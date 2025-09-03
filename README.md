@@ -2,17 +2,19 @@
 
 ## 📋 Mission pour l'IA
 
-Ce projet est une **refonte complète** de Blobinfini, marketplace de mise en relation pour les sports de glisse (surf/kitesurf). 
+Ce projet est une **refonte complète** de Blobinfini, marketplace de mise en relation pour les sports de glisse (surf/kitesurf).
 
 **Votre mission** : Analyser le code existant dans `/blobevolution` et le réécrire avec une architecture moderne et scalable dans `/blobevolutionClaudeCodex`.
 
 ### Projets à analyser
+
 - **Source** : `/blobevolution` (version initiale, à améliorer)
 - **Destination** : `/blobevolutionClaudeCodex` (nouvelle version optimisée)
 
 ## 🎯 Vision Produit
 
 Blobinfini connecte les passionnés de sports de glisse en proposant :
+
 - **Matching intelligent** entre riders basé sur géolocalisation, niveau et disponibilités
 - **Réservation de cours** avec moniteurs professionnels certifiés
 - **Paiement sécurisé** via Stripe avec commission plateforme (10-15%)
@@ -21,6 +23,7 @@ Blobinfini connecte les passionnés de sports de glisse en proposant :
 - **Carte interactive** (BloboMap) montrant groupes et spots en temps réel
 
 ### Utilisateurs cibles
+
 - **Riders** : Surfeurs/kitesurfeurs 25-45 ans cherchant partenaires ou cours
 - **Professionnels** : Moniteurs indépendants et écoles cherchant visibilité
 - **Objectif inclusion** : Interface accessible, effort particulier pour attirer les femmes dans ces sports
@@ -28,6 +31,7 @@ Blobinfini connecte les passionnés de sports de glisse en proposant :
 ## 🏗️ Architecture Cible
 
 ### Stack Technique Requis
+
 ```yaml
 Frontend:
   - Next.js 14+ (App Router)
@@ -56,6 +60,7 @@ Infrastructure:
 ```
 
 ### Structure Monorepo - Phase MVP (Recommandé pour démarrer)
+
 ```
 blobevolutionClaudeCodex/
 ├── apps/
@@ -91,6 +96,7 @@ blobevolutionClaudeCodex/
 ```
 
 ### Structure Services Découplés - Phase Scale (Évolution future)
+
 ```
 blobevolutionClaudeCodex/
 ├── services/                   # Microservices (après 1000+ users)
@@ -103,6 +109,7 @@ blobevolutionClaudeCodex/
 ## 🔐 Architecture Authentification
 
 ### Phase MVP - Module Auth Intégré
+
 L'authentification est un **module dans l'API principale** pour simplifier le développement :
 
 ```typescript
@@ -119,6 +126,7 @@ L'authentification est un **module dans l'API principale** pour simplifier le d�
 ```
 
 ### Fonctionnalités Auth Requises
+
 - ✅ Registration avec vérification email
 - ✅ Login JWT + Refresh tokens
 - ✅ 2FA obligatoire pour pros (TOTP)
@@ -129,6 +137,7 @@ L'authentification est un **module dans l'API principale** pour simplifier le d�
 - ✅ RGPD: consentement, export, suppression
 
 ### Schéma Base de Données
+
 ```prisma
 model User {
   id               String    @id @default(uuid())
@@ -137,11 +146,11 @@ model User {
   role             Role      @default(RIDER)
   emailVerified    Boolean   @default(false)
   twoFactorEnabled Boolean   @default(false)
-  
+
   // RGPD
   consentedAt      DateTime?
   deletedAt        DateTime? // Soft delete
-  
+
   // Relations
   sessions         Session[]
   riderProfile     RiderProfile?
@@ -152,6 +161,7 @@ model User {
 ## 🔒 Exigences Critiques de Sécurité
 
 ### RGPD Obligatoire
+
 - ✅ Chiffrement AES-256 données personnelles
 - ✅ Consentement explicite géolocalisation
 - ✅ Droit à l'oubli (soft delete + purge 30j)
@@ -160,6 +170,7 @@ model User {
 - ✅ Hébergement données en Europe
 
 ### Sécurité Technique
+
 - ✅ Validation Zod sur TOUS les inputs
 - ✅ Prisma ORM (pas de SQL raw)
 - ✅ Rate limiting (100 req/min)
@@ -169,6 +180,7 @@ model User {
 - ✅ JWT + refresh tokens sécurisés
 
 ### Protection Commission
+
 - ✅ Filtrage emails/téléphones dans messages
 - ✅ QR codes uniques par session
 - ✅ Détection comportements suspects
@@ -177,6 +189,7 @@ model User {
 ## 📊 Fonctionnalités par Phase
 
 ### Phase 1 - MVP (3 mois)
+
 - [ ] **Auth Module** : inscription, connexion, JWT, reset password
 - [ ] Profils riders/pros avec vérification
 - [ ] Matching basique par géolocalisation
@@ -185,6 +198,7 @@ model User {
 - [ ] PWA mobile-first
 
 ### Phase 2 - Croissance (6 mois)
+
 - [ ] **2FA obligatoire** pour pros
 - [ ] Social login (Google, Facebook)
 - [ ] Matching ML multi-critères
@@ -195,6 +209,7 @@ model User {
 - [ ] Mascotte Blob basique
 
 ### Phase 3 - Scale (12 mois)
+
 - [ ] **Migration auth vers service dédié**
 - [ ] Multi-sports (windsurf, paddle)
 - [ ] API publique REST/GraphQL
@@ -208,6 +223,7 @@ model User {
 ### Analyse du Code Existant
 
 1. **Examinez `/blobevolution`** pour comprendre :
+
    - L'architecture actuelle
    - Les fonctionnalités implémentées
    - Les problèmes de sécurité
@@ -224,12 +240,14 @@ model User {
 ### Réécriture dans `/blobevolutionClaudeCodex`
 
 3. **Créez la nouvelle architecture** :
+
    ```bash
    # Structure monorepo avec Turborepo
    npx create-turbo@latest blobevolutionClaudeCodex
    ```
 
 4. **Implémentez le module Auth en premier** :
+
    - JWT avec access + refresh tokens
    - Validation Zod des inputs
    - Sessions Redis pour invalidation
@@ -237,6 +255,7 @@ model User {
    - Email verification avec nodemailer
 
 5. **Migrez fonctionnalité par fonctionnalité** :
+
    - Auth → Module complet avec guards
    - Profiles → RGPD compliant avec chiffrement
    - Matching → Algorithme PostGIS optimisé
@@ -286,6 +305,7 @@ npm run start         # Start production
 ## 📝 Patterns de Code à Suivre
 
 ### Module Auth
+
 ```typescript
 // apps/api/src/modules/auth/auth.service.ts
 import bcrypt from 'bcrypt';
@@ -295,79 +315,78 @@ import { z } from 'zod';
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(['RIDER', 'PRO'])
+  role: z.enum(['RIDER', 'PRO']),
 });
 
 export class AuthService {
   async register(data: unknown) {
     const validated = registerSchema.parse(data);
-    
+
     // Hash password
     const hashedPassword = await bcrypt.hash(validated.password, 12);
-    
+
     // Create user with Prisma
     const user = await prisma.user.create({
       data: {
         email: validated.email,
         password: hashedPassword,
         role: validated.role,
-        verifyToken: crypto.randomBytes(32).toString('hex')
-      }
+        verifyToken: crypto.randomBytes(32).toString('hex'),
+      },
     });
-    
+
     // Send verification email
     await emailService.sendVerification(user.email, user.verifyToken);
-    
+
     return { message: 'Check email to verify account' };
   }
-  
+
   async login(email: string, password: string) {
     const user = await prisma.user.findUnique({ where: { email } });
-    
-    if (!user || !await bcrypt.compare(password, user.password)) {
+
+    if (!user || !(await bcrypt.compare(password, user.password))) {
       throw new UnauthorizedException();
     }
-    
+
     // Generate tokens
-    const accessToken = jwt.sign(
-      { sub: user.id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '15m' }
-    );
-    
-    const refreshToken = jwt.sign(
-      { sub: user.id },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '30d' }
-    );
-    
+    const accessToken = jwt.sign({ sub: user.id, role: user.role }, process.env.JWT_SECRET, {
+      expiresIn: '15m',
+    });
+
+    const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET, {
+      expiresIn: '30d',
+    });
+
     // Save session
     await this.saveSession(user.id, refreshToken);
-    
+
     return { accessToken, refreshToken };
   }
 }
 ```
 
 ### API Route Protégée
+
 ```typescript
 // apps/api/src/modules/bookings/bookings.controller.ts
 import { requireAuth } from '@/modules/auth/auth.guard';
 
-router.post('/bookings', 
-  requireAuth,           // Vérifie JWT
-  requireRole('RIDER'),  // Vérifie rôle
-  rateLimit(100),       // Rate limiting
+router.post(
+  '/bookings',
+  requireAuth, // Vérifie JWT
+  requireRole('RIDER'), // Vérifie rôle
+  rateLimit(100), // Rate limiting
   async (req, res) => {
     const booking = await bookingService.create(req.user.id, req.body);
     res.json(booking);
-  }
+  },
 );
 ```
 
 ## 🔍 Points d'Attention Spécifiques
 
 ### Authentification
+
 - JWT courte durée (15min) + refresh token (30j)
 - Stockage refresh tokens en base (révocation possible)
 - 2FA obligatoire pour pros (génération QR code TOTP)
@@ -375,6 +394,7 @@ router.post('/bookings',
 - Rate limiting sur login (5 tentatives/minute)
 
 ### Matching Algorithm
+
 - PostGIS pour requêtes géospatiales
 - Redis cache pour performances
 - Maximum 4 riders par groupe
@@ -382,6 +402,7 @@ router.post('/bookings',
 - Système verrouillage groupe (cadenas)
 
 ### Paiement & Commission
+
 - Stripe Connect pour split payments
 - Commission 10-15% prélevée automatiquement
 - Escrow virtuel jusqu'à validation session
@@ -389,12 +410,14 @@ router.post('/bookings',
 - Webhooks Stripe sécurisés
 
 ### Messagerie
+
 - Filtrage regex emails/téléphones
 - Conversations limitées aux matchs confirmés
 - Archivage auto après 30 jours inactivité
 - Modération IA contenus inappropriés
 
 ### Gamification
+
 - Points "Flocons d'avoine" par action
 - Badges débloquables (Top Rider, Pro Elite)
 - Mascotte Blob personnalisable (accessoires)
@@ -411,6 +434,7 @@ router.post('/bookings',
 ## 🤝 Contribution IA
 
 Avant de coder :
+
 1. Lisez **CLAUDE.md** pour les conventions
 2. Analysez `/blobevolution` complètement
 3. Proposez un plan de migration
@@ -419,6 +443,7 @@ Avant de coder :
 6. Implémentez par petits commits atomiques
 
 Chaque contribution doit :
+
 - Être testée (min 80% coverage)
 - Respecter TypeScript strict
 - Suivre les patterns de sécurité
@@ -433,4 +458,4 @@ Chaque contribution doit :
 
 ---
 
-*Blobinfini - Connecter les riders, simplifier les sessions, protéger l'océan* 🌊# blobevolutionClaudeCodex
+_Blobinfini - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊# blobevolutionClaudeCodex

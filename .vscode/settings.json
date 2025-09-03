@@ -52,5 +52,8 @@
 
   // Docker
   "docker.commands.composeDown.removeOrphans": true,
-  "javascript.referencesCodeLens.showOnAllFunctions": true
+  "javascript.referencesCodeLens.showOnAllFunctions": true,
+  "containers.commands.composeDown": {
+    "removeOrphans": true
+  }
 }
