@@ -142,4 +142,126 @@ describe('Auth E2E', () => {
     expect(loginNew.body).toHaveProperty('accessToken');
     expect(loginNew.body).toHaveProperty('refreshToken');
   });
+
+  it('verify-email marks user as verified', async () => {
+    // Register a new user and get verification token (exposed in test env)
+    const reg = await request(app)
+      .post('/auth/register')
+      .send({ email: 'verify@test.com', password: 'Passw0rd!', role: 'RIDER' })
+      .expect(201);
+    expect(reg.body).toHaveProperty('verificationToken');
+    const token = reg.body.verificationToken as string;
+
+    // Verify the email
+    await request(app)
+      .post('/auth/verify-email')
+      .send({ token })
+      .expect(200);
+
+    // Check in DB
+    const u = await prisma.user.findUnique({ where: { email: 'verify@test.com' } });
+    expect(u?.emailVerified).toBe(true);
+  });
+
+  it('GET /auth/me returns current profile', async () => {
+    // Login with the verified user
+    const login = await request(app)
+      .post('/auth/login')
+      .send({ email: 'verify@test.com', password: 'Passw0rd!' })
+      .expect(200);
+    const access = login.body.accessToken as string;
+
+    const me = await request(app)
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${access}`)
+      .expect(200);
+
+    expect(me.body.email).toBe('verify@test.com');
+    expect(me.body).toHaveProperty('emailVerified', true);
+    expect(me.body).toHaveProperty('role');
+    expect(me.body).not.toHaveProperty('password');
+  });
+
+  it('resend verification + enforce verified login when flag enabled', async () => {
+    const prev = process.env.AUTH_REQUIRE_VERIFIED;
+    try {
+      process.env.AUTH_REQUIRE_VERIFIED = 'true';
+
+      // Register a new unverified user
+      await request(app)
+        .post('/auth/register')
+        .send({ email: 'blocked@test.com', password: 'Passw0rd!', role: 'RIDER' })
+        .expect(201);
+
+      // Login should be blocked
+      await request(app)
+        .post('/auth/login')
+        .send({ email: 'blocked@test.com', password: 'Passw0rd!' })
+        .expect(403);
+
+      // Resend verification to get a token
+      const resend = await request(app)
+        .post('/auth/resend-verification')
+        .send({ email: 'blocked@test.com' })
+        .expect(200);
+      expect(resend.body).toHaveProperty('message');
+      expect(resend.body).toHaveProperty('verificationToken');
+      const token = resend.body.verificationToken as string;
+
+      // Verify
+      await request(app)
+        .post('/auth/verify-email')
+        .send({ token })
+        .expect(200);
+
+      // Login should now work
+      const loginOk = await request(app)
+        .post('/auth/login')
+        .send({ email: 'blocked@test.com', password: 'Passw0rd!' })
+        .expect(200);
+      expect(loginOk.body).toHaveProperty('accessToken');
+      expect(loginOk.body).toHaveProperty('refreshToken');
+    } finally {
+      if (prev === undefined) delete process.env.AUTH_REQUIRE_VERIFIED; else process.env.AUTH_REQUIRE_VERIFIED = prev;
+    }
+  });
+
+  it('route-level requireVerifiedEmail denies unverified and allows after verify', async () => {
+    const prev = process.env.AUTH_REQUIRE_VERIFIED;
+    try {
+      process.env.AUTH_REQUIRE_VERIFIED = 'false'; // ensure login not blocked
+
+      // Register an unverified user and login
+      const reg = await request(app)
+        .post('/auth/register')
+        .send({ email: 'routeblock@test.com', password: 'Passw0rd!', role: 'RIDER' })
+        .expect(201);
+      const token = reg.body.verificationToken as string;
+
+      const login = await request(app)
+        .post('/auth/login')
+        .send({ email: 'routeblock@test.com', password: 'Passw0rd!' })
+        .expect(200);
+      const access = login.body.accessToken as string;
+
+      // Access verified-only should be forbidden
+      await request(app)
+        .get('/auth/verified-only')
+        .set('Authorization', `Bearer ${access}`)
+        .expect(403);
+
+      // Verify email, then access should succeed
+      await request(app)
+        .post('/auth/verify-email')
+        .send({ token })
+        .expect(200);
+
+      await request(app)
+        .get('/auth/verified-only')
+        .set('Authorization', `Bearer ${access}`)
+        .expect(200);
+    } finally {
+      if (prev === undefined) delete process.env.AUTH_REQUIRE_VERIFIED; else process.env.AUTH_REQUIRE_VERIFIED = prev;
+    }
+  });
 });

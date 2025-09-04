@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { authRouter } from './modules/auth/auth.controller';
+import { profileRouter } from './modules/profile/profile.controller';
 
 export function createApp() {
   const app = express();
@@ -15,6 +16,7 @@ export function createApp() {
   });
 
   app.use('/auth', authRouter);
+  app.use('/profile', profileRouter);
 
   return app;
 }
