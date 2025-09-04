@@ -179,6 +179,13 @@ model User {
 - ✅ 2FA obligatoire pour pros
 - ✅ JWT + refresh tokens sécurisés
 
+### Décision: Refresh tokens (MVP)
+
+- Stockage: empreinte SHA‑256 du refresh token (non réversible) au lieu d’un hash salé type bcrypt pour permettre une comparaison déterministe et rapide.
+- Rotation: lors de l’appel à `/auth/refresh`, tous les refresh tokens actifs de l’utilisateur sont révoqués puis un nouveau token est émis. Cela impose la sémantique « single‑use » et évite toute réutilisation accidentelle d’un ancien token.
+- Tests: des tests E2E vérifient l’inscription, la connexion, la rotation du refresh (l’ancien devient invalide), le logout (global et device unique), et le reset password.
+- Implémentation: voir `apps/api/src/modules/auth/auth.service.ts`.
+
 ### Protection Commission
 
 - ✅ Filtrage emails/téléphones dans messages
