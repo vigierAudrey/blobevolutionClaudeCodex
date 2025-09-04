@@ -1,5 +1,6 @@
 import { prisma } from '@blobinfini/database';
 import bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 
@@ -7,6 +8,9 @@ const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
 
 export class AuthService {
+  private hashToken(raw: string) {
+    return createHash('sha256').update(raw).digest('hex');
+  }
   async register(data: { email: string; password: string; role: 'RIDER' | 'PRO' }) {
     const hashed = await bcrypt.hash(data.password, 12);
     const user = await prisma.user.create({
@@ -34,7 +38,7 @@ export class AuthService {
     });
 
     // On stocke le hash du refresh pour permettre l’invalidation ultérieure
-    const tokenHash = await bcrypt.hash(refreshToken, 10);
+    const tokenHash = this.hashToken(refreshToken);
     const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
     await prisma.refreshToken.create({
       data: { userId: user.id, tokenHash, expiresAt },
@@ -66,9 +70,9 @@ export class AuthService {
     });
 
     let dbToken: { id: string; tokenHash: string } | null = null;
+    const rHash = this.hashToken(refreshToken);
     for (const t of candidates) {
-      const match = await bcrypt.compare(refreshToken, t.tokenHash);
-      if (match) {
+      if (t.tokenHash === rHash) {
         dbToken = { id: t.id, tokenHash: t.tokenHash };
         break;
       }
@@ -84,19 +88,20 @@ export class AuthService {
         expiresIn: `${REFRESH_TTL_DAYS}d`,
       },
     );
-    const newHash = await bcrypt.hash(newRefresh, 10);
+    const newHash = this.hashToken(newRefresh);
     const newExpiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
 
     const now = new Date();
     const result = await prisma.$transaction(async (tx) => {
-      // Révoque uniquement si le token n'est pas déjà révoqué
+      // Politique simple et sûre: invalider tous les refresh actifs de l'utilisateur
+      // pour empêcher toute réutilisation du token précédent (même en cas de duplication inattendue).
       const { count } = await tx.refreshToken.updateMany({
-        where: { id: dbToken!.id, revokedAt: null },
+        where: { userId, revokedAt: null },
         data: { revokedAt: now },
       });
 
-      if (count !== 1) {
-        // Token déjà utilisé/révoqué → tentative de réutilisation
+      // Si aucun token actif ne correspondait, c'est probablement une réutilisation ou un token invalide
+      if (count === 0) {
         return { rotated: false as const };
       }
 
@@ -140,9 +145,9 @@ export class AuthService {
         expiresAt: { gt: new Date() },
       },
     });
+    const rHash2 = this.hashToken(refreshToken);
     for (const t of candidates) {
-      const match = await bcrypt.compare(refreshToken, t.tokenHash);
-      if (match) {
+      if (t.tokenHash === rHash2) {
         await prisma.refreshToken.update({ where: { id: t.id }, data: { revokedAt: new Date() } });
         return { message: 'Logged out from current device' };
       }
