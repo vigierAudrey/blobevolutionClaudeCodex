@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '@blobinfini/database';
 import { requireAuth } from '../auth/auth.guard';
+import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
+import { lookup as mimeLookup, extension as mimeExtension } from 'mime-types';
+import crypto from 'crypto';
 
 export const profileRouter = Router();
 
@@ -46,6 +49,8 @@ profileRouter.put('/me', requireAuth, async (req, res) => {
     });
     return res.json(rp);
   } catch (err: any) {
+    // eslint-disable-next-line no-console
+    console.error('upload-url error', err);
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
@@ -53,3 +58,39 @@ profileRouter.put('/me', requireAuth, async (req, res) => {
   }
 });
 
+// Generate a pre-signed URL for direct upload to S3/MinIO
+profileRouter.post('/photo/upload-url', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const schema = z.object({ contentType: z.string().min(1) });
+    const { contentType } = schema.parse(req.body);
+
+    // Accept only common image types
+    const allowed = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    if (!allowed.has(contentType)) return res.status(400).json({ error: 'Unsupported content type' });
+
+    // Debug basic env state for S3
+    // eslint-disable-next-line no-console
+    console.log('S3 env check', {
+      endpoint: process.env.S3_ENDPOINT,
+      bucket: process.env.S3_BUCKET,
+      hasKey: !!process.env.S3_ACCESS_KEY_ID,
+    });
+    await ensureBucket();
+    const ext = mimeExtension(contentType) || 'bin';
+    const key = `users/${userId}/${crypto.randomUUID()}.${ext}`;
+    const uploadUrl = await presignPutObject(key, contentType, 900);
+    const fileUrl = publicUrlForKey(key);
+
+    return res.json({ uploadUrl, key, fileUrl });
+  } catch (err: any) {
+    // eslint-disable-next-line no-console
+    console.error('upload-url error', err);
+    if (err?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});

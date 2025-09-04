@@ -60,6 +60,9 @@ export const apiClient = {
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
   updateProfile: (body: any) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
+  searchMatching: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced'; date: string; partner?: 'ALL' | 'WOMEN' | 'MEN'; distanceKm?: number; location?: { lat: number; lng: number }; page?: number; pageSize?: number; sortBy?: 'distance' | 'name' }) =>
+    request('/matching/search', { method: 'POST', body: JSON.stringify(body) }, true),
+
   saveTokens: setTokens,
   clearTokens: clearTokens,
   getTokens,

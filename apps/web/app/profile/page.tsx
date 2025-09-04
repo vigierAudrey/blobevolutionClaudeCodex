@@ -7,12 +7,15 @@ import { Textarea } from '../../components/ui/textarea';
 import { Button } from '../../components/ui/button';
 import { apiClient } from '../../lib/apiClient';
 import { useRouter } from 'next/navigation';
+import { BackBar } from '../../components/BackBar';
+import { useToast } from '../../components/ui/toast';
+import { Spinner } from '../../components/ui/spinner';
 
 type Sex = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
-type PartnerPref = 'ALL' | 'WOMEN' | 'MEN';
 
 export default function ProfilePage() {
   const router = useRouter();
+  const toast = useToast();
   // Photo upload + preview
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -28,8 +31,8 @@ export default function ProfilePage() {
   const [sex, setSex] = useState<Sex>('Femme');
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
-  const [partnerPref, setPartnerPref] = useState<PartnerPref>('ALL');
-  const [maxDistance, setMaxDistance] = useState<number>(20);
+  const [/*deprecatedPartnerPref*/] = useState<string>('ALL');
+  const [/*deprecatedMaxDistance*/] = useState<number>(20);
   const [emailNotif, setEmailNotif] = useState<boolean>(false);
 
   useEffect(() => {
@@ -43,8 +46,7 @@ export default function ProfilePage() {
         setSex(
           p.sex === 'FEMALE' ? 'Femme' : p.sex === 'MALE' ? 'Homme' : p.sex === 'OTHER' ? 'Autre' : 'Ne pas préciser',
         );
-        setPartnerPref(p.partnerPref as any);
-        setMaxDistance(p.maxDistanceKm ?? 20);
+        // Partner preference & distance moved to matching flow – no longer editable here
         setEmailNotif(!!p.emailNotif);
         setPhotoUrl(p.photoUrl ?? null);
       })
@@ -54,6 +56,8 @@ export default function ProfilePage() {
       });
   }, [router]);
 
+  const [saving, setSaving] = useState(false);
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // Map UI -> enums API
@@ -62,22 +66,41 @@ export default function ProfilePage() {
       displayName: displayName || undefined,
       bio: bio || undefined,
       sex: sexEnum,
-      partnerPref,
-      maxDistanceKm: Number(maxDistance),
+      // partnerPref and maxDistance moved to matching flow
       emailNotif,
       photoUrl: photoUrl || undefined,
     };
     try {
+      setSaving(true);
+      // If there is a new photo file, upload it first
+      if (photoFile) {
+        const contentType = photoFile.type || 'image/jpeg';
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/profile/photo/upload-url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiClient.getTokens()?.accessToken || ''}` },
+          body: JSON.stringify({ contentType }),
+        });
+        if (!res.ok) throw new Error('Impossible de préparer le téléversement');
+        const data = await res.json();
+        const uploadUrl = data.uploadUrl as string;
+        const finalUrl = data.fileUrl as string | undefined;
+        // Upload direct to S3/MinIO
+        const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: photoFile });
+        if (!put.ok) throw new Error('Échec de l’upload');
+        if (finalUrl) body.photoUrl = finalUrl;
+      }
+
       await apiClient.updateProfile(body);
-      // TODO: upload photo file in next iteration (endpoint dédié)
-      alert('Profil sauvegardé');
+      toast('Profil sauvegardé', 'success');
     } catch (e: any) {
-      alert(e?.message || 'Erreur lors de la sauvegarde');
+      toast(e?.message || 'Erreur lors de la sauvegarde', 'error');
     }
+    finally { setSaving(false); }
   };
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
+      <BackBar fallbackHref="/dashboard" />
       <div className="text-center space-y-1">
         <h1 className="text-2xl sm:text-3xl font-semibold">Modifier mon Profil 🏄‍♀️</h1>
         <p className="text-sm text-muted-foreground">Personnalise ton profil et choisis tes préférences de session.</p>
@@ -148,52 +171,15 @@ export default function ProfilePage() {
           </Card>
         </div>
 
-        {/* Session preferences */}
+        {/* Notifications */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Préférences de Session</CardTitle>
+            <CardTitle className="text-base">Notifications</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="partnerPref">Sélection du partenaire</Label>
-              <select
-                id="partnerPref"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={partnerPref}
-                onChange={(e) => setPartnerPref(e.target.value as PartnerPref)}
-              >
-                <option value="ALL">Peu importe</option>
-                <option value="WOMEN">Uniquement les femmes</option>
-                <option value="MEN">Uniquement les hommes</option>
-              </select>
-              <p className="text-xs text-amber-700">⚠️ Plus la sélection est restrictive, moins tu as de chance de trouver un partenaire.</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="distance">Distance maximale (km)</Label>
-              <div className="flex items-center gap-3">
-                <input
-                  id="distance"
-                  type="range"
-                  min={5}
-                  max={200}
-                  step={5}
-                  value={maxDistance}
-                  onChange={(e) => setMaxDistance(Number(e.target.value))}
-                  className="w-full"
-                />
-                <Input
-                  type="number"
-                  min={1}
-                  max={500}
-                  value={maxDistance}
-                  onChange={(e) => setMaxDistance(Number(e.target.value))}
-                  className="w-20"
-                />
-              </div>
-            </div>
-
-            <p className="text-sm text-muted-foreground">⭐ La sélection de la tranche d’âge sera disponible dans une prochaine version.</p>
+            <p className="text-sm text-muted-foreground">
+              Le choix du partenaire et la distance se font désormais dans le flux Matching pour éviter toute confusion.
+            </p>
 
             <div className="flex items-center gap-2">
               <input id="emailNotif" type="checkbox" checked={emailNotif} onChange={(e) => setEmailNotif(e.target.checked)} />
@@ -205,7 +191,13 @@ export default function ProfilePage() {
         </Card>
 
         <div className="flex justify-end">
-          <Button type="submit" className="w-full sm:w-auto">Enregistrer</Button>
+          <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
+            {saving ? (
+              <span className="inline-flex items-center gap-2"><Spinner /> Enregistrement…</span>
+            ) : (
+              'Enregistrer'
+            )}
+          </Button>
         </div>
       </form>
     </div>

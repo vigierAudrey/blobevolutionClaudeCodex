@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Label } from '../../components/ui/label';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
+import { BackBar } from '../../components/BackBar';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -31,6 +32,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <div className="max-w-md mx-auto">
+      <BackBar fallbackHref="/login" />
       <Card>
         <CardHeader>
           <CardTitle>Mot de passe oublié</CardTitle>
@@ -54,4 +56,3 @@ export default function ForgotPasswordPage() {
     </div>
   );
 }
-

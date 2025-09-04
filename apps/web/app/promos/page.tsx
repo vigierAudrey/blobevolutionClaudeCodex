@@ -1,8 +1,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { BackBar } from '../../components/BackBar';
 
 export default function PromosPage() {
   return (
     <div className="max-w-2xl mx-auto">
+      <BackBar fallbackHref="/dashboard" />
       <Card>
         <CardHeader>
           <CardTitle>Offres promotionnelles</CardTitle>
@@ -19,4 +21,3 @@ export default function PromosPage() {
     </div>
   );
 }
-

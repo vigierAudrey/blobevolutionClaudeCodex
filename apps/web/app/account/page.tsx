@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '../../lib/apiClient';
 import { useRouter } from 'next/navigation';
+import { BackBar } from '../../components/BackBar';
 
 export default function AccountPage() {
   const router = useRouter();
@@ -47,6 +48,7 @@ export default function AccountPage() {
 
   return (
     <div className="max-w-md mx-auto space-y-4">
+      <BackBar fallbackHref="/dashboard" />
       <h1 className="text-2xl font-semibold">Mon compte</h1>
       <div className="bg-white shadow-sm rounded-lg p-4 sm:p-6">
         <div className="space-y-1 text-sm">
@@ -89,4 +91,3 @@ export default function AccountPage() {
     </div>
   );
 }
-

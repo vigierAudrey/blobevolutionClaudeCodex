@@ -17,7 +17,8 @@ const config: Config = {
     '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@blobinfini/database$': '<rootDir>/../../packages/database/src/index.ts'
   },
-  roots: ['<rootDir>/src']
-};
+  roots: ['<rootDir>/src'],
+  maxWorkers: 1
+}; 
 
 export default config;
