@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
+const EMAIL_VERIFY_TTL_HOURS = 24;
 
 export class AuthService {
   private hashToken(raw: string) {
@@ -16,8 +17,14 @@ export class AuthService {
     const user = await prisma.user.create({
       data: { email: data.email, password: hashed, role: data.role },
     });
-    // TODO: envoyer email de vérification (stub)
-    return { message: 'Account created. Please verify your email.', userId: user.id };
+    // Génère un token de vérification email
+    const verification = await this.createEmailVerification(user.id);
+    return {
+      message: 'Account created. Please verify your email.',
+      userId: user.id,
+      // En test uniquement, on expose le token brut pour simplifier les tests
+      ...(process.env.NODE_ENV === 'test' ? { verificationToken: verification.token } : {}),
+    };
   }
 
   async login(email: string, password: string) {
@@ -25,6 +32,12 @@ export class AuthService {
     if (!user) throw { code: 'UNAUTHORIZED' };
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) throw { code: 'UNAUTHORIZED' };
+
+    // Optionnel: bloquer la connexion si l'email n'est pas vérifié
+    const requireVerified = String(process.env.AUTH_REQUIRE_VERIFIED || 'false').toLowerCase() === 'true';
+    if (requireVerified && !user.emailVerified) {
+      throw { code: 'EMAIL_NOT_VERIFIED' };
+    }
 
     const accessToken = jwt.sign(
       { sub: user.id, role: user.role },
@@ -210,5 +223,57 @@ export class AuthService {
     ]);
 
     return { message: 'Password updated' };
+  }
+
+  // Email verification
+  async createEmailVerification(userId: string) {
+    const raw = crypto.randomBytes(32).toString('hex');
+    const tokenHash = this.hashToken(raw);
+    const expiresAt = new Date(Date.now() + EMAIL_VERIFY_TTL_HOURS * 60 * 60 * 1000);
+    await prisma.emailVerificationToken.create({
+      data: { userId, tokenHash, expiresAt },
+    });
+    // Ici, en production, on enverrait un e-mail contenant `raw`
+    return { token: raw, expiresAt };
+  }
+
+  async verifyEmail(rawToken: string) {
+    const tokenHash = this.hashToken(rawToken);
+    const tok = await prisma.emailVerificationToken.findFirst({
+      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!tok) throw { code: 'UNAUTHORIZED', message: 'Invalid or expired token' };
+
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: tok.userId }, data: { emailVerified: true } }),
+      prisma.emailVerificationToken.update({ where: { id: tok.id }, data: { usedAt: new Date() } }),
+      // Optionnel: invalider autres tokens de vérification existants
+      prisma.emailVerificationToken.updateMany({
+        where: { userId: tok.userId, id: { not: tok.id }, usedAt: null },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    return { message: 'Email verified' };
+  }
+
+  async resendEmailVerification(email: string) {
+    const generic = { message: 'If the account exists, a verification email was sent' } as any;
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return generic;
+    if (user.emailVerified) return generic;
+
+    // Invalider les tokens précédents non utilisés
+    await prisma.emailVerificationToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    const res = await this.createEmailVerification(user.id);
+    if (process.env.NODE_ENV === 'test') {
+      return { ...generic, verificationToken: res.token };
+    }
+    return generic;
   }
 }

@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { rateLimit } from '../../middleware/rate-limit';
-import { requireAuth } from './auth.guard';
+import { requireAuth, requireVerifiedEmail } from './auth.guard';
 import { AuthService } from './auth.service';
+import { prisma } from '@blobinfini/database';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -36,6 +37,14 @@ const resetSchema = z.object({
   password: z.string().min(8),
 });
 
+const verifyEmailSchema = z.object({
+  token: z.string().min(10),
+});
+
+const resendVerifySchema = z.object({
+  email: z.string().email(),
+});
+
 authRouter.post('/register', async (req, res) => {
   try {
     const data = registerSchema.parse(req.body);
@@ -62,6 +71,9 @@ authRouter.post('/login', async (req, res) => {
       }
       if (err?.code === 'UNAUTHORIZED') {
         return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      if (err?.code === 'EMAIL_NOT_VERIFIED') {
+        return res.status(403).json({ error: 'Email not verified' });
       }
       return res.status(500).json({ error: 'Internal error' });
     }
@@ -107,6 +119,62 @@ authRouter.post('/logout', requireAuth, async (req, res) => {
   }
 });
 
+authRouter.post('/verify-email', async (req, res) => {
+  try {
+    const { token } = verifyEmailSchema.parse(req.body);
+    const result = await service.verifyEmail(token);
+    res.json(result);
+  } catch (err: any) {
+    if (err?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    if (err?.code === 'UNAUTHORIZED') {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Resend verification email (generic response)
+authRouter.post('/resend-verification', async (req, res) => {
+  // Rate limit pour éviter l'abus
+  rateLimit({ key: 'auth:resend', limit: 30, windowMs: 60_000 })(req, res, async () => {
+    try {
+      const { email } = resendVerifySchema.parse(req.body);
+      const result = await service.resendEmailVerification(email);
+      res.json(result);
+    } catch (err: any) {
+      if (err?.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid input', details: err.errors });
+      }
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  });
+});
+
+authRouter.get('/me', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        emailVerified: true,
+        twoFactorEnabled: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    res.json(user);
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
 authRouter.post('/forgot-password', async (req, res) => {
   try {
     const { email } = forgotSchema.parse(req.body);
@@ -134,4 +202,9 @@ authRouter.post('/reset-password', async (req, res) => {
     }
     return res.status(500).json({ error: 'Internal error' });
   }
+});
+
+// Demo: route protégée par email vérifié (à réutiliser pour modules critiques)
+authRouter.get('/verified-only', requireAuth, requireVerifiedEmail, async (_req, res) => {
+  return res.json({ ok: true });
 });

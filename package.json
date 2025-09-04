@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "npm run dev:api",
     "dev:api": "npm run build --workspace @blobinfini/database && npm run dev --workspace @blobinfini/api",
+    "dev:web": "npm run dev --workspace @blobinfini/web",
+    "dev:all": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
     "build": "npm run build --workspace @blobinfini/api && npm run build --workspace @blobinfini/database",
     "type-check": "tsc -p tsconfig.base.json && tsc -p apps/api/tsconfig.json",
     "db:generate": "npm run generate --workspace @blobinfini/database",
@@ -15,5 +17,8 @@
     "db:studio": "npm run studio --workspace @blobinfini/database",
     "test": "npm run test --workspace @blobinfini/api",
     "postinstall": "npm run build --workspace @blobinfini/database || true"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

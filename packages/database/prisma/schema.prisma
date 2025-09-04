@@ -27,6 +27,8 @@ model User {
   sessions         Session[]
   refreshTokens    RefreshToken[]
   passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  riderProfile     RiderProfile?
 }
 
 model Session {
@@ -59,6 +61,49 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
   usedAt    DateTime?
   expiresAt DateTime
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  createdAt DateTime @default(now())
+  usedAt    DateTime?
+  expiresAt DateTime
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+enum Sex {
+  FEMALE
+  MALE
+  OTHER
+  UNSPECIFIED
+}
+
+enum PartnerPref {
+  ALL
+  WOMEN
+  MEN
+}
+
+model RiderProfile {
+  id             String       @id @default(uuid())
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName    String?
+  bio            String?
+  sex            Sex          @default(UNSPECIFIED)
+  partnerPref    PartnerPref  @default(ALL)
+  maxDistanceKm  Int          @default(20)
+  emailNotif     Boolean      @default(false)
+  photoUrl       String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@index([userId])
 }

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { prisma } from '@blobinfini/database';
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const auth = req.headers.authorization;
@@ -25,3 +26,15 @@ export function requireRole(role: 'RIDER' | 'PRO' | 'ADMIN') {
   };
 }
 
+export async function requireVerifiedEmail(req: Request, res: Response, next: NextFunction) {
+  const user = (req as any).user as { id: string } | undefined;
+  if (!user?.id) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const found = await prisma.user.findUnique({ where: { id: user.id }, select: { emailVerified: true } });
+    if (!found) return res.status(401).json({ error: 'Unauthorized' });
+    if (!found.emailVerified) return res.status(403).json({ error: 'Email not verified' });
+    return next();
+  } catch {
+    return res.status(500).json({ error: 'Internal error' });
+  }
+}
