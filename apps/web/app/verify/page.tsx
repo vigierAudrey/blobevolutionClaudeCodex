@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { BackBar } from '../../components/BackBar';
 
 function VerifyInner() {
   const search = useSearchParams();
@@ -48,6 +49,7 @@ function VerifyInner() {
 
   return (
     <div className="max-w-md mx-auto">
+      <BackBar fallbackHref="/login" />
       <Card>
         <CardHeader>
           <CardTitle>Vérification de l’email</CardTitle>

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Label } from '../../components/ui/label';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
+import { BackBar } from '../../components/BackBar';
 
 function ResetPasswordInner() {
   const search = useSearchParams();
@@ -39,6 +40,7 @@ function ResetPasswordInner() {
 
   return (
     <div className="max-w-md mx-auto">
+      <BackBar fallbackHref="/login" />
       <Card>
         <CardHeader>
           <CardTitle>Réinitialiser le mot de passe</CardTitle>

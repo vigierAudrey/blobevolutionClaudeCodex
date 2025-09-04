@@ -1,9 +1,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { BackBar } from '../../components/BackBar';
 import Link from 'next/link';
 
 export default function AboutPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-4">
+      <BackBar fallbackHref="/dashboard" />
       <Card>
         <CardHeader>
           <CardTitle>RGPD & Utilisation des données</CardTitle>
@@ -44,4 +46,3 @@ export default function AboutPage() {
     </div>
   );
 }
-

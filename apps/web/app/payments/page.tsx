@@ -1,9 +1,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { BackBar } from '../../components/BackBar';
 import { Button } from '../../components/ui/button';
 
 export default function PaymentsPage() {
   return (
     <div className="max-w-2xl mx-auto">
+      <BackBar fallbackHref="/dashboard" />
       <Card>
         <CardHeader>
           <CardTitle>Paiements</CardTitle>
@@ -21,4 +23,3 @@ export default function PaymentsPage() {
     </div>
   );
 }
-
