@@ -15,7 +15,10 @@ describe('Matching search E2E', () => {
     await prisma.user.deleteMany();
 
     // Create user and login
-    await request(app).post('/auth/register').send({ email: 'match@test.com', password: 'Passw0rd!' }).expect(201);
+    await request(app)
+      .post('/auth/register')
+      .send({ email: 'match@test.com', password: 'Passw0rd!', consentAccepted: true })
+      .expect(201);
     const login = await request(app)
       .post('/auth/login')
       .send({ email: 'match@test.com', password: 'Passw0rd!' })

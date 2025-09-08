@@ -12,11 +12,15 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   role: z.enum(['RIDER', 'PRO']).default('RIDER'),
+  consentAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'Vous devez accepter la charte et l’avertissement.' }),
+  }),
 });
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  consentAccepted: z.boolean().optional().default(false),
 });
 
 const refreshSchema = z.object({
@@ -48,7 +52,11 @@ const resendVerifySchema = z.object({
 authRouter.post('/register', async (req, res) => {
   try {
     const data = registerSchema.parse(req.body);
-    const result = await service.register(data);
+    // Extraire la meilleure IP disponible
+    // Si trust proxy est activé (voir apps/api/src/index.ts), req.ips[0] reflète le premier IP client
+    const ips = (req as any).ips as string[] | undefined;
+    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+    const result = await service.register(data, { consentIp: ip });
     res.status(201).json(result);
   } catch (err: any) {
     if (err?.name === 'ZodError') {
@@ -62,8 +70,10 @@ authRouter.post('/login', async (req, res) => {
   // Rate limit (par IP) – config élevée pour ne pas gêner les tests
   rateLimit({ key: 'auth:login', limit: 100, windowMs: 60_000 })(req, res, async () => {
     try {
-      const { email, password } = loginSchema.parse(req.body);
-      const result = await service.login(email, password);
+      const { email, password, consentAccepted } = loginSchema.parse(req.body);
+      const ips = (req as any).ips as string[] | undefined;
+      const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+      const result = await service.login(email, password, { consentAccepted, consentIp: ip });
       res.json(result);
     } catch (err: any) {
       if (err?.name === 'ZodError') {
@@ -71,6 +81,9 @@ authRouter.post('/login', async (req, res) => {
       }
       if (err?.code === 'UNAUTHORIZED') {
         return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      if (err?.code === 'CONSENT_REQUIRED') {
+        return res.status(403).json({ error: 'Consent required', code: 'CONSENT_REQUIRED', consentVersion: 'v1.0.0' });
       }
       if (err?.code === 'EMAIL_NOT_VERIFIED') {
         return res.status(403).json({ error: 'Email not verified' });
@@ -164,6 +177,9 @@ authRouter.get('/me', requireAuth, async (req, res) => {
         role: true,
         emailVerified: true,
         twoFactorEnabled: true,
+        consentedAt: true,
+        consentVersion: true,
+        consentIp: true,
         createdAt: true,
         updatedAt: true,
       },
