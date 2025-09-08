@@ -11,11 +11,13 @@ function ResultsInner() {
   const sp = useSearchParams();
   const sport = sp.get('sport') as 'surf' | 'kitesurf' | null;
   const level = sp.get('level') as 'beginner' | 'intermediate' | 'advanced' | null;
-  const partner = sp.get('partner') as 'ALL' | 'WOMEN' | 'MEN' | null;
+  // Partner selection removed from flow; using profile default server-side
+  const partner = null as any;
   const date = sp.get('date');
   const distanceKm = sp.get('distanceKm');
   const lat = sp.get('lat');
   const lng = sp.get('lng');
+  const useGeoloc = sp.get('useGeoloc') === '1';
   const [data, setData] = useState<{ criteria: any; results: any[]; total?: number; page?: number; pageSize?: number; hasMore?: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -25,14 +27,13 @@ function ResultsInner() {
   useEffect(() => {
     if (!sport || !level || !date) return;
     const body: any = { sport, level, date, page, pageSize, sortBy };
-    if (partner) body.partner = partner;
-    if (distanceKm) body.distanceKm = Number(distanceKm);
-    if (lat && lng) body.location = { lat: Number(lat), lng: Number(lng) };
+    if (useGeoloc && distanceKm) body.distanceKm = Number(distanceKm);
+    if (useGeoloc && lat && lng) body.location = { lat: Number(lat), lng: Number(lng) };
     apiClient
       .searchMatching(body)
       .then(setData)
       .catch((e) => setError(e?.message || 'Erreur recherche'));
-  }, [sport, level, date, partner, distanceKm, lat, lng, page, sortBy]);
+  }, [sport, level, date, useGeoloc, distanceKm, lat, lng, page, sortBy]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -41,7 +42,7 @@ function ResultsInner() {
         <CardHeader>
           <CardTitle>Résultats</CardTitle>
           <CardDescription>
-            Sélection: {sport || '—'} &gt; {level || '—'} &gt; {partner || '—'} &gt; {distanceKm ? `${distanceKm} km` : '—'} &gt; {date || '—'}
+            Sélection: {sport || '—'} &gt; {level || '—'} &gt; {useGeoloc ? (distanceKm ? `${distanceKm} km` : '—') : 'sans géolocalisation'} &gt; {date || '—'}
           </CardDescription>
         </CardHeader>
         <CardContent>

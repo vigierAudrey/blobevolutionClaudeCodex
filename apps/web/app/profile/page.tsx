@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { BackBar } from '../../components/BackBar';
 import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
+import { apiClient as client } from '../../lib/apiClient';
 
 type Sex = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
 
@@ -55,6 +56,19 @@ export default function ProfilePage() {
         router.replace('/login');
       });
   }, [router]);
+
+  // Disciplines state
+  const [surfLevel, setSurfLevel] = useState<'' | 'beginner' | 'intermediate' | 'advanced'>('');
+  const [kiteLevel, setKiteLevel] = useState<'' | 'beginner' | 'intermediate' | 'advanced'>('');
+
+  useEffect(() => {
+    client.getDisciplines().then((items) => {
+      const surf = items.find((d) => d.sport === 'surf');
+      const kite = items.find((d) => d.sport === 'kitesurf');
+      setSurfLevel((surf?.level as any) || '');
+      setKiteLevel((kite?.level as any) || '');
+    }).catch(() => {});
+  }, []);
 
   const [saving, setSaving] = useState(false);
 
@@ -170,6 +184,49 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Disciplines */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Mes disciplines</CardTitle>
+            <CardDescription>Sélectionne ton niveau pour chaque sport (tu peux choisir les deux)</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Surf</Label>
+                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={surfLevel} onChange={(e)=>setSurfLevel(e.target.value as any)}>
+                  <option value="">— Aucun —</option>
+                  <option value="beginner">Débutant</option>
+                  <option value="intermediate">Intermédiaire</option>
+                  <option value="advanced">Confirmé</option>
+                </select>
+              </div>
+              <div>
+                <Label>Kitesurf</Label>
+                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={kiteLevel} onChange={(e)=>setKiteLevel(e.target.value as any)}>
+                  <option value="">— Aucun —</option>
+                  <option value="beginner">Débutant</option>
+                  <option value="intermediate">Intermédiaire</option>
+                  <option value="advanced">Confirmé</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <Button type="button" variant="secondary" onClick={async ()=>{
+                const items: any[] = [];
+                if (surfLevel) items.push({ sport: 'surf', level: surfLevel });
+                if (kiteLevel) items.push({ sport: 'kitesurf', level: kiteLevel });
+                try {
+                  await client.setDisciplines(items as any);
+                  toast('Disciplines enregistrées', 'success');
+                } catch (e: any) {
+                  toast(e?.message || 'Erreur enregistrement disciplines', 'error');
+                }
+              }}>Enregistrer mes disciplines</Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Notifications */}
         <Card>

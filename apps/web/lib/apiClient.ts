@@ -44,10 +44,10 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false) {
 }
 
 export const apiClient = {
-  login: (body: { email: string; password: string }) =>
+  login: (body: { email: string; password: string; consentAccepted?: boolean }) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(body) }) as Promise<LoginResponse>,
 
-  register: (body: { email: string; password: string; role: 'RIDER' | 'PRO' }) =>
+  register: (body: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted: true }) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(body) }) as Promise<any>,
 
   me: () => request('/auth/me', { method: 'GET' }, true),
@@ -60,8 +60,35 @@ export const apiClient = {
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
   updateProfile: (body: any) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
-  searchMatching: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced'; date: string; partner?: 'ALL' | 'WOMEN' | 'MEN'; distanceKm?: number; location?: { lat: number; lng: number }; page?: number; pageSize?: number; sortBy?: 'distance' | 'name' }) =>
+  getDisciplines: () => request('/profile/disciplines', { method: 'GET' }, true) as Promise<Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced' }>>,
+  setDisciplines: (items: Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced' }>) =>
+    request('/profile/disciplines', { method: 'PUT', body: JSON.stringify(items) }, true),
+
+  searchMatching: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced'; date: string; partner?: 'ALL' | 'WOMEN' | 'MEN'; distanceKm?: number; location?: { lat: number; lng: number }; page?: number; pageSize?: number; sortBy?: 'distance' | 'name'; excludeIds?: string[] }) =>
     request('/matching/search', { method: 'POST', body: JSON.stringify(body) }, true),
+
+  matchDecision: (body: { targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }) =>
+    request('/matching/decision', { method: 'POST', body: JSON.stringify(body) }, true),
+
+  matchDecisions: (list: Array<{ targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }>) =>
+    request('/matching/decisions', { method: 'POST', body: JSON.stringify({ items: list }) }, true),
+
+  reportProfile: (body: { targetProfileId: string; reason?: string }) =>
+    request('/reports/profile', { method: 'POST', body: JSON.stringify(body) }, true),
+
+  listConversations: (opts?: { includeTrashed?: boolean }) => {
+    const q = opts?.includeTrashed ? '?includeTrashed=true' : '';
+    return request(`/conversations${q}`, { method: 'GET' }, true);
+  },
+  getMessages: (id: string, cursor?: string, limit: number = 50) =>
+    request(`/conversations/${id}/messages${cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=${limit}` : `?limit=${limit}`}`, { method: 'GET' }, true),
+  sendMessage: (id: string, body: { type?: 'TEXT'|'PROPOSAL'; content: string; meta?: any }) =>
+    request(`/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify(body) }, true),
+  blockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({}) }, true),
+  unmatchConversation: (id: string) => request(`/conversations/${id}/unmatch`, { method: 'POST', body: JSON.stringify({}) }, true),
+  trashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'trash' }) }, true),
+  untrashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'untrash' }) }, true),
+  favoriteConversation: (id: string, value: boolean) => request(`/conversations/${id}/favorite`, { method: 'POST', body: JSON.stringify({ value }) }, true),
 
   saveTokens: setTokens,
   clearTokens: clearTokens,

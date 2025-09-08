@@ -12,10 +12,22 @@ export class AuthService {
   private hashToken(raw: string) {
     return createHash('sha256').update(raw).digest('hex');
   }
-  async register(data: { email: string; password: string; role: 'RIDER' | 'PRO' }) {
+  private static readonly CONSENT_VERSION = 'v1.0.0';
+
+  async register(
+    data: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted?: boolean },
+    opts?: { consentIp?: string },
+  ) {
     const hashed = await bcrypt.hash(data.password, 12);
     const user = await prisma.user.create({
-      data: { email: data.email, password: hashed, role: data.role },
+      data: {
+        email: data.email,
+        password: hashed,
+        role: data.role,
+        consentedAt: new Date(),
+        consentVersion: AuthService.CONSENT_VERSION,
+        consentIp: opts?.consentIp,
+      },
     });
     // Génère un token de vérification email
     const verification = await this.createEmailVerification(user.id);
@@ -27,7 +39,7 @@ export class AuthService {
     };
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, opts?: { consentAccepted?: boolean; consentIp?: string }) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) throw { code: 'UNAUTHORIZED' };
     const ok = await bcrypt.compare(password, user.password);
@@ -37,6 +49,19 @@ export class AuthService {
     const requireVerified = String(process.env.AUTH_REQUIRE_VERIFIED || 'false').toLowerCase() === 'true';
     if (requireVerified && !user.emailVerified) {
       throw { code: 'EMAIL_NOT_VERIFIED' };
+    }
+
+    // Exiger la dernière version du consentement pour les comptes existants
+    const needsConsent = !user.consentedAt || user.consentVersion !== AuthService.CONSENT_VERSION;
+    if (needsConsent) {
+      if (opts?.consentAccepted) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { consentedAt: new Date(), consentVersion: AuthService.CONSENT_VERSION, consentIp: opts?.consentIp },
+        });
+      } else {
+        throw { code: 'CONSENT_REQUIRED' };
+      }
     }
 
     const accessToken = jwt.sign(

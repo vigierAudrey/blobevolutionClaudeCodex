@@ -6,13 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import Link from 'next/link';
-import { User, Map, CreditCard, Percent, Info, LogOut } from 'lucide-react';
+import { User, Map, CreditCard, Percent, Info, LogOut, MessageSquare } from 'lucide-react';
 
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
+  const [unreadTotal, setUnreadTotal] = useState<number>(0);
 
   useEffect(() => {
     const t = apiClient.getTokens();
@@ -32,6 +33,22 @@ export default function DashboardPage() {
       })
       .finally(() => setLoading(false));
   }, [router]);
+
+  // Load aggregated unread count for conversations
+  useEffect(() => {
+    let active = true;
+    const loadUnread = async () => {
+      try {
+        const data = await apiClient.listConversations();
+        if (!active) return;
+        const total = (data.items || []).reduce((acc: number, it: any) => acc + (Number(it.unread) || 0), 0);
+        setUnreadTotal(total);
+      } catch {}
+    };
+    loadUnread();
+    const t = setInterval(loadUnread, 15000);
+    return () => { active = false; clearInterval(t); };
+  }, []);
 
   const role = user?.role as 'RIDER' | 'PRO' | 'ADMIN' | undefined;
 
@@ -84,6 +101,17 @@ export default function DashboardPage() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><MessageSquare size={18}/> Messagerie {unreadTotal>0 && (<span className="ml-2 inline-flex items-center rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5">{unreadTotal}</span>)}</CardTitle>
+                <CardDescription>Retrouve tes conversations</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/messages" className="inline-block w-full">
+                  <Button className="w-full" variant="outline">Ouvrir la messagerie</Button>
+                </Link>
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><User size={18}/> Profil</CardTitle>
@@ -163,4 +191,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

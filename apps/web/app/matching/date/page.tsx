@@ -17,11 +17,11 @@ const levelLabels: Record<Level, string> = {
 
 const SPORT_KEY = 'matching.sport';
 const LEVEL_KEY = 'matching.level';
-const PARTNER_KEY = 'matching.partner';
 const DATE_KEY = 'matching.date';
 const DIST_KEY = 'matching.distanceKm';
 const LAT_KEY = 'matching.lat';
 const LNG_KEY = 'matching.lng';
+const USE_GEO_KEY = 'matching.useGeoloc';
 
 function formatDateISO(d: Date) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -38,27 +38,27 @@ function DateInner() {
   const [sport, setSport] = useState<Sport | null>(null);
   const [level, setLevel] = useState<Level | null>(null);
   const [dateISO, setDateISO] = useState<string | null>(null);
-  const [partner, setPartner] = useState<'ALL' | 'WOMEN' | 'MEN' | null>(null);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
+  const [useGeoloc, setUseGeoloc] = useState<boolean>(false);
 
   // Init from query/localStorage
   useEffect(() => {
     const qsSport = (search.get('sport') as Sport | null) || (localStorage.getItem(SPORT_KEY) as Sport | null);
     const qsLevel = (search.get('level') as Level | null) || (localStorage.getItem(LEVEL_KEY) as Level | null);
-    const qsPartner = (search.get('partner') as 'ALL' | 'WOMEN' | 'MEN' | null) || (localStorage.getItem(PARTNER_KEY) as any);
     const qsDate = search.get('date') || localStorage.getItem(DATE_KEY);
     const qsDist = search.get('distanceKm') || localStorage.getItem(DIST_KEY);
     const qsLat = search.get('lat') || localStorage.getItem(LAT_KEY);
     const qsLng = search.get('lng') || localStorage.getItem(LNG_KEY);
+    const qsUseGeoloc = search.get('useGeoloc') || localStorage.getItem(USE_GEO_KEY);
     setSport(qsSport || null);
     setLevel(qsLevel || null);
-    setPartner(qsPartner || 'ALL');
     setDateISO(qsDate || null);
     setDistanceKm(qsDist ? Number(qsDist) : null);
     setLat(qsLat ? Number(qsLat) : null);
     setLng(qsLng ? Number(qsLng) : null);
+    setUseGeoloc(qsUseGeoloc === '1');
   }, [search]);
 
   // Guard: if sport/level missing, send back to matching
@@ -79,19 +79,51 @@ function DateInner() {
     const url = new URL(window.location.href);
     if (sport) url.searchParams.set('sport', sport);
     if (level) url.searchParams.set('level', level);
-    if (partner) url.searchParams.set('partner', partner);
-    if (distanceKm != null) url.searchParams.set('distanceKm', String(distanceKm));
-    if (lat != null && lng != null) { url.searchParams.set('lat', String(lat)); url.searchParams.set('lng', String(lng)); }
+    if (useGeoloc) url.searchParams.set('useGeoloc', '1'); else url.searchParams.delete('useGeoloc');
+    if (useGeoloc && distanceKm != null) url.searchParams.set('distanceKm', String(distanceKm)); else url.searchParams.delete('distanceKm');
+    if (useGeoloc && lat != null && lng != null) { url.searchParams.set('lat', String(lat)); url.searchParams.set('lng', String(lng)); } else { url.searchParams.delete('lat'); url.searchParams.delete('lng'); }
     url.searchParams.set('date', iso);
     window.history.replaceState(null, '', url.toString());
   };
 
   const breadcrumb = useMemo(() => {
     const dateStr = dateISO ? new Date(dateISO + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
-    const partnerShort = partner ? (partner === 'ALL' ? 'Peu importe' : partner === 'WOMEN' ? 'Femmes' : 'Hommes') : '—';
-    const distShort = distanceKm != null ? `${distanceKm} km` : '—';
-    return [sport ? sportLabels[sport] : '—', level ? levelLabels[level] : '—', partnerShort, distShort, dateStr].join(' > ');
-  }, [sport, level, partner, distanceKm, dateISO]);
+    const distShort = useGeoloc ? (distanceKm != null ? `${distanceKm} km` : '—') : 'sans géolocalisation';
+    return [sport ? sportLabels[sport] : '—', level ? levelLabels[level] : '—', distShort, dateStr].join(' > ');
+  }, [sport, level, distanceKm, dateISO, useGeoloc]);
+
+  const toggleUseGeoloc = (checked: boolean) => {
+    setUseGeoloc(checked);
+    try { localStorage.setItem(USE_GEO_KEY, checked ? '1' : '0'); } catch {}
+    const url = new URL(window.location.href);
+    if (checked) {
+      url.searchParams.set('useGeoloc', '1');
+      if (distanceKm != null) url.searchParams.set('distanceKm', String(distanceKm));
+      if (lat != null && lng != null) { url.searchParams.set('lat', String(lat)); url.searchParams.set('lng', String(lng)); }
+    } else {
+      url.searchParams.delete('useGeoloc');
+      url.searchParams.delete('distanceKm');
+      url.searchParams.delete('lat');
+      url.searchParams.delete('lng');
+    }
+    window.history.replaceState(null, '', url.toString());
+  };
+
+  const getLocation = () => {
+    if (!navigator.geolocation) return alert('La géolocalisation n’est pas supportée par ce navigateur.');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const la = pos.coords.latitude; const lo = pos.coords.longitude;
+        setLat(la); setLng(lo);
+        try { localStorage.setItem(LAT_KEY, String(la)); localStorage.setItem(LNG_KEY, String(lo)); } catch {}
+        const url = new URL(window.location.href);
+        url.searchParams.set('lat', String(la)); url.searchParams.set('lng', String(lo));
+        window.history.replaceState(null, '', url.toString());
+      },
+      () => { alert('Impossible de récupérer la position.'); },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -132,13 +164,50 @@ function DateInner() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Sélection actuelle</CardTitle>
-          <CardDescription className="text-sm">{breadcrumb}</CardDescription>
+          <CardTitle className="text-base">4) Géolocalisation (optionnel)</CardTitle>
+          <CardDescription>Active la case pour utiliser ta position et un rayon</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={useGeoloc} onChange={(e)=>toggleUseGeoloc(e.target.checked)} />
+            <span>Utiliser ma position pour calculer la distance</span>
+          </label>
+          {useGeoloc && (
+            <>
+              <div className="flex items-center gap-3">
+                <Button variant="outline" onClick={getLocation}>Activer ma position</Button>
+                <div className="text-xs text-muted-foreground">
+                  {lat != null && lng != null ? `Position: ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="distance">Distance maximale (km)</label>
+                <div className="flex items-center gap-3">
+                  <input id="distance" type="range" min={5} max={200} step={5} value={distanceKm ?? 20} onChange={(e)=>{ const v=Number(e.target.value); setDistanceKm(v); try{ localStorage.setItem(DIST_KEY, String(v)); }catch{}; if(useGeoloc){ const url=new URL(window.location.href); url.searchParams.set('distanceKm', String(v)); window.history.replaceState(null,'',url.toString()); } }} className="w-full"/>
+                  <Button variant="outline" onClick={()=>{ const v=20; setDistanceKm(v); try{ localStorage.setItem(DIST_KEY, String(v)); }catch{}; if(useGeoloc){ const url=new URL(window.location.href); url.searchParams.set('distanceKm', String(v)); window.history.replaceState(null,'',url.toString()); } }}>Reset 20km</Button>
+                </div>
+              </div>
+            </>
+          )}
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setDatePersist(formatDateISO(today))}>Choisir aujourd’hui</Button>
-            <Button disabled={!dateISO} onClick={() => router.push(`/matching/results?sport=${sport}&level=${level}&partner=${partner}&distanceKm=${distanceKm ?? ''}&lat=${lat ?? ''}&lng=${lng ?? ''}&date=${dateISO}`)}>Continuer</Button>
+            <Button
+              disabled={!dateISO || (useGeoloc && (lat == null || lng == null))}
+              onClick={() => {
+                const u = new URL(window.location.origin + '/matching/cards');
+                if (sport) u.searchParams.set('sport', sport);
+                if (level) u.searchParams.set('level', level);
+                if (dateISO) u.searchParams.set('date', dateISO);
+                if (useGeoloc) {
+                  u.searchParams.set('useGeoloc', '1');
+                  if (distanceKm != null) u.searchParams.set('distanceKm', String(distanceKm));
+                  if (lat != null && lng != null) { u.searchParams.set('lat', String(lat)); u.searchParams.set('lng', String(lng)); }
+                }
+                router.push(u.toString());
+              }}
+            >
+              Voir les profils
+            </Button>
           </div>
         </CardContent>
       </Card>

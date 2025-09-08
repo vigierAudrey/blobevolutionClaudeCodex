@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/input';
+import { apiClient } from '../../../lib/apiClient';
 import { Button } from '../../../components/ui/button';
 
 type Sport = 'surf' | 'kitesurf';
@@ -26,6 +27,7 @@ function LocationInner() {
   const [distanceKm, setDistanceKm] = useState<number>(20);
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
+  const [saveDefault, setSaveDefault] = useState<boolean>(false);
 
   useEffect(() => {
     const qsSport = (sp.get('sport') as Sport | null) || (localStorage.getItem(SPORT_KEY) as Sport | null);
@@ -46,10 +48,13 @@ function LocationInner() {
     if (sport && level) return; const t=setTimeout(()=>router.replace('/matching'),0); return ()=>clearTimeout(t);
   }, [router, sport, level]);
 
-  const saveAndNext = () => {
+  const saveAndNext = async () => {
     try { localStorage.setItem(DIST_KEY, String(distanceKm)); } catch {}
     if (lat != null && lng != null) {
       try { localStorage.setItem(LAT_KEY, String(lat)); localStorage.setItem(LNG_KEY, String(lng)); } catch {}
+      if (saveDefault) {
+        try { await apiClient.updateProfile({ lat, lng }); } catch {}
+      }
     }
     const url = new URL(window.location.origin + '/matching/date');
     if (sport) url.searchParams.set('sport', sport);
@@ -89,6 +94,10 @@ function LocationInner() {
               {lat != null && lng != null ? `Position: ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
             </div>
           </div>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={saveDefault} onChange={(e)=>setSaveDefault(e.target.checked)} />
+            <span>Enregistrer cette position comme position par défaut de mon profil</span>
+          </label>
           <div className="space-y-2">
             <label htmlFor="distance">Distance maximale (km)</label>
             <div className="flex items-center gap-3">
@@ -114,4 +123,3 @@ export default function Page(){
     </Suspense>
   );
 }
-

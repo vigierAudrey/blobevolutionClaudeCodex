@@ -19,7 +19,7 @@ describe('Auth E2E', () => {
   it('registers a user', async () => {
     const res = await request(app)
       .post('/auth/register')
-      .send({ email: 'e2e@test.com', password: 'Passw0rd!', role: 'RIDER' })
+      .send({ email: 'e2e@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
       .expect(201);
     expect(res.body).toHaveProperty('message');
     expect(res.body).toHaveProperty('userId');
@@ -147,7 +147,7 @@ describe('Auth E2E', () => {
     // Register a new user and get verification token (exposed in test env)
     const reg = await request(app)
       .post('/auth/register')
-      .send({ email: 'verify@test.com', password: 'Passw0rd!', role: 'RIDER' })
+      .send({ email: 'verify@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
       .expect(201);
     expect(reg.body).toHaveProperty('verificationToken');
     const token = reg.body.verificationToken as string;
@@ -190,7 +190,7 @@ describe('Auth E2E', () => {
       // Register a new unverified user
       await request(app)
         .post('/auth/register')
-        .send({ email: 'blocked@test.com', password: 'Passw0rd!', role: 'RIDER' })
+        .send({ email: 'blocked@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
         .expect(201);
 
       // Login should be blocked
@@ -234,7 +234,7 @@ describe('Auth E2E', () => {
       // Register an unverified user and login
       const reg = await request(app)
         .post('/auth/register')
-        .send({ email: 'routeblock@test.com', password: 'Passw0rd!', role: 'RIDER' })
+        .send({ email: 'routeblock@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
         .expect(201);
       const token = reg.body.verificationToken as string;
 

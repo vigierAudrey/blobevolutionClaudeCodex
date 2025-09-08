@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../auth/auth.guard';
 import { prisma } from '@blobinfini/database';
+import { Prisma } from '@prisma/client';
 
 export const matchingRouter = Router();
 
@@ -22,6 +23,7 @@ const searchSchema = z.object({
   page: z.number().int().min(1).optional().default(1),
   pageSize: z.number().int().min(1).max(50).optional().default(50),
   sortBy: z.enum(['distance','name']).optional().default('distance'),
+  excludeIds: z.array(z.string()).optional(),
 });
 
 matchingRouter.post('/search', requireAuth, async (req, res) => {
@@ -37,122 +39,263 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
       profile = await prisma.riderProfile.create({ data: { userId } });
     }
 
+    // Pull last search to provide sensible defaults if not provided
+    const last = await prisma.lastSearch.findUnique({ where: { userId } });
+
+    const effectiveLocation = location ?? (last?.lat && last?.lng ? { lat: last.lat, lng: last.lng } : undefined) ??
+      (profile.lat != null && profile.lng != null ? { lat: profile.lat, lng: profile.lng } : undefined) ?? null;
+
     // Compose criteria using profile preferences (distance, partnerPref, etc.)
     const criteria = {
       sport,
       level,
       date,
-      maxDistanceKm: distanceKm ?? profile.maxDistanceKm,
+      maxDistanceKm: distanceKm ?? last?.distanceKm ?? profile.maxDistanceKm,
       partnerPref: partner ?? profile.partnerPref,
       emailNotif: profile.emailNotif,
-      location: location ?? null,
+      location: effectiveLocation,
     } as const;
 
-    // Mock dataset (to be replaced by real search using PostGIS)
-    type Mock = {
-      id: string;
-      displayName: string;
-      gender: 'FEMALE' | 'MALE';
-      sports: Array<{ sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced' }>;
-      location?: { lat: number; lng: number };
-    };
-    const MOCKS: Mock[] = [
-      {
-        id: 'm1',
-        displayName: 'Léa',
-        gender: 'FEMALE',
-        sports: [
-          { sport: 'surf', level: 'beginner' },
-          { sport: 'kitesurf', level: 'intermediate' },
-        ],
-        location: { lat: 48.8566, lng: 2.3522 }, // Paris
-      },
-      {
-        id: 'm2',
-        displayName: 'Hugo',
-        gender: 'MALE',
-        sports: [
-          { sport: 'surf', level: 'intermediate' },
-          { sport: 'kitesurf', level: 'advanced' },
-        ],
-        location: { lat: 43.2965, lng: 5.3698 }, // Marseille
-      },
-      {
-        id: 'm3',
-        displayName: 'Camille',
-        gender: 'FEMALE',
-        sports: [
-          { sport: 'surf', level: 'beginner' },
-          { sport: 'kitesurf', level: 'beginner' },
-        ],
-        location: { lat: 44.8378, lng: -0.5792 }, // Bordeaux
-      },
-      {
-        id: 'm4',
-        displayName: 'Noah',
-        gender: 'MALE',
-        sports: [
-          { sport: 'surf', level: 'advanced' },
-        ],
-        location: { lat: 47.2184, lng: -1.5536 }, // Nantes
-      },
-    ];
-
-    function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-      const R = 6371;
-      const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-      const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-      const la1 = (a.lat * Math.PI) / 180;
-      const la2 = (b.lat * Math.PI) / 180;
-      const x = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(la1) * Math.cos(la2);
-      return 2 * R * Math.asin(Math.sqrt(x));
-    }
-
-    // Filter mocks
-    const genderFilter = (g: 'FEMALE' | 'MALE') => {
-      if (criteria.partnerPref === 'WOMEN') return g === 'FEMALE';
-      if (criteria.partnerPref === 'MEN') return g === 'MALE';
-      return true;
-    };
-
-    const sportLevelFilter = (m: Mock) => m.sports.some((s) => s.sport === sport && s.level === level);
-
-    let results = MOCKS.filter((m) => genderFilter(m.gender) && sportLevelFilter(m)).map((m) => {
-      let distanceKm: number | null = null;
-      if (criteria.location && m.location) {
-        distanceKm = Math.round(haversineKm(criteria.location, m.location));
-      }
-      return {
-        id: m.id,
-        displayName: m.displayName,
-        gender: m.gender,
+    // Persist last search (for defaults next time)
+    await prisma.lastSearch.upsert({
+      where: { userId },
+      create: {
+        userId,
         sport,
         level,
-        distanceKm,
-      };
+        partner: criteria.partnerPref,
+        distanceKm: criteria.maxDistanceKm,
+        lat: effectiveLocation?.lat ?? null,
+        lng: effectiveLocation?.lng ?? null,
+        date: new Date(date + 'T00:00:00Z'),
+      },
+      update: {
+        sport,
+        level,
+        partner: criteria.partnerPref,
+        distanceKm: criteria.maxDistanceKm,
+        lat: effectiveLocation?.lat ?? null,
+        lng: effectiveLocation?.lng ?? null,
+        date: new Date(date + 'T00:00:00Z'),
+      },
     });
 
-    if (criteria.location && criteria.maxDistanceKm) {
-      results = results.filter((r) => r.distanceKm == null || r.distanceKm <= criteria.maxDistanceKm);
+    // If no location provided, return empty results (no DB dependency in this path)
+    if (!criteria.location) {
+      return res.json({ criteria, results: [], total: 0, page, pageSize, hasMore: false });
     }
 
-    // Sort
-    if (sortBy === 'distance') {
-      results.sort((a, b) => (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9));
-    } else if (sortBy === 'name') {
-      results.sort((a, b) => a.displayName.localeCompare(b.displayName, 'fr'));
+    // If we have a location, use PostGIS for distance + optional radius filtering
+    let results: Array<{ id: string; displayName: string | null; gender: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED'; sport: string; level: string; distanceKm: number | null }> = [];
+    let total = 0;
+    let hasMore = false;
+    if (criteria.location) {
+      const genderCond = criteria.partnerPref === 'WOMEN'
+        ? Prisma.sql`AND rp."sex" = 'FEMALE'`
+        : criteria.partnerPref === 'MEN'
+          ? Prisma.sql`AND rp."sex" = 'MALE'`
+          : Prisma.empty;
+
+      const radiusCond = criteria.maxDistanceKm
+        ? Prisma.sql`
+            AND ST_DWithin(
+              ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
+              ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography,
+              ${criteria.maxDistanceKm * 1000}
+            )
+          `
+        : Prisma.empty;
+
+      const offset = (page - 1) * pageSize;
+      const orderBy = sortBy === 'distance'
+        ? Prisma.sql`ORDER BY dist_m ASC`
+        : Prisma.sql`ORDER BY rp."displayName" ASC NULLS LAST`;
+
+      // Additional dynamic conditions
+      const excludeCond = (req.body.excludeIds && Array.isArray(req.body.excludeIds) && req.body.excludeIds.length > 0)
+        ? Prisma.sql`AND rp."id" NOT IN (${Prisma.join(req.body.excludeIds as string[])})`
+        : Prisma.empty;
+
+      const notAlreadyActedCond = Prisma.sql`
+        AND NOT EXISTS (
+          SELECT 1 FROM "MatchDecision" md
+          WHERE md."actorUserId" = ${userId} AND md."targetProfileId" = rp."id"
+        )
+      `;
+
+      // Count total matching rows (for pagination metadata)
+      const countRows = await prisma.$queryRaw<Array<{ count: number }>>(
+        Prisma.sql`
+          SELECT COUNT(*)::int AS count
+          FROM "RiderProfile" rp
+          JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
+          WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
+          ${genderCond}
+          ${radiusCond}
+          ${excludeCond}
+          ${notAlreadyActedCond}
+        `
+      );
+      total = (countRows?.[0]?.count ?? 0) as number;
+
+      // Fetch paginated rows with computed distance
+      const rows = await prisma.$queryRaw<Array<{ id: string; displayName: string | null; sex: any; sport: string; level: string; dist_m: number | null }>>(
+        Prisma.sql`
+          SELECT rp."id", rp."displayName", rp."sex", rd."sport", rd."level",
+                 CASE
+                   WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_DistanceSphere(
+                     ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
+                     ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
+                   )
+                   ELSE NULL
+                 END AS dist_m
+          FROM "RiderProfile" rp
+          JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
+          WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
+          ${genderCond}
+          ${radiusCond}
+          ${excludeCond}
+          ${notAlreadyActedCond}
+          ${orderBy}
+          LIMIT ${pageSize} OFFSET ${offset}
+        `
+      );
+
+      results = rows
+        .filter((r) => r.dist_m == null || isFinite(r.dist_m))
+        .map((r) => ({
+          id: r.id,
+          displayName: r.displayName ?? 'Profil',
+          gender: r.sex,
+          sport: r.sport,
+          level: r.level,
+          distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
+        }));
+
+      hasMore = offset + results.length < total;
     }
 
-    const total = results.length;
-    const start = (page - 1) * pageSize;
-    const pageResults = results.slice(start, start + pageSize);
-    const hasMore = start + pageSize < total;
-
-    return res.json({ criteria, results: pageResults, total, page, pageSize, hasMore });
+    return res.json({ criteria, results, total, page, pageSize, hasMore });
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Record a decision (accept/refuse) for a target profile
+const decisionSchema = z.object({ targetProfileId: z.string().uuid(), decision: z.enum(['ACCEPT','REFUSE']) });
+matchingRouter.post('/decision', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { targetProfileId, decision } = decisionSchema.parse(req.body);
+    const createdConversations: Array<{ conversationId: string; otherDisplayName: string | null }> = [];
+    await prisma.$transaction(async (tx) => {
+      await tx.matchDecision.upsert({
+        where: { actorUserId_targetProfileId: { actorUserId: userId, targetProfileId } as any },
+        update: { decision },
+        create: { actorUserId: userId, targetProfileId, decision },
+      });
+      if (decision === 'ACCEPT') {
+        const targetProfile = await tx.riderProfile.findUnique({ where: { id: targetProfileId }, select: { userId: true, displayName: true } });
+        if (targetProfile?.userId) {
+          const myProfile = await tx.riderProfile.findUnique({ where: { userId }, select: { id: true } });
+          if (myProfile?.id) {
+            const reciprocal = await tx.matchDecision.findUnique({
+              where: { actorUserId_targetProfileId: { actorUserId: targetProfile.userId, targetProfileId: myProfile.id } as any },
+              select: { decision: true },
+            });
+            if (reciprocal?.decision === 'ACCEPT') {
+              const [one, two] = userId < targetProfile.userId ? [userId, targetProfile.userId] : [targetProfile.userId, userId];
+              const match = await tx.match.upsert({
+                where: { userOneId_userTwoId: { userOneId: one, userTwoId: two } as any },
+                update: { status: 'ACTIVE' },
+                create: { userOneId: one, userTwoId: two, status: 'ACTIVE' },
+              });
+              let conv = await tx.conversation.findFirst({ where: { matchId: match.id } });
+              if (!conv) {
+                conv = await tx.conversation.create({ data: { matchId: match.id } });
+                await tx.conversationMember.createMany({
+                  data: [
+                    { conversationId: conv.id, userId: userId },
+                    { conversationId: conv.id, userId: targetProfile.userId },
+                  ],
+                  skipDuplicates: true,
+                });
+              }
+              createdConversations.push({ conversationId: conv.id, otherDisplayName: targetProfile.displayName ?? 'Profil' });
+            }
+          }
+        }
+      }
+    });
+    return res.json({ ok: true, createdConversations });
+  } catch (err: any) {
+    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Batch decisions
+matchingRouter.post('/decisions', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const schema = z.object({ items: z.array(z.object({ targetProfileId: z.string().uuid(), decision: z.enum(['ACCEPT','REFUSE']) })).max(100) });
+    const { items } = schema.parse(req.body || { items: [] });
+    if (items.length === 0) return res.json({ ok: true, count: 0 });
+    // Upsert decisions and compute new matches
+    const createdConversations: Array<{ conversationId: string; otherDisplayName: string | null }> = [];
+    await prisma.$transaction(async (tx) => {
+      for (const it of items) {
+        await tx.matchDecision.upsert({
+          where: { actorUserId_targetProfileId: { actorUserId: userId, targetProfileId: it.targetProfileId } as any },
+          update: { decision: it.decision },
+          create: { actorUserId: userId, targetProfileId: it.targetProfileId, decision: it.decision },
+        });
+        if (it.decision === 'ACCEPT') {
+          // Check reciprocal accept
+          const targetProfile = await tx.riderProfile.findUnique({ where: { id: it.targetProfileId }, select: { userId: true, displayName: true } });
+          if (!targetProfile?.userId) continue;
+          const targetUserId = targetProfile.userId;
+          const myProfile = await tx.riderProfile.findUnique({ where: { userId }, select: { id: true } });
+          if (!myProfile?.id) continue;
+          const reciprocal = await tx.matchDecision.findUnique({
+            where: { actorUserId_targetProfileId: { actorUserId: targetUserId, targetProfileId: myProfile.id } as any },
+            select: { decision: true },
+          });
+          if (reciprocal?.decision === 'ACCEPT') {
+            // Create Match (canonical order by userId)
+            const [one, two] = userId < targetUserId ? [userId, targetUserId] : [targetUserId, userId];
+            const match = await tx.match.upsert({
+              where: { userOneId_userTwoId: { userOneId: one, userTwoId: two } as any },
+              update: { status: 'ACTIVE' },
+              create: { userOneId: one, userTwoId: two, status: 'ACTIVE' },
+            });
+            // Create Conversation if not exists
+            let conv = await tx.conversation.findFirst({
+              where: { matchId: match.id },
+            });
+            if (!conv) {
+              conv = await tx.conversation.create({ data: { matchId: match.id } });
+              await tx.conversationMember.createMany({
+                data: [
+                  { conversationId: conv.id, userId: userId },
+                  { conversationId: conv.id, userId: targetUserId },
+                ],
+                skipDuplicates: true,
+              });
+            }
+            createdConversations.push({ conversationId: conv.id, otherDisplayName: targetProfile.displayName ?? 'Profil' });
+          }
+        }
+      }
+    });
+    return res.json({ ok: true, count: items.length, createdConversations });
+  } catch (err: any) {
+    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
     return res.status(500).json({ error: 'Internal error' });
   }
 });

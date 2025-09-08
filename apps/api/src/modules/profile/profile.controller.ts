@@ -19,6 +19,8 @@ const upsertSchema = z.object({
   maxDistanceKm: z.number().int().min(1).max(500).optional(),
   emailNotif: z.boolean().optional(),
   photoUrl: z.string().url().optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
 });
 
 profileRouter.get('/me', requireAuth, async (req, res) => {
@@ -54,6 +56,48 @@ profileRouter.put('/me', requireAuth, async (req, res) => {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Disciplines (sport + level) CRUD
+const sportEnum = ['surf', 'kitesurf'] as const;
+const levelEnum = ['beginner', 'intermediate', 'advanced'] as const;
+const disciplineSchema = z.object({ sport: z.enum(sportEnum), level: z.enum(levelEnum) });
+
+profileRouter.get('/disciplines', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const rp = await prisma.riderProfile.findUnique({ where: { userId }, select: { id: true } });
+    if (!rp) return res.json([]);
+    const items = await prisma.riderDiscipline.findMany({ where: { profileId: rp.id }, select: { sport: true, level: true } });
+    return res.json(items);
+  } catch {
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+profileRouter.put('/disciplines', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const body = z.array(disciplineSchema).max(10).parse(req.body || []);
+    let rp = await prisma.riderProfile.findUnique({ where: { userId } });
+    if (!rp) rp = await prisma.riderProfile.create({ data: { userId } });
+
+    // Replace strategy: clear then insert unique sports/levels
+    await prisma.riderDiscipline.deleteMany({ where: { profileId: rp.id } });
+    if (body.length > 0) {
+      await prisma.riderDiscipline.createMany({
+        data: Array.from(new Map(body.map((b) => [`${b.sport}:${b.level}`, { profileId: rp.id, sport: b.sport, level: b.level }])).values()),
+        skipDuplicates: true,
+      });
+    }
+    const after = await prisma.riderDiscipline.findMany({ where: { profileId: rp.id }, select: { sport: true, level: true } });
+    return res.json(after);
+  } catch (err: any) {
+    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
     return res.status(500).json({ error: 'Internal error' });
   }
 });

@@ -18,6 +18,9 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [loginConsentNeeded, setLoginConsentNeeded] = useState(false);
+  const [loginConsentAccepted, setLoginConsentAccepted] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,17 +29,26 @@ export function AuthForm({ mode }: { mode: Mode }) {
     setLoading(true);
     try {
       if (mode === 'register') {
-        const res = await apiClient.register({ email, password, role });
+        if (!consentAccepted) {
+          throw new Error('Merci de confirmer que vous avez lu et accepté la charte.');
+        }
+        const res = await apiClient.register({ email, password, role, consentAccepted: true });
         setInfo('Compte créé. Vérifie ta boîte mail pour valider ton email.');
         // Optionnel: rediriger vers login
         setTimeout(() => router.push('/login'), 800);
       } else {
-        const res = await apiClient.login({ email, password });
+        const res = await apiClient.login({ email, password, consentAccepted: loginConsentNeeded ? loginConsentAccepted : undefined });
         apiClient.saveTokens(res.accessToken, res.refreshToken);
         router.push('/dashboard');
       }
     } catch (err: any) {
-      setError(err?.message || 'Une erreur est survenue');
+      const msg = err?.message || 'Une erreur est survenue';
+      if (mode === 'login' && msg.toLowerCase().includes('consent')) {
+        setLoginConsentNeeded(true);
+        setError('Pour continuer, merci d’accepter la charte.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -79,6 +91,63 @@ export function AuthForm({ mode }: { mode: Mode }) {
                 <option value="RIDER">Rider</option>
                 <option value="PRO">Pro</option>
               </select>
+            </div>
+          )}
+          {mode === 'register' && (
+            <div className="space-y-2 border rounded-md p-3 bg-muted/30">
+              <div className="text-sm text-foreground">
+                <p className="font-medium">Charte de sécurité & responsabilité</p>
+                <p className="mt-1">
+                  Blobinfini facilite la mise en relation entre personnes pour partager de bons moments.
+                  Tu restes toutefois seul responsable de tes choix, de ta sécurité et de tes biens.
+                  Blobinfini ne fournit ni assurance, ni encadrement, ni garantie sur les activités organisées entre utilisateurs.
+                </p>
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                  <li>Donne rendez‑vous dans un lieu public et préviens un proche.</li>
+                  <li>Reste vigilant face aux comportements inappropriés ou malveillants.</li>
+                  <li>Évalue toi‑même les conditions (météo, niveau, matériel) avant de pratiquer.</li>
+                  <li>Interromps toute activité si tu ne te sens pas en sécurité.</li>
+                </ul>
+                <p className="mt-2 text-muted-foreground">
+                  En t’inscrivant, tu confirmes avoir lu et accepté cette charte.
+                  Pour les détails, consulte la page «
+                  <a className="underline text-primary" href="/charte" target="_blank" rel="noopener noreferrer">Charte et avertissement</a> ».
+                </p>
+              </div>
+              <label className="flex items-start gap-2 text-sm mt-2">
+                <input
+                  id="consentAccepted"
+                  type="checkbox"
+                  className="mt-1"
+                  checked={consentAccepted}
+                  onChange={(e) => setConsentAccepted(e.target.checked)}
+                  required
+                />
+                <span>J’ai lu et j’accepte la charte de sécurité et l’avertissement.</span>
+              </label>
+            </div>
+          )}
+          {mode === 'login' && loginConsentNeeded && (
+            <div className="space-y-2 border rounded-md p-3 bg-muted/30">
+              <div className="text-sm text-foreground">
+                <p className="font-medium">Charte de sécurité & responsabilité</p>
+                <p className="mt-1">
+                  Pour poursuivre la connexion, confirme avoir lu et accepté la charte.
+                  Consulte la page «
+                  <a className="underline text-primary" href="/charte" target="_blank" rel="noopener noreferrer">Charte et avertissement</a> ».
+                </p>
+              </div>
+              <label className="flex items-start gap-2 text-sm mt-2">
+                <input
+                  id="loginConsentAccepted"
+                  type="checkbox"
+                  className="mt-1"
+                  checked={loginConsentAccepted}
+                  onChange={(e) => setLoginConsentAccepted(e.target.checked)}
+                  required
+                />
+                <span>J’ai lu et j’accepte la charte de sécurité et l’avertissement.</span>
+              </label>
             </div>
           )}
           {error && <p className="text-sm text-red-600" role="alert">{error}</p>}

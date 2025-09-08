@@ -15,7 +15,10 @@ describe('Profile E2E', () => {
     await prisma.user.deleteMany();
 
     // Register and login to get tokens
-    await request(app).post('/auth/register').send({ email: 'p@test.com', password: 'Passw0rd!' }).expect(201);
+    await request(app)
+      .post('/auth/register')
+      .send({ email: 'p@test.com', password: 'Passw0rd!', consentAccepted: true })
+      .expect(201);
     const login = await request(app).post('/auth/login').send({ email: 'p@test.com', password: 'Passw0rd!' }).expect(200);
     access = login.body.accessToken as string;
   });
@@ -50,4 +53,3 @@ describe('Profile E2E', () => {
     expect(res.body).toHaveProperty('key');
   });
 });
-
