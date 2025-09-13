@@ -73,6 +73,9 @@ export const apiClient = {
   matchDecisions: (list: Array<{ targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }>) =>
     request('/matching/decisions', { method: 'POST', body: JSON.stringify({ items: list }) }, true),
 
+  openConversation: (targetUserId: string) =>
+    request('/conversations/open', { method: 'POST', body: JSON.stringify({ targetUserId }) }, true) as Promise<{ id: string }>,
+
   reportProfile: (body: { targetProfileId: string; reason?: string }) =>
     request('/reports/profile', { method: 'POST', body: JSON.stringify(body) }, true),
 

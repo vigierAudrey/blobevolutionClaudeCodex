@@ -14,7 +14,7 @@ try {
 export async function runSeed(client?: PrismaClient) {
   const prisma = client ?? new PrismaClient();
   // Idempotent cleanup of dev users by tag email
-  const emails = ['dev+rider@test.com', 'dev+pro@test.com'];
+  const emails = ['dev+rider@test.com', 'dev+pro@test.com', 'dev+kite@test.com'];
   await prisma.refreshToken.deleteMany({ where: { user: { email: { in: emails } } } });
   await prisma.session.deleteMany({ where: { user: { email: { in: emails } } } });
   await prisma.passwordResetToken.deleteMany({ where: { user: { email: { in: emails } } } });
@@ -42,6 +42,10 @@ export async function runSeed(client?: PrismaClient) {
           sex: Sex.FEMALE,
           emailNotif: true,
           maxDistanceKm: 30,
+          wantsLesson: true,
+          lessonSport: 'surf',
+          lat: 48.8566,
+          lng: 2.3522,
         },
       },
     },
@@ -53,6 +57,40 @@ export async function runSeed(client?: PrismaClient) {
       data: [
         { profileId: rider.riderProfile.id, sport: 'surf', level: 'intermediate' },
         { profileId: rider.riderProfile.id, sport: 'kitesurf', level: 'beginner' },
+      ],
+      skipDuplicates: true,
+    });
+  }
+
+  // Second rider for kitesurf lesson demo
+  const riderKite = await prisma.user.create({
+    data: {
+      email: 'dev+kite@test.com',
+      password: hashed,
+      role: Role.RIDER,
+      emailVerified: true,
+      consentedAt: new Date(),
+      consentVersion: 'v1.0.0',
+      consentIp: '127.0.0.1',
+      riderProfile: {
+        create: {
+          displayName: 'Blobkite',
+          bio: 'Kite débutant, cherche cours découverte.',
+          sex: Sex.FEMALE,
+          emailNotif: true,
+          wantsLesson: true,
+          lessonSport: 'kitesurf',
+          lat: 48.8466,
+          lng: 2.3622,
+        },
+      },
+    },
+    include: { riderProfile: true },
+  });
+  if (riderKite.riderProfile) {
+    await prisma.riderDiscipline.createMany({
+      data: [
+        { profileId: riderKite.riderProfile.id, sport: 'kitesurf', level: 'beginner' },
       ],
       skipDuplicates: true,
     });
@@ -79,6 +117,8 @@ export async function runSeed(client?: PrismaClient) {
       bio: 'Monitrice indépendante, 8 ans d\'expérience. Cours particuliers et packs découverte.',
       pricePerHour: 60,
       emailNotif: true,
+      lat: 48.8666,
+      lng: 2.3122,
     },
   });
 

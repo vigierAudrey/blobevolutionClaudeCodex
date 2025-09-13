@@ -21,6 +21,9 @@ const upsertSchema = z.object({
   photoUrl: z.string().url().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
+  // Lesson intent (visible on BloboMap Pro)
+  wantsLesson: z.boolean().optional(),
+  lessonSport: z.enum(['surf','kitesurf']).optional(),
 });
 
 profileRouter.get('/me', requireAuth, async (req, res) => {

@@ -15,7 +15,6 @@ export default function ProProfilePage() {
   const [err, setErr] = useState<string | null>(null);
   const [businessName, setBusinessName] = useState('');
   const [bio, setBio] = useState('');
-  const [pricePerHour, setPricePerHour] = useState<number | ''>('');
   const [emailNotif, setEmailNotif] = useState(false);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -32,7 +31,6 @@ export default function ProProfilePage() {
         if (!ok) throw new Error(body?.error || 'Erreur chargement');
         setBusinessName(body.businessName || '');
         setBio(body.bio || '');
-        setPricePerHour(typeof body.pricePerHour === 'number' ? body.pricePerHour : '');
         setEmailNotif(!!body.emailNotif);
         setPhotoUrl(body.photoUrl || null);
       })
@@ -74,7 +72,6 @@ export default function ProProfilePage() {
         body: JSON.stringify({
           businessName: businessName || undefined,
           bio: bio || undefined,
-          pricePerHour: typeof pricePerHour === 'number' ? pricePerHour : undefined,
           emailNotif,
           photoUrl: finalUrl,
         }),
@@ -110,10 +107,6 @@ export default function ProProfilePage() {
                 <Textarea value={bio} onChange={(e)=>setBio(e.target.value)} placeholder="Ce que tu proposes, ton expérience, ton spot préféré…" />
               </div>
               <div className="space-y-2">
-                <Label>Tarif horaire (EUR)</Label>
-                <Input type="number" value={pricePerHour} onChange={(e)=> setPricePerHour(e.target.value === '' ? '' : Number(e.target.value))} min={0} />
-              </div>
-              <div className="space-y-2">
                 <Label>Photo/Logo</Label>
                 <input type="file" accept="image/*" onChange={onPick} />
                 {photoUrl && (
@@ -134,4 +127,3 @@ export default function ProProfilePage() {
     </div>
   );
 }
-

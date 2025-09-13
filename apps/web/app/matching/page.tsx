@@ -157,6 +157,18 @@ export default function MatchingPage() {
           >
             Enregistrer comme préférence
           </Button>
+          <div className="mt-3 flex items-center gap-2 text-sm">
+            <input id="wantsLesson" type="checkbox" onChange={async (e)=>{
+              try {
+                const sport = chosenSport || 'surf';
+                await apiClient.updateProfile({ wantsLesson: e.target.checked, lessonSport: sport });
+                toast(e.target.checked ? 'Demande de cours activée' : 'Demande de cours désactivée', 'success');
+              } catch (err: any) {
+                toast(err?.message || 'Erreur mise à jour', 'error');
+              }
+            }} />
+            <label htmlFor="wantsLesson">Je veux un cours avec un pro</label>
+          </div>
         </CardContent>
       </Card>
 
@@ -181,6 +193,15 @@ export default function MatchingPage() {
               }
               window.location.href = url.toString();
             }}>Continuer</Button>
+            <Button variant="secondary" onClick={async ()=>{
+              try {
+                const sport = chosenSport || 'surf';
+                await apiClient.updateProfile({ wantsLesson: true, lessonSport: sport });
+                toast('Ta demande de cours est visible par les pros.', 'success');
+              } catch (e: any) {
+                toast(e?.message || 'Erreur', 'error');
+              }
+            }}>Faire appel à un pro</Button>
           </div>
         </CardContent>
       </Card>

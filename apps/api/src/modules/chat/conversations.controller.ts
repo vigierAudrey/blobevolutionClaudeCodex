@@ -155,3 +155,39 @@ conversationsRouter.post('/:id/favorite', requireAuth, async (req, res) => {
     return res.json({ ok: true, favorite: !!favoritedAt });
   } catch { return res.status(500).json({ error: 'Internal error' }); }
 });
+
+// Ensure a direct conversation exists with target user and return its id
+conversationsRouter.post('/open', requireAuth, async (req, res) => {
+  try {
+    const meId = (req as any).user?.id as string | undefined;
+    if (!meId) return res.status(401).json({ error: 'Unauthorized' });
+    const body = z.object({ targetUserId: z.string().uuid() }).parse(req.body);
+
+    const myMemberships = await prisma.conversationMember.findMany({
+      where: { userId: meId },
+      select: { conversationId: true },
+      take: 2000,
+    });
+    const convIds = myMemberships.map((m) => m.conversationId);
+    if (convIds.length > 0) {
+      const exists = await prisma.conversationMember.findFirst({
+        where: { conversationId: { in: convIds }, userId: body.targetUserId },
+        select: { conversationId: true },
+      });
+      if (exists) return res.status(200).json({ id: exists.conversationId });
+    }
+
+    const conv = await prisma.conversation.create({ data: {} });
+    await prisma.conversationMember.createMany({
+      data: [
+        { conversationId: conv.id, userId: meId },
+        { conversationId: conv.id, userId: body.targetUserId },
+      ],
+      skipDuplicates: true,
+    });
+    return res.status(201).json({ id: conv.id });
+  } catch (e: any) {
+    if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
