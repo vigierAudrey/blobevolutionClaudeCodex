@@ -139,9 +139,9 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
       total = (countRows?.[0]?.count ?? 0) as number;
 
       // Fetch paginated rows with computed distance
-      const rows = await prisma.$queryRaw<Array<{ id: string; displayName: string | null; sex: any; sport: string; level: string; dist_m: number | null }>>(
+      const rows = await prisma.$queryRaw<Array<{ id: string; displayName: string | null; sex: any; sport: string; level: string; wantsLesson: boolean; lessonSport: string | null; dist_m: number | null }>>(
         Prisma.sql`
-          SELECT rp."id", rp."displayName", rp."sex", rd."sport", rd."level",
+          SELECT rp."id", rp."displayName", rp."sex", rd."sport", rd."level", rp."wantsLesson", rp."lessonSport",
                  CASE
                    WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_DistanceSphere(
                      ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
@@ -169,6 +169,8 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
           gender: r.sex,
           sport: r.sport,
           level: r.level,
+          wantsLesson: !!r.wantsLesson,
+          lessonSport: r.lessonSport,
           distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
         }));
 

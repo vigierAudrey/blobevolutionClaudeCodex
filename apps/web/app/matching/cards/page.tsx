@@ -214,7 +214,14 @@ function CardsInner() {
                 'rounded-md border p-4 transform transition duration-200 will-change-transform ' +
                 (animDir === 'left' ? '-translate-x-24 opacity-0' : animDir === 'right' ? 'translate-x-24 opacity-0' : '')
               }>
-                <div className="text-base font-medium">{current.displayName}</div>
+                <div className="text-base font-medium flex items-center gap-2">
+                  {current.displayName}
+                  {current.wantsLesson && (
+                    <span title="Souhaite un cours" className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px]">
+                      🎓 Cours
+                    </span>
+                  )}
+                </div>
                 <div className="text-sm text-muted-foreground">{current.gender === 'FEMALE' ? 'Femme' : 'Homme'} • {current.sport} • {current.level}</div>
                 <div className="text-sm text-muted-foreground">{current.distanceKm != null ? `${current.distanceKm} km` : 'distance inconnue'}</div>
               </div>

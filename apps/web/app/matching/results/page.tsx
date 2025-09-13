@@ -76,7 +76,12 @@ function ResultsInner() {
                   {data.results.map((r) => (
                     <div key={r.id} className="rounded-md border p-3 text-sm flex items-center justify-between">
                       <div>
-                        <div className="font-medium">{r.displayName}</div>
+                        <div className="font-medium flex items-center gap-2">
+                          {r.displayName}
+                          {r.wantsLesson && (
+                            <span title="Souhaite un cours" className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px]">🎓 Cours</span>
+                          )}
+                        </div>
                         <div className="text-muted-foreground">
                           {r.gender === 'FEMALE' ? 'Femme' : 'Homme'} • {r.sport} • {r.level}
                         </div>

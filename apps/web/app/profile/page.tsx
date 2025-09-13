@@ -35,6 +35,8 @@ export default function ProfilePage() {
   const [/*deprecatedPartnerPref*/] = useState<string>('ALL');
   const [/*deprecatedMaxDistance*/] = useState<number>(20);
   const [emailNotif, setEmailNotif] = useState<boolean>(false);
+  const [wantsLesson, setWantsLesson] = useState<boolean>(false);
+  const [lessonSport, setLessonSport] = useState<'surf'|'kitesurf'>('surf');
 
   useEffect(() => {
     // Charger le profil existant
@@ -49,6 +51,8 @@ export default function ProfilePage() {
         );
         // Partner preference & distance moved to matching flow – no longer editable here
         setEmailNotif(!!p.emailNotif);
+        setWantsLesson(!!(p as any).wantsLesson);
+        setLessonSport((p as any).lessonSport === 'kitesurf' ? 'kitesurf' : 'surf');
         setPhotoUrl(p.photoUrl ?? null);
       })
       .catch(() => {
@@ -82,6 +86,8 @@ export default function ProfilePage() {
       sex: sexEnum,
       // partnerPref and maxDistance moved to matching flow
       emailNotif,
+      wantsLesson,
+      lessonSport,
       photoUrl: photoUrl || undefined,
     };
     try {
@@ -243,6 +249,21 @@ export default function ProfilePage() {
               <Label htmlFor="emailNotif" className="!m-0">
                 Recevoir des emails lorsqu’un partenaire cherche à me joindre
               </Label>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <input id="wantsLesson" type="checkbox" checked={wantsLesson} onChange={(e)=>setWantsLesson(e.target.checked)} />
+              <div>
+                <Label htmlFor="wantsLesson" className="!m-0">Je veux un cours</Label>
+                <div className="mt-2">
+                  <Label className="mr-2">Sport</Label>
+                  <select className="h-9 rounded-md border px-2" value={lessonSport} onChange={(e)=> setLessonSport(e.target.value as any)}>
+                    <option value="surf">Surf</option>
+                    <option value="kitesurf">Kitesurf</option>
+                  </select>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Les pros à proximité verront ta demande sur la BloboMap.</p>
+              </div>
             </div>
           </CardContent>
         </Card>

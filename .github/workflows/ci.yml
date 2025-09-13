@@ -17,7 +17,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: blobinfini
+          POSTGRES_DB: postgres
         options: >-
           --health-cmd "pg_isready -U postgres" 
           --health-interval 10s 
@@ -27,6 +27,7 @@ jobs:
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
       JWT_SECRET: test-jwt-secret
       JWT_REFRESH_SECRET: test-jwt-refresh-secret
       # Web base for link building in tests (emails etc.)
@@ -45,6 +46,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Prepare PostGIS (create DBs + extensions)
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          until pg_isready -h localhost -U postgres; do sleep 2; done
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini;"
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini_shadow;"
+          psql "postgresql://postgres:postgres@localhost:5432/blobinfini" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql "postgresql://postgres:postgres@localhost:5432/blobinfini_shadow" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 
       - name: Generate Prisma Client
         run: npm run db:generate

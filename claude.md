@@ -26,7 +26,7 @@ Infra:     Docker Compose (dev) • Cloud scalable (prod)
 ```
 blobinfini/
 ├── apps/
-│   ├── web/                 # Next.js PWA (port 3000)
+│   ├── web/                 # Next.js PWA (port 3001 en dev)
 │   └── api/                 # API Express modulaire (port 4000)
 │       └── src/
 │           └── modules/
@@ -55,7 +55,8 @@ cp .env.example .env        # Configurer les variables
 # Démarrage complet
 docker compose up -d         # BDD + Redis
 npm run db:migrate          # Migrations Prisma
-npm run dev                 # Tous les services
+npm run dev:api            # API seule (4000)
+npm run dev --workspace @blobinfini/web   # Web seul (3001)
 
 # Commandes spécifiques
 npm run db:studio           # Interface Prisma
@@ -326,3 +327,30 @@ Quand tu génères du code pour Blobinfini :
 ### Boîte aux lettres d’échange
 - Dossiers: `ai/exchange/requests/` (demandes) et `ai/exchange/proposals/` (propositions).
 - Claude Code dépose des `.diff`/`.md` dans `proposals/`; Codex applique/valide et renvoie feedback.
+## 👥 Rôles & Profils (Rider/Pro)
+
+- RiderProfile
+  - Champs clés: `displayName`, `sex`, `lat/lng`, `wantsLesson` (bool), `lessonSport` ('surf'|'kitesurf').
+  - Badge “🎓 Cours” en matching si `wantsLesson=true` (visible sur cartes et résultats).
+
+- ProProfile
+  - Champs clés: `businessName`, `bio`, `photoUrl`, `lat/lng` (lieu de travail), `verified` (bool).
+  - `pricePerHour` conservé en base mais non exposé dans l’UI publique pour l’instant.
+
+### BloboMap (Pros)
+- Front: `/pro/map` (Leaflet + OpenStreetMap, gratuit). Filtres: sport (surf/kite) et rayon (km).
+- API: `GET /pro/near/lessons?sport=surf|kitesurf&radiusKm=25` → riders avec `wantsLesson=true`, `lessonSport`=sport, coords présentes, au moins un match actif, triés par distance.
+- Action “Contacter”: `POST /conversations/open` ouvre/crée une conversation directe, puis redirection vers `/messages/{id}`.
+- Page `/pro/profile`: renseigner lat/lng + logo (sinon la carte affiche un message invitant à compléter le profil).
+
+### Matching (Rider)
+- Page `/matching`: interrupteur “Je veux un cours avec un pro” → met `wantsLesson=true` et `lessonSport` selon le sport choisi; bouton dédié “Faire appel à un pro”.
+- Résultats/cartes: badge “🎓 Cours” sur les profils qui souhaitent un cours.
+
+### Seeds & Commandes utiles
+- `npm run db:seed` → comptes de démo; `npm run db:reseed` → efface données + réinjecte (rapide);
+  `npm run db:reset` → drop + remigre + seed.
+- Comptes: Rider surf (dev+rider@test.com), Rider kite (dev+kite@test.com), Pro (dev+pro@test.com) — mot de passe `Passw0rd!`.
+
+### Cartographie
+- Leaflet + tuiles OpenStreetMap (aucune dépendance payante). Géocodage (Nominatim) possible en extension.

@@ -213,6 +213,17 @@ export default function DashboardPage() {
           </Card>
           <Card>
             <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Map size={18}/> BloboMap</CardTitle>
+              <CardDescription>Voir les demandes de cours autour de toi</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link href="/pro/map" className="inline-block w-full">
+                <Button className="w-full" variant="secondary">Ouvrir la BloboMap</Button>
+              </Link>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
               <CardTitle className="flex items-center gap-2"><Map size={18}/> Planning (bientôt)</CardTitle>
               <CardDescription>Gère tes créneaux disponibles</CardDescription>
             </CardHeader>
