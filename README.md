@@ -313,7 +313,7 @@ Activer l’envoi d’emails (dev avec Mailpit)
 
 - Démarrer Mailpit: inclus dans `docker-compose.yml` → `docker compose up -d mailpit` (UI: http://localhost:8025)
 - `.env` déjà prêt pour Mailpit: `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_SECURE=false`.
-- Définir `WEB_BASE_URL` (ex: http://localhost:3000) pour générer les liens.
+- Définir `WEB_BASE_URL` (ex: http://localhost:3001) pour générer les liens.
 - `apps/api` dépend de `nodemailer`; exécutez `npm install` à la racine si besoin.
 
 Sans SMTP actif, l’API continue de fonctionner et ignore l’envoi (log d’info seulement).
