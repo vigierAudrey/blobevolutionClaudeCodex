@@ -292,6 +292,9 @@ docker compose up -d  # PostgreSQL + Redis
 npm run db:generate   # Génère client Prisma
 npm run db:migrate    # Applique migrations
 npm run db:seed       # Données de test (users de démo)
+npm run db:reset      # Drop + remigre + seed (RESET complet)
+npm run db:reset:seedless  # Drop + remigre (sans seed)
+npm run db:reseed     # Efface les données et réinjecte le jeu de démo (sans toucher au schéma)
 
 # Développement
 npm run dev           # Lance tous les services

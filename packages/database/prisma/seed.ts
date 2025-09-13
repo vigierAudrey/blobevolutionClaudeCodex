@@ -8,16 +8,11 @@ try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const dotenv = require('dotenv');
   const ok = dotenv.config({ path: resolve(__dirname, '../../../.env') });
-  if (ok?.parsed) {
-    // loaded from root
-  } else {
-    dotenv.config({ path: resolve(__dirname, './.env') });
-  }
+  if (!ok?.parsed) dotenv.config({ path: resolve(__dirname, './.env') });
 } catch {}
 
-const prisma = new PrismaClient();
-
-async function main() {
+export async function runSeed(client?: PrismaClient) {
+  const prisma = client ?? new PrismaClient();
   // Idempotent cleanup of dev users by tag email
   const emails = ['dev+rider@test.com', 'dev+pro@test.com'];
   await prisma.refreshToken.deleteMany({ where: { user: { email: { in: emails } } } });
@@ -64,7 +59,7 @@ async function main() {
   }
 
   // Pro user (email verified)
-  await prisma.user.create({
+  const pro = await prisma.user.create({
     data: {
       email: 'dev+pro@test.com',
       password: hashed,
@@ -76,20 +71,59 @@ async function main() {
     },
   });
 
+  // Create pro profile
+  await prisma.proProfile.create({
+    data: {
+      userId: pro.id,
+      businessName: 'BlobPro School',
+      bio: 'Monitrice indépendante, 8 ans d\'expérience. Cours particuliers et packs découverte.',
+      pricePerHour: 60,
+      emailNotif: true,
+    },
+  });
+
+  // Demo match + conversation + a few messages
+  const match = await prisma.match.create({
+    data: { userOneId: rider.id, userTwoId: pro.id },
+  });
+  const conv = await prisma.conversation.create({ data: { matchId: match.id } });
+  await prisma.conversationMember.createMany({
+    data: [
+      { conversationId: conv.id, userId: rider.id },
+      { conversationId: conv.id, userId: pro.id },
+    ],
+    skipDuplicates: true,
+  });
+  await prisma.message.createMany({
+    data: [
+      {
+        conversationId: conv.id,
+        senderId: rider.id,
+        type: 'TEXT',
+        content: 'Salut ! Partant·e pour une session demain matin ? 🌊',
+      },
+      {
+        conversationId: conv.id,
+        senderId: pro.id,
+        type: 'TEXT',
+        content: 'Oui ! 8h à la plage centrale, houle bien orientée 👍',
+      },
+    ],
+    skipDuplicates: true,
+  });
+
   // Optional: a conversation sample could be added later
   // Keep seed minimal and fast for CI/dev
 
   // eslint-disable-next-line no-console
   console.log('Seed completed: users dev+rider@test.com / dev+pro@test.com (password: Passw0rd!)');
+  if (!client) await prisma.$disconnect();
 }
 
-main()
-  .catch((e) => {
-    // eslint-disable-next-line no-console
+// If executed via `prisma db seed`, run standalone
+if (require.main === module) {
+  runSeed().catch((e) => {
     console.error(e);
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });
-
+}
