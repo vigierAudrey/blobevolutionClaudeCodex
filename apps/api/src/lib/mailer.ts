@@ -22,9 +22,9 @@ function getSmtpConfig() {
   // Dev convenience: allow servers without auth (e.g., Mailpit on 1025)
   const allowNoAuth = String(process.env.SMTP_ALLOW_NO_AUTH || '').toLowerCase() === 'true' || port === 1025;
 
-  const base = { host, port, secure, from } as const;
-  if (user && pass) return { ...base, auth: { user, pass } } as const;
-  if (allowNoAuth) return base as const; // no auth
+  const base = { host, port, secure, from };
+  if (user && pass) return { ...base, auth: { user, pass } };
+  if (allowNoAuth) return base; // no auth
 
   return null; // not configured properly
 }
@@ -43,7 +43,7 @@ async function getTransport() {
       // If no auth provided (Mailpit), nodemailer accepts undefined
       auth: (cfg as any).auth,
     });
-    return { transport, from: (cfg as any).from } as const;
+    return { transport, from: (cfg as any).from };
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn('[mailer] nodemailer not available; emails will be skipped');
