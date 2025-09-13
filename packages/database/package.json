@@ -9,14 +9,21 @@
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
     "studio": "prisma studio",
+    "seed": "prisma db seed",
+    "reseed": "tsx prisma/reseed.ts",
+    "reset": "prisma migrate reset --force",
+    "reset:seedless": "prisma migrate reset --force --skip-seed",
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@prisma/client": "^5.15.0"
+    "@prisma/client": "^5.15.0",
+    "bcrypt": "^5.1.1"
   },
   "devDependencies": {
     "prisma": "^5.15.0",
     "typescript": "^5.4.0"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }
-

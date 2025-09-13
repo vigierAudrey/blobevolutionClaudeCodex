@@ -31,6 +31,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
   riderProfile     RiderProfile?
+  proProfile       ProProfile?
   lastSearch       LastSearch?
   decisions        MatchDecision[] @relation("UserAsActor")
   reports          ProfileReport[] @relation("UserAsReporter")
@@ -143,6 +144,24 @@ model RiderProfile {
   disciplines    RiderDiscipline[]
   incomingDecisions MatchDecision[] @relation("ProfileAsTarget")
   reports            ProfileReport[] @relation("ProfileAsReported")
+
+  @@index([userId])
+}
+
+model ProProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName   String?
+  bio            String?
+  pricePerHour   Int?
+  emailNotif     Boolean  @default(false)
+  photoUrl       String?
+  lat            Float?
+  lng            Float?
+  verified       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([userId])
 }

@@ -17,6 +17,7 @@ import { profileRouter } from './modules/profile/profile.controller';
 import { matchingRouter } from './modules/matching/matching.controller';
 import { reportsRouter } from './modules/reports/reports.controller';
 import { conversationsRouter } from './modules/chat/conversations.controller';
+import { proRouter } from './modules/pro/pro.controller';
 
 export function createApp() {
   const app = express();
@@ -80,6 +81,7 @@ export function createApp() {
   app.use('/matching', matchingRouter);
   app.use('/reports', reportsRouter);
   app.use('/conversations', conversationsRouter);
+  app.use('/pro', proRouter);
 
   return app;
 }

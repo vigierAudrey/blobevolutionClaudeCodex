@@ -16,6 +16,10 @@
     "db:migrate": "npm run migrate --workspace @blobinfini/database",
     "db:migrate:nolock": "PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 npm run migrate --workspace @blobinfini/database",
     "db:studio": "npm run studio --workspace @blobinfini/database",
+    "db:seed": "npm run seed --workspace @blobinfini/database",
+    "db:reset": "npm run reset --workspace @blobinfini/database",
+    "db:reset:seedless": "npm run reset:seedless --workspace @blobinfini/database",
+    "db:reseed": "npm run reseed --workspace @blobinfini/database",
     "purge:consent-ip": "tsx apps/api/src/jobs/purgeConsent.ts",
     "test": "npm run test --workspace @blobinfini/api",
     "postinstall": "npm run build --workspace @blobinfini/database || true"

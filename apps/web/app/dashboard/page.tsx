@@ -199,17 +199,46 @@ export default function DashboardPage() {
           </div>
         </>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Espace Professionnel</CardTitle>
-            <CardDescription>
-              Interface dédiée en préparation (planning, réservations, paiements pro, offres…)
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Reviens bientôt — ou contacte le support pour en savoir plus.</p>
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><User size={18}/> Profil pro</CardTitle>
+              <CardDescription>Renseigne tes infos (nom, bio, tarif, logo)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link href="/pro/profile" className="inline-block w-full">
+                <Button className="w-full">Ouvrir mon profil pro</Button>
+              </Link>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Map size={18}/> Planning (bientôt)</CardTitle>
+              <CardDescription>Gère tes créneaux disponibles</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button className="w-full" variant="outline" disabled>En préparation</Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><CreditCard size={18}/> Réservations (bientôt)</CardTitle>
+              <CardDescription>Voir les demandes de cours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button className="w-full" variant="outline" disabled>En préparation</Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Percent size={18}/> Offres (bientôt)</CardTitle>
+              <CardDescription>Créer des packs/Promos</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button className="w-full" variant="outline" disabled>En préparation</Button>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

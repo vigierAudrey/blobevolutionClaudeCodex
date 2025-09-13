@@ -291,7 +291,10 @@ docker compose up -d  # PostgreSQL + Redis
 # Base de données
 npm run db:generate   # Génère client Prisma
 npm run db:migrate    # Applique migrations
-npm run db:seed       # Données de test
+npm run db:seed       # Données de test (users de démo)
+npm run db:reset      # Drop + remigre + seed (RESET complet)
+npm run db:reset:seedless  # Drop + remigre (sans seed)
+npm run db:reseed     # Efface les données et réinjecte le jeu de démo (sans toucher au schéma)
 
 # Développement
 npm run dev           # Lance tous les services
@@ -309,11 +312,58 @@ npm run build         # Build production
 npm run start         # Start production
 ```
 
+## 🛠️ CI & E2E (Coach pédago)
+
+- Image mentale: la **CI** est la chaîne de montage; les **E2E** sont l’essai routier filmé. Chaque PR passe la chaîne; si tout est vert, on peut fusionner en confiance.
+- Ce repo possède une CI GitHub Actions: build Web, Prisma generate/migrate, type-check, tests API E2E.
+- Guide détaillé avec blocs à coller: `docs/ci-e2e.md`.
+
+## 👥 Rôles, Profils et BloboMap
+
+- Riders (particuliers):
+  - Profil `RiderProfile` avec `wantsLesson` (bool) et `lessonSport` (surf|kitesurf).
+  - Matching: bouton “Faire appel à un pro” et interrupteur “Je veux un cours”.
+  - Affichage badge “🎓 Cours” sur cartes/résultats si `wantsLesson=true`.
+
+- Pros (professionnels):
+  - Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).
+  - Prix conservé en base mais non exposé en UI publique pour l’instant.
+  - BloboMap (OSM/Leaflet) côté pro: `/pro/map` avec filtres “Surf / Kitesurf” et rayon (km).
+  - Un clic sur un marqueur ouvre/crée une conversation (“Contacter”).
+
+- API liées:
+  - `PUT /profile/me`: accepte `wantsLesson`, `lessonSport` (rider).
+  - `GET /pro/near/lessons?sport=surf|kitesurf&radiusKm=25`: demandes de cours visibles par tous les pros du périmètre (variante B), Riders ayant au moins un match actif, tri par distance.
+  - `POST /conversations/open`: crée/retourne une conversation directe entre 2 users.
+
+- Web:
+  - `/matching` → interrupteur “Je veux un cours” + badge 🎓 en liste.
+  - `/pro/profile` → lieu de travail (lat/lng), logo; pas de champ prix en UI publique.
+  - `/pro/map` → Leaflet + OpenStreetMap, filtres sport/rayon, bouton “Contacter”.
+
+## 🧪 Données de démo (seed)
+
+- Commandes:
+  - `npm run db:seed` → crée des comptes de démo.
+  - `npm run db:reseed` → efface les données et réinjecte la démo (rapide, sans toucher au schéma).
+  - `npm run db:reset` → drop + remigre + seed (reset complet).
+
+- Comptes:
+  - Rider: `dev+rider@test.com` (Passw0rd!) — wantsLesson surf (lat/lng Paris)
+  - Rider kite: `dev+kite@test.com` (Passw0rd!) — wantsLesson kitesurf (lat/lng Paris)
+  - Pro: `dev+pro@test.com` (Passw0rd!) — lieu de travail (lat/lng Paris)
+
+## 🗺️ Carte (open source, sans Google)
+
+- Front: Leaflet + tuiles OpenStreetMap.
+- Pas de dépendance payante Google Maps.
+- Extension prévue: géocodage gratuit Nominatim pour convertir adresses → lat/lng.
+
 Activer l’envoi d’emails (dev avec Mailpit)
 
 - Démarrer Mailpit: inclus dans `docker-compose.yml` → `docker compose up -d mailpit` (UI: http://localhost:8025)
 - `.env` déjà prêt pour Mailpit: `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_SECURE=false`.
-- Définir `WEB_BASE_URL` (ex: http://localhost:3000) pour générer les liens.
+- Définir `WEB_BASE_URL` (ex: http://localhost:3001) pour générer les liens.
 - `apps/api` dépend de `nodemailer`; exécutez `npm install` à la racine si besoin.
 
 Sans SMTP actif, l’API continue de fonctionner et ignore l’envoi (log d’info seulement).

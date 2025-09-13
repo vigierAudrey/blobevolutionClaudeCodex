@@ -2,7 +2,7 @@
   {
     "AllowedHeaders": ["*"],
     "AllowedMethods": ["PUT", "GET"],
-    "AllowedOrigins": ["http://localhost:3000"],
+    "AllowedOrigins": ["http://localhost:3001", "http://localhost:3000"],
     "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3000
   }

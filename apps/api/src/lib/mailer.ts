@@ -16,25 +16,34 @@ function getSmtpConfig() {
   const pass = process.env.SMTP_PASS;
   const secure = String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true';
   const from = process.env.SMTP_FROM || 'no-reply@localhost';
-  if (!host || !user || !pass) return null;
-  return { host, port, secure, auth: { user, pass }, from } as const;
+
+  if (!host) return null;
+
+  // Dev convenience: allow servers without auth (e.g., Mailpit on 1025)
+  const allowNoAuth = String(process.env.SMTP_ALLOW_NO_AUTH || '').toLowerCase() === 'true' || port === 1025;
+
+  const base = { host, port, secure, from } as const;
+  if (user && pass) return { ...base, auth: { user, pass } } as const;
+  if (allowNoAuth) return base as const; // no auth
+
+  return null; // not configured properly
 }
 
 async function getTransport() {
   const cfg = getSmtpConfig();
   if (!cfg) return null;
   try {
-    // Lazy import so the project can run without nodemailer installed
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const nodemailer = await import('nodemailer' as any);
-    // @ts-expect-error: ESM type interop not critical here
+    // Lazy import to keep optional
+    const mod = await import('nodemailer');
+    const nodemailer: any = (mod as any).default ?? mod; // support CJS/ESM
     const transport = nodemailer.createTransport({
-      host: cfg.host,
-      port: cfg.port,
-      secure: cfg.secure,
-      auth: cfg.auth,
+      host: (cfg as any).host,
+      port: (cfg as any).port,
+      secure: (cfg as any).secure,
+      // If no auth provided (Mailpit), nodemailer accepts undefined
+      auth: (cfg as any).auth,
     });
-    return { transport, from: cfg.from } as const;
+    return { transport, from: (cfg as any).from } as const;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn('[mailer] nodemailer not available; emails will be skipped');
@@ -60,7 +69,7 @@ export async function sendMail(mail: Mail) {
 }
 
 export function buildWebUrl(pathname: string, params?: Record<string, string>) {
-  const base = process.env.WEB_BASE_URL || 'http://localhost:3000';
+  const base = process.env.WEB_BASE_URL || 'http://localhost:3001';
   const url = new URL(pathname.startsWith('/') ? pathname : `/${pathname}`, base);
   if (params) {
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
@@ -81,4 +90,3 @@ export async function sendPasswordResetEmail(to: string, token: string) {
   const html = `<p>Tu as demandé à réinitialiser ton mot de passe.</p><p><a href="${link}">Réinitialiser mon mot de passe</a></p>`;
   return sendMail({ to, subject: 'Réinitialisation du mot de passe', text, html });
 }
-
