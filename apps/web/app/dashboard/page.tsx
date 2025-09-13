@@ -34,6 +34,29 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [router]);
 
+  // Redirect to onboarding if profile is incomplete (name + at least one discipline + photo)
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    (async () => {
+      try {
+        const [p, d] = await Promise.all([
+          apiClient.getProfile(),
+          apiClient.getDisciplines().catch(() => []),
+        ]);
+        if (!active) return;
+        const hasName = !!p?.displayName;
+        const hasPhoto = !!p?.photoUrl;
+        const hasDiscipline = Array.isArray(d) && d.length > 0;
+        const incomplete = !hasName || !hasPhoto || !hasDiscipline;
+        if (incomplete) router.replace('/onboarding');
+      } catch (_) {
+        // ignore
+      }
+    })();
+    return () => { active = false; };
+  }, [user, router]);
+
   // Load aggregated unread count for conversations
   useEffect(() => {
     let active = true;

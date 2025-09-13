@@ -21,6 +21,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [loginConsentNeeded, setLoginConsentNeeded] = useState(false);
   const [loginConsentAccepted, setLoginConsentAccepted] = useState(false);
+  const [emailNotVerified, setEmailNotVerified] = useState(false);
+  const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,11 +48,30 @@ export function AuthForm({ mode }: { mode: Mode }) {
       if (mode === 'login' && msg.toLowerCase().includes('consent')) {
         setLoginConsentNeeded(true);
         setError('Pour continuer, merci d’accepter la charte.');
+        setEmailNotVerified(false);
+      } else if (mode === 'login' && msg.toLowerCase().includes('email not verified')) {
+        setEmailNotVerified(true);
+        setError(null);
       } else {
         setError(msg);
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const resend = async () => {
+    if (!email) return;
+    setResendStatus('loading');
+    setError(null);
+    setInfo(null);
+    try {
+      await apiClient.resendVerification(email);
+      setResendStatus('sent');
+      setInfo('Email de vérification renvoyé. Vérifie ta boîte mail.');
+    } catch (e: any) {
+      setResendStatus('error');
+      setError(e?.message || 'Impossible de renvoyer l’email');
     }
   };
 
@@ -148,6 +169,20 @@ export function AuthForm({ mode }: { mode: Mode }) {
                 />
                 <span>J’ai lu et j’accepte la charte de sécurité et l’avertissement.</span>
               </label>
+            </div>
+          )}
+          {mode === 'login' && emailNotVerified && (
+            <div className="space-y-2 border rounded-md p-3 bg-amber-50 border-amber-200">
+              <div className="text-sm text-foreground">
+                <p className="font-medium">Email non vérifié</p>
+                <p className="mt-1">Avant de te connecter, confirme ton adresse email.</p>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" disabled={resendStatus==='loading' || !email} onClick={resend}>
+                  {resendStatus==='loading' ? 'Envoi…' : 'Renvoyer l’email de vérification'}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Astuce: vérifie aussi le dossier spam.</p>
             </div>
           )}
           {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
