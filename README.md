@@ -291,7 +291,7 @@ docker compose up -d  # PostgreSQL + Redis
 # Base de données
 npm run db:generate   # Génère client Prisma
 npm run db:migrate    # Applique migrations
-npm run db:seed       # Données de test
+npm run db:seed       # Données de test (users de démo)
 
 # Développement
 npm run dev           # Lance tous les services
