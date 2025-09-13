@@ -34,7 +34,7 @@ function VerifyInner() {
         body: JSON.stringify({ token: t }),
       });
       setStatus('success');
-      setMessage('Email vérifié avec succès. Tu peux te connecter.');
+      setMessage('Email vérifié avec succès. Redirection…');
     } catch (e: any) {
       setStatus('error');
       setMessage(e?.message || 'Impossible de vérifier le token');
@@ -68,14 +68,25 @@ function VerifyInner() {
               <p className={`text-sm ${status === 'success' ? 'text-green-600' : status === 'error' ? 'text-red-600' : 'text-muted-foreground'}`}>{message}</p>
             )}
             {status === 'success' && (
-              <Button type="button" className="w-full" onClick={() => router.push('/login')}>
-                Aller à la connexion
-              </Button>
+              <AutoRedirect to="/login" delayMs={2000} />
             )}
           </form>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function AutoRedirect({ to, delayMs = 2000 }: { to: string; delayMs?: number }) {
+  const router = useRouter();
+  useEffect(() => {
+    const id = setTimeout(() => router.replace(to), delayMs);
+    return () => clearTimeout(id);
+  }, [router, to, delayMs]);
+  return (
+    <Button type="button" className="w-full" onClick={() => router.replace(to)}>
+      Aller à la connexion maintenant
+    </Button>
   );
 }
 

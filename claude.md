@@ -308,3 +308,21 @@ Quand tu génères du code pour Blobinfini :
 - Paiement : Stripe uniquement, 3D Secure, commission 10-15%
 - Social : Messages filtrés, groupes verrouillables
 - Auth : JWT 15min + refresh 30j, 2FA pros obligatoire
+
+### Rôles Claude Code
+- Impl rapide: `ai/personas/yolo.md` + `ai/prompts/yolo_task.md`.
+- Débogage/Triage: `ai/personas/debugger.md` + `ai/prompts/debug_request.md`.
+- Revue PR: `ai/personas/relecteur_pr.md` + `ai/prompts/review.md`.
+- Tests: `ai/personas/testeur.md` + `ai/prompts/tests.md`.
+- Performance: `ai/personas/performance.md` + `ai/prompts/perf_request.md`.
+- Migrations/DB: `ai/personas/migrations_db.md` + `ai/prompts/migration_plan.md`.
+- Docs/DX: `ai/personas/docs_scribe.md` + `ai/prompts/docs_request.md`.
+
+### Utilisation VS Code (Claude Code)
+- Créez un profil par rôle en collant le contenu du persona dans les « System Instructions ».
+- Utilisez le template associé pour formuler la demande et collez les extraits pertinents.
+- Voir le protocole: `ai/handbook/claude_code_handshake.md`.
+
+### Boîte aux lettres d’échange
+- Dossiers: `ai/exchange/requests/` (demandes) et `ai/exchange/proposals/` (propositions).
+- Claude Code dépose des `.diff`/`.md` dans `proposals/`; Codex applique/valide et renvoie feedback.

@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { sendPasswordResetEmail, sendVerificationEmail } from '../../lib/mailer';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
@@ -31,6 +32,10 @@ export class AuthService {
     });
     // Génère un token de vérification email
     const verification = await this.createEmailVerification(user.id);
+    // Envoi d'email (meilleure-effort)
+    try {
+      await sendVerificationEmail(user.email, verification.token);
+    } catch (_) {}
     return {
       message: 'Account created. Please verify your email.',
       userId: user.id,
@@ -211,7 +216,10 @@ export class AuthService {
       // En test, renvoyer le token brut pour pouvoir lutiliser dans les tests
       return { ...generic, resetToken: rawToken };
     }
-    // En prod, on enverrait un e-mail ici
+    // Envoi d'email (meilleure-effort)
+    try {
+      await sendPasswordResetEmail(user.email, rawToken);
+    } catch (_) {}
     return generic;
   }
 
@@ -296,6 +304,9 @@ export class AuthService {
     });
 
     const res = await this.createEmailVerification(user.id);
+    try {
+      await sendVerificationEmail(user.email, res.token);
+    } catch (_) {}
     if (process.env.NODE_ENV === 'test') {
       return { ...generic, verificationToken: res.token };
     }
