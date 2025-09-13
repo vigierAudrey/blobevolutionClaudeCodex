@@ -309,6 +309,12 @@ npm run build         # Build production
 npm run start         # Start production
 ```
 
+## 🛠️ CI & E2E (Coach pédago)
+
+- Image mentale: la **CI** est la chaîne de montage; les **E2E** sont l’essai routier filmé. Chaque PR passe la chaîne; si tout est vert, on peut fusionner en confiance.
+- Ce repo possède une CI GitHub Actions: build Web, Prisma generate/migrate, type-check, tests API E2E.
+- Guide détaillé avec blocs à coller: `docs/ci-e2e.md`.
+
 Activer l’envoi d’emails (dev avec Mailpit)
 
 - Démarrer Mailpit: inclus dans `docker-compose.yml` → `docker compose up -d mailpit` (UI: http://localhost:8025)
