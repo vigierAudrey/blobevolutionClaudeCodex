@@ -22,6 +22,7 @@ export default function MatchingPage() {
   const [surfLevel, setSurfLevel] = useState<Level | ''>('');
   const [kiteLevel, setKiteLevel] = useState<Level | ''>('');
   const [chosenSport, setChosenSport] = useState<Sport | null>(null);
+  const [wantsLesson, setWantsLesson] = useState<boolean>(false);
 
   useEffect(() => {
     (async () => {
@@ -34,100 +35,104 @@ export default function MatchingPage() {
         const lsLevel = (localStorage.getItem(LEVEL_KEY) as Level | null) || null;
         const effSport = qsSport || lsSport;
         const effLevel = (qsLevel || lsLevel) as Level | null;
-        if (effSport === 'surf') { setSurfSelected(true); setChosenSport('surf'); if (effLevel) setSurfLevel(effLevel); }
-        if (effSport === 'kitesurf') { setKiteSelected(true); setChosenSport('kitesurf'); if (effLevel) setKiteLevel(effLevel); }
-        // Prefill from profile disciplines
-        const discs = await apiClient.getDisciplines();
-        const surf = discs.find(d => d.sport === 'surf');
-        const kite = discs.find(d => d.sport === 'kitesurf');
-        if (surf) { setSurfSelected(true); if (!surfLevel) setSurfLevel(surf.level as any); if (!chosenSport) setChosenSport('surf'); }
-        if (kite) { setKiteSelected(true); if (!kiteLevel) setKiteLevel(kite.level as any); if (!chosenSport) setChosenSport('kitesurf'); }
-        const count = (surf ? 1 : 0) + (kite ? 1 : 0);
-        if (count === 1 && (surf || kite)) {
-          const s = surf ? 'surf' : 'kitesurf';
-          const l = (surf ? surf.level : kite!.level) as Level;
-          try { localStorage.setItem(SPORT_KEY, s); localStorage.setItem(LEVEL_KEY, l); } catch {}
-          const next = new URL(window.location.origin + '/matching/date');
-          next.searchParams.set('sport', s);
-          next.searchParams.set('level', l);
-          window.location.href = next.toString();
+
+        if (effSport === 'surf') {
+          setSurfSelected(true);
+          setChosenSport('surf');
+          if (effLevel) setSurfLevel(effLevel);
+        }
+        if (effSport === 'kitesurf') {
+          setKiteSelected(true);
+          setChosenSport('kitesurf');
+          if (effLevel) setKiteLevel(effLevel);
+        }
+
+        // Prefill from profile disciplines only if nothing was set from URL/localStorage
+        if (!effSport) {
+          const discs = await apiClient.getDisciplines();
+          const surf = discs.find(d => d.sport === 'surf');
+          const kite = discs.find(d => d.sport === 'kitesurf');
+
+          if (surf) {
+            setSurfSelected(true);
+            setSurfLevel(surf.level as any);
+            if (!kite) setChosenSport('surf');
+          }
+          if (kite) {
+            setKiteSelected(true);
+            setKiteLevel(kite.level as any);
+            if (!surf) setChosenSport('kitesurf');
+          }
+
+          // Don't auto-redirect - let user choose explicitly to avoid infinite loops
         }
       } catch {}
     })();
-  }, [chosenSport, kiteLevel, surfLevel]);
+  }, []); // Remove problematic dependencies to prevent infinite loop
 
-  const toggleSport = (s: Sport) => {
+  const selectSport = (s: Sport) => {
+    // Directly set the chosen sport and activate it
+    setChosenSport(s);
     if (s === 'surf') {
-      const next = !surfSelected; setSurfSelected(next);
-      if (next) { setChosenSport('surf'); if (!surfLevel) setSurfLevel('beginner'); }
-      else if (chosenSport === 'surf') setChosenSport(kiteSelected ? 'kitesurf' : null);
+      setSurfSelected(true);
+      setKiteSelected(false);
+      if (!surfLevel) setSurfLevel('beginner');
+      setKiteLevel(''); // Clear kite level when surf is selected
     } else {
-      const next = !kiteSelected; setKiteSelected(next);
-      if (next) { setChosenSport('kitesurf'); if (!kiteLevel) setKiteLevel('beginner'); }
-      else if (chosenSport === 'kitesurf') setChosenSport(surfSelected ? 'surf' : null);
+      setKiteSelected(true);
+      setSurfSelected(false);
+      if (!kiteLevel) setKiteLevel('beginner');
+      setSurfLevel(''); // Clear surf level when kite is selected
     }
   };
 
   const canContinue = useMemo(() => {
-    if (!chosenSport) return false;
-    if (chosenSport === 'surf') return surfSelected && !!surfLevel;
-    return kiteSelected && !!kiteLevel;
-  }, [chosenSport, surfSelected, kiteSelected, surfLevel, kiteLevel]);
+    const result = (() => {
+      if (!chosenSport) return false;
+      if (chosenSport === 'surf') return !!surfLevel;
+      return !!kiteLevel;
+    })();
+    console.log('canContinue:', result, { chosenSport, surfLevel, kiteLevel });
+    return result;
+  }, [chosenSport, surfLevel, kiteLevel]);
 
   const breadcrumb = useMemo(() => {
-    const items: string[] = [];
-    items.push(surfSelected ? `Surf ${surfLevel ? `(${levelLabels[surfLevel as Level]})` : ''}` : 'Surf —');
-    items.push(kiteSelected ? `Kite ${kiteLevel ? `(${levelLabels[kiteLevel as Level]})` : ''}` : 'Kite —');
-    items.push(`Utilisé: ${chosenSport ?? '—'}`);
-    return items.join(' • ');
-  }, [surfSelected, kiteSelected, surfLevel, kiteLevel, chosenSport]);
+    if (!chosenSport) return 'Aucun sport sélectionné';
+    const level = chosenSport === 'surf' ? surfLevel : kiteLevel;
+    const levelText = level ? levelLabels[level as Level] : 'niveau non choisi';
+    const lessonIcon = wantsLesson ? ' 🎓' : '';
+    return `${chosenSport === 'surf' ? 'Surf' : 'Kitesurf'} - ${levelText}${lessonIcon}`;
+  }, [chosenSport, surfLevel, kiteLevel, wantsLesson]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
       <BackBar fallbackHref="/dashboard" />
       <div>
         <h1 className="text-2xl font-semibold">Matching</h1>
-        <p className="text-sm text-muted-foreground">Choisis un ou deux sports et précise le niveau pour chacun. Un seul sport sera utilisé pour cette recherche.</p>
+        <p className="text-sm text-muted-foreground">Choisis le sport et le niveau pour ce matching.</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">1) Sélection des sports</CardTitle>
-          <CardDescription>Active Surf et/ou Kitesurf, puis choisis les niveaux.</CardDescription>
+          <CardTitle className="text-base">Sport et niveau</CardTitle>
+          <CardDescription>Sélectionne directement le sport et niveau que tu veux pour ce matching.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => toggleSport('surf')} aria-pressed={surfSelected} className={'rounded-md border px-4 py-6 text-center text-sm transition ' + (surfSelected ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>Surf</button>
-            <button onClick={() => toggleSport('kitesurf')} aria-pressed={kiteSelected} className={'rounded-md border px-4 py-6 text-center text-sm transition ' + (kiteSelected ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>Kitesurf</button>
+            <button onClick={() => selectSport('surf')} aria-pressed={chosenSport === 'surf'} className={'rounded-md border px-4 py-6 text-center text-sm transition ' + (chosenSport === 'surf' ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>Surf</button>
+            <button onClick={() => selectSport('kitesurf')} aria-pressed={chosenSport === 'kitesurf'} className={'rounded-md border px-4 py-6 text-center text-sm transition ' + (chosenSport === 'kitesurf' ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>Kitesurf</button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className={!surfSelected ? 'opacity-50' : ''}>
-              <div className="text-sm mb-1">Niveau Surf</div>
+          {chosenSport && (
+            <div>
+              <div className="text-sm mb-1">Niveau {chosenSport === 'surf' ? 'Surf' : 'Kitesurf'}</div>
               <div className="grid grid-cols-3 gap-2">
-                {(['beginner','intermediate','advanced'] as Level[]).map(l => (
-                  <button key={l} disabled={!surfSelected} onClick={() => setSurfLevel(l)} aria-pressed={surfLevel === l} className={'rounded-md border px-2 py-2 text-xs transition disabled:opacity-50 ' + (surfLevel === l ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>{levelLabels[l]}</button>
-                ))}
-              </div>
-            </div>
-            <div className={!kiteSelected ? 'opacity-50' : ''}>
-              <div className="text-sm mb-1">Niveau Kitesurf</div>
-              <div className="grid grid-cols-3 gap-2">
-                {(['beginner','intermediate','advanced'] as Level[]).map(l => (
-                  <button key={l} disabled={!kiteSelected} onClick={() => setKiteLevel(l)} aria-pressed={kiteLevel === l} className={'rounded-md border px-2 py-2 text-xs transition disabled:opacity-50 ' + (kiteLevel === l ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>{levelLabels[l]}</button>
-                ))}
-              </div>
-            </div>
-          </div>
-          {(surfSelected && kiteSelected) && (
-            <div className="text-sm">
-              <div className="mb-1">Sport utilisé pour ce matching</div>
-              <div className="flex items-center gap-4">
-                <label className="inline-flex items-center gap-1">
-                  <input type="radio" name="chosenSport" checked={chosenSport === 'surf'} onChange={()=>setChosenSport('surf')} /> Surf ({surfLevel ? levelLabels[surfLevel as Level] : 'niveau ?'})
-                </label>
-                <label className="inline-flex items-center gap-1">
-                  <input type="radio" name="chosenSport" checked={chosenSport === 'kitesurf'} onChange={()=>setChosenSport('kitesurf')} /> Kitesurf ({kiteLevel ? levelLabels[kiteLevel as Level] : 'niveau ?'})
-                </label>
+                {(['beginner','intermediate','advanced'] as Level[]).map(l => {
+                  const isSelected = chosenSport === 'surf' ? surfLevel === l : kiteLevel === l;
+                  const onClick = chosenSport === 'surf' ? () => setSurfLevel(l) : () => setKiteLevel(l);
+                  return (
+                    <button key={l} onClick={onClick} aria-pressed={isSelected} className={'rounded-md border px-2 py-2 text-xs transition ' + (isSelected ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>{levelLabels[l]}</button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -136,72 +141,52 @@ export default function MatchingPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Préférences</CardTitle>
-          <CardDescription>Tu peux enregistrer ces niveaux dans ton profil.</CardDescription>
+          <CardTitle className="text-base">Options pour cette session</CardTitle>
+          <CardDescription>Coche si tu souhaites un cours avec un pro pour cette session.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button
-            variant="secondary"
-            disabled={!surfSelected && !kiteSelected}
-            onClick={async () => {
-              const items: any[] = [];
-              if (surfSelected && surfLevel) items.push({ sport: 'surf', level: surfLevel });
-              if (kiteSelected && kiteLevel) items.push({ sport: 'kitesurf', level: kiteLevel });
-              try {
-                await apiClient.setDisciplines(items);
-                toast('Préférences enregistrées', 'success');
-              } catch (e: any) {
-                toast(e?.message || 'Erreur lors de l’enregistrement', 'error');
-              }
-            }}
-          >
-            Enregistrer comme préférence
-          </Button>
-          <div className="mt-3 flex items-center gap-2 text-sm">
-            <input id="wantsLesson" type="checkbox" onChange={async (e)=>{
+          <div className="flex items-center gap-2 text-sm">
+            <input id="wantsLesson" type="checkbox" checked={wantsLesson} onChange={async (e)=>{
+              const checked = e.target.checked;
+              setWantsLesson(checked);
               try {
                 const sport = chosenSport || 'surf';
-                await apiClient.updateProfile({ wantsLesson: e.target.checked, lessonSport: sport });
-                toast(e.target.checked ? 'Demande de cours activée' : 'Demande de cours désactivée', 'success');
+                await apiClient.updateProfile({ wantsLesson: checked, lessonSport: sport });
+                toast(checked ? 'Demande de cours activée' : 'Demande de cours désactivée', 'success');
               } catch (err: any) {
                 toast(err?.message || 'Erreur mise à jour', 'error');
               }
             }} />
-            <label htmlFor="wantsLesson">Je veux un cours avec un pro</label>
+            <label htmlFor="wantsLesson" className="flex items-center gap-1">
+              <span>🎓</span>
+              Je veux un cours avec un pro
+            </label>
           </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Sélection actuelle</CardTitle>
+          <CardTitle className="text-base">Ton choix pour ce matching</CardTitle>
           <CardDescription className="text-sm">{breadcrumb}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => { setSurfSelected(false); setKiteSelected(false); setSurfLevel(''); setKiteLevel(''); setChosenSport(null); try { localStorage.removeItem(SPORT_KEY); localStorage.removeItem(LEVEL_KEY); } catch {} }}>Réinitialiser</Button>
+            <Button variant="outline" onClick={() => { setSurfSelected(false); setKiteSelected(false); setSurfLevel(''); setKiteLevel(''); setChosenSport(null); try { localStorage.removeItem(SPORT_KEY); localStorage.removeItem(LEVEL_KEY); } catch {} }}>Changer de sport</Button>
             <Button disabled={!canContinue} onClick={() => {
-              const url = new URL(window.location.origin + '/matching/date');
+              console.log('Continuer clicked:', { canContinue, chosenSport, surfLevel, kiteLevel });
               if (chosenSport === 'surf') {
-                url.searchParams.set('sport', 'surf');
-                url.searchParams.set('level', (surfLevel || 'beginner') as string);
+                console.log('Navigating to surf page...');
                 try { localStorage.setItem(SPORT_KEY, 'surf'); localStorage.setItem(LEVEL_KEY, (surfLevel || 'beginner') as string); } catch {}
+                window.location.href = `/matching/date?sport=surf&level=${surfLevel || 'beginner'}`;
               } else if (chosenSport === 'kitesurf') {
-                url.searchParams.set('sport', 'kitesurf');
-                url.searchParams.set('level', (kiteLevel || 'beginner') as string);
+                console.log('Navigating to kitesurf page...');
                 try { localStorage.setItem(SPORT_KEY, 'kitesurf'); localStorage.setItem(LEVEL_KEY, (kiteLevel || 'beginner') as string); } catch {}
+                window.location.href = `/matching/date?sport=kitesurf&level=${kiteLevel || 'beginner'}`;
+              } else {
+                console.log('No sport selected');
               }
-              window.location.href = url.toString();
             }}>Continuer</Button>
-            <Button variant="secondary" onClick={async ()=>{
-              try {
-                const sport = chosenSport || 'surf';
-                await apiClient.updateProfile({ wantsLesson: true, lessonSport: sport });
-                toast('Ta demande de cours est visible par les pros.', 'success');
-              } catch (e: any) {
-                toast(e?.message || 'Erreur', 'error');
-              }
-            }}>Faire appel à un pro</Button>
           </div>
         </CardContent>
       </Card>

@@ -17,14 +17,10 @@ export function BackBar({ fallbackHref = '/dashboard', label = 'Retour' }: { fal
   };
 
   return (
-    <div className="mb-4 flex items-center gap-3">
+    <div className="mb-4">
       <Button variant="ghost" size="sm" onClick={onBack} className="inline-flex items-center gap-2">
         <ArrowLeft size={16} /> {label}
       </Button>
-      <span className="text-xs text-muted-foreground">ou</span>
-      <Link href={fallbackHref} className="text-xs underline text-primary">
-        aller à {fallbackHref === '/' ? 'l’accueil' : 'la page précédente'}
-      </Link>
     </div>
   );
 }

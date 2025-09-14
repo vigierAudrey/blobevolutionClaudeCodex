@@ -49,6 +49,16 @@ export default function OnboardingPage() {
   const hasDiscipline = (disciplines?.length || 0) > 0;
   const hasPhoto = !!profile?.photoUrl;
 
+  // Debug info
+  console.log('Onboarding status:', {
+    hasName,
+    displayName: profile?.displayName,
+    hasDiscipline,
+    disciplinesCount: disciplines?.length,
+    hasPhoto,
+    photoUrl: profile?.photoUrl,
+  });
+
   // Auto-redirect when everything is complete
   useEffect(() => {
     if (loading || error) return;
@@ -64,7 +74,7 @@ export default function OnboardingPage() {
     <div className="max-w-md mx-auto space-y-4">
       <BackBar fallbackHref="/dashboard" />
       <h1 className="text-2xl font-semibold">Bienvenue !</h1>
-      <p className="text-muted-foreground">Complète 3 petites étapes pour lancer le matching.</p>
+      <p className="text-muted-foreground">Complète ces 3 étapes obligatoires pour accéder au matching.</p>
 
       {loading ? (
         <p>Chargement…</p>
@@ -84,12 +94,12 @@ export default function OnboardingPage() {
         <Card>
           <CardHeader>
             <CardTitle>Compléter mon profil</CardTitle>
-            <CardDescription>Quelques infos aident à de bons matchs.</CardDescription>
+            <CardDescription>Toutes ces informations sont requises pour commencer le matching.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <ChecklistItem done={hasName} label="Ajouter un pseudo" />
+            <ChecklistItem done={hasName} label="Ajouter un pseudo (nom d'affichage requis)" />
             <ChecklistItem done={hasDiscipline} label="Choisir au moins un sport + niveau" />
-            <ChecklistItem done={hasPhoto} label="Ajouter une photo" />
+            <ChecklistItem done={hasPhoto} label="Ajouter une photo de profil" />
             <div className="pt-2 flex gap-2">
               <Button onClick={() => router.push('/profile')}>Ouvrir mon profil</Button>
               <Link href="/matching" className="inline-flex items-center rounded-md border px-4 py-2 text-sm">

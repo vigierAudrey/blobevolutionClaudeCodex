@@ -19,29 +19,37 @@ export class AuthService {
     data: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted?: boolean },
     opts?: { consentIp?: string },
   ) {
-    const hashed = await bcrypt.hash(data.password, 12);
-    const user = await prisma.user.create({
-      data: {
-        email: data.email,
-        password: hashed,
-        role: data.role,
-        consentedAt: new Date(),
-        consentVersion: AuthService.CONSENT_VERSION,
-        consentIp: opts?.consentIp,
-      },
-    });
-    // Génère un token de vérification email
-    const verification = await this.createEmailVerification(user.id);
-    // Envoi d'email (meilleure-effort)
     try {
-      await sendVerificationEmail(user.email, verification.token);
-    } catch (_) {}
-    return {
-      message: 'Account created. Please verify your email.',
-      userId: user.id,
-      // En test uniquement, on expose le token brut pour simplifier les tests
-      ...(process.env.NODE_ENV === 'test' ? { verificationToken: verification.token } : {}),
-    };
+      const hashed = await bcrypt.hash(data.password, 12);
+      const user = await prisma.user.create({
+        data: {
+          email: data.email,
+          password: hashed,
+          role: data.role,
+          consentedAt: new Date(),
+          consentVersion: AuthService.CONSENT_VERSION,
+          consentIp: opts?.consentIp,
+        },
+      });
+      // Génère un token de vérification email
+      const verification = await this.createEmailVerification(user.id);
+      // Envoi d'email (meilleure-effort)
+      try {
+        await sendVerificationEmail(user.email, verification.token);
+      } catch (_) {}
+      return {
+        message: 'Account created. Please verify your email.',
+        userId: user.id,
+        // En test uniquement, on expose le token brut pour simplifier les tests
+        ...(process.env.NODE_ENV === 'test' ? { verificationToken: verification.token } : {}),
+      };
+    } catch (error: any) {
+      // Gestion des erreurs Prisma
+      if (error.code === 'P2002' && error.meta?.target?.includes('email')) {
+        throw { code: 'EMAIL_ALREADY_EXISTS', message: 'This email is already registered' };
+      }
+      throw error;
+    }
   }
 
   async login(email: string, password: string, opts?: { consentAccepted?: boolean; consentIp?: string }) {

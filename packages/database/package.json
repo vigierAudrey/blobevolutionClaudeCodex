@@ -2,18 +2,19 @@
   "name": "@blobinfini/database",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
+  "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rimraf dist",
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
     "studio": "prisma studio",
     "seed": "prisma db seed",
     "reseed": "tsx prisma/reseed.ts",
     "reset": "prisma migrate reset --force",
-    "reset:seedless": "prisma migrate reset --force --skip-seed",
-    "build": "tsc -p tsconfig.json"
+    "reset:seedless": "prisma migrate reset --force --skip-seed"
   },
   "dependencies": {
     "@prisma/client": "^5.15.0",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "prisma": "^5.15.0",
+    "rimraf": "^6.0.1",
     "typescript": "^5.4.0"
   },
   "prisma": {

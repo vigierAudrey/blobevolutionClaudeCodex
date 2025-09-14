@@ -112,6 +112,8 @@ export default function ProfilePage() {
 
       await apiClient.updateProfile(body);
       toast('Profil sauvegardé', 'success');
+      // Redirect to onboarding to refresh completion status
+      setTimeout(() => router.push('/onboarding'), 1000);
     } catch (e: any) {
       toast(e?.message || 'Erreur lors de la sauvegarde', 'error');
     }
@@ -226,6 +228,8 @@ export default function ProfilePage() {
                 try {
                   await client.setDisciplines(items as any);
                   toast('Disciplines enregistrées', 'success');
+                  // Redirect to onboarding to refresh completion status
+                  setTimeout(() => router.push('/onboarding'), 1000);
                 } catch (e: any) {
                   toast(e?.message || 'Erreur enregistrement disciplines', 'error');
                 }
