@@ -47,11 +47,13 @@ export function AuthForm({ mode }: { mode: Mode }) {
       const msg = err?.message || 'Une erreur est survenue';
       if (mode === 'login' && msg.toLowerCase().includes('consent')) {
         setLoginConsentNeeded(true);
-        setError('Pour continuer, merci d’accepter la charte.');
+        setError('Pour continuer, merci d\'accepter la charte.');
         setEmailNotVerified(false);
       } else if (mode === 'login' && msg.toLowerCase().includes('email not verified')) {
         setEmailNotVerified(true);
         setError(null);
+      } else if (mode === 'register' && msg.toLowerCase().includes('email already registered')) {
+        setError('Cette adresse email est deja utilisee. Essayez de vous connecter ou utilisez une autre adresse.');
       } else {
         setError(msg);
       }

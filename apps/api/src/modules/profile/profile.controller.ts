@@ -47,11 +47,13 @@ profileRouter.put('/me', requireAuth, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const body = upsertSchema.parse(req.body);
+    console.log('Updating profile for user:', userId, 'with data:', body);
     const rp = await prisma.riderProfile.upsert({
       where: { userId },
       create: { userId, ...body },
       update: { ...body },
     });
+    console.log('Profile updated:', rp);
     return res.json(rp);
   } catch (err: any) {
     // eslint-disable-next-line no-console

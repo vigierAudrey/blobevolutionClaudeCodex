@@ -62,6 +62,9 @@ authRouter.post('/register', async (req, res) => {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
+    if (err?.code === 'EMAIL_ALREADY_EXISTS') {
+      return res.status(409).json({ error: 'Email already registered' });
+    }
     return res.status(500).json({ error: 'Internal error' });
   }
 });
