@@ -15,6 +15,27 @@ type Level = 'beginner' | 'intermediate' | 'advanced';
 function CardsInner() {
   const sp = useSearchParams();
   const router = useRouter();
+
+  // Vérifier le rôle utilisateur
+  useEffect(() => {
+    (async () => {
+      try {
+        const tokens = apiClient.getTokens();
+        if (!tokens?.accessToken) {
+          router.replace('/login');
+          return;
+        }
+
+        const user = await apiClient.me();
+        if (user.role === 'PRO') {
+          router.replace('/pro/dashboard');
+          return;
+        }
+      } catch {
+        router.replace('/login');
+      }
+    })();
+  }, [router]);
   const sport = sp.get('sport') as Sport | null;
   const level = sp.get('level') as Level | null;
   const date = sp.get('date');

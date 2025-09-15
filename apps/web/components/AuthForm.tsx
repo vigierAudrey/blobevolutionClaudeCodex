@@ -18,21 +18,59 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{email?: string; password?: string; role?: string; consent?: string}>({});
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [loginConsentNeeded, setLoginConsentNeeded] = useState(false);
   const [loginConsentAccepted, setLoginConsentAccepted] = useState(false);
   const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
 
+  const handleZodErrors = (details: any[]) => {
+    const errors: {email?: string; password?: string; role?: string; consent?: string} = {};
+
+    details.forEach((detail) => {
+      const field = detail.path?.[0];
+      const code = detail.code;
+      const message = detail.message;
+
+      if (field === 'email') {
+        if (code === 'invalid_string' && message?.includes('email')) {
+          errors.email = 'Adresse email invalide.';
+        } else {
+          errors.email = 'Adresse email invalide.';
+        }
+      } else if (field === 'password') {
+        if (code === 'too_small' && detail.minimum === 8) {
+          errors.password = 'Le mot de passe doit contenir au moins 8 caractères.';
+        } else {
+          errors.password = 'Mot de passe invalide.';
+        }
+      } else if (field === 'role') {
+        errors.role = 'Rôle invalide.';
+      } else if (field === 'consentAccepted') {
+        errors.consent = 'Vous devez accepter la charte pour continuer.';
+      }
+    });
+
+    setFieldErrors(errors);
+
+    // Si aucune erreur spécifique n'a été trouvée, afficher un message générique
+    if (Object.keys(errors).length === 0) {
+      setError('Une erreur est survenue, veuillez vérifier vos informations.');
+    }
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setInfo(null);
+    setFieldErrors({});
     setLoading(true);
     try {
       if (mode === 'register') {
         if (!consentAccepted) {
-          throw new Error('Merci de confirmer que vous avez lu et accepté la charte.');
+          setFieldErrors({ consent: 'Merci de confirmer que vous avez lu et accepté la charte.' });
+          return;
         }
         const res = await apiClient.register({ email, password, role, consentAccepted: true });
         setInfo('Compte créé. Vérifie ta boîte mail pour valider ton email.');
@@ -41,11 +79,26 @@ export function AuthForm({ mode }: { mode: Mode }) {
       } else {
         const res = await apiClient.login({ email, password, consentAccepted: loginConsentNeeded ? loginConsentAccepted : undefined });
         apiClient.saveTokens(res.accessToken, res.refreshToken);
-        router.push('/dashboard');
+
+        // Récupérer le rôle de l'utilisateur pour rediriger correctement
+        try {
+          const user = await apiClient.me();
+          if (user.role === 'PRO') {
+            router.push('/pro/onboarding'); // Les pros vont sur leur onboarding spécifique
+          } else {
+            router.push('/onboarding'); // Les riders vont sur l'onboarding rider
+          }
+        } catch {
+          router.push('/dashboard'); // Fallback
+        }
       }
     } catch (err: any) {
       const msg = err?.message || 'Une erreur est survenue';
-      if (mode === 'login' && msg.toLowerCase().includes('consent')) {
+
+      // Vérifier si c'est une erreur de validation Zod
+      if (msg === 'Invalid input' && err?.details && Array.isArray(err.details)) {
+        handleZodErrors(err.details);
+      } else if (mode === 'login' && msg.toLowerCase().includes('consent')) {
         setLoginConsentNeeded(true);
         setError('Pour continuer, merci d\'accepter la charte.');
         setEmailNotVerified(false);
@@ -53,7 +106,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
         setEmailNotVerified(true);
         setError(null);
       } else if (mode === 'register' && msg.toLowerCase().includes('email already registered')) {
-        setError('Cette adresse email est deja utilisee. Essayez de vous connecter ou utilisez une autre adresse.');
+        setFieldErrors({ email: 'Cette adresse email est déjà utilisée. Essayez de vous connecter ou utilisez une autre adresse.' });
       } else {
         setError(msg);
       }
@@ -89,7 +142,16 @@ export function AuthForm({ mode }: { mode: Mode }) {
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input
+              id="email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={fieldErrors.email ? 'border-red-500 focus-visible:ring-red-500' : ''}
+            />
+            {fieldErrors.email && <p className="text-sm text-red-600" role="alert">{fieldErrors.email}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Mot de passe</Label>
@@ -100,20 +162,27 @@ export function AuthForm({ mode }: { mode: Mode }) {
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              className={fieldErrors.password ? 'border-red-500 focus-visible:ring-red-500' : ''}
             />
+            {fieldErrors.password && <p className="text-sm text-red-600" role="alert">{fieldErrors.password}</p>}
           </div>
           {mode === 'register' && (
             <div className="space-y-2">
               <Label htmlFor="role">Rôle</Label>
               <select
                 id="role"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={`h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${
+                  fieldErrors.role
+                    ? 'border-red-500 focus-visible:ring-red-500'
+                    : 'border-input bg-background focus-visible:ring-ring'
+                }`}
                 value={role}
                 onChange={(e) => setRole(e.target.value as any)}
               >
                 <option value="RIDER">Rider</option>
                 <option value="PRO">Pro</option>
               </select>
+              {fieldErrors.role && <p className="text-sm text-red-600" role="alert">{fieldErrors.role}</p>}
             </div>
           )}
           {mode === 'register' && (
@@ -141,13 +210,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
                 <input
                   id="consentAccepted"
                   type="checkbox"
-                  className="mt-1"
+                  className={`mt-1 ${fieldErrors.consent ? 'border-red-500' : ''}`}
                   checked={consentAccepted}
                   onChange={(e) => setConsentAccepted(e.target.checked)}
                   required
                 />
-                <span>J’ai lu et j’accepte la charte de sécurité et l’avertissement.</span>
+                <span>J'ai lu et j'accepte la charte de sécurité et l'avertissement.</span>
               </label>
+              {fieldErrors.consent && <p className="text-sm text-red-600 mt-2" role="alert">{fieldErrors.consent}</p>}
             </div>
           )}
           {mode === 'login' && loginConsentNeeded && (

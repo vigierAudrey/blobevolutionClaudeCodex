@@ -28,6 +28,30 @@ function LocationInner() {
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [saveDefault, setSaveDefault] = useState<boolean>(false);
+  const [user, setUser] = useState<any>(null);
+
+  // Vérifier le rôle utilisateur
+  useEffect(() => {
+    (async () => {
+      try {
+        const tokens = apiClient.getTokens();
+        if (!tokens?.accessToken) {
+          router.replace('/login');
+          return;
+        }
+
+        const currentUser = await apiClient.me();
+        setUser(currentUser);
+
+        if (currentUser.role === 'PRO') {
+          router.replace('/pro/dashboard');
+          return;
+        }
+      } catch {
+        router.replace('/login');
+      }
+    })();
+  }, [router]);
 
   useEffect(() => {
     const qsSport = (sp.get('sport') as Sport | null) || (localStorage.getItem(SPORT_KEY) as Sport | null);
@@ -45,7 +69,9 @@ function LocationInner() {
   }, [sp]);
 
   useEffect(() => {
-    if (sport && level) return; const t=setTimeout(()=>router.replace('/matching'),0); return ()=>clearTimeout(t);
+    if (sport && level) return;
+    const t = setTimeout(() => router.replace('/matching'), 0);
+    return () => clearTimeout(t);
   }, [router, sport, level]);
 
   const saveAndNext = async () => {

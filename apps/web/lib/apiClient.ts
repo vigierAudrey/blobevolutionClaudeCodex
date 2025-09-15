@@ -38,7 +38,12 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false) {
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) {
     const message = data?.error || `HTTP ${res.status}`;
-    throw new Error(message);
+    const error = new Error(message) as any;
+    // Passer les détails de validation s'ils existent
+    if (data?.details) {
+      error.details = data.details;
+    }
+    throw error;
   }
   return data;
 }
@@ -92,6 +97,35 @@ export const apiClient = {
   trashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'trash' }) }, true),
   untrashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'untrash' }) }, true),
   favoriteConversation: (id: string, value: boolean) => request(`/conversations/${id}/favorite`, { method: 'POST', body: JSON.stringify({ value }) }, true),
+
+  // Pro Offers
+  getProOffer: () => request('/pro/offers/me', { method: 'GET' }, true),
+  createOrUpdateProOffer: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced'; title: string; description: string; hourlyRate: number; isActive?: boolean }) =>
+    request('/pro/offers', { method: 'POST', body: JSON.stringify(body) }, true),
+  deleteProOffer: () => request('/pro/offers/me', { method: 'DELETE' }, true),
+  toggleProOffer: () => request('/pro/offers/me/toggle', { method: 'PATCH' }, true),
+
+  searchOffers: (params: { lat?: number; lng?: number; radiusKm?: number; sport?: string; level?: string }) => {
+    const query = new URLSearchParams();
+    if (params.lat) query.append('lat', params.lat.toString());
+    if (params.lng) query.append('lng', params.lng.toString());
+    if (params.radiusKm) query.append('radiusKm', params.radiusKm.toString());
+    if (params.sport) query.append('sport', params.sport);
+    if (params.level) query.append('level', params.level);
+
+    return request(`/pro/offers/search?${query.toString()}`, { method: 'GET' }, true);
+  },
+
+  // Credits
+  getWallet: () => request('/credits/wallet', { method: 'GET' }, true),
+  getTransactions: (params?: { page?: number; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    return request(`/credits/transactions?${query.toString()}`, { method: 'GET' }, true);
+  },
+  claimWelcomeBonus: () => request('/credits/welcome-bonus', { method: 'POST' }, true),
+  canSpend: (amount: number) => request(`/credits/can-spend/${amount}`, { method: 'GET' }, true),
 
   saveTokens: setTokens,
   clearTokens: clearTokens,
