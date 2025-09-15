@@ -16,6 +16,15 @@ const upsertSchema = z.object({
   lng: z.number().min(-180).max(180).optional(),
 });
 
+const offerSchema = z.object({
+  sport: z.enum(['surf', 'kitesurf']),
+  level: z.enum(['beginner', 'intermediate', 'advanced']),
+  title: z.string().min(10).max(200),
+  description: z.string().min(50).max(2000),
+  hourlyRate: z.number().min(10).max(200),
+  isActive: z.boolean().optional().default(true),
+});
+
 proRouter.get('/me', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
@@ -134,6 +143,274 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
 
     return res.json({ items });
   } catch (err) {
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ========== PRO OFFERS ENDPOINTS ==========
+
+// Get my offer
+proRouter.get('/offers/me', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Vérifier que l'utilisateur est bien un PRO
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
+
+    // Récupérer le profil pro et son offre
+    const proProfile = await prisma.proProfile.findUnique({
+      where: { userId },
+      include: { offer: true }
+    });
+
+    if (!proProfile) return res.status(404).json({ error: 'Pro profile not found' });
+
+    return res.json({ offer: proProfile.offer });
+  } catch (err) {
+    console.error('Error fetching pro offer:', err);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Create or update my offer
+proRouter.post('/offers', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Vérifier que l'utilisateur est bien un PRO
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
+
+    // Valider les données
+    const body = offerSchema.parse(req.body);
+
+    // Récupérer le profil pro pour la géolocalisation
+    const proProfile = await prisma.proProfile.findUnique({ where: { userId } });
+    if (!proProfile) return res.status(404).json({ error: 'Pro profile not found' });
+    if (!proProfile.lat || !proProfile.lng) {
+      return res.status(400).json({ error: 'Geolocation required. Please update your pro profile with lat/lng first.' });
+    }
+
+    // Créer ou mettre à jour l'offre (upsert)
+    const offer = await prisma.proOffer.upsert({
+      where: { proProfileId: proProfile.id },
+      create: {
+        proProfileId: proProfile.id,
+        sport: body.sport,
+        level: body.level,
+        title: body.title,
+        description: body.description,
+        hourlyRate: body.hourlyRate,
+        lat: proProfile.lat,
+        lng: proProfile.lng,
+        isActive: body.isActive,
+      },
+      update: {
+        sport: body.sport,
+        level: body.level,
+        title: body.title,
+        description: body.description,
+        hourlyRate: body.hourlyRate,
+        lat: proProfile.lat,
+        lng: proProfile.lng,
+        isActive: body.isActive,
+      },
+    });
+
+    return res.status(201).json(offer);
+  } catch (err: any) {
+    console.error('Error creating/updating pro offer:', err);
+    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Delete my offer
+proRouter.delete('/offers/me', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Vérifier que l'utilisateur est bien un PRO
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
+
+    // Récupérer le profil pro
+    const proProfile = await prisma.proProfile.findUnique({ where: { userId } });
+    if (!proProfile) return res.status(404).json({ error: 'Pro profile not found' });
+
+    // Supprimer l'offre si elle existe
+    const deletedOffer = await prisma.proOffer.deleteMany({
+      where: { proProfileId: proProfile.id }
+    });
+
+    if (deletedOffer.count === 0) {
+      return res.status(404).json({ error: 'No offer found to delete' });
+    }
+
+    return res.status(204).send();
+  } catch (err) {
+    console.error('Error deleting pro offer:', err);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Toggle offer active status
+proRouter.patch('/offers/me/toggle', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Vérifier que l'utilisateur est bien un PRO
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
+
+    // Récupérer le profil pro et son offre
+    const proProfile = await prisma.proProfile.findUnique({
+      where: { userId },
+      include: { offer: true }
+    });
+
+    if (!proProfile?.offer) return res.status(404).json({ error: 'No offer found' });
+
+    // Toggle le statut
+    const updatedOffer = await prisma.proOffer.update({
+      where: { id: proProfile.offer.id },
+      data: { isActive: !proProfile.offer.isActive }
+    });
+
+    return res.json(updatedOffer);
+  } catch (err) {
+    console.error('Error toggling offer status:', err);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ========== OFFERS SEARCH FOR RIDERS ==========
+
+// Search offers near rider location
+proRouter.get('/offers/search', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Paramètres de recherche
+    const radiusKm = Math.max(1, Math.min(200, Number(req.query.radiusKm) || 50));
+    const sport = req.query.sport as string | undefined;
+    const level = req.query.level as string | undefined;
+    const lat = req.query.lat ? Number(req.query.lat) : undefined;
+    const lng = req.query.lng ? Number(req.query.lng) : undefined;
+
+    // Si pas de coordonnées dans la query, essayer de récupérer depuis le profil rider
+    let searchLat = lat;
+    let searchLng = lng;
+
+    if (!searchLat || !searchLng) {
+      const riderProfile = await prisma.riderProfile.findUnique({
+        where: { userId },
+        select: { lat: true, lng: true }
+      });
+
+      if (riderProfile?.lat && riderProfile?.lng) {
+        searchLat = riderProfile.lat;
+        searchLng = riderProfile.lng;
+      }
+    }
+
+    if (!searchLat || !searchLng) {
+      return res.status(400).json({
+        error: 'Geolocation required. Please provide lat/lng in query or update your profile.'
+      });
+    }
+
+    // Construire les filtres
+    const where: any = {
+      isActive: true,
+    };
+
+    if (sport && ['surf', 'kitesurf'].includes(sport)) {
+      where.sport = sport;
+    }
+
+    if (level && ['beginner', 'intermediate', 'advanced'].includes(level)) {
+      where.level = level;
+    }
+
+    // Récupérer toutes les offres actives avec les filtres
+    const offers = await prisma.proOffer.findMany({
+      where,
+      include: {
+        proProfile: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true
+              }
+            }
+          }
+        }
+      },
+      take: 1000 // Limite pour éviter les gros datasets
+    });
+
+    // Fonction de calcul de distance (Haversine)
+    function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
+      const toRad = (d: number) => (d * Math.PI) / 180;
+      const R = 6371; // km
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // Calculer les distances et filtrer par rayon
+    const offersWithDistance = offers
+      .map(offer => {
+        const distance = haversine(searchLat!, searchLng!, offer.lat, offer.lng);
+        return {
+          id: offer.id,
+          sport: offer.sport,
+          level: offer.level,
+          title: offer.title,
+          description: offer.description,
+          hourlyRate: Number(offer.hourlyRate), // Convertir Decimal en number
+          lat: offer.lat,
+          lng: offer.lng,
+          createdAt: offer.createdAt,
+          distanceKm: Math.round(distance * 10) / 10,
+          pro: {
+            id: offer.proProfile.id,
+            userId: offer.proProfile.user.id,
+            businessName: offer.proProfile.businessName,
+            bio: offer.proProfile.bio,
+            photoUrl: offer.proProfile.photoUrl,
+            verified: offer.proProfile.verified,
+          }
+        };
+      })
+      .filter(offer => offer.distanceKm <= radiusKm)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, 50); // Limiter le résultat final
+
+    return res.json({
+      offers: offersWithDistance,
+      total: offersWithDistance.length,
+      searchParams: {
+        lat: searchLat,
+        lng: searchLng,
+        radiusKm,
+        sport,
+        level
+      }
+    });
+
+  } catch (err) {
+    console.error('Error searching offers:', err);
     return res.status(500).json({ error: 'Internal error' });
   }
 });

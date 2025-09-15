@@ -31,15 +31,28 @@ export default function OnboardingPage() {
       router.replace('/login');
       return;
     }
-    Promise.all([
-      apiClient.getProfile().catch((e) => {
-        throw new Error(e?.message || 'Erreur profil');
-      }),
-      apiClient.getDisciplines().catch(() => []),
-    ])
-      .then(([p, d]) => {
-        setProfile(p);
-        setDisciplines(d as any);
+
+    // Vérifier que l'utilisateur est bien un RIDER
+    apiClient.me()
+      .then((user) => {
+        if (user.role === 'PRO') {
+          router.replace('/pro/onboarding');
+          return;
+        }
+
+        return Promise.all([
+          apiClient.getProfile().catch((e) => {
+            throw new Error(e?.message || 'Erreur profil');
+          }),
+          apiClient.getDisciplines().catch(() => []),
+        ]);
+      })
+      .then((result) => {
+        if (result) {
+          const [p, d] = result;
+          setProfile(p);
+          setDisciplines(d as any);
+        }
       })
       .catch((e) => setError(e?.message || 'Erreur'))
       .finally(() => setLoading(false));

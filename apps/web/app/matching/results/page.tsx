@@ -9,6 +9,27 @@ import { Button } from '../../../components/ui/button';
 function ResultsInner() {
   const router = useRouter();
   const sp = useSearchParams();
+
+  // Vérifier le rôle utilisateur
+  useEffect(() => {
+    (async () => {
+      try {
+        const tokens = apiClient.getTokens();
+        if (!tokens?.accessToken) {
+          router.replace('/login');
+          return;
+        }
+
+        const user = await apiClient.me();
+        if (user.role === 'PRO') {
+          router.replace('/pro/dashboard');
+          return;
+        }
+      } catch {
+        router.replace('/login');
+      }
+    })();
+  }, [router]);
   const sport = sp.get('sport') as 'surf' | 'kitesurf' | null;
   const level = sp.get('level') as 'beginner' | 'intermediate' | 'advanced' | null;
   // Partner selection removed from flow; using profile default server-side

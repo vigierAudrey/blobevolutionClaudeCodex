@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { BackBar } from '../../../components/BackBar';
 import { Button } from '../../../components/ui/button';
+import { apiClient } from '../../../lib/apiClient';
 
 type Sport = 'surf' | 'kitesurf';
 type Level = 'beginner' | 'intermediate' | 'advanced';
@@ -22,6 +23,7 @@ const DIST_KEY = 'matching.distanceKm';
 const LAT_KEY = 'matching.lat';
 const LNG_KEY = 'matching.lng';
 const USE_GEO_KEY = 'matching.useGeoloc';
+const LESSON_KEY = 'matching.wantsLesson';
 
 function formatDateISO(d: Date) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -42,6 +44,32 @@ function DateInner() {
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [useGeoloc, setUseGeoloc] = useState<boolean>(false);
+  const [hasInitialized, setHasInitialized] = useState<boolean>(false);
+  const [wantsLesson, setWantsLesson] = useState<boolean>(false);
+  const [user, setUser] = useState<any>(null);
+
+  // Vérifier le rôle utilisateur
+  useEffect(() => {
+    (async () => {
+      try {
+        const tokens = apiClient.getTokens();
+        if (!tokens?.accessToken) {
+          router.replace('/login');
+          return;
+        }
+
+        const currentUser = await apiClient.me();
+        setUser(currentUser);
+
+        if (currentUser.role === 'PRO') {
+          router.replace('/pro/dashboard');
+          return;
+        }
+      } catch {
+        router.replace('/login');
+      }
+    })();
+  }, [router]);
 
   // Init from query/localStorage
   useEffect(() => {
@@ -52,6 +80,7 @@ function DateInner() {
     const qsLat = search.get('lat') || localStorage.getItem(LAT_KEY);
     const qsLng = search.get('lng') || localStorage.getItem(LNG_KEY);
     const qsUseGeoloc = search.get('useGeoloc') || localStorage.getItem(USE_GEO_KEY);
+    const qsLesson = search.get('wantsLesson') || localStorage.getItem(LESSON_KEY);
     setSport(qsSport || null);
     setLevel(qsLevel || null);
     setDateISO(qsDate || null);
@@ -59,15 +88,19 @@ function DateInner() {
     setLat(qsLat ? Number(qsLat) : null);
     setLng(qsLng ? Number(qsLng) : null);
     setUseGeoloc(qsUseGeoloc === '1');
+    setWantsLesson(qsLesson === '1');
+    setHasInitialized(true);
   }, [search]);
 
-  // Guard: if sport/level missing, send back to matching
+  // Guard: if sport/level missing after initial load, send back to matching
   useEffect(() => {
+    // Only check after we've tried to initialize from search params and localStorage
+    if (!hasInitialized) return;
     if (sport && level) return;
-    // minimal delay to avoid flash
-    const t = setTimeout(() => router.replace('/matching'), 0);
-    return () => clearTimeout(t);
-  }, [router, sport, level]);
+
+    // Redirect back to matching if required params are missing
+    router.replace('/matching');
+  }, [router, sport, level, hasInitialized]);
 
   const today = useMemo(() => new Date(), []);
   const tomorrow = useMemo(() => new Date(Date.now() + 24 * 60 * 60 * 1000), []);
@@ -131,13 +164,11 @@ function DateInner() {
 
       <div>
         <h1 className="text-2xl font-semibold">Choisis la date</h1>
-        <p className="text-sm text-muted-foreground">Sélectionne l’un des trois prochains jours.</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">3) Date</CardTitle>
-          <CardDescription>Jour même, lendemain ou surlendemain</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -164,6 +195,47 @@ function DateInner() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">5) Cours avec un professionnel</CardTitle>
+          <CardDescription>Coche si tu souhaites prendre un cours avec un pro pour cette session</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2">
+            <input
+              id="wantsLesson"
+              type="checkbox"
+              checked={wantsLesson}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setWantsLesson(checked);
+                try {
+                  localStorage.setItem(LESSON_KEY, checked ? '1' : '0');
+                } catch {}
+                const url = new URL(window.location.href);
+                if (checked) {
+                  url.searchParams.set('wantsLesson', '1');
+                } else {
+                  url.searchParams.delete('wantsLesson');
+                }
+                window.history.replaceState(null, '', url.toString());
+              }}
+            />
+            <label htmlFor="wantsLesson" className="flex items-center gap-1 text-sm">
+              <span>🎓</span>
+              Je veux un cours avec un professionnel
+            </label>
+          </div>
+          {wantsLesson && (
+            <div className="mt-3 p-3 bg-blue-50 rounded-md">
+              <p className="text-xs text-blue-700">
+                Les professionnels à proximité verront ta demande et pourront te proposer un cours pour la date sélectionnée.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">4) Géolocalisation (optionnel)</CardTitle>
           <CardDescription>Active la case pour utiliser ta position et un rayon</CardDescription>
         </CardHeader>
@@ -181,7 +253,10 @@ function DateInner() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label htmlFor="distance">Distance maximale (km)</label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="distance">Distance maximale (km)</label>
+                  <span className="text-sm font-medium text-primary">{distanceKm ?? 20} km</span>
+                </div>
                 <div className="flex items-center gap-3">
                   <input id="distance" type="range" min={5} max={200} step={5} value={distanceKm ?? 20} onChange={(e)=>{ const v=Number(e.target.value); setDistanceKm(v); try{ localStorage.setItem(DIST_KEY, String(v)); }catch{}; if(useGeoloc){ const url=new URL(window.location.href); url.searchParams.set('distanceKm', String(v)); window.history.replaceState(null,'',url.toString()); } }} className="w-full"/>
                   <Button variant="outline" onClick={()=>{ const v=20; setDistanceKm(v); try{ localStorage.setItem(DIST_KEY, String(v)); }catch{}; if(useGeoloc){ const url=new URL(window.location.href); url.searchParams.set('distanceKm', String(v)); window.history.replaceState(null,'',url.toString()); } }}>Reset 20km</Button>
@@ -198,6 +273,7 @@ function DateInner() {
                 if (sport) u.searchParams.set('sport', sport);
                 if (level) u.searchParams.set('level', level);
                 if (dateISO) u.searchParams.set('date', dateISO);
+                if (wantsLesson) u.searchParams.set('wantsLesson', '1');
                 if (useGeoloc) {
                   u.searchParams.set('useGeoloc', '1');
                   if (distanceKm != null) u.searchParams.set('distanceKm', String(distanceKm));

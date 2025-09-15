@@ -39,6 +39,8 @@ model User {
   matchesB         Match[]         @relation("UserTwo")
   conversationMembers ConversationMember[]
   messages         Message[]
+  wallet           UserWallet?
+  creditTransactions CreditTransaction[]
 }
 
 model Session {
@@ -165,6 +167,8 @@ model ProProfile {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  offer          ProOffer?
+
   @@index([userId])
 }
 
@@ -267,4 +271,72 @@ model Message {
   readAt         DateTime?
 
   @@index([conversationId, createdAt])
+}
+
+enum Sport {
+  surf
+  kitesurf
+}
+
+enum Level {
+  beginner
+  intermediate
+  advanced
+}
+
+model ProOffer {
+  id             String   @id @default(uuid())
+  proProfileId   String   @unique
+  proProfile     ProProfile @relation(fields: [proProfileId], references: [id], onDelete: Cascade)
+  sport          Sport
+  level          Level
+  title          String
+  description    String
+  hourlyRate     Decimal  @db.Decimal(5,2)
+  lat            Float    @db.DoublePrecision
+  lng            Float    @db.DoublePrecision
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([sport, level])
+  @@index([lat, lng])
+  @@index([isActive])
+}
+
+enum CreditTransactionType {
+  WELCOME_BONUS      // Bonus de bienvenue
+  ADMIN_GRANT        // Crédit offert par admin
+  LESSON_BOOKING     // Réservation de cours
+  LESSON_REFUND      // Remboursement de cours
+  PROMO_BONUS        // Bonus promotionnel
+  REFERRAL_BONUS     // Bonus de parrainage
+}
+
+model UserWallet {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance       Decimal  @default(0) @db.Decimal(10,2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model CreditTransaction {
+  id            String                 @id @default(uuid())
+  userId        String
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          CreditTransactionType
+  amount        Decimal                @db.Decimal(10,2)
+  balanceBefore Decimal                @db.Decimal(10,2)
+  balanceAfter  Decimal                @db.Decimal(10,2)
+  description   String?
+  metadata      Json?                  // Données supplémentaires (ex: offerId pour LESSON_BOOKING)
+  createdAt     DateTime               @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([type])
 }

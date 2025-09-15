@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { BackBar } from '../../components/BackBar';
 import { Button } from '../../components/ui/button';
 import { apiClient } from '../../lib/apiClient';
-import { useToast } from '../../components/ui/toast';
 
 type Sport = 'surf' | 'kitesurf';
 type Level = 'beginner' | 'intermediate' | 'advanced';
@@ -16,17 +15,30 @@ const LEVEL_KEY = 'matching.level';
 
 export default function MatchingPage() {
   const router = useRouter();
-  const toast = useToast();
-  const [surfSelected, setSurfSelected] = useState<boolean>(false);
-  const [kiteSelected, setKiteSelected] = useState<boolean>(false);
   const [surfLevel, setSurfLevel] = useState<Level | ''>('');
   const [kiteLevel, setKiteLevel] = useState<Level | ''>('');
   const [chosenSport, setChosenSport] = useState<Sport | null>(null);
-  const [wantsLesson, setWantsLesson] = useState<boolean>(false);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
     (async () => {
       try {
+        // Vérifier le rôle de l'utilisateur
+        const tokens = apiClient.getTokens();
+        if (!tokens?.accessToken) {
+          router.replace('/login');
+          return;
+        }
+
+        const currentUser = await apiClient.me();
+        setUser(currentUser);
+
+        // Rediriger les PRO vers leur dashboard
+        if (currentUser.role === 'PRO') {
+          router.replace('/pro/dashboard');
+          return;
+        }
+
         // Prefill from URL/localStorage
         const url = new URL(window.location.href);
         const qsSport = url.searchParams.get('sport') as Sport | null;
@@ -37,12 +49,10 @@ export default function MatchingPage() {
         const effLevel = (qsLevel || lsLevel) as Level | null;
 
         if (effSport === 'surf') {
-          setSurfSelected(true);
           setChosenSport('surf');
           if (effLevel) setSurfLevel(effLevel);
         }
         if (effSport === 'kitesurf') {
-          setKiteSelected(true);
           setChosenSport('kitesurf');
           if (effLevel) setKiteLevel(effLevel);
         }
@@ -54,33 +64,30 @@ export default function MatchingPage() {
           const kite = discs.find(d => d.sport === 'kitesurf');
 
           if (surf) {
-            setSurfSelected(true);
             setSurfLevel(surf.level as any);
             if (!kite) setChosenSport('surf');
           }
           if (kite) {
-            setKiteSelected(true);
             setKiteLevel(kite.level as any);
             if (!surf) setChosenSport('kitesurf');
           }
 
           // Don't auto-redirect - let user choose explicitly to avoid infinite loops
         }
-      } catch {}
+      } catch (error) {
+        console.error('Error in useEffect:', error);
+        router.replace('/login');
+      }
     })();
-  }, []); // Remove problematic dependencies to prevent infinite loop
+  }, [router]); // Remove problematic dependencies to prevent infinite loop
 
   const selectSport = (s: Sport) => {
     // Directly set the chosen sport and activate it
     setChosenSport(s);
     if (s === 'surf') {
-      setSurfSelected(true);
-      setKiteSelected(false);
       if (!surfLevel) setSurfLevel('beginner');
       setKiteLevel(''); // Clear kite level when surf is selected
     } else {
-      setKiteSelected(true);
-      setSurfSelected(false);
       if (!kiteLevel) setKiteLevel('beginner');
       setSurfLevel(''); // Clear surf level when kite is selected
     }
@@ -100,9 +107,8 @@ export default function MatchingPage() {
     if (!chosenSport) return 'Aucun sport sélectionné';
     const level = chosenSport === 'surf' ? surfLevel : kiteLevel;
     const levelText = level ? levelLabels[level as Level] : 'niveau non choisi';
-    const lessonIcon = wantsLesson ? ' 🎓' : '';
-    return `${chosenSport === 'surf' ? 'Surf' : 'Kitesurf'} - ${levelText}${lessonIcon}`;
-  }, [chosenSport, surfLevel, kiteLevel, wantsLesson]);
+    return `${chosenSport === 'surf' ? 'Surf' : 'Kitesurf'} - ${levelText}`;
+  }, [chosenSport, surfLevel, kiteLevel]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -139,31 +145,6 @@ export default function MatchingPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Options pour cette session</CardTitle>
-          <CardDescription>Coche si tu souhaites un cours avec un pro pour cette session.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2 text-sm">
-            <input id="wantsLesson" type="checkbox" checked={wantsLesson} onChange={async (e)=>{
-              const checked = e.target.checked;
-              setWantsLesson(checked);
-              try {
-                const sport = chosenSport || 'surf';
-                await apiClient.updateProfile({ wantsLesson: checked, lessonSport: sport });
-                toast(checked ? 'Demande de cours activée' : 'Demande de cours désactivée', 'success');
-              } catch (err: any) {
-                toast(err?.message || 'Erreur mise à jour', 'error');
-              }
-            }} />
-            <label htmlFor="wantsLesson" className="flex items-center gap-1">
-              <span>🎓</span>
-              Je veux un cours avec un pro
-            </label>
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -172,17 +153,17 @@ export default function MatchingPage() {
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => { setSurfSelected(false); setKiteSelected(false); setSurfLevel(''); setKiteLevel(''); setChosenSport(null); try { localStorage.removeItem(SPORT_KEY); localStorage.removeItem(LEVEL_KEY); } catch {} }}>Changer de sport</Button>
+            <Button variant="outline" onClick={() => { setSurfLevel(''); setKiteLevel(''); setChosenSport(null); try { localStorage.removeItem(SPORT_KEY); localStorage.removeItem(LEVEL_KEY); } catch {} }}>Changer de sport</Button>
             <Button disabled={!canContinue} onClick={() => {
               console.log('Continuer clicked:', { canContinue, chosenSport, surfLevel, kiteLevel });
               if (chosenSport === 'surf') {
                 console.log('Navigating to surf page...');
                 try { localStorage.setItem(SPORT_KEY, 'surf'); localStorage.setItem(LEVEL_KEY, (surfLevel || 'beginner') as string); } catch {}
-                window.location.href = `/matching/date?sport=surf&level=${surfLevel || 'beginner'}`;
+                router.push(`/matching/date?sport=surf&level=${surfLevel || 'beginner'}`);
               } else if (chosenSport === 'kitesurf') {
                 console.log('Navigating to kitesurf page...');
                 try { localStorage.setItem(SPORT_KEY, 'kitesurf'); localStorage.setItem(LEVEL_KEY, (kiteLevel || 'beginner') as string); } catch {}
-                window.location.href = `/matching/date?sport=kitesurf&level=${kiteLevel || 'beginner'}`;
+                router.push(`/matching/date?sport=kitesurf&level=${kiteLevel || 'beginner'}`);
               } else {
                 console.log('No sport selected');
               }
