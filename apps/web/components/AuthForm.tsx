@@ -14,7 +14,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'RIDER' | 'PRO'>('RIDER');
+  const [role, setRole] = useState<'RIDER' | 'PRO' | 'ADMIN'>('RIDER');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -85,6 +85,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
           const user = await apiClient.me();
           if (user.role === 'PRO') {
             router.push('/pro/onboarding'); // Les pros vont sur leur onboarding spécifique
+          } else if (user.role === 'ADMIN') {
+            router.push('/admin/dashboard'); // Les admins vont sur leur dashboard
           } else {
             router.push('/onboarding'); // Les riders vont sur l'onboarding rider
           }
@@ -181,6 +183,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
               >
                 <option value="RIDER">Rider</option>
                 <option value="PRO">Pro</option>
+                <option value="ADMIN">Admin</option>
               </select>
               {fieldErrors.role && <p className="text-sm text-red-600" role="alert">{fieldErrors.role}</p>}
             </div>

@@ -403,11 +403,11 @@ export default function OffersPage() {
             )}
 
             {offers.map((offer) => (
-              <Card key={offer.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
+              <Card key={offer.id} className="hover:shadow-md transition-shadow overflow-hidden">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex flex-col sm:flex-row items-start gap-4">
+                    <div className="flex-1 min-w-0 w-full">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
                           {sportLabels[offer.sport]}
                         </span>
@@ -422,33 +422,40 @@ export default function OffersPage() {
                         )}
                       </div>
 
-                      <h3 className="text-lg font-semibold mb-2">{offer.title}</h3>
+                      <h3 className="text-lg font-semibold mb-2 break-words">{offer.title}</h3>
 
-                      <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
+                      <p className="text-muted-foreground text-sm mb-3 overflow-hidden break-words hyphens-auto"
+                         style={{
+                           display: '-webkit-box',
+                           WebkitLineClamp: 2,
+                           WebkitBoxOrient: 'vertical',
+                           lineHeight: '1.4',
+                           maxHeight: '2.8em'
+                         }}>
                         {offer.description}
                       </p>
 
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-3">
                         <div className="flex items-center gap-1">
                           <MapPin size={14} />
-                          À {offer.distanceKm} km
+                          <span>À {offer.distanceKm} km</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <Euro size={14} />
-                          {offer.hourlyRate}€/heure
+                          <span>{offer.hourlyRate}€/heure</span>
                         </div>
                         {offer.pro.businessName && (
                           <div className="flex items-center gap-1">
-                            <span>par {offer.pro.businessName}</span>
+                            <span className="break-words">par {offer.pro.businessName}</span>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2 ml-4">
+                    <div className="flex flex-col gap-2 w-full sm:w-auto">
                       <Button
                         onClick={() => contactPro(offer.pro.userId)}
-                        className="inline-flex items-center gap-1"
+                        className="inline-flex items-center justify-center gap-1 w-full sm:w-auto"
                       >
                         Contacter
                         <ChevronRight size={14} />

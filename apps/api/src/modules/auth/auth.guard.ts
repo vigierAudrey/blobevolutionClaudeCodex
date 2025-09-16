@@ -38,3 +38,8 @@ export async function requireVerifiedEmail(req: Request, res: Response, next: Ne
     return res.status(500).json({ error: 'Internal error' });
   }
 }
+
+// Helper pour les middlewares admin
+export const requireAdmin = requireRole('ADMIN');
+export const requirePro = requireRole('PRO');
+export const requireRider = requireRole('RIDER');

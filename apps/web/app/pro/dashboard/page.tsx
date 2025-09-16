@@ -5,7 +5,7 @@ import { apiClient } from '../../../lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
-import { User, Map, CreditCard, Percent, Info, LogOut, BookOpen } from 'lucide-react';
+import { User, Map, CreditCard, Percent, Info, LogOut, BookOpen, MessageSquare, Network } from 'lucide-react';
 
 export default function ProDashboardPage() {
   const router = useRouter();
@@ -97,11 +97,25 @@ export default function ProDashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><BookOpen size={18}/> Réservations</CardTitle>
-            <CardDescription>Voir les demandes de cours</CardDescription>
+            <CardTitle className="flex items-center gap-2"><MessageSquare size={18}/> Messages</CardTitle>
+            <CardDescription>Communiquer avec vos élèves et collègues</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button className="w-full" variant="outline" disabled>En préparation</Button>
+            <Link href="/pro/messages" className="inline-block w-full">
+              <Button className="w-full">Voir mes conversations</Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Network size={18}/> Réseau Pro</CardTitle>
+            <CardDescription>Découvrir et contacter d'autres professionnels</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/pro/network" className="inline-block w-full">
+              <Button className="w-full" variant="secondary">Explorer le réseau</Button>
+            </Link>
           </CardContent>
         </Card>
 
@@ -114,6 +128,16 @@ export default function ProDashboardPage() {
             <Link href="/pro/offers" className="inline-block w-full">
               <Button className="w-full">Gérer mon offre</Button>
             </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><BookOpen size={18}/> Réservations</CardTitle>
+            <CardDescription>Voir les demandes de cours</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" variant="outline" disabled>En préparation</Button>
           </CardContent>
         </Card>
 

@@ -11,12 +11,15 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const includeTrashed = String(req.query.includeTrashed || 'false').toLowerCase() === 'true';
+    const convType = req.query.type as string | undefined; // 'RIDER_TO_RIDER' | 'RIDER_TO_PRO'
+
     const convs = await prisma.conversationMember.findMany({
       where: { userId, ...(includeTrashed ? {} : { trashedAt: null }) },
       select: {
         conversation: {
           select: {
             id: true,
+            type: true,
             updatedAt: true,
             match: {
               select: { userOneId: true, userTwoId: true },
@@ -32,15 +35,46 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
         lastReadAt: true,
         trashedAt: true,
         favoritedAt: true,
+        blockedAt: true,
       },
       orderBy: { conversation: { updatedAt: 'desc' } },
     });
+
+    // Filter by conversation type if specified
+    const filteredConvs = convType ? convs.filter(cm => cm.conversation.type === convType) : convs;
+
     // Decorate with other user's displayName and unread count
     const results = [] as any[];
-    for (const cm of convs) {
+    for (const cm of filteredConvs) {
       const conv = cm.conversation;
       const otherId = conv.members.find((m) => m.userId !== userId)?.userId;
-      const otherProfile = otherId ? await prisma.riderProfile.findUnique({ where: { userId: otherId }, select: { displayName: true } }) : null;
+
+      // Get the appropriate profile based on conversation type
+      let otherDisplayName = 'Profil';
+      let otherRole = 'RIDER';
+
+      if (otherId) {
+        const otherUser = await prisma.user.findUnique({
+          where: { id: otherId },
+          select: { role: true }
+        });
+        otherRole = otherUser?.role || 'RIDER';
+
+        if (otherRole === 'PRO') {
+          const proProfile = await prisma.proProfile.findUnique({
+            where: { userId: otherId },
+            select: { businessName: true }
+          });
+          otherDisplayName = proProfile?.businessName || 'Professionnel';
+        } else {
+          const riderProfile = await prisma.riderProfile.findUnique({
+            where: { userId: otherId },
+            select: { displayName: true }
+          });
+          otherDisplayName = riderProfile?.displayName || 'Rider';
+        }
+      }
+
       const unread = await prisma.message.count({
         where: {
           conversationId: conv.id,
@@ -48,18 +82,23 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
           createdAt: cm.lastReadAt ? { gt: cm.lastReadAt } : undefined,
         },
       });
+
       results.push({
         id: conv.id,
-        otherDisplayName: otherProfile?.displayName ?? 'Profil',
+        type: conv.type,
+        otherDisplayName,
+        otherRole,
         lastMessage: conv.messages[0]?.content ?? '',
         lastAt: conv.messages[0]?.createdAt ?? conv.updatedAt,
         unread,
         trashed: !!cm.trashedAt,
         favorite: !!cm.favoritedAt,
+        blocked: !!cm.blockedAt,
       });
     }
     return res.json({ items: results });
   } catch (e) {
+    console.error('Conversations list error:', e);
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -123,8 +162,10 @@ conversationsRouter.post('/:id/block', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     const id = req.params.id;
-    await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId: id, userId } as any }, data: { blockedAt: new Date() } });
-    return res.json({ ok: true });
+    const action = String((req.body?.action || 'block')).toLowerCase();
+    const blockedAt = action === 'unblock' ? null : new Date();
+    await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId: id, userId } as any }, data: { blockedAt } });
+    return res.json({ ok: true, blocked: action === 'block' });
   } catch { return res.status(500).json({ error: 'Internal error' }); }
 });
 
@@ -163,6 +204,33 @@ conversationsRouter.post('/open', requireAuth, async (req, res) => {
     if (!meId) return res.status(401).json({ error: 'Unauthorized' });
     const body = z.object({ targetUserId: z.string().uuid() }).parse(req.body);
 
+    // Determine conversation type based on target user's role
+    const targetUser = await prisma.user.findUnique({
+      where: { id: body.targetUserId },
+      select: { role: true }
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Target user not found' });
+    }
+
+    // Déterminer le type de conversation selon les rôles
+    const currentUser = await prisma.user.findUnique({
+      where: { id: meId },
+      select: { role: true }
+    });
+
+    let conversationType: string;
+    if (currentUser?.role === 'PRO' && targetUser.role === 'PRO') {
+      conversationType = 'PRO_TO_PRO';
+    } else if (currentUser?.role === 'RIDER' && targetUser.role === 'PRO') {
+      conversationType = 'RIDER_TO_PRO';
+    } else if (currentUser?.role === 'PRO' && targetUser.role === 'RIDER') {
+      conversationType = 'RIDER_TO_PRO'; // Même type car c'est la communication rider/pro
+    } else {
+      conversationType = 'RIDER_TO_RIDER';
+    }
+
     const myMemberships = await prisma.conversationMember.findMany({
       where: { userId: meId },
       select: { conversationId: true },
@@ -177,7 +245,11 @@ conversationsRouter.post('/open', requireAuth, async (req, res) => {
       if (exists) return res.status(200).json({ id: exists.conversationId });
     }
 
-    const conv = await prisma.conversation.create({ data: {} });
+    const conv = await prisma.conversation.create({
+      data: {
+        type: conversationType as any
+      }
+    });
     await prisma.conversationMember.createMany({
       data: [
         { conversationId: conv.id, userId: meId },
