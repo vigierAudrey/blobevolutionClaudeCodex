@@ -1,19 +1,40 @@
 "use client";
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail } from 'lucide-react';
+import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, Briefcase, Shield, ShieldOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { apiClient } from '../../lib/apiClient';
 
+type ConversationItem = {
+  id: string;
+  type: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO';
+  otherDisplayName: string;
+  otherRole: 'RIDER' | 'PRO';
+  lastMessage: string;
+  lastAt: string;
+  unread: number;
+  trashed?: boolean;
+  favorite?: boolean;
+  blocked?: boolean;
+};
+
 export default function MessagesPage() {
-  const [items, setItems] = useState<Array<{ id: string; otherDisplayName: string; lastMessage: string; lastAt: string; unread: number; trashed?: boolean; favorite?: boolean }>>([]);
+  const [items, setItems] = useState<ConversationItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'ALL'|'FAVORITES'|'UNREAD'|'TRASH'>('ALL');
+  const [filter, setFilter] = useState<'ALL'|'FAVORITES'|'UNREAD'|'TRASH'|'RIDERS'|'PROS'>('ALL');
 
   const load = async () => {
     try {
-      const data = await apiClient.listConversations({ includeTrashed: filter === 'TRASH' });
+      const opts: { includeTrashed?: boolean; type?: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' } = {
+        includeTrashed: filter === 'TRASH'
+      };
+
+      // Filter by conversation type if needed
+      if (filter === 'RIDERS') opts.type = 'RIDER_TO_RIDER';
+      if (filter === 'PROS') opts.type = 'RIDER_TO_PRO';
+
+      const data = await apiClient.listConversations(opts);
       setItems(data.items || []);
     } catch (e: any) { setError(e?.message || 'Erreur'); }
   };
@@ -25,13 +46,17 @@ export default function MessagesPage() {
     const fav = items.filter(it => !it.trashed && it.favorite).length;
     const unread = items.filter(it => !it.trashed && it.unread > 0).length;
     const trash = items.filter(it => it.trashed).length;
-    return { all, fav, unread, trash };
+    const riders = items.filter(it => !it.trashed && it.type === 'RIDER_TO_RIDER').length;
+    const pros = items.filter(it => !it.trashed && it.type === 'RIDER_TO_PRO').length;
+    return { all, fav, unread, trash, riders, pros };
   }, [items]);
 
   const visible = useMemo(() => {
     if (filter === 'ALL') return items.filter(i => !i.trashed);
     if (filter === 'FAVORITES') return items.filter(i => !i.trashed && i.favorite);
     if (filter === 'UNREAD') return items.filter(i => !i.trashed && i.unread > 0);
+    if (filter === 'RIDERS') return items.filter(i => !i.trashed && i.type === 'RIDER_TO_RIDER');
+    if (filter === 'PROS') return items.filter(i => !i.trashed && i.type === 'RIDER_TO_PRO');
     return items.filter(i => i.trashed);
   }, [items, filter]);
 
@@ -50,19 +75,32 @@ export default function MessagesPage() {
         </CardHeader>
         <CardContent>
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="mb-3 flex items-center gap-2 text-xs">
-            <button onClick={()=>setFilter('ALL')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='ALL'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
-              <Inbox size={14}/> Tous {counts.all>0?`(${counts.all})`:''}
-            </button>
-            <button onClick={()=>setFilter('FAVORITES')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='FAVORITES'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
-              <Heart size={14}/> Favoris {counts.fav>0?`(${counts.fav})`:''}
-            </button>
-            <button onClick={()=>setFilter('UNREAD')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='UNREAD'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
-              <Mail size={14}/> Non lus {counts.unread>0?`(${counts.unread})`:''}
-            </button>
-            <button onClick={()=>setFilter('TRASH')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='TRASH'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
-              <Trash size={14}/> Corbeille {counts.trash>0?`(${counts.trash})`:''}
-            </button>
+          <div className="mb-4 space-y-3">
+            <div className="flex items-center gap-2 text-xs">
+              <button onClick={()=>setFilter('ALL')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='ALL'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
+                <Inbox size={14}/> Tous {counts.all>0?`(${counts.all})`:''}
+              </button>
+              <button onClick={()=>setFilter('FAVORITES')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='FAVORITES'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
+                <Heart size={14}/> Favoris {counts.fav>0?`(${counts.fav})`:''}
+              </button>
+              <button onClick={()=>setFilter('UNREAD')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='UNREAD'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
+                <Mail size={14}/> Non lus {counts.unread>0?`(${counts.unread})`:''}
+              </button>
+              <button onClick={()=>setFilter('TRASH')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='TRASH'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
+                <Trash size={14}/> Corbeille {counts.trash>0?`(${counts.trash})`:''}
+              </button>
+            </div>
+
+            {/* Séparation par type de conversation */}
+            <div className="flex items-center gap-2 text-xs border-t pt-3">
+              <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Par type :</span>
+              <button onClick={()=>setFilter('RIDERS')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='RIDERS'?'border-blue-500 text-blue-600 bg-blue-50':'border-input text-muted-foreground'}`}>
+                <Users size={14}/> Autres Riders {counts.riders>0?`(${counts.riders})`:''}
+              </button>
+              <button onClick={()=>setFilter('PROS')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='PROS'?'border-green-500 text-green-600 bg-green-50':'border-input text-muted-foreground'}`}>
+                <Briefcase size={14}/> Professionnels {counts.pros>0?`(${counts.pros})`:''}
+              </button>
+            </div>
           </div>
           {visible.length === 0 && <p className="text-sm text-muted-foreground">Aucune conversation.</p>}
           <div className="divide-y">
@@ -71,8 +109,12 @@ export default function MessagesPage() {
                 <Link href={`/messages/${it.id}`} className="flex-1">
                   <div>
                     <div className={(it.unread>0 ? 'font-semibold' : 'font-medium') + " flex items-center gap-2"}>
+                      {it.otherRole === 'PRO' && <Briefcase size={12} className="text-green-600" />}
+                      {it.otherRole === 'RIDER' && <Users size={12} className="text-blue-600" />}
                       {it.otherDisplayName}
                       {it.favorite && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px]"><Star size={10}/> Favori</span>}
+                      {it.blocked && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[10px]"><Shield size={10}/> Bloqué</span>}
+                      {it.otherRole === 'PRO' && <span className="inline-flex items-center rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px]">PRO</span>}
                     </div>
                     <div className={(it.unread>0 ? 'text-foreground' : 'text-muted-foreground') + " text-xs line-clamp-1"}>{it.lastMessage}</div>
                   </div>
@@ -80,7 +122,26 @@ export default function MessagesPage() {
                 <div className="flex items-center gap-2">
                   {filter!=='TRASH' && (
                     <button title={it.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'} onClick={async (e)=>{ e.preventDefault(); await apiClient.favoriteConversation(it.id, !it.favorite); await load(); }}>
-                      {it.favorite ? <Star className="text-amber-500" size={16}/> : <StarOff size={16}/>} 
+                      {it.favorite ? <Star className="text-amber-500" size={16}/> : <StarOff size={16}/>}
+                    </button>
+                  )}
+                  {filter!=='TRASH' && (
+                    <button
+                      title={it.blocked ? 'Débloquer ce contact' : 'Bloquer ce contact'}
+                      onClick={async (e)=>{
+                        e.preventDefault();
+                        if (it.blocked) {
+                          await apiClient.unblockConversation(it.id);
+                        } else {
+                          if (confirm('Êtes-vous sûr de vouloir bloquer ce contact ? Il ne pourra plus vous envoyer de messages.')) {
+                            await apiClient.blockConversation(it.id);
+                          }
+                        }
+                        await load();
+                      }}
+                      className={it.blocked ? 'text-red-600' : 'text-gray-500 hover:text-red-600'}
+                    >
+                      {it.blocked ? <ShieldOff size={16}/> : <Shield size={16}/>}
                     </button>
                   )}
                   {filter!=='TRASH' ? (

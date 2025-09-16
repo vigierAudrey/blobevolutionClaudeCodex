@@ -52,7 +52,7 @@ export const apiClient = {
   login: (body: { email: string; password: string; consentAccepted?: boolean }) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(body) }) as Promise<LoginResponse>,
 
-  register: (body: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted: true }) =>
+  register: (body: { email: string; password: string; role: 'RIDER' | 'PRO' | 'ADMIN'; consentAccepted: true }) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(body) }) as Promise<any>,
 
   me: () => request('/auth/me', { method: 'GET' }, true),
@@ -84,15 +84,19 @@ export const apiClient = {
   reportProfile: (body: { targetProfileId: string; reason?: string }) =>
     request('/reports/profile', { method: 'POST', body: JSON.stringify(body) }, true),
 
-  listConversations: (opts?: { includeTrashed?: boolean }) => {
-    const q = opts?.includeTrashed ? '?includeTrashed=true' : '';
-    return request(`/conversations${q}`, { method: 'GET' }, true);
+  listConversations: (opts?: { includeTrashed?: boolean; type?: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' | 'PRO_TO_PRO' }) => {
+    const params = new URLSearchParams();
+    if (opts?.includeTrashed) params.append('includeTrashed', 'true');
+    if (opts?.type) params.append('type', opts.type);
+    const query = params.toString();
+    return request(`/conversations${query ? `?${query}` : ''}`, { method: 'GET' }, true);
   },
   getMessages: (id: string, cursor?: string, limit: number = 50) =>
     request(`/conversations/${id}/messages${cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=${limit}` : `?limit=${limit}`}`, { method: 'GET' }, true),
   sendMessage: (id: string, body: { type?: 'TEXT'|'PROPOSAL'; content: string; meta?: any }) =>
     request(`/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify(body) }, true),
-  blockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({}) }, true),
+  blockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({ action: 'block' }) }, true),
+  unblockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({ action: 'unblock' }) }, true),
   unmatchConversation: (id: string) => request(`/conversations/${id}/unmatch`, { method: 'POST', body: JSON.stringify({}) }, true),
   trashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'trash' }) }, true),
   untrashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'untrash' }) }, true),
@@ -126,6 +130,26 @@ export const apiClient = {
   },
   claimWelcomeBonus: () => request('/credits/welcome-bonus', { method: 'POST' }, true),
   canSpend: (amount: number) => request(`/credits/can-spend/${amount}`, { method: 'GET' }, true),
+
+  // Admin
+  getAdminStats: () => request('/admin/stats', { method: 'GET' }, true),
+  getAdminUsers: (params?: { page?: number; limit?: number; role?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.role) query.append('role', params.role);
+    return request(`/admin/users?${query.toString()}`, { method: 'GET' }, true);
+  },
+  suspendUser: (userId: string, suspended: boolean) =>
+    request(`/admin/users/${userId}/suspend`, { method: 'PATCH', body: JSON.stringify({ suspended }) }, true),
+  verifyPro: (userId: string, verified: boolean) =>
+    request(`/admin/pros/${userId}/verify`, { method: 'PATCH', body: JSON.stringify({ verified }) }, true),
+  getAdminReports: (params?: { page?: number; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    return request(`/admin/reports?${query.toString()}`, { method: 'GET' }, true);
+  },
 
   saveTokens: setTokens,
   clearTokens: clearTokens,

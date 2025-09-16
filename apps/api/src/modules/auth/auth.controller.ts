@@ -11,7 +11,7 @@ const service = new AuthService();
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(['RIDER', 'PRO']).default('RIDER'),
+  role: z.enum(['RIDER', 'PRO', 'ADMIN']).default('RIDER'),
   consentAccepted: z.literal(true, {
     errorMap: () => ({ message: 'Vous devez accepter la charte et l’avertissement.' }),
   }),
