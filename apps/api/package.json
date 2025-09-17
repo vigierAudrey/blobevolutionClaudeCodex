@@ -11,7 +11,7 @@
     "dev": "tsx watch src/index.ts",
     "clean": "rimraf dist",
     "type-check": "tsc -p tsconfig.json",
-    "test": "jest --config jest.config.ts"
+    "test": "NODE_ENV=test jest --config jest.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.616.0",

@@ -90,11 +90,7 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
     let total = 0;
     let hasMore = false;
     if (criteria.location) {
-      const genderCond = criteria.partnerPref === 'WOMEN'
-        ? Prisma.sql`AND rp."sex" = 'FEMALE'`
-        : criteria.partnerPref === 'MEN'
-          ? Prisma.sql`AND rp."sex" = 'MALE'`
-          : Prisma.empty;
+      const genderCond = Prisma.empty;
 
       const radiusCond = criteria.maxDistanceKm
         ? Prisma.sql`
@@ -143,7 +139,7 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
         Prisma.sql`
           SELECT rp."id", rp."displayName", rp."sex", rd."sport", rd."level", rp."wantsLesson", rp."lessonSport",
                  CASE
-                   WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_DistanceSphere(
+                   WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_Distance(
                      ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
                      ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
                    )
