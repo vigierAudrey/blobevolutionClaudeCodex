@@ -145,7 +145,15 @@ export default function ProMapPage() {
               </div>
               <MapComponent
                 center={center}
-                items={items}
+                items={items.map((item: any) => ({ ...item, type: 'rider' as const }))}
+                legend={[
+                  { label: 'Votre position', color: '#0ea5e9' },
+                  { label: 'Demandes de riders', color: '#16a34a' },
+                ]}
+                centerMarker={{
+                  label: 'Vous êtes ici',
+                  description: `Rayon de ${radiusKm} km`,
+                }}
                 onContactClick={async (userId: string) => {
                   try {
                     const r = await apiClient.openConversation(userId);

@@ -38,6 +38,9 @@ model User {
   wallet                  UserWallet?
   contactRequests         ContactRequest[]         @relation("ProContactRequests")
   contactResponses        ContactRequestResponse[] @relation("RiderContactResponses")
+  proAvailabilities       ProAvailability[]        @relation("ProAvailabilityOnUser")
+  bookingRequests         BookingRequest[]         @relation("BookingRequestOnUser")
+  bookings                Booking[]                @relation("BookingOnUser")
 }
 
 model Session {
@@ -137,7 +140,7 @@ model ProProfile {
   verified     Boolean    @default(false)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  offers       ProOffer[]
+  offers          ProOffer[]
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -195,6 +198,81 @@ model ProfileReport {
 
   @@index([reporterUserId])
   @@index([reportedProfileId])
+}
+
+model ProAvailability {
+  id           String        @id @default(uuid())
+  proUserId    String
+  sport        Sport
+  levels       String[]
+  startAt      DateTime
+  endAt        DateTime
+  capacity     Int           @default(1)
+  bookedCount  Int           @default(0)
+  status       AvailabilityStatus @default(OPEN)
+  spotName     String?
+  spotLat      Float?
+  spotLng      Float?
+  price        Decimal?      @db.Decimal(8, 2)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  bookings     Booking[]     @relation("BookingOnAvailability")
+  requests     BookingRequest[] @relation("BookingRequestOnAvailability")
+  pro          User          @relation("ProAvailabilityOnUser", fields: [proUserId], references: [id], onDelete: Cascade)
+
+  @@index([proUserId])
+  @@index([sport])
+  @@index([startAt])
+  @@unique([proUserId, startAt, endAt])
+}
+
+model BookingRequest {
+  id              String              @id @default(uuid())
+  riderUserId     String
+  availabilityId  String
+  message         String?
+  status          BookingRequestStatus @default(PENDING)
+  respondedAt     DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  rider           User                @relation("BookingRequestOnUser", fields: [riderUserId], references: [id], onDelete: Cascade)
+  availability    ProAvailability     @relation("BookingRequestOnAvailability", fields: [availabilityId], references: [id], onDelete: Cascade)
+
+  @@index([riderUserId])
+  @@index([availabilityId])
+  @@unique([riderUserId, availabilityId, status])
+}
+
+model Booking {
+  id             String          @id @default(uuid())
+  availabilityId String
+  riderUserId    String
+  status         BookingStatus   @default(CONFIRMED)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  availability   ProAvailability @relation("BookingOnAvailability", fields: [availabilityId], references: [id], onDelete: Cascade)
+  rider          User            @relation("BookingOnUser", fields: [riderUserId], references: [id], onDelete: Cascade)
+
+  @@index([availabilityId])
+  @@index([riderUserId])
+  @@unique([availabilityId, riderUserId])
+}
+
+enum AvailabilityStatus {
+  OPEN
+  CLOSED
+}
+
+enum BookingRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED_RIDER
+  CANCELLED_PRO
 }
 
 model Match {

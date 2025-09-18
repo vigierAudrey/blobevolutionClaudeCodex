@@ -1,3 +1,13 @@
+import type {
+  BookingAvailability,
+  BookingRequestInboxItem,
+  CreateBookingAvailabilityPayload,
+  AvailabilityLevel,
+  AvailabilitySport,
+  AvailabilityStatus,
+  RiderBookingRequest,
+} from './types/booking';
+
 export type LoginResponse = { accessToken: string; refreshToken: string };
 
 export type AdminAnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
@@ -137,6 +147,19 @@ export interface AdminBehaviorAnalytics {
   };
 }
 
+export interface AdminMatchingTTFM {
+  period: AdminAnalyticsPeriod;
+  sampleSize: number;
+  averageDays: number;
+  medianDays: number;
+  p90Days: number;
+  buckets: Array<{ label: string; count: number }>;
+  newRidersInPeriod: number;
+  ridersWithoutMatch: number;
+  periodGranularity: 'day' | 'week' | 'month';
+  timeline: Array<{ period: string; averageDays: number; count: number }>;
+}
+
 export type ModerationAction = 'approve' | 'dismiss' | 'ban';
 
 export interface AdminModerationResponse {
@@ -204,6 +227,75 @@ export interface AdminUserDetail {
     sessionsCount: number;
   };
 }
+
+export interface BookingAvailabilityResult {
+  id: string;
+  pro: {
+    userId: string;
+    email: string;
+    businessName: string | null;
+  };
+  sport: 'surf' | 'kitesurf';
+  levels: string[];
+  startAt: string;
+  endAt: string;
+  capacity: number;
+  bookedCount: number;
+  spotName: string | null;
+  spotLat: number | null;
+  spotLng: number | null;
+  distanceKm: number | null;
+  riders: Array<{ id: string; displayName: string; avatarUrl: string | null }>;
+}
+
+type BookingRequestInboxApiItem = {
+  id: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  message?: string | null;
+  createdAt: string;
+  respondedAt?: string | null;
+  availability: {
+    id: string;
+    startAt: string;
+    endAt: string;
+    spotName: string | null;
+    sport: AvailabilitySport;
+    levels: AvailabilityLevel[];
+    capacity: number;
+    bookedCount: number;
+    status: AvailabilityStatus;
+  };
+  rider: {
+    id: string;
+    email: string;
+    riderProfile?: {
+      displayName?: string | null;
+      photoUrl?: string | null;
+    } | null;
+  };
+};
+
+type BookingRequestMeApiItem = {
+  id: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  message?: string | null;
+  createdAt: string;
+  respondedAt?: string | null;
+  availability: {
+    id: string;
+    sport: AvailabilitySport;
+    levels: AvailabilityLevel[];
+    spotName: string | null;
+    startAt: string;
+    endAt: string;
+    pro: {
+      email: string;
+      proProfile?: {
+        businessName?: string | null;
+      } | null;
+    };
+  };
+};
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -376,6 +468,95 @@ export const apiClient = {
   getBehaviorAnalytics: (period?: AdminAnalyticsPeriod) => {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/behavior${query}`, { method: 'GET' }, true) as Promise<AdminBehaviorAnalytics>;
+  },
+  getMatchingTTFMAnalytics: (period?: AdminAnalyticsPeriod) => {
+    const query = period ? `?period=${period}` : '';
+    return request(`/admin/analytics/matching/ttfm${query}`, { method: 'GET' }, true) as Promise<AdminMatchingTTFM>;
+  },
+  searchBookingAvailability: (params: {
+    sport: 'surf' | 'kitesurf';
+    level: 'beginner' | 'intermediate' | 'advanced';
+    lat: number;
+    lng: number;
+    radiusKm: number;
+    startAt?: string;
+    endAt?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams();
+    query.append('sport', params.sport);
+    query.append('level', params.level);
+    query.append('lat', params.lat.toString());
+    query.append('lng', params.lng.toString());
+    query.append('radiusKm', params.radiusKm.toString());
+    if (params.startAt) query.append('startAt', params.startAt);
+    if (params.endAt) query.append('endAt', params.endAt);
+    if (params.page) query.append('page', params.page.toString());
+    if (params.pageSize) query.append('pageSize', params.pageSize.toString());
+    return request(`/booking/availability/search?${query.toString()}`, { method: 'GET' }, true) as Promise<{ results: BookingAvailabilityResult[] }>;
+  },
+  getBookingAvailabilitiesForPro: () =>
+    request('/booking/availability/me', { method: 'GET' }, true) as Promise<{ availabilities: BookingAvailability[] }> ,
+  createBookingAvailability: (payload: CreateBookingAvailabilityPayload) =>
+    request('/booking/availability', { method: 'POST', body: JSON.stringify(payload) }, true) as Promise<BookingAvailability>,
+  createBookingRequest: (payload: { availabilityId: string; message?: string }) =>
+    request('/booking/requests', { method: 'POST', body: JSON.stringify(payload) }, true) as Promise<{ id: string }>,
+  getBookingRequestsInbox: async () => {
+    const response = (await request('/booking/requests/inbox', { method: 'GET' }, true)) as {
+      requests: BookingRequestInboxApiItem[];
+    };
+    return {
+      requests: response.requests.map<BookingRequestInboxItem>((req) => ({
+        id: req.id,
+        status: req.status,
+        riderName: req.rider.riderProfile?.displayName ?? req.rider.email,
+        riderEmail: req.rider.email,
+        riderAvatarUrl: req.rider.riderProfile?.photoUrl ?? null,
+        message: req.message ?? null,
+        createdAt: req.createdAt,
+        respondedAt: req.respondedAt ?? null,
+        availability: {
+          id: req.availability.id,
+          startAt: req.availability.startAt,
+          endAt: req.availability.endAt,
+          spotName: req.availability.spotName,
+          sport: req.availability.sport,
+          levels: req.availability.levels,
+          capacity: req.availability.capacity,
+          bookedCount: req.availability.bookedCount,
+          status: req.availability.status,
+        },
+      })),
+    };
+  },
+  decideBookingRequest: (requestId: string, decision: 'ACCEPT' | 'REJECT') =>
+    request(`/booking/requests/${requestId}/decision`, { method: 'POST', body: JSON.stringify({ decision }) }, true),
+  getMyBookingRequests: async () => {
+    const response = (await request('/booking/requests/me', { method: 'GET' }, true)) as {
+      requests: BookingRequestMeApiItem[];
+    };
+    return {
+      requests: response.requests.map<RiderBookingRequest>((req) => ({
+        id: req.id,
+        status: req.status,
+        message: req.message ?? null,
+        createdAt: req.createdAt,
+        respondedAt: req.respondedAt ?? null,
+        availability: {
+          id: req.availability.id,
+          sport: req.availability.sport,
+          levels: req.availability.levels,
+          spotName: req.availability.spotName,
+          startAt: req.availability.startAt,
+          endAt: req.availability.endAt,
+          pro: {
+            email: req.availability.pro.email,
+            businessName: req.availability.pro.proProfile?.businessName ?? null,
+          },
+        },
+      })),
+    };
   },
 
   saveTokens: setTokens,
