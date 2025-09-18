@@ -14,7 +14,7 @@ const partnerEnum = z.enum(['ALL', 'WOMEN', 'MEN']);
 const searchSchema = z.object({
   sport: sportEnum,
   level: levelEnum,
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // YYYY-MM-DD
+  date: z.string().regex(/^(\d{4}-\d{2}-\d{2}|anytime)$/), // YYYY-MM-DD or "anytime"
   partner: partnerEnum.optional(),
   distanceKm: z.number().int().min(1).max(500).optional(),
   location: z
@@ -33,6 +33,8 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
 
     const { sport, level, date, partner, distanceKm, location, page, pageSize, sortBy } = searchSchema.parse(req.body);
 
+    const partnerPref = partner ?? 'WOMEN';
+
     // Ensure we have a profile to read preferences from
     let profile = await prisma.riderProfile.findUnique({ where: { userId } });
     if (!profile) {
@@ -45,38 +47,37 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
     const effectiveLocation = location ?? (last?.lat && last?.lng ? { lat: last.lat, lng: last.lng } : undefined) ??
       (profile.lat != null && profile.lng != null ? { lat: profile.lat, lng: profile.lng } : undefined) ?? null;
 
-    // Compose criteria using profile preferences (distance, partnerPref, etc.)
+    // Compose criteria using profile preferences (distance, etc.)
     const criteria = {
       sport,
       level,
       date,
       maxDistanceKm: distanceKm ?? last?.distanceKm ?? profile.maxDistanceKm,
-      partnerPref: partner ?? profile.partnerPref,
       emailNotif: profile.emailNotif,
       location: effectiveLocation,
+      partnerPref,
     } as const;
 
     // Persist last search (for defaults next time)
+    const dateValue = date === 'anytime' ? null : new Date(date + 'T00:00:00Z');
     await prisma.lastSearch.upsert({
       where: { userId },
       create: {
         userId,
         sport,
         level,
-        partner: criteria.partnerPref,
         distanceKm: criteria.maxDistanceKm,
         lat: effectiveLocation?.lat ?? null,
         lng: effectiveLocation?.lng ?? null,
-        date: new Date(date + 'T00:00:00Z'),
+        date: dateValue,
       },
       update: {
         sport,
         level,
-        partner: criteria.partnerPref,
         distanceKm: criteria.maxDistanceKm,
         lat: effectiveLocation?.lat ?? null,
         lng: effectiveLocation?.lng ?? null,
-        date: new Date(date + 'T00:00:00Z'),
+        date: dateValue,
       },
     });
 

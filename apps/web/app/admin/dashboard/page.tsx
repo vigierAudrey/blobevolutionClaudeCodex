@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
-import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react';
+import Link from 'next/link';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -137,6 +138,27 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
+              <BarChart3 size={20} />
+              Analytics
+            </CardTitle>
+            <CardDescription>
+              Visualiser l'engagement et les performances de matching
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/analytics">
+                  Analytics détaillées
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
               <Users size={20} />
               Gestion des utilisateurs
             </CardTitle>
@@ -146,14 +168,20 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
-                Voir tous les utilisateurs
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/users">
+                  Voir tous les utilisateurs
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
-                Gestion des pros
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/users?role=PRO">
+                  Gestion des pros
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
-                Utilisateurs signalés
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/reports">
+                  Utilisateurs signalés
+                </Link>
               </Button>
             </div>
           </CardContent>
@@ -171,19 +199,23 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
-                Signalements en attente
-                {stats?.reportedProfiles > 0 && (
-                  <span className="ml-auto bg-red-500 text-white rounded-full px-2 py-1 text-xs">
-                    {stats.reportedProfiles}
-                  </span>
-                )}
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/reports">
+                  Signalements en attente
+                  {stats?.reportedProfiles > 0 && (
+                    <span className="ml-auto bg-red-500 text-white rounded-full px-2 py-1 text-xs">
+                      {stats.reportedProfiles}
+                    </span>
+                  )}
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button variant="outline" className="w-full justify-start" disabled>
                 Conversations bloquées
+                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button variant="outline" className="w-full justify-start" disabled>
                 Historique modération
+                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
               </Button>
             </div>
           </CardContent>
@@ -201,14 +233,18 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
+              <Button variant="outline" className="w-full justify-start" disabled>
                 Tentatives de connexion suspectes
+                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button variant="outline" className="w-full justify-start" disabled>
                 Logs de sécurité
+                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
-                Gestion des permissions
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/permissions">
+                  Gestion des permissions
+                </Link>
               </Button>
             </div>
           </CardContent>

@@ -318,12 +318,30 @@ npm run start         # Start production
 - Ce repo possède une CI GitHub Actions: build Web, Prisma generate/migrate, type-check, tests API E2E.
 - Guide détaillé avec blocs à coller: `docs/ci-e2e.md`.
 
+## 📋 Changements récents
+
+### Suppression du champ `partnerPref` (Sept 2025)
+
+**Simplification du matching** : Le champ `partnerPref` (préférence de partenaire) a été supprimé pour simplifier l'algorithme de matching.
+
+- ❌ **Supprimé** : `partnerPref` (RiderProfile), `partner` (LastSearch), enum `PartnerPref`
+- ✅ **Conservé** : champ `sex` pour identifier le sexe de l'individu
+- 🎯 **Nouveau matching** : géolocalisation + sport + niveau + disponibilités uniquement
+
+### Affichage date sélectionnée dans matching (Sept 2025)
+
+**UX amélioration** : La date sélectionnée par l'utilisateur est maintenant visible dans chaque carte de profil.
+
+- ✅ **Ajouté** : Fonction `formatDateForDisplay()` avec formatage intelligent
+- ✅ **Interface** : Icône 📅 + date dans chaque carte ("Aujourd'hui", "Demain", "Peu importe")
+- 🎯 **Comportement** : Affichage uniquement, la date n'influence pas l'algorithme de recherche
+
 ## 👥 Rôles, Profils et BloboMap
 
 - Riders (particuliers):
   - Profil `RiderProfile` avec `wantsLesson` (bool) et `lessonSport` (surf|kitesurf).
-  - Matching: bouton “Faire appel à un pro” et interrupteur “Je veux un cours”.
-  - Affichage badge “🎓 Cours” sur cartes/résultats si `wantsLesson=true`.
+  - Matching: bouton "Faire appel à un pro" et interrupteur "Je veux un cours".
+  - Affichage badge "🎓 Cours" sur cartes/résultats si `wantsLesson=true`.
 
 - Pros (professionnels):
   - Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).

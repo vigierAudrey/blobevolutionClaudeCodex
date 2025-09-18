@@ -37,7 +37,7 @@ describe('Profile E2E', () => {
     const res = await request(app)
       .put('/profile/me')
       .set('Authorization', `Bearer ${access}`)
-      .send({ displayName: 'Blobmama', bio: 'Hello', partnerPref: 'ALL', maxDistanceKm: 30, emailNotif: true })
+      .send({ displayName: 'Blobmama', bio: 'Hello', maxDistanceKm: 30, emailNotif: true })
       .expect(200);
     expect(res.body.displayName).toBe('Blobmama');
     expect(res.body.maxDistanceKm).toBe(30);

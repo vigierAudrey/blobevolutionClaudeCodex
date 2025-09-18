@@ -104,7 +104,6 @@ function DateInner() {
 
   const today = useMemo(() => new Date(), []);
   const tomorrow = useMemo(() => new Date(Date.now() + 24 * 60 * 60 * 1000), []);
-  const after = useMemo(() => new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), []);
 
   const setDatePersist = (iso: string) => {
     setDateISO(iso);
@@ -120,7 +119,7 @@ function DateInner() {
   };
 
   const breadcrumb = useMemo(() => {
-    const dateStr = dateISO ? new Date(dateISO + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
+    const dateStr = dateISO === 'anytime' ? 'peu importe' : dateISO ? new Date(dateISO + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
     const distShort = useGeoloc ? (distanceKm != null ? `${distanceKm} km` : '—') : 'sans géolocalisation';
     return [sport ? sportLabels[sport] : '—', level ? levelLabels[level] : '—', distShort, dateStr].join(' > ');
   }, [sport, level, distanceKm, dateISO, useGeoloc]);
@@ -173,9 +172,9 @@ function DateInner() {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
-              { key: formatDateISO(today), label: `Aujourd’hui (${formatDateDisplay(today)})` },
+              { key: formatDateISO(today), label: `Aujourd'hui (${formatDateDisplay(today)})` },
               { key: formatDateISO(tomorrow), label: `Demain (${formatDateDisplay(tomorrow)})` },
-              { key: formatDateISO(after), label: `Après-demain (${formatDateDisplay(after)})` },
+              { key: 'anytime', label: '🗓️ Peu importe' },
             ].map((d) => (
               <button
                 key={d.key}
@@ -265,7 +264,6 @@ function DateInner() {
             </>
           )}
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setDatePersist(formatDateISO(today))}>Choisir aujourd’hui</Button>
             <Button
               disabled={!dateISO || (useGeoloc && (lat == null || lng == null))}
               onClick={() => {
