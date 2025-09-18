@@ -198,6 +198,30 @@ model User {
 ### Phase 1 - MVP (3 mois)
 
 - [ ] **Auth Module** : inscription, connexion, JWT, reset password
+
+### Administration – Analytics (à venir)
+
+- **Lot 3 – Heatmap géographique** : agrégations par grille (0,1°) des recherches et premiers matches avec filtres (période, sport, niveau) et affichage heatmap dans `/admin/analytics`.
+- **Lot 4 – Créneaux horaires** : distribution des décisions/matches par heure (0–23) avec double série accept/refus et visualisation (bar chart) sur la même page.
+
+### UX – Réservation Riders ↔ Pros (à venir)
+
+- **Parcours rider** : sélection sport/niveau, géolocalisation + distance, liste de pros disponibles, aperçu des riders déjà inscrits (miniatures), demande envoyée au pro, navigation retour simple.
+- **Module planning pro** : création de créneaux (date/heure/durée/capacité), vue calendrier, gestion des demandes entrantes (accepter/refuser puis ajout du rider au créneau).
+- **Workflow notification** : envoi d’une demande au pro, visualisation « en attente », acceptation → rider ajouté au créneau et miniatures mises à jour.
+- **UX** : carte + liste responsive, modales profil, états vides clairs, accessibilité clavier + mobile.
+
+#### Prochaines étapes courtes (à prioriser demain)
+
+- [ ] Mettre en place l’infrastructure Playwright : `playwright.config.ts`, script `npm run test:e2e`, tests smoke `/reservations/start`, exécuter `npx playwright install`.
+- [ ] Ajuster le bouton carte « Contacter » côté rider (libellé explicite “Demander ce créneau”, tooltip) et vérifier les états désactivés.
+- [ ] Affiner l’expérience carte : zoom/centrage dynamique selon `distanceKm`, gestion tooltip légende sur mobile.
+- [ ] Documenter dans le README le lancement des tests E2E dès que Playwright est prêt.
+
+### Administration – Analytics (à venir)
+
+- **Lot 3 – Heatmap géographique** : agrégations par grille (0,1°) des recherches et premiers matches avec filtres (période, sport, niveau) et affichage heatmap dans `/admin/analytics`.
+- **Lot 4 – Créneaux horaires** : distribution des décisions/matches par heure (0–23) avec double série accept/refus et visualisation (bar chart) sur la même page.
 - [ ] Profils riders/pros avec vérification
 - [ ] Matching basique par géolocalisation
 - [ ] Réservation simple + paiement Stripe

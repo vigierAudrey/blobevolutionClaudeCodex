@@ -4,8 +4,8 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { apiClient, type AdminEngagementAnalytics, type AdminMatchingAnalytics, type AdminAnalyticsPeriod, type AdminBehaviorAnalytics } from '../../../lib/apiClient';
-import { ArrowLeft, TrendingUp, Users, Heart, Target, MapPin, Clock, Activity, Navigation, LifeBuoy, MessageSquare, BarChart3 } from 'lucide-react';
+import { apiClient, type AdminEngagementAnalytics, type AdminMatchingAnalytics, type AdminAnalyticsPeriod, type AdminBehaviorAnalytics, type AdminMatchingTTFM } from '../../../lib/apiClient';
+import { ArrowLeft, TrendingUp, Users, Heart, Target, MapPin, Clock, Activity, Navigation, LifeBuoy, MessageSquare, BarChart3, Hourglass } from 'lucide-react';
 import Link from 'next/link';
 
 const PERIODS: Array<{ value: AdminAnalyticsPeriod; label: string }> = [
@@ -32,6 +32,7 @@ export default function AdminAnalytics() {
   const [engagementData, setEngagementData] = useState<AdminEngagementAnalytics | null>(null);
   const [matchingData, setMatchingData] = useState<AdminMatchingAnalytics | null>(null);
   const [behaviorData, setBehaviorData] = useState<AdminBehaviorAnalytics | null>(null);
+  const [ttfmData, setTtfmData] = useState<AdminMatchingTTFM | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,15 +64,17 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior] = await Promise.all([
+      const [engagement, matching, behavior, ttfm] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
-        apiClient.getBehaviorAnalytics(period)
+        apiClient.getBehaviorAnalytics(period),
+        apiClient.getMatchingTTFMAnalytics(period)
       ]);
 
       setEngagementData(engagement);
       setMatchingData(matching);
       setBehaviorData(behavior);
+      setTtfmData(ttfm);
     } catch (err: any) {
       setError(err.message || 'Erreur de chargement des analytics');
     } finally {
@@ -97,6 +100,7 @@ export default function AdminAnalytics() {
     }
     return `${minutes.toLocaleString('fr-FR', { maximumFractionDigits: minutes >= 20 ? 0 : 1 })} min`;
   };
+  const formatDaysValue = (value: number) => `${value.toLocaleString('fr-FR', { maximumFractionDigits: value >= 10 ? 0 : 1 })} j`;
 
   const sportPreferencesTotal = matchingData?.sportPreferences.reduce((sum, item) => sum + item.count, 0) ?? 0;
   const levelPreferencesTotal = matchingData?.levelPreferences.reduce((sum, item) => sum + item.count, 0) ?? 0;
@@ -108,18 +112,22 @@ export default function AdminAnalytics() {
   const proBase = behaviorData?.userJourney.totals.pros ?? 0;
   const totalUsersCount = behaviorData?.userJourney.totals.users ?? 0;
   const currentPeriodLabel = PERIODS.find(p => p.value === period)?.label ?? '30 jours';
-  const periodGranularity = matchingData?.periodGranularity ?? 'day';
-  const periodGranularityLabel = {
+  const granularityLabel = {
     day: 'jour',
     week: 'semaine',
     month: 'mois'
   } as const;
+  const matchingGranularity = matchingData?.periodGranularity ?? 'day';
+  const ttfmGranularity = ttfmData?.periodGranularity ?? 'day';
+  const ttfmCoverage = ttfmData && ttfmData.newRidersInPeriod > 0
+    ? (ttfmData.sampleSize / ttfmData.newRidersInPeriod) * 100
+    : 0;
 
-  const formatTimelinePeriod = (iso: string) => {
+  const formatTimelinePeriod = (iso: string, granularity: 'day' | 'week' | 'month') => {
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return iso;
 
-    if (periodGranularity === 'month') {
+    if (granularity === 'month') {
       return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
     }
 
@@ -324,7 +332,7 @@ export default function AdminAnalytics() {
                   Décisions sur la période
                 </CardTitle>
                 <CardDescription>
-                  Acceptations et refus agrégés par {periodGranularityLabel[periodGranularity]}
+                  Acceptations et refus agrégés par {granularityLabel[matchingGranularity]}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -344,7 +352,7 @@ export default function AdminAnalytics() {
                       <tbody>
                         {matchingData.decisionTimeline.map(item => (
                           <tr key={item.period} className="border-t border-muted">
-                            <td className="py-2 pr-4">{formatTimelinePeriod(item.period)}</td>
+                            <td className="py-2 pr-4">{formatTimelinePeriod(item.period, matchingGranularity)}</td>
                             <td className="py-2 pr-4 text-emerald-600 font-medium">{formatNumber(item.accepted)}</td>
                             <td className="py-2 pr-4 text-red-500 font-medium">{formatNumber(item.refused)}</td>
                             <td className="py-2">{formatNumber(item.total)}</td>
@@ -364,7 +372,7 @@ export default function AdminAnalytics() {
                   Conversations créées
                 </CardTitle>
                 <CardDescription>
-                  Volume de conversations par {periodGranularityLabel[periodGranularity]}
+                  Volume de conversations par {granularityLabel[matchingGranularity]}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -382,7 +390,7 @@ export default function AdminAnalytics() {
                       <tbody>
                         {matchingData.conversationTimeline.map(item => (
                           <tr key={item.period} className="border-t border-muted">
-                            <td className="py-2 pr-4">{formatTimelinePeriod(item.period)}</td>
+                            <td className="py-2 pr-4">{formatTimelinePeriod(item.period, matchingGranularity)}</td>
                             <td className="py-2">{formatNumber(item.conversations)}</td>
                           </tr>
                         ))}
@@ -393,6 +401,125 @@ export default function AdminAnalytics() {
               </CardContent>
             </Card>
           </div>
+
+          {ttfmData && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Hourglass className="h-5 w-5" />
+                    Time to First Match
+                  </CardTitle>
+                  <CardDescription>
+                    Médiane et distribution du temps avant premier match sur {granularityLabel[ttfmGranularity]}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {ttfmData.sampleSize === 0 ? (
+                    <p className="text-sm text-muted-foreground">Aucun premier match enregistré sur cette période.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-blue-600">{formatDaysValue(ttfmData.medianDays)}</div>
+                        <div className="text-sm text-muted-foreground">Médiane</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-emerald-600">{formatDaysValue(ttfmData.averageDays)}</div>
+                        <div className="text-sm text-muted-foreground">Moyenne</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-purple-600">{formatDaysValue(ttfmData.p90Days)}</div>
+                        <div className="text-sm text-muted-foreground">P90</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-orange-600">{formatPercent(ttfmCoverage)}</div>
+                        <div className="text-sm text-muted-foreground">Riders matchés ({ttfmData.sampleSize}/{ttfmData.newRidersInPeriod})</div>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {ttfmData.ridersWithoutMatch > 0
+                      ? `${formatNumber(ttfmData.ridersWithoutMatch)} nouveaux riders n'ont pas encore matché sur la période.`
+                      : 'Tous les nouveaux riders de la période ont un premier match.'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              {ttfmData.sampleSize > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <BarChart3 className="h-5 w-5" />
+                        Répartition des délais
+                      </CardTitle>
+                      <CardDescription>
+                        Temps avant premier match par tranche (jours)
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead className="text-xs uppercase text-muted-foreground">
+                            <tr className="text-left">
+                              <th className="py-2 pr-4">Tranche</th>
+                              <th className="py-2">Riders</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ttfmData.buckets.map(bucket => (
+                              <tr key={bucket.label} className="border-t border-muted">
+                                <td className="py-2 pr-4">{bucket.label} jours</td>
+                                <td className="py-2">{formatNumber(bucket.count)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Clock className="h-5 w-5" />
+                        Évolution du TTFM
+                      </CardTitle>
+                      <CardDescription>
+                        Moyenne par {granularityLabel[ttfmGranularity]}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {ttfmData.timeline.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Aucune donnée suffisante pour tracer la tendance.</p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-sm">
+                            <thead className="text-xs uppercase text-muted-foreground">
+                              <tr className="text-left">
+                                <th className="py-2 pr-4">Période</th>
+                                <th className="py-2 pr-4">TTFM moyen</th>
+                                <th className="py-2">Matches</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {ttfmData.timeline.map(item => (
+                                <tr key={item.period} className="border-t border-muted">
+                                  <td className="py-2 pr-4">{formatTimelinePeriod(item.period, ttfmGranularity)}</td>
+                                  <td className="py-2 pr-4">{formatDaysValue(item.averageDays)}</td>
+                                  <td className="py-2">{formatNumber(item.count)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+            </>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Préférences de sport */}

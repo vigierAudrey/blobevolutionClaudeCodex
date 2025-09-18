@@ -1,16 +1,31 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../../../lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
+import { Badge } from '../../../components/ui/badge';
 import { User, Map, CreditCard, Percent, Info, LogOut, BookOpen, MessageSquare, Network } from 'lucide-react';
 
 export default function ProDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [planningStats, setPlanningStats] = useState<{ availabilityCount: number; pendingCount: number } | null>(null);
+
+  const loadPlanningStats = useCallback(async () => {
+    try {
+      const [availabilityRes, inboxRes] = await Promise.all([
+        apiClient.getBookingAvailabilitiesForPro(),
+        apiClient.getBookingRequestsInbox(),
+      ]);
+      const pendingCount = inboxRes.requests.filter((req) => req.status === 'PENDING').length;
+      setPlanningStats({ availabilityCount: availabilityRes.availabilities.length, pendingCount });
+    } catch (_) {
+      setPlanningStats({ availabilityCount: 0, pendingCount: 0 });
+    }
+  }, []);
 
   useEffect(() => {
     const t = apiClient.getTokens();
@@ -27,12 +42,13 @@ export default function ProDashboardPage() {
           return;
         }
         setUser(u);
+        void loadPlanningStats();
       })
       .catch(() => {
         router.replace('/login');
       })
       .finally(() => setLoading(false));
-  }, [router]);
+  }, [loadPlanningStats, router]);
 
   const logout = async () => {
     try {
@@ -134,10 +150,24 @@ export default function ProDashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><BookOpen size={18}/> Réservations</CardTitle>
-            <CardDescription>Voir les demandes de cours</CardDescription>
+            <CardDescription>Gérer tes créneaux, demandes et sessions confirmées.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button className="w-full" variant="outline" disabled>En préparation</Button>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2 text-xs font-medium">
+              <Badge variant="outline">
+                {planningStats
+                  ? `${planningStats.availabilityCount} créneau${planningStats.availabilityCount > 1 ? 'x' : ''}`
+                  : '-- créneaux'}
+              </Badge>
+              <Badge variant={planningStats && planningStats.pendingCount > 0 ? 'secondary' : 'outline'}>
+                {planningStats
+                  ? `${planningStats.pendingCount} demande${planningStats.pendingCount > 1 ? 's' : ''} en attente`
+                  : '-- demandes'}
+              </Badge>
+            </div>
+            <Link href="/pro/planning" className="inline-block w-full">
+              <Button className="w-full" variant="secondary">Ouvrir mon planning</Button>
+            </Link>
           </CardContent>
         </Card>
 

@@ -554,6 +554,187 @@ adminRouter.patch('/admins/:id/role', async (req, res) => {
   }
 });
 
+adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
+  try {
+    const periodParam = typeof req.query.period === 'string' ? req.query.period : '30d';
+    const period: AnalyticsPeriod = ['7d', '30d', '90d', '1y'].includes(periodParam)
+      ? (periodParam as AnalyticsPeriod)
+      : '30d';
+
+    const now = new Date();
+    let startDate = new Date();
+    let groupBy: 'day' | 'week' | 'month' = 'day';
+
+    switch (period) {
+      case '7d':
+        startDate.setDate(now.getDate() - 7);
+        groupBy = 'day';
+        break;
+      case '30d':
+        startDate.setDate(now.getDate() - 30);
+        groupBy = 'day';
+        break;
+      case '90d':
+        startDate.setDate(now.getDate() - 90);
+        groupBy = 'week';
+        break;
+      case '1y':
+        startDate.setFullYear(now.getFullYear() - 1);
+        groupBy = 'month';
+        break;
+      default:
+        startDate.setDate(now.getDate() - 30);
+        groupBy = 'day';
+    }
+
+    const firstMatchesRaw = await prisma.$queryRaw<Array<{
+      user_id: string;
+      user_created_at: Date;
+      first_conversation_at: Date;
+      days_to_match: number | null;
+    }>>(
+      Prisma.sql`
+        SELECT
+          u."id" as user_id,
+          u."createdAt" as user_created_at,
+          first_conv.first_conversation_at,
+          EXTRACT(EPOCH FROM (first_conv.first_conversation_at - u."createdAt")) / 86400.0 AS days_to_match
+        FROM "User" u
+        JOIN (
+          SELECT cm."userId", MIN(c."createdAt") as first_conversation_at
+          FROM "ConversationMember" cm
+          JOIN "Conversation" c ON c."id" = cm."conversationId"
+          WHERE c."type" = 'RIDER_TO_RIDER'
+          GROUP BY cm."userId"
+        ) first_conv ON first_conv."userId" = u."id"
+        WHERE first_conv.first_conversation_at >= ${startDate}
+          AND first_conv.first_conversation_at <= ${now}
+          AND u."role" = 'RIDER'
+          AND u."deletedAt" IS NULL
+      `
+    );
+
+    const sampleSize = firstMatchesRaw.length;
+    const daysValues = firstMatchesRaw.map(row => {
+      const value = Number(row.days_to_match ?? 0);
+      return value < 0 ? 0 : value;
+    });
+
+    const sortedDays = [...daysValues].sort((a, b) => a - b);
+    const averageDays = sampleSize > 0 ? sortedDays.reduce((sum, value) => sum + value, 0) / sampleSize : 0;
+    const medianDays = sampleSize > 0
+      ? (sampleSize % 2 === 1
+        ? sortedDays[Math.floor(sampleSize / 2)]
+        : (sortedDays[sampleSize / 2 - 1] + sortedDays[sampleSize / 2]) / 2)
+      : 0;
+    const p90Days = sampleSize > 0
+      ? sortedDays[Math.min(sortedDays.length - 1, Math.ceil(sortedDays.length * 0.9) - 1)]
+      : 0;
+
+    const bucketDefs: Array<{ label: string; min: number; max: number | null }> = [
+      { label: '0-1', min: 0, max: 1 },
+      { label: '1-3', min: 1, max: 3 },
+      { label: '3-7', min: 3, max: 7 },
+      { label: '7-14', min: 7, max: 14 },
+      { label: '14+', min: 14, max: null }
+    ];
+
+    const buckets = bucketDefs.map(def => ({
+      label: def.label,
+      count: sortedDays.filter(value => {
+        if (def.max === null) {
+          return value >= def.min;
+        }
+        return value >= def.min && value < def.max;
+      }).length
+    }));
+
+    const newRidersInPeriod = await prisma.user.count({
+      where: {
+        role: 'RIDER',
+        deletedAt: null,
+        createdAt: {
+          gte: startDate,
+          lte: now
+        }
+      }
+    });
+
+    const ridersWithoutMatch = await prisma.user.count({
+      where: {
+        role: 'RIDER',
+        deletedAt: null,
+        createdAt: {
+          gte: startDate,
+          lte: now
+        },
+        conversationMembers: {
+          none: {
+            conversation: {
+              type: 'RIDER_TO_RIDER'
+            }
+          }
+        }
+      }
+    });
+
+    const timelineMap = new Map<string, { totalDays: number; count: number }>();
+
+    const normalizeDate = (date: Date, granularity: 'day' | 'week' | 'month') => {
+      const normalized = new Date(date);
+      normalized.setUTCMilliseconds(0);
+      normalized.setUTCSeconds(0);
+      normalized.setUTCMinutes(0);
+      normalized.setUTCHours(0);
+
+      if (granularity === 'week') {
+        const day = normalized.getUTCDay();
+        const diff = (day + 6) % 7;
+        normalized.setUTCDate(normalized.getUTCDate() - diff);
+      } else if (granularity === 'month') {
+        normalized.setUTCDate(1);
+      }
+
+      return normalized.toISOString();
+    };
+
+    firstMatchesRaw.forEach(entry => {
+      const value = entry.days_to_match ?? 0;
+      const days = value < 0 ? 0 : value;
+      const key = normalizeDate(entry.first_conversation_at, groupBy);
+      const bucket = timelineMap.get(key) ?? { totalDays: 0, count: 0 };
+      bucket.totalDays += days;
+      bucket.count += 1;
+      timelineMap.set(key, bucket);
+    });
+
+    const timeline = Array.from(timelineMap.entries())
+      .sort(([a], [b]) => (a > b ? 1 : -1))
+      .map(([periodIso, data]) => ({
+        period: periodIso,
+        averageDays: data.count > 0 ? data.totalDays / data.count : 0,
+        count: data.count
+      }));
+
+    return res.json({
+      period,
+      sampleSize,
+      averageDays,
+      medianDays,
+      p90Days,
+      buckets,
+      newRidersInPeriod,
+      ridersWithoutMatch,
+      periodGranularity: groupBy,
+      timeline
+    });
+  } catch (error) {
+    console.error('Analytics matching TTFM error:', error);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+
 // Analytics détaillées - Engagement
 type AnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
 

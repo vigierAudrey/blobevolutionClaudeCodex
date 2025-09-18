@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { resolve } from 'path';
-import { PrismaClient, Role, Sex, Level, Sport, DecisionKind, MatchStatus } from '@prisma/client';
+import { PrismaClient, Role, Sex, Level, Sport, DecisionKind, MatchStatus, BookingRequestStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 // Ensure env is loaded from repo root .env (fallback prisma/.env)
@@ -414,6 +414,30 @@ export async function runSeed(client?: PrismaClient) {
       type: 'PRO_TO_PRO'
     }
   });
+  await prisma.conversationMember.createMany({
+    data: [
+      { conversationId: conv3.id, userId: pros[0].id },
+      { conversationId: conv3.id, userId: pros[1].id }
+    ],
+    skipDuplicates: true
+  });
+  await prisma.message.createMany({
+    data: [
+      {
+        conversationId: conv3.id,
+        senderId: pros[0].id,
+        type: 'TEXT',
+        content: 'Salut collègue ! Comment ça se passe la saison chez vous ?'
+      },
+      {
+        conversationId: conv3.id,
+        senderId: pros[1].id,
+        type: 'TEXT',
+        content: 'Hey ! Très bien merci, beaucoup de demandes cette année. Et toi ?'
+      }
+    ],
+    skipDuplicates: true
+  });
 
   console.log('Simulating rider matching decisions...');
 
@@ -570,31 +594,102 @@ export async function runSeed(client?: PrismaClient) {
       }
     });
   }
-  await prisma.conversationMember.createMany({
-    data: [
-      { conversationId: conv3.id, userId: pros[0].id },
-      { conversationId: conv3.id, userId: pros[1].id },
-    ],
-    skipDuplicates: true,
-  });
-  await prisma.message.createMany({
-    data: [
-      {
-        conversationId: conv3.id,
-        senderId: pros[0].id,
-        type: 'TEXT',
-        content: 'Salut collègue ! Comment ça se passe la saison chez vous ?',
-      },
-      {
-        conversationId: conv3.id,
-        senderId: pros[1].id,
-        type: 'TEXT',
-        content: 'Hey ! Très bien merci, beaucoup de demandes cette année. Et toi ?',
-      },
-    ],
-    skipDuplicates: true,
+
+  console.log('Creating availability samples...');
+
+  const availabilityBaseStart = addHours(new Date(), 4);
+  const availabilityDefinitions = [
+    {
+      proUserId: pros[0].id,
+      sport: Sport.surf,
+      levels: ['beginner', 'intermediate'],
+      startAt: availabilityBaseStart,
+      endAt: addHours(availabilityBaseStart, 2),
+      capacity: 4,
+      bookedCount: 1,
+      status: 'OPEN' as const,
+      spotName: 'Plage Centrale',
+      spotLat: 43.493,
+      spotLng: -1.558,
+      price: '60.00'
+    },
+    {
+      proUserId: pros[1].id,
+      sport: Sport.kitesurf,
+      levels: ['intermediate', 'advanced'],
+      startAt: addHours(availabilityBaseStart, 8),
+      endAt: addHours(availabilityBaseStart, 10),
+      capacity: 3,
+      bookedCount: 0,
+      status: 'OPEN' as const,
+      spotName: 'Lagune Nord',
+      spotLat: 43.210,
+      spotLng: -1.456,
+      price: '85.00'
+    },
+    {
+      proUserId: pros[2].id,
+      sport: Sport.surf,
+      levels: ['beginner'],
+      startAt: addHours(availabilityBaseStart, 20),
+      endAt: addHours(availabilityBaseStart, 22),
+      capacity: 2,
+      bookedCount: 0,
+      status: 'OPEN' as const,
+      spotName: 'Spot Secret',
+      spotLat: 43.320,
+      spotLng: -1.60,
+      price: '55.00'
+    }
+  ];
+
+  const availabilityRecords = await Promise.all(
+    availabilityDefinitions.map((slot) =>
+      prisma.proAvailability.create({
+        data: {
+          proUserId: slot.proUserId,
+          sport: slot.sport,
+          levels: slot.levels,
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          capacity: slot.capacity,
+          bookedCount: slot.bookedCount,
+          status: slot.status,
+          spotName: slot.spotName,
+          spotLat: slot.spotLat,
+          spotLng: slot.spotLng,
+          price: slot.price
+        }
+      })
+    )
+  );
+
+  await prisma.bookingRequest.create({
+    data: {
+      riderUserId: riders[0].id,
+      availabilityId: availabilityRecords[0].id,
+      status: BookingRequestStatus.ACCEPTED,
+      respondedAt: new Date(),
+      message: 'Départ depuis Biarritz, ok pour co-voiturage ?'
+    }
   });
 
+  await prisma.booking.create({
+    data: {
+      availabilityId: availabilityRecords[0].id,
+      riderUserId: riders[0].id,
+      status: 'CONFIRMED'
+    }
+  });
+
+  await prisma.bookingRequest.create({
+    data: {
+      riderUserId: riders[3].id,
+      availabilityId: availabilityRecords[1].id,
+      status: BookingRequestStatus.PENDING,
+      message: 'Intéressé pour progresser en kite !'
+    }
+  });
   console.log('✅ Seed completed successfully!');
   console.log('📧 20 riders: dev+rider1@test.com to dev+rider20@test.com');
   console.log('🏄 5 pros: dev+pro1@test.com to dev+pro5@test.com');
@@ -604,6 +699,7 @@ export async function runSeed(client?: PrismaClient) {
   console.log('🎯 Varied levels, sports, and preferences + recherches récentes');
   console.log('🕒 Sessions générées pour refléter l’activité des riders');
   console.log('🤝 Décisions de matching acceptées/refusées avec conversations simulées');
+  console.log('📅 Créneaux pros disponibles + exemples de demandes');
   console.log('🚨 Signalements de support pour alimenter les analytics');
 
   if (!client) await prisma.$disconnect();
