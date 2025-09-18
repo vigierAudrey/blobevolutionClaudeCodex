@@ -9,13 +9,11 @@ import crypto from 'crypto';
 export const profileRouter = Router();
 
 const sexEnum = z.enum(['FEMALE', 'MALE', 'OTHER', 'UNSPECIFIED']);
-const partnerEnum = z.enum(['ALL', 'WOMEN', 'MEN']);
 
 const upsertSchema = z.object({
   displayName: z.string().min(1).max(60).optional().or(z.literal('').transform(() => undefined)),
   bio: z.string().max(1000).optional().or(z.literal('').transform(() => undefined)),
   sex: sexEnum.optional(),
-  partnerPref: partnerEnum.optional(),
   maxDistanceKm: z.number().int().min(1).max(500).optional(),
   emailNotif: z.boolean().optional(),
   photoUrl: z.string().url().optional(),

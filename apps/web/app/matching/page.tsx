@@ -39,6 +39,22 @@ export default function MatchingPage() {
           return;
         }
 
+        // Vérifier si le profil est complet avant d'accéder au matching
+        const [profile, disciplines] = await Promise.all([
+          apiClient.getProfile(),
+          apiClient.getDisciplines().catch(() => []),
+        ]);
+
+        const hasName = !!profile?.displayName;
+        const hasPhoto = !!profile?.photoUrl;
+        const hasDiscipline = Array.isArray(disciplines) && disciplines.length > 0;
+        const incomplete = !hasName || !hasPhoto || !hasDiscipline;
+
+        if (incomplete) {
+          router.replace('/onboarding');
+          return;
+        }
+
         // Prefill from URL/localStorage
         const url = new URL(window.location.href);
         const qsSport = url.searchParams.get('sport') as Sport | null;

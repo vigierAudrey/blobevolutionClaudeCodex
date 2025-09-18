@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { resolve } from 'path';
-import { PrismaClient, Role, Sex } from '@prisma/client';
+import { PrismaClient, Role, Sex, Level, Sport, DecisionKind, MatchStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 // Ensure env is loaded from repo root .env (fallback prisma/.env)
@@ -19,6 +19,51 @@ export async function runSeed(client?: PrismaClient) {
     .concat(Array.from({length: 5}, (_, i) => `dev+pro${i+1}@test.com`))
     .concat(['dev+admin@test.com']);
 
+  await prisma.message.deleteMany({
+    where: {
+      conversation: {
+        members: {
+          some: {
+            user: { email: { in: devEmails } }
+          }
+        }
+      }
+    }
+  });
+  await prisma.conversationMember.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.conversation.deleteMany({
+    where: {
+      OR: [
+        { members: { some: { user: { email: { in: devEmails } } } } },
+        {
+          match: {
+            OR: [
+              { userOne: { email: { in: devEmails } } },
+              { userTwo: { email: { in: devEmails } } }
+            ]
+          }
+        }
+      ]
+    }
+  });
+  await prisma.matchDecision.deleteMany({ where: { actor: { email: { in: devEmails } } } });
+  await prisma.match.deleteMany({
+    where: {
+      OR: [
+        { userOne: { email: { in: devEmails } } },
+        { userTwo: { email: { in: devEmails } } }
+      ]
+    }
+  });
+  await prisma.lastSearch.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.profileReport.deleteMany({
+    where: {
+      OR: [
+        { reporter: { email: { in: devEmails } } },
+        { reportedProfile: { user: { email: { in: devEmails } } } }
+      ]
+    }
+  });
   await prisma.refreshToken.deleteMany({ where: { user: { email: { in: devEmails } } } });
   await prisma.session.deleteMany({ where: { user: { email: { in: devEmails } } } });
   await prisma.passwordResetToken.deleteMany({ where: { user: { email: { in: devEmails } } } });
@@ -50,6 +95,20 @@ export async function runSeed(client?: PrismaClient) {
     { name: 'Quiberon', lat: 47.4847, lng: -3.1197 },
     { name: 'Saint-Malo', lat: 48.6496, lng: -2.0259 }
   ];
+
+  const randomDateWithin = (days: number) => {
+    const now = new Date();
+    const past = new Date(now);
+    past.setDate(now.getDate() - days);
+    const timestamp = past.getTime() + Math.random() * (now.getTime() - past.getTime());
+    return new Date(timestamp);
+  };
+
+  const addHours = (date: Date, hours: number) => {
+    const copy = new Date(date);
+    copy.setHours(copy.getHours() + hours);
+    return copy;
+  };
 
   const riderNames = [
     'Alex Surf', 'Sam Rider', 'Jordan Wave', 'Casey Ocean', 'Taylor Beach',
@@ -83,10 +142,9 @@ export async function runSeed(client?: PrismaClient) {
 
   console.log('Creating 20 rider users...');
 
-  const levels = ['beginner', 'intermediate', 'advanced'];
-  const sports = ['surf', 'kitesurf'];
+  const levels = [Level.beginner, Level.intermediate, Level.advanced];
+  const sports = [Sport.surf, Sport.kitesurf];
   const sexes = [Sex.FEMALE, Sex.MALE, Sex.OTHER, Sex.UNSPECIFIED];
-  const partnerPrefs = ['ALL', 'WOMEN', 'MEN'];
 
   // Create 20 riders with varied profiles
   const riders = [];
@@ -106,11 +164,10 @@ export async function runSeed(client?: PrismaClient) {
             displayName: riderNames[i],
             bio: riderBios[i],
             sex: sexes[i % sexes.length],
-            partnerPref: partnerPrefs[i % partnerPrefs.length],
             emailNotif: Math.random() > 0.3,
             maxDistanceKm: [15, 25, 30, 50, 75][i % 5],
             wantsLesson: Math.random() > 0.6,
-            lessonSport: Math.random() > 0.5 ? 'surf' : 'kitesurf',
+            lessonSport: Math.random() > 0.5 ? Sport.surf : Sport.kitesurf,
             lat: location.lat + (Math.random() - 0.5) * 0.1, // Petit décalage aléatoire
             lng: location.lng + (Math.random() - 0.5) * 0.1,
           },
@@ -122,7 +179,7 @@ export async function runSeed(client?: PrismaClient) {
     // Add varied disciplines
     const riderDisciplines = [];
     const numSports = Math.random() > 0.6 ? 2 : 1; // 40% ont les deux sports
-    const chosenSports = numSports === 2 ? ['surf', 'kitesurf'] : [sports[Math.floor(Math.random() * sports.length)]];
+    const chosenSports = numSports === 2 ? [Sport.surf, Sport.kitesurf] : [sports[Math.floor(Math.random() * sports.length)]];
 
     for (const sport of chosenSports) {
       riderDisciplines.push({
@@ -136,6 +193,41 @@ export async function runSeed(client?: PrismaClient) {
       data: riderDisciplines,
       skipDuplicates: true,
     });
+
+    const searchSport = chosenSports[0];
+    const searchLevel = levels[Math.floor(Math.random() * levels.length)];
+
+    await prisma.lastSearch.upsert({
+      where: { userId: rider.id },
+      update: {
+        sport: searchSport,
+        level: searchLevel,
+        distanceKm: [10, 25, 50, 75][i % 4],
+        lat: rider.riderProfile?.lat ?? location.lat,
+        lng: rider.riderProfile?.lng ?? location.lng,
+        updatedAt: randomDateWithin(30)
+      },
+      create: {
+        userId: rider.id,
+        sport: searchSport,
+        level: searchLevel,
+        distanceKm: [10, 25, 50, 75][i % 4],
+        lat: rider.riderProfile?.lat ?? location.lat,
+        lng: rider.riderProfile?.lng ?? location.lng,
+        date: randomDateWithin(15),
+        createdAt: randomDateWithin(60)
+      }
+    });
+
+    const sessionEntries = Array.from({ length: 3 }).map(() => {
+      const createdAt = randomDateWithin(60);
+      return {
+        userId: rider.id,
+        createdAt,
+        expiresAt: addHours(createdAt, 6)
+      };
+    });
+    await prisma.session.createMany({ data: sessionEntries });
 
     riders.push(rider);
   }
@@ -190,7 +282,7 @@ export async function runSeed(client?: PrismaClient) {
     // Create offers for each pro
     const numOffers = i === 4 ? 1 : 2; // Le dernier pro n'a qu'une offre
     for (let j = 0; j < numOffers; j++) {
-      const sport = j === 0 ? 'surf' : 'kitesurf';
+      const sport = j === 0 ? Sport.surf : Sport.kitesurf;
       const level = levels[j]; // Varie le niveau selon l'offre
 
       await prisma.proOffer.create({
@@ -198,8 +290,8 @@ export async function runSeed(client?: PrismaClient) {
           proProfileId: proProfile.id,
           sport,
           level,
-          title: `Cours ${sport} niveau ${level === 'beginner' ? 'débutant' : level === 'intermediate' ? 'intermédiaire' : 'confirmé'}`,
-          description: `Apprenez le ${sport} avec nos moniteurs expérimentés. Matériel fourni, sécurité garantie. ${level === 'beginner' ? 'Première fois ? Parfait pour découvrir!' : level === 'intermediate' ? 'Perfectionnez votre technique.' : 'Repoussez vos limites!'}`,
+          title: `Cours ${sport} niveau ${level === Level.beginner ? 'débutant' : level === Level.intermediate ? 'intermédiaire' : 'confirmé'}`,
+          description: `Apprenez le ${sport} avec nos moniteurs expérimentés. Matériel fourni, sécurité garantie. ${level === Level.beginner ? 'Première fois ? Parfait pour découvrir!' : level === Level.intermediate ? 'Perfectionnez votre technique.' : 'Repoussez vos limites!'}`,
           hourlyRate: [45, 55, 60, 70, 80][i],
           isActive: true,
           lat: location.lat + (Math.random() - 0.5) * 0.02,
@@ -232,6 +324,8 @@ export async function runSeed(client?: PrismaClient) {
 
   // Create some demo conversations
   console.log('Creating demo conversations...');
+
+  const acceptedDecisions: Array<{ matchId: string; conversationId: string; createdAt: Date }> = [];
 
   // Conversation rider-pro
   const match1 = await prisma.match.create({
@@ -320,6 +414,162 @@ export async function runSeed(client?: PrismaClient) {
       type: 'PRO_TO_PRO'
     }
   });
+
+  console.log('Simulating rider matching decisions...');
+
+  const riderCount = riders.length;
+  for (let i = 0; i < riderCount; i++) {
+    const actor = riders[i];
+    const targets = [riders[(i + 1) % riderCount], riders[(i + 5) % riderCount]];
+
+    for (const target of targets) {
+      if (!target?.riderProfile) continue;
+
+      const decisionType: DecisionKind = (i + targets.indexOf(target)) % 3 === 0 ? 'REFUSE' : 'ACCEPT';
+      const createdAt = randomDateWithin(90);
+
+      await prisma.matchDecision.upsert({
+        where: {
+          actorUserId_targetProfileId: {
+            actorUserId: actor.id,
+            targetProfileId: target.riderProfile.id
+          }
+        },
+        update: {
+          decision: decisionType,
+          updatedAt: createdAt
+        },
+        create: {
+          actorUserId: actor.id,
+          targetProfileId: target.riderProfile.id,
+          decision: decisionType,
+          createdAt,
+          updatedAt: createdAt
+        }
+      });
+
+      if (decisionType === 'ACCEPT') {
+        const existingMatch = await prisma.match.findFirst({
+          where: {
+            OR: [
+              { userOneId: actor.id, userTwoId: target.id },
+              { userOneId: target.id, userTwoId: actor.id }
+            ]
+          }
+        });
+
+        const match = existingMatch
+          ? existingMatch
+          : await prisma.match.create({
+              data: {
+                userOneId: actor.id,
+                userTwoId: target.id,
+                status: MatchStatus.ACTIVE,
+                createdAt,
+                lastActivityAt: addHours(createdAt, 2)
+              }
+            });
+
+        const existingConversation = await prisma.conversation.findFirst({
+          where: {
+            OR: [
+              { matchId: match.id },
+              {
+                members: {
+                  some: { userId: actor.id }
+                },
+                AND: {
+                  members: {
+                    some: { userId: target.id }
+                  }
+                }
+              }
+            ]
+          }
+        });
+
+        if (!existingConversation) {
+          const conversation = await prisma.conversation.create({
+            data: {
+              matchId: match.id,
+              type: 'RIDER_TO_RIDER',
+              createdAt,
+              updatedAt: addHours(createdAt, 3)
+            }
+          });
+
+          await prisma.conversationMember.createMany({
+            data: [
+              { conversationId: conversation.id, userId: actor.id },
+              { conversationId: conversation.id, userId: target.id }
+            ]
+          });
+
+          await prisma.message.createMany({
+            data: [
+              {
+                conversationId: conversation.id,
+                senderId: actor.id,
+                type: 'TEXT',
+                content: `Hey ${target.riderProfile.displayName?.split(' ')[0] ?? 'rider'} ! Session prévue ${createdAt.toLocaleDateString('fr-FR')} ?`,
+                createdAt
+              },
+              {
+                conversationId: conversation.id,
+                senderId: target.id,
+                type: 'TEXT',
+                content: 'Yes, je ramène la wax et on se retrouve sur place.',
+                createdAt: addHours(createdAt, 1)
+              }
+            ]
+          });
+        }
+      }
+    }
+  }
+
+  console.log('Creating extra refuse decisions for analytics balance...');
+
+  for (let i = 0; i < 12; i++) {
+    const actor = riders[(i * 2) % riderCount];
+    const target = riders[(i * 3 + 4) % riderCount];
+    if (!target.riderProfile) continue;
+    const createdAt = randomDateWithin(120);
+    await prisma.matchDecision.upsert({
+      where: {
+        actorUserId_targetProfileId: {
+          actorUserId: actor.id,
+          targetProfileId: target.riderProfile.id
+        }
+      },
+      update: {
+        decision: 'REFUSE',
+        updatedAt: createdAt
+      },
+      create: {
+        actorUserId: actor.id,
+        targetProfileId: target.riderProfile.id,
+        decision: 'REFUSE',
+        createdAt,
+        updatedAt: createdAt
+      }
+    });
+  }
+
+  console.log('Creating support reports...');
+  for (let i = 0; i < 6; i++) {
+    const reporter = riders[i];
+    const reported = riders[(i + 6) % riderCount];
+    if (!reported.riderProfile) continue;
+    await prisma.profileReport.create({
+      data: {
+        reporterUserId: reporter.id,
+        reportedProfileId: reported.riderProfile.id,
+        reason: i % 2 === 0 ? 'Problème comportement' : 'Profil suspect',
+        createdAt: randomDateWithin(40)
+      }
+    });
+  }
   await prisma.conversationMember.createMany({
     data: [
       { conversationId: conv3.id, userId: pros[0].id },
@@ -351,8 +601,10 @@ export async function runSeed(client?: PrismaClient) {
   console.log('👨‍💼 1 admin: dev+admin@test.com');
   console.log('🔑 Password for all accounts: Passw0rd!');
   console.log('📍 Users spread across 15 French locations');
-  console.log('🎯 Varied levels, sports, and preferences');
-  console.log('💬 3 demo conversations with messages');
+  console.log('🎯 Varied levels, sports, and preferences + recherches récentes');
+  console.log('🕒 Sessions générées pour refléter l’activité des riders');
+  console.log('🤝 Décisions de matching acceptées/refusées avec conversations simulées');
+  console.log('🚨 Signalements de support pour alimenter les analytics');
 
   if (!client) await prisma.$disconnect();
 }

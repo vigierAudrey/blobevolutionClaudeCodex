@@ -162,12 +162,12 @@ proRouter.get('/offers/me', requireAuth, async (req, res) => {
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
       where: { userId },
-      include: { offer: true }
+      include: { offers: true }
     });
 
     if (!proProfile) return res.status(404).json({ error: 'Pro profile not found' });
 
-    return res.json({ offer: proProfile.offer });
+    return res.json({ offers: proProfile.offers });
   } catch (err) {
     console.error('Error fetching pro offer:', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -194,31 +194,43 @@ proRouter.post('/offers', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Geolocation required. Please update your pro profile with lat/lng first.' });
     }
 
-    // Créer ou mettre à jour l'offre (upsert)
-    const offer = await prisma.proOffer.upsert({
-      where: { proProfileId: proProfile.id },
-      create: {
-        proProfileId: proProfile.id,
-        sport: body.sport,
-        level: body.level,
-        title: body.title,
-        description: body.description,
-        hourlyRate: body.hourlyRate,
-        lat: proProfile.lat,
-        lng: proProfile.lng,
-        isActive: body.isActive,
-      },
-      update: {
-        sport: body.sport,
-        level: body.level,
-        title: body.title,
-        description: body.description,
-        hourlyRate: body.hourlyRate,
-        lat: proProfile.lat,
-        lng: proProfile.lng,
-        isActive: body.isActive,
-      },
+    // Chercher l'offre existante pour ce pro
+    const existingOffer = await prisma.proOffer.findFirst({
+      where: { proProfileId: proProfile.id }
     });
+
+    let offer;
+    if (existingOffer) {
+      // Mettre à jour l'offre existante
+      offer = await prisma.proOffer.update({
+        where: { id: existingOffer.id },
+        data: {
+          sport: body.sport,
+          level: body.level,
+          title: body.title,
+          description: body.description,
+          hourlyRate: body.hourlyRate,
+          lat: proProfile.lat,
+          lng: proProfile.lng,
+          isActive: body.isActive,
+        },
+      });
+    } else {
+      // Créer une nouvelle offre
+      offer = await prisma.proOffer.create({
+        data: {
+          proProfileId: proProfile.id,
+          sport: body.sport,
+          level: body.level,
+          title: body.title,
+          description: body.description,
+          hourlyRate: body.hourlyRate,
+          lat: proProfile.lat,
+          lng: proProfile.lng,
+          isActive: body.isActive,
+        },
+      });
+    }
 
     return res.status(201).json(offer);
   } catch (err: any) {
@@ -271,15 +283,15 @@ proRouter.patch('/offers/me/toggle', requireAuth, async (req, res) => {
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
       where: { userId },
-      include: { offer: true }
+      include: { offers: true }
     });
 
-    if (!proProfile?.offer) return res.status(404).json({ error: 'No offer found' });
+    if (!proProfile?.offers || proProfile.offers.length === 0) return res.status(404).json({ error: 'No offer found' });
 
     // Toggle le statut
     const updatedOffer = await prisma.proOffer.update({
-      where: { id: proProfile.offer.id },
-      data: { isActive: !proProfile.offer.isActive }
+      where: { id: proProfile.offers[0].id },
+      data: { isActive: !proProfile.offers[0].isActive }
     });
 
     return res.json(updatedOffer);

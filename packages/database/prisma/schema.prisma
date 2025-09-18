@@ -36,6 +36,8 @@ model User {
   riderProfile            RiderProfile?
   sessions                Session[]
   wallet                  UserWallet?
+  contactRequests         ContactRequest[]         @relation("ProContactRequests")
+  contactResponses        ContactRequestResponse[] @relation("RiderContactResponses")
 }
 
 model Session {
@@ -89,7 +91,6 @@ model LastSearch {
   userId     String       @id
   sport      String
   level      String
-  partner    PartnerPref?
   distanceKm Int?
   lat        Float?
   lng        Float?
@@ -106,7 +107,6 @@ model RiderProfile {
   displayName       String?
   bio               String?
   sex               Sex               @default(UNSPECIFIED)
-  partnerPref       PartnerPref       @default(ALL)
   maxDistanceKm     Int               @default(20)
   emailNotif        Boolean           @default(false)
   photoUrl          String?
@@ -212,14 +212,15 @@ model Match {
 }
 
 model Conversation {
-  id        String               @id @default(uuid())
-  matchId   String?              @unique
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
-  type      ConversationType     @default(RIDER_TO_RIDER)
-  match     Match?               @relation(fields: [matchId], references: [id])
-  members   ConversationMember[]
-  messages  Message[]
+  id             String               @id @default(uuid())
+  matchId        String?              @unique
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  type           ConversationType     @default(RIDER_TO_RIDER)
+  match          Match?               @relation(fields: [matchId], references: [id])
+  members        ConversationMember[]
+  messages       Message[]
+  contactRequests ContactRequest[]
 
   @@index([type])
 }
@@ -303,6 +304,37 @@ model CreditTransaction {
   @@index([type])
 }
 
+model ContactRequest {
+  id             String              @id @default(uuid())
+  proUserId      String
+  conversationId String
+  message        String?
+  status         ContactRequestStatus @default(PENDING)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  pro            User                @relation("ProContactRequests", fields: [proUserId], references: [id], onDelete: Cascade)
+  conversation   Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  responses      ContactRequestResponse[]
+
+  @@index([proUserId])
+  @@index([conversationId])
+  @@index([status])
+}
+
+model ContactRequestResponse {
+  id               String         @id @default(uuid())
+  contactRequestId String
+  riderUserId      String
+  response         ContactResponse
+  createdAt        DateTime       @default(now())
+  contactRequest   ContactRequest @relation(fields: [contactRequestId], references: [id], onDelete: Cascade)
+  rider            User           @relation("RiderContactResponses", fields: [riderUserId], references: [id], onDelete: Cascade)
+
+  @@unique([contactRequestId, riderUserId])
+  @@index([contactRequestId])
+  @@index([riderUserId])
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model spatial_ref_sys {
   srid      Int     @id
@@ -325,11 +357,6 @@ enum Sex {
   UNSPECIFIED
 }
 
-enum PartnerPref {
-  ALL
-  WOMEN
-  MEN
-}
 
 enum MatchStatus {
   ACTIVE
@@ -370,4 +397,15 @@ enum CreditTransactionType {
   LESSON_REFUND
   PROMO_BONUS
   REFERRAL_BONUS
+}
+
+enum ContactRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum ContactResponse {
+  ACCEPT
+  REJECT
 }

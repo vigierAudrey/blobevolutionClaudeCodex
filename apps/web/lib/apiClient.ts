@@ -1,5 +1,210 @@
 export type LoginResponse = { accessToken: string; refreshToken: string };
 
+export type AdminAnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
+
+export interface AdminEngagementAnalytics {
+  overview: {
+    totalUsers: number;
+    totalRiders: number;
+    totalPros: number;
+    activeUsersLast7Days: number;
+    newUsersInPeriod: number;
+    retentionRates: {
+      day1: number;
+      day7: number;
+      day30: number;
+    };
+  };
+  registrations: Array<{
+    period: string;
+    total: number;
+    riders: number;
+    pros: number;
+  }>;
+  activeUsers: Array<{
+    period: string;
+    count: number;
+  }>;
+  period: AdminAnalyticsPeriod;
+}
+
+export interface AdminMatchingAnalytics {
+  overview: {
+    totalDecisions: number;
+    acceptedCount: number;
+    refusedCount: number;
+    acceptRate: number;
+    refuseRate: number;
+    matchRate: number;
+    matchedConversations: number;
+    geoUsageRate: number;
+  };
+  decisionTimeline: Array<{
+    period: string;
+    accepted: number;
+    refused: number;
+    total: number;
+  }>;
+  conversationTimeline: Array<{
+    period: string;
+    conversations: number;
+  }>;
+  periodGranularity: 'day' | 'week' | 'month';
+  matchesOverTime: Array<{
+    period: string;
+    count: number;
+  }>;
+  sportPreferences: Array<{
+    sport: string;
+    count: number;
+  }>;
+  levelPreferences: Array<{
+    level: string;
+    count: number;
+  }>;
+  searchesBySport: Array<{
+    sport: string;
+    count: number;
+  }>;
+  period: AdminAnalyticsPeriod;
+}
+
+export interface AdminBehaviorAnalytics {
+  period: AdminAnalyticsPeriod;
+  userJourney: {
+    totals: {
+      users: number;
+      riders: number;
+      pros: number;
+    };
+    riders: {
+      profileCreated: number;
+      displayName: number;
+      disciplines: number;
+      photo: number;
+      onboardingComplete: number;
+      searchConfigured: number;
+      recentNewUsers: number;
+      recentProfiles: number;
+      recentDisciplines: number;
+      recentPhotoUpdates: number;
+      recentDecisions: number;
+      recentMessagers: number;
+    };
+    pros: {
+      profileCreated: number;
+      offersPublished: number;
+      verified: number;
+      recentNewUsers: number;
+      recentProfiles: number;
+      recentOffers: number;
+    };
+  };
+  sessions: {
+    totalSessions: number;
+    uniqueUsers: number;
+    avgSessionsPerUser: number;
+    avgDurationSeconds: number;
+    medianDurationSeconds: number;
+    maxDurationSeconds: number;
+    distribution: Array<{ sessions: number; users: number }>;
+  };
+  featureUsage: {
+    messaging: {
+      totalMessages: number;
+      activeConversations: number;
+      uniqueSenders: number;
+      avgMessagesPerConversation: number;
+      avgMessagesPerSender: number;
+    };
+    geolocation: {
+      ridersWithLocation: number;
+      searchesWithGeo: number;
+      activeOffers: number;
+      geoSearchRate: number;
+    };
+    search: {
+      totalSearchUpdates: number;
+      geoSearches: number;
+      avgDistanceKm: number | null;
+      uniqueSearchers: number;
+      period: AdminAnalyticsPeriod;
+    };
+  };
+  support: {
+    totalReports: number;
+    reportsByReason: Array<{ reason: string; count: number }>;
+  };
+}
+
+export type ModerationAction = 'approve' | 'dismiss' | 'ban';
+
+export interface AdminModerationResponse {
+  success: true;
+  action: ModerationAction;
+  reportId: string;
+  bannedUserId?: string;
+}
+
+export interface AdminUserDetail {
+  user: {
+    id: string;
+    email: string;
+    role: 'RIDER' | 'PRO' | 'ADMIN';
+    createdAt: string;
+    deletedAt: string | null;
+    emailVerified: boolean;
+    consentedAt?: string | null;
+    consentVersion?: string | null;
+    riderProfile?: {
+      id: string;
+      displayName: string | null;
+      bio: string | null;
+      sex: string;
+      maxDistanceKm: number | null;
+      emailNotif: boolean;
+      photoUrl: string | null;
+      lat: number | null;
+      lng: number | null;
+      wantsLesson: boolean;
+      lessonSport: string | null;
+      createdAt: string;
+      updatedAt: string;
+      disciplines: Array<{ sport: string; level: string; createdAt: string }>;
+    };
+    proProfile?: {
+      id: string;
+      businessName: string | null;
+      bio: string | null;
+      pricePerHour: string | null;
+      verified: boolean;
+      lat: number | null;
+      lng: number | null;
+      createdAt: string;
+      updatedAt: string;
+      offers: Array<{ id: string; sport: string; level: string; title: string; hourlyRate: string; isActive: boolean; createdAt: string; updatedAt: string }>;
+    };
+    adminProfile?: {
+      displayName: string | null;
+      permissions: string[];
+      lastLoginAt: string | null;
+    };
+    lastSearch?: {
+      sport: string;
+      level: string;
+      distanceKm: number | null;
+      lat: number | null;
+      lng: number | null;
+      updatedAt: string;
+    } | null;
+  };
+  metrics: {
+    reportsReceived: number;
+    reportsSubmitted: number;
+    sessionsCount: number;
+  };
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 function getTokens() {
@@ -149,6 +354,28 @@ export const apiClient = {
     if (params?.page) query.append('page', params.page.toString());
     if (params?.limit) query.append('limit', params.limit.toString());
     return request(`/admin/reports?${query.toString()}`, { method: 'GET' }, true);
+  },
+  moderateReport: (reportId: string, action: ModerationAction) =>
+    request(`/admin/reports/${reportId}/action`, { method: 'POST', body: JSON.stringify({ action }) }, true) as Promise<AdminModerationResponse>,
+  getAdminUser: (userId: string) =>
+    request(`/admin/users/${userId}`, { method: 'GET' }, true) as Promise<AdminUserDetail>,
+  getPermissions: () => request('/admin/permissions', { method: 'GET' }, true),
+  getAdmins: () => request('/admin/admins', { method: 'GET' }, true),
+  updateAdminPermissions: (adminId: string, permissions: string[]) =>
+    request(`/admin/admins/${adminId}/permissions`, { method: 'PATCH', body: JSON.stringify({ permissions }) }, true),
+  setAdminRole: (adminId: string, role: string) =>
+    request(`/admin/admins/${adminId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }, true),
+  getEngagementAnalytics: (period?: AdminAnalyticsPeriod) => {
+    const query = period ? `?period=${period}` : '';
+    return request(`/admin/analytics/engagement${query}`, { method: 'GET' }, true) as Promise<AdminEngagementAnalytics>;
+  },
+  getMatchingAnalytics: (period?: AdminAnalyticsPeriod) => {
+    const query = period ? `?period=${period}` : '';
+    return request(`/admin/analytics/matching${query}`, { method: 'GET' }, true) as Promise<AdminMatchingAnalytics>;
+  },
+  getBehaviorAnalytics: (period?: AdminAnalyticsPeriod) => {
+    const query = period ? `?period=${period}` : '';
+    return request(`/admin/analytics/behavior${query}`, { method: 'GET' }, true) as Promise<AdminBehaviorAnalytics>;
   },
 
   saveTokens: setTokens,

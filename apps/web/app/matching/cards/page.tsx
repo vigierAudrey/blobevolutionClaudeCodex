@@ -12,11 +12,31 @@ import Link from 'next/link';
 type Sport = 'surf' | 'kitesurf';
 type Level = 'beginner' | 'intermediate' | 'advanced';
 
+function formatDateForDisplay(dateStr: string | null): string {
+  if (!dateStr) return '—';
+  if (dateStr === 'anytime') return 'Peu importe';
+
+  const today = new Date();
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const todayISO = today.toISOString().slice(0, 10);
+  const tomorrowISO = tomorrow.toISOString().slice(0, 10);
+
+  if (dateStr === todayISO) return "Aujourd'hui";
+  if (dateStr === tomorrowISO) return 'Demain';
+
+  try {
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' });
+  } catch {
+    return dateStr;
+  }
+}
+
 function CardsInner() {
   const sp = useSearchParams();
   const router = useRouter();
 
-  // Vérifier le rôle utilisateur
+  // Vérifier le rôle utilisateur et profil complet
   useEffect(() => {
     (async () => {
       try {
@@ -29,6 +49,22 @@ function CardsInner() {
         const user = await apiClient.me();
         if (user.role === 'PRO') {
           router.replace('/pro/dashboard');
+          return;
+        }
+
+        // Vérifier si le profil est complet avant d'accéder au matching
+        const [profile, disciplines] = await Promise.all([
+          apiClient.getProfile(),
+          apiClient.getDisciplines().catch(() => []),
+        ]);
+
+        const hasName = !!profile?.displayName;
+        const hasPhoto = !!profile?.photoUrl;
+        const hasDiscipline = Array.isArray(disciplines) && disciplines.length > 0;
+        const incomplete = !hasName || !hasPhoto || !hasDiscipline;
+
+        if (incomplete) {
+          router.replace('/onboarding');
           return;
         }
       } catch {
@@ -206,7 +242,8 @@ function CardsInner() {
 
   const header = useMemo(() => {
     const geoPart = useGeoloc ? (distanceKm ? `${distanceKm} km` : '—') : 'sans géolocalisation';
-    return `${sport || '—'} > ${level || '—'} > ${geoPart} > ${date || '—'}`;
+    const datePart = date === 'anytime' ? 'peu importe' : date || '—';
+    return `${sport || '—'} > ${level || '—'} > ${geoPart} > ${datePart}`;
   }, [sport, level, useGeoloc, distanceKm, date]);
 
   const isInitialLoading = loading && candidates.length === 0;
@@ -228,7 +265,29 @@ function CardsInner() {
         <CardContent className="relative">
           {error && <p className="text-sm text-red-600">{error}</p>}
           {isInitialLoading && <p className="text-sm text-muted-foreground">Chargement…</p>}
-          {!loading && !current && <p className="text-sm text-muted-foreground">Plus de profils pour le moment.</p>}
+          {!loading && !current && (
+            <div className="text-center space-y-4 py-6">
+              <div className="space-y-2">
+                <div className="text-4xl">🏄‍♀️</div>
+                <h3 className="font-semibold text-lg">Plus de profils disponibles</h3>
+                <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                  Désolé si tu n'as pas trouvé de partenaire pour partager ta session ! On reste optimiste,
+                  la communauté des riders grandit chaque jour.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  💡 Astuce : essaie d'augmenter ton périmètre de recherche pour découvrir plus de riders
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Button onClick={() => router.push('/dashboard')} className="w-full">
+                  Retour au dashboard
+                </Button>
+                <Button variant="outline" onClick={() => router.push('/matching')} className="w-full">
+                  Nouvelle recherche
+                </Button>
+              </div>
+            </div>
+          )}
           {current && (
             <div className="space-y-3">
               <div className={
@@ -245,6 +304,10 @@ function CardsInner() {
                 </div>
                 <div className="text-sm text-muted-foreground">{current.gender === 'FEMALE' ? 'Femme' : 'Homme'} • {current.sport} • {current.level}</div>
                 <div className="text-sm text-muted-foreground">{current.distanceKm != null ? `${current.distanceKm} km` : 'distance inconnue'}</div>
+                <div className="text-sm text-muted-foreground flex items-center gap-1">
+                  <span>📅</span>
+                  <span>{formatDateForDisplay(date)}</span>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" onClick={report} disabled={animating} aria-disabled={animating}>Signaler</Button>
@@ -273,12 +336,20 @@ function CardsInner() {
       {newMatch && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-4" onClick={() => setNewMatch(null)}>
           <div className="w-full max-w-sm rounded-lg bg-background border shadow-lg" onClick={(e)=>e.stopPropagation()}>
-            <div className="p-4 space-y-2">
-              <div className="text-xl font-semibold">{newMatch.sport === 'surf' ? 'Go surf ?' : 'Go kite ?'}</div>
-              <div className="text-sm text-muted-foreground">avec {newMatch.otherDisplayName}</div>
-              <div className="pt-2 flex items-center gap-2">
-                <Button onClick={() => { const cid = newMatch.conversationId; setNewMatch(null); router.push(`/messages/${cid}`); }}>Dire bonjour</Button>
-                <Button variant="outline" onClick={() => setNewMatch(null)}>Plus tard</Button>
+            <div className="p-6 space-y-4 text-center">
+              <div className="text-2xl">🎉</div>
+              <div className="text-xl font-semibold">C'est un match !</div>
+              <div className="text-base">
+                {newMatch.sport === 'surf' ? 'Tu vas pouvoir surfer' : 'Tu vas pouvoir kiter'} avec <span className="font-semibold text-primary">{newMatch.otherDisplayName}</span>
+              </div>
+              <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
+                💬 Envoie un message cool pour commencer la conversation !
+              </div>
+              <div className="pt-2 flex flex-col gap-2">
+                <Button className="w-full" onClick={() => { const cid = newMatch.conversationId; setNewMatch(null); router.push(`/messages/${cid}`); }}>
+                  Envoyer un message 🚀
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => setNewMatch(null)}>Plus tard</Button>
               </div>
             </div>
           </div>
