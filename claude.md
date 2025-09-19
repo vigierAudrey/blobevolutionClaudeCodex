@@ -1,6 +1,6 @@
-# 🏄 Guide Claude Code – Blobinfini
+# 🏄 Guide IA – Blobinfini
 
-Ce fichier guide Claude (ou tout LLM) dans le développement de Blobinfini. À lire avant chaque session de code.
+Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement de Blobinfini. À lire avant chaque session de code.
 
 ## 📌 Contexte Projet
 
@@ -9,6 +9,14 @@ Ce fichier guide Claude (ou tout LLM) dans le développement de Blobinfini. À l
 - **Réservation** : Cours avec pros, paiement Stripe, QR codes validation
 - **Social** : Messagerie temps réel, groupes, favoris, réputation
 - **Gamification** : Points "Flocons d'avoine", badges, mascotte Blob personnalisable
+
+## 🧭 Source de vérité & IA
+
+- Ce monorepo (`blobevolutionClaudeCodex`) est la **source unique de vérité**.
+- **Ne consultez plus** l'ancien projet `/blobevolution` (archivé pour référence historique uniquement).
+- Les documents de référence IA sont **README.md** et **claude.md** ; tout écart avec le code doit être signalé par une PR de documentation.
+- Pour le contexte historique, voir `ai/context/migration_from_blobevolution.md` sans en déduire de code.
+- 🎯 Focus visibilité : la Blobosphère est notre vitrine éditoriale pour attirer du trafic et des inscriptions.
 
 ## 🏗️ Architecture Technique
 
@@ -35,7 +43,8 @@ blobinfini/
 │               ├── matching/# Algorithme matching
 │               ├── bookings/# Réservations
 │               ├── payments/# Stripe integration
-│               └── messaging/# Chat Socket.io
+│               ├── messaging/# Chat Socket.io
+│               └── blobosphere/# Contenus éditoriaux & partage social
 ├── packages/
 │   ├── database/            # Prisma schemas + client
 │   ├── shared/              # Types TypeScript partagés
@@ -112,6 +121,37 @@ modules/auth/
 - ✅ Filtrer numéros/emails dans messages
 - ✅ QR codes uniques par session
 - ✅ Tracking comportements suspects
+
+## 🌐 Module Blobosphère
+
+### Mission
+- Renforcer la visibilité de Blobinfini (SEO + réseaux sociaux) via un hub éditorial riche.
+- Relier les univers Riders et Pros à un espace de contenus inspirants/experts.
+- Permettre aux admins de publier, programmer et modérer les contenus.
+
+### Périmètre MVP
+- Pages Next.js :
+  - `/blobosphere` (listing thématique, CTA partage)
+  - `/blobosphere/[slug]` (article, galerie photo)
+  - `/admin/blobosphere` (éditeur WYSIWYG + workflow statut)
+- Contenus : articles, galeries, interviews (rich text + media).
+- Partage : boutons X/Twitter, Facebook, Instagram (deep link), LinkedIn; métadonnées OG/Twitter cards.
+- SEO : ISR/SSG, sitemap dédié, slugs optimisés.
+
+### Backend & données
+- Module API `blobosphere/` (services, contrôleurs, DTO, tests) dans l’API Express.
+- Modèles Prisma clés : `BlobospherePost`, `BlobosphereTopic`, `BlobosphereShareStats`.
+- Statuts : `DRAFT`, `REVIEW`, `PUBLISHED`, `ARCHIVED`.
+- Stockage médias : S3/MinIO via package `blobinfini/storage`, génération de vignettes.
+
+### Gouvernance & analytics
+- Rôles : `ADMIN` (publication/modération), `EDITOR` (optionnel futur), utilisateur authentifié (lecture, commentaires ultérieurs).
+- Events : `blobosphere.enter`, `blobosphere.share.click`, `blobosphere.post.publish`.
+- KPI : +20 % trafic organique, +10 % inscriptions issues des partages.
+
+### Scalabilité
+- Reste dans ce monorepo (Next.js + Express + Prisma). Pas de microservice tant que charge < 10k RPM soutenus.
+- Plan d’évolution : CDN agressif + service de lecture read-only si trafic média massif.
 
 ## 💻 Patterns de Code
 
@@ -295,14 +335,16 @@ npm test -- --watch auth.test.ts
 ## 🤖 Pour Claude/LLMs
 
 Quand tu génères du code pour Blobinfini :
-1. **Module auth d'abord** : JWT, 2FA, sessions Redis
-2. **Sécurité systématique** : Valide tout avec Zod
-3. **RGPD strict** : Consentements, anonymisation
-4. **Performance** : Cache Redis, index DB
-5. **UX mobile** : Touch-friendly, offline-first
-6. **Commission protégée** : Filtrage contacts
-7. **Tests inclus** : Au moins un test par fonction
-8. **Accessibilité** : WCAG 2.1 AA minimum
+1. **Reste dans ce repo** : Ne fais référence qu’au code présent ici.
+2. **Renforce la Blobosphère** : contenus shareables, SEO, workflow admin.
+3. **Module auth d'abord** : JWT, 2FA, sessions Redis
+4. **Sécurité systématique** : Valide tout avec Zod
+5. **RGPD strict** : Consentements, anonymisation
+6. **Performance** : Cache Redis, index DB
+7. **UX mobile** : Touch-friendly, offline-first
+8. **Commission protégée** : Filtrage contacts
+9. **Tests inclus** : Au moins un test par fonction
+10. **Accessibilité** : WCAG 2.1 AA minimum
 
 ### Contexte métier clé
 - Matching : Multi-critères, max 4 riders/groupe, géoloc PostGIS

@@ -1,15 +1,14 @@
-# 🏄 Blobinfini - Claude Codex Edition
+# 🏄 Blobinfini – Monorepo IA
 
 ## 📋 Mission pour l'IA
 
-Ce projet est une **refonte complète** de Blobinfini, marketplace de mise en relation pour les sports de glisse (surf/kitesurf).
+Ce monorepo contient la version vivante de Blobinfini, marketplace de mise en relation pour les sports de glisse (surf/kitesurf).
 
-**Votre mission** : Analyser le code existant dans `/blobevolution` et le réécrire avec une architecture moderne et scalable dans `/blobevolutionClaudeCodex`.
+**Votre mission** : Contribuer directement ici. Ignorez l'ancien projet `/blobevolution` (archivé). Pour un rappel historique uniquement, consultez `ai/context/migration_from_blobevolution.md`.
 
-### Projets à analyser
+**Référence IA** : Ce README et `claude.md` sont les guides officiels pour nos IA (Codex, ChatGPT-5, Claude Code) et l’équipe humaine.
 
-- **Source** : `/blobevolution` (version initiale, à améliorer)
-- **Destination** : `/blobevolutionClaudeCodex` (nouvelle version optimisée)
+**Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de Blobinfini via du contenu partageable (SEO + réseaux sociaux).
 
 ## 🎯 Vision Produit
 
@@ -21,6 +20,7 @@ Blobinfini connecte les passionnés de sports de glisse en proposant :
 - **Messagerie intégrée** avec filtrage anti-contournement
 - **Gamification** : Points "Flocons d'avoine", badges, mascotte Blob personnalisable
 - **Carte interactive** (BloboMap) montrant groupes et spots en temps réel
+- **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de Blobinfini
 
 ### Utilisateurs cibles
 
@@ -81,7 +81,8 @@ blobevolutionClaudeCodex/
 │       │   │   ├── matching/   # Algorithme matching
 │       │   │   ├── bookings/   # Réservations
 │       │   │   ├── payments/   # Intégration Stripe
-│       │   │   └── messaging/  # Chat Socket.io
+│       │   │   ├── messaging/  # Chat Socket.io
+│       │   │   └── blobosphere/ # Contenus éditoriaux & partage social
 │       │   ├── middleware/     # Rate limit, CORS, etc.
 │       │   └── lib/           # Redis, Prisma, etc.
 │       └── Dockerfile
@@ -198,6 +199,7 @@ model User {
 ### Phase 1 - MVP (3 mois)
 
 - [ ] **Auth Module** : inscription, connexion, JWT, reset password
+- [ ] **Blobosphère MVP** : listing public, article, partage social, back-office admin
 
 ### Administration – Analytics (à venir)
 
@@ -238,6 +240,7 @@ model User {
 - [ ] Programme fidélité (Flocons)
 - [ ] BloboMap interactive
 - [ ] Mascotte Blob basique
+- [ ] Blobosphère enrichie (commentaires, newsletters, automation)
 
 ### Phase 3 - Scale (12 mois)
 
@@ -251,54 +254,27 @@ model User {
 
 ## 🚀 Instructions pour l'IA
 
-### Analyse du Code Existant
+### Lignes directrices
 
-1. **Examinez `/blobevolution`** pour comprendre :
+- Travaillez exclusivement dans `blobevolutionClaudeCodex`.
+- Respectez l’architecture modulaire (auth, matching, bookings, payments, messaging).
+- Intégrez le module `blobosphere` (contenus éditoriaux) pour renforcer la visibilité externe.
+- Sécurité systématique : Zod sur tous les inputs, Prisma uniquement, rate limiting, CSRF, headers de sécurité.
+- Auth : JWT 15 min + refresh 30 j, 2FA obligatoire pour les pros, sessions invalidables.
+- RGPD : consentement explicite, anonymisation, droit à l’oubli, export des données.
+- Performance : PostGIS, Redis, index composites, pagination cursor-based.
+- Qualité : TypeScript strict, tests unitaires/E2E, couverture ≥ 80 %.
+- CI/CD : utilisez les scripts fournis (`npm run build`, `npm test`, etc.) et surveillez la GitHub Action `CI`.
 
-   - L'architecture actuelle
-   - Les fonctionnalités implémentées
-   - Les problèmes de sécurité
-   - Les anti-patterns à corriger
+### Processus recommandé
 
-2. **Identifiez les améliorations** :
-   - Code non typé → TypeScript strict
-   - Pas de validation → Zod partout
-   - SQL direct → Prisma ORM
-   - Monolithe → Modules découplés
-   - Pas de tests → 80% coverage minimum
-   - Auth basique → JWT + 2FA + RGPD
-
-### Réécriture dans `/blobevolutionClaudeCodex`
-
-3. **Créez la nouvelle architecture** :
-
-   ```bash
-   # Structure monorepo avec Turborepo
-   npx create-turbo@latest blobevolutionClaudeCodex
-   ```
-
-4. **Implémentez le module Auth en premier** :
-
-   - JWT avec access + refresh tokens
-   - Validation Zod des inputs
-   - Sessions Redis pour invalidation
-   - 2FA avec speakeasy/otplib
-   - Email verification avec nodemailer
-
-5. **Migrez fonctionnalité par fonctionnalité** :
-
-   - Auth → Module complet avec guards
-   - Profiles → RGPD compliant avec chiffrement
-   - Matching → Algorithme PostGIS optimisé
-   - Booking → Intégration Stripe complète
-   - Chat → Socket.io avec rooms
-
-6. **Ajoutez les améliorations** :
-   - Tests unitaires/E2E (Jest + Cypress)
-   - Documentation OpenAPI
-   - Monitoring (Sentry)
-   - Analytics respectueux (Plausible)
-   - CI/CD complet
+1. Lisez `claude.md` et ce README avant chaque session.
+2. Clarifiez le périmètre (feature/bug) et proposez un plan de travail court.
+3. Priorisez les modules critiques (auth par défaut) si la priorité n’est pas spécifiée.
+4. Livrez par petits commits/diffs, avec migrations et seeds synchronisés.
+5. Vérifiez les impacts Blobosphère (SEO, partage, rôles admin) si votre changement touche l’éditorial.
+6. Ajoutez/actualisez tests, seeds, SEO metadata et documentation.
+7. Exécutez `npm run lint`, `npm run type-check` et `npm test` avant de soumettre.
 
 ## 💻 Commandes de Développement
 
@@ -360,8 +336,60 @@ npm run start         # Start production
 - ✅ **Interface** : Icône 📅 + date dans chaque carte ("Aujourd'hui", "Demain", "Peu importe")
 - 🎯 **Comportement** : Affichage uniquement, la date n'influence pas l'algorithme de recherche
 
+## 🌐 Blobosphère – Hub éditorial
+
+### Objectif produit
+- Amplifier la visibilité de Blobinfini via un espace éditorial riche (articles, interviews, reportages photo).
+- Créer un tunnel d’entrée SEO/social : chaque contenu dispose d’URL publiques optimisées et de métadonnées partageables.
+- Offrir aux riders/pros un lien direct depuis leurs univers respectifs pour explorer l’actualité de la communauté.
+
+### Parcours utilisateur
+- Depuis les sections Riders et Pros, un lien “Explorer la Blobosphère” ouvre `/blobosphere` (nouvelle route Next.js).
+- Contenus structurés par thèmes (spots, riders, pros, écologie). Possibilité de filtrer et de rechercher.
+- Boutons de partage social (X/Twitter, Facebook, Instagram, LinkedIn) avec prévisualisations OG/Twitter Cards.
+
+### Gestion éditoriale (Admin)
+- Les comptes `ADMIN` accèdent à `/admin/blobosphere` (guardé) pour rédiger, prévisualiser et publier.
+- Workflow statut : `draft` → `review` → `published` → `archived`.
+- Possibilité d’épingler un contenu sur la page d’accueil Blobosphère et dans les univers Riders/Pros.
+- Outils de modération : signalements utilisateurs, bannière “contenu signalé”, archivage rapide.
+
+### Architecture & données
+- Nouveau module API `blobosphere/` (services, contrôleurs, DTO Prisma).
+- Modèles Prisma suggérés :
+  ```prisma
+  model BlobospherePost {
+    id            String   @id @default(uuid())
+    slug          String   @unique
+    title         String
+    excerpt       String
+    content       Json
+    coverImageUrl String?
+    status        BlobosphereStatus @default(DRAFT)
+    publishedAt   DateTime?
+    authorId      String
+    author        User     @relation(fields: [authorId], references: [id])
+    topics        BlobospherePostTopic[]
+    shareStats    BlobosphereShareStats?
+    createdAt     DateTime @default(now())
+    updatedAt     DateTime @updatedAt
+  }
+  ```
+- Stockage médias : bucket S3/MinIO (géré par le package `blobinfini/storage`), génération de formats responsive.
+- SEO : ISR/SSG par post, réhydratation côté client pour interactions (likes, commentaires futurs).
+
+### Mesure & analytics
+- Événements : `blobosphere.enter`, `blobosphere.share.click`, `blobosphere.post.publish`.
+- Dashboard Metabase/Looker : trafic, partages, conversions (clic vers inscription).
+- Objectif KPI : +20% trafic organique mensuel et +10% inscriptions issues de posts partagés.
+
+### Scalabilité
+- Reste dans ce monorepo : Next.js (web), module Express (API), Prisma/Postgres.
+- Si trafic média dépasse la charge transactionnelle (pics >10K RPM soutenus) : envisager CDN agressif + microservice lecture read-only (non prioritaire MVP).
+
 ## 👥 Rôles, Profils et BloboMap
 
+- Riders et Pros disposent d’un CTA "Explorer la Blobosphère" pour accéder au hub éditorial (route `/blobosphere`).
 - Riders (particuliers):
   - Profil `RiderProfile` avec `wantsLesson` (bool) et `lessonSport` (surf|kitesurf).
   - Matching: bouton "Faire appel à un pro" et interrupteur "Je veux un cours".
@@ -394,6 +422,7 @@ npm run start         # Start production
   - Rider: `dev+rider@test.com` (Passw0rd!) — wantsLesson surf (lat/lng Paris)
   - Rider kite: `dev+kite@test.com` (Passw0rd!) — wantsLesson kitesurf (lat/lng Paris)
   - Pro: `dev+pro@test.com` (Passw0rd!) — lieu de travail (lat/lng Paris)
+  - Admin: `admin@example.com` (AdminPass123!) — accès publication/modération Blobosphère
 
 ## 🗺️ Carte (open source, sans Google)
 
@@ -541,22 +570,21 @@ router.post(
 
 ## 🤝 Contribution IA
 
-Avant de coder :
+### Checklist avant de coder
+1. **Synchronisez le contexte** : relisez `claude.md`, ce README et les RFC pertinentes (`docs/architecture/*`).
+2. **Cadrez le besoin** : story/bug, critères d’acceptation, métriques attendues (inclure impacts Blobosphère/SEO/IA).
+3. **Mappez les dépendances** : migrations Prisma, seeds, feature flags, variables d’environnement, scripts CI.
+4. **Partagez un plan concis** : étapes, fichiers ciblés, tests prévus; validez-le avec l’équipe avant d’écrire du code.
+5. **Itérez par petits commits/diffs** : documentez les décisions et actualisez la doc associée (README, claude.md, RFC).
+6. **Gardez la visibilité en tête** : pour toute feature touchant la Blobosphère, mettez à jour SEO, métadonnées de partage et analytics (`aiRedirects`).
+7. **Exécutez la boucle CI locale** : `npm run lint`, `npm run type-check`, `npm test`, scénarios E2E obligatoires si concernés.
 
-1. Lisez **CLAUDE.md** pour les conventions
-2. Analysez `/blobevolution` complètement
-3. Proposez un plan de migration
-4. **Commencez par le module Auth**
-5. Validez l'architecture avec des diagrammes
-6. Implémentez par petits commits atomiques
-
-Chaque contribution doit :
-
-- Être testée (min 80% coverage)
-- Respecter TypeScript strict
-- Suivre les patterns de sécurité
-- Documenter les choix techniques
-- Inclure les migrations nécessaires
+### Definition of Done
+- ✅ Couverture de tests ≥ 80 % (unitaires + E2E ciblés).
+- ✅ TypeScript strict sans `any` non justifié.
+- ✅ Patterns de sécurité respectés (Zod, Prisma, rate limiting, secrets).
+- ✅ Documentation actualisée (technique + guides IA) et migrations/seed incluses si besoin.
+- ✅ Expérience Blobosphère vérifiée (routing public, partage social, rôle admin, contenu attractif pour IA).
 
 ## 📞 Support & Contact
 
@@ -566,4 +594,4 @@ Chaque contribution doit :
 
 ---
 
-_Blobinfini - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊# blobevolutionClaudeCodex
+_Blobinfini - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊

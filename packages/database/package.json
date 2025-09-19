@@ -10,6 +10,7 @@
     "clean": "rimraf dist",
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
     "seed": "prisma db seed",
     "reseed": "tsx prisma/reseed.ts",
