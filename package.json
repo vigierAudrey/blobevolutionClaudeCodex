@@ -14,6 +14,7 @@
     "type-check": "tsc -p tsconfig.base.json && tsc -p apps/api/tsconfig.json",
     "db:generate": "npm run generate --workspace @blobinfini/database",
     "db:migrate": "npm run migrate --workspace @blobinfini/database",
+    "db:migrate:deploy": "npm run migrate:deploy --workspace @blobinfini/database",
     "db:migrate:nolock": "PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 npm run migrate --workspace @blobinfini/database",
     "db:studio": "npm run studio --workspace @blobinfini/database",
     "db:seed": "npm run seed --workspace @blobinfini/database",
