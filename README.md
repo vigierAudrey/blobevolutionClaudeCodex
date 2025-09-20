@@ -318,6 +318,7 @@ npm run start         # Start production
 2. Dans un terminal séparé, démarre l’API si nécessaire (`npm run dev:api`) ; le front est lancé automatiquement par Playwright via `playwright.config.ts`.
 3. Exécute `npm run test:e2e`.
 4. Pour vérifier un test mobile spécifique, force l’option `--project=chromium` (déjà par défaut) ; les tests incluent une couverture mobile et la démo `/reservations/start`.
+5. En CI, récupère l’artefact `playwright-report` (HTML) ou `playwright-traces` (si échec) pour rejouer les scénarios via `npx playwright show-trace <trace.zip>`.
 
 ### Publier ton travail sur GitHub (workflow local)
 

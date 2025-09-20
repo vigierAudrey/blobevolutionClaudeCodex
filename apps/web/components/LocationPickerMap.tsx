@@ -8,6 +8,7 @@ type LocationPickerMapProps = {
   value: { lat: number; lng: number } | null;
   onChange: (coords: { lat: number; lng: number }) => void;
   defaultCenter?: [number, number];
+  draggableMarker?: boolean;
 };
 
 // Ensure Leaflet default icons load correctly in Next.js
@@ -18,7 +19,12 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-export default function LocationPickerMap({ value, onChange, defaultCenter = [43.493, -1.558] }: LocationPickerMapProps) {
+export default function LocationPickerMap({
+  value,
+  onChange,
+  defaultCenter = [43.493, -1.558],
+  draggableMarker = false,
+}: LocationPickerMapProps) {
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;
@@ -65,7 +71,7 @@ export default function LocationPickerMap({ value, onChange, defaultCenter = [43
     >
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
       <FlyToMarker center={center} />
-      <SelectionMarker value={value} onChange={onChange} icon={markerIcon} />
+      <SelectionMarker value={value} onChange={onChange} icon={markerIcon} draggable={draggableMarker} />
     </MapContainer>
   );
 }
@@ -88,9 +94,10 @@ type SelectionMarkerProps = {
   value: { lat: number; lng: number } | null;
   onChange: (coords: { lat: number; lng: number }) => void;
   icon: L.DivIcon;
+  draggable: boolean;
 };
 
-function SelectionMarker({ value, onChange, icon }: SelectionMarkerProps) {
+function SelectionMarker({ value, onChange, icon, draggable }: SelectionMarkerProps) {
   const map = useMapEvents({
     click(event) {
       const lat = Number(event.latlng.lat.toFixed(6));
@@ -110,5 +117,18 @@ function SelectionMarker({ value, onChange, icon }: SelectionMarkerProps) {
     return null;
   }
 
-  return <Marker position={[value.lat, value.lng]} icon={icon} />;
+  return (
+    <Marker
+      position={[value.lat, value.lng]}
+      icon={icon}
+      draggable={draggable}
+      eventHandlers={{
+        dragend(event) {
+          const lat = Number(event.target.getLatLng().lat.toFixed(6));
+          const lng = Number(event.target.getLatLng().lng.toFixed(6));
+          onChange({ lat, lng });
+        },
+      }}
+    />
+  );
 }

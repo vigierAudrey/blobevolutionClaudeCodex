@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type Browser } from '@playwright/test';
 
 test.describe('Reservations start flow', () => {
   test('rider can progress through the main steps', async ({ page }) => {
@@ -85,5 +85,151 @@ test.describe('Reservations map on mobile', () => {
 
     await legendToggle.click();
     await expect(page.getByRole('button', { name: 'Afficher la légende' })).toBeVisible();
+  });
+});
+
+async function runBookingFlow(
+  browser: Browser,
+  action: 'ACCEPT' | 'REJECT',
+  options: { proEmail?: string; riderEmail?: string } = {}
+) {
+    const apiBaseUrl = process.env.PLAYWRIGHT_API_URL ?? 'http://127.0.0.1:4000';
+    const api = await playwrightRequest.newContext({ baseURL: apiBaseUrl });
+
+    const proEmail = options.proEmail ?? process.env.E2E_PRO_EMAIL ?? 'dev+pro1@test.com';
+    const riderEmail = options.riderEmail ?? process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
+
+    const proLogin = await api.post('/auth/login', {
+      data: { email: proEmail, password: 'Passw0rd!' },
+    });
+    if (!proLogin.ok()) {
+      throw new Error(`Pro login failed (${proLogin.status}): ${await proLogin.text()}`);
+    }
+    const proLoginJson = await proLogin.json();
+    const proToken = proLoginJson.accessToken as string;
+
+    const riderLogin = await api.post('/auth/login', {
+      data: { email: riderEmail, password: 'Passw0rd!' },
+    });
+    if (!riderLogin.ok()) {
+      throw new Error(`Rider login failed (${riderLogin.status}): ${await riderLogin.text()}`);
+    }
+    const riderLoginJson = await riderLogin.json();
+    const riderToken = riderLoginJson.accessToken as string;
+
+    const now = Date.now();
+    const startAt = new Date(now + 60 * 60 * 1000);
+    const endAt = new Date(now + 90 * 60 * 1000);
+    const spotName = `Playwright Spot ${action} ${now}`;
+
+    const availabilityResponse = await api.post('/booking/availability', {
+      headers: { Authorization: `Bearer ${proToken}` },
+      data: {
+        sport: 'surf',
+        levels: ['beginner', 'intermediate'],
+        startAt: startAt.toISOString(),
+        endAt: endAt.toISOString(),
+        capacity: 4,
+        spotName,
+        spotLat: 43.493,
+        spotLng: -1.558,
+      },
+    });
+    expect(availabilityResponse.ok()).toBeTruthy();
+    const availabilityJson = await availabilityResponse.json();
+    const availabilityId = availabilityJson.id as string;
+
+    const riderContext = await browser.newContext();
+    const riderPage = await riderContext.newPage();
+
+    await riderPage.goto('/login');
+    await riderPage.getByLabel('Email').fill(riderEmail);
+    await riderPage.getByLabel('Mot de passe').fill('Passw0rd!');
+    await riderPage.getByRole('button', { name: 'Se connecter' }).click();
+    await riderPage.waitForTimeout(500); // redirection onboarding vs dashboard
+    await riderPage.goto('/reservations/start');
+
+    await riderPage.getByRole('button', { name: /Surf/ }).click();
+    await riderPage.getByText('Débutant').click();
+    await riderPage.getByRole('button', { name: /Continuer/ }).click();
+    await riderPage.getByRole('button', { name: 'Voir les pros disponibles' }).click();
+
+    await riderPage.waitForResponse((res) => res.url().includes('/booking/availability/search'));
+    const slotHeading = riderPage.getByRole('heading', { name: spotName }).first();
+    await expect(slotHeading).toBeVisible();
+    const slotCard = slotHeading.locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+    await slotCard.getByRole('button', { name: 'Demander ce créneau' }).click();
+    await expect(riderPage.getByRole('heading', { name: 'Demander ce créneau' })).toBeVisible();
+    await riderPage.getByRole('button', { name: 'Envoyer la demande' }).click();
+    await expect(riderPage.getByText('Demande envoyée')).toBeVisible();
+
+    const riderRequestsPending = await api.get('/booking/requests/me', {
+      headers: { Authorization: `Bearer ${riderToken}` },
+    });
+    expect(riderRequestsPending.ok()).toBeTruthy();
+    const riderRequestsJson = (await riderRequestsPending.json()) as {
+      requests: Array<{ id: string; availability: { id: string }; status: string }>;
+    };
+    const createdRequest = riderRequestsJson.requests.find((req) => req.availability.id === availabilityId);
+    expect(createdRequest).toBeTruthy();
+    const requestId = createdRequest!.id;
+    expect(createdRequest!.status).toBe('PENDING');
+
+    const proContext = await browser.newContext();
+    const proPage = await proContext.newPage();
+    await proPage.goto('/login');
+    await proPage.getByLabel('Email').fill(proEmail);
+    await proPage.getByLabel('Mot de passe').fill('Passw0rd!');
+    await proPage.getByRole('button', { name: 'Se connecter' }).click();
+    await proPage.waitForTimeout(500);
+    await proPage.goto('/pro/planning');
+
+    const pendingRequestCard = proPage.locator('div', {
+      hasText: spotName,
+      has: proPage.getByRole('button', { name: 'Accepter' }),
+    }).first();
+    await expect(pendingRequestCard).toBeVisible();
+    const decisionButtonName = action === 'ACCEPT' ? 'Accepter' : 'Refuser';
+    await Promise.all([
+      proPage.waitForResponse(
+        (res) =>
+          res.url().includes(`/booking/requests/${requestId}/decision`) &&
+          res.request().method() === 'POST' &&
+          res.ok()
+      ),
+      pendingRequestCard.getByRole('button', { name: decisionButtonName }).first().click(),
+    ]);
+
+    const riderRequestsAccepted = await api.get('/booking/requests/me', {
+      headers: { Authorization: `Bearer ${riderToken}` },
+    });
+    expect(riderRequestsAccepted.ok()).toBeTruthy();
+    const riderRequestsAcceptedJson = (await riderRequestsAccepted.json()) as {
+      requests: Array<{ id: string; availability: { id: string }; status: string }>;
+    };
+    const finalRequest = riderRequestsAcceptedJson.requests.find((req) => req.id === requestId);
+    expect(finalRequest).toBeTruthy();
+    expect(finalRequest!.status).toBe(action === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED');
+
+    await proContext.close();
+    await riderContext.close();
+    await api.dispose();
+}
+
+test.describe('Rider to pro booking flow', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  test('rider sends request and pro accepts it', async ({ browser }) => {
+    await runBookingFlow(browser, 'ACCEPT', {
+      proEmail: 'dev+pro1@test.com',
+      riderEmail: 'dev+rider1@test.com',
+    });
+  });
+
+  test('rider sends request and pro rejects it', async ({ browser }) => {
+    await runBookingFlow(browser, 'REJECT', {
+      proEmail: 'dev+pro2@test.com',
+      riderEmail: 'dev+rider2@test.com',
+    });
   });
 });
