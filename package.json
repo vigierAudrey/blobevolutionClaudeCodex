@@ -23,9 +23,11 @@
     "db:reseed": "npm run reseed --workspace @blobinfini/database",
     "purge:consent-ip": "tsx apps/api/src/jobs/purgeConsent.ts",
     "test": "npm run test --workspace @blobinfini/api",
+    "test:e2e": "playwright test",
     "postinstall": "npm run build --workspace @blobinfini/database || true"
   },
   "devDependencies": {
+    "@playwright/test": "^1.48.0",
     "concurrently": "^9.2.1"
   }
 }
