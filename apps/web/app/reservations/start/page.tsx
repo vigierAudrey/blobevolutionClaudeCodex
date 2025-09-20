@@ -87,21 +87,26 @@ export default function ReservationStartPage() {
   const mapItems = useMemo(() => {
     return results
       .filter((slot) => slot.spotLat != null && slot.spotLng != null)
-      .map((slot) => ({
-        id: slot.id,
-        lat: slot.spotLat as number,
-        lng: slot.spotLng as number,
-        displayName: slot.spotName || slot.pro.businessName || slot.pro.email,
-        distanceKm: slot.distanceKm ?? undefined,
-        userId: slot.id,
-        type: 'availability' as const,
-      }));
+      .map((slot) => {
+        const isFull = slot.bookedCount >= slot.capacity;
+        return {
+          id: slot.id,
+          lat: slot.spotLat as number,
+          lng: slot.spotLng as number,
+          displayName: slot.spotName || slot.pro.businessName || slot.pro.email,
+          distanceKm: slot.distanceKm ?? undefined,
+          userId: slot.id,
+          type: 'availability' as const,
+          isDisabled: isFull,
+          disabledReason: isFull ? 'Ce créneau est complet.' : undefined,
+        };
+      });
   }, [results]);
 
   const handleMapContactClick = useCallback(
     (slotId: string) => {
       const slot = results.find((item) => item.id === slotId);
-      if (slot) {
+      if (slot && slot.bookedCount < slot.capacity) {
         setRequestingSlot(slot);
       }
     },
@@ -341,6 +346,7 @@ export default function ReservationStartPage() {
                         { label: 'Votre position', color: '#0ea5e9' },
                         { label: 'Créneaux disponibles', color: '#2563eb' },
                       ]}
+                      radiusKm={distanceKm}
                     />
                   ) : (
                     <div className="p-4 text-sm text-muted-foreground">
@@ -394,8 +400,16 @@ export default function ReservationStartPage() {
                         </div>
                         <RiderMiniaturesStrip riders={slot.riders} />
                       </div>
-                      <div className="flex justify-end">
-                        <Button size="sm" onClick={() => setRequestingSlot(slot)}>
+                      <div className="flex items-center justify-end gap-2">
+                        {slot.bookedCount >= slot.capacity && (
+                          <span className="text-xs text-muted-foreground">Créneau complet</span>
+                        )}
+                        <Button
+                          size="sm"
+                          onClick={() => setRequestingSlot(slot)}
+                          disabled={slot.bookedCount >= slot.capacity}
+                          title={slot.bookedCount >= slot.capacity ? 'Tous les riders sont déjà positionnés.' : undefined}
+                        >
                           Demander ce créneau
                         </Button>
                       </div>

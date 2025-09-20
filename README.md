@@ -215,10 +215,10 @@ model User {
 
 #### Prochaines étapes courtes (à prioriser demain)
 
-- [ ] Mettre en place l’infrastructure Playwright : `playwright.config.ts`, script `npm run test:e2e`, tests smoke `/reservations/start`, exécuter `npx playwright install`.
-- [ ] Ajuster le bouton carte « Contacter » côté rider (libellé explicite “Demander ce créneau”, tooltip) et vérifier les états désactivés.
-- [ ] Affiner l’expérience carte : zoom/centrage dynamique selon `distanceKm`, gestion tooltip légende sur mobile.
-- [ ] Documenter dans le README le lancement des tests E2E dès que Playwright est prêt.
+    - [x] Mettre en place l’infrastructure Playwright : `playwright.config.ts`, script `npm run test:e2e`, tests smoke `/reservations/start`, exécuter `npx playwright install`.
+- [x] Ajuster le bouton carte « Contacter » côté rider (libellé explicite “Demander ce créneau”, tooltip) et vérifier les états désactivés.
+- [x] Affiner l’expérience carte : zoom/centrage dynamique selon `distanceKm`, gestion tooltip légende sur mobile.
+- [x] Documenter dans le README le lancement des tests E2E dès que Playwright est prêt.
 
 ### Administration – Analytics (à venir)
 
@@ -311,6 +311,34 @@ npm run type-check    # TypeScript
 npm run build         # Build production
 npm run start         # Start production
 ```
+
+### Tests E2E Playwright (à lancer localement)
+
+1. Première fois uniquement : `npx playwright install` (télécharge les navigateurs).
+2. Dans un terminal séparé, démarre l’API si nécessaire (`npm run dev:api`) ; le front est lancé automatiquement par Playwright via `playwright.config.ts`.
+3. Exécute `npm run test:e2e`.
+4. Pour vérifier un test mobile spécifique, force l’option `--project=chromium` (déjà par défaut) ; les tests incluent une couverture mobile et la démo `/reservations/start`.
+
+### Publier ton travail sur GitHub (workflow local)
+
+```bash
+# Vérifier l’état
+git status
+
+# Créer une branche dédiée (une fois)
+git checkout -b feat/ma-fonctionnalite
+
+# Ajouter les fichiers modifiés
+git add .
+
+# Committer avec un message clair
+git commit -m "feat: description courte"
+
+# Pousser la branche vers GitHub
+git push -u origin feat/ma-fonctionnalite
+```
+
+Ensuite, ouvre la Pull Request depuis GitHub comme d’habitude (la branche est déjà publiée).
 
 ## 🛠️ CI & E2E (Coach pédago)
 
@@ -417,6 +445,25 @@ npm run start         # Start production
   - `npm run db:seed` → crée des comptes de démo.
   - `npm run db:reseed` → efface les données et réinjecte la démo (rapide, sans toucher au schéma).
   - `npm run db:reset` → drop + remigre + seed (reset complet).
+
+- Démarrage rapide à copier-coller (local) :
+
+  ```bash
+  # 1. Préparer l'environnement (la copie .env est nécessaire uniquement la première fois)
+  cp -n .env.example .env 2>/dev/null || true
+  docker compose up -d postgres redis minio mailpit
+  npm install
+  npm run db:reseed
+
+  # 2. Lancer les serveurs applicatifs (dans deux terminaux séparés)
+  npm run dev:api
+  npm run dev:web
+  ```
+
+  - API dispo sur `http://localhost:4000`
+  - Front web sur `http://localhost:3002`
+  - Mailpit (inbox mails dev) : `http://localhost:8025`
+  - Console fichier MinIO (stockage images) : `http://localhost:9001` (`minioadmin` / `minioadmin`)
 
 - Comptes:
   - Rider: `dev+rider@test.com` (Passw0rd!) — wantsLesson surf (lat/lng Paris)

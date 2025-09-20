@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -18,6 +19,18 @@ import type {
 
 type AvailabilityView = BookingAvailability;
 interface RequestView extends BookingRequestInboxItem {}
+
+const LocationPickerMap = dynamic(() => import('../../../components/LocationPickerMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+      Chargement de la carte…
+    </div>
+  ),
+});
+
+const STORAGE_KEY = 'pro-planning:last-slot';
+const STORAGE_VERSION = 1;
 
 export default function ProPlanningPage() {
   const router = useRouter();
@@ -279,14 +292,59 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
   const [form, setForm] = useState<CreateAvailabilityFormState>(defaultCreateFormState);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showMap, setShowMap] = useState(false);
+  const [hasStoredPrefs, setHasStoredPrefs] = useState(false);
+
+  const restorePreferences = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as {
+        version: number;
+        data: CreateAvailabilityFormState;
+      };
+      if (parsed.version !== STORAGE_VERSION) {
+        return;
+      }
+      setForm(parsed.data);
+      setHasStoredPrefs(true);
+    } catch (err) {
+      console.warn('[CreateAvailabilityModal] unable to restore preferences', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    restorePreferences();
+  }, [restorePreferences]);
 
   useEffect(() => {
     if (!open) {
       setForm(defaultCreateFormState);
       setSaving(false);
       setError(null);
+      setShowMap(false);
+      setHasStoredPrefs(false);
+      restorePreferences();
     }
-  }, [open]);
+  }, [open, restorePreferences]);
+
+  const LocationPickerMap = useMemo(
+    () =>
+      dynamic(() => import('../../../components/LocationPickerMap'), {
+        ssr: false,
+        loading: () => (
+          <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+            Chargement de la carte…
+          </div>
+        ),
+      }),
+    []
+  );
 
   const computedEndDate = useMemo(() => {
     if (!form.date || !form.startTime) return null;
@@ -360,6 +418,17 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
     try {
       setSaving(true);
       await apiClient.createBookingAvailability(payload);
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({ version: STORAGE_VERSION, data: form })
+          );
+          setHasStoredPrefs(true);
+        } catch (err) {
+          console.warn('[CreateAvailabilityModal] unable to persist preferences', err);
+        }
+      }
       await onCreated();
       onClose();
     } catch (err: any) {
@@ -494,24 +563,26 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
           </div>
 
           <label className="flex flex-col gap-1 text-sm">
-            Durée (minutes)
+            Durée (heures)
             <input
               type="number"
-              min={30}
-              max={240}
-              step={15}
-              value={form.duration}
+              min={0.5}
+              max={4}
+              step={0.25}
+              value={form.duration / 60}
               onChange={(event) =>
                 setForm((prev) => {
-                  const next = Number(event.target.value);
-                  if (Number.isNaN(next)) return prev;
-                  const clamped = Math.min(240, Math.max(30, next));
-                  return { ...prev, duration: clamped };
+                  const nextHours = Number(event.target.value);
+                  if (Number.isNaN(nextHours)) return prev;
+                  const clampedHours = Math.min(4, Math.max(0.5, nextHours));
+                  const minutes = Math.round(clampedHours * 60);
+                  return { ...prev, duration: minutes };
                 })
               }
               className="rounded-md border px-2 py-1"
               required
             />
+            <span className="text-xs text-muted-foreground">{form.duration} min au total</span>
             {formattedEnd && (
               <span className="text-xs text-muted-foreground">Fin estimée à {formattedEnd}</span>
             )}
@@ -528,29 +599,79 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
             />
           </label>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-sm">
-              Latitude
-              <input
-                type="number"
-                step="any"
-                value={form.spotLat}
-                onChange={(event) => setForm((prev) => ({ ...prev, spotLat: event.target.value }))}
-                className="rounded-md border px-2 py-1"
-                placeholder="43.493"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              Longitude
-              <input
-                type="number"
-                step="any"
-                value={form.spotLng}
-                onChange={(event) => setForm((prev) => ({ ...prev, spotLng: event.target.value }))}
-                className="rounded-md border px-2 py-1"
-                placeholder="-1.558"
-              />
-            </label>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Localisation</span>
+              <div className="flex items-center gap-2">
+                {hasStoredPrefs && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        window.localStorage.removeItem(STORAGE_KEY);
+                      }
+                      setForm(defaultCreateFormState);
+                      setHasStoredPrefs(false);
+                    }}
+                  >
+                    Réinitialiser mes préférences
+                  </Button>
+                )}
+                <Button type="button" size="sm" variant="secondary" onClick={() => setShowMap((prev) => !prev)}>
+                  {showMap ? 'Masquer la carte' : 'Choisir sur la carte'}
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-sm">
+                Latitude
+                <input
+                  type="number"
+                  step="any"
+                  value={form.spotLat}
+                  onChange={(event) => setForm((prev) => ({ ...prev, spotLat: event.target.value }))}
+                  className="rounded-md border px-2 py-1"
+                  placeholder="43.493"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                Longitude
+                <input
+                  type="number"
+                  step="any"
+                  value={form.spotLng}
+                  onChange={(event) => setForm((prev) => ({ ...prev, spotLng: event.target.value }))}
+                  className="rounded-md border px-2 py-1"
+                  placeholder="-1.558"
+                />
+              </label>
+            </div>
+            {showMap && (
+              <div className="overflow-hidden rounded-md border">
+                <div className="h-64">
+                  <LocationPickerMap
+                    value={
+                      form.spotLat && form.spotLng
+                        ? { lat: Number(form.spotLat), lng: Number(form.spotLng) }
+                        : null
+                    }
+                    onChange={({ lat, lng }) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        spotLat: lat.toFixed(6),
+                        spotLng: lng.toFixed(6),
+                      }))
+                    }
+                  />
+                </div>
+                <p className="px-3 py-2 text-xs text-muted-foreground">
+                  Clique sur la carte pour positionner le spot du cours. Les coordonnées sont mises à jour
+                  automatiquement.
+                </p>
+              </div>
+            )}
           </div>
 
           {error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
