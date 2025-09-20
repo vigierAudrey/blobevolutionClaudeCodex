@@ -37,6 +37,10 @@ export class BookingRepository {
 
     const startCondition = startAt ? Prisma.sql`AND pa."startAt" >= ${startAt}` : Prisma.empty;
     const endCondition = endAt ? Prisma.sql`AND pa."startAt" <= ${endAt}` : Prisma.empty;
+    const sportCondition =
+      sport === 'surf'
+        ? Prisma.sql`pa."sport" = 'surf'::"Sport"`
+        : Prisma.sql`pa."sport" = 'kitesurf'::"Sport"`;
 
     return prisma.$queryRaw<Array<any>>(
       Prisma.sql`
@@ -62,7 +66,7 @@ export class BookingRepository {
         FROM "ProAvailability" pa
         JOIN "User" u ON u."id" = pa."proUserId"
         LEFT JOIN "ProProfile" pp ON pp."userId" = pa."proUserId"
-        WHERE pa."sport" = ${sport}
+        WHERE ${sportCondition}
           AND ${level} = ANY(pa."levels")
           AND pa."status" = 'OPEN'
           AND pa."spotLat" IS NOT NULL
