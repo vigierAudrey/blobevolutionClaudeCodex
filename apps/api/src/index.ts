@@ -3,15 +3,20 @@ import { resolve } from 'path';
 // Load env from repo root by default so workspaces share one .env
 dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env') });
 import express from 'express';
+import session from 'express-session';
+import cookieParser from 'cookie-parser';
 // Minimal CORS middleware to avoid ESM/CJS interop issues in dev
 function simpleCors(_req: any, res: any, next: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-XSRF-Token');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   if (_req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 }
 import helmet from 'helmet';
+import { setupCSRF, csrfProtection, getCSRFToken } from './middleware/csrf';
+import { smartRateLimit } from './middleware/enhanced-rate-limit';
 import { authRouter } from './modules/auth/auth.controller';
 import { profileRouter } from './modules/profile/profile.controller';
 import { matchingRouter } from './modules/matching/matching.controller';
@@ -26,14 +31,37 @@ import { bookingRouter } from './modules/booking/booking.controller';
 export function createApp() {
   const app = express();
   app.use(express.json());
+  app.use(cookieParser());
+
   // Trust proxy so req.ip/req.ips reflect X-Forwarded-For when behind a reverse proxy
   // In dev Docker/localhost this is harmless; in prod it ensures correct client IPs.
   app.set('trust proxy', true);
+
+  // Session configuration for CSRF
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'blobinfini-dev-secret-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax'
+    }
+  }));
+
   app.use(simpleCors);
   app.use(helmet());
 
-  // Optional background purge of consent IPs (minimization)
-  const purgeHours = Number(process.env.CONSENT_PURGE_INTERVAL_HOURS || '0');
+  // Global rate limiting (before specific routes)
+  app.use(smartRateLimit);
+
+  // CSRF setup (must be after session and before routes)
+  app.use(setupCSRF);
+
+  // Enhanced GDPR purge system with legal protection
+  const gdprPurgeHours = Number(process.env.GDPR_PURGE_INTERVAL_HOURS || '24'); // Daily by default
+  const legacyPurgeHours = Number(process.env.CONSENT_PURGE_INTERVAL_HOURS || '0'); // Legacy system
   const purgeDays = Number(process.env.CONSENT_PURGE_RETENTION_DAYS || '730');
   const convPurgeHours = Number(process.env.CONV_PURGE_INTERVAL_HOURS || '0');
   const convTrashDays = Number(process.env.CONV_TRASH_RETENTION_DAYS || '30');
@@ -50,8 +78,26 @@ export function createApp() {
       console.error('Consent purge failed', e);
     }
   }
-  if (purgeHours > 0) {
-    setInterval(purgeOnce, purgeHours * 60 * 60 * 1000);
+  // Enhanced GDPR purge system
+  async function performGDPRPurge() {
+    try {
+      const { gdprPurgeService } = await import('./services/gdpr-purge.service');
+      await gdprPurgeService.performFullPurge();
+    } catch (e) {
+      console.error('GDPR purge failed', e);
+    }
+  }
+
+  if (gdprPurgeHours > 0) {
+    setInterval(performGDPRPurge, gdprPurgeHours * 60 * 60 * 1000);
+    if (String(process.env.GDPR_PURGE_RUN_ON_START || 'false').toLowerCase() === 'true') {
+      performGDPRPurge();
+    }
+  }
+
+  // Legacy consent IP purge (fallback if GDPR purge disabled)
+  if (legacyPurgeHours > 0 && gdprPurgeHours === 0) {
+    setInterval(purgeOnce, legacyPurgeHours * 60 * 60 * 1000);
     if (String(process.env.CONSENT_PURGE_RUN_ON_START || 'true').toLowerCase() === 'true') {
       purgeOnce();
     }
@@ -79,6 +125,12 @@ export function createApp() {
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
+
+  // CSRF token endpoint (GET requests are not protected)
+  app.get('/csrf-token', getCSRFToken);
+
+  // Apply CSRF protection to all routes
+  app.use(csrfProtection);
 
   app.use('/auth', authRouter);
   app.use('/profile', profileRouter);

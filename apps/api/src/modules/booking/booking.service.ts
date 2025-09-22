@@ -1,11 +1,120 @@
 import { Prisma, BookingRequestStatus } from '@prisma/client';
 import { prisma } from '@blobinfini/database';
 import { bookingRepository } from './booking.repository';
+import { cacheService, CacheKeys } from '../../services/cache.service';
 
 export class BookingService {
   async createAvailability(proUserId: string, data: any) {
-    // TODO: validate overlap, compute geo point
+    // Validate geographic coordinates
+    this.validateGeoPoint(data.spotLat, data.spotLng);
+
+    // Validate time overlap with existing availabilities
+    await this.validateTimeOverlap(proUserId, data.startAt, data.endAt);
+
     return bookingRepository.createAvailability({ ...data, proUserId });
+  }
+
+  private validateGeoPoint(lat?: number, lng?: number): void {
+    if (lat !== undefined && lng !== undefined) {
+      if (lat < -90 || lat > 90) {
+        throw Object.assign(new Error('Invalid latitude: must be between -90 and 90'), { status: 400 });
+      }
+      if (lng < -180 || lng > 180) {
+        throw Object.assign(new Error('Invalid longitude: must be between -180 and 180'), { status: 400 });
+      }
+    }
+  }
+
+  private async validateTimeOverlap(proUserId: string, startAt: Date | string, endAt: Date | string): Promise<void> {
+    const start = new Date(startAt);
+    const end = new Date(endAt);
+
+    if (start >= end) {
+      throw Object.assign(new Error('Start time must be before end time'), { status: 400 });
+    }
+
+    // Check for overlapping availabilities
+    const overlappingAvailabilities = await prisma.proAvailability.findMany({
+      where: {
+        proUserId,
+        OR: [
+          // New availability starts during existing one
+          {
+            startAt: { lte: start },
+            endAt: { gt: start }
+          },
+          // New availability ends during existing one
+          {
+            startAt: { lt: end },
+            endAt: { gte: end }
+          },
+          // New availability completely contains existing one
+          {
+            startAt: { gte: start },
+            endAt: { lte: end }
+          }
+        ]
+      }
+    });
+
+    if (overlappingAvailabilities.length > 0) {
+      const conflictTimes = overlappingAvailabilities
+        .map(a => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .join(', ');
+      throw Object.assign(
+        new Error(`Time overlap detected with existing availability: ${conflictTimes}`),
+        { status: 409 }
+      );
+    }
+  }
+
+  private async validateTimeOverlapForUpdate(
+    proUserId: string,
+    availabilityId: string,
+    startAt: Date | string,
+    endAt: Date | string
+  ): Promise<void> {
+    const start = new Date(startAt);
+    const end = new Date(endAt);
+
+    if (start >= end) {
+      throw Object.assign(new Error('Start time must be before end time'), { status: 400 });
+    }
+
+    // Check for overlapping availabilities (excluding the current one being updated)
+    const overlappingAvailabilities = await prisma.proAvailability.findMany({
+      where: {
+        proUserId,
+        id: { not: availabilityId }, // Exclude current availability
+        OR: [
+          // New availability starts during existing one
+          {
+            startAt: { lte: start },
+            endAt: { gt: start }
+          },
+          // New availability ends during existing one
+          {
+            startAt: { lt: end },
+            endAt: { gte: end }
+          },
+          // New availability completely contains existing one
+          {
+            startAt: { gte: start },
+            endAt: { lte: end }
+          }
+        ]
+      }
+    });
+
+    if (overlappingAvailabilities.length > 0) {
+      const conflictTimes = overlappingAvailabilities
+        .map(a => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .join(', ');
+      throw Object.assign(
+        new Error(`Time overlap detected with existing availability: ${conflictTimes}`),
+        { status: 409 }
+      );
+    }
   }
 
   async listAvailabilities(proUserId: string, query: any) {
@@ -17,12 +126,76 @@ export class BookingService {
     if (!availability || availability.proUserId !== proUserId) {
       throw Object.assign(new Error('Availability not found'), { status: 404 });
     }
+
+    // Validate geographic coordinates if provided
+    if (data.spotLat !== undefined || data.spotLng !== undefined) {
+      this.validateGeoPoint(data.spotLat ?? availability.spotLat, data.spotLng ?? availability.spotLng);
+    }
+
+    // Validate time overlap if dates are being changed
+    if (data.startAt !== undefined || data.endAt !== undefined) {
+      await this.validateTimeOverlapForUpdate(
+        proUserId,
+        availabilityId,
+        data.startAt ?? availability.startAt,
+        data.endAt ?? availability.endAt
+      );
+    }
+
     return bookingRepository.updateAvailability(availabilityId, data);
   }
 
   async searchAvailabilities(filters: any) {
+    // Support both cursor-based and legacy pagination
+    const cursor = filters.cursor;
+    const limit = filters.limit ?? 20;
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 20;
+
+    const useCursorPagination = cursor !== undefined || !page;
+    const effectiveLimit = limit || pageSize;
+
+    // Check cache first for availability search (cursor-aware)
+    const cacheKey = useCursorPagination
+      ? `${CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25)}:cursor:${cursor || 'start'}`
+      : CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25);
+
+    const cachedAvailabilities = await cacheService.getAvailabilities(cacheKey);
+    if (cachedAvailabilities && cacheService.isAvailable()) {
+      console.log('🚀 Cache hit for availabilities');
+
+      if (useCursorPagination) {
+        // Cursor-based pagination on cached results
+        const startIndex = cursor ? cachedAvailabilities.findIndex(a => a.id === cursor) + 1 : 0;
+        const endIndex = Math.min(startIndex + effectiveLimit, cachedAvailabilities.length);
+        const paginatedResults = cachedAvailabilities.slice(startIndex, endIndex);
+        const nextCursor = endIndex < cachedAvailabilities.length ? cachedAvailabilities[endIndex - 1].id : null;
+
+        return {
+          items: paginatedResults,
+          hasMore: endIndex < cachedAvailabilities.length,
+          nextCursor,
+          cached: true
+        };
+      } else {
+        // Legacy pagination on cached results
+        const offset = (page - 1) * effectiveLimit;
+        const paginatedResults = cachedAvailabilities.slice(offset, offset + effectiveLimit);
+
+        return {
+          items: paginatedResults,
+          pagination: {
+            page,
+            pageSize: effectiveLimit,
+            total: cachedAvailabilities.length,
+            hasMore: offset + effectiveLimit < cachedAvailabilities.length
+          },
+          nextCursor: paginatedResults.length > 0 ? paginatedResults[paginatedResults.length - 1].id : null,
+          cached: true
+        };
+      }
+    }
+
     const rows = await bookingRepository.searchAvailabilities({
       sport: filters.sport,
       level: filters.level,
@@ -35,40 +208,37 @@ export class BookingService {
       pageSize,
     });
 
+    // Get booking data with a single optimized query instead of N+1
     const availabilityIds = rows.map((row: any) => row.id);
-    const bookings = availabilityIds.length
-      ? await bookingRepository.listBookings({
-          where: { availabilityId: { in: availabilityIds } },
-          include: {
-            rider: {
-              select: {
-                id: true,
-                email: true,
-                riderProfile: {
-                  select: {
-                    displayName: true,
-                    photoUrl: true,
-                  },
-                },
-              },
-            },
-          },
-        })
+    const bookingsData = availabilityIds.length > 0
+      ? await prisma.$queryRaw<Array<any>>`
+          SELECT
+            b."availabilityId",
+            ru."id" as "riderId",
+            ru."email" as "riderEmail",
+            rp."displayName",
+            rp."photoUrl"
+          FROM "Booking" b
+          JOIN "User" ru ON ru."id" = b."riderUserId"
+          LEFT JOIN "RiderProfile" rp ON rp."userId" = ru."id"
+          WHERE b."availabilityId" IN (${Prisma.join(availabilityIds)})
+          ORDER BY b."createdAt" DESC
+        `
       : [];
 
+    // Group bookings by availability for efficient lookup
     const ridersByAvailability = new Map<string, Array<{ id: string; displayName: string; avatarUrl: string | null }>>();
-    for (const booking of bookings as any[]) {
-      const rider = booking.rider;
+    for (const booking of bookingsData) {
       const collection = ridersByAvailability.get(booking.availabilityId) ?? [];
       collection.push({
-        id: rider.id,
-        displayName: rider.riderProfile?.displayName ?? rider.email,
-        avatarUrl: rider.riderProfile?.photoUrl ?? null,
+        id: booking.riderId,
+        displayName: booking.displayName ?? booking.riderEmail,
+        avatarUrl: booking.photoUrl ?? null,
       });
       ridersByAvailability.set(booking.availabilityId, collection.slice(0, 6));
     }
 
-    return rows.map((row: any) => ({
+    const formattedResults = rows.map((row: any) => ({
       id: row.id,
       pro: {
         userId: row.proUserId,
@@ -87,6 +257,14 @@ export class BookingService {
       distanceKm: row.distance_m != null ? Number(row.distance_m) / 1000 : null,
       riders: ridersByAvailability.get(row.id) ?? [],
     }));
+
+    // Cache the results for future requests
+    if (formattedResults.length > 0 && cacheService.isAvailable()) {
+      await cacheService.setAvailabilities(cacheKey, formattedResults, 180); // 3 minutes cache
+      console.log(`💾 Cached ${formattedResults.length} availability results`);
+    }
+
+    return formattedResults;
   }
 
   async createRequest(riderUserId: string, data: any) {

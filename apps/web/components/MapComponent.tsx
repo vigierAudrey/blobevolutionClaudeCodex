@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -47,22 +47,74 @@ export default function MapComponent({
   const legendRef = useRef<HTMLDivElement | null>(null);
   const legendButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  // Cache CSS loading to avoid reloading on every component mount
   useEffect(() => {
-    // Charger le CSS de Leaflet côté client
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !document.querySelector('link[href*="leaflet.css"]')) {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
       link.crossOrigin = '';
+      link.as = 'style';
       document.head.appendChild(link);
 
-      return () => {
-        document.head.removeChild(link);
-      };
+      // Add mobile-specific styles for better touch interaction
+      const style = document.createElement('style');
+      style.textContent = `
+        /* Mobile optimizations for Leaflet map */
+        .leaflet-container {
+          touch-action: pan-x pan-y !important;
+        }
+
+        /* Bigger zoom controls for mobile */
+        @media (max-width: 768px) {
+          .leaflet-control-zoom a {
+            width: 44px !important;
+            height: 44px !important;
+            line-height: 44px !important;
+            font-size: 18px !important;
+          }
+
+          .leaflet-control-zoom {
+            margin: 20px !important;
+          }
+
+          /* Better popup positioning on mobile */
+          .mobile-optimized-popup .leaflet-popup-content {
+            margin: 8px 12px !important;
+            line-height: 1.4 !important;
+          }
+
+          .mobile-optimized-popup .leaflet-popup-content-wrapper {
+            border-radius: 8px !important;
+          }
+
+          /* Marker hover effects */
+          .map-marker-icon div:hover {
+            transform: translate(-50%, -50%) scale(1.1) !important;
+          }
+        }
+
+        /* Disable text selection on map */
+        .leaflet-container {
+          -webkit-user-select: none;
+          -moz-user-select: none;
+          -ms-user-select: none;
+          user-select: none;
+        }
+      `;
+      document.head.appendChild(style);
     }
   }, []);
 
-  const mapStyle = { height: '60vh', width: '100%' } as const;
+  // Adaptive height for mobile vs desktop
+  const mapStyle = useMemo(() => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    return {
+      height: isMobile ? '50vh' : '60vh',
+      width: '100%',
+      touchAction: 'none', // Optimize touch performance
+    } as const;
+  }, []);
 
   const zoom = useMemo(() => {
     if (!radiusKm) return 11;
@@ -74,23 +126,29 @@ export default function MapComponent({
   }, [radiusKm]);
 
   const markerIcons = useMemo(() => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const size = isMobile ? 28 : 20; // Bigger markers for touch
+    const border = isMobile ? 3 : 2;
+
     const createIcon = (color: string) =>
       L.divIcon({
         className: 'map-marker-icon',
         html: `
           <div style="
-            width: 20px;
-            height: 20px;
+            width: ${size}px;
+            height: ${size}px;
             border-radius: 9999px;
             background: ${color};
-            border: 2px solid white;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            border: ${border}px solid white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             transform: translate(-50%, -50%);
+            cursor: pointer;
+            transition: transform 0.2s ease;
           "></div>
         `,
-        iconSize: [20, 20],
-        iconAnchor: [10, 10],
-        popupAnchor: [0, -10],
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+        popupAnchor: [0, -size / 2],
       });
 
     return {
@@ -188,10 +246,28 @@ export default function MapComponent({
         </div>
       )}
 
-      <MapContainer center={center} zoom={zoom} style={mapStyle} scrollWheelZoom>
+      <MapContainer
+        center={center}
+        zoom={zoom}
+        style={mapStyle}
+        scrollWheelZoom={false} // Disable on mobile for better touch
+        touchZoom={true}
+        doubleClickZoom={true}
+        zoomControl={true}
+        dragging={true}
+        zoomSnap={0.5}
+        zoomDelta={0.5}
+        wheelPxPerZoomLevel={100}
+        maxBounds={[[-90, -180], [90, 180]]} // Prevent infinite panning
+      >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution="&copy; OpenStreetMap contributors"
+          maxZoom={18}
+          tileSize={256}
+          detectRetina={true}
+          updateWhenIdle={true} // Better performance on mobile
+          keepBuffer={2} // Reduce memory usage
         />
         <MapViewUpdater center={center} zoom={zoom} bounds={bounds} />
         {showCenterMarker && (
@@ -220,28 +296,33 @@ export default function MapComponent({
           const icon = markerIcons[type] ?? markerIcons.default;
           return (
             <Marker key={item.id} position={[item.lat, item.lng]} icon={icon}>
-              <Popup>
-                <div className="text-sm">
-                  <div className="font-medium">{item.displayName || 'Rider'}</div>
+              <Popup
+                minWidth={200}
+                maxWidth={280}
+                className="mobile-optimized-popup"
+                closeButton={true}
+                autoPan={true}
+                keepInView={true}
+              >
+                <div className="text-sm p-1">
+                  <div className="font-medium text-base mb-1">{item.displayName || 'Rider'}</div>
                   {item.distanceKm != null && (
-                    <div className="text-muted-foreground text-xs">à ~{item.distanceKm.toFixed(1)} km</div>
+                    <div className="text-muted-foreground text-xs mb-3">📍 À ~{item.distanceKm.toFixed(1)} km</div>
                   )}
-                  <div className="mt-2">
-                    <div className="group relative inline-flex">
-                      <button
-                        className="underline text-primary hover:text-primary/80 disabled:cursor-not-allowed disabled:text-muted-foreground"
-                        onClick={() => onContactClick(item.userId)}
-                        disabled={item.isDisabled}
-                        title={item.disabledReason ?? 'Demander ce créneau'}
-                      >
-                        Demander ce créneau
-                      </button>
-                      <span
-                        className="pointer-events-none absolute bottom-full left-1/2 mb-1 hidden w-40 -translate-x-1/2 rounded bg-slate-900 px-2 py-1 text-center text-[10px] text-white shadow group-hover:block group-focus-within:block"
-                      >
-                        {item.isDisabled ? item.disabledReason : 'Ouvre la demande pour ce créneau.'}
-                      </span>
-                    </div>
+                  <div>
+                    <button
+                      className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium touch-manipulation"
+                      onClick={() => onContactClick(item.userId)}
+                      disabled={item.isDisabled}
+                      style={{ minHeight: '44px' }} // iOS touch target recommendation
+                    >
+                      {item.isDisabled ? '❌ Indisponible' : '💬 Demander ce créneau'}
+                    </button>
+                    {item.isDisabled && item.disabledReason && (
+                      <div className="mt-2 text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                        {item.disabledReason}
+                      </div>
+                    )}
                   </div>
                 </div>
               </Popup>

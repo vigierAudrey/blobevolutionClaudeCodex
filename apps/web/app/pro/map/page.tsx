@@ -1,6 +1,6 @@
 "use client";
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/input';
@@ -8,10 +8,12 @@ import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
 import { useRouter } from 'next/navigation';
 
+import { MapSkeleton } from '../../../components/ui/skeleton';
+
 // Import dynamique de toute la carte pour éviter les problèmes SSR
 const MapComponent = dynamic(() => import('../../../components/MapComponent'), {
   ssr: false,
-  loading: () => <div className="h-96 bg-gray-100 rounded flex items-center justify-center">Chargement de la carte...</div>
+  loading: () => <MapSkeleton />
 });
 
 export default function ProMapPage() {
@@ -22,6 +24,8 @@ export default function ProMapPage() {
   const [center, setCenter] = useState<[number, number] | null>(null);
   const [hasGeolocPermission, setHasGeolocPermission] = useState(false);
   const [geolocEnabled, setGeolocEnabled] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
     // Load pro location via /pro/me
@@ -82,15 +86,43 @@ export default function ProMapPage() {
     );
   };
 
-  const load = async () => {
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) return;
-    const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/near/lessons?radiusKm=${radiusKm}&sport=${sport}`, { headers: { Authorization: `Bearer ${t.accessToken}` }});
-    const data = await r.json();
-    if (r.ok) setItems(data.items || []);
-  };
+  const load = useCallback(async () => {
+    if (!geolocEnabled) return;
 
-  useEffect(() => { load(); }, [radiusKm, sport]);
+    setLoading(true);
+    try {
+      const t = apiClient.getTokens();
+      if (!t?.accessToken) return;
+
+      const r = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/near/lessons?radiusKm=${radiusKm}&sport=${sport}`,
+        { headers: { Authorization: `Bearer ${t.accessToken}` }}
+      );
+      const data = await r.json();
+      if (r.ok) setItems(data.items || []);
+    } catch (error) {
+      console.error('Error loading lesson requests:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [radiusKm, sport, geolocEnabled]);
+
+  // Debounced loading for better performance
+  const debouncedLoad = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = setTimeout(load, 300); // 300ms debounce
+  }, [load]);
+
+  useEffect(() => {
+    debouncedLoad();
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, [debouncedLoad]);
 
 
   return (
@@ -128,14 +160,55 @@ export default function ProMapPage() {
             </div>
           )}
 
-          <div className="flex items-center gap-2 mb-3">
-            <div className="flex items-center gap-1 mr-4">
-              <button className={`rounded-md border px-2 py-1 text-sm ${sport==='surf'?'border-primary ring-2 ring-primary':'border-input'}`} onClick={()=>setSport('surf')}>Surf</button>
-              <button className={`rounded-md border px-2 py-1 text-sm ${sport==='kitesurf'?'border-primary ring-2 ring-primary':'border-input'}`} onClick={()=>setSport('kitesurf')}>Kitesurf</button>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Sport :</span>
+              <div className="flex items-center gap-1">
+                <button
+                  className={`rounded-md border px-4 py-2 text-sm font-medium touch-manipulation ${
+                    sport === 'surf' ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:bg-accent'
+                  }`}
+                  onClick={() => setSport('surf')}
+                  style={{ minHeight: '44px' }}
+                >
+                  🏄 Surf
+                </button>
+                <button
+                  className={`rounded-md border px-4 py-2 text-sm font-medium touch-manipulation ${
+                    sport === 'kitesurf' ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:bg-accent'
+                  }`}
+                  onClick={() => setSport('kitesurf')}
+                  style={{ minHeight: '44px' }}
+                >
+                  🪁 Kitesurf
+                </button>
+              </div>
             </div>
-            <label className="text-sm">Rayon (km)</label>
-            <Input type="number" min={1} max={200} value={radiusKm} onChange={(e)=> setRadiusKm(Number(e.target.value || 25))} className="w-24" disabled={!geolocEnabled} />
-            <Button variant="outline" onClick={load} disabled={!geolocEnabled}>Rafraîchir</Button>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">Rayon :</label>
+              <Input
+                type="number"
+                min={1}
+                max={200}
+                value={radiusKm}
+                onChange={(e) => setRadiusKm(Number(e.target.value || 25))}
+                className="w-20 text-center"
+                disabled={!geolocEnabled}
+                style={{ minHeight: '44px' }}
+              />
+              <span className="text-sm text-muted-foreground">km</span>
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={load}
+              disabled={!geolocEnabled || loading}
+              className="touch-manipulation"
+              style={{ minHeight: '44px' }}
+            >
+              {loading ? '🔄 Chargement...' : '🔄 Rafraîchir'}
+            </Button>
           </div>
 
           {geolocEnabled && center ? (

@@ -28,6 +28,10 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "pg": "^8.16.3"
+  },
+  "dependencies": {
+    "framer-motion": "^12.23.18"
   }
 }
