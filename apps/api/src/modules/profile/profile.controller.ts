@@ -5,6 +5,7 @@ import { requireAuth } from '../auth/auth.guard';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import { lookup as mimeLookup, extension as mimeExtension } from 'mime-types';
 import crypto from 'crypto';
+import { cacheService, CacheKeys } from '../../services/cache.service';
 
 export const profileRouter = Router();
 
@@ -49,11 +50,25 @@ profileRouter.get('/me', requireAuth, async (req, res) => {
       }
       return res.json(ap);
     } else {
+      // Check cache first for rider profile
+      const cachedProfile = await cacheService.getProfile(userId);
+      if (cachedProfile && cacheService.isAvailable()) {
+        console.log('🚀 Cache hit for rider profile');
+        return res.json(cachedProfile);
+      }
+
       // Comportement existant pour les riders
       let rp = await prisma.riderProfile.findUnique({ where: { userId } });
       if (!rp) {
         rp = await prisma.riderProfile.create({ data: { userId } });
       }
+
+      // Cache the profile for future requests
+      if (cacheService.isAvailable()) {
+        await cacheService.setProfile(userId, rp, 600); // 10 minutes cache
+        console.log('💾 Cached rider profile');
+      }
+
       return res.json(rp);
     }
   } catch (err) {
@@ -94,6 +109,17 @@ profileRouter.put('/me', requireAuth, async (req, res) => {
         create: { userId, ...body },
         update: { ...body },
       });
+
+      // Invalidate profile cache after update
+      if (cacheService.isAvailable()) {
+        await cacheService.del(`profile:${userId}`);
+        // Also invalidate related matching cache if location changed
+        if (body.lat || body.lng) {
+          await cacheService.invalidateMatching();
+        }
+        console.log('🗑️ Invalidated profile cache after update');
+      }
+
       console.log('Profile updated:', rp);
       return res.json(rp);
     }

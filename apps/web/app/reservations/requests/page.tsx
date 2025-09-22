@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
 import type { RiderBookingRequest } from '../../../lib/types/booking';
+import { ListItemSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 
 function statusLabel(status: RiderBookingRequest['status']) {
   switch (status) {
@@ -81,7 +82,14 @@ export default function RiderRequestsPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           {loading ? (
-            <p className="text-sm text-muted-foreground">Chargement…</p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-muted-foreground">🔄 Chargement de vos demandes...</div>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <ListItemSkeleton key={i} />
+                ))}
+              </div>
+            </div>
           ) : error ? (
             <p className="text-sm text-red-700">{error}</p>
           ) : requests.length === 0 ? (

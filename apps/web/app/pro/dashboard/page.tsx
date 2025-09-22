@@ -1,12 +1,13 @@
 "use client";
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '../../../lib/apiClient';
+import { optimizedApiClient, measureApiPerformance } from '../../../lib/optimizedApiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
 import { Badge } from '../../../components/ui/badge';
 import { User, Map, CreditCard, Percent, Info, LogOut, BookOpen, MessageSquare, Network } from 'lucide-react';
+import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 
 export default function ProDashboardPage() {
   const router = useRouter();
@@ -16,24 +17,28 @@ export default function ProDashboardPage() {
 
   const loadPlanningStats = useCallback(async () => {
     try {
-      const [availabilityRes, inboxRes] = await Promise.all([
-        apiClient.getBookingAvailabilitiesForPro(),
-        apiClient.getBookingRequestsInbox(),
-      ]);
-      const pendingCount = inboxRes.requests.filter((req) => req.status === 'PENDING').length;
-      setPlanningStats({ availabilityCount: availabilityRes.availabilities.length, pendingCount });
-    } catch (_) {
+      const perf = measureApiPerformance('Pro Dashboard Data');
+
+      // Use optimized parallel initialization
+      const { availabilities, inbox } = await optimizedApiClient.initializePro();
+
+      const pendingCount = inbox.requests.filter((req) => req.status === 'PENDING').length;
+      setPlanningStats({ availabilityCount: availabilities.availabilities.length, pendingCount });
+
+      perf.end();
+    } catch (error) {
+      console.error('Pro dashboard initialization failed:', error);
       setPlanningStats({ availabilityCount: 0, pendingCount: 0 });
     }
   }, []);
 
   useEffect(() => {
-    const t = apiClient.getTokens();
+    const t = optimizedApiClient.getTokens();
     if (!t?.accessToken) {
       router.replace('/login');
       return;
     }
-    apiClient
+    optimizedApiClient
       .me()
       .then((u) => {
         // Vérifier que l'utilisateur est bien un PRO
@@ -52,13 +57,24 @@ export default function ProDashboardPage() {
 
   const logout = async () => {
     try {
-      await apiClient.logoutAll();
+      await optimizedApiClient.logoutAll();
     } catch (_) {}
-    apiClient.clearTokens();
+    optimizedApiClient.clearTokens();
     router.replace('/login');
   };
 
-  if (loading) return <p>Chargement…</p>;
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <PageHeaderSkeleton />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (!user) return null;
 
   return (

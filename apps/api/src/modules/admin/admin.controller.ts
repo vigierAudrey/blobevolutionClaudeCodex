@@ -4,6 +4,7 @@ import { prisma } from '@blobinfini/database';
 import { Prisma } from '@prisma/client';
 import type { DecisionKind } from '@prisma/client';
 import { requireAuth, requireAdmin } from '../auth/auth.guard';
+import { gdprPurgeService } from '../../services/gdpr-purge.service';
 
 export const adminRouter = Router();
 
@@ -1496,6 +1497,116 @@ adminRouter.get('/analytics/behavior', async (req, res) => {
     return res.json(behaviorAnalytics);
   } catch (error) {
     console.error('Analytics behavior error:', error);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ===== ENDPOINTS RGPD =====
+
+// Rapport de conformité RGPD
+adminRouter.get('/gdpr/compliance-report', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const report = await gdprPurgeService.getGDPRComplianceReport();
+
+    const complianceStatus = {
+      isCompliant:
+        report.expiredSessionsCount === 0 &&
+        report.expiredTokensCount === 0 &&
+        report.unanonymizedDeletedUsers < 10 && // Tolérance pour traitement quotidien
+        report.oldDeletedUsersAwaitingPurge < 5,
+
+      issues: [] as string[],
+      recommendations: [] as string[]
+    };
+
+    if (report.expiredSessionsCount > 0) {
+      complianceStatus.issues.push(`${report.expiredSessionsCount} sessions expirées à purger`);
+      complianceStatus.recommendations.push('Exécuter la purge technique immédiatement');
+    }
+
+    if (report.unanonymizedDeletedUsers > 0) {
+      complianceStatus.issues.push(`${report.unanonymizedDeletedUsers} utilisateurs supprimés non anonymisés`);
+      complianceStatus.recommendations.push('Exécuter l\'anonymisation progressive');
+    }
+
+    if (report.oldDeletedUsersAwaitingPurge > 0) {
+      complianceStatus.issues.push(`${report.oldDeletedUsersAwaitingPurge} utilisateurs supprimés > 10 ans à archiver`);
+      complianceStatus.recommendations.push('Archiver les preuves légales et purger définitivement');
+    }
+
+    return res.json({
+      timestamp: new Date().toISOString(),
+      compliance: complianceStatus,
+      details: report,
+      legalProtection: {
+        consentArchiveEnabled: true,
+        retentionPeriod: '10 ans pour preuves légales',
+        anonymizationDelay: '7 jours pour données détaillées, 2 ans pour email'
+      }
+    });
+  } catch (error) {
+    console.error('GDPR compliance report error:', error);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Exécution manuelle de la purge RGPD
+adminRouter.post('/gdpr/run-purge', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await gdprPurgeService.performFullPurge();
+
+    return res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      result,
+      message: 'Purge RGPD exécutée avec succès'
+    });
+  } catch (error) {
+    console.error('Manual GDPR purge error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Erreur lors de la purge RGPD',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Recherche dans l'archive légale (pour litiges)
+adminRouter.get('/gdpr/legal-archive/:userId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Rechercher dans l'archive légale
+    const legalRecord = await prisma.$queryRaw`
+      SELECT
+        original_user_id,
+        consented_at,
+        consent_version,
+        consent_ip_hash,
+        deleted_at,
+        archived_at
+      FROM legal_consent_archive
+      WHERE original_user_id = ${userId}
+      ORDER BY archived_at DESC
+      LIMIT 1
+    `;
+
+    if (!Array.isArray(legalRecord) || legalRecord.length === 0) {
+      return res.status(404).json({
+        error: 'Aucune archive légale trouvée pour cet utilisateur',
+        userId
+      });
+    }
+
+    return res.json({
+      found: true,
+      userId,
+      legalEvidence: legalRecord[0],
+      purpose: 'Archive légale pour protection en cas de litige',
+      note: 'Ces données sont conservées conformément aux obligations légales de preuve'
+    });
+  } catch (error) {
+    console.error('Legal archive search error:', error);
     return res.status(500).json({ error: 'Internal error' });
   }
 });
