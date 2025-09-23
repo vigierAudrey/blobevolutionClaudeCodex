@@ -11,29 +11,11 @@ import { ProfileCardSkeleton, PageHeaderSkeleton } from '../../../components/ui/
 import { useInitializationSkeleton, useSearchSkeleton } from '../../../hooks/useSkeletonState';
 import { useToast } from '../../../components/ui/toast';
 import Link from 'next/link';
+import { AdBannerFeed } from '../../../components/ads/AdBanner';
+import { formatDateForDisplay } from './utils';
 
 type Sport = 'surf' | 'kitesurf';
 type Level = 'beginner' | 'intermediate' | 'advanced';
-
-function formatDateForDisplay(dateStr: string | null): string {
-  if (!dateStr) return '—';
-  if (dateStr === 'anytime') return 'Peu importe';
-
-  const today = new Date();
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const todayISO = today.toISOString().slice(0, 10);
-  const tomorrowISO = tomorrow.toISOString().slice(0, 10);
-
-  if (dateStr === todayISO) return "Aujourd'hui";
-  if (dateStr === tomorrowISO) return 'Demain';
-
-  try {
-    const date = new Date(dateStr + 'T00:00:00');
-    return date.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' });
-  } catch {
-    return dateStr;
-  }
-}
 
 function CardsInner() {
   const sp = useSearchParams();
@@ -372,6 +354,13 @@ function CardsInner() {
                   💡 Astuce : essaie d'augmenter ton périmètre de recherche pour découvrir plus de riders
                 </p>
               </div>
+
+              {/* Publicité entre le message et les boutons */}
+              <AdBannerFeed
+                slot="matching-end-feed"
+                className="max-w-sm mx-auto"
+              />
+
               <div className="flex flex-col gap-2">
                 <Button onClick={() => router.push('/dashboard')} className="w-full">
                   Retour au dashboard

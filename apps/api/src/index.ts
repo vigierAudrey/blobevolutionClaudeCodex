@@ -27,6 +27,7 @@ import { creditsRouter } from './modules/credits/credits.controller';
 import { adminRouter } from './modules/admin/admin.controller';
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
+import pushRouter from './modules/push/push.controller';
 
 export function createApp() {
   const app = express();
@@ -142,6 +143,7 @@ export function createApp() {
   app.use('/admin', adminRouter);
   app.use('/contact', contactRouter);
   app.use('/booking', bookingRouter);
+  app.use('/push', pushRouter);
 
   return app;
 }

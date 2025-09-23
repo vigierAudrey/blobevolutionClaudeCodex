@@ -2,6 +2,47 @@
 
 ## 📋 Changements récents importants
 
+### Push Notifications PWA - Phase 1 (Sept 2025)
+
+**Décision architecture** : Implémentation complète des notifications push avec Clever Cloud + Firebase.
+
+**Fonctionnalités ajoutées :**
+- ✅ Service Worker sophistiqué (`/public/sw.js`)
+- ✅ PWA Manifest pour installation app-like (`/public/manifest.json`)
+- ✅ Firebase Cloud Messaging intégration complète
+- ✅ API routes push (`/api/push/subscribe`, `/test`, `/status`)
+- ✅ Hooks React `usePushNotifications` pour gestion état
+- ✅ Composants UI pour prompts permissions
+- ✅ Notifications automatiques acceptation/refus demandes
+- ✅ Analytics et gestion d'erreurs robuste
+
+**Architecture choisie :**
+```
+[Frontend PWA] ←→ [Clever Cloud API] ←→ [Firebase FCM] → [Users]
+```
+
+**Pourquoi Clever Cloud + Firebase :**
+- Clever Cloud : Hébergement API/DB français et simple
+- Firebase FCM : Service push gratuit et universel
+- Combinaison économique et robuste pour startup
+
+**Variables d'environnement requises :**
+```bash
+# Clever Cloud (API)
+FIREBASE_PROJECT_ID=blobinfini-prod
+FIREBASE_CLIENT_EMAIL=firebase-admin@...
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----..."
+
+# Frontend (publiques)
+NEXT_PUBLIC_FIREBASE_API_KEY=your-web-api-key
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=blobinfini-prod
+```
+
+**Intégration automatique :**
+- Push notifications envoyées lors acceptation/refus de demandes dans `booking.service.ts`
+- Gestion intelligente des permissions et état d'abonnement
+- Support offline avec cache et retry automatique
+
 ### Suppression du champ `partnerPref` (Sept 2025)
 
 **Décision produit** : Simplification du matching en supprimant le critère de préférence de partenaire.

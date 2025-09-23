@@ -27,10 +27,13 @@ class CSRFManager {
       }
 
       const data = await response.json();
+      if (!data.csrfToken) {
+        throw new Error('CSRF token not provided in response');
+      }
       this.token = data.csrfToken;
       this.expires = new Date(data.expires);
 
-      return this.token;
+      return this.token!;
     } catch (error) {
       console.error('Error fetching CSRF token:', error);
       throw error;

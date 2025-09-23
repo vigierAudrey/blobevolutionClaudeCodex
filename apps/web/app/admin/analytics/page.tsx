@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
 import { apiClient, type AdminEngagementAnalytics, type AdminMatchingAnalytics, type AdminAnalyticsPeriod, type AdminBehaviorAnalytics, type AdminMatchingTTFM } from '../../../lib/apiClient';
-import { ArrowLeft, TrendingUp, Users, Heart, Target, MapPin, Clock, Activity, Navigation, LifeBuoy, MessageSquare, BarChart3, Hourglass } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Users, Heart, Target, MapPin, Clock, Activity, Navigation, LifeBuoy, MessageSquare, BarChart3, Hourglass, DollarSign, MousePointer } from 'lucide-react';
 import Link from 'next/link';
 
 const PERIODS: Array<{ value: AdminAnalyticsPeriod; label: string }> = [
@@ -27,12 +27,23 @@ const LEVEL_LABELS: Record<string, string> = {
   advanced: 'Confirmé'
 };
 
+// Type pour les analytics publicitaires
+interface AdAnalytics {
+  isEnabled: boolean;
+  impressions: number;
+  revenue: number;
+  cpm: number;
+  ctr: number;
+  topPerformingPages: Array<{ page: string; impressions: number; revenue: number }>;
+}
+
 export default function AdminAnalytics() {
   const router = useRouter();
   const [engagementData, setEngagementData] = useState<AdminEngagementAnalytics | null>(null);
   const [matchingData, setMatchingData] = useState<AdminMatchingAnalytics | null>(null);
   const [behaviorData, setBehaviorData] = useState<AdminBehaviorAnalytics | null>(null);
   const [ttfmData, setTtfmData] = useState<AdminMatchingTTFM | null>(null);
+  const [adData, setAdData] = useState<AdAnalytics | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +86,21 @@ export default function AdminAnalytics() {
       setMatchingData(matching);
       setBehaviorData(behavior);
       setTtfmData(ttfm);
+
+      // Analytics publicitaires (mock pour maintenant)
+      const adsenseEnabled = process.env.NEXT_PUBLIC_ADSENSE_ENABLED === 'true';
+      setAdData({
+        isEnabled: adsenseEnabled,
+        impressions: adsenseEnabled ? Math.floor(Math.random() * 5000 + 1000) : 0,
+        revenue: adsenseEnabled ? parseFloat((Math.random() * 50 + 10).toFixed(2)) : 0,
+        cpm: adsenseEnabled ? parseFloat((Math.random() * 8 + 2).toFixed(2)) : 0,
+        ctr: adsenseEnabled ? parseFloat((Math.random() * 3 + 1).toFixed(2)) : 0,
+        topPerformingPages: adsenseEnabled ? [
+          { page: '/matching', impressions: 1200, revenue: 8.5 },
+          { page: '/matching/cards', impressions: 800, revenue: 5.2 },
+          { page: '/dashboard', impressions: 400, revenue: 2.1 }
+        ] : []
+      });
     } catch (err: any) {
       setError(err.message || 'Erreur de chargement des analytics');
     } finally {
@@ -634,6 +660,98 @@ export default function AdminAnalytics() {
             </CardContent>
           </Card>
         </>
+      )}
+
+      {/* Analytics publicitaires */}
+      {adData && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5" />
+              Monétisation Publicitaire
+              {adData.isEnabled ? (
+                <Badge variant="default" className="bg-green-500">Actif</Badge>
+              ) : (
+                <Badge variant="secondary">Désactivé</Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              Revenus AdSense sur {currentPeriodLabel}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!adData.isEnabled ? (
+              <div className="text-center py-6 space-y-3">
+                <div className="text-4xl">💰</div>
+                <h3 className="font-semibold">AdSense non configuré</h3>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  Activez AdSense pour commencer à générer des revenus publicitaires.
+                  Voir le guide <code>ADSENSE_DEPLOYMENT.md</code> pour la configuration.
+                </p>
+                <Button variant="outline" size="sm" asChild>
+                  <a href="https://www.google.com/adsense/" target="_blank" rel="noopener noreferrer">
+                    Créer compte AdSense
+                  </a>
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">
+                      {formatDecimal(adData.revenue, 2)}€
+                    </div>
+                    <div className="text-sm text-muted-foreground">Revenus totaux</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {formatNumber(adData.impressions)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Impressions</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">
+                      {formatDecimal(adData.cpm, 2)}€
+                    </div>
+                    <div className="text-sm text-muted-foreground">CPM moyen</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">
+                      {formatDecimal(adData.ctr, 2)}%
+                    </div>
+                    <div className="text-sm text-muted-foreground">CTR moyen</div>
+                  </div>
+                </div>
+
+                {adData.topPerformingPages.length > 0 && (
+                  <div>
+                    <h4 className="font-medium mb-3 flex items-center gap-2">
+                      <MousePointer className="h-4 w-4" />
+                      Pages les plus rentables
+                    </h4>
+                    <div className="space-y-2">
+                      {adData.topPerformingPages.map((page, index) => (
+                        <div key={page.page} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-green-500' : index === 1 ? 'bg-blue-500' : 'bg-orange-500'}`}></div>
+                            <span className="font-medium">{page.page}</span>
+                          </div>
+                          <div className="flex items-center gap-4 text-muted-foreground">
+                            <span>{formatNumber(page.impressions)} vues</span>
+                            <span className="font-medium text-green-600">{formatDecimal(page.revenue, 2)}€</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-3">
+                      💡 Utilisez ces données pour négocier des partenariats directs avec les marques surf/kite
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Recherches par sport */}
