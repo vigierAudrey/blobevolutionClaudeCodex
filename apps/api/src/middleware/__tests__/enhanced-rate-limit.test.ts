@@ -90,7 +90,11 @@ describe('Enhanced Rate Limiting', () => {
   describe('Smart rate limit routing', () => {
     it('should identify auth endpoints correctly', async () => {
       // Mock NODE_ENV to enable rate limiting for this test
-      process.env.NODE_ENV = 'development';
+      const originalNodeEnv = process.env.NODE_ENV;
+      Object.defineProperty(process.env, 'NODE_ENV', {
+        value: 'development',
+        configurable: true
+      });
 
       // Create fresh app with rate limiting enabled
       const testApp = createApp();
@@ -107,7 +111,10 @@ describe('Enhanced Rate Limiting', () => {
     });
 
     it('should handle health check bypass', async () => {
-      process.env.NODE_ENV = 'development';
+      Object.defineProperty(process.env, 'NODE_ENV', {
+        value: 'development',
+        configurable: true
+      });
       const testApp = createApp();
 
       // Health check should always work regardless of rate limits
@@ -140,7 +147,10 @@ describe('Enhanced Rate Limiting', () => {
     it('should handle Redis connection gracefully when not available', async () => {
       // Test without Redis URL
       delete process.env.REDIS_URL;
-      process.env.NODE_ENV = 'production';
+      Object.defineProperty(process.env, 'NODE_ENV', {
+        value: 'production',
+        configurable: true
+      });
 
       // Should not throw error when Redis is not available
       expect(() => {
@@ -149,7 +159,10 @@ describe('Enhanced Rate Limiting', () => {
     });
 
     it('should initialize Redis client when URL is provided in production', async () => {
-      process.env.NODE_ENV = 'production';
+      Object.defineProperty(process.env, 'NODE_ENV', {
+        value: 'production',
+        configurable: true
+      });
       process.env.REDIS_URL = 'redis://localhost:6379';
 
       // Should attempt to connect (will likely fail in test environment, but shouldn't crash)
@@ -206,7 +219,10 @@ describe('Enhanced Rate Limiting', () => {
   describe('Skip conditions', () => {
     it('should skip rate limiting for trusted IPs when configured', async () => {
       process.env.TRUSTED_IPS = '127.0.0.1,192.168.1.1';
-      process.env.NODE_ENV = 'development';
+      Object.defineProperty(process.env, 'NODE_ENV', {
+        value: 'development',
+        configurable: true
+      });
 
       const { createRateLimiter } = await import('../enhanced-rate-limit');
       const limiter = createRateLimiter('API_STANDARD');

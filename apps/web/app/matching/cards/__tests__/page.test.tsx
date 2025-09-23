@@ -49,7 +49,7 @@ const mockUserProfile = {
 };
 
 const mockDisciplines = [
-  { sport: 'surf', level: 'beginner' },
+  { sport: 'surf' as const, level: 'beginner' as const },
 ];
 
 describe('Matching Cards Component', () => {
@@ -79,7 +79,7 @@ describe('Matching Cards Component', () => {
     mockSearchParams.set('lat', '43.4832');
     mockSearchParams.set('lng', '-1.5586');
 
-    mockUseSearchParams.mockReturnValue({
+    const mockUrlSearchParams = {
       get: (key: string) => mockSearchParams.get(key),
       getAll: jest.fn(),
       has: jest.fn(),
@@ -88,10 +88,18 @@ describe('Matching Cards Component', () => {
       entries: jest.fn(),
       forEach: jest.fn(),
       toString: jest.fn(),
-    });
+      append: jest.fn(),
+      delete: jest.fn(),
+      set: jest.fn(),
+      sort: jest.fn(),
+      size: 0,
+      [Symbol.iterator]: jest.fn(),
+    } as any;
+
+    mockUseSearchParams.mockReturnValue(mockUrlSearchParams);
 
     // Setup API client mocks
-    mockApiClient.getTokens.mockReturnValue({ accessToken: 'fake-token' });
+    mockApiClient.getTokens.mockReturnValue({ accessToken: 'fake-token', refreshToken: 'fake-refresh' });
     mockApiClient.me.mockResolvedValue(mockUser);
     mockApiClient.getProfile.mockResolvedValue(mockUserProfile);
     mockApiClient.getDisciplines.mockResolvedValue(mockDisciplines);

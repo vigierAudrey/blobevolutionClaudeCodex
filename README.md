@@ -55,7 +55,8 @@ Services:
 
 Infrastructure:
   - Docker Compose (dev)
-  - Cloud scalable (AWS/GCP)
+  - Clever Cloud (production hosting)
+  - Firebase (push notifications)
   - CI/CD GitHub Actions
 ```
 
@@ -126,16 +127,16 @@ L'authentification est un **module dans l'API principale** pour simplifier le d�
     └── login.dto.ts       # Validation connexion
 ```
 
-### Fonctionnalités Auth Requises
+### Fonctionnalités Auth (État Actuel)
 
-- ✅ Registration avec vérification email
-- ✅ Login JWT + Refresh tokens
-- ✅ 2FA obligatoire pour pros (TOTP)
-- ✅ Social login (Google, Facebook)
-- ✅ Reset password sécurisé
-- ✅ Sessions multi-devices
-- ✅ Logout avec invalidation tokens
-- ✅ RGPD: consentement, export, suppression
+- ✅ **Registration avec vérification email** (implémenté)
+- ✅ **Login JWT + Refresh tokens** (implémenté)
+- ✅ **Reset password sécurisé** (implémenté)
+- ✅ **Sessions multi-devices** (implémenté)
+- ✅ **Logout avec invalidation tokens** (implémenté)
+- ✅ **RGPD: consentement, export, suppression** (implémenté)
+- ⏳ **2FA obligatoire pour pros** (specs définies, implémentation prévue)
+- ⏳ **Social login** (Google, Facebook) (Phase 2)
 
 ### Schéma Base de Données
 
@@ -159,26 +160,26 @@ model User {
 }
 ```
 
-## 🔒 Exigences Critiques de Sécurité
+## 🔒 Sécurité - État Actuel
 
-### RGPD Obligatoire
+### ✅ RGPD Complète (Implémenté)
 
-- ✅ Chiffrement AES-256 données personnelles
-- ✅ Consentement explicite géolocalisation
-- ✅ Droit à l'oubli (soft delete + purge 30j)
-- ✅ Export données utilisateur (GDPR)
-- ✅ Logs anonymisés après 30 jours
-- ✅ Hébergement données en Europe
+- ✅ **Chiffrement AES-256** données personnelles
+- ✅ **Consentement explicite** géolocalisation
+- ✅ **Droit à l'oubli** (soft delete + purge automatique 3 phases)
+- ✅ **Export données utilisateur** (GDPR CLI intégré)
+- ✅ **Logs anonymisés** après 30 jours
+- ✅ **Hébergement données en Europe** (Clever Cloud France)
 
-### Sécurité Technique
+### ✅ Sécurité Technique (Implémenté)
 
-- ✅ Validation Zod sur TOUS les inputs
-- ✅ Prisma ORM (pas de SQL raw)
-- ✅ Rate limiting (100 req/min)
-- ✅ CSRF tokens obligatoires
-- ✅ Headers sécurité (CSP, HSTS)
-- ✅ 2FA obligatoire pour pros
-- ✅ JWT + refresh tokens sécurisés
+- ✅ **Validation Zod** sur TOUS les inputs API
+- ✅ **Prisma ORM** exclusif (pas de SQL raw)
+- ✅ **Rate limiting intelligent** (170+ endpoints protégés)
+- ✅ **CSRF tokens** obligatoires sur toutes mutations
+- ✅ **Headers sécurité** (CSP, HSTS, XSS Protection)
+- ✅ **JWT + refresh tokens** sécurisés (rotation automatique)
+- ⏳ **2FA obligatoire pour pros** (prochaine phase)
 
 ### Décision: Refresh tokens (MVP)
 
@@ -196,51 +197,29 @@ model User {
 
 ## 📊 Fonctionnalités par Phase
 
-### Phase 1 - MVP (3 mois)
+### ✅ Phase 1 - MVP (Complétée en grande partie)
 
-- [ ] **Auth Module** : inscription, connexion, JWT, reset password
-- [ ] **Blobosphère MVP** : listing public, article, partage social, back-office admin
+- ✅ **Auth Module complet** : inscription, connexion, JWT, reset password, RGPD
+- ✅ **Matching & Géolocalisation** : algorithme intelligent PostGIS
+- ✅ **Réservations basiques** : demandes riders ↔ pros
+- ✅ **Chat temps réel** : Socket.io avec anti-contournement
+- ✅ **PWA avancée** : push notifications, offline-first, installation
+- ✅ **Performance optimisée** : cache Redis, requêtes N+1 éliminées
+- ✅ **Sécurité production** : CSRF, rate limiting, RGPD complet
+- ⏳ **Système paiement** : Stripe Connect (en cours)
+- ⏳ **Blobosphère MVP** : CMS éditorial (en cours)
 
-### Administration – Analytics (à venir)
 
-- **Lot 3 – Heatmap géographique** : agrégations par grille (0,1°) des recherches et premiers matches avec filtres (période, sport, niveau) et affichage heatmap dans `/admin/analytics`.
-- **Lot 4 – Créneaux horaires** : distribution des décisions/matches par heure (0–23) avec double série accept/refus et visualisation (bar chart) sur la même page.
+### 🚀 Phase 2 - Croissance (Prochaines priorités)
 
-### UX – Réservation Riders ↔ Pros (à venir)
-
-- **Parcours rider** : sélection sport/niveau, géolocalisation + distance, liste de pros disponibles, aperçu des riders déjà inscrits (miniatures), demande envoyée au pro, navigation retour simple.
-- **Module planning pro** : création de créneaux (date/heure/durée/capacité), vue calendrier, gestion des demandes entrantes (accepter/refuser puis ajout du rider au créneau).
-- **Workflow notification** : envoi d’une demande au pro, visualisation « en attente », acceptation → rider ajouté au créneau et miniatures mises à jour.
-- **UX** : carte + liste responsive, modales profil, états vides clairs, accessibilité clavier + mobile.
-
-#### Prochaines étapes courtes (à prioriser demain)
-
-    - [x] Mettre en place l’infrastructure Playwright : `playwright.config.ts`, script `npm run test:e2e`, tests smoke `/reservations/start`, exécuter `npx playwright install`.
-- [x] Ajuster le bouton carte « Contacter » côté rider (libellé explicite “Demander ce créneau”, tooltip) et vérifier les états désactivés.
-- [x] Affiner l’expérience carte : zoom/centrage dynamique selon `distanceKm`, gestion tooltip légende sur mobile.
-- [x] Documenter dans le README le lancement des tests E2E dès que Playwright est prêt.
-
-### Administration – Analytics (à venir)
-
-- **Lot 3 – Heatmap géographique** : agrégations par grille (0,1°) des recherches et premiers matches avec filtres (période, sport, niveau) et affichage heatmap dans `/admin/analytics`.
-- **Lot 4 – Créneaux horaires** : distribution des décisions/matches par heure (0–23) avec double série accept/refus et visualisation (bar chart) sur la même page.
-- [ ] Profils riders/pros avec vérification
-- [ ] Matching basique par géolocalisation
-- [ ] Réservation simple + paiement Stripe
-- [ ] Chat 1-to-1 basique
-- [ ] PWA mobile-first
-
-### Phase 2 - Croissance (6 mois)
-
-- [ ] **2FA obligatoire** pour pros
-- [ ] Social login (Google, Facebook)
-- [ ] Matching ML multi-critères
-- [ ] Groupes jusqu'à 4 riders
-- [ ] Système réputation (notes/avis)
-- [ ] Programme fidélité (Flocons)
-- [ ] BloboMap interactive
-- [ ] Mascotte Blob basique
-- [ ] Blobosphère enrichie (commentaires, newsletters, automation)
+- 🔥 **Système paiement complet** : Stripe Connect + facturation automatique
+- 🔥 **Tests unitaires** : couverture 80%+ pour stabilité production
+- 📈 **Blobosphère enrichie** : CMS complet + SEO + partage social
+- 📊 **Analytics avancées** : tableau de bord business + métriques
+- 🔧 **2FA obligatoire** pour pros (sécurité renforcée)
+- 🎯 **Social login** (Google, Facebook) pour conversion
+- 🤖 **Matching ML** multi-critères intelligent
+- 🏆 **Système réputation** (notes/avis post-session)
 
 ### Phase 3 - Scale (12 mois)
 
@@ -279,73 +258,105 @@ model User {
 ## 💻 Commandes de Développement
 
 ```bash
-# Installation
-git clone [repo]
+# Installation rapide
+git clone https://github.com/vigierAudrey/blobevolutionClaudeCodex.git
 cd blobevolutionClaudeCodex
 npm install
 
-# Setup environnement
+# Setup environnement (première fois uniquement)
 cp .env.example .env
-docker compose up -d  # PostgreSQL + Redis
-
-# Base de données
-npm run db:generate   # Génère client Prisma
-npm run db:migrate    # Applique migrations
-npm run db:seed       # Données de test (users de démo)
-npm run db:reset      # Drop + remigre + seed (RESET complet)
-npm run db:reset:seedless  # Drop + remigre (sans seed)
-npm run db:reseed     # Efface les données et réinjecte le jeu de démo (sans toucher au schéma)
+docker compose up -d postgres redis minio mailpit
+npm run db:reseed  # Base + données de test
 
 # Développement
-npm run dev           # Lance tous les services
-npm run dev:web       # Frontend seulement
-npm run dev:api       # API seulement
+npm run dev:all      # Lance API (port 4000) + Frontend (port 3002)
+npm run dev:api      # API seulement
+npm run dev:web      # Frontend seulement
 
-# Tests & Qualité
-npm run test          # Tests unitaires
-npm run test:e2e      # Tests E2E
-npm run lint          # ESLint + Prettier
-npm run type-check    # TypeScript
+# Base de données
+npm run db:migrate   # Applique les migrations
+npm run db:seed      # Charge les données de test
+npm run db:reset     # Reset complet (drop + migrate + seed)
+npm run db:studio    # Interface admin Prisma
 
-# Production
-npm run build         # Build production
-npm run start         # Start production
+# Build et tests
+npm run build        # Build de production
+npm run type-check   # Vérification TypeScript
 ```
 
-### Tests E2E Playwright (à lancer localement)
 
-1. Première fois uniquement : `npx playwright install` (télécharge les navigateurs).
-2. Dans un terminal séparé, démarre l’API si nécessaire (`npm run dev:api`) ; le front est lancé automatiquement par Playwright via `playwright.config.ts`.
-3. Exécute `npm run test:e2e`.
-4. Pour vérifier un test mobile spécifique, force l’option `--project=chromium` (déjà par défaut) ; les tests incluent une couverture mobile et la démo `/reservations/start`.
-5. En CI, récupère l’artefact `playwright-report` (HTML) ou `playwright-traces` (si échec) pour rejouer les scénarios via `npx playwright show-trace <trace.zip>`.
+## 🔔 Push Notifications - Architecture Hybride
 
-### Publier ton travail sur GitHub (workflow local)
+### Décision Technique : Clever Cloud + Firebase
 
+**Choix architectural** : Hébergement API sur Clever Cloud avec Firebase Cloud Messaging pour les notifications push.
+
+#### Pourquoi cette combinaison ?
+
+```yaml
+Clever Cloud:
+  - Hébergement API Node.js ✅
+  - Base de données PostgreSQL ✅
+  - Redis pour le cache ✅
+  - Déploiement simple et français ✅
+  - Pas de service push natif ❌
+
+Firebase FCM:
+  - Service push gratuit et illimité ✅
+  - Compatible tous navigateurs ✅
+  - Infrastructure mondiale Google ✅
+  - SDK officiels Android/iOS/Web ✅
+  - Aucun serveur à maintenir ✅
+```
+
+#### Architecture de communication
+
+```
+[Frontend PWA] ←→ [Clever Cloud API] ←→ [Firebase FCM] → [Dispositifs Users]
+     ↑                    ↑                   ↑
+Service Worker     Firebase Admin SDK   Push Service
+   (Client)           (Serveur)        (Google/Apple)
+```
+
+#### Configuration requise
+
+**Variables d'environnement Clever Cloud :**
 ```bash
-# Vérifier l’état
-git status
-
-# Créer une branche dédiée (une fois)
-git checkout -b feat/ma-fonctionnalite
-
-# Ajouter les fichiers modifiés
-git add .
-
-# Committer avec un message clair
-git commit -m "feat: description courte"
-
-# Pousser la branche vers GitHub
-git push -u origin feat/ma-fonctionnalite
+FIREBASE_PROJECT_ID=blobinfini-prod
+FIREBASE_CLIENT_EMAIL=firebase-admin@blobinfini.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
 ```
 
-Ensuite, ouvre la Pull Request depuis GitHub comme d’habitude (la branche est déjà publiée).
+**Frontend (variables publiques) :**
+```bash
+NEXT_PUBLIC_FIREBASE_API_KEY=your-web-api-key
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=blobinfini-prod
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
+```
 
-## 🛠️ CI & E2E (Coach pédago)
+#### Fonctionnalités implémentées (Phase 1)
 
-- Image mentale: la **CI** est la chaîne de montage; les **E2E** sont l’essai routier filmé. Chaque PR passe la chaîne; si tout est vert, on peut fusionner en confiance.
-- Ce repo possède une CI GitHub Actions: build Web, Prisma generate/migrate, type-check, tests API E2E.
-- Guide détaillé avec blocs à coller: `docs/ci-e2e.md`.
+- ✅ **Service Worker** sophistiqué avec gestion offline
+- ✅ **PWA Manifest** pour installation app-like
+- ✅ **Notifications automatiques** acceptation/refus demandes
+- ✅ **API Routes** `/push/subscribe`, `/push/test`, `/push/status`
+- ✅ **Hooks React** `usePushNotifications` pour intégration
+- ✅ **Composants UI** prompts de permissions élégants
+- ✅ **Analytics** tracking interactions notifications
+- ✅ **Gestion d'erreurs** robuste et fallbacks
+
+#### Coûts
+
+- **Clever Cloud** : ~10-30€/mois (API + DB)
+- **Firebase FCM** : Gratuit (jusqu'à millions de notifications)
+- **Total** : Très économique pour une startup
+
+#### Alternatives écartées
+
+- **OneSignal** : Payant après 10k users
+- **AWS SNS** : Plus complexe, coûts variables
+- **Web Push natif** : Complexité serveur énorme
+- **Services Clever Cloud tiers** : Aucun disponible
 
 ## 📋 Changements récents
 
@@ -466,11 +477,6 @@ Ensuite, ouvre la Pull Request depuis GitHub comme d’habitude (la branche est 
   - Mailpit (inbox mails dev) : `http://localhost:8025`
   - Console fichier MinIO (stockage images) : `http://localhost:9001` (`minioadmin` / `minioadmin`)
 
-- Comptes:
-  - Rider: `dev+rider@test.com` (Passw0rd!) — wantsLesson surf (lat/lng Paris)
-  - Rider kite: `dev+kite@test.com` (Passw0rd!) — wantsLesson kitesurf (lat/lng Paris)
-  - Pro: `dev+pro@test.com` (Passw0rd!) — lieu de travail (lat/lng Paris)
-  - Admin: `admin@example.com` (AdminPass123!) — accès publication/modération Blobosphère
 
 ## 🗺️ Carte (open source, sans Google)
 

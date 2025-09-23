@@ -2,6 +2,7 @@ import { Prisma, BookingRequestStatus } from '@prisma/client';
 import { prisma } from '@blobinfini/database';
 import { bookingRepository } from './booking.repository';
 import { cacheService, CacheKeys } from '../../services/cache.service';
+import { notifyBookingAccepted, notifyBookingRejected } from '../push/push.controller';
 
 export class BookingService {
   async createAvailability(proUserId: string, data: any) {
@@ -337,11 +338,20 @@ export class BookingService {
   }
 
   async decideRequest(proUserId: string, requestId: string, action: 'accept' | 'reject') {
-    return prisma.$transaction(async (tx) => {
+    // First, execute the database transaction
+    const result = await prisma.$transaction(async (tx) => {
       const request = await tx.bookingRequest.findUnique({
         where: { id: requestId },
         include: {
-          availability: true,
+          availability: {
+            include: {
+              pro: {
+                include: {
+                  proProfile: true
+                }
+              }
+            }
+          }
         },
       });
 
@@ -407,8 +417,39 @@ export class BookingService {
         });
       }
 
-      return { success: true, action };
+      return {
+        success: true,
+        action,
+        requestData: request // Return request data for notifications
+      };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    // After successful transaction, send push notifications
+    try {
+      const { requestData } = result;
+
+      if (action === 'accept') {
+        console.log('📬 Sending booking accepted notification');
+        await notifyBookingAccepted(requestData.riderUserId, {
+          proName: requestData.availability?.pro?.proProfile?.businessName || requestData.availability?.pro?.email || 'Instructeur',
+          spotName: requestData.availability?.spotName || 'Spot à définir',
+          dateTime: requestData.availability?.startAt?.toISOString() || new Date().toISOString(),
+          // TODO: Add conversationId when messaging system is ready
+        });
+      } else {
+        console.log('📬 Sending booking rejected notification');
+        await notifyBookingRejected(requestData.riderUserId, {
+          proName: requestData.availability?.pro?.proProfile?.businessName || requestData.availability?.pro?.email || 'Instructeur',
+          spotName: requestData.availability?.spotName || 'Spot à définir',
+          reason: 'Le créneau n\'est plus disponible'
+        });
+      }
+    } catch (notificationError) {
+      // Log notification errors but don't fail the request
+      console.error('❌ Failed to send push notification:', notificationError);
+    }
+
+    return { success: true, action };
   }
 
   async addManualBooking(proUserId: string, data: any) {

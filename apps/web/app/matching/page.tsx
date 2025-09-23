@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { BackBar } from '../../components/BackBar';
 import { Button } from '../../components/ui/button';
 import { apiClient } from '../../lib/apiClient';
+import { AdBannerFeed } from '../../components/ads/AdBanner';
 
 type Sport = 'surf' | 'kitesurf';
 type Level = 'beginner' | 'intermediate' | 'advanced';
@@ -161,6 +162,11 @@ export default function MatchingPage() {
         </CardContent>
       </Card>
 
+      {/* Publicité entre les cartes */}
+      <AdBannerFeed
+        slot="matching-selection"
+        className="max-w-md mx-auto"
+      />
 
       <Card>
         <CardHeader>
