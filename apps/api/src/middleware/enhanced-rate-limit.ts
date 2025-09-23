@@ -202,16 +202,16 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
   return rateLimit(options);
 }
 
-// Pre-configured rate limiters for common use cases
+// Pre-configured rate limiters for common use cases (created once at startup)
 export const rateLimiters = {
-  auth: () => createRateLimiter('AUTH'),
-  registration: () => createRateLimiter('REGISTRATION'),
-  apiStandard: () => createRateLimiter('API_STANDARD'),
-  search: () => createRateLimiter('SEARCH'),
-  upload: () => createRateLimiter('UPLOAD'),
-  admin: () => createRateLimiter('ADMIN'),
-  messaging: () => createRateLimiter('MESSAGING'),
-  global: () => createRateLimiter('GLOBAL')
+  auth: createRateLimiter('AUTH'),
+  registration: createRateLimiter('REGISTRATION'),
+  apiStandard: createRateLimiter('API_STANDARD'),
+  search: createRateLimiter('SEARCH'),
+  upload: createRateLimiter('UPLOAD'),
+  admin: createRateLimiter('ADMIN'),
+  messaging: createRateLimiter('MESSAGING'),
+  global: createRateLimiter('GLOBAL')
 };
 
 // Middleware to apply appropriate rate limiting based on endpoint
@@ -224,23 +224,23 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
 
   if (path.startsWith('/auth/')) {
     if (path.includes('/register')) {
-      limiter = rateLimiters.registration();
+      limiter = rateLimiters.registration;
     } else {
-      limiter = rateLimiters.auth();
+      limiter = rateLimiters.auth;
     }
   } else if (path.includes('/upload') || method === 'POST' && path.includes('/photo')) {
-    limiter = rateLimiters.upload();
+    limiter = rateLimiters.upload;
   } else if (path.includes('/search') || path.includes('/matching')) {
-    limiter = rateLimiters.search();
+    limiter = rateLimiters.search;
   } else if (path.includes('/messages') || path.includes('/conversations')) {
-    limiter = rateLimiters.messaging();
+    limiter = rateLimiters.messaging;
   } else if (path.startsWith('/admin/')) {
-    limiter = rateLimiters.admin();
+    limiter = rateLimiters.admin;
   } else if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-    limiter = rateLimiters.apiStandard();
+    limiter = rateLimiters.apiStandard;
   } else {
     // GET requests get global rate limiting (more permissive)
-    limiter = rateLimiters.global();
+    limiter = rateLimiters.global;
   }
 
   limiter(req, res, next);

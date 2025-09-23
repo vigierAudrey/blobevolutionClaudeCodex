@@ -52,18 +52,7 @@ export class AuthService {
     }
   }
 
-  async login(email: string, password: string, opts?: { consentAccepted?: boolean; consentIp?: string }) {
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw { code: 'UNAUTHORIZED' };
-    const ok = await bcrypt.compare(password, user.password);
-    if (!ok) throw { code: 'UNAUTHORIZED' };
-
-    // Optionnel: bloquer la connexion si l'email n'est pas vérifié
-    const requireVerified = String(process.env.AUTH_REQUIRE_VERIFIED || 'false').toLowerCase() === 'true';
-    if (requireVerified && !user.emailVerified) {
-      throw { code: 'EMAIL_NOT_VERIFIED' };
-    }
-
+  async generateTokens(user: any, opts?: { consentAccepted?: boolean; consentIp?: string }) {
     // Exiger la dernière version du consentement pour les comptes existants
     const needsConsent = !user.consentedAt || user.consentVersion !== AuthService.CONSENT_VERSION;
     if (needsConsent) {
@@ -88,7 +77,7 @@ export class AuthService {
       expiresIn: `${REFRESH_TTL_DAYS}d`,
     });
 
-    // On stocke le hash du refresh pour permettre l’invalidation ultérieure
+    // On stocke le hash du refresh pour permettre l'invalidation ultérieure
     const tokenHash = this.hashToken(refreshToken);
     const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
     await prisma.refreshToken.create({
@@ -96,6 +85,21 @@ export class AuthService {
     });
 
     return { accessToken, refreshToken };
+  }
+
+  async login(email: string, password: string, opts?: { consentAccepted?: boolean; consentIp?: string }) {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) throw { code: 'UNAUTHORIZED' };
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) throw { code: 'UNAUTHORIZED' };
+
+    // Optionnel: bloquer la connexion si l'email n'est pas vérifié
+    const requireVerified = String(process.env.AUTH_REQUIRE_VERIFIED || 'false').toLowerCase() === 'true';
+    if (requireVerified && !user.emailVerified) {
+      throw { code: 'EMAIL_NOT_VERIFIED' };
+    }
+
+    return this.generateTokens(user, opts);
   }
 
   async refresh(refreshToken: string) {

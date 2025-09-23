@@ -34,9 +34,16 @@ export function createApp() {
   app.use(express.json());
   app.use(cookieParser());
 
-  // Trust proxy so req.ip/req.ips reflect X-Forwarded-For when behind a reverse proxy
-  // In dev Docker/localhost this is harmless; in prod it ensures correct client IPs.
-  app.set('trust proxy', true);
+  // Trust proxy configuration - more secure than 'true'
+  // In dev, trust localhost. In prod, trust only known proxy IPs or use number of hops
+  if (process.env.NODE_ENV === 'production') {
+    // Production: trust first proxy or specific IPs
+    const trustedProxies = process.env.TRUSTED_PROXY_IPS?.split(',') || ['127.0.0.1', '::1'];
+    app.set('trust proxy', trustedProxies);
+  } else {
+    // Development: trust localhost and private networks
+    app.set('trust proxy', ['127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']);
+  }
 
   // Session configuration for CSRF
   app.use(session({

@@ -359,6 +359,12 @@ export const apiClient = {
   resendVerification: (email: string) =>
     request('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
 
+  send2FA: (email: string) =>
+    request('/auth/2fa/send', { method: 'POST', body: JSON.stringify({ email }) }),
+
+  verify2FA: (email: string, code: string) =>
+    request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<LoginResponse>,
+
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
   updateProfile: (body: any) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
