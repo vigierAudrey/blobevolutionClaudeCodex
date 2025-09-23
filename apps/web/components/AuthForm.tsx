@@ -72,7 +72,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           setFieldErrors({ consent: 'Merci de confirmer que vous avez lu et accepté la charte.' });
           return;
         }
-        const res = await apiClient.register({ email, password, role, consentAccepted: true });
+        await apiClient.register({ email, password, role, consentAccepted: true });
         setInfo('Compte créé. Vérifie ta boîte mail pour valider ton email.');
         // Optionnel: rediriger vers login
         setTimeout(() => router.push('/login'), 800);
@@ -128,9 +128,10 @@ export function AuthForm({ mode }: { mode: Mode }) {
       setInfo('Email de vérification renvoyé. Vérifie ta boîte mail.');
     } catch (e: any) {
       setResendStatus('error');
-      setError(e?.message || 'Impossible de renvoyer l’email');
+      setError(e?.message || 'Impossible de renvoyer email');
     }
   };
+
 
   return (
     <Card>

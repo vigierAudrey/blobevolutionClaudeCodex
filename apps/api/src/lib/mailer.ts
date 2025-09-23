@@ -90,3 +90,36 @@ export async function sendPasswordResetEmail(to: string, token: string) {
   const html = `<p>Tu as demandé à réinitialiser ton mot de passe.</p><p><a href="${link}">Réinitialiser mon mot de passe</a></p>`;
   return sendMail({ to, subject: 'Réinitialisation du mot de passe', text, html });
 }
+
+export async function send2FACode(to: string, code: string) {
+  const text = `Code de sécurité Blobinfini: ${code}
+
+Ce code expire dans 5 minutes.
+
+Si tu n'as pas demandé ce code, ignore cet email.`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1e40af;">🔒 Code de sécurité</h2>
+      <p>Voici ton code de sécurité pour accéder à ton compte Blobinfini :</p>
+
+      <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+        <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1e40af;">${code}</span>
+      </div>
+
+      <p style="color: #6b7280; font-size: 14px;">
+        ⏱️ Ce code expire dans <strong>5 minutes</strong><br>
+        🔐 Ne le partage avec personne
+      </p>
+
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+
+      <p style="color: #9ca3af; font-size: 12px;">
+        Si tu n'as pas demandé ce code, ignore cet email.<br>
+        Équipe Blobinfini
+      </p>
+    </div>
+  `;
+
+  return sendMail({ to, subject: '🔒 Code de sécurité Blobinfini', text, html });
+}

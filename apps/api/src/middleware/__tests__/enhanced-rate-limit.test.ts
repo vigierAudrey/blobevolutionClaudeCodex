@@ -127,7 +127,7 @@ describe('Enhanced Rate Limiting', () => {
     it('should create rate limiters with correct configurations', async () => {
       const { rateLimiters } = await import('../enhanced-rate-limit');
 
-      // Test that all factory functions exist and return middleware
+      // Test that all rate limiters exist as middleware functions
       expect(typeof rateLimiters.auth).toBe('function');
       expect(typeof rateLimiters.registration).toBe('function');
       expect(typeof rateLimiters.apiStandard).toBe('function');
@@ -137,9 +137,8 @@ describe('Enhanced Rate Limiting', () => {
       expect(typeof rateLimiters.messaging).toBe('function');
       expect(typeof rateLimiters.global).toBe('function');
 
-      // Test that they return middleware functions
-      const authLimiter = rateLimiters.auth();
-      expect(typeof authLimiter).toBe('function');
+      // Test that they are ready-to-use middleware functions
+      expect(typeof rateLimiters.auth).toBe('function');
     });
   });
 

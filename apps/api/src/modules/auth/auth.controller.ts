@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth, requireVerifiedEmail } from './auth.guard';
 import { AuthService } from './auth.service';
 import { prisma } from '@blobinfini/database';
+import { twoFactorService } from '../../services/two-factor.service';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -46,6 +47,16 @@ const verifyEmailSchema = z.object({
 
 const resendVerifySchema = z.object({
   email: z.string().email(),
+});
+
+// 2FA Schemas
+const send2FASchema = z.object({
+  email: z.string().email(),
+});
+
+const verify2FASchema = z.object({
+  email: z.string().email(),
+  code: z.string().length(6, 'Code must be 6 digits'),
 });
 
 authRouter.post('/register', async (req, res) => {
@@ -208,6 +219,83 @@ authRouter.post('/reset-password', async (req, res) => {
     }
     if (err?.code === 'UNAUTHORIZED') {
       return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// 2FA Routes
+authRouter.post('/2fa/send', async (req, res) => {
+  try {
+    const { email } = send2FASchema.parse(req.body);
+
+    // Vérifier que l'utilisateur existe et est PRO
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, role: true, email: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    }
+
+    if (user.role !== 'PRO') {
+      return res.status(403).json({ error: '2FA disponible uniquement pour les pros' });
+    }
+
+    const result = await twoFactorService.sendCode(user.id, user.email);
+
+    if (result.success) {
+      res.json({ message: result.message });
+    } else {
+      res.status(500).json({ error: result.message });
+    }
+  } catch (err: any) {
+    if (err?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+authRouter.post('/2fa/verify', async (req, res) => {
+  try {
+    const { email, code } = verify2FASchema.parse(req.body);
+
+    // Vérifier que l'utilisateur existe et est PRO
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, role: true, email: true, password: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    }
+
+    if (user.role !== 'PRO') {
+      return res.status(403).json({ error: '2FA disponible uniquement pour les pros' });
+    }
+
+    const verification = await twoFactorService.verifyCode(user.id, code);
+
+    if (verification.valid) {
+      // Code valide - générer les tokens JWT comme pour un login normal
+      const ips = (req as any).ips as string[] | undefined;
+      const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+
+      // Utiliser le service de login avec des données simulées (pas besoin de re-vérifier password)
+      const tokens = await service.generateTokens(user, { consentAccepted: true, consentIp: ip });
+
+      res.json({
+        message: 'Authentification 2FA réussie',
+        ...tokens
+      });
+    } else {
+      res.status(401).json({ error: verification.message });
+    }
+  } catch (err: any) {
+    if (err?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
