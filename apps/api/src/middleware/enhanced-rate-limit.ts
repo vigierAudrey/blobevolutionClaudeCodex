@@ -28,10 +28,12 @@ async function initializeRedis(): Promise<RedisClientType | null> {
   return null;
 }
 
-// Initialize Redis on module load
-initializeRedis().then(client => {
-  redisClient = client;
-});
+// Initialize Redis on module load (not in test mode)
+if (process.env.NODE_ENV !== 'test') {
+  initializeRedis().then(client => {
+    redisClient = client;
+  });
+}
 
 // Rate limit configuration profiles
 export const RATE_LIMIT_PROFILES = {

@@ -89,20 +89,13 @@ describe('Enhanced Rate Limiting', () => {
 
   describe('Smart rate limit routing', () => {
     it('should identify auth endpoints correctly', async () => {
-      // Mock NODE_ENV to enable rate limiting for this test
-      const originalNodeEnv = process.env.NODE_ENV;
-      Object.defineProperty(process.env, 'NODE_ENV', {
-        value: 'development',
-        configurable: true
-      });
-
-      // Create fresh app with rate limiting enabled
-      const testApp = createApp();
+      // Note: We don't change NODE_ENV as it would start background jobs
+      // Rate limiting is enabled by default in our middleware
 
       // Auth endpoints should get stricter limits
       // We can't easily test the actual rate limiting without Redis or memory store manipulation,
       // but we can verify the middleware is applied correctly by checking the response structure
-      const response = await request(testApp)
+      const response = await request(app)
         .get('/csrf-token'); // This should not be rate limited (GET request)
 
       expect(response.status).toBe(200);
@@ -111,14 +104,8 @@ describe('Enhanced Rate Limiting', () => {
     });
 
     it('should handle health check bypass', async () => {
-      Object.defineProperty(process.env, 'NODE_ENV', {
-        value: 'development',
-        configurable: true
-      });
-      const testApp = createApp();
-
       // Health check should always work regardless of rate limits
-      const response = await request(testApp).get('/health');
+      const response = await request(app).get('/health');
       expect(response.status).toBe(200);
     });
   });
@@ -218,10 +205,6 @@ describe('Enhanced Rate Limiting', () => {
   describe('Skip conditions', () => {
     it('should skip rate limiting for trusted IPs when configured', async () => {
       process.env.TRUSTED_IPS = '127.0.0.1,192.168.1.1';
-      Object.defineProperty(process.env, 'NODE_ENV', {
-        value: 'development',
-        configurable: true
-      });
 
       const { createRateLimiter } = await import('../enhanced-rate-limit');
       const limiter = createRateLimiter('API_STANDARD');

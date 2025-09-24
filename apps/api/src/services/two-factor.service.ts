@@ -6,14 +6,17 @@ import { send2FACode } from '../lib/mailer';
 const memoryStore = new Map<string, { code: string; expiresAt: number }>();
 
 // TODO: Add cleanup interval for memory store to prevent memory leaks
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of memoryStore.entries()) {
-    if (value.expiresAt < now) {
-      memoryStore.delete(key);
+// Only start cleanup interval in production/development, not in tests
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of memoryStore.entries()) {
+      if (value.expiresAt < now) {
+        memoryStore.delete(key);
+      }
     }
-  }
-}, 60000); // Clean expired entries every minute
+  }, 60000); // Clean expired entries every minute
+}
 
 export class TwoFactorService {
   /**

@@ -18,7 +18,12 @@ const config: Config = {
     '^@blobinfini/database$': '<rootDir>/../../packages/database/src/index.ts'
   },
   roots: ['<rootDir>/src'],
-  maxWorkers: 1
+  maxWorkers: 1,
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  // Force Jest to exit after tests complete
+  forceExit: true,
+  // Detect open handles to help debug hanging tests
+  detectOpenHandles: true
 }; 
 
 export default config;
