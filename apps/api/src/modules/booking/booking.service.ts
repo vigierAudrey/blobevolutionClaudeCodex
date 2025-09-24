@@ -3,6 +3,7 @@ import { prisma } from '@blobinfini/database';
 import { bookingRepository } from './booking.repository';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { notifyBookingAccepted, notifyBookingRejected } from '../push/push.controller';
+import { withTransactionRetry } from '../../utils/transaction-retry';
 
 export class BookingService {
   async createAvailability(proUserId: string, data: any) {
@@ -338,8 +339,9 @@ export class BookingService {
   }
 
   async decideRequest(proUserId: string, requestId: string, action: 'accept' | 'reject') {
-    // First, execute the database transaction
-    const result = await prisma.$transaction(async (tx) => {
+    // Execute the database transaction with retry logic for serialization failures
+    const result = await withTransactionRetry(async () => {
+      return await prisma.$transaction(async (tx) => {
       const request = await tx.bookingRequest.findUnique({
         where: { id: requestId },
         include: {
@@ -422,7 +424,8 @@ export class BookingService {
         action,
         requestData: request // Return request data for notifications
       };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    });
 
     // After successful transaction, send push notifications
     try {
@@ -453,18 +456,33 @@ export class BookingService {
   }
 
   async addManualBooking(proUserId: string, data: any) {
-    const availability = await bookingRepository.findAvailabilityById(data.availabilityId);
-    if (!availability || availability.proUserId !== proUserId) {
-      throw Object.assign(new Error('Availability not found'), { status: 404 });
-    }
-    const booking = await bookingRepository.createBooking({
-      availabilityId: data.availabilityId,
-      riderUserId: data.riderUserId,
+    return await withTransactionRetry(async () => {
+      return await prisma.$transaction(async (tx) => {
+        const availability = await tx.proAvailability.findUnique({
+          where: { id: data.availabilityId }
+        });
+
+        if (!availability || availability.proUserId !== proUserId) {
+          throw Object.assign(new Error('Availability not found'), { status: 404 });
+        }
+
+        const booking = await tx.booking.create({
+          data: {
+            availabilityId: data.availabilityId,
+            riderUserId: data.riderUserId,
+          },
+        });
+
+        await tx.proAvailability.update({
+          where: { id: data.availabilityId },
+          data: {
+            bookedCount: { increment: 1 },
+          },
+        });
+
+        return booking;
+      });
     });
-    await bookingRepository.updateAvailability(data.availabilityId, {
-      bookedCount: { increment: 1 },
-    });
-    return booking;
   }
 
   async listProBookings(proUserId: string) {
