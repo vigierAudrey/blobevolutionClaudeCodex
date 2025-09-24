@@ -186,8 +186,10 @@ export class CacheService {
 // Export singleton instance
 export const cacheService = CacheService.getInstance();
 
-// Initialize cache on module load
-cacheService.initialize().catch(console.error);
+// Initialize cache on module load (except in tests)
+if (process.env.NODE_ENV !== 'test') {
+  cacheService.initialize().catch(console.error);
+}
 
 // Helper functions for cache key generation
 export const CacheKeys = {

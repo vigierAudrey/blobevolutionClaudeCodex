@@ -96,18 +96,27 @@ export function createApp() {
     }
   }
 
-  if (gdprPurgeHours > 0) {
-    setInterval(performGDPRPurge, gdprPurgeHours * 60 * 60 * 1000);
-    if (String(process.env.GDPR_PURGE_RUN_ON_START || 'false').toLowerCase() === 'true') {
-      performGDPRPurge();
+  // Only start background jobs in production/development, not in tests
+  if (process.env.NODE_ENV !== 'test') {
+    if (gdprPurgeHours > 0) {
+      setInterval(performGDPRPurge, gdprPurgeHours * 60 * 60 * 1000);
+      if (String(process.env.GDPR_PURGE_RUN_ON_START || 'false').toLowerCase() === 'true') {
+        performGDPRPurge();
+      }
     }
-  }
 
-  // Legacy consent IP purge (fallback if GDPR purge disabled)
-  if (legacyPurgeHours > 0 && gdprPurgeHours === 0) {
-    setInterval(purgeOnce, legacyPurgeHours * 60 * 60 * 1000);
-    if (String(process.env.CONSENT_PURGE_RUN_ON_START || 'true').toLowerCase() === 'true') {
-      purgeOnce();
+    // Legacy consent IP purge (fallback if GDPR purge disabled)
+    if (legacyPurgeHours > 0 && gdprPurgeHours === 0) {
+      setInterval(purgeOnce, legacyPurgeHours * 60 * 60 * 1000);
+      if (String(process.env.CONSENT_PURGE_RUN_ON_START || 'true').toLowerCase() === 'true') {
+        purgeOnce();
+      }
+    }
+
+    // Background auto-deletion of trashed conversations (per member)
+    if (convPurgeHours > 0) {
+      setInterval(purgeTrashedConversations, convPurgeHours * 60 * 60 * 1000);
+      purgeTrashedConversations();
     }
   }
 
@@ -124,10 +133,6 @@ export function createApp() {
       // eslint-disable-next-line no-console
       console.error('Conversation purge failed', e);
     }
-  }
-  if (convPurgeHours > 0) {
-    setInterval(purgeTrashedConversations, convPurgeHours * 60 * 60 * 1000);
-    purgeTrashedConversations();
   }
 
   app.get('/health', (_req, res) => {
