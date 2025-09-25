@@ -1,4 +1,4 @@
-import { test, expect, request as playwrightRequest, type Browser } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type Browser, type APIRequestContext } from '@playwright/test';
 
 test.describe('Reservations start flow', () => {
   test('rider can progress through the main steps', async ({ page }) => {
@@ -94,12 +94,24 @@ async function runBookingFlow(
   options: { proEmail?: string; riderEmail?: string } = {}
 ) {
     const apiBaseUrl = process.env.PLAYWRIGHT_API_URL ?? 'http://127.0.0.1:4000';
-    const api = await playwrightRequest.newContext({ baseURL: apiBaseUrl });
+    const proApi = await playwrightRequest.newContext({ baseURL: apiBaseUrl });
+    const riderApi = await playwrightRequest.newContext({ baseURL: apiBaseUrl });
+
+    const fetchCsrfToken = async (ctx: APIRequestContext) => {
+      const res = await ctx.get('/csrf-token');
+      if (!res.ok()) {
+        throw new Error(`Unable to fetch CSRF token (${res.status()})`);
+      }
+      const json = (await res.json()) as { csrfToken: string };
+      return json.csrfToken;
+    };
 
     const proEmail = options.proEmail ?? process.env.E2E_PRO_EMAIL ?? 'dev+pro1@test.com';
     const riderEmail = options.riderEmail ?? process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
 
-    const proLogin = await api.post('/auth/login', {
+    const proLoginCsrf = await fetchCsrfToken(proApi);
+    const proLogin = await proApi.post('/auth/login', {
+      headers: { 'X-CSRF-Token': proLoginCsrf },
       data: { email: proEmail, password: 'Passw0rd!' },
     });
     if (!proLogin.ok()) {
@@ -108,7 +120,9 @@ async function runBookingFlow(
     const proLoginJson = await proLogin.json();
     const proToken = proLoginJson.accessToken as string;
 
-    const riderLogin = await api.post('/auth/login', {
+    const riderLoginCsrf = await fetchCsrfToken(riderApi);
+    const riderLogin = await riderApi.post('/auth/login', {
+      headers: { 'X-CSRF-Token': riderLoginCsrf },
       data: { email: riderEmail, password: 'Passw0rd!' },
     });
     if (!riderLogin.ok()) {
@@ -122,8 +136,9 @@ async function runBookingFlow(
     const endAt = new Date(now + 90 * 60 * 1000);
     const spotName = `Playwright Spot ${action} ${now}`;
 
-    const availabilityResponse = await api.post('/booking/availability', {
-      headers: { Authorization: `Bearer ${proToken}` },
+    const availabilityCsrf = await fetchCsrfToken(proApi);
+    const availabilityResponse = await proApi.post('/booking/availability', {
+      headers: { Authorization: `Bearer ${proToken}`, 'X-CSRF-Token': availabilityCsrf },
       data: {
         sport: 'surf',
         levels: ['beginner', 'intermediate'],
@@ -163,7 +178,7 @@ async function runBookingFlow(
     await riderPage.getByRole('button', { name: 'Envoyer la demande' }).click();
     await expect(riderPage.getByText('Demande envoyée')).toBeVisible();
 
-    const riderRequestsPending = await api.get('/booking/requests/me', {
+    const riderRequestsPending = await riderApi.get('/booking/requests/me', {
       headers: { Authorization: `Bearer ${riderToken}` },
     });
     expect(riderRequestsPending.ok()).toBeTruthy();
@@ -200,7 +215,7 @@ async function runBookingFlow(
       pendingRequestCard.getByRole('button', { name: decisionButtonName }).first().click(),
     ]);
 
-    const riderRequestsAccepted = await api.get('/booking/requests/me', {
+    const riderRequestsAccepted = await riderApi.get('/booking/requests/me', {
       headers: { Authorization: `Bearer ${riderToken}` },
     });
     expect(riderRequestsAccepted.ok()).toBeTruthy();
@@ -213,7 +228,8 @@ async function runBookingFlow(
 
     await proContext.close();
     await riderContext.close();
-    await api.dispose();
+    await proApi.dispose();
+    await riderApi.dispose();
 }
 
 test.describe('Rider to pro booking flow', () => {
