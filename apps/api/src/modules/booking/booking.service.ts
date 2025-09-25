@@ -425,7 +425,7 @@ export class BookingService {
         requestData: request // Return request data for notifications
       };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    });
+    }, 7, 150);
 
     // After successful transaction, send push notifications
     try {
@@ -482,7 +482,7 @@ export class BookingService {
 
         return booking;
       });
-    });
+    }, 7, 150);
   }
 
   async listProBookings(proUserId: string) {

@@ -5,8 +5,8 @@
 
 export async function withTransactionRetry<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelay: number = 100
+  maxRetries: number = 5,
+  baseDelay: number = 120
 ): Promise<T> {
   let lastError: Error;
 

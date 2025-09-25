@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -294,6 +294,18 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
   const [error, setError] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [hasStoredPrefs, setHasStoredPrefs] = useState(false);
+  const [addressQuery, setAddressQuery] = useState('');
+  const [addressSuggestions, setAddressSuggestions] = useState<Array<{ label: string; lat: number; lng: number }>>([]);
+  const [geocodeLoading, setGeocodeLoading] = useState(false);
+  const [reverseLoading, setReverseLoading] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
+  const [spotNameEdited, setSpotNameEdited] = useState(false);
+
+  const skipGeocodeRef = useRef(false);
+  const geocodeAbortRef = useRef<AbortController | null>(null);
+  const geocodeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reverseAbortRef = useRef<AbortController | null>(null);
+  const reverseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const restorePreferences = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -313,6 +325,11 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
       }
       setForm(parsed.data);
       setHasStoredPrefs(true);
+      skipGeocodeRef.current = true;
+      setAddressQuery(parsed.data.spotName ?? '');
+      setAddressSuggestions([]);
+      setGeocodeError(null);
+      setSpotNameEdited(false);
     } catch (err) {
       console.warn('[CreateAvailabilityModal] unable to restore preferences', err);
     }
@@ -329,6 +346,10 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
       setError(null);
       setShowMap(false);
       setHasStoredPrefs(false);
+      setAddressQuery('');
+      setAddressSuggestions([]);
+      setGeocodeError(null);
+      setSpotNameEdited(false);
       restorePreferences();
     }
   }, [open, restorePreferences]);
@@ -345,6 +366,180 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
       }),
     []
   );
+
+  useEffect(() => {
+    return () => {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+      }
+      geocodeAbortRef.current?.abort();
+      if (reverseTimeoutRef.current) {
+        clearTimeout(reverseTimeoutRef.current);
+      }
+      reverseAbortRef.current?.abort();
+    };
+  }, []);
+
+  const triggerReverseLookup = useCallback(
+    (lat: number, lng: number) => {
+      if (reverseTimeoutRef.current) {
+        clearTimeout(reverseTimeoutRef.current);
+      }
+
+      reverseTimeoutRef.current = setTimeout(async () => {
+        reverseAbortRef.current?.abort();
+        const controller = new AbortController();
+        reverseAbortRef.current = controller;
+
+        setReverseLoading(true);
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=fr`,
+            { signal: controller.signal }
+          );
+          if (!response.ok) {
+            throw new Error('Reverse geocoding failed');
+          }
+          const payload = (await response.json()) as { display_name?: string };
+          const displayName = payload?.display_name;
+          if (displayName) {
+            skipGeocodeRef.current = true;
+            setAddressQuery(displayName);
+            setGeocodeError(null);
+            if (!spotNameEdited) {
+              setForm((prev) => ({ ...prev, spotName: displayName }));
+            }
+          }
+        } catch (err: any) {
+          if (err?.name !== 'AbortError') {
+            setGeocodeError('Impossible de récupérer l’adresse exacte.');
+          }
+        } finally {
+          setReverseLoading(false);
+        }
+      }, 450);
+    },
+    [spotNameEdited]
+  );
+
+  const updateCoordinates = useCallback(
+    (lat: number, lng: number, options?: { skipReverse?: boolean }) => {
+      setForm((prev) => ({
+        ...prev,
+        spotLat: lat.toFixed(6),
+        spotLng: lng.toFixed(6),
+      }));
+      if (!options?.skipReverse) {
+        triggerReverseLookup(lat, lng);
+      }
+    },
+    [triggerReverseLookup]
+  );
+
+  const applyGeocodingResult = useCallback(
+    (label: string, lat: number, lng: number) => {
+      skipGeocodeRef.current = true;
+      setAddressQuery(label);
+      setAddressSuggestions([]);
+      setGeocodeError(null);
+      setSpotNameEdited(false);
+      updateCoordinates(lat, lng, { skipReverse: true });
+      setForm((prev) => ({ ...prev, spotName: label }));
+      setShowMap(true);
+    },
+    [updateCoordinates]
+  );
+
+  const handleManualCoordinates = useCallback(() => {
+    const lat = Number(form.spotLat);
+    const lng = Number(form.spotLng);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      setGeocodeError('Coordonnées invalides (ex: 43.493 / -1.558).');
+      return;
+    }
+    setShowMap(true);
+    setGeocodeError(null);
+    updateCoordinates(lat, lng);
+  }, [form.spotLat, form.spotLng, updateCoordinates]);
+
+  useEffect(() => {
+    if (skipGeocodeRef.current) {
+      skipGeocodeRef.current = false;
+      return;
+    }
+
+    const trimmed = addressQuery.trim();
+
+    if (!trimmed) {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+        geocodeTimeoutRef.current = null;
+      }
+      geocodeAbortRef.current?.abort();
+      setAddressSuggestions([]);
+      setGeocodeError(null);
+      setGeocodeLoading(false);
+      return;
+    }
+
+    if (trimmed.length < 3) {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+        geocodeTimeoutRef.current = null;
+      }
+      setAddressSuggestions([]);
+      setGeocodeError('Saisis au moins 3 caractères.');
+      setGeocodeLoading(false);
+      return;
+    }
+
+    if (geocodeTimeoutRef.current) {
+      clearTimeout(geocodeTimeoutRef.current);
+    }
+    geocodeAbortRef.current?.abort();
+    const controller = new AbortController();
+    geocodeAbortRef.current = controller;
+
+    geocodeTimeoutRef.current = setTimeout(async () => {
+      try {
+        setGeocodeLoading(true);
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=fr&accept-language=fr&q=${encodeURIComponent(trimmed)}`,
+          { signal: controller.signal }
+        );
+        if (!response.ok) {
+          throw new Error('Service géocodage indisponible');
+        }
+        const payload = (await response.json()) as Array<{ display_name: string; lat: string; lon: string; importance?: number }>;
+        const enriched = payload.map((item) => ({
+          label: item.display_name,
+          lat: Number(item.lat),
+          lng: Number(item.lon ?? item.lng ?? 0),
+          importance: item.importance ?? 0,
+        }));
+        enriched.sort((a, b) => b.importance - a.importance);
+        setAddressSuggestions(enriched.map(({ label, lat, lng }) => ({ label, lat, lng })));
+        setGeocodeError(mapped.length === 0 ? 'Aucun résultat trouvé.' : null);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          return;
+        }
+        setAddressSuggestions([]);
+        setGeocodeError(err?.message ?? 'Erreur lors de la recherche d’adresse.');
+      } finally {
+        setGeocodeLoading(false);
+      }
+    }, 450);
+
+    return () => {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+        geocodeTimeoutRef.current = null;
+      }
+      controller.abort();
+      geocodeAbortRef.current = null;
+    };
+  }, [addressQuery]);
 
   const computedEndDate = useMemo(() => {
     if (!form.date || !form.startTime) return null;
@@ -593,11 +788,53 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
             <input
               type="text"
               value={form.spotName}
-              onChange={(event) => setForm((prev) => ({ ...prev, spotName: event.target.value }))}
+              onChange={(event) => {
+                setSpotNameEdited(true);
+                setForm((prev) => ({ ...prev, spotName: event.target.value }));
+              }}
               placeholder="Ex: Plage Centrale"
               className="rounded-md border px-2 py-1"
             />
           </label>
+
+          <div className="space-y-2 text-sm">
+            <label className="flex flex-col gap-1">
+              Adresse (optionnelle)
+              <input
+                type="text"
+                value={addressQuery}
+                onChange={(event) => {
+                  setAddressQuery(event.target.value);
+                  setGeocodeError(null);
+                }}
+                placeholder="Ex: 12 avenue des Dunes, Biarritz"
+                className="rounded-md border px-2 py-1"
+              />
+            </label>
+            <div className="min-h-[1.25rem] text-xs text-muted-foreground">
+              {geocodeLoading ? 'Recherche en cours…' : reverseLoading ? 'Mise à jour de l’adresse…' : ' '}
+            </div>
+            {geocodeError && (
+              <p className="text-xs text-red-600" role="alert">
+                {geocodeError}
+              </p>
+            )}
+            {addressSuggestions.length > 0 && (
+              <ul className="max-h-48 space-y-1 overflow-y-auto rounded-md border bg-white p-2 text-sm shadow">
+                {addressSuggestions.map((suggestion) => (
+                  <li key={`${suggestion.lat}-${suggestion.lng}`}>
+                    <button
+                      type="button"
+                      className="w-full text-left hover:text-primary"
+                      onClick={() => applyGeocodingResult(suggestion.label, suggestion.lat, suggestion.lng)}
+                    >
+                      {suggestion.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -614,6 +851,10 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
                       }
                       setForm(defaultCreateFormState);
                       setHasStoredPrefs(false);
+                      setAddressQuery('');
+                      setAddressSuggestions([]);
+                      setGeocodeError(null);
+                      setSpotNameEdited(false);
                     }}
                   >
                     Réinitialiser mes préférences
@@ -648,6 +889,12 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
                 />
               </label>
             </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <Button type="button" size="sm" variant="outline" onClick={handleManualCoordinates}>
+                Utiliser ces coordonnées
+              </Button>
+              <span>Format attendu : latitude 43.493 / longitude -1.558</span>
+            </div>
             {showMap && (
               <div className="overflow-hidden rounded-md border">
                 <div className="h-64">
@@ -657,13 +904,8 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
                         ? { lat: Number(form.spotLat), lng: Number(form.spotLng) }
                         : null
                     }
-                    onChange={({ lat, lng }) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        spotLat: lat.toFixed(6),
-                        spotLng: lng.toFixed(6),
-                      }))
-                    }
+                    onChange={({ lat, lng }) => updateCoordinates(lat, lng)}
+                    draggableMarker
                   />
                 </div>
                 <p className="px-3 py-2 text-xs text-muted-foreground">
