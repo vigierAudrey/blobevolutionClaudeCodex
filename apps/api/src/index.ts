@@ -1,10 +1,15 @@
 import dotenv from 'dotenv';
 import { resolve } from 'path';
+import fs from 'fs';
 // Load env from repo root by default so workspaces share one .env
 dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env') });
+
+// Standard logging for monitoring (Clever Cloud logs)
 import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'js-yaml';
 // Minimal CORS middleware to avoid ESM/CJS interop issues in dev
 function simpleCors(_req: any, res: any, next: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,6 +20,7 @@ function simpleCors(_req: any, res: any, next: any) {
   next();
 }
 import helmet from 'helmet';
+import compression from 'compression';
 import { setupCSRF, csrfProtection, getCSRFToken } from './middleware/csrf';
 import { smartRateLimit } from './middleware/enhanced-rate-limit';
 import { authRouter } from './modules/auth/auth.controller';
@@ -29,8 +35,38 @@ import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
 
+
+const OPENAPI_SPEC_PATH = resolve(process.cwd(), 'docs/openapi/openapi.yaml');
+
+const loadOpenApiDocument = () => {
+  try {
+    const raw = fs.readFileSync(OPENAPI_SPEC_PATH, 'utf-8');
+    return YAML.load(raw) as object;
+  } catch (error) {
+    console.warn('⚠️  Impossible de charger docs/openapi/openapi.yaml', error);
+    return null;
+  }
+};
+
 export function createApp() {
   const app = express();
+
+  // Production-grade compression (gzip/brotli)
+  app.use(compression({
+    // Only compress responses larger than 1KB
+    threshold: 1024,
+    // Compression level (1=fastest, 6=good balance, 9=best compression)
+    level: process.env.NODE_ENV === 'production' ? 6 : 1,
+    // Custom filter for compression
+    filter: (req, res) => {
+      // Don't compress responses with this request header
+      if (req.headers['x-no-compression']) {
+        return false;
+      }
+      // Use compression default filter (compresses text, json, etc.)
+      return compression.filter(req, res);
+    }
+  }));
   app.use(express.json());
   app.use(cookieParser());
 
@@ -142,8 +178,39 @@ export function createApp() {
   // CSRF token endpoint (GET requests are not protected)
   app.get('/csrf-token', getCSRFToken);
 
+  // OpenAPI specification & Swagger UI
+  app.get('/openapi.yaml', (_req, res) => {
+    res.sendFile(OPENAPI_SPEC_PATH);
+  });
+
+  app.get('/openapi.json', (_req, res) => {
+    const document = loadOpenApiDocument();
+    if (!document) {
+      return res.status(500).json({ error: 'OpenAPI specification unavailable' });
+    }
+    res.json(document);
+  });
+
+  const swaggerDocument = loadOpenApiDocument();
+  if (swaggerDocument) {
+    app.use(
+      '/api/docs',
+      swaggerUi.serve,
+      swaggerUi.setup(swaggerDocument, {
+        explorer: true,
+        customSiteTitle: 'Blobinfini API – Swagger UI',
+      })
+    );
+  }
+
   // Apply CSRF protection to all routes
   app.use(csrfProtection);
+
+  // Simple request logging for debugging
+  app.use((req, _res, next) => {
+    console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+    next();
+  });
 
   app.use('/auth', authRouter);
   app.use('/profile', profileRouter);
@@ -156,6 +223,13 @@ export function createApp() {
   app.use('/contact', contactRouter);
   app.use('/booking', bookingRouter);
   app.use('/push', pushRouter);
+
+
+  // Global error handler
+  app.use((err: any, _req: any, res: any, _next: any) => {
+    console.error('Global error handler:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  });
 
   return app;
 }
