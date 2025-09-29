@@ -1,7 +1,7 @@
 # 🚀 Roadmap de Développement Blobinfini
 
 ## 🆓 **Philosophie Projet : 100% Open Source & Gratuit**
-- **Monitoring :** Clever Cloud logs (0€) vs Sentry (300€/an)
+- **Monitoring :** Clever Cloud logs + dashboards open source (0€)
 - **Infrastructure :** Solutions gratuites privilégiées
 - **Outils :** Open source first, économies réinvesties dans les features
 
@@ -140,7 +140,7 @@
 ### ✅ **9. Developer Experience Gratuit**
 - [ ] **Documentation OpenAPI/Swagger** API (tenir `openapi.yaml` + Swagger UI à jour et ajouter un lint OpenAPI dans la CI)
 - [x] **Storybook** composants UI ✅ RÉSOLU (v8.0.10 + tests visuels fonctionnels)
-- [x] **Monitoring performance gratuit** (Clever Cloud + logs standards vs Sentry 300€/an)
+- [x] **Monitoring performance gratuit** (Clever Cloud + logs standards open source)
 - [ ] **Automated deployment** amélioré (GitHub Actions + Clever Cloud)
 
 ### ✅ **10. Fonctionnalités Avancées**
@@ -154,7 +154,7 @@
 ## 👥 **Répartition Équipe Recommandée**
 
 ### **👨‍💻 Claude (Backend/Performance)**
-- **En cours:** Setup Sentry + optimisations DB + compression
+- **En cours:** Observabilité open source (dashboards Clever Cloud) + optimisations DB + compression
 - **Suivant:** CDN + monitoring production
 
 ### **🤖 Codex (Frontend/Infrastructure)**
@@ -203,7 +203,7 @@
 - ⚠️ **Module Blobosphère incomplet** (SEO/engagement limité)
 
 ### **Production Ready**
-- ⚠️ **Monitoring absent** (Sentry/DataDog non configuré)
+- ⚠️ **Monitoring à étendre** (dashboards/alertes Clever Cloud à finaliser)
 - ⚠️ **Analytics limitées** (métriques business manquantes)
 - 🔧 **CI/CD basique** (deployment manuel sur Clever Cloud)
 
@@ -234,7 +234,7 @@
 ## 💰 **Économies Stack 100% Gratuite**
 
 ### **Économies Annuelles Réalisées :**
-- **Sentry monitoring :** 300€/an → Clever Cloud logs (0€)
+- **Monitoring open source :** Clever Cloud logs (0€)
 - **Analytics futures :** 200€/mois → Grafana self-hosted (0€)
 - **CDN :** 50€/mois → Cloudflare free tier (0€)
 - **Total économisé :** **~2,700€/an** réinvestis dans les features business
@@ -263,11 +263,10 @@
 
 **🔥 EN COURS - Production Ready**
 
-**Claude #1: Setup Sentry Monitoring (0.5j)**
-- Configuration Sentry pour erreurs production
-- Dashboards performance + alertes
-- Integration avec Clever Cloud
-- Tests monitoring en conditions réelles
+**Claude #1: Observabilité Clever Cloud (0.5j)**
+- Configurer les dashboards et alertes (logs, métriques)
+- Documenter la procédure pour l'équipe
+- Valider la rotation / rétention des logs gratuits
 
 **Claude #2: Optimisations Performance DB (0.5j)**
 - Connection pooling PostgreSQL optimisé

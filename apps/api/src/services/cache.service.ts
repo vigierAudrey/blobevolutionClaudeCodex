@@ -1,4 +1,5 @@
 import { createClient } from 'redis';
+import { resolveRedisUrl } from '../lib/redisConfig';
 
 // Redis client for caching (separate from rate limiting)
 let cacheClient: any = null;
@@ -6,10 +7,12 @@ let cacheClient: any = null;
 // Initialize Redis cache client
 export async function initializeCache(): Promise<any> {
   // Enable cache in both development and production
-  if (process.env.REDIS_URL) {
+  const redisUrl = resolveRedisUrl();
+
+  if (redisUrl) {
     try {
       const client = createClient({
-        url: process.env.REDIS_URL,
+        url: redisUrl,
       });
 
       await client.connect();
@@ -21,7 +24,7 @@ export async function initializeCache(): Promise<any> {
       return null;
     }
   }
-  console.log('⚠️ Redis cache disabled - no REDIS_URL provided');
+  console.log('⚠️ Redis cache disabled - no Redis URL available');
   return null;
 }
 

@@ -1,6 +1,8 @@
 # 🏄 Guide IA – Blobinfini
 
-Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement de Blobinfini. À lire avant chaque session de code.
+ Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement de Blobinfini. À lire avant chaque session de code.
+
+> **Note :** ce document remplace l'ancien `CLAUDE.md`. Tous les liens internes doivent désormais pointer vers `claude.md`.
 
 ## 📌 Contexte Projet
 
@@ -14,9 +16,123 @@ Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement d
 
 - Ce monorepo (`blobevolutionClaudeCodex`) est la **source unique de vérité**.
 - **Ne consultez plus** l'ancien projet `/blobevolution` (archivé pour référence historique uniquement).
-- Les documents de référence IA sont **README.md** et **claude.md** ; tout écart avec le code doit être signalé par une PR de documentation.
+- Les documents de référence IA sont **README.md**, **AGENTS.md** et **claude.md** ; tout écart avec le code doit être signalé par une PR de documentation.
 - Pour le contexte historique, voir `ai/context/migration_from_blobevolution.md` sans en déduire de code.
 - 🎯 Focus visibilité : la Blobosphère est notre vitrine éditoriale pour attirer du trafic et des inscriptions.
+
+## 📘 Contrats API & UI
+
+- **Modification contrats API** :
+  - Mettre à jour le fichier `openapi.yaml` (ou `.json`) avec endpoints, schémas, codes d'erreur et exemples réalistes.
+  - Vérifier que l'UI Swagger (ex. `/api/docs`) se charge sans erreur et reflète les changements.
+  - Synchroniser les DTO/validations Zod (`apps/api`) et les types partagés (`packages/shared`).
+  - Exécuter le lint/validation OpenAPI (`npm run openapi:lint`, `spectral lint openapi.yaml`, ou équivalent) et faire tourner les tests API impactés.
+- **Modification composants UI ou props** :
+  - Actualiser les stories Storybook (`*.stories.tsx`) pour couvrir les nouveaux états (default/loading/error/disabled/etc.).
+  - Régénérer les tests visuels (Storybook test runner, Playwright snapshots, Chromatic… selon outillage disponible) et accepter explicitement les diffs attendus.
+  - Vérifier la cohérence des types côté front (`packages/ui`, `apps/web`) et mettre à jour la doc utilisateur si nécessaire.
+- **Check PR obligatoire** : inclure dans la description la checklist Contrats/UI (OpenAPI à jour, stories/tests visuels à jour) avant demande de review.
+
+## 📋 Changements récents importants
+
+### Push Notifications PWA - Phase 1 (Sept 2025)
+
+**Décision architecture** : Implémentation complète des notifications push avec Clever Cloud + Firebase.
+
+**Fonctionnalités ajoutées :**
+- ✅ Service Worker sophistiqué (`/public/sw.js`)
+- ✅ PWA Manifest pour installation app-like (`/public/manifest.json`)
+- ✅ Firebase Cloud Messaging intégration complète
+- ✅ API routes push (`/api/push/subscribe`, `/test`, `/status`)
+- ✅ Hooks React `usePushNotifications` pour gestion état
+- ✅ Composants UI pour prompts permissions
+- ✅ Notifications automatiques acceptation/refus demandes
+- ✅ Analytics et gestion d'erreurs robuste
+
+**Architecture choisie :**
+```
+[Frontend PWA] ←→ [Clever Cloud API] ←→ [Firebase FCM] → [Users]
+```
+
+**Pourquoi Clever Cloud + Firebase :**
+- Clever Cloud : Hébergement API/DB français et simple
+- Firebase FCM : Service push gratuit et universel
+- Combinaison économique et robuste pour startup
+
+**Variables d'environnement requises :**
+```bash
+# Clever Cloud (API)
+FIREBASE_PROJECT_ID=blobinfini-prod
+FIREBASE_CLIENT_EMAIL=firebase-admin@...
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----..."
+
+# Frontend (publiques)
+NEXT_PUBLIC_FIREBASE_API_KEY=your-web-api-key
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=blobinfini-prod
+```
+
+**Intégration automatique :**
+- Push notifications envoyées lors acceptation/refus de demandes dans `booking.service.ts`
+- Gestion intelligente des permissions et état d'abonnement
+- Support offline avec cache et retry automatique
+
+### Suppression du champ `partnerPref` (Sept 2025)
+
+**Décision produit** : Simplification du matching en supprimant le critère de préférence de partenaire.
+
+**Changements appliqués :**
+- ❌ Supprimé le champ `partnerPref` du modèle `RiderProfile`
+- ❌ Supprimé le champ `partner` du modèle `LastSearch`
+- ❌ Supprimé complètement l'enum `PartnerPref`
+- ✅ Conservé le champ `sex` pour identifier le sexe de l'individu
+- 🔄 Mis à jour tous les controllers, tests et le seed
+- 📊 Base de données migrée avec `prisma db push`
+
+**Avant :**
+```prisma
+model RiderProfile {
+  // ...
+  sex         Sex         @default(UNSPECIFIED)
+  partnerPref PartnerPref @default(ALL)  // ❌ SUPPRIMÉ
+  // ...
+}
+
+enum PartnerPref {  // ❌ SUPPRIMÉ COMPLÈTEMENT
+  ALL
+  WOMEN
+  MEN
+}
+```
+
+**Après :**
+```prisma
+model RiderProfile {
+  // ...
+  sex         Sex         @default(UNSPECIFIED)  // ✅ CONSERVÉ
+  // partnerPref supprimé
+  // ...
+}
+```
+
+**Impact sur le matching :**
+- Le matching se base maintenant uniquement sur : géolocalisation, sport, niveau, disponibilités
+- Plus de filtrage par préférence de genre de partenaire
+- Interface simplifiée pour les utilisateurs
+
+### Affichage de la date sélectionnée (Sept 2025)
+
+**Décision produit** : Afficher la date sélectionnée dans les cartes de profils sans l'utiliser dans l'algorithme de matching.
+
+**Changements appliqués :**
+- ✅ Ajout de la fonction `formatDateForDisplay()` dans `/apps/web/app/matching/cards/page.tsx`
+- ✅ Affichage de la date avec icône 📅 dans chaque carte de profil
+- ✅ Formatage intelligent : "Aujourd'hui", "Demain", "Peu importe", ou date formatée
+
+**Comportement :**
+- La date sélectionnée est visible dans chaque carte de profil
+- Format d'affichage : "Aujourd'hui", "Demain", "Peu importe" ou "mer. 18 sept"
+- La date n'influence PAS l'algorithme de recherche (uniquement affichage)
+- Permet aux utilisateurs de se rappeler de leur sélection lors du swipe
 
 ## 🏗️ Architecture Technique
 
@@ -59,19 +175,26 @@ blobinfini/
 ```bash
 # Installation initiale
 npm install
-cp .env.example .env        # Configurer les variables
+cp .env.example .env        # Configurer les variables locales
 
-# Démarrage complet
-docker compose up -d         # BDD + Redis
-npm run db:migrate          # Migrations Prisma
-npm run dev:api            # API seule (4000)
-npm run dev --workspace @blobinfini/web   # Web seul (3001)
+# Développement
+docker compose up -d        # PostgreSQL + Redis
+npm run dev:all             # API (4000) + Web (3002)
+npm run dev:api             # API seule
+npm run dev:web             # Frontend Next.js seul
 
-# Commandes spécifiques
-npm run db:studio           # Interface Prisma
-npm run test               # Jest + Cypress
-npm run lint               # ESLint + Prettier
-npm run type-check         # TypeScript strict
+# Base de données
+npm run db:migrate          # Applique les migrations Prisma
+npm run db:seed             # Charge les données de test
+npm run db:reset            # Drop + migrate + seed
+npm run db:reseed           # Reseed rapide sans drop complet
+npm run db:studio           # Interface Prisma Studio
+
+# Qualité & build
+npm run test                # Suite Jest
+npm run lint                # ESLint + formatting
+npm run build               # Build de production
+npm run type-check          # Vérification TypeScript stricte
 ```
 
 ## 🔐 Module Authentification
@@ -254,6 +377,22 @@ export function BookingCard({ booking, onUpdate }: BookingCardProps) {
 }
 ```
 
+## 🚨 Points d'attention
+
+- Après changements de schéma : exécuter `npx prisma db push`, puis `npm run build && npm run type-check`.
+- Relancer un seed (`npm run db:reseed`) quand les données de référence évoluent.
+- Surveiller les serveurs dev (`npm run dev:all`) ouverts en arrière-plan : consulter les logs Docker en cas d'anomalie.
+- Maintenir la cohérence RGPD : consentements enregistrés, anonymisation des logs à 30 jours.
+
+## 🔄 Workflow type pour modifications
+
+1. Modifier le schéma Prisma si nécessaire.
+2. `npx prisma db push` pour synchroniser la base locale.
+3. Mettre à jour controllers/services + DTO/tests liés.
+4. Corriger les tests existants et en ajouter de nouveaux.
+5. `npm run build && npm run type-check` pour sécuriser la livraison.
+6. `npm run db:reseed` si des données de démonstration supplémentaires sont requises.
+
 ## 🎯 Fonctionnalités Prioritaires
 
 ### Phase 1 - MVP (Actuel)
@@ -390,9 +529,16 @@ Quand tu génères du code pour Blobinfini :
 - Résultats/cartes: badge “🎓 Cours” sur les profils qui souhaitent un cours.
 
 ### Seeds & Commandes utiles
-- `npm run db:seed` → comptes de démo; `npm run db:reseed` → efface données + réinjecte (rapide);
-  `npm run db:reset` → drop + remigre + seed.
-- Comptes: Rider surf (dev+rider@test.com), Rider kite (dev+kite@test.com), Pro (dev+pro@test.com) — mot de passe `Passw0rd!`.
+- `npm run db:seed` → injecte tous les comptes de démo.
+- `npm run db:reseed` → efface les données non critiques puis réapplique le seed (rapide).
+- `npm run db:reset` → drop + migrate + seed complet (à utiliser après évolution de schéma).
+
+**Comptes après `npm run db:seed`**
+- 20 riders : `dev+rider1@test.com` → `dev+rider20@test.com`
+- 5 pros : `dev+pro1@test.com` → `dev+pro5@test.com`
+- 1 admin : `dev+admin@test.com`
+- Mot de passe commun : `Passw0rd!`
+- Profils rapides : Rider surf (`dev+rider@test.com`), Rider kite (`dev+kite@test.com`), Pro (`dev+pro@test.com`)
 
 ### Cartographie
 - Leaflet + tuiles OpenStreetMap (aucune dépendance payante). Géocodage (Nominatim) possible en extension.

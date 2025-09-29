@@ -1,0 +1,7 @@
+# CODEOWNERS – définissez ici les reviewers automatiques.
+# Remplacez les exemples par les handles GitHub réels (utilisateur ou équipe).
+# Exemple :
+# apps/web/ @blobinfini/frontend-team
+# apps/api/ @blobinfini/backend-team
+# Par défaut, toutes les modifications pingent la personne ou l’équipe ci-dessous.
+* @blobinfini-maintainers

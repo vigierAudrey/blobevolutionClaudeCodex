@@ -6,7 +6,7 @@ Ce monorepo contient la version vivante de Blobinfini, marketplace de mise en re
 
 **Votre mission** : Contribuer directement ici. Ignorez l'ancien projet `/blobevolution` (archivé). Pour un rappel historique uniquement, consultez `ai/context/migration_from_blobevolution.md`.
 
-**Référence IA** : Ce README et `claude.md` sont les guides officiels pour nos IA (Codex, ChatGPT-5, Claude Code) et l’équipe humaine.
+**Référence IA** : Ce README, `AGENTS.md` et `claude.md` sont les guides officiels pour nos IA (Codex, ChatGPT-5, Claude Code) et l’équipe humaine.
 
 **Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de Blobinfini via du contenu partageable (SEO + réseaux sociaux).
 
@@ -94,7 +94,7 @@ blobevolutionClaudeCodex/
 │   └── utils/                  # Helpers communs
 ├── docker-compose.yml
 ├── turbo.json                  # Turborepo config
-└── CLAUDE.md                   # Guide IA
+└── claude.md                   # Guide IA
 ```
 
 ### Structure Services Découplés - Phase Scale (Évolution future)
