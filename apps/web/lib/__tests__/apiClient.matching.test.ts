@@ -2,11 +2,13 @@
  * Tests d'intégration pour l'API client du système de matching
  */
 
-import { apiClient } from '../apiClient';
+// Unmock apiClient to test the real implementation
+jest.unmock('../apiClient');
 
-// Mock global fetch
-const mockFetch = jest.fn();
-global.fetch = mockFetch;
+// Mock fetch BEFORE importing apiClient
+global.fetch = jest.fn();
+
+import { apiClient } from '../apiClient';
 
 describe('API Client - Matching Integration', () => {
   const mockTokens = {
@@ -17,24 +19,22 @@ describe('API Client - Matching Integration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Mock localStorage
-    const localStorageMock = {
-      getItem: jest.fn(),
-      setItem: jest.fn(),
-      removeItem: jest.fn(),
-      clear: jest.fn(),
-    };
-    Object.defineProperty(window, 'localStorage', {
-      value: localStorageMock,
-    });
+    // Reset fetch mock
+    (global.fetch as jest.Mock).mockClear();
 
-    // Setup default token mock
-    localStorageMock.getItem.mockImplementation((key: string) => {
-      if (key === 'tokens') {
-        return JSON.stringify(mockTokens);
-      }
+    // Ensure window is defined (for jsdom)
+    if (typeof window === 'undefined') {
+      (global as any).window = {};
+    }
+
+    // Mock localStorage with proper spies
+    Storage.prototype.getItem = jest.fn((key: string) => {
+      if (key === 'accessToken') return mockTokens.accessToken;
+      if (key === 'refreshToken') return mockTokens.refreshToken;
       return null;
     });
+    Storage.prototype.setItem = jest.fn();
+    Storage.prototype.removeItem = jest.fn();
   });
 
   describe('searchMatching', () => {
@@ -78,14 +78,20 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait envoyer une requête de recherche correctement formatée', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => mockSearchResponse,
+        text: async () => JSON.stringify(mockSearchResponse),
       });
 
-      const result = await apiClient.searchMatching(mockSearchRequest);
+      let result;
+      try {
+        result = await apiClient.searchMatching(mockSearchRequest);
+      } catch (error) {
+        console.error('Error calling searchMatching:', error);
+        throw error;
+      }
 
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4000/matching/search', {
+      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/matching/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -104,14 +110,14 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       };
 
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ results: [], total: 0 }),
+        text: async () => JSON.stringify({ results: [], total: 0 }),
       });
 
       await apiClient.searchMatching(minimalRequest);
 
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4000/matching/search', {
+      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/matching/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -122,16 +128,16 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait gérer les erreurs de réseau', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
 
       await expect(apiClient.searchMatching(mockSearchRequest)).rejects.toThrow('Network error');
     });
 
     it('devrait gérer les erreurs HTTP', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 400,
-        json: async () => ({ error: 'Invalid search parameters' }),
+        text: async () => JSON.stringify({ error: 'Invalid search parameters' }),
       });
 
       await expect(apiClient.searchMatching(mockSearchRequest)).rejects.toThrow();
@@ -156,14 +162,14 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait envoyer les décisions par batch', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => mockDecisionResponse,
+        text: async () => JSON.stringify(mockDecisionResponse),
       });
 
       const result = await apiClient.matchDecisions(mockDecisions);
 
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4000/matching/decisions', {
+      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/matching/decisions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -176,9 +182,9 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait gérer une liste vide de décisions', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true, count: 0 }),
+        text: async () => JSON.stringify({ ok: true, count: 0 }),
       });
 
       const result = await apiClient.matchDecisions([]);
@@ -187,10 +193,10 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait gérer les erreurs de conflit (409)', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 409,
-        json: async () => ({ error: 'Request already handled' }),
+        text: async () => JSON.stringify({ error: 'Request already handled' }),
       });
 
       await expect(apiClient.matchDecisions(mockDecisions)).rejects.toThrow();
@@ -204,14 +210,14 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait envoyer un signalement avec motif', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ success: true }),
+        text: async () => JSON.stringify({ success: true }),
       });
 
       await apiClient.reportProfile(mockReportRequest);
 
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4000/reports', {
+      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/reports/profile', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -222,14 +228,14 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait envoyer un signalement sans motif', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ success: true }),
+        text: async () => JSON.stringify({ success: true }),
       });
 
       await apiClient.reportProfile({ targetProfileId: 'profile-123' });
 
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4000/reports', {
+      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/reports/profile', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -272,16 +278,17 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait récupérer la liste des conversations', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => mockConversationsResponse,
+        text: async () => JSON.stringify(mockConversationsResponse),
       });
 
       const result = await apiClient.listConversations();
 
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:4000/conversations', {
+      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/conversations', {
         method: 'GET',
         headers: {
+          'Content-Type': 'application/json',
           'Authorization': 'Bearer fake-access-token',
         },
       });
@@ -290,9 +297,9 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait calculer correctement le total des messages non lus', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => mockConversationsResponse,
+        text: async () => JSON.stringify(mockConversationsResponse),
       });
 
       const result = await apiClient.listConversations();
@@ -304,9 +311,9 @@ describe('API Client - Matching Integration', () => {
 
   describe('Gestion des tokens et authentification', () => {
     it('devrait inclure le token d\'autorisation dans les requêtes', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ results: [] }),
+        text: async () => JSON.stringify({ results: [] }),
       });
 
       await apiClient.searchMatching({
@@ -315,7 +322,7 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       });
 
-      const [, options] = mockFetch.mock.calls[0];
+      const [, options] = (global.fetch as jest.Mock).mock.calls[0];
       expect(options.headers).toMatchObject({
         'Authorization': 'Bearer fake-access-token',
       });
@@ -323,15 +330,11 @@ describe('API Client - Matching Integration', () => {
 
     it('devrait gérer l\'absence de tokens', async () => {
       // Mock l'absence de tokens
-      const localStorageMock = window.localStorage as jest.Mocked<Storage>;
-      localStorageMock.getItem.mockReturnValue(null);
+      Storage.prototype.getItem = jest.fn(() => null);
 
-      // Forcer le rechargement des tokens
-      (apiClient as any).tokens = null;
-
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ results: [] }),
+        text: async () => JSON.stringify({ results: [] }),
       });
 
       await apiClient.searchMatching({
@@ -340,15 +343,15 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       });
 
-      const [, options] = mockFetch.mock.calls[0];
+      const [, options] = (global.fetch as jest.Mock).mock.calls[0];
       expect(options.headers).not.toHaveProperty('Authorization');
     });
 
     it('devrait gérer l\'expiration du token (401)', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 401,
-        json: async () => ({ error: 'Token expired' }),
+        text: async () => JSON.stringify({ error: 'Token expired' }),
       });
 
       await expect(apiClient.searchMatching({
@@ -367,15 +370,15 @@ describe('API Client - Matching Integration', () => {
         { sport: 'surf' as const, level: 'advanced' as const, date: '2024-01-16' },
       ];
 
-      mockFetch.mockResolvedValue({
+      (global.fetch as jest.Mock).mockResolvedValue({
         ok: true,
-        json: async () => ({ results: [], total: 0 }),
+        text: async () => JSON.stringify({ results: [], total: 0 }),
       });
 
       const promises = requests.map(req => apiClient.searchMatching(req));
       const results = await Promise.all(promises);
 
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect((global.fetch as jest.Mock)).toHaveBeenCalledTimes(3);
       expect(results).toHaveLength(3);
       results.forEach(result => {
         expect(result).toHaveProperty('results');
@@ -389,11 +392,11 @@ describe('API Client - Matching Integration', () => {
       const slowRequest = new Promise(resolve => {
         setTimeout(() => resolve({
           ok: true,
-          json: async () => ({ results: [] }),
+          text: async () => JSON.stringify({ results: [] }),
         }), 10000);
       });
 
-      mockFetch.mockReturnValueOnce(slowRequest);
+      (global.fetch as jest.Mock).mockReturnValueOnce(slowRequest);
 
       const searchPromise = apiClient.searchMatching({
         sport: 'surf',
@@ -406,7 +409,7 @@ describe('API Client - Matching Integration', () => {
 
       // Note: Dans un vrai test, on configurerait un timeout dans fetch
       // Pour cet exemple, on vérifie juste que la requête est en cours
-      expect(mockFetch).toHaveBeenCalled();
+      expect((global.fetch as jest.Mock)).toHaveBeenCalled();
 
       jest.useRealTimers();
     });
@@ -417,14 +420,14 @@ describe('API Client - Matching Integration', () => {
         decision: 'ACCEPT' as const,
       }));
 
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true, count: 100 }),
+        text: async () => JSON.stringify({ ok: true, count: 100 }),
       });
 
       await apiClient.matchDecisions(manyDecisions);
 
-      const [, options] = mockFetch.mock.calls[0];
+      const [, options] = (global.fetch as jest.Mock).mock.calls[0];
       const body = JSON.parse(options.body);
 
       // Dans une vraie implémentation, on limiterait à 100 éléments max
@@ -442,10 +445,10 @@ describe('API Client - Matching Integration', () => {
         ],
       };
 
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 400,
-        json: async () => errorResponse,
+        text: async () => JSON.stringify(errorResponse),
       });
 
       try {
@@ -461,10 +464,10 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait gérer les erreurs de parsing JSON', async () => {
-      mockFetch.mockResolvedValueOnce({
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 500,
-        json: async () => {
+        text: async () => {
           throw new Error('Invalid JSON');
         },
       });
@@ -477,7 +480,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait gérer les erreurs de réseau avec des messages explicites', async () => {
-      mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
       try {
         await apiClient.searchMatching({

@@ -1,0 +1,14 @@
+diff --git a/node_modules/react-leaflet/package.json b/node_modules/react-leaflet/package.json
+index 15b6f9b..1cdad58 100644
+--- a/node_modules/react-leaflet/package.json
++++ b/node_modules/react-leaflet/package.json
+@@ -23,7 +23,8 @@
+   "types": "lib/index.d.ts",
+   "exports": {
+     ".": "./lib/index.js",
+-    "./*": "./lib/*.js"
++    "./*": "./lib/*.js",
++    "./package.json": "./package.json"
+   },
+   "files": [
+     "lib/*"

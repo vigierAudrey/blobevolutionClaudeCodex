@@ -1,0 +1,29 @@
+{
+  "extends": [
+    "next/core-web-vitals",
+    "next/typescript"
+  ],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/.next/**",
+    "**/storybook-static/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/out/**"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "app/**/*.{js,jsx,ts,tsx}",
+        "components/**/*.{js,jsx,ts,tsx}",
+        "hooks/**/*.{js,jsx,ts,tsx}",
+        "lib/**/*.{js,jsx,ts,tsx}"
+      ]
+    },
+    {
+      "files": [
+        "src/**/*.{js,jsx,ts,tsx}"
+      ]
+    }
+  ]
+}

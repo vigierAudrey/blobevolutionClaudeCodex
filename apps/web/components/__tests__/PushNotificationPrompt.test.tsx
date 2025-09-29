@@ -3,19 +3,27 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 import PushNotificationPrompt, { CompactPushPrompt, PushNotificationToggle } from '../PushNotificationPrompt';
 
-const hookMock = jest.fn();
+jest.mock('../../hooks/usePushNotifications', () => {
+  const hookMock = jest.fn();
+  return {
+    __esModule: true,
+    usePushPermissionPrompt: hookMock,
+    __mock: {
+      hookMock,
+    },
+  };
+});
 
-jest.mock('../hooks/usePushNotifications', () => ({
-  usePushPermissionPrompt: () => hookMock(),
-}));
+const getHookMock = () =>
+  (jest.requireMock('../../hooks/usePushNotifications') as any).__mock.hookMock as jest.Mock;
 
 describe('PushNotificationPrompt', () => {
   beforeEach(() => {
-    hookMock.mockReset();
+    getHookMock().mockReset();
   });
 
   it('renders nothing when prompt is not visible', () => {
-    hookMock.mockReturnValue({
+    getHookMock().mockReturnValue({
       isVisible: false,
       handleAccept: jest.fn(),
       handleDismiss: jest.fn(),
@@ -31,7 +39,7 @@ describe('PushNotificationPrompt', () => {
       handleAccept: jest.fn(),
       handleDismiss: jest.fn(),
     };
-    hookMock.mockReturnValue({
+    getHookMock().mockReturnValue({
       isVisible: true,
       ...handlers,
     });
@@ -56,7 +64,7 @@ describe('PushNotificationPrompt', () => {
       handleAccept: jest.fn(),
       handleDismiss: jest.fn(),
     };
-    hookMock.mockReturnValue({
+    getHookMock().mockReturnValue({
       isVisible: true,
       ...handlers,
     });
@@ -70,7 +78,9 @@ describe('PushNotificationPrompt', () => {
     await user.click(screen.getByRole('button', { name: /pas maintenant/i }));
     expect(handlers.handleDismiss).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByLabelText(/fermer/i));
+    await act(async () => {
+      await user.click(screen.getByLabelText(/fermer/i));
+    });
     expect(handlers.handleDismiss).toHaveBeenCalledTimes(2);
   });
 });
@@ -85,10 +95,14 @@ describe('CompactPushPrompt', () => {
       <CompactPushPrompt message="Enable push" onAccept={onAccept} onDismiss={onDismiss} />,
     );
 
-    await user.click(screen.getByRole('button', { name: /activer/i }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /activer/i }));
+    });
     expect(onAccept).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole('button', { name: /✕/i }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /✕/i }));
+    });
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
@@ -102,10 +116,14 @@ describe('PushNotificationToggle', () => {
     const toggle = screen.getByRole('button', { hidden: true });
     expect(toggle.className).toMatch(/bg-gray-200/);
 
-    await user.click(toggle);
+    await act(async () => {
+      await user.click(toggle);
+    });
     expect(toggle.className).toMatch(/bg-blue-600/);
 
-    await user.click(toggle);
+    await act(async () => {
+      await user.click(toggle);
+    });
     expect(toggle.className).toMatch(/bg-gray-200/);
   });
 });

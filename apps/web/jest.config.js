@@ -6,7 +6,7 @@ export default {
     '^~/(.*)$': '<rootDir>/$1',
   },
   transform: {
-    '^.+\\.(js|jsx|ts|tsx)$': ['babel-jest', { presets: ['next/babel'] }],
+    '^.+\\.(js|jsx|ts|tsx)$': ['@swc/jest'],
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx'],
   collectCoverageFrom: [
@@ -25,10 +25,4 @@ export default {
     '<rootDir>/node_modules/',
     '<rootDir>/tests/e2e/', // Exclure les tests Playwright
   ],
-  extensionsToTreatAsEsm: ['.ts', '.tsx'],
-  globals: {
-    'ts-jest': {
-      useESM: true,
-    },
-  },
 };

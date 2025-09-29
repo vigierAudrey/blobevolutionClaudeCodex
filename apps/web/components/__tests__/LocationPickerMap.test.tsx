@@ -2,21 +2,9 @@ import { act, render, screen } from '@testing-library/react';
 import React from 'react';
 import LocationPickerMap from '../LocationPickerMap';
 
-const mapInstance = {
-  setView: jest.fn(),
-  flyTo: jest.fn(),
-  getZoom: jest.fn(() => 13),
-};
-
-const mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null } = {
-  current: null,
-};
-
-const markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }> = [];
-
 jest.mock('leaflet', () => {
   class FakeIconDefault {}
-  FakeIconDefault.prototype = { _getIconUrl: jest.fn() } as any;
+  Object.assign(FakeIconDefault.prototype, { _getIconUrl: jest.fn() });
   (FakeIconDefault as any).mergeOptions = jest.fn();
 
   return {
@@ -38,6 +26,15 @@ jest.mock('react-leaflet', () => {
     </div>
   );
   const TileLayer = (props: any) => <div data-testid="tile-layer" {...props} />;
+  const mapInstance = {
+    setView: jest.fn(),
+    flyTo: jest.fn(),
+    getZoom: jest.fn(() => 13),
+  };
+  const mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null } = {
+    current: null,
+  };
+  const markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }> = [];
   const Marker = ({ children, position, eventHandlers, ...rest }: any) => {
     markerInstances.push({ eventHandlers, position });
     return (
@@ -57,12 +54,29 @@ jest.mock('react-leaflet', () => {
       mapEventsHandlers.current = handlers;
       return mapInstance;
     },
+    __mock: {
+      mapInstance,
+      mapEventsHandlers,
+      markerInstances,
+    },
   };
 });
+
+const getReactLeafletMocks = () =>
+  (jest.requireMock('react-leaflet') as any).__mock as {
+    mapInstance: {
+      setView: jest.Mock;
+      flyTo: jest.Mock;
+      getZoom: jest.Mock;
+    };
+    mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null };
+    markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }>;
+  };
 
 describe('LocationPickerMap', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    const { mapEventsHandlers, markerInstances } = getReactLeafletMocks();
     mapEventsHandlers.current = null;
     markerInstances.length = 0;
   });
@@ -72,6 +86,7 @@ describe('LocationPickerMap', () => {
 
     render(<LocationPickerMap value={null} onChange={onChange} />);
 
+    const { mapEventsHandlers, mapInstance } = getReactLeafletMocks();
     const handlers = mapEventsHandlers.current;
     expect(handlers).toBeTruthy();
 
@@ -89,6 +104,7 @@ describe('LocationPickerMap', () => {
 
     const marker = screen.getByTestId('marker');
     expect(marker).toHaveAttribute('data-position', JSON.stringify([43.5, -1.5]));
+    const { mapInstance } = getReactLeafletMocks();
     expect(mapInstance.setView).toHaveBeenCalledWith([43.5, -1.5]);
   });
 
@@ -103,6 +119,7 @@ describe('LocationPickerMap', () => {
       />,
     );
 
+    const { markerInstances } = getReactLeafletMocks();
     const instance = markerInstances[0];
     expect(instance).toBeDefined();
 
