@@ -1,0 +1,7 @@
+apis:
+  blobinfini:
+    root: docs/openapi/openapi.yaml
+extends:
+  - recommended
+rules:
+  no-server-example.com: off

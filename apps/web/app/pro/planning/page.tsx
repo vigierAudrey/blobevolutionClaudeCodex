@@ -510,16 +510,30 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
         if (!response.ok) {
           throw new Error('Service géocodage indisponible');
         }
-        const payload = (await response.json()) as Array<{ display_name: string; lat: string; lon: string; importance?: number }>;
-        const enriched = payload.map((item) => ({
-          label: item.display_name,
-          lat: Number(item.lat),
-          lng: Number(item.lon ?? item.lng ?? 0),
-          importance: item.importance ?? 0,
-        }));
+        type NominatimResult = {
+          display_name: string;
+          lat: string;
+          lon?: string;
+          lng?: string;
+          importance?: number;
+        };
+        const payload = (await response.json()) as Array<NominatimResult>;
+        const enriched = payload
+          .map((item) => {
+            const lat = Number(item.lat);
+            const lon = item.lon ?? item.lng;
+            const lng = lon !== undefined ? Number(lon) : Number.NaN;
+            return {
+              label: item.display_name,
+              lat,
+              lng,
+              importance: item.importance ?? 0,
+            };
+          })
+          .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
         enriched.sort((a, b) => b.importance - a.importance);
         setAddressSuggestions(enriched.map(({ label, lat, lng }) => ({ label, lat, lng })));
-        setGeocodeError(mapped.length === 0 ? 'Aucun résultat trouvé.' : null);
+        setGeocodeError(enriched.length === 0 ? 'Aucun résultat trouvé.' : null);
       } catch (err: any) {
         if (err?.name === 'AbortError') {
           return;

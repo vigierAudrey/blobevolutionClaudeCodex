@@ -2,6 +2,7 @@ import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { Request, Response, NextFunction } from 'express';
+import { resolveRedisUrl } from '../lib/redisConfig';
 
 type RedisClientType = ReturnType<typeof createClient>;
 
@@ -10,10 +11,12 @@ let redisClient: RedisClientType | null = null;
 
 // Initialize Redis client for production
 async function initializeRedis(): Promise<RedisClientType | null> {
-  if (process.env.NODE_ENV === 'production' && process.env.REDIS_URL) {
+  const redisUrl = resolveRedisUrl();
+
+  if (redisUrl) {
     try {
       const client = createClient({
-        url: process.env.REDIS_URL,
+        url: redisUrl,
       });
 
       await client.connect();
@@ -25,6 +28,8 @@ async function initializeRedis(): Promise<RedisClientType | null> {
       return null;
     }
   }
+
+  console.warn('⚠️ Redis rate limiting disabled - no Redis URL available');
   return null;
 }
 

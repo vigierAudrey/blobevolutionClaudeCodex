@@ -1,0 +1,7 @@
+diff --git a/path/to/file.ts b/path/to/file.ts
+index 0000000..1111111 100644
+--- a/path/to/file.ts
++++ b/path/to/file.ts
+@@
+-// Ancien code
++// Nouveau code (décrire brièvement l’intention ici)

@@ -41,7 +41,7 @@ export interface FCMTokenData {
   isActive: boolean;
 }
 
-class PushNotificationService {
+export class PushNotificationService {
   private isInitialized = false;
 
   constructor() {
