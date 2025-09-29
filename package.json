@@ -24,7 +24,7 @@
     "purge:consent-ip": "tsx apps/api/src/jobs/purgeConsent.ts",
     "test": "npm run test --workspace @blobinfini/api",
     "test:e2e": "playwright test",
-    "postinstall": "npm run build --workspace @blobinfini/database || true",
+    "postinstall": "(npm run build --workspace @blobinfini/database || true) && patch-package",
     "openapi:lint": "redocly lint docs/openapi/openapi.yaml",
     "storybook": "npm run storybook --workspace @blobinfini/web",
     "storybook:build": "npm run build-storybook --workspace @blobinfini/web",
@@ -36,6 +36,7 @@
     "@storybook/nextjs": "^8.0.10",
     "concurrently": "^9.2.1",
     "http-server": "^14.1.1",
+    "patch-package": "^8.0.0",
     "pg": "^8.16.3",
     "storybook": "^8.0.10",
     "wait-on": "^9.0.1"

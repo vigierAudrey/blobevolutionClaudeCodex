@@ -3,19 +3,6 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 import MapComponent from '../MapComponent';
 
-const mapInstance = {
-  flyToBounds: jest.fn(),
-  setView: jest.fn(),
-  flyTo: jest.fn(),
-  getZoom: jest.fn(() => 12),
-};
-
-const mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null } = {
-  current: null,
-};
-
-const markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }> = [];
-
 jest.mock('leaflet', () => {
   const latLngBounds = (points: Array<{ lat: number; lng: number }>) => {
     const lats = points.map((point) => point.lat);
@@ -29,7 +16,7 @@ jest.mock('leaflet', () => {
   };
 
   class FakeIconDefault {}
-  FakeIconDefault.prototype = { _getIconUrl: jest.fn() } as any;
+  Object.assign(FakeIconDefault.prototype, { _getIconUrl: jest.fn() });
   (FakeIconDefault as any).mergeOptions = jest.fn();
 
   return {
@@ -48,6 +35,16 @@ jest.mock('leaflet', () => {
 
 jest.mock('react-leaflet', () => {
   const React = require('react');
+  const mapInstance = {
+    flyToBounds: jest.fn(),
+    setView: jest.fn(),
+    flyTo: jest.fn(),
+    getZoom: jest.fn(() => 12),
+  };
+  const mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null } = {
+    current: null,
+  };
+  const markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }> = [];
   const MapContainer = ({ children, center, zoom, ...rest }: any) => (
     <div data-testid="map-container" data-center={JSON.stringify(center)} data-zoom={zoom} {...rest}>
       {children}
@@ -77,12 +74,30 @@ jest.mock('react-leaflet', () => {
       mapEventsHandlers.current = handlers;
       return mapInstance;
     },
+    __mock: {
+      mapInstance,
+      mapEventsHandlers,
+      markerInstances,
+    },
   };
 });
+
+const getReactLeafletMocks = () =>
+  (jest.requireMock('react-leaflet') as any).__mock as {
+    mapInstance: {
+      flyToBounds: jest.Mock;
+      setView: jest.Mock;
+      flyTo: jest.Mock;
+      getZoom: jest.Mock;
+    };
+    mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null };
+    markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }>;
+  };
 
 describe('MapComponent', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    const { mapEventsHandlers, markerInstances } = getReactLeafletMocks();
     mapEventsHandlers.current = null;
     markerInstances.length = 0;
   });
@@ -148,6 +163,7 @@ describe('MapComponent', () => {
 
     await act(async () => {});
 
+    const { mapInstance } = getReactLeafletMocks();
     expect(mapInstance.flyToBounds).toHaveBeenCalled();
   });
 });

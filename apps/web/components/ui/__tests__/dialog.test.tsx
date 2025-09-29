@@ -37,6 +37,7 @@ describe('Dialog', () => {
     );
 
     await user.click(screen.getByRole('button', { name: /open dialog/i }));
+
     expect(screen.getByText('Dialog content')).toBeInTheDocument();
   });
 
@@ -58,17 +59,22 @@ describe('Dialog', () => {
     );
 
     await user.click(screen.getByTestId('custom-trigger'));
+
     expect(screen.getByText('Content')).toBeInTheDocument();
   });
 
   it('throws when trigger used outside dialog', () => {
-    const trigger = () =>
+    // Suppress console.error for this test since we expect an error
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() =>
       render(
         <DialogTrigger>
           <span>Open</span>
         </DialogTrigger>,
-      );
+      ),
+    ).toThrow('DialogTrigger must be used within Dialog');
 
-    expect(trigger).toThrow('DialogTrigger must be used within Dialog');
+    consoleError.mockRestore();
   });
 });

@@ -138,8 +138,13 @@
 ## 🛠 **AMÉLIORATIONS TECHNIQUES (100% Open Source)**
 
 ### ✅ **9. Developer Experience Gratuit**
-- [ ] **Documentation OpenAPI/Swagger** API (tenir `openapi.yaml` + Swagger UI à jour et ajouter un lint OpenAPI dans la CI)
+- [x] **Documentation OpenAPI/Swagger** API (tenir `openapi.yaml` + Swagger UI à jour et ajouter un lint OpenAPI dans la CI)
+  - [x] `docs/openapi/openapi.yaml` synchronisé avec endpoints Auth/Profiles/Matching/Booking/Admin
+  - [x] `npm run openapi:lint` exécuté en CI (`ci.yml`)
+  - [x] Collection Postman partagée (`docs/postman/blobinfini.postman_collection.json`)
 - [x] **Storybook** composants UI ✅ RÉSOLU (v8.0.10 + tests visuels fonctionnels)
+  - [x] Stories Map + UI shadcn complètes (`apps/web/components/**.stories.tsx`)
+  - [x] Doc interne sur les warnings et la stratégie (`docs/storybook.md`)
 - [x] **Monitoring performance gratuit** (Clever Cloud + logs standards open source)
 - [ ] **Automated deployment** amélioré (GitHub Actions + Clever Cloud)
 

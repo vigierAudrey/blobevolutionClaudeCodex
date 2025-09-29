@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { ToastProvider, Toaster, useToast } from '../toast';
@@ -27,12 +27,17 @@ describe('ToastProvider', () => {
   });
 
   it('throws when useToast is called outside provider', () => {
+    // Suppress console.error for this test since we expect an error
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
     const Consumer = () => {
       useToast();
       return null;
     };
 
     expect(() => render(<Consumer />)).toThrow('useToast must be used within ToastProvider');
+
+    consoleError.mockRestore();
   });
 
   it('shows toast messages with styling based on type', async () => {
@@ -53,9 +58,12 @@ describe('ToastProvider', () => {
     );
 
     await user.click(screen.getByText(/launch toast/i));
-    const toast = screen.getByRole('status');
-    expect(toast).toHaveTextContent('Saved!');
-    expect(toast).toHaveClass('bg-green-50');
+
+    await waitFor(() => {
+      const toast = screen.getByRole('status');
+      expect(toast).toHaveTextContent('Saved!');
+      expect(toast).toHaveClass('bg-green-50');
+    });
   });
 
   it('automatically dismisses toasts after timeout', async () => {
@@ -76,16 +84,24 @@ describe('ToastProvider', () => {
     );
 
     await user.click(screen.getByText(/toast once/i));
-    expect(screen.getByText('Bye')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText('Bye')).toBeInTheDocument();
+    });
 
     await user.click(screen.getByText(/toast once/i));
-    expect(screen.getAllByText('Bye')).toHaveLength(2);
 
-    await act(async () => {
+    await waitFor(() => {
+      expect(screen.getAllByText('Bye')).toHaveLength(2);
+    });
+
+    act(() => {
       jest.advanceTimersByTime(1000);
     });
 
-    expect(screen.queryByText('Bye')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('Bye')).not.toBeInTheDocument();
+    });
   });
 });
 

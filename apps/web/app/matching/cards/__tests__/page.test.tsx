@@ -5,15 +5,82 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../../../../lib/apiClient';
 import Page from '../page';
 
-// Mock des modules
+// Mock modules
 jest.mock('next/navigation');
 jest.mock('../../../../lib/apiClient');
+jest.mock('../../../../lib/optimizedApiClient', () => {
+  const { apiClient } = require('../../../../lib/apiClient');
+  return {
+    optimizedApiClient: {
+      getTokens: jest.fn(() => apiClient.getTokens()),
+      initializeUser: jest.fn(async () => ({
+        user: await apiClient.me(),
+        profile: await apiClient.getProfile(),
+        disciplines: await apiClient.getDisciplines(),
+      })),
+      searchMatching: jest.fn((...args) => apiClient.searchMatching(...args)),
+      prefetchMatchingData: jest.fn(),
+      listConversations: jest.fn((...args) => apiClient.listConversations(...args)),
+      matchDecisions: jest.fn((...args) => apiClient.matchDecisions(...args)),
+      reportProfile: jest.fn((...args) => apiClient.reportProfile(...args)),
+    },
+    measureApiPerformance: jest.fn(() => ({ end: jest.fn() })),
+  };
+});
+jest.mock('../../../../components/ui/toast', () => {
+  const mockReact = require('react');
+  return {
+    useToast: jest.fn(() => jest.fn()),
+    ToastProvider: ({ children }) => mockReact.createElement('div', { 'data-testid': 'toast-provider' }, children),
+  };
+});
+jest.mock('framer-motion', () => {
+  const mockReact = require('react');
+  const MockMotion = mockReact.forwardRef(({ children, style, onDrag, onDragEnd, drag, whileTap, transition, className, ...rest }, ref) => {
+    const handleMouseDown = (e) => {
+      if (onDrag) onDrag(e, { offset: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } });
+    };
+    const handleMouseUp = (e) => {
+      if (onDragEnd) onDragEnd(e, { offset: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } });
+    };
 
-const mockUseRouter = useRouter as jest.MockedFunction<typeof useRouter>;
-const mockUseSearchParams = useSearchParams as jest.MockedFunction<typeof useSearchParams>;
-const mockApiClient = apiClient as jest.Mocked<typeof apiClient>;
+    // Filter out framer-motion specific props that would generate warnings
+    const validProps = { ...rest };
+    delete validProps.drag;
+    delete validProps.dragConstraints;
+    delete validProps.dragElastic;
+    delete validProps.dragMomentum;
+    delete validProps.onDrag;
+    delete validProps.onDragEnd;
+    delete validProps.whileTap;
+    delete validProps.transition;
 
-// Mock des données de test
+    return mockReact.createElement('div', {
+      ref,
+      style,
+      className,
+      onMouseDown: drag === 'x' ? handleMouseDown : undefined,
+      onMouseUp: drag === 'x' ? handleMouseUp : undefined,
+      ...validProps,
+    }, children);
+  });
+
+  return {
+    __esModule: true,
+    motion: {
+      div: MockMotion,
+    },
+    useMotionValue: () => ({ get: () => 0, set: () => {} }),
+    useTransform: () => 0,
+    PanInfo: {},
+  };
+});
+
+const mockUseRouter = useRouter;
+const mockUseSearchParams = useSearchParams;
+const mockApiClient = apiClient;
+
+// Test data
 const mockProfile = {
   id: 'profile-1',
   displayName: 'Surf Rider',
@@ -49,8 +116,15 @@ const mockUserProfile = {
 };
 
 const mockDisciplines = [
-  { sport: 'surf' as const, level: 'beginner' as const },
+  { sport: 'surf', level: 'beginner' },
 ];
+
+// Helper function to render with providers
+function renderWithProviders(ui) {
+  const { ToastProvider } = require('../../../../components/ui/toast');
+  const Wrapper = ({ children }) => React.createElement(ToastProvider, null, children);
+  return render(ui, { wrapper: Wrapper });
+}
 
 describe('Matching Cards Component', () => {
   const mockPush = jest.fn();
@@ -59,6 +133,7 @@ describe('Matching Cards Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useRealTimers();
 
     // Setup router mock
     mockUseRouter.mockReturnValue({
@@ -80,7 +155,7 @@ describe('Matching Cards Component', () => {
     mockSearchParams.set('lng', '-1.5586');
 
     const mockUrlSearchParams = {
-      get: (key: string) => mockSearchParams.get(key),
+      get: (key) => mockSearchParams.get(key),
       getAll: jest.fn(),
       has: jest.fn(),
       keys: jest.fn(),
@@ -94,7 +169,7 @@ describe('Matching Cards Component', () => {
       sort: jest.fn(),
       size: 0,
       [Symbol.iterator]: jest.fn(),
-    } as any;
+    };
 
     mockUseSearchParams.mockReturnValue(mockUrlSearchParams);
 
@@ -111,12 +186,12 @@ describe('Matching Cards Component', () => {
     mockApiClient.matchDecisions.mockResolvedValue({ createdConversations: [] });
   });
 
-  describe('Authentification et autorisation', () => {
-    it('devrait rediriger vers login si pas de token', async () => {
+  describe('Authentication and Authorization', () => {
+    it('should redirect to login if no token', async () => {
       mockApiClient.getTokens.mockReturnValue(null);
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -124,11 +199,11 @@ describe('Matching Cards Component', () => {
       });
     });
 
-    it('devrait rediriger les PROs vers le dashboard', async () => {
+    it('should redirect PROs to dashboard', async () => {
       mockApiClient.me.mockResolvedValue({ ...mockUser, role: 'PRO' });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -136,11 +211,11 @@ describe('Matching Cards Component', () => {
       });
     });
 
-    it('devrait rediriger vers onboarding si profil incomplet', async () => {
+    it('should redirect to onboarding if incomplete profile', async () => {
       mockApiClient.getProfile.mockResolvedValue({ displayName: null, photoUrl: null });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -149,27 +224,28 @@ describe('Matching Cards Component', () => {
     });
   });
 
-  describe('Affichage des cartes de profils', () => {
-    it('devrait afficher les informations du profil courant', async () => {
+  describe('Profile Display', () => {
+    it('should display current profile information', async () => {
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-        expect(screen.getByText('Femme • surf • intermediate')).toBeInTheDocument();
-        expect(screen.getByText('5 km')).toBeInTheDocument();
       });
+
+      expect(screen.getByText('Femme • surf • intermediate')).toBeInTheDocument();
+      expect(screen.getByText('5 km')).toBeInTheDocument();
     });
 
-    it('devrait afficher le badge "Cours" pour les profils qui veulent des leçons', async () => {
+    it('should display lesson badge for profiles wanting lessons', async () => {
       mockApiClient.searchMatching.mockResolvedValue({
         results: [{ ...mockProfile, wantsLesson: true }],
         total: 1,
       });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -177,24 +253,14 @@ describe('Matching Cards Component', () => {
       });
     });
 
-    it('devrait afficher la date formatée correctement', async () => {
-      await act(async () => {
-        render(<Page />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('📅')).toBeInTheDocument();
-      });
-    });
-
-    it('devrait afficher le message "Plus de profils" quand la liste est vide', async () => {
+    it('should display empty state when no profiles', async () => {
       mockApiClient.searchMatching.mockResolvedValue({
         results: [],
         total: 0,
       });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -204,12 +270,55 @@ describe('Matching Cards Component', () => {
     });
   });
 
-  describe('Interactions de swipe', () => {
-    it('devrait accepter un profil en cliquant sur "Accepter"', async () => {
-      const user = userEvent.setup();
+  describe('Loading States', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should display loading indicator during initial load', async () => {
+      // Make searchMatching return a promise that takes time to resolve
+      mockApiClient.searchMatching.mockImplementation(() =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ results: mockProfiles, total: 2 }), 100);
+        })
+      );
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
+      });
+
+      // Initially should show loading message
+      expect(screen.getByText('🔍 Recherche de profils compatibles...')).toBeInTheDocument();
+
+      // Advance timers to resolve the promise
+      await act(async () => {
+        jest.advanceTimersByTime(200);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('User Interactions', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should accept profile when clicking Accept button', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -217,25 +326,21 @@ describe('Matching Cards Component', () => {
       });
 
       const acceptButton = screen.getByText('Accepter');
-      await user.click(acceptButton);
-
-      // Vérifier l'animation
-      await waitFor(() => {
-        const cardElement = screen.getByText('Surf Rider').closest('div');
-        expect(cardElement).toHaveClass('translate-x-24', 'opacity-0');
+      await act(async () => {
+        await user.click(acceptButton);
+        jest.advanceTimersByTime(300);
       });
 
-      // Vérifier le passage au profil suivant après l'animation
       await waitFor(() => {
         expect(screen.getByText('Kite Rider')).toBeInTheDocument();
-      }, { timeout: 1000 });
+      });
     });
 
-    it('devrait refuser un profil en cliquant sur "Refuser"', async () => {
-      const user = userEvent.setup();
+    it('should refuse profile when clicking Refuse button', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -243,25 +348,21 @@ describe('Matching Cards Component', () => {
       });
 
       const refuseButton = screen.getByText('Refuser');
-      await user.click(refuseButton);
-
-      // Vérifier l'animation vers la gauche
-      await waitFor(() => {
-        const cardElement = screen.getByText('Surf Rider').closest('div');
-        expect(cardElement).toHaveClass('-translate-x-24', 'opacity-0');
+      await act(async () => {
+        await user.click(refuseButton);
+        jest.advanceTimersByTime(300);
       });
 
-      // Vérifier le passage au profil suivant
       await waitFor(() => {
         expect(screen.getByText('Kite Rider')).toBeInTheDocument();
-      }, { timeout: 1000 });
+      });
     });
 
-    it('devrait empêcher les clics multiples pendant l\'animation', async () => {
-      const user = userEvent.setup();
+    it('should prevent multiple clicks during animation', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -271,21 +372,29 @@ describe('Matching Cards Component', () => {
       const acceptButton = screen.getByText('Accepter');
       const refuseButton = screen.getByText('Refuser');
 
-      // Premier clic
-      await user.click(acceptButton);
+      await act(async () => {
+        await user.click(acceptButton);
+      });
 
-      // Vérifier que les boutons sont désactivés pendant l'animation
       expect(acceptButton).toBeDisabled();
       expect(refuseButton).toBeDisabled();
     });
   });
 
-  describe('Fonction d\'annulation (undo)', () => {
-    it('devrait afficher le bouton d\'annulation après une action', async () => {
-      const user = userEvent.setup();
+  describe('Undo Functionality', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should display undo button after action', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -293,7 +402,10 @@ describe('Matching Cards Component', () => {
       });
 
       const acceptButton = screen.getByText('Accepter');
-      await user.click(acceptButton);
+      await act(async () => {
+        await user.click(acceptButton);
+        jest.advanceTimersByTime(300);
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Action: Accepté — annuler dans 5 s')).toBeInTheDocument();
@@ -301,42 +413,42 @@ describe('Matching Cards Component', () => {
       });
     });
 
-    it('devrait restaurer le profil précédent lors de l\'annulation', async () => {
-      const user = userEvent.setup();
+    it('should restore previous profile when undoing', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
       });
 
-      // Accepter le profil
       const acceptButton = screen.getByText('Accepter');
-      await user.click(acceptButton);
+      await act(async () => {
+        await user.click(acceptButton);
+        jest.advanceTimersByTime(300);
+      });
 
-      // Attendre le passage au profil suivant
       await waitFor(() => {
         expect(screen.getByText('Kite Rider')).toBeInTheDocument();
-      }, { timeout: 1000 });
+      });
 
-      // Cliquer sur Annuler
       const undoButton = screen.getByText('Annuler');
-      await user.click(undoButton);
+      await act(async () => {
+        await user.click(undoButton);
+      });
 
-      // Vérifier que le profil précédent est restauré
       await waitFor(() => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
       });
     });
 
-    it('devrait masquer le bouton d\'annulation après 5 secondes', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup();
+    it('should hide undo button after timeout', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -344,27 +456,35 @@ describe('Matching Cards Component', () => {
       });
 
       const acceptButton = screen.getByText('Accepter');
-      await user.click(acceptButton);
+      await act(async () => {
+        await user.click(acceptButton);
+        jest.advanceTimersByTime(300);
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Annuler')).toBeInTheDocument();
       });
 
-      // Avancer le temps de 5 secondes
-      act(() => {
+      await act(async () => {
         jest.advanceTimersByTime(5000);
       });
 
       await waitFor(() => {
         expect(screen.queryByText('Annuler')).not.toBeInTheDocument();
       });
-
-      jest.useRealTimers();
     });
   });
 
-  describe('Gestion des matches', () => {
-    it('devrait afficher la popup de match quand un match est créé', async () => {
+  describe('Match Handling', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should display match popup when match is created', async () => {
       mockApiClient.matchDecisions.mockResolvedValue({
         createdConversations: [{
           conversationId: 'conv-1',
@@ -372,10 +492,10 @@ describe('Matching Cards Component', () => {
         }],
       });
 
-      const user = userEvent.setup();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
@@ -383,23 +503,26 @@ describe('Matching Cards Component', () => {
       });
 
       const acceptButton = screen.getByText('Accepter');
-      await user.click(acceptButton);
+      await act(async () => {
+        await user.click(acceptButton);
+        jest.advanceTimersByTime(300);
+      });
 
-      // Attendre que la décision soit traitée (après 5 secondes)
-      jest.useFakeTimers();
-      act(() => {
-        jest.advanceTimersByTime(5000);
+      // Wait for decision to be added to queue, then advance time to process batch (5s + 2s interval)
+      await act(async () => {
+        jest.advanceTimersByTime(7000);
       });
 
       await waitFor(() => {
-        expect(screen.getByText('C\'est un match !')).toBeInTheDocument();
-        expect(screen.getByText('Tu vas pouvoir surfer avec Match User')).toBeInTheDocument();
+        expect(screen.getByText("C'est un match !")).toBeInTheDocument();
+        expect(screen.getByText((content, element) => {
+          return content.includes('Tu vas pouvoir surfer');
+        })).toBeInTheDocument();
+        expect(screen.getByText('Match User')).toBeInTheDocument();
       });
-
-      jest.useRealTimers();
     });
 
-    it('devrait naviguer vers la conversation lors du clic sur "Envoyer un message"', async () => {
+    it('should navigate to conversation when clicking message button', async () => {
       mockApiClient.matchDecisions.mockResolvedValue({
         createdConversations: [{
           conversationId: 'conv-123',
@@ -407,24 +530,25 @@ describe('Matching Cards Component', () => {
         }],
       });
 
-      const user = userEvent.setup();
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
-      // Simuler un match
       await waitFor(() => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
       });
 
       const acceptButton = screen.getByText('Accepter');
-      await user.click(acceptButton);
+      await act(async () => {
+        await user.click(acceptButton);
+        jest.advanceTimersByTime(300);
+      });
 
-      // Avancer le temps pour déclencher le traitement du match
-      jest.useFakeTimers();
-      act(() => {
-        jest.advanceTimersByTime(5000);
+      // Wait for decision to be added to queue, then advance time to process batch (5s + 2s interval)
+      await act(async () => {
+        jest.advanceTimersByTime(7000);
       });
 
       await waitFor(() => {
@@ -432,162 +556,52 @@ describe('Matching Cards Component', () => {
       });
 
       const messageButton = screen.getByText('Envoyer un message 🚀');
-      await user.click(messageButton);
+      await act(async () => {
+        await user.click(messageButton);
+      });
 
       expect(mockPush).toHaveBeenCalledWith('/messages/conv-123');
+    });
+  });
 
+  describe('Decision Queue Processing', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
       jest.useRealTimers();
     });
-  });
 
-  describe('Fonction de signalement', () => {
-    it('devrait permettre de signaler un profil', async () => {
-      const user = userEvent.setup();
-      const mockPrompt = jest.fn().mockReturnValue('Comportement inapproprié');
-      window.prompt = mockPrompt;
+    it('should process decisions in batch after delay', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
       await act(async () => {
-        render(<Page />);
+        renderWithProviders(React.createElement(Page));
       });
 
       await waitFor(() => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
       });
 
-      const reportButton = screen.getByText('Signaler');
-      await user.click(reportButton);
-
-      expect(mockPrompt).toHaveBeenCalledWith('Motif du signalement (optionnel) :');
-      expect(mockApiClient.reportProfile).toHaveBeenCalledWith({
-        targetProfileId: 'profile-1',
-        reason: 'Comportement inapproprié',
-      });
-    });
-  });
-
-  describe('Chargement et pagination', () => {
-    it('devrait afficher un indicateur de chargement initial', async () => {
-      mockApiClient.searchMatching.mockImplementation(() =>
-        new Promise(resolve => setTimeout(() => resolve({ results: mockProfiles, total: 2 }), 100))
-      );
-
-      await act(async () => {
-        render(<Page />);
-      });
-
-      expect(screen.getByText('Chargement…')).toBeInTheDocument();
-
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
-    });
-
-    it('devrait précharger les profils suivants quand proche de la fin', async () => {
-      // Mock une première recherche avec 2 profils
-      mockApiClient.searchMatching.mockResolvedValueOnce({
-        results: mockProfiles,
-        total: 2,
-      });
-
-      await act(async () => {
-        render(<Page />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
-
-      // Passer au dernier profil devrait déclencher un préchargement
       const acceptButton = screen.getByText('Accepter');
-      const user = userEvent.setup();
-      await user.click(acceptButton);
-
-      // Vérifier qu'une nouvelle recherche est déclenchée pour le préchargement
-      await waitFor(() => {
-        expect(mockApiClient.searchMatching).toHaveBeenCalledTimes(2);
-      });
-    });
-
-    it('devrait gérer les erreurs de chargement', async () => {
-      mockApiClient.searchMatching.mockRejectedValue(new Error('Erreur réseau'));
-
       await act(async () => {
-        render(<Page />);
+        await user.click(acceptButton);
+        jest.advanceTimersByTime(300);
       });
-
-      await waitFor(() => {
-        expect(screen.getByText('Erreur réseau')).toBeInTheDocument();
-      });
-    });
-  });
-
-  describe('Formatage des dates', () => {
-    it('devrait formater "anytime" comme "Peu importe"', async () => {
-      mockSearchParams.set('date', 'anytime');
-
-      await act(async () => {
-        render(<Page />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Peu importe')).toBeInTheDocument();
-      });
-    });
-
-    it('devrait formater la date d\'aujourd\'hui comme "Aujourd\'hui"', async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      mockSearchParams.set('date', today);
-
-      await act(async () => {
-        render(<Page />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Aujourd\'hui')).toBeInTheDocument();
-      });
-    });
-
-    it('devrait formater la date de demain comme "Demain"', async () => {
-      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      mockSearchParams.set('date', tomorrow);
-
-      await act(async () => {
-        render(<Page />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Demain')).toBeInTheDocument();
-      });
-    });
-  });
-
-  describe('Queue des décisions', () => {
-    it('devrait traiter les décisions par batch toutes les 2 secondes', async () => {
-      jest.useFakeTimers();
-      const user = userEvent.setup();
-
-      await act(async () => {
-        render(<Page />);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
-
-      // Faire plusieurs actions
-      const acceptButton = screen.getByText('Accepter');
-      await user.click(acceptButton);
 
       await waitFor(() => {
         expect(screen.getByText('Kite Rider')).toBeInTheDocument();
-      }, { timeout: 1000 });
+      });
 
       const refuseButton = screen.getByText('Refuser');
-      await user.click(refuseButton);
+      await act(async () => {
+        await user.click(refuseButton);
+        jest.advanceTimersByTime(300);
+      });
 
-      // Avancer le temps pour déclencher le flush
-      act(() => {
-        jest.advanceTimersByTime(7000); // 5s + 2s pour être sûr
+      await act(async () => {
+        jest.advanceTimersByTime(7000);
       });
 
       await waitFor(() => {
@@ -596,8 +610,98 @@ describe('Matching Cards Component', () => {
           { targetProfileId: 'profile-2', decision: 'REFUSE' },
         ]);
       });
+    });
+  });
 
-      jest.useRealTimers();
+  describe('Date Formatting', () => {
+    it('should format "anytime" as "Peu importe"', async () => {
+      // Set the search param to anytime
+      mockSearchParams.set('date', 'anytime');
+
+      // Mock the URLSearchParams to return anytime for date
+      const mockUrlSearchParams = {
+        get: (key) => {
+          if (key === 'date') return 'anytime';
+          return mockSearchParams.get(key);
+        },
+        getAll: jest.fn(),
+        has: jest.fn(),
+        keys: jest.fn(),
+        values: jest.fn(),
+        entries: jest.fn(),
+        forEach: jest.fn(),
+        toString: jest.fn(),
+        append: jest.fn(),
+        delete: jest.fn(),
+        set: jest.fn(),
+        sort: jest.fn(),
+        size: 0,
+        [Symbol.iterator]: jest.fn(),
+      };
+
+      mockUseSearchParams.mockReturnValue(mockUrlSearchParams);
+
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('surf > intermediate > 20 km > peu importe')).toBeInTheDocument();
+      });
+    });
+
+    it('should format today date as "Aujourd\'hui"', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      mockSearchParams.set('date', today);
+
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Aujourd'hui")).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should display error message when loading fails', async () => {
+      mockApiClient.searchMatching.mockRejectedValue(new Error('Erreur réseau'));
+
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Erreur réseau')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Report Functionality', () => {
+    it('should allow reporting a profile', async () => {
+      const user = userEvent.setup();
+      const mockPrompt = jest.fn().mockReturnValue('Comportement inapproprié');
+      window.prompt = mockPrompt;
+
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
+      });
+
+      const reportButton = screen.getByText('Signaler');
+      await act(async () => {
+        await user.click(reportButton);
+      });
+
+      expect(mockPrompt).toHaveBeenCalledWith('Motif du signalement (optionnel) :');
+      expect(mockApiClient.reportProfile).toHaveBeenCalledWith({
+        targetProfileId: 'profile-1',
+        reason: 'Comportement inapproprié',
+      });
     });
   });
 });

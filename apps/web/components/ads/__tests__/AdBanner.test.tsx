@@ -9,6 +9,10 @@ const localStorageMock = {
   clear: jest.fn(),
 };
 global.localStorage = localStorageMock as any;
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock,
+  configurable: true,
+});
 
 // Mock window.adsbygoogle
 global.window.adsbygoogle = [];
@@ -53,8 +57,10 @@ describe('AdBanner', () => {
     render(<AdBanner slot="test-slot" />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Espace partenaire surf\/kite/)).toBeInTheDocument();
+      expect(localStorageMock.getItem).toHaveBeenCalledWith('cookie-consent');
     });
+
+    await screen.findByText(/Espace partenaire surf\/kite/);
 
     expect(screen.getByText(/Publicité non personnalisée/)).toBeInTheDocument();
   });

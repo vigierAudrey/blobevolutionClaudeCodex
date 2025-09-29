@@ -58,6 +58,7 @@ Infrastructure:
   - Clever Cloud (production hosting)
   - Firebase (push notifications)
   - CI/CD GitHub Actions
+  - PostGIS activé (image `postgis/postgis:15-3.4` pour dev & CI)
 ```
 
 ### Structure Monorepo - Phase MVP (Recommandé pour démarrer)
