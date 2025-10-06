@@ -14,7 +14,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const toast = useCallback((message: string, type: ToastType = 'info', timeoutMs = 3000) => {
-    const id = crypto.randomUUID();
+    // Generate ID safely (fallback for SSR where crypto.randomUUID may not exist)
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`;
     setToasts((t) => [...t, { id, type, message, timeout: timeoutMs }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), timeoutMs);
   }, []);
@@ -31,7 +34,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 export function useToast() {
   const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error('useToast must be used within ToastProvider');
+  if (!ctx) {
+    // Fallback for SSR/prerender: return no-op function
+    return () => {};
+  }
   return ctx.toast;
 }
 
