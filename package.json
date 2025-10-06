@@ -28,7 +28,9 @@
     "openapi:lint": "redocly lint docs/openapi/openapi.yaml",
     "storybook": "npm run storybook --workspace @blobinfini/web",
     "storybook:build": "npm run build-storybook --workspace @blobinfini/web",
-    "storybook:test": "bash scripts/run-storybook-tests.sh"
+    "storybook:test": "bash scripts/run-storybook-tests.sh",
+    "fix:perms": "rm -rf node_modules apps/*/node_modules packages/*/node_modules && rm -f package-lock.json apps/*/package-lock.json packages/*/package-lock.json && npm cache clean --force && npm install",
+    "fix:perms:sudo": "sudo chown -R $(whoami) ~/.npm && sudo chown -R $(whoami) ./ && npm run fix:perms"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
