@@ -1,8 +1,17 @@
 import type { Metadata } from 'next';
-import './globals.css';
-import { ToastProvider } from '../components/ui/toast';
+import dynamic from 'next/dynamic';
 import Script from 'next/script';
+import './globals.css';
+import type { ClientProviderProps } from '@/components/ui/ClientProvider';
 import { CookieConsent } from '../components/cookies/CookieConsent';
+
+const ClientProvider = dynamic<ClientProviderProps>(
+  () => import('@/components/ui/ClientProvider'),
+  {
+    ssr: false,
+    loading: (props) => <>{(props as ClientProviderProps).children}</>,
+  }
+);
 
 export const metadata: Metadata = {
   title: 'Blobinfini — Auth',
@@ -26,10 +35,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         )}
       </head>
       <body className="min-h-screen bg-gray-50 text-gray-900">
-        <ToastProvider>
+        <ClientProvider>
           <main className="container-responsive py-6 sm:py-10">{children}</main>
           <CookieConsent />
-        </ToastProvider>
+        </ClientProvider>
       </body>
     </html>
   );
