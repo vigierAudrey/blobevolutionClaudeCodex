@@ -26,6 +26,7 @@ jobs:
 
     env:
       NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=4096
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
       SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
       JWT_SECRET: test-jwt-secret
@@ -40,16 +41,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.11.1'
+          node-version: '20.19.0'
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Install SWC binary (linux-x64-gnu)
-        run: |
-          npm install --no-save @next/swc-linux-x64-gnu@14.2.7
-          echo "NODE_OPTIONS=--max-old-space-size=4096" >> $GITHUB_ENV
+        run: npm install --no-save @next/swc-linux-x64-gnu@14.2.7
 
       - name: Install Chrome Stable
         run: |
