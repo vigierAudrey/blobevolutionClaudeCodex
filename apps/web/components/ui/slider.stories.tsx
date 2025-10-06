@@ -25,14 +25,16 @@ export default meta;
 
 type Story = StoryObj<typeof Slider>;
 
+function SliderDemo(args: React.ComponentProps<typeof Slider>) {
+  const [value, setValue] = useState(args.defaultValue);
+  return (
+    <div className="space-y-2">
+      <Slider {...args} defaultValue={value} onValueChange={setValue} />
+      <p className="text-sm text-muted-foreground">Rayon actuel : {value?.[0]} km</p>
+    </div>
+  );
+}
+
 export const Default: Story = {
-  render: (args) => {
-    const [value, setValue] = useState(args.defaultValue);
-    return (
-      <div className="space-y-2">
-        <Slider {...args} defaultValue={value} onValueChange={setValue} />
-        <p className="text-sm text-muted-foreground">Rayon actuel : {value?.[0]} km</p>
-      </div>
-    );
-  },
+  render: (args: React.ComponentProps<typeof Slider>) => <SliderDemo {...args} />,
 };

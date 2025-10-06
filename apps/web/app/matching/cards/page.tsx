@@ -83,6 +83,8 @@ function CardsInner() {
   const rotate = useTransform(x, [-200, 200], [-20, 20]);
   const opacity = useTransform(x, [-200, -50, 0, 50, 200], [0.5, 1, 1, 1, 0.5]);
   const scale = useTransform(x, [-200, 0, 200], [0.95, 1, 0.95]);
+  const opacityAccept = useTransform(x, [0, 100], [0, 1]);
+  const opacityRefuse = useTransform(x, [-100, 0], [1, 0]);
 
   const current = candidates[cursor] || null;
   const [lastAction, setLastAction] = useState<null | { id: string; decision: 'ACCEPT'|'REFUSE'; profile: any; wasEndOfBatch: boolean; prevCursor: number; timeout: any }>(null);
@@ -403,13 +405,13 @@ function CardsInner() {
                 {/* Swipe indicators */}
                 <motion.div
                   className="absolute inset-0 bg-green-500/20 flex items-center justify-center pointer-events-none"
-                  style={{ opacity: useTransform(x, [0, 100], [0, 1]) }}
+                  style={{ opacity: opacityAccept }}
                 >
                   <div className="text-3xl text-green-600 font-bold">✓</div>
                 </motion.div>
                 <motion.div
                   className="absolute inset-0 bg-red-500/20 flex items-center justify-center pointer-events-none"
-                  style={{ opacity: useTransform(x, [-100, 0], [1, 0]) }}
+                  style={{ opacity: opacityRefuse }}
                 >
                   <div className="text-3xl text-red-600 font-bold">✗</div>
                 </motion.div>
