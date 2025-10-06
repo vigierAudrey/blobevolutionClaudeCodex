@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     services:
       postgres:
@@ -19,9 +19,9 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
         options: >-
-          --health-cmd "pg_isready -U postgres" 
-          --health-interval 10s 
-          --health-timeout 5s 
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
           --health-retries 5
 
     env:
@@ -30,8 +30,7 @@ jobs:
       SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
       JWT_SECRET: test-jwt-secret
       JWT_REFRESH_SECRET: test-jwt-refresh-secret
-      # Web base for link building in tests (emails etc.)
-      WEB_BASE_URL: http://localhost:3001
+      WEB_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:4000
 
     steps:
@@ -41,11 +40,29 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: '20.11.1'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install SWC binary (linux-x64-gnu)
+        run: |
+          npm install --no-save @next/swc-linux-x64-gnu@14.2.7
+          echo "NODE_OPTIONS=--max-old-space-size=4096" >> $GITHUB_ENV
+
+      - name: Install Chrome Stable
+        run: |
+          npx --yes @puppeteer/browsers install chrome@stable --install-dir=$HOME/.cache/chrome
+          echo "CHROME_PATH=$HOME/.cache/chrome/chrome/linux-*/chrome" >> $GITHUB_ENV
+
+      - name: Environment diagnostics
+        run: |
+          uname -a
+          node -p "process.versions"
+          ldd --version || true
+          echo "SWC bins:"
+          ls -la node_modules/@next | grep swc || true
 
       - name: Prepare PostGIS (create DBs + extensions)
         run: |
@@ -62,11 +79,41 @@ jobs:
       - name: Run DB migrations
         run: npm run db:migrate
 
-      - name: Build web app (type-check via Next)
+      - name: Build web app
         run: npm run build --workspace @blobinfini/web
 
       - name: Type check
         run: npm run type-check
 
+      - name: Start Next server
+        run: |
+          npm run start --workspace @blobinfini/web &
+          echo $! > web.pid
+
+      - name: Wait for server
+        run: npx wait-on http://127.0.0.1:3000/
+
+      - name: Lighthouse CI
+        env:
+          CHROME_PATH: ${{ env.CHROME_PATH }}
+        run: npm run lhci
+        continue-on-error: true # TODO: retirer continue-on-error dès que LHCI passe vert
+
+      - name: Upload Lighthouse reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: lhci-report
+          path: .lighthouseci
+          if-no-files-found: warn
+
+      - name: Stop Next server
+        if: always()
+        run: |
+          if [ -f web.pid ]; then
+            kill $(cat web.pid) || true
+            rm web.pid
+          fi
+
       - name: Run tests (API)
         run: npm test
+*** End Patch
