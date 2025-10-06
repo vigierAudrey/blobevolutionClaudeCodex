@@ -5,17 +5,16 @@ import { requireAuth } from '../auth/auth.guard';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import { lookup as mimeLookup, extension as mimeExtension } from 'mime-types';
 import crypto from 'crypto';
+import { cacheService, CacheKeys } from '../../services/cache.service';
 
 export const profileRouter = Router();
 
 const sexEnum = z.enum(['FEMALE', 'MALE', 'OTHER', 'UNSPECIFIED']);
-const partnerEnum = z.enum(['ALL', 'WOMEN', 'MEN']);
 
 const upsertSchema = z.object({
   displayName: z.string().min(1).max(60).optional().or(z.literal('').transform(() => undefined)),
   bio: z.string().max(1000).optional().or(z.literal('').transform(() => undefined)),
   sex: sexEnum.optional(),
-  partnerPref: partnerEnum.optional(),
   maxDistanceKm: z.number().int().min(1).max(500).optional(),
   emailNotif: z.boolean().optional(),
   photoUrl: z.string().url().optional(),
@@ -26,16 +25,52 @@ const upsertSchema = z.object({
   lessonSport: z.enum(['surf','kitesurf']).optional(),
 });
 
+const adminUpsertSchema = z.object({
+  displayName: z.string().min(1).max(60).optional().or(z.literal('').transform(() => undefined)),
+});
+
 profileRouter.get('/me', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    let rp = await prisma.riderProfile.findUnique({ where: { userId } });
-    if (!rp) {
-      rp = await prisma.riderProfile.create({ data: { userId } });
+    // Récupérer le rôle de l'utilisateur
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Gérer selon le rôle
+    if (user.role === 'ADMIN') {
+      let ap = await prisma.adminProfile.findUnique({ where: { userId } });
+      if (!ap) {
+        ap = await prisma.adminProfile.create({ data: { userId } });
+      }
+      return res.json(ap);
+    } else {
+      // Check cache first for rider profile
+      const cachedProfile = await cacheService.getProfile(userId);
+      if (cachedProfile && cacheService.isAvailable()) {
+        console.log('🚀 Cache hit for rider profile');
+        return res.json(cachedProfile);
+      }
+
+      // Comportement existant pour les riders
+      let rp = await prisma.riderProfile.findUnique({ where: { userId } });
+      if (!rp) {
+        rp = await prisma.riderProfile.create({ data: { userId } });
+      }
+
+      // Cache the profile for future requests
+      if (cacheService.isAvailable()) {
+        await cacheService.setProfile(userId, rp, 600); // 10 minutes cache
+        console.log('💾 Cached rider profile');
+      }
+
+      return res.json(rp);
     }
-    return res.json(rp);
   } catch (err) {
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -46,18 +81,51 @@ profileRouter.put('/me', requireAuth, async (req, res) => {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const body = upsertSchema.parse(req.body);
-    console.log('Updating profile for user:', userId, 'with data:', body);
-    const rp = await prisma.riderProfile.upsert({
-      where: { userId },
-      create: { userId, ...body },
-      update: { ...body },
+    // Récupérer le rôle de l'utilisateur
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
     });
-    console.log('Profile updated:', rp);
-    return res.json(rp);
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Gérer selon le rôle
+    if (user.role === 'ADMIN') {
+      const body = adminUpsertSchema.parse(req.body);
+      console.log('Updating admin profile for user:', userId, 'with data:', body);
+      const ap = await prisma.adminProfile.upsert({
+        where: { userId },
+        create: { userId, ...body },
+        update: { ...body },
+      });
+      console.log('Admin profile updated:', ap);
+      return res.json(ap);
+    } else {
+      // Comportement existant pour les riders
+      const body = upsertSchema.parse(req.body);
+      console.log('Updating profile for user:', userId, 'with data:', body);
+      const rp = await prisma.riderProfile.upsert({
+        where: { userId },
+        create: { userId, ...body },
+        update: { ...body },
+      });
+
+      // Invalidate profile cache after update
+      if (cacheService.isAvailable()) {
+        await cacheService.del(`profile:${userId}`);
+        // Also invalidate related matching cache if location changed
+        if (body.lat || body.lng) {
+          await cacheService.invalidateMatching();
+        }
+        console.log('🗑️ Invalidated profile cache after update');
+      }
+
+      console.log('Profile updated:', rp);
+      return res.json(rp);
+    }
   } catch (err: any) {
     // eslint-disable-next-line no-console
-    console.error('upload-url error', err);
+    console.error('profile update error', err);
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }

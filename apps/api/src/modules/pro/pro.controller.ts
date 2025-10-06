@@ -91,54 +91,63 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
     if (!me?.lat || !me?.lng) return res.status(400).json({ error: 'Missing pro location' });
     const plat = me.lat, plng = me.lng;
 
-    // Fetch candidate riders (want lessons, have coords, lessonSport surf, and at least one active match)
-    const candidates = await prisma.riderProfile.findMany({
-      where: {
-        wantsLesson: true,
-        lat: { not: null },
-        lng: { not: null },
-        OR: [
-          { lessonSport: sport },
-          { lessonSport: null }, // tolerate missing data; will be filtered client-side default
-        ],
-      },
-      select: {
-        id: true,
-        userId: true,
-        displayName: true,
-        bio: true,
-        lat: true,
-        lng: true,
-        lessonSport: true,
-        user: {
-          select: {
-            matchesA: { where: { status: 'ACTIVE' }, select: { id: true } },
-            matchesB: { where: { status: 'ACTIVE' }, select: { id: true } },
-          },
-        },
-      },
-      take: 2000,
-    });
+    // Optimized query using PostGIS and SQL filtering instead of JavaScript
+    const candidates = await prisma.$queryRaw<Array<{
+      id: string;
+      userId: string;
+      displayName: string | null;
+      bio: string | null;
+      lat: number;
+      lng: number;
+      lessonSport: string | null;
+      distance_km: number;
+      activeMatchCount: number;
+    }>>`
+      SELECT
+        rp."id",
+        rp."userId",
+        rp."displayName",
+        rp."bio",
+        rp."lat",
+        rp."lng",
+        rp."lessonSport",
+        ST_Distance(
+          ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
+        ) / 1000.0 AS distance_km,
+        (
+          COALESCE(
+            (SELECT COUNT(*) FROM "Match" m1 WHERE m1."userOneId" = rp."userId" AND m1."status" = 'ACTIVE'), 0
+          ) +
+          COALESCE(
+            (SELECT COUNT(*) FROM "Match" m2 WHERE m2."userTwoId" = rp."userId" AND m2."status" = 'ACTIVE'), 0
+          )
+        ) AS "activeMatchCount"
+      FROM "RiderProfile" rp
+      WHERE rp."wantsLesson" = true
+        AND rp."lat" IS NOT NULL
+        AND rp."lng" IS NOT NULL
+        AND (rp."lessonSport" = ${sport} OR rp."lessonSport" IS NULL)
+        AND ST_DWithin(
+          ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography,
+          50000  -- 50km radius
+        )
+      HAVING "activeMatchCount" > 0
+      ORDER BY distance_km ASC
+      LIMIT 500  -- Reduced from 2000 to 500
+    `;
 
-    function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
-      const toRad = (d: number) => (d * Math.PI) / 180;
-      const R = 6371; // km
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    }
-
-    const items = candidates
-      .filter((c) => (c.user.matchesA.length + c.user.matchesB.length) > 0)
-      .filter((c) => (c.lessonSport || 'surf') === sport)
-      .map((c) => {
-        const d = haversine(plat, plng, c.lat as number, c.lng as number);
-        return { id: c.id, userId: c.userId, displayName: c.displayName, bio: c.bio, lat: c.lat, lng: c.lng, distanceKm: Math.round(d * 10) / 10 };
-      })
-      .filter((it) => it.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
+    // No more JavaScript filtering needed - everything is done in SQL!
+    const items = candidates.map((c) => ({
+      id: c.id,
+      userId: c.userId,
+      displayName: c.displayName,
+      bio: c.bio,
+      lat: c.lat,
+      lng: c.lng,
+      distanceKm: Math.round(c.distance_km * 10) / 10  // Already calculated in SQL
+    }))
       .slice(0, 500);
 
     return res.json({ items });
@@ -162,12 +171,12 @@ proRouter.get('/offers/me', requireAuth, async (req, res) => {
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
       where: { userId },
-      include: { offer: true }
+      include: { offers: true }
     });
 
     if (!proProfile) return res.status(404).json({ error: 'Pro profile not found' });
 
-    return res.json({ offer: proProfile.offer });
+    return res.json({ offers: proProfile.offers });
   } catch (err) {
     console.error('Error fetching pro offer:', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -194,31 +203,43 @@ proRouter.post('/offers', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Geolocation required. Please update your pro profile with lat/lng first.' });
     }
 
-    // Créer ou mettre à jour l'offre (upsert)
-    const offer = await prisma.proOffer.upsert({
-      where: { proProfileId: proProfile.id },
-      create: {
-        proProfileId: proProfile.id,
-        sport: body.sport,
-        level: body.level,
-        title: body.title,
-        description: body.description,
-        hourlyRate: body.hourlyRate,
-        lat: proProfile.lat,
-        lng: proProfile.lng,
-        isActive: body.isActive,
-      },
-      update: {
-        sport: body.sport,
-        level: body.level,
-        title: body.title,
-        description: body.description,
-        hourlyRate: body.hourlyRate,
-        lat: proProfile.lat,
-        lng: proProfile.lng,
-        isActive: body.isActive,
-      },
+    // Chercher l'offre existante pour ce pro
+    const existingOffer = await prisma.proOffer.findFirst({
+      where: { proProfileId: proProfile.id }
     });
+
+    let offer;
+    if (existingOffer) {
+      // Mettre à jour l'offre existante
+      offer = await prisma.proOffer.update({
+        where: { id: existingOffer.id },
+        data: {
+          sport: body.sport,
+          level: body.level,
+          title: body.title,
+          description: body.description,
+          hourlyRate: body.hourlyRate,
+          lat: proProfile.lat,
+          lng: proProfile.lng,
+          isActive: body.isActive,
+        },
+      });
+    } else {
+      // Créer une nouvelle offre
+      offer = await prisma.proOffer.create({
+        data: {
+          proProfileId: proProfile.id,
+          sport: body.sport,
+          level: body.level,
+          title: body.title,
+          description: body.description,
+          hourlyRate: body.hourlyRate,
+          lat: proProfile.lat,
+          lng: proProfile.lng,
+          isActive: body.isActive,
+        },
+      });
+    }
 
     return res.status(201).json(offer);
   } catch (err: any) {
@@ -271,15 +292,15 @@ proRouter.patch('/offers/me/toggle', requireAuth, async (req, res) => {
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
       where: { userId },
-      include: { offer: true }
+      include: { offers: true }
     });
 
-    if (!proProfile?.offer) return res.status(404).json({ error: 'No offer found' });
+    if (!proProfile?.offers || proProfile.offers.length === 0) return res.status(404).json({ error: 'No offer found' });
 
     // Toggle le statut
     const updatedOffer = await prisma.proOffer.update({
-      where: { id: proProfile.offer.id },
-      data: { isActive: !proProfile.offer.isActive }
+      where: { id: proProfile.offers[0].id },
+      data: { isActive: !proProfile.offers[0].isActive }
     });
 
     return res.json(updatedOffer);

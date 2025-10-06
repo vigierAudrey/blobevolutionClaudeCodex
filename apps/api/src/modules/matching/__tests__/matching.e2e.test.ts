@@ -29,8 +29,8 @@ describe('Matching search E2E', () => {
     const user = await prisma.user.findFirstOrThrow({ where: { email: 'match@test.com' } });
     await prisma.riderProfile.upsert({
       where: { userId: user.id },
-      create: { userId: user.id, maxDistanceKm: 35, partnerPref: 'WOMEN', emailNotif: true },
-      update: { maxDistanceKm: 35, partnerPref: 'WOMEN', emailNotif: true },
+      create: { userId: user.id, maxDistanceKm: 35, emailNotif: true },
+      update: { maxDistanceKm: 35, emailNotif: true },
     });
   });
 

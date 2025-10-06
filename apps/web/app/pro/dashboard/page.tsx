@@ -1,24 +1,44 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '../../../lib/apiClient';
+import { optimizedApiClient, measureApiPerformance } from '../../../lib/optimizedApiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
-import { User, Map, CreditCard, Percent, Info, LogOut, BookOpen } from 'lucide-react';
+import { Badge } from '../../../components/ui/badge';
+import { User, Map, CreditCard, Percent, Info, LogOut, BookOpen, MessageSquare, Network } from 'lucide-react';
+import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 
 export default function ProDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [planningStats, setPlanningStats] = useState<{ availabilityCount: number; pendingCount: number } | null>(null);
+
+  const loadPlanningStats = useCallback(async () => {
+    try {
+      const perf = measureApiPerformance('Pro Dashboard Data');
+
+      // Use optimized parallel initialization
+      const { availabilities, inbox } = await optimizedApiClient.initializePro();
+
+      const pendingCount = inbox.requests.filter((req) => req.status === 'PENDING').length;
+      setPlanningStats({ availabilityCount: availabilities.availabilities.length, pendingCount });
+
+      perf.end();
+    } catch (error) {
+      console.error('Pro dashboard initialization failed:', error);
+      setPlanningStats({ availabilityCount: 0, pendingCount: 0 });
+    }
+  }, []);
 
   useEffect(() => {
-    const t = apiClient.getTokens();
+    const t = optimizedApiClient.getTokens();
     if (!t?.accessToken) {
       router.replace('/login');
       return;
     }
-    apiClient
+    optimizedApiClient
       .me()
       .then((u) => {
         // Vérifier que l'utilisateur est bien un PRO
@@ -27,22 +47,34 @@ export default function ProDashboardPage() {
           return;
         }
         setUser(u);
+        void loadPlanningStats();
       })
       .catch(() => {
         router.replace('/login');
       })
       .finally(() => setLoading(false));
-  }, [router]);
+  }, [loadPlanningStats, router]);
 
   const logout = async () => {
     try {
-      await apiClient.logoutAll();
+      await optimizedApiClient.logoutAll();
     } catch (_) {}
-    apiClient.clearTokens();
+    optimizedApiClient.clearTokens();
     router.replace('/login');
   };
 
-  if (loading) return <p>Chargement…</p>;
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <PageHeaderSkeleton />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (!user) return null;
 
   return (
@@ -97,11 +129,25 @@ export default function ProDashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><BookOpen size={18}/> Réservations</CardTitle>
-            <CardDescription>Voir les demandes de cours</CardDescription>
+            <CardTitle className="flex items-center gap-2"><MessageSquare size={18}/> Messages</CardTitle>
+            <CardDescription>Communiquer avec vos élèves et collègues</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button className="w-full" variant="outline" disabled>En préparation</Button>
+            <Link href="/pro/messages" className="inline-block w-full">
+              <Button className="w-full">Voir mes conversations</Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Network size={18}/> Réseau Pro</CardTitle>
+            <CardDescription>Découvrir et contacter d'autres professionnels</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/pro/network" className="inline-block w-full">
+              <Button className="w-full" variant="secondary">Explorer le réseau</Button>
+            </Link>
           </CardContent>
         </Card>
 
@@ -113,6 +159,30 @@ export default function ProDashboardPage() {
           <CardContent>
             <Link href="/pro/offers" className="inline-block w-full">
               <Button className="w-full">Gérer mon offre</Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><BookOpen size={18}/> Réservations</CardTitle>
+            <CardDescription>Gérer tes créneaux, demandes et sessions confirmées.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2 text-xs font-medium">
+              <Badge variant="outline">
+                {planningStats
+                  ? `${planningStats.availabilityCount} créneau${planningStats.availabilityCount > 1 ? 'x' : ''}`
+                  : '-- créneaux'}
+              </Badge>
+              <Badge variant={planningStats && planningStats.pendingCount > 0 ? 'secondary' : 'outline'}>
+                {planningStats
+                  ? `${planningStats.pendingCount} demande${planningStats.pendingCount > 1 ? 's' : ''} en attente`
+                  : '-- demandes'}
+              </Badge>
+            </div>
+            <Link href="/pro/planning" className="inline-block w-full">
+              <Button className="w-full" variant="secondary">Ouvrir mon planning</Button>
             </Link>
           </CardContent>
         </Card>

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { BackBar } from '../../components/BackBar';
 import { Button } from '../../components/ui/button';
 import { apiClient } from '../../lib/apiClient';
+import { AdBannerFeed } from '../../components/ads/AdBanner';
 
 type Sport = 'surf' | 'kitesurf';
 type Level = 'beginner' | 'intermediate' | 'advanced';
@@ -36,6 +37,22 @@ export default function MatchingPage() {
         // Rediriger les PRO vers leur dashboard
         if (currentUser.role === 'PRO') {
           router.replace('/pro/dashboard');
+          return;
+        }
+
+        // Vérifier si le profil est complet avant d'accéder au matching
+        const [profile, disciplines] = await Promise.all([
+          apiClient.getProfile(),
+          apiClient.getDisciplines().catch(() => []),
+        ]);
+
+        const hasName = !!profile?.displayName;
+        const hasPhoto = !!profile?.photoUrl;
+        const hasDiscipline = Array.isArray(disciplines) && disciplines.length > 0;
+        const incomplete = !hasName || !hasPhoto || !hasDiscipline;
+
+        if (incomplete) {
+          router.replace('/onboarding');
           return;
         }
 
@@ -145,6 +162,11 @@ export default function MatchingPage() {
         </CardContent>
       </Card>
 
+      {/* Publicité entre les cartes */}
+      <AdBannerFeed
+        slot="matching-selection"
+        className="max-w-md mx-auto"
+      />
 
       <Card>
         <CardHeader>

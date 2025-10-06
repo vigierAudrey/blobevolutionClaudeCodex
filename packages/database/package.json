@@ -10,6 +10,7 @@
     "clean": "rimraf dist",
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
     "seed": "prisma db seed",
     "reseed": "tsx prisma/reseed.ts",
@@ -18,9 +19,11 @@
   },
   "dependencies": {
     "@prisma/client": "^5.15.0",
-    "bcrypt": "^5.1.1"
+    "bcrypt": "^6.0.0",
+    "patch-package": "^8.0.1"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "prisma": "^5.15.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.4.0"

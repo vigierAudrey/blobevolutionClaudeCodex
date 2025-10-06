@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import Link from 'next/link';
 import { User, Map, Wallet, Percent, Info, LogOut, MessageSquare, Briefcase } from 'lucide-react';
+import { AdBannerSidebar } from '../../components/ads/AdBanner';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -213,6 +214,12 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Publicité dashboard - sidebar */}
+      <AdBannerSidebar
+        slot="dashboard-sidebar"
+        className="max-w-md mx-auto mt-6"
+      />
     </div>
   );
 }

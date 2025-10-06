@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { resolve } from 'path';
-import { PrismaClient, Role, Sex } from '@prisma/client';
+import { PrismaClient, Role, Sex, Level, Sport, DecisionKind, MatchStatus, BookingRequestStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 // Ensure env is loaded from repo root .env (fallback prisma/.env)
@@ -13,150 +13,695 @@ try {
 
 export async function runSeed(client?: PrismaClient) {
   const prisma = client ?? new PrismaClient();
-  // Idempotent cleanup of dev users by tag email
-  const emails = ['dev+rider@test.com', 'dev+pro@test.com', 'dev+kite@test.com'];
-  await prisma.refreshToken.deleteMany({ where: { user: { email: { in: emails } } } });
-  await prisma.session.deleteMany({ where: { user: { email: { in: emails } } } });
-  await prisma.passwordResetToken.deleteMany({ where: { user: { email: { in: emails } } } });
-  await prisma.emailVerificationToken.deleteMany({ where: { user: { email: { in: emails } } } });
-  await prisma.riderDiscipline.deleteMany({ where: { profile: { user: { email: { in: emails } } } } });
-  await prisma.riderProfile.deleteMany({ where: { user: { email: { in: emails } } } });
-  await prisma.user.deleteMany({ where: { email: { in: emails } } });
+
+  // Cleanup all existing dev data
+  const devEmails = Array.from({length: 20}, (_, i) => `dev+rider${i+1}@test.com`)
+    .concat(Array.from({length: 5}, (_, i) => `dev+pro${i+1}@test.com`))
+    .concat(['dev+admin@test.com']);
+
+  await prisma.message.deleteMany({
+    where: {
+      conversation: {
+        members: {
+          some: {
+            user: { email: { in: devEmails } }
+          }
+        }
+      }
+    }
+  });
+  await prisma.conversationMember.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.conversation.deleteMany({
+    where: {
+      OR: [
+        { members: { some: { user: { email: { in: devEmails } } } } },
+        {
+          match: {
+            OR: [
+              { userOne: { email: { in: devEmails } } },
+              { userTwo: { email: { in: devEmails } } }
+            ]
+          }
+        }
+      ]
+    }
+  });
+  await prisma.matchDecision.deleteMany({ where: { actor: { email: { in: devEmails } } } });
+  await prisma.match.deleteMany({
+    where: {
+      OR: [
+        { userOne: { email: { in: devEmails } } },
+        { userTwo: { email: { in: devEmails } } }
+      ]
+    }
+  });
+  await prisma.lastSearch.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.profileReport.deleteMany({
+    where: {
+      OR: [
+        { reporter: { email: { in: devEmails } } },
+        { reportedProfile: { user: { email: { in: devEmails } } } }
+      ]
+    }
+  });
+  await prisma.refreshToken.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.session.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.passwordResetToken.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.emailVerificationToken.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.riderDiscipline.deleteMany({ where: { profile: { user: { email: { in: devEmails } } } } });
+  await prisma.proOffer.deleteMany({ where: { proProfile: { user: { email: { in: devEmails } } } } });
+  await prisma.riderProfile.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.proProfile.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.adminProfile.deleteMany({ where: { user: { email: { in: devEmails } } } });
+  await prisma.user.deleteMany({ where: { email: { in: devEmails } } });
 
   const hashed = await bcrypt.hash('Passw0rd!', 12);
 
-  // Rider user with profile
-  const rider = await prisma.user.create({
+  // Localités françaises pour varier les géolocalisations
+  const locations = [
+    { name: 'Paris', lat: 48.8566, lng: 2.3522 },
+    { name: 'Biarritz', lat: 43.4832, lng: -1.5586 },
+    { name: 'Hossegor', lat: 43.6613, lng: -1.3976 },
+    { name: 'Lacanau', lat: 44.9771, lng: -1.1942 },
+    { name: 'La Rochelle', lat: 46.1603, lng: -1.1511 },
+    { name: 'Marseille', lat: 43.2965, lng: 5.3698 },
+    { name: 'Nice', lat: 43.7102, lng: 7.2620 },
+    { name: 'Montpellier', lat: 43.6109, lng: 3.8763 },
+    { name: 'Nantes', lat: 47.2184, lng: -1.5536 },
+    { name: 'Bordeaux', lat: 44.8378, lng: -0.5792 },
+    { name: 'Anglet', lat: 43.4924, lng: -1.5127 },
+    { name: 'Leucate', lat: 42.9086, lng: 3.0314 },
+    { name: 'Carnac', lat: 47.5827, lng: -3.0783 },
+    { name: 'Quiberon', lat: 47.4847, lng: -3.1197 },
+    { name: 'Saint-Malo', lat: 48.6496, lng: -2.0259 }
+  ];
+
+  const randomDateWithin = (days: number) => {
+    const now = new Date();
+    const past = new Date(now);
+    past.setDate(now.getDate() - days);
+    const timestamp = past.getTime() + Math.random() * (now.getTime() - past.getTime());
+    return new Date(timestamp);
+  };
+
+  const addHours = (date: Date, hours: number) => {
+    const copy = new Date(date);
+    copy.setHours(copy.getHours() + hours);
+    return copy;
+  };
+
+  const riderNames = [
+    'Alex Surf', 'Sam Rider', 'Jordan Wave', 'Casey Ocean', 'Taylor Beach',
+    'Morgan Sea', 'Riley Tide', 'Sage Storm', 'Quinn Current', 'Blake Shore',
+    'Avery Salt', 'River Blue', 'Sky Marine', 'Luna Wave', 'Nova Ocean',
+    'Kai Surf', 'Zara Beach', 'Leo Tide', 'Mia Storm', 'Finn Current'
+  ];
+
+  const riderBios = [
+    'Passionné·e de surf depuis 10 ans, toujours partant·e pour de nouvelles sessions!',
+    'Kite addict, j\'adore les sessions entre potes et découvrir de nouveaux spots.',
+    'Surf & kite, team sunrise! Toujours motivé·e pour partager ma passion.',
+    'Rider expérimenté·e, j\'aime transmettre mes techniques aux débutants.',
+    'Sessions détente ou intense, peu importe tant qu\'on s\'amuse sur l\'eau!',
+    'Nouvelle dans la région, cherche la communauté locale pour rider ensemble.',
+    'Compétiteur·trice amateur, j\'aime progresser et repousser mes limites.',
+    'Photographe aquatique à mes heures perdues, j\'immortalise nos sessions.',
+    'Éco-rider, je milite pour des océans propres et des sessions responsables.',
+    'Ancien·ne pro reconvertie, je partage maintenant ma passion en amateur.',
+    'Week-end warrior, je profite de chaque moment libre pour aller à l\'eau.',
+    'Voyageur·se des spots, toujours en quête de la vague parfaite.',
+    'Rider nocturne, j\'adore les sessions sous les étoiles quand c\'est possible.',
+    'Minimaliste du surf, une planche, une combi, et c\'est parti!',
+    'Collectionneur·se de sensations, du surf au kite en passant par le windsurf.',
+    'Local de longue date, je connais tous les secrets du coin.',
+    'Débutant·e motivé·e, en quête de progression et de bons conseils.',
+    'Rider famille, j\'initie mes enfants à la glisse avec patience.',
+    'Philosophe de l\'océan, je médite autant que je ride.',
+    'Technicien·ne de la glisse, j\'analyse chaque mouvement pour m\'améliorer.'
+  ];
+
+  console.log('Creating 20 rider users...');
+
+  const levels = [Level.beginner, Level.intermediate, Level.advanced];
+  const sports = [Sport.surf, Sport.kitesurf];
+  const sexes = [Sex.FEMALE, Sex.MALE, Sex.OTHER, Sex.UNSPECIFIED];
+
+  // Create 20 riders with varied profiles
+  const riders = [];
+  for (let i = 0; i < 20; i++) {
+    const location = locations[i % locations.length];
+    const rider = await prisma.user.create({
+      data: {
+        email: `dev+rider${i+1}@test.com`,
+        password: hashed,
+        role: Role.RIDER,
+        emailVerified: true,
+        consentedAt: new Date(),
+        consentVersion: 'v1.0.0',
+        consentIp: '127.0.0.1',
+        riderProfile: {
+          create: {
+            displayName: riderNames[i],
+            bio: riderBios[i],
+            sex: sexes[i % sexes.length],
+            emailNotif: Math.random() > 0.3,
+            maxDistanceKm: [15, 25, 30, 50, 75][i % 5],
+            wantsLesson: Math.random() > 0.6,
+            lessonSport: Math.random() > 0.5 ? Sport.surf : Sport.kitesurf,
+            lat: location.lat + (Math.random() - 0.5) * 0.1, // Petit décalage aléatoire
+            lng: location.lng + (Math.random() - 0.5) * 0.1,
+          },
+        },
+      },
+      include: { riderProfile: true },
+    });
+
+    // Add varied disciplines
+    const riderDisciplines = [];
+    const numSports = Math.random() > 0.6 ? 2 : 1; // 40% ont les deux sports
+    const chosenSports = numSports === 2 ? [Sport.surf, Sport.kitesurf] : [sports[Math.floor(Math.random() * sports.length)]];
+
+    for (const sport of chosenSports) {
+      riderDisciplines.push({
+        profileId: rider.riderProfile!.id,
+        sport,
+        level: levels[Math.floor(Math.random() * levels.length)]
+      });
+    }
+
+    await prisma.riderDiscipline.createMany({
+      data: riderDisciplines,
+      skipDuplicates: true,
+    });
+
+    const searchSport = chosenSports[0];
+    const searchLevel = levels[Math.floor(Math.random() * levels.length)];
+
+    await prisma.lastSearch.upsert({
+      where: { userId: rider.id },
+      update: {
+        sport: searchSport,
+        level: searchLevel,
+        distanceKm: [10, 25, 50, 75][i % 4],
+        lat: rider.riderProfile?.lat ?? location.lat,
+        lng: rider.riderProfile?.lng ?? location.lng,
+        updatedAt: randomDateWithin(30)
+      },
+      create: {
+        userId: rider.id,
+        sport: searchSport,
+        level: searchLevel,
+        distanceKm: [10, 25, 50, 75][i % 4],
+        lat: rider.riderProfile?.lat ?? location.lat,
+        lng: rider.riderProfile?.lng ?? location.lng,
+        date: randomDateWithin(15),
+        createdAt: randomDateWithin(60)
+      }
+    });
+
+    const sessionEntries = Array.from({ length: 3 }).map(() => {
+      const createdAt = randomDateWithin(60);
+      return {
+        userId: rider.id,
+        createdAt,
+        expiresAt: addHours(createdAt, 6)
+      };
+    });
+    await prisma.session.createMany({ data: sessionEntries });
+
+    riders.push(rider);
+  }
+
+  console.log('Creating 5 pro users with offers...');
+
+  const proNames = [
+    'Ocean Academy',
+    'Surf Evolution',
+    'Kite Masters',
+    'Wave Riders School',
+    'Atlantic Surf Club'
+  ];
+
+  const proBios = [
+    'École de surf reconnue, 15 ans d\'expérience. Cours collectifs et particuliers. Matériel fourni.',
+    'Moniteurs diplômés d\'état. Spécialistes progression rapide. Stages intensifs week-end.',
+    'Centre de formation kitesurf. Du débutant au perfectionnement. Spots exceptionnels.',
+    'École indépendante, ambiance familiale. Méthode pédagogique éprouvée depuis 2010.',
+    'Club historique de la côte. Cours tous niveaux, location matériel, coaching compétition.'
+  ];
+
+  const pros = [];
+  for (let i = 0; i < 5; i++) {
+    const location = locations[i + 2]; // Décaler pour varier les emplacements
+    const pro = await prisma.user.create({
+      data: {
+        email: `dev+pro${i+1}@test.com`,
+        password: hashed,
+        role: Role.PRO,
+        emailVerified: true,
+        consentedAt: new Date(),
+        consentVersion: 'v1.0.0',
+        consentIp: '127.0.0.1',
+      },
+    });
+
+    // Create pro profile
+    const proProfile = await prisma.proProfile.create({
+      data: {
+        userId: pro.id,
+        businessName: proNames[i],
+        bio: proBios[i],
+        pricePerHour: [45, 55, 60, 70, 80][i], // Tarifs variés
+        emailNotif: true,
+        verified: i < 3, // Les 3 premiers sont vérifiés
+        lat: location.lat + (Math.random() - 0.5) * 0.05,
+        lng: location.lng + (Math.random() - 0.5) * 0.05,
+      },
+    });
+
+    // Create offers for each pro
+    const numOffers = i === 4 ? 1 : 2; // Le dernier pro n'a qu'une offre
+    for (let j = 0; j < numOffers; j++) {
+      const sport = j === 0 ? Sport.surf : Sport.kitesurf;
+      const level = levels[j]; // Varie le niveau selon l'offre
+
+      await prisma.proOffer.create({
+        data: {
+          proProfileId: proProfile.id,
+          sport,
+          level,
+          title: `Cours ${sport} niveau ${level === Level.beginner ? 'débutant' : level === Level.intermediate ? 'intermédiaire' : 'confirmé'}`,
+          description: `Apprenez le ${sport} avec nos moniteurs expérimentés. Matériel fourni, sécurité garantie. ${level === Level.beginner ? 'Première fois ? Parfait pour découvrir!' : level === Level.intermediate ? 'Perfectionnez votre technique.' : 'Repoussez vos limites!'}`,
+          hourlyRate: [45, 55, 60, 70, 80][i],
+          isActive: true,
+          lat: location.lat + (Math.random() - 0.5) * 0.02,
+          lng: location.lng + (Math.random() - 0.5) * 0.02,
+        },
+      });
+    }
+
+    pros.push(pro);
+  }
+
+  // Create admin user
+  console.log('Creating admin user...');
+  await prisma.user.create({
     data: {
-      email: 'dev+rider@test.com',
+      email: 'dev+admin@test.com',
       password: hashed,
-      role: Role.RIDER,
+      role: Role.ADMIN,
       emailVerified: true,
       consentedAt: new Date(),
       consentVersion: 'v1.0.0',
       consentIp: '127.0.0.1',
-      riderProfile: {
+      adminProfile: {
         create: {
-          displayName: 'Blobmama',
-          bio: 'Rideuse cool, team sunrise. Surf shortboard. Cherche sessions matinales.',
-          sex: Sex.FEMALE,
-          emailNotif: true,
-          maxDistanceKm: 30,
-          wantsLesson: true,
-          lessonSport: 'surf',
-          lat: 48.8566,
-          lng: 2.3522,
+          displayName: 'Admin Dev',
         },
       },
     },
-    include: { riderProfile: true },
   });
 
-  if (rider.riderProfile) {
-    await prisma.riderDiscipline.createMany({
-      data: [
-        { profileId: rider.riderProfile.id, sport: 'surf', level: 'intermediate' },
-        { profileId: rider.riderProfile.id, sport: 'kitesurf', level: 'beginner' },
-      ],
-      skipDuplicates: true,
-    });
-  }
+  // Create some demo conversations
+  console.log('Creating demo conversations...');
 
-  // Second rider for kitesurf lesson demo
-  const riderKite = await prisma.user.create({
+  const acceptedDecisions: Array<{ matchId: string; conversationId: string; createdAt: Date }> = [];
+
+  // Conversation rider-pro
+  const match1 = await prisma.match.create({
+    data: { userOneId: riders[0].id, userTwoId: pros[0].id },
+  });
+  const conv1 = await prisma.conversation.create({
     data: {
-      email: 'dev+kite@test.com',
-      password: hashed,
-      role: Role.RIDER,
-      emailVerified: true,
-      consentedAt: new Date(),
-      consentVersion: 'v1.0.0',
-      consentIp: '127.0.0.1',
-      riderProfile: {
-        create: {
-          displayName: 'Blobkite',
-          bio: 'Kite débutant, cherche cours découverte.',
-          sex: Sex.FEMALE,
-          emailNotif: true,
-          wantsLesson: true,
-          lessonSport: 'kitesurf',
-          lat: 48.8466,
-          lng: 2.3622,
-        },
-      },
-    },
-    include: { riderProfile: true },
+      matchId: match1.id,
+      type: 'RIDER_TO_PRO'
+    }
   });
-  if (riderKite.riderProfile) {
-    await prisma.riderDiscipline.createMany({
-      data: [
-        { profileId: riderKite.riderProfile.id, sport: 'kitesurf', level: 'beginner' },
-      ],
-      skipDuplicates: true,
-    });
-  }
-
-  // Pro user (email verified)
-  const pro = await prisma.user.create({
-    data: {
-      email: 'dev+pro@test.com',
-      password: hashed,
-      role: Role.PRO,
-      emailVerified: true,
-      consentedAt: new Date(),
-      consentVersion: 'v1.0.0',
-      consentIp: '127.0.0.1',
-    },
-  });
-
-  // Create pro profile
-  await prisma.proProfile.create({
-    data: {
-      userId: pro.id,
-      businessName: 'BlobPro School',
-      bio: 'Monitrice indépendante, 8 ans d\'expérience. Cours particuliers et packs découverte.',
-      pricePerHour: 60,
-      emailNotif: true,
-      lat: 48.8666,
-      lng: 2.3122,
-    },
-  });
-
-  // Demo match + conversation + a few messages
-  const match = await prisma.match.create({
-    data: { userOneId: rider.id, userTwoId: pro.id },
-  });
-  const conv = await prisma.conversation.create({ data: { matchId: match.id } });
   await prisma.conversationMember.createMany({
     data: [
-      { conversationId: conv.id, userId: rider.id },
-      { conversationId: conv.id, userId: pro.id },
+      { conversationId: conv1.id, userId: riders[0].id },
+      { conversationId: conv1.id, userId: pros[0].id },
     ],
     skipDuplicates: true,
   });
   await prisma.message.createMany({
     data: [
       {
-        conversationId: conv.id,
-        senderId: rider.id,
+        conversationId: conv1.id,
+        senderId: riders[0].id,
         type: 'TEXT',
-        content: 'Salut ! Partant·e pour une session demain matin ? 🌊',
+        content: 'Salut ! Je suis intéressé par vos cours de surf débutant 🏄‍♂️',
       },
       {
-        conversationId: conv.id,
-        senderId: pro.id,
+        conversationId: conv1.id,
+        senderId: pros[0].id,
         type: 'TEXT',
-        content: 'Oui ! 8h à la plage centrale, houle bien orientée 👍',
+        content: 'Bonjour ! Parfait, nous avons des créneaux libres cette semaine. Vous préférez le matin ou l\'après-midi ?',
+      },
+      {
+        conversationId: conv1.id,
+        senderId: riders[0].id,
+        type: 'PROPOSAL',
+        content: 'Proposition de session Samedi 10h @ Plage centrale',
+        meta: { date: '2025-09-20', place: 'Plage centrale', note: 'Première leçon' },
       },
     ],
     skipDuplicates: true,
   });
 
-  // Optional: a conversation sample could be added later
-  // Keep seed minimal and fast for CI/dev
+  // Conversation rider-rider
+  const match2 = await prisma.match.create({
+    data: { userOneId: riders[1].id, userTwoId: riders[2].id },
+  });
+  const conv2 = await prisma.conversation.create({
+    data: {
+      matchId: match2.id,
+      type: 'RIDER_TO_RIDER'
+    }
+  });
+  await prisma.conversationMember.createMany({
+    data: [
+      { conversationId: conv2.id, userId: riders[1].id },
+      { conversationId: conv2.id, userId: riders[2].id },
+    ],
+    skipDuplicates: true,
+  });
+  await prisma.message.createMany({
+    data: [
+      {
+        conversationId: conv2.id,
+        senderId: riders[1].id,
+        type: 'TEXT',
+        content: 'Hey ! Tu es dispo pour une session kite demain ? 🪁',
+      },
+      {
+        conversationId: conv2.id,
+        senderId: riders[2].id,
+        type: 'TEXT',
+        content: 'Salut ! Oui carrément ! Les conditions ont l\'air top 🌊',
+      },
+    ],
+    skipDuplicates: true,
+  });
 
-  // eslint-disable-next-line no-console
-  console.log('Seed completed: users dev+rider@test.com / dev+pro@test.com (password: Passw0rd!)');
+  // Conversation pro-pro
+  const match3 = await prisma.match.create({
+    data: { userOneId: pros[0].id, userTwoId: pros[1].id },
+  });
+  const conv3 = await prisma.conversation.create({
+    data: {
+      matchId: match3.id,
+      type: 'PRO_TO_PRO'
+    }
+  });
+  await prisma.conversationMember.createMany({
+    data: [
+      { conversationId: conv3.id, userId: pros[0].id },
+      { conversationId: conv3.id, userId: pros[1].id }
+    ],
+    skipDuplicates: true
+  });
+  await prisma.message.createMany({
+    data: [
+      {
+        conversationId: conv3.id,
+        senderId: pros[0].id,
+        type: 'TEXT',
+        content: 'Salut collègue ! Comment ça se passe la saison chez vous ?'
+      },
+      {
+        conversationId: conv3.id,
+        senderId: pros[1].id,
+        type: 'TEXT',
+        content: 'Hey ! Très bien merci, beaucoup de demandes cette année. Et toi ?'
+      }
+    ],
+    skipDuplicates: true
+  });
+
+  console.log('Simulating rider matching decisions...');
+
+  const riderCount = riders.length;
+  for (let i = 0; i < riderCount; i++) {
+    const actor = riders[i];
+    const targets = [riders[(i + 1) % riderCount], riders[(i + 5) % riderCount]];
+
+    for (const target of targets) {
+      if (!target?.riderProfile) continue;
+
+      const decisionType: DecisionKind = (i + targets.indexOf(target)) % 3 === 0 ? 'REFUSE' : 'ACCEPT';
+      const createdAt = randomDateWithin(90);
+
+      await prisma.matchDecision.upsert({
+        where: {
+          actorUserId_targetProfileId: {
+            actorUserId: actor.id,
+            targetProfileId: target.riderProfile.id
+          }
+        },
+        update: {
+          decision: decisionType,
+          updatedAt: createdAt
+        },
+        create: {
+          actorUserId: actor.id,
+          targetProfileId: target.riderProfile.id,
+          decision: decisionType,
+          createdAt,
+          updatedAt: createdAt
+        }
+      });
+
+      if (decisionType === 'ACCEPT') {
+        const existingMatch = await prisma.match.findFirst({
+          where: {
+            OR: [
+              { userOneId: actor.id, userTwoId: target.id },
+              { userOneId: target.id, userTwoId: actor.id }
+            ]
+          }
+        });
+
+        const match = existingMatch
+          ? existingMatch
+          : await prisma.match.create({
+              data: {
+                userOneId: actor.id,
+                userTwoId: target.id,
+                status: MatchStatus.ACTIVE,
+                createdAt,
+                lastActivityAt: addHours(createdAt, 2)
+              }
+            });
+
+        const existingConversation = await prisma.conversation.findFirst({
+          where: {
+            OR: [
+              { matchId: match.id },
+              {
+                members: {
+                  some: { userId: actor.id }
+                },
+                AND: {
+                  members: {
+                    some: { userId: target.id }
+                  }
+                }
+              }
+            ]
+          }
+        });
+
+        if (!existingConversation) {
+          const conversation = await prisma.conversation.create({
+            data: {
+              matchId: match.id,
+              type: 'RIDER_TO_RIDER',
+              createdAt,
+              updatedAt: addHours(createdAt, 3)
+            }
+          });
+
+          await prisma.conversationMember.createMany({
+            data: [
+              { conversationId: conversation.id, userId: actor.id },
+              { conversationId: conversation.id, userId: target.id }
+            ]
+          });
+
+          await prisma.message.createMany({
+            data: [
+              {
+                conversationId: conversation.id,
+                senderId: actor.id,
+                type: 'TEXT',
+                content: `Hey ${target.riderProfile.displayName?.split(' ')[0] ?? 'rider'} ! Session prévue ${createdAt.toLocaleDateString('fr-FR')} ?`,
+                createdAt
+              },
+              {
+                conversationId: conversation.id,
+                senderId: target.id,
+                type: 'TEXT',
+                content: 'Yes, je ramène la wax et on se retrouve sur place.',
+                createdAt: addHours(createdAt, 1)
+              }
+            ]
+          });
+        }
+      }
+    }
+  }
+
+  console.log('Creating extra refuse decisions for analytics balance...');
+
+  for (let i = 0; i < 12; i++) {
+    const actor = riders[(i * 2) % riderCount];
+    const target = riders[(i * 3 + 4) % riderCount];
+    if (!target.riderProfile) continue;
+    const createdAt = randomDateWithin(120);
+    await prisma.matchDecision.upsert({
+      where: {
+        actorUserId_targetProfileId: {
+          actorUserId: actor.id,
+          targetProfileId: target.riderProfile.id
+        }
+      },
+      update: {
+        decision: 'REFUSE',
+        updatedAt: createdAt
+      },
+      create: {
+        actorUserId: actor.id,
+        targetProfileId: target.riderProfile.id,
+        decision: 'REFUSE',
+        createdAt,
+        updatedAt: createdAt
+      }
+    });
+  }
+
+  console.log('Creating support reports...');
+  for (let i = 0; i < 6; i++) {
+    const reporter = riders[i];
+    const reported = riders[(i + 6) % riderCount];
+    if (!reported.riderProfile) continue;
+    await prisma.profileReport.create({
+      data: {
+        reporterUserId: reporter.id,
+        reportedProfileId: reported.riderProfile.id,
+        reason: i % 2 === 0 ? 'Problème comportement' : 'Profil suspect',
+        createdAt: randomDateWithin(40)
+      }
+    });
+  }
+
+  console.log('Creating availability samples...');
+
+  const availabilityBaseStart = addHours(new Date(), 4);
+  const availabilityDefinitions = [
+    {
+      proUserId: pros[0].id,
+      sport: Sport.surf,
+      levels: ['beginner', 'intermediate'],
+      startAt: availabilityBaseStart,
+      endAt: addHours(availabilityBaseStart, 2),
+      capacity: 4,
+      bookedCount: 1,
+      status: 'OPEN' as const,
+      spotName: 'Plage Centrale',
+      spotLat: 43.493,
+      spotLng: -1.558,
+      price: '60.00'
+    },
+    {
+      proUserId: pros[1].id,
+      sport: Sport.kitesurf,
+      levels: ['intermediate', 'advanced'],
+      startAt: addHours(availabilityBaseStart, 8),
+      endAt: addHours(availabilityBaseStart, 10),
+      capacity: 3,
+      bookedCount: 0,
+      status: 'OPEN' as const,
+      spotName: 'Lagune Nord',
+      spotLat: 43.210,
+      spotLng: -1.456,
+      price: '85.00'
+    },
+    {
+      proUserId: pros[2].id,
+      sport: Sport.surf,
+      levels: ['beginner'],
+      startAt: addHours(availabilityBaseStart, 20),
+      endAt: addHours(availabilityBaseStart, 22),
+      capacity: 2,
+      bookedCount: 0,
+      status: 'OPEN' as const,
+      spotName: 'Spot Secret',
+      spotLat: 43.320,
+      spotLng: -1.60,
+      price: '55.00'
+    }
+  ];
+
+  const availabilityRecords = await Promise.all(
+    availabilityDefinitions.map((slot) =>
+      prisma.proAvailability.create({
+        data: {
+          proUserId: slot.proUserId,
+          sport: slot.sport,
+          levels: slot.levels,
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          capacity: slot.capacity,
+          bookedCount: slot.bookedCount,
+          status: slot.status,
+          spotName: slot.spotName,
+          spotLat: slot.spotLat,
+          spotLng: slot.spotLng,
+          price: slot.price
+        }
+      })
+    )
+  );
+
+  await prisma.bookingRequest.create({
+    data: {
+      riderUserId: riders[0].id,
+      availabilityId: availabilityRecords[0].id,
+      status: BookingRequestStatus.ACCEPTED,
+      respondedAt: new Date(),
+      message: 'Départ depuis Biarritz, ok pour co-voiturage ?'
+    }
+  });
+
+  await prisma.booking.create({
+    data: {
+      availabilityId: availabilityRecords[0].id,
+      riderUserId: riders[0].id,
+      status: 'CONFIRMED'
+    }
+  });
+
+  await prisma.bookingRequest.create({
+    data: {
+      riderUserId: riders[3].id,
+      availabilityId: availabilityRecords[1].id,
+      status: BookingRequestStatus.PENDING,
+      message: 'Intéressé pour progresser en kite !'
+    }
+  });
+  console.log('✅ Seed completed successfully!');
+  console.log('📧 20 riders: dev+rider1@test.com to dev+rider20@test.com');
+  console.log('🏄 5 pros: dev+pro1@test.com to dev+pro5@test.com');
+  console.log('👨‍💼 1 admin: dev+admin@test.com');
+  console.log('🔑 Password for all accounts: Passw0rd!');
+  console.log('📍 Users spread across 15 French locations');
+  console.log('🎯 Varied levels, sports, and preferences + recherches récentes');
+  console.log('🕒 Sessions générées pour refléter l’activité des riders');
+  console.log('🤝 Décisions de matching acceptées/refusées avec conversations simulées');
+  console.log('📅 Créneaux pros disponibles + exemples de demandes');
+  console.log('🚨 Signalements de support pour alimenter les analytics');
+
   if (!client) await prisma.$disconnect();
 }
 
