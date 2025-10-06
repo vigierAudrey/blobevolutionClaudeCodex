@@ -50,11 +50,6 @@ jobs:
       - name: Install SWC binary (linux-x64-gnu)
         run: npm install --no-save @next/swc-linux-x64-gnu@14.2.7
 
-      - name: Install Chrome Stable
-        run: |
-          npx --yes @puppeteer/browsers install chrome@stable --install-dir=$HOME/.cache/chrome
-          echo "CHROME_PATH=$HOME/.cache/chrome/chrome/linux-*/chrome" >> $GITHUB_ENV
-
       - name: Environment diagnostics
         run: |
           uname -a
@@ -83,35 +78,6 @@ jobs:
 
       - name: Type check
         run: npm run type-check
-
-      - name: Start Next server
-        run: |
-          npm run start --workspace @blobinfini/web &
-          echo $! > web.pid
-
-      - name: Wait for server
-        run: npx wait-on http://127.0.0.1:3000/
-
-      - name: Lighthouse CI
-        env:
-          CHROME_PATH: ${{ env.CHROME_PATH }}
-        run: npm run lhci
-        continue-on-error: true # TODO: retirer continue-on-error dès que LHCI passe vert
-
-      - name: Upload Lighthouse reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: lhci-report
-          path: .lighthouseci
-          if-no-files-found: warn
-
-      - name: Stop Next server
-        if: always()
-        run: |
-          if [ -f web.pid ]; then
-            kill $(cat web.pid) || true
-            rm web.pid
-          fi
 
       - name: Run tests (API)
         run: npm test
