@@ -1,0 +1,33 @@
+{
+  "ci": {
+    "collect": {
+      "url": [
+        "http://localhost:3000/",
+        "http://localhost:3000/blobosphere"
+      ],
+      "numberOfRuns": 1,
+      "settings": {
+        "chromeFlags": [
+          "--no-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-software-rasterizer",
+          "--disable-gpu"
+        ],
+        "emulatedFormFactor": "desktop",
+        "disableStorageReset": true
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.9 }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 2500, "aggregationMethod": "median" }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1, "aggregationMethod": "median" }],
+        "total-blocking-time": ["error", { "maxNumericValue": 200, "aggregationMethod": "median" }]
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": ".lighthouseci"
+    }
+  }
+}
