@@ -77,7 +77,7 @@ jobs:
         run: npm run db:generate
 
       - name: Run DB migrations
-        run: npm run db:migrate
+        run: npm run db:migrate:deploy
 
       - name: Build web app
         run: npm run build --workspace @blobinfini/web
