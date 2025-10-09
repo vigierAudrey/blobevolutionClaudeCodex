@@ -1,3 +1,6 @@
+// ISR with 5min revalidation
+export const revalidate = 300;
+
 export const metadata = {
   title: 'Charte et avertissement – Blobinfini',
 };

@@ -1,4 +1,7 @@
 "use client";
+
+// Force SSR for dynamic pro/messaging features
+export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';

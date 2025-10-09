@@ -1,4 +1,7 @@
 "use client";
+
+// Force SSR for dynamic user-specific features
+export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';

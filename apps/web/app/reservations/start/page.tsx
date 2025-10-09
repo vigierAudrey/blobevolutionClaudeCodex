@@ -1,8 +1,11 @@
 "use client";
 
+// Force SSR for dynamic user-specific features
+export const dynamic = 'force-dynamic';
+
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
+import dynamicImport from 'next/dynamic';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
@@ -11,7 +14,7 @@ import { ReservationStepper } from '../../../components/reservations/Reservation
 import { RiderMiniaturesStrip } from '../../../components/reservations/RiderMiniaturesStrip';
 import { apiClient, type BookingAvailabilityResult } from '../../../lib/apiClient';
 
-const AvailabilityMap = dynamic(() => import('../../../components/MapComponent'), { ssr: false });
+const AvailabilityMap = dynamicImport(() => import('../../../components/MapComponent'), { ssr: false });
 
 const sports: Array<{ id: 'surf' | 'kitesurf'; label: string }> = [
   { id: 'surf', label: 'Surf' },

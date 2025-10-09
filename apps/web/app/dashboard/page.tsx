@@ -9,6 +9,9 @@ import Link from 'next/link';
 import { User, Map, Wallet, Percent, Info, LogOut, MessageSquare, Briefcase } from 'lucide-react';
 import { AdBannerSidebar } from '../../components/ads/AdBanner';
 
+// Force SSR due to auth context and dynamic user data
+export const dynamic = 'force-dynamic';
+
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);

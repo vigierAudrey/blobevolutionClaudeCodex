@@ -1,17 +1,11 @@
 import type { Metadata } from 'next';
-import dynamic from 'next/dynamic';
 import Script from 'next/script';
 import './globals.css';
-import type { ClientProviderProps } from '@/components/ui/ClientProvider';
+import ClientProvider from '@/components/ui/ClientProvider';
 import { CookieConsent } from '../components/cookies/CookieConsent';
 
-const ClientProvider = dynamic<ClientProviderProps>(
-  () => import('@/components/ui/ClientProvider'),
-  {
-    ssr: false,
-    loading: (props) => <>{(props as ClientProviderProps).children}</>,
-  }
-);
+// Root layout provides HTML shell + ClientProvider for all pages
+// Static pages in (static)/ use ISR with revalidate=300 and avoid using contexts
 
 export const metadata: Metadata = {
   title: 'Blobinfini — Auth',

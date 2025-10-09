@@ -1,5 +1,5 @@
 "use client";
-import dynamic from 'next/dynamic';
+import dynamicImport from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -10,8 +10,11 @@ import { useRouter } from 'next/navigation';
 
 import { MapSkeleton } from '../../../components/ui/skeleton';
 
+// Force SSR due to Leaflet map (dynamic import with ssr:false)
+export const dynamic = 'force-dynamic';
+
 // Import dynamique de toute la carte pour éviter les problèmes SSR
-const MapComponent = dynamic(() => import('../../../components/MapComponent'), {
+const MapComponent = dynamicImport(() => import('../../../components/MapComponent'), {
   ssr: false,
   loading: () => <MapSkeleton />
 });

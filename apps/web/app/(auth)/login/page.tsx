@@ -1,6 +1,8 @@
 "use client";
-import { AuthForm } from '../../components/AuthForm';
-import { BackBar } from '../../components/BackBar';
+
+export const dynamic = 'force-dynamic';
+import { AuthForm } from '@/components/AuthForm';
+import { BackBar } from '@/components/BackBar';
 
 export default function LoginPage() {
   return (

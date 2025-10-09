@@ -1,6 +1,9 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import { BackBar } from '../../components/BackBar';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { BackBar } from '@/components/BackBar';
 import Link from 'next/link';
+
+// ISR with 5min revalidation
+export const revalidate = 300;
 
 export default function AboutPage() {
   return (

@@ -1,4 +1,7 @@
 "use client";
+
+// Force SSR for dynamic user-specific features
+export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../../lib/apiClient';
 import { useRouter } from 'next/navigation';

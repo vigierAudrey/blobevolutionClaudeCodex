@@ -1,11 +1,13 @@
 "use client";
+
+export const dynamic = 'force-dynamic';
 import { useState } from 'react';
-import { apiClient } from '../../lib/apiClient';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import { Label } from '../../components/ui/label';
-import { Input } from '../../components/ui/input';
-import { Button } from '../../components/ui/button';
-import { BackBar } from '../../components/BackBar';
+import { apiClient } from '@/lib/apiClient';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { BackBar } from '@/components/BackBar';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');

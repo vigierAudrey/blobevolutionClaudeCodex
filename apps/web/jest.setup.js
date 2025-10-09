@@ -99,14 +99,33 @@ global.PerformanceObserver = class PerformanceObserver {
 // Suppress act() warnings for async state updates in setTimeout/promises
 // These are expected in our toast/dialog components
 const originalError = console.error;
+const suppressedDomProps = new Set([
+  'maxZoom',
+  'tileSize',
+  'pathOptions',
+  'detectRetina',
+  'updateWhenIdle',
+  'maxBounds',
+  'keepBuffer',
+  'scrollWheelZoom',
+  'wheelPxPerZoomLevel',
+]);
+
 beforeAll(() => {
   console.error = (...args) => {
-    if (
-      typeof args[0] === 'string' &&
-      args[0].includes('An update to') &&
-      args[0].includes('was not wrapped in act')
-    ) {
-      return;
+    const [message] = args;
+    if (typeof message === 'string') {
+      const isActWarning =
+        message.includes('An update to') && message.includes('was not wrapped in act');
+      const isLeafletDomWarning =
+        message.startsWith('Warning: React does not recognize the `%s` prop on a DOM element.') &&
+        args.length > 1 &&
+        typeof args[1] === 'string' &&
+        suppressedDomProps.has(args[1]);
+
+      if (isActWarning || isLeafletDomWarning) {
+        return;
+      }
     }
     originalError.call(console, ...args);
   };

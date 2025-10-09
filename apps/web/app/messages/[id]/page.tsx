@@ -1,4 +1,7 @@
 "use client";
+
+// Force SSR for dynamic pro/messaging features
+export const dynamic = 'force-dynamic';
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';

@@ -1,4 +1,7 @@
 "use client";
+
+// Force SSR for dynamic user-specific features
+export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Label } from '../../components/ui/label';

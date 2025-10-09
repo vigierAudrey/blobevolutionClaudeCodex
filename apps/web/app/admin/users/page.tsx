@@ -1,4 +1,7 @@
 "use client";
+
+// Force SSR for admin auth and dynamic data
+export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
