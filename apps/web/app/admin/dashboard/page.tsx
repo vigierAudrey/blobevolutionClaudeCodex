@@ -7,6 +7,9 @@ import { apiClient } from '../../../lib/apiClient';
 import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react';
 import Link from 'next/link';
 
+// Force SSR for admin auth and dynamic stats
+export const dynamic = 'force-dynamic';
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);

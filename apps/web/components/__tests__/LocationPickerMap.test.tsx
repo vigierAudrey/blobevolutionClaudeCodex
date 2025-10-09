@@ -20,11 +20,20 @@ jest.mock('leaflet', () => {
 });
 
 jest.mock('react-leaflet', () => {
-  const MapContainer = ({ children, center, zoom, ...rest }: any) => (
-    <div data-testid="map-container" data-center={JSON.stringify(center)} data-zoom={zoom} {...rest}>
-      {children}
-    </div>
-  );
+  const MapContainer = ({ children, center, zoom, ...rest }: any) => {
+    const { scrollWheelZoom, ...divProps } = rest;
+    return (
+      <div
+        data-testid="map-container"
+        data-center={JSON.stringify(center)}
+        data-zoom={zoom}
+        data-scroll-wheel-zoom={scrollWheelZoom ?? 'undefined'}
+        {...divProps}
+      >
+        {children}
+      </div>
+    );
+  };
   const TileLayer = (props: any) => <div data-testid="tile-layer" {...props} />;
   const mapInstance = {
     setView: jest.fn(),

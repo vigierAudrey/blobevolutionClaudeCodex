@@ -1,7 +1,10 @@
 "use client";
 
+// Force SSR for dynamic pro/messaging features
+export const dynamic = 'force-dynamic';
+
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import dynamic from 'next/dynamic';
+import dynamicImport from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -20,14 +23,6 @@ import type {
 type AvailabilityView = BookingAvailability;
 interface RequestView extends BookingRequestInboxItem {}
 
-const LocationPickerMap = dynamic(() => import('../../../components/LocationPickerMap'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
-      Chargement de la carte…
-    </div>
-  ),
-});
 
 const STORAGE_KEY = 'pro-planning:last-slot';
 const STORAGE_VERSION = 1;
@@ -356,7 +351,7 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
 
   const LocationPickerMap = useMemo(
     () =>
-      dynamic(() => import('../../../components/LocationPickerMap'), {
+      dynamicImport(() => import('../../../components/LocationPickerMap'), {
         ssr: false,
         loading: () => (
           <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">

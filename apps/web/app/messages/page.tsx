@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { BackBar } from '../../components/BackBar';
 import { apiClient } from '../../lib/apiClient';
 
+// Force SSR for real-time messaging
+export const dynamic = 'force-dynamic';
+
 type ConversationItem = {
   id: string;
   type: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO';

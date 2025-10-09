@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 type ToastType = 'success' | 'error' | 'info';
 type Toast = { id: string; type: ToastType; message: string; timeout: number };
@@ -35,8 +35,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 export function useToast() {
   const ctx = useContext(ToastContext);
   if (!ctx) {
-    // Fallback for SSR/prerender: return no-op function
-    return () => {};
+    throw new Error('useToast must be used within ToastProvider');
   }
   return ctx.toast;
 }
@@ -65,4 +64,3 @@ export function Toaster({ toasts }: { toasts: Toast[] }) {
     </div>
   );
 }
-

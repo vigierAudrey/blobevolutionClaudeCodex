@@ -18,6 +18,9 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
   const [currentConsent, setCurrentConsent] = useState<ConsentLevel>('none');
 
   useEffect(() => {
+    // Guard SSR: only run in browser
+    if (typeof window === 'undefined') return;
+
     // Vérifier le consentement existant
     const savedConsent = localStorage.getItem('cookie-consent') as ConsentLevel | null;
     if (savedConsent) {
@@ -35,13 +38,17 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
 
   const handleConsent = (level: ConsentLevel) => {
     setCurrentConsent(level);
-    localStorage.setItem('cookie-consent', level);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cookie-consent', level);
+    }
     setIsVisible(false);
     onConsentChange?.(level);
   };
 
   const resetConsent = () => {
-    localStorage.removeItem('cookie-consent');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('cookie-consent');
+    }
     setCurrentConsent('none');
     setIsVisible(true);
   };
@@ -166,6 +173,7 @@ export function useCookieConsent() {
   const [consentLevel, setConsentLevel] = useState<ConsentLevel>('none');
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const savedConsent = localStorage.getItem('cookie-consent') as ConsentLevel | null;
     if (savedConsent) {
       setConsentLevel(savedConsent);
@@ -174,7 +182,9 @@ export function useCookieConsent() {
 
   const updateConsent = (level: ConsentLevel) => {
     setConsentLevel(level);
-    localStorage.setItem('cookie-consent', level);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cookie-consent', level);
+    }
   };
 
   return {

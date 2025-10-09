@@ -9,7 +9,7 @@ interface PerformanceMetric {
   timestamp: number;
   cacheHit?: boolean;
   endpoint?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 interface PerformanceStats {
@@ -188,7 +188,12 @@ class PerformanceMonitor {
 export const performanceMonitor = new PerformanceMonitor();
 
 // Helper function to create a performance measurement
-export function measurePerformance(name: string, cacheHit = false, endpoint?: string, metadata?: any) {
+export function measurePerformance(
+  name: string,
+  cacheHit = false,
+  endpoint?: string,
+  metadata?: Record<string, unknown>
+) {
   const start = performance.now();
   return {
     end: () => {
@@ -209,7 +214,17 @@ export function measurePerformance(name: string, cacheHit = false, endpoint?: st
 // Development helpers
 if (process.env.NODE_ENV === 'development') {
   // Expose performance monitor for debugging
-  (window as any).debugPerformance = {
+  type DebugPerformanceWindow = typeof window & {
+    debugPerformance?: {
+      monitor: PerformanceMonitor;
+      stats: () => ReturnType<PerformanceMonitor['getAllStats']>;
+      report: () => void;
+      clear: () => void;
+      export: () => void;
+    };
+  };
+
+  (window as DebugPerformanceWindow).debugPerformance = {
     monitor: performanceMonitor,
     stats: () => performanceMonitor.getAllStats(),
     report: () => console.log(performanceMonitor.generateReport()),
@@ -241,35 +256,40 @@ export function trackWebVitals() {
     // Track Largest Contentful Paint
     new PerformanceObserver((list) => {
       const entries = list.getEntries();
-      const lastEntry = entries[entries.length - 1] as any;
-      performanceMonitor.record({
-        name: 'LCP',
-        duration: lastEntry.startTime,
-        timestamp: Date.now(),
-        metadata: { value: lastEntry.startTime },
-      });
+      const lastEntry = entries[entries.length - 1];
+      if (lastEntry) {
+        performanceMonitor.record({
+          name: 'LCP',
+          duration: lastEntry.startTime,
+          timestamp: Date.now(),
+          metadata: { value: lastEntry.startTime },
+        });
+      }
     }).observe({ entryTypes: ['largest-contentful-paint'] });
 
     // Track First Input Delay
     new PerformanceObserver((list) => {
-      const entries = list.getEntries() as any[];
+      const entries = list.getEntries();
       entries.forEach((entry) => {
-        performanceMonitor.record({
-          name: 'FID',
-          duration: entry.processingStart - entry.startTime,
-          timestamp: Date.now(),
-          metadata: { value: entry.processingStart - entry.startTime },
-        });
+        if ('processingStart' in entry) {
+          const duration = (entry as EventTimingEntry).processingStart - entry.startTime;
+          performanceMonitor.record({
+            name: 'FID',
+            duration,
+            timestamp: Date.now(),
+            metadata: { value: duration },
+          });
+        }
       });
     }).observe({ entryTypes: ['first-input'] });
 
     // Track Cumulative Layout Shift
     let clsValue = 0;
     new PerformanceObserver((list) => {
-      const entries = list.getEntries() as any[];
+      const entries = list.getEntries();
       entries.forEach((entry) => {
-        if (!entry.hadRecentInput) {
-          clsValue += entry.value;
+        if ('hadRecentInput' in entry && 'value' in entry && !entry.hadRecentInput) {
+          clsValue += (entry as LayoutShiftEntry).value;
         }
       });
       performanceMonitor.record({
@@ -286,3 +306,5 @@ export function trackWebVitals() {
 if (typeof window !== 'undefined') {
   trackWebVitals();
 }
+type EventTimingEntry = PerformanceEntry & { processingStart: number };
+type LayoutShiftEntry = PerformanceEntry & { value: number; hadRecentInput: boolean };

@@ -1,5 +1,8 @@
 import Link from 'next/link';
 
+// ISR with 5min revalidation - best compromise for static-like performance
+export const revalidate = 300;
+
 export default function Home() {
   return (
     <div className="max-w-md mx-auto">

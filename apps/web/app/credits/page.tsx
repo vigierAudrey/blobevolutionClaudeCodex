@@ -1,4 +1,7 @@
 "use client";
+
+// Force SSR for dynamic user-specific features
+export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../components/BackBar';

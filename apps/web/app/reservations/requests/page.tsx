@@ -1,5 +1,8 @@
 "use client";
 
+// Force SSR for dynamic user-specific features
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';

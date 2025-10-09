@@ -1,5 +1,8 @@
 "use client";
 
+// Force SSR for admin auth and dynamic data
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';

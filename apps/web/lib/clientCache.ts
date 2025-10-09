@@ -23,7 +23,7 @@ interface CacheConfig {
 }
 
 class ClientCache {
-  private memoryCache = new Map<string, CacheItem<any>>();
+  private memoryCache = new Map<string, CacheItem<unknown>>();
   private currentSize = 0;
   private config: CacheConfig;
 
@@ -40,7 +40,7 @@ class ClientCache {
    * Get cached data if available and not expired
    */
   get<T>(key: string): T | null {
-    const item = this.memoryCache.get(key);
+    const item = this.memoryCache.get(key) as CacheItem<T> | undefined;
 
     if (!item) {
       return null;
@@ -176,7 +176,7 @@ class ClientCache {
   /**
    * Estimate size of data in bytes
    */
-  private estimateSize(data: any): number {
+  private estimateSize(data: unknown): number {
     try {
       return new Blob([JSON.stringify(data)]).size;
     } catch {
@@ -194,12 +194,26 @@ export const clientCache = new ClientCache({
 });
 
 // Cache key generators for different data types
+type MatchingSearchParams = {
+  sport: string;
+  level: string;
+  date: string;
+  location?: { lat: number; lng: number };
+  [key: string]: unknown;
+};
+
+type OffersSearchParams = {
+  sport?: string;
+  level?: string;
+  [key: string]: unknown;
+};
+
 export const CacheKeys = {
   user: () => 'user:me',
   profile: () => 'profile:me',
   disciplines: () => 'profile:disciplines',
   conversations: () => 'conversations:list',
-  searchMatching: (params: any) => {
+  searchMatching: (params: MatchingSearchParams) => {
     const key = `search:${params.sport}:${params.level}:${params.date}`;
     if (params.location) {
       return `${key}:${Math.floor(params.location.lat * 100)}:${Math.floor(params.location.lng * 100)}`;
@@ -208,7 +222,8 @@ export const CacheKeys = {
   },
   proAvailabilities: () => 'pro:availabilities',
   proInbox: () => 'pro:inbox',
-  offers: (params: any) => `offers:${params.sport || 'all'}:${params.level || 'all'}`,
+  offers: (params: OffersSearchParams) =>
+    `offers:${params.sport || 'all'}:${params.level || 'all'}`,
 };
 
 // Cache TTL constants (in milliseconds)

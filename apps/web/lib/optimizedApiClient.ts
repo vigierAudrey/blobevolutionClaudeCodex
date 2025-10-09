@@ -8,17 +8,15 @@ import { clientCache, CacheKeys, CacheTTL } from './clientCache';
 import { measurePerformance } from './performanceMonitor';
 
 // Debounce utilities
-type DebouncedFunction<T extends (...args: any[]) => any> = (...args: Parameters<T>) => Promise<Awaited<ReturnType<T>>>;
-
-function debounce<T extends (...args: any[]) => Promise<any>>(
-  func: T,
+function debounce<TArgs extends unknown[], TResult>(
+  func: (...args: TArgs) => Promise<TResult>,
   delay: number
-): DebouncedFunction<T> {
+): (...args: TArgs) => Promise<TResult> {
   let timeoutId: NodeJS.Timeout;
-  let latestResolve: ((value: Awaited<ReturnType<T>>) => void) | null = null;
-  let latestReject: ((reason?: any) => void) | null = null;
+  let latestResolve: ((value: TResult) => void) | null = null;
+  let latestReject: ((reason?: unknown) => void) | null = null;
 
-  return (...args: Parameters<T>): Promise<Awaited<ReturnType<T>>> => {
+  return (...args: TArgs): Promise<TResult> => {
     return new Promise((resolve, reject) => {
       // Clear existing timeout
       if (timeoutId) {
@@ -43,7 +41,7 @@ function debounce<T extends (...args: any[]) => Promise<any>>(
 }
 
 // Request deduplication
-const pendingRequests = new Map<string, Promise<any>>();
+const pendingRequests = new Map<string, Promise<unknown>>();
 
 async function deduplicateRequest<T>(key: string, requestFn: () => Promise<T>): Promise<T> {
   if (pendingRequests.has(key)) {
@@ -136,7 +134,7 @@ export const optimizedApiClient = {
 
   // Debounced search with caching
   searchMatching: debounce(
-    async (params: any) => {
+    async (params: Parameters<typeof apiClient.searchMatching>[0]) => {
       const cacheKey = CacheKeys.searchMatching(params);
       return cachedRequest(
         cacheKey,
@@ -148,7 +146,9 @@ export const optimizedApiClient = {
   ),
 
   // Cached conversations with shorter TTL for real-time feel
-  listConversations: (opts?: any) => cachedRequest(
+  listConversations: (
+    opts?: Parameters<typeof apiClient.listConversations>[0]
+  ) => cachedRequest(
     `${CacheKeys.conversations()}:${JSON.stringify(opts || {})}`,
     () => apiClient.listConversations(opts),
     CacheTTL.CONVERSATIONS
@@ -184,11 +184,14 @@ export const optimizedApiClient = {
   },
 
   // Prefetching for predicted user actions
-  async prefetchMatchingData(params: any) {
+  async prefetchMatchingData(params: Parameters<typeof apiClient.searchMatching>[0]) {
     console.log('🔮 Prefetching matching data...');
 
     // Prefetch next page
-    const nextPageParams = { ...params, page: (params.page || 1) + 1 };
+    const nextPageParams: Parameters<typeof apiClient.searchMatching>[0] = {
+      ...params,
+      page: (params.page || 1) + 1,
+    };
     this.searchMatching(nextPageParams).catch(() => {}); // Silent prefetch
 
     // Prefetch conversations for quick access
@@ -212,21 +215,25 @@ export const optimizedApiClient = {
   },
 
   // Pass-through methods for non-cached operations
-  updateProfile: async (body: any) => {
+  updateProfile: async (body: Record<string, unknown>) => {
     const result = await apiClient.updateProfile(body);
     // Invalidate related cache
     optimizedApiClient.invalidateUserData();
     return result;
   },
 
-  setDisciplines: async (items: any) => {
+  setDisciplines: async (
+    items: Parameters<typeof apiClient.setDisciplines>[0]
+  ) => {
     const result = await apiClient.setDisciplines(items);
     // Invalidate disciplines cache
     clientCache.delete(CacheKeys.disciplines());
     return result;
   },
 
-  matchDecisions: async (decisions: any) => {
+  matchDecisions: async (
+    decisions: Parameters<typeof apiClient.matchDecisions>[0]
+  ) => {
     const result = await apiClient.matchDecisions(decisions);
     // Invalidate conversations cache as new matches might be created
     clientCache.invalidatePattern('^conversations:');
@@ -308,7 +315,17 @@ apiClient.updateProfile = async (...args) => {
 // Development helpers
 if (process.env.NODE_ENV === 'development') {
   // Expose cache for debugging
-  (window as any).debugCache = {
+  type DebugCacheWindow = typeof window & {
+    debugCache?: {
+      cache: typeof clientCache;
+      keys: typeof CacheKeys;
+      ttl: typeof CacheTTL;
+      stats: () => ReturnType<typeof clientCache.getStats>;
+      clear: () => void;
+    };
+  };
+
+  (window as DebugCacheWindow).debugCache = {
     cache: clientCache,
     keys: CacheKeys,
     ttl: CacheTTL,

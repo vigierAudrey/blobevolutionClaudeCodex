@@ -7,6 +7,9 @@ import { Input } from '../../../components/ui/input';
 import { apiClient } from '../../../lib/apiClient';
 import { Button } from '../../../components/ui/button';
 
+// Force SSR due to useSearchParams and localStorage usage
+export const dynamic = 'force-dynamic';
+
 type Sport = 'surf' | 'kitesurf';
 type Level = 'beginner' | 'intermediate' | 'advanced';
 type Partner = 'ALL' | 'WOMEN' | 'MEN';

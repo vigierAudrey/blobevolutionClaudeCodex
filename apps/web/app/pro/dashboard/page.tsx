@@ -1,4 +1,7 @@
 "use client";
+
+// Force SSR for dynamic pro/messaging features
+export const dynamic = 'force-dynamic';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { optimizedApiClient, measureApiPerformance } from '../../../lib/optimizedApiClient';

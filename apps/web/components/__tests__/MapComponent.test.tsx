@@ -45,22 +45,22 @@ jest.mock('react-leaflet', () => {
     current: null,
   };
   const markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }> = [];
-  const MapContainer = ({ children, center, zoom, ...rest }: any) => (
-    <div data-testid="map-container" data-center={JSON.stringify(center)} data-zoom={zoom} {...rest}>
+  const MapContainer = ({ children, center, zoom }: any) => (
+    <div data-testid="map-container" data-center={JSON.stringify(center)} data-zoom={zoom}>
       {children}
     </div>
   );
-  const TileLayer = (props: any) => <div data-testid="tile-layer" {...props} />;
-  const Marker = ({ children, position, eventHandlers, ...rest }: any) => {
+  const TileLayer = () => <div data-testid="tile-layer" />;
+  const Marker = ({ children, position, eventHandlers }: any) => {
     markerInstances.push({ eventHandlers, position });
     return (
-      <div data-testid="marker" data-position={JSON.stringify(position)} {...rest}>
+      <div data-testid="marker" data-position={JSON.stringify(position)}>
         {children}
       </div>
     );
   };
   const Popup = ({ children }: any) => <div data-testid="popup">{children}</div>;
-  const Circle = (props: any) => <div data-testid="circle" {...props} />;
+  const Circle = () => <div data-testid="circle" />;
 
   return {
     __esModule: true,

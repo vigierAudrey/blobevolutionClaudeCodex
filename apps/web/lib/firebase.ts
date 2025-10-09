@@ -3,7 +3,7 @@
  */
 
 import { initializeApp } from 'firebase/app';
-import { getMessaging, getToken, onMessage, type Messaging } from 'firebase/messaging';
+import { getMessaging, getToken, onMessage, type Messaging, type MessagePayload } from 'firebase/messaging';
 
 // Firebase config - These should be environment variables in production
 const firebaseConfig = {
@@ -102,7 +102,7 @@ export function onTokenRefresh(callback: (token: string) => void) {
   if (!messaging) return () => {};
 
   // Listen for token refresh
-  return onMessage(messaging, (payload) => {
+  return onMessage(messaging, (payload: MessagePayload) => {
     console.log('🔄 Token refreshed or message received:', payload);
 
     // Handle foreground messages
@@ -110,13 +110,26 @@ export function onTokenRefresh(callback: (token: string) => void) {
       // Show notification when app is in foreground
       showForegroundNotification(payload.notification);
     }
+
+    const refreshedToken = payload.data?.token;
+    if (refreshedToken) {
+      callback(refreshedToken);
+    }
   });
 }
 
 /**
  * Show notification when app is in foreground
  */
-function showForegroundNotification(notification: any) {
+type ForegroundNotification = {
+  title?: string;
+  body?: string;
+  icon?: string;
+  badge?: string;
+  requireInteraction?: boolean;
+};
+
+function showForegroundNotification(notification: ForegroundNotification) {
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification(notification.title || 'Blobinfini', {
       body: notification.body,
