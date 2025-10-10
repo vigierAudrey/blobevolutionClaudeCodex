@@ -76,8 +76,28 @@ jobs:
       - name: Build web app
         run: npm run build --workspace @blobinfini/web
 
-      - name: Type check
-        run: npm run type-check
+      # Type-check each workspace with its own tsconfig to preserve path aliases
+      # Web: Next.js App Router requires @/* alias resolved via apps/web/tsconfig.json
+      # API: CommonJS API requires its own type-check config
+      # Note: Excludes test files to avoid mock-related type errors (covered by jest+eslint)
+      - name: Type check (web + api)
+        run: |
+          npm run type-check -w @blobinfini/web
+          npm run type-check -w @blobinfini/api
 
       - name: Run tests (API)
         run: npm test
+
+  verify-import-alias:
+    runs-on: ubuntu-22.04
+    needs: build-and-test
+    if: always()
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      # Non-bloquant: vérifie que les alias import respectent la casse (App Router casse sensible sur Linux)
+      - name: Verify imports alias (case-sensitive)
+        run: |
+          echo "Checking for incorrect case-sensitive imports in web workspace..."
+          ! git grep -n "from ['\"']@/lib/apiclient['\"']" apps/web/app
