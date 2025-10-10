@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  // exclure tests/mocks; eslint+jest couvrent cette surface
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/__tests__/**",
+    "**/__mocks__/**",
+    "jest.setup.ts",
+    "jest.setup.js"
+  ]
+}
