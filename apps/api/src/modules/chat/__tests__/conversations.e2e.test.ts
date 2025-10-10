@@ -1,9 +1,15 @@
-import request from 'supertest';
 import { createApp } from '../../../index';
+import request, { SuperAgentTest } from 'supertest';
+import type { Response as SupertestResponse } from 'supertest';
+import { ensureProProfile, ensureRiderProfile, createUser } from '../../../tests/helpers/prismaFactories';
+import { Role } from '@prisma/client';
 import { prisma } from '@blobinfini/database';
 
 describe('Conversations E2E', () => {
   const app = createApp();
+  let agent: SuperAgentTest;
+  let csrfToken: string;
+  const post = (path: string) => agent.post(path).set('X-CSRF-Token', csrfToken);
   let riderAccessToken: string;
   let proAccessToken: string;
   let otherProAccessToken: string;
@@ -12,7 +18,33 @@ describe('Conversations E2E', () => {
   let otherRiderId: string;
   let otherProId: string;
 
+  const resolveUserId = async (
+    response: SupertestResponse,
+    email: string,
+    role: Role,
+  ) => {
+    if (response.body?.userId) {
+      return response.body.userId as string;
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return existing.id;
+    }
+
+    const fallback = await createUser(
+      prisma,
+      { email, role },
+      { rawPassword: 'Passw0rd!' },
+    );
+    return fallback.id;
+  };
+
   beforeAll(async () => {
+    agent = request.agent(app);
+    const csrfRes = await agent.get('/csrf-token').expect(200);
+    csrfToken = csrfRes.body.csrfToken as string;
+
     // Nettoyer la DB
     await prisma.message.deleteMany();
     await prisma.conversationMember.deleteMany();
@@ -24,62 +56,66 @@ describe('Conversations E2E', () => {
     await prisma.user.deleteMany();
 
     // Créer un rider
-    const riderRes = await request(app)
-      .post('/auth/register')
-      .send({ email: 'rider@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true });
-    riderId = riderRes.body.userId;
+    const riderRes = await post('/auth/register')
+      .send({ email: 'rider@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
+      .expect(201);
+    riderId = await resolveUserId(riderRes, 'rider@test.com', Role.RIDER);
 
     // Créer un autre rider
-    const otherRiderRes = await request(app)
-      .post('/auth/register')
-      .send({ email: 'rider2@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true });
-    otherRiderId = otherRiderRes.body.userId;
+    const otherRiderRes = await post('/auth/register')
+      .send({ email: 'rider2@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
+      .expect(201);
+    otherRiderId = await resolveUserId(otherRiderRes, 'rider2@test.com', Role.RIDER);
 
     // Créer un PRO
-    const proRes = await request(app)
-      .post('/auth/register')
-      .send({ email: 'pro@test.com', password: 'Passw0rd!', role: 'PRO', consentAccepted: true });
-    proId = proRes.body.userId;
+    const proRes = await post('/auth/register')
+      .send({ email: 'pro@test.com', password: 'Passw0rd!', role: 'PRO', consentAccepted: true })
+      .expect(201);
+    proId = await resolveUserId(proRes, 'pro@test.com', Role.PRO);
 
     // Créer un autre PRO
-    const otherProRes = await request(app)
-      .post('/auth/register')
-      .send({ email: 'pro2@test.com', password: 'Passw0rd!', role: 'PRO', consentAccepted: true });
-    otherProId = otherProRes.body.userId;
+    const otherProRes = await post('/auth/register')
+      .send({ email: 'pro2@test.com', password: 'Passw0rd!', role: 'PRO', consentAccepted: true })
+      .expect(201);
+    otherProId = await resolveUserId(otherProRes, 'pro2@test.com', Role.PRO);
 
     // Login rider
-    const riderLogin = await request(app)
-      .post('/auth/login')
-      .send({ email: 'rider@test.com', password: 'Passw0rd!' });
+    const riderLogin = await post('/auth/login')
+      .send({ email: 'rider@test.com', password: 'Passw0rd!' })
+      .expect(200);
     riderAccessToken = riderLogin.body.accessToken;
 
     // Login PRO
-    const proLogin = await request(app)
-      .post('/auth/login')
-      .send({ email: 'pro@test.com', password: 'Passw0rd!' });
+    const proLogin = await post('/auth/login')
+      .send({ email: 'pro@test.com', password: 'Passw0rd!' })
+      .expect(200);
     proAccessToken = proLogin.body.accessToken;
 
     // Login autre PRO
-    const otherProLogin = await request(app)
-      .post('/auth/login')
-      .send({ email: 'pro2@test.com', password: 'Passw0rd!' });
+    const otherProLogin = await post('/auth/login')
+      .send({ email: 'pro2@test.com', password: 'Passw0rd!' })
+      .expect(200);
     otherProAccessToken = otherProLogin.body.accessToken;
 
     // Créer les profils
-    await prisma.riderProfile.create({
-      data: { userId: riderId, displayName: 'Rider Test' }
+    await ensureRiderProfile(prisma, {
+      userId: riderId,
+      profile: { displayName: 'Rider Test' },
     });
 
-    await prisma.riderProfile.create({
-      data: { userId: otherRiderId, displayName: 'Other Rider' }
+    await ensureRiderProfile(prisma, {
+      userId: otherRiderId,
+      profile: { displayName: 'Other Rider' },
     });
 
-    await prisma.proProfile.create({
-      data: { userId: proId, businessName: 'Pro Business' }
+    await ensureProProfile(prisma, {
+      userId: proId,
+      profile: { businessName: 'Pro Business' },
     });
 
-    await prisma.proProfile.create({
-      data: { userId: otherProId, businessName: 'Other Pro Business' }
+    await ensureProProfile(prisma, {
+      userId: otherProId,
+      profile: { businessName: 'Other Pro Business' },
     });
   });
 
@@ -89,8 +125,7 @@ describe('Conversations E2E', () => {
 
   describe('Opening conversations', () => {
     it('should create RIDER_TO_RIDER conversation', async () => {
-      const res = await request(app)
-        .post('/conversations/open')
+      const res = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: otherRiderId })
         .expect(201);
@@ -105,8 +140,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should create RIDER_TO_PRO conversation', async () => {
-      const res = await request(app)
-        .post('/conversations/open')
+      const res = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: proId })
         .expect(201);
@@ -121,8 +155,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should create PRO_TO_PRO conversation', async () => {
-      const res = await request(app)
-        .post('/conversations/open')
+      const res = await post('/conversations/open')
         .set('Authorization', `Bearer ${proAccessToken}`)
         .send({ targetUserId: otherProId })
         .expect(201);
@@ -138,8 +171,7 @@ describe('Conversations E2E', () => {
 
     it('should create RIDER_TO_PRO conversation when PRO contacts RIDER', async () => {
       // Un PRO qui contacte un RIDER doit créer une conversation RIDER_TO_PRO
-      const res = await request(app)
-        .post('/conversations/open')
+      const res = await post('/conversations/open')
         .set('Authorization', `Bearer ${proAccessToken}`)
         .send({ targetUserId: riderId })
         .expect((res) => {
@@ -163,43 +195,37 @@ describe('Conversations E2E', () => {
 
     beforeAll(async () => {
       // Créer les conversations de test
-      const r2rRes = await request(app)
-        .post('/conversations/open')
+      const r2rRes = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: otherRiderId });
       riderToRiderConvId = r2rRes.body.id;
 
-      const r2pRes = await request(app)
-        .post('/conversations/open')
+      const r2pRes = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: proId });
       riderToProConvId = r2pRes.body.id;
 
-      const p2pRes = await request(app)
-        .post('/conversations/open')
+      const p2pRes = await post('/conversations/open')
         .set('Authorization', `Bearer ${proAccessToken}`)
         .send({ targetUserId: otherProId });
       proToProConvId = p2pRes.body.id;
 
       // Ajouter des messages pour tester
-      await request(app)
-        .post(`/conversations/${riderToRiderConvId}/messages`)
+      await post(`/conversations/${riderToRiderConvId}/messages`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ content: 'Hello other rider!' });
 
-      await request(app)
-        .post(`/conversations/${riderToProConvId}/messages`)
+      await post(`/conversations/${riderToProConvId}/messages`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ content: 'Hello pro!' });
 
-      await request(app)
-        .post(`/conversations/${proToProConvId}/messages`)
+      await post(`/conversations/${proToProConvId}/messages`)
         .set('Authorization', `Bearer ${proAccessToken}`)
         .send({ content: 'Hello other pro!' });
     });
 
     it('should list all conversations', async () => {
-      const res = await request(app)
+      const res = await agent
         .get('/conversations')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -220,7 +246,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should filter by RIDER_TO_RIDER type', async () => {
-      const res = await request(app)
+      const res = await agent
         .get('/conversations?type=RIDER_TO_RIDER')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -231,7 +257,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should filter by RIDER_TO_PRO type', async () => {
-      const res = await request(app)
+      const res = await agent
         .get('/conversations?type=RIDER_TO_PRO')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -242,7 +268,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should filter by PRO_TO_PRO type', async () => {
-      const res = await request(app)
+      const res = await agent
         .get('/conversations?type=PRO_TO_PRO')
         .set('Authorization', `Bearer ${proAccessToken}`)
         .expect(200);
@@ -255,7 +281,7 @@ describe('Conversations E2E', () => {
 
     it('should show PRO conversations correctly for pros', async () => {
       // Un PRO doit voir à la fois ses conversations avec des riders ET avec d'autres pros
-      const res = await request(app)
+      const res = await agent
         .get('/conversations')
         .set('Authorization', `Bearer ${proAccessToken}`)
         .expect(200);
@@ -279,16 +305,14 @@ describe('Conversations E2E', () => {
     let conversationId: string;
 
     beforeAll(async () => {
-      const res = await request(app)
-        .post('/conversations/open')
+      const res = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: proId });
       conversationId = res.body.id;
     });
 
     it('should send message in conversation', async () => {
-      const res = await request(app)
-        .post(`/conversations/${conversationId}/messages`)
+      const res = await post(`/conversations/${conversationId}/messages`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ content: 'Test message', type: 'TEXT' })
         .expect(201);
@@ -297,7 +321,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should get messages from conversation', async () => {
-      const res = await request(app)
+      const res = await agent
         .get(`/conversations/${conversationId}/messages`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -313,16 +337,14 @@ describe('Conversations E2E', () => {
     let conversationId: string;
 
     beforeAll(async () => {
-      const res = await request(app)
-        .post('/conversations/open')
+      const res = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: otherRiderId });
       conversationId = res.body.id;
     });
 
     it('should favorite conversation', async () => {
-      const res = await request(app)
-        .post(`/conversations/${conversationId}/favorite`)
+      const res = await post(`/conversations/${conversationId}/favorite`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ value: true })
         .expect(200);
@@ -331,14 +353,13 @@ describe('Conversations E2E', () => {
     });
 
     it('should trash conversation', async () => {
-      await request(app)
-        .post(`/conversations/${conversationId}/trash`)
+      await post(`/conversations/${conversationId}/trash`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ action: 'trash' })
         .expect(200);
 
       // Vérifier que la conversation n'apparaît plus dans la liste normale
-      const listRes = await request(app)
+      const listRes = await agent
         .get('/conversations')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -348,7 +369,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should show trashed conversation with includeTrashed=true', async () => {
-      const res = await request(app)
+      const res = await agent
         .get('/conversations?includeTrashed=true')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -359,14 +380,13 @@ describe('Conversations E2E', () => {
     });
 
     it('should untrash conversation', async () => {
-      await request(app)
-        .post(`/conversations/${conversationId}/trash`)
+      await post(`/conversations/${conversationId}/trash`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ action: 'untrash' })
         .expect(200);
 
       // Vérifier que la conversation réapparaît dans la liste normale
-      const listRes = await request(app)
+      const listRes = await agent
         .get('/conversations')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -381,16 +401,14 @@ describe('Conversations E2E', () => {
     let conversationId: string;
 
     beforeAll(async () => {
-      const res = await request(app)
-        .post('/conversations/open')
+      const res = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: otherRiderId });
       conversationId = res.body.id;
     });
 
     it('should block conversation', async () => {
-      const res = await request(app)
-        .post(`/conversations/${conversationId}/block`)
+      const res = await post(`/conversations/${conversationId}/block`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ action: 'block' })
         .expect(200);
@@ -399,7 +417,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should show blocked status in conversation list', async () => {
-      const listRes = await request(app)
+      const listRes = await agent
         .get('/conversations')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -411,21 +429,18 @@ describe('Conversations E2E', () => {
 
     it('should prevent blocked user from sending messages', async () => {
       // L'autre rider (qui est bloqué) ne peut plus envoyer de messages
-      const otherRiderLogin = await request(app)
-        .post('/auth/login')
+      const otherRiderLogin = await post('/auth/login')
         .send({ email: 'rider2@test.com', password: 'Passw0rd!' });
       const otherRiderToken = otherRiderLogin.body.accessToken;
 
-      await request(app)
-        .post(`/conversations/${conversationId}/messages`)
+      await post(`/conversations/${conversationId}/messages`)
         .set('Authorization', `Bearer ${otherRiderToken}`)
         .send({ content: 'This should be blocked!' })
         .expect(403);
     });
 
     it('should allow unblocking conversation', async () => {
-      const res = await request(app)
-        .post(`/conversations/${conversationId}/block`)
+      const res = await post(`/conversations/${conversationId}/block`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ action: 'unblock' })
         .expect(200);
@@ -433,7 +448,7 @@ describe('Conversations E2E', () => {
       expect(res.body.blocked).toBe(false);
 
       // Vérifier que le statut est mis à jour
-      const listRes = await request(app)
+      const listRes = await agent
         .get('/conversations')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -444,13 +459,11 @@ describe('Conversations E2E', () => {
 
     it('should allow messages after unblocking', async () => {
       // L'autre rider peut maintenant envoyer des messages
-      const otherRiderLogin = await request(app)
-        .post('/auth/login')
+      const otherRiderLogin = await post('/auth/login')
         .send({ email: 'rider2@test.com', password: 'Passw0rd!' });
       const otherRiderToken = otherRiderLogin.body.accessToken;
 
-      await request(app)
-        .post(`/conversations/${conversationId}/messages`)
+      await post(`/conversations/${conversationId}/messages`)
         .set('Authorization', `Bearer ${otherRiderToken}`)
         .send({ content: 'Message after unblock' })
         .expect(201);
@@ -458,22 +471,19 @@ describe('Conversations E2E', () => {
 
     it('should allow blocking PRO_TO_PRO conversations', async () => {
       // Créer une conversation PRO_TO_PRO
-      const p2pRes = await request(app)
-        .post('/conversations/open')
+      const p2pRes = await post('/conversations/open')
         .set('Authorization', `Bearer ${proAccessToken}`)
         .send({ targetUserId: otherProId });
       const p2pConvId = p2pRes.body.id;
 
       // Bloquer la conversation
-      await request(app)
-        .post(`/conversations/${p2pConvId}/block`)
+      await post(`/conversations/${p2pConvId}/block`)
         .set('Authorization', `Bearer ${proAccessToken}`)
         .send({ action: 'block' })
         .expect(200);
 
       // Vérifier que l'autre PRO ne peut plus envoyer de messages
-      await request(app)
-        .post(`/conversations/${p2pConvId}/messages`)
+      await post(`/conversations/${p2pConvId}/messages`)
         .set('Authorization', `Bearer ${otherProAccessToken}`)
         .send({ content: 'Blocked PRO message' })
         .expect(403);
@@ -481,22 +491,19 @@ describe('Conversations E2E', () => {
 
     it('should allow blocking RIDER_TO_PRO conversations from PRO side', async () => {
       // Créer une conversation RIDER_TO_PRO
-      const r2pRes = await request(app)
-        .post('/conversations/open')
+      const r2pRes = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: proId });
       const r2pConvId = r2pRes.body.id;
 
       // Le PRO bloque la conversation
-      await request(app)
-        .post(`/conversations/${r2pConvId}/block`)
+      await post(`/conversations/${r2pConvId}/block`)
         .set('Authorization', `Bearer ${proAccessToken}`)
         .send({ action: 'block' })
         .expect(200);
 
       // Vérifier que le RIDER ne peut plus envoyer de messages
-      await request(app)
-        .post(`/conversations/${r2pConvId}/messages`)
+      await post(`/conversations/${r2pConvId}/messages`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ content: 'Blocked by PRO' })
         .expect(403);
@@ -504,22 +511,19 @@ describe('Conversations E2E', () => {
 
     it('should allow blocking RIDER_TO_PRO conversations from RIDER side', async () => {
       // Créer une nouvelle conversation RIDER_TO_PRO
-      const r2pRes = await request(app)
-        .post('/conversations/open')
+      const r2pRes = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: otherProId });
       const r2pConvId = r2pRes.body.id;
 
       // Le RIDER bloque la conversation
-      await request(app)
-        .post(`/conversations/${r2pConvId}/block`)
+      await post(`/conversations/${r2pConvId}/block`)
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ action: 'block' })
         .expect(200);
 
       // Vérifier que l'autre PRO ne peut plus envoyer de messages
-      await request(app)
-        .post(`/conversations/${r2pConvId}/messages`)
+      await post(`/conversations/${r2pConvId}/messages`)
         .set('Authorization', `Bearer ${otherProAccessToken}`)
         .send({ content: 'Blocked by RIDER' })
         .expect(403);
@@ -533,29 +537,26 @@ describe('Conversations E2E', () => {
 
     beforeAll(async () => {
       // Créer une conversation RIDER_TO_RIDER
-      const r2rRes = await request(app)
-        .post('/conversations/open')
+      const r2rRes = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: otherRiderId });
       riderToRiderConvId = r2rRes.body.id;
 
       // Créer une conversation RIDER_TO_PRO
-      const r2pRes = await request(app)
-        .post('/conversations/open')
+      const r2pRes = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: proId });
       riderToProConvId = r2pRes.body.id;
 
       // Créer une conversation PRO_TO_PRO
-      const p2pRes = await request(app)
-        .post('/conversations/open')
+      const p2pRes = await post('/conversations/open')
         .set('Authorization', `Bearer ${proAccessToken}`)
         .send({ targetUserId: otherProId });
       proToProConvId = p2pRes.body.id;
     });
 
     it('should filter PRO conversations by RIDER_TO_PRO type', async () => {
-      const res = await request(app)
+      const res = await agent
         .get('/conversations?type=RIDER_TO_PRO')
         .set('Authorization', `Bearer ${proAccessToken}`)
         .expect(200);
@@ -570,7 +571,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should filter PRO conversations by PRO_TO_PRO type', async () => {
-      const res = await request(app)
+      const res = await agent
         .get('/conversations?type=PRO_TO_PRO')
         .set('Authorization', `Bearer ${proAccessToken}`)
         .expect(200);
@@ -585,7 +586,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should filter RIDER conversations by RIDER_TO_RIDER type', async () => {
-      const res = await request(app)
+      const res = await agent
         .get('/conversations?type=RIDER_TO_RIDER')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -597,7 +598,7 @@ describe('Conversations E2E', () => {
     });
 
     it('should filter RIDER conversations by RIDER_TO_PRO type', async () => {
-      const res = await request(app)
+      const res = await agent
         .get('/conversations?type=RIDER_TO_PRO')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);
@@ -613,8 +614,7 @@ describe('Conversations E2E', () => {
     let conversationId: string;
 
     beforeAll(async () => {
-      const res = await request(app)
-        .post('/conversations/open')
+      const res = await post('/conversations/open')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .send({ targetUserId: otherRiderId });
       conversationId = res.body.id;
@@ -622,23 +622,21 @@ describe('Conversations E2E', () => {
 
     it('should track unread messages correctly', async () => {
       // Faire lire les messages existants d'abord
-      await request(app)
+      await agent
         .get(`/conversations/${conversationId}/messages`)
         .set('Authorization', `Bearer ${riderAccessToken}`);
 
       // Simuler qu'un autre user envoie un message
-      const otherRiderLogin = await request(app)
-        .post('/auth/login')
+      const otherRiderLogin = await post('/auth/login')
         .send({ email: 'rider2@test.com', password: 'Passw0rd!' });
       const otherRiderToken = otherRiderLogin.body.accessToken;
 
-      await request(app)
-        .post(`/conversations/${conversationId}/messages`)
+      await post(`/conversations/${conversationId}/messages`)
         .set('Authorization', `Bearer ${otherRiderToken}`)
         .send({ content: 'Unread message!' });
 
       // Vérifier le count non lu
-      const listRes = await request(app)
+      const listRes = await agent
         .get('/conversations')
         .set('Authorization', `Bearer ${riderAccessToken}`)
         .expect(200);

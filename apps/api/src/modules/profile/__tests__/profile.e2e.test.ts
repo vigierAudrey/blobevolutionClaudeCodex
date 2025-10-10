@@ -1,10 +1,12 @@
-import request from 'supertest';
 import { createApp } from '../../../index';
 import { prisma } from '@blobinfini/database';
+import { Role } from '@prisma/client';
+import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
 
 describe('Profile E2E', () => {
   const app = createApp();
-  let access = '';
+  let accessToken = '';
+  let session: TestSession;
 
   beforeAll(async () => {
     await prisma.refreshToken.deleteMany();
@@ -14,13 +16,13 @@ describe('Profile E2E', () => {
     await prisma.riderProfile.deleteMany();
     await prisma.user.deleteMany();
 
-    // Register and login to get tokens
-    await request(app)
-      .post('/auth/register')
-      .send({ email: 'p@test.com', password: 'Passw0rd!', consentAccepted: true })
-      .expect(201);
-    const login = await request(app).post('/auth/login').send({ email: 'p@test.com', password: 'Passw0rd!' }).expect(200);
-    access = login.body.accessToken as string;
+    const auth = await getAccessToken({
+      app,
+      email: 'p@test.com',
+      role: Role.RIDER,
+    });
+    accessToken = auth.accessToken;
+    session = auth.session;
   });
 
   afterAll(async () => {
@@ -28,15 +30,18 @@ describe('Profile E2E', () => {
   });
 
   it('GET /profile/me creates default profile', async () => {
-    const res = await request(app).get('/profile/me').set('Authorization', `Bearer ${access}`).expect(200);
+    const res = await session
+      .get('/profile/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
     expect(res.body).toHaveProperty('userId');
     expect(res.body).toHaveProperty('id');
   });
 
   it('PUT /profile/me updates simple fields', async () => {
-    const res = await request(app)
+    const res = await session
       .put('/profile/me')
-      .set('Authorization', `Bearer ${access}`)
+      .set('Authorization', `Bearer ${accessToken}`)
       .send({ displayName: 'Blobmama', bio: 'Hello', maxDistanceKm: 30, emailNotif: true })
       .expect(200);
     expect(res.body.displayName).toBe('Blobmama');
@@ -44,9 +49,9 @@ describe('Profile E2E', () => {
   });
 
   it('POST /profile/photo/upload-url returns presigned URL', async () => {
-    const res = await request(app)
+    const res = await session
       .post('/profile/photo/upload-url')
-      .set('Authorization', `Bearer ${access}`)
+      .set('Authorization', `Bearer ${accessToken}`)
       .send({ contentType: 'image/jpeg' })
       .expect(200);
     expect(res.body).toHaveProperty('uploadUrl');
