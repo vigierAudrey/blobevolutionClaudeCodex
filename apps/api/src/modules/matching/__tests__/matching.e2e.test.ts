@@ -1,10 +1,12 @@
-import request from 'supertest';
 import { createApp } from '../../../index';
 import { prisma } from '@blobinfini/database';
+import { Role } from '@prisma/client';
+import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
 
 describe('Matching search E2E', () => {
   const app = createApp();
-  let access = '';
+  let accessToken = '';
+  let session: TestSession;
 
   beforeAll(async () => {
     await prisma.refreshToken.deleteMany();
@@ -14,18 +16,14 @@ describe('Matching search E2E', () => {
     await prisma.riderProfile.deleteMany();
     await prisma.user.deleteMany();
 
-    // Create user and login
-    await request(app)
-      .post('/auth/register')
-      .send({ email: 'match@test.com', password: 'Passw0rd!', consentAccepted: true })
-      .expect(201);
-    const login = await request(app)
-      .post('/auth/login')
-      .send({ email: 'match@test.com', password: 'Passw0rd!' })
-      .expect(200);
-    access = login.body.accessToken as string;
+    const auth = await getAccessToken({
+      app,
+      email: 'match@test.com',
+      role: Role.RIDER,
+    });
+    accessToken = auth.accessToken;
+    session = auth.session;
 
-    // Update profile preferences to non-default to assert they're used
     const user = await prisma.user.findFirstOrThrow({ where: { email: 'match@test.com' } });
     await prisma.riderProfile.upsert({
       where: { userId: user.id },
@@ -39,9 +37,9 @@ describe('Matching search E2E', () => {
   });
 
   it('returns criteria merged with profile preferences', async () => {
-    const res = await request(app)
+    const res = await session
       .post('/matching/search')
-      .set('Authorization', `Bearer ${access}`)
+      .set('Authorization', `Bearer ${accessToken}`)
       .send({ sport: 'surf', level: 'beginner', date: '2025-09-04' })
       .expect(200);
 
@@ -58,9 +56,9 @@ describe('Matching search E2E', () => {
   });
 
   it('allows overriding partner preference via request body', async () => {
-    const res = await request(app)
+    const res = await session
       .post('/matching/search')
-      .set('Authorization', `Bearer ${access}`)
+      .set('Authorization', `Bearer ${accessToken}`)
       .send({ sport: 'kitesurf', level: 'advanced', date: '2025-09-05', partner: 'MEN' })
       .expect(200);
 

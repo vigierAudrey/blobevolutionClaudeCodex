@@ -19,7 +19,7 @@ const config: Config = {
   },
   roots: ['<rootDir>/src'],
   maxWorkers: 1,
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.redis.ts', '<rootDir>/jest.setup.ts'],
   // Force Jest to exit after tests complete
   forceExit: true,
   // Detect open handles to help debug hanging tests
