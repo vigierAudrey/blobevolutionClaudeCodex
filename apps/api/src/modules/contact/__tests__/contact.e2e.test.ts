@@ -2,6 +2,7 @@ import request, { SuperAgentTest } from 'supertest';
 import jwt from 'jsonwebtoken';
 import { prisma } from '@blobinfini/database';
 import { createApp } from '../../../index';
+import { cleanupTestUsers, createTestUser } from '../../../__tests__/helpers';
 
 type Role = 'RIDER' | 'PRO' | 'ADMIN';
 
@@ -37,40 +38,7 @@ async function getCsrf(agent: SuperAgentTest) {
 }
 
 async function cleanupFixtureData() {
-  await prisma.contactRequestResponse.deleteMany({
-    where: {
-      OR: [
-        { rider: { email: { in: [emails.riderOne, emails.riderTwo] } } },
-        { contactRequest: { pro: { email: emails.pro } } }
-      ]
-    }
-  });
-  await prisma.contactRequest.deleteMany({
-    where: {
-      pro: { email: emails.pro }
-    }
-  });
-  await prisma.conversationMember.deleteMany({
-    where: { user: { email: { in: Object.values(emails) } } }
-  });
-  await prisma.conversation.deleteMany({
-    where: {
-      members: {
-        some: { user: { email: { in: Object.values(emails) } } }
-      }
-    }
-  });
-  await prisma.match.deleteMany({
-    where: {
-      OR: [
-        { userOne: { email: { in: [emails.riderOne, emails.riderTwo] } } },
-        { userTwo: { email: { in: [emails.riderOne, emails.riderTwo] } } }
-      ]
-    }
-  });
-  await prisma.proProfile.deleteMany({ where: { user: { email: emails.pro } } });
-  await prisma.riderProfile.deleteMany({ where: { user: { email: { in: [emails.riderOne, emails.riderTwo] } } } });
-  await prisma.user.deleteMany({ where: { email: { in: Object.values(emails) } } });
+  await cleanupTestUsers(Object.values(emails));
 }
 
 describe('Contact Controller', () => {
@@ -78,13 +46,11 @@ describe('Contact Controller', () => {
     ensureSecrets();
     await cleanupFixtureData();
 
-    const pro = await prisma.user.create({
-      data: {
-        email: emails.pro,
-        password: 'hash',
-        role: 'PRO',
-        emailVerified: true
-      }
+    const pro = await createTestUser({
+      email: emails.pro,
+      password: 'hash',
+      role: 'PRO',
+      emailVerified: true
     });
     proId = pro.id;
     await prisma.proProfile.create({
@@ -94,13 +60,11 @@ describe('Contact Controller', () => {
       }
     });
 
-    const riderOne = await prisma.user.create({
-      data: {
-        email: emails.riderOne,
-        password: 'hash',
-        role: 'RIDER',
-        emailVerified: true
-      }
+    const riderOne = await createTestUser({
+      email: emails.riderOne,
+      password: 'hash',
+      role: 'RIDER',
+      emailVerified: true
     });
     riderOneId = riderOne.id;
     await prisma.riderProfile.create({
@@ -111,13 +75,11 @@ describe('Contact Controller', () => {
       }
     });
 
-    const riderTwo = await prisma.user.create({
-      data: {
-        email: emails.riderTwo,
-        password: 'hash',
-        role: 'RIDER',
-        emailVerified: true
-      }
+    const riderTwo = await createTestUser({
+      email: emails.riderTwo,
+      password: 'hash',
+      role: 'RIDER',
+      emailVerified: true
     });
     riderTwoId = riderTwo.id;
     await prisma.riderProfile.create({
