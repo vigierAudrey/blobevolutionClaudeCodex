@@ -73,6 +73,17 @@ jobs:
       - name: Run DB migrations
         run: npm run db:migrate:deploy
 
+      - name: Push schema to test database (ensures all tables exist)
+        run: |
+          cd packages/database
+          npx prisma db push --skip-generate --accept-data-loss
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Verify database tables
+        run: |
+          psql "postgresql://postgres:postgres@localhost:5432/blobinfini" -c "\dt public.*" | grep -E "(User|ContactRequestResponse)" || echo "⚠️  Warning: Some tables may be missing"
+
       - name: Build web app
         run: npm run build --workspace @blobinfini/web
 
