@@ -423,17 +423,6 @@ export const apiClient = {
     return request(`/pro/offers/search?${query.toString()}`, { method: 'GET' }, true);
   },
 
-  // Credits
-  getWallet: () => request('/credits/wallet', { method: 'GET' }, true),
-  getTransactions: (params?: { page?: number; limit?: number }) => {
-    const query = new URLSearchParams();
-    if (params?.page) query.append('page', params.page.toString());
-    if (params?.limit) query.append('limit', params.limit.toString());
-    return request(`/credits/transactions?${query.toString()}`, { method: 'GET' }, true);
-  },
-  claimWelcomeBonus: () => request('/credits/welcome-bonus', { method: 'POST' }, true),
-  canSpend: (amount: number) => request(`/credits/can-spend/${amount}`, { method: 'GET' }, true),
-
   // Admin
   getAdminStats: () => request('/admin/stats', { method: 'GET' }, true),
   getAdminUsers: (params?: { page?: number; limit?: number; role?: string }) => {

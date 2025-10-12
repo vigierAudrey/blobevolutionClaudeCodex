@@ -8,7 +8,7 @@
 
 **Blobinfini** = Marketplace communautaire pour sports de glisse (surf/kitesurf)
 - **Matching** : Algorithme multi-critères (géoloc, niveau, dispo) pour connecter riders
-- **Réservation** : Cours avec pros, paiement Stripe, QR codes validation
+- **Réservation** : Cours avec pros, paiement Stripe (désactivé), QR codes validation
 - **Social** : Messagerie temps réel, groupes, favoris, réputation
 - **Gamification** : Points "Flocons d'avoine", badges, mascotte Blob personnalisable
 
@@ -141,7 +141,7 @@ model RiderProfile {
 Frontend:  Next.js 14 (App Router) • TypeScript • Tailwind CSS • Shadcn/ui • PWA
 Backend:   Node.js • Express • Prisma ORM • PostgreSQL + PostGIS
 Temps réel: Socket.IO • Redis (cache + pub/sub)
-Paiements: Stripe (webhooks, 3D Secure)
+Paiements: Stripe (webhooks, 3D Secure — désactivé pour l'instant)
 Auth:      JWT + Refresh tokens • bcrypt • 2FA (TOTP)
 Infra:     Docker Compose (dev) • Cloud scalable (prod)
 ```
@@ -158,7 +158,7 @@ blobinfini/
 │               ├── users/   # Profils riders/pros
 │               ├── matching/# Algorithme matching
 │               ├── bookings/# Réservations
-│               ├── payments/# Stripe integration
+│               ├── payments/# Stripe integration (mise en pause)
 │               ├── messaging/# Chat Socket.io
 │               └── blobosphere/# Contenus éditoriaux & partage social
 ├── packages/
@@ -400,7 +400,7 @@ export function BookingCard({ booking, onUpdate }: BookingCardProps) {
 - [ ] Module auth complet (JWT, 2FA, reset)
 - [ ] Profils riders/pros avec validation
 - [ ] Matching géolocalisé simple
-- [ ] Réservation + paiement Stripe
+- [ ] Réservation + paiement Stripe _(en pause)_
 - [ ] Chat basique Socket.IO
 
 ### Phase 2 - Croissance
@@ -487,7 +487,7 @@ Quand tu génères du code pour Blobinfini :
 
 ### Contexte métier clé
 - Matching : Multi-critères, max 4 riders/groupe, géoloc PostGIS
-- Paiement : Stripe uniquement, 3D Secure, commission 10-15%
+- Paiement : Stripe uniquement, 3D Secure, commission 10-15% (désactivé temporairement)
 - Social : Messages filtrés, groupes verrouillables
 - Auth : JWT 15min + refresh 30j, 2FA pros obligatoire
 

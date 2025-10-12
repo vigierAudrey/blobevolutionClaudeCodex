@@ -1,6 +1,5 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
-import { Button } from '../../components/ui/button';
 
 export default function PaymentsPage() {
   return (
@@ -8,16 +7,11 @@ export default function PaymentsPage() {
       <BackBar fallbackHref="/dashboard" />
       <Card>
         <CardHeader>
-          <CardTitle>Paiements</CardTitle>
-          <CardDescription>Ajoute du crédit à ton compte (Stripe à venir).</CardDescription>
+          <CardTitle>Paiements désactivés</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <Button variant="secondary">+10 €</Button>
-            <Button variant="secondary">+25 €</Button>
-            <Button variant="secondary">+50 €</Button>
-          </div>
-          <p className="text-sm text-muted-foreground mt-3">Intégration Stripe Connect et 3D Secure prévues dans la phase suivante.</p>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>Les paiements en ligne et l’achat de crédits sont momentanément indisponibles.</p>
+          <p>Nous vous avertirons dès que le service Stripe sera de nouveau activé.</p>
         </CardContent>
       </Card>
     </div>

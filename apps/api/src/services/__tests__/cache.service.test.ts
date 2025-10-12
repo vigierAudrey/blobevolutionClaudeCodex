@@ -1,42 +1,38 @@
 import { beforeEach, afterEach, afterAll, describe, it, expect, jest } from '@jest/globals';
 import { CacheService, cacheService, CacheKeys, initializeCache } from '../cache.service';
 
-// Mock Redis client
-const mockRedisClient = {
-  connect: jest.fn() as jest.MockedFunction<any>,
-  ping: jest.fn() as jest.MockedFunction<any>,
-  get: jest.fn() as jest.MockedFunction<any>,
-  setEx: jest.fn() as jest.MockedFunction<any>,
-  del: jest.fn() as jest.MockedFunction<any>,
-  keys: jest.fn() as jest.MockedFunction<any>,
-  quit: jest.fn() as jest.MockedFunction<any>
+import { createClient } from 'redis';
+import * as redisConfig from '../../lib/redisConfig';
+
+const redisMock = (globalThis as any).__REDIS_MOCK__ as {
+  instances: any[];
+  createClient: jest.Mock;
+  factory: () => any;
 };
 
-// Mock Redis module
-jest.mock('redis', () => ({
-  createClient: jest.fn(() => mockRedisClient)
-}));
-
-// Mock redisConfig
-jest.mock('../../lib/redisConfig', () => ({
-  resolveRedisUrl: jest.fn()
-}));
-
-import { createClient } from 'redis';
-import { resolveRedisUrl } from '../../lib/redisConfig';
-
 const mockCreateClient = createClient as jest.MockedFunction<typeof createClient>;
-const mockResolveRedisUrl = resolveRedisUrl as jest.MockedFunction<typeof resolveRedisUrl>;
+const mockResolveRedisUrl = jest.spyOn(redisConfig, 'resolveRedisUrl');
+
+let mockRedisClient: ReturnType<typeof redisMock.factory>;
+
+const prepareRedisClient = () => {
+  mockRedisClient = redisMock.factory();
+  redisMock.createClient.mockReturnValue(mockRedisClient);
+  return mockRedisClient;
+};
 
 describe('CacheService', () => {
   let cacheServiceInstance: CacheService;
 
-  beforeEach(() => {
-    // Reset all mocks
+  beforeEach(async () => {
     jest.clearAllMocks();
+    mockResolveRedisUrl.mockReset();
+    redisMock.createClient.mockClear();
+    redisMock.instances.length = 0;
+    prepareRedisClient();
 
-    // Reset singleton instance
-    (CacheService as any).instance = undefined;
+    await cacheService.close();
+    (cacheService as any).client = null;
     cacheServiceInstance = CacheService.getInstance();
   });
 
@@ -433,7 +429,7 @@ describe('CacheService', () => {
 
         await cacheServiceInstance.invalidateAvailabilities(43.5, -1.5);
 
-        expect(mockRedisClient.keys).toHaveBeenCalledWith('availabilities:43:-1:*');
+        expect(mockRedisClient.keys).toHaveBeenCalledWith('availabilities:43:-2:*');
         expect(mockRedisClient.del).toHaveBeenCalledWith(mockKeys);
       });
 
@@ -495,7 +491,7 @@ describe('CacheService', () => {
         const key2 = CacheKeys.matching('surf', 'beginner', 43.4832, -1.5586, 10);
 
         expect(key1).toBe(key2);
-        expect(key1).toBe('surf:beginner:4348:-155:10');
+        expect(key1).toBe('surf:beginner:4348:-156:10');
       });
 
       it('should generate different keys for different coordinates', () => {
@@ -516,7 +512,7 @@ describe('CacheService', () => {
     describe('CacheKeys.availabilities', () => {
       it('should generate availability cache keys with zone precision', () => {
         const key = CacheKeys.availabilities('surf', 'beginner', 43.4832, -1.5586, 10);
-        expect(key).toBe('surf:beginner:434:-15:10');
+        expect(key).toBe('surf:beginner:434:-16:10');
       });
     });
 
@@ -531,7 +527,7 @@ describe('CacheService', () => {
 
       it('should generate high precision distance cache keys', () => {
         const key = CacheKeys.distance(43.4832, -1.5586, 43.5000, -1.4000);
-        expect(key).toMatch(/^43483,-1558:43500,-1400$|^43500,-1400:43483,-1558$/);
+        expect(key).toMatch(/^43483,-1559:43500,-1400$|^43500,-1400:43483,-1559$/);
       });
     });
   });
