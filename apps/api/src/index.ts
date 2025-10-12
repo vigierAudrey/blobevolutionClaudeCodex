@@ -34,6 +34,38 @@ function ensureProductionSecrets() {
 
 ensureProductionSecrets();
 
+const cspConnectSrc = ["'self'"];
+if (allowedOrigins.length > 0) {
+  cspConnectSrc.push(...allowedOrigins);
+} else {
+  cspConnectSrc.push('http://localhost:3000');
+}
+
+const helmetMiddleware = helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: cspConnectSrc,
+      imgSrc: ["'self'", 'data:', 'https:'],
+      fontSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: []
+    }
+  },
+  referrerPolicy: { policy: 'no-referrer' },
+  frameguard: { action: 'deny' },
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  crossOriginResourcePolicy: { policy: 'same-origin' },
+  hsts: process.env.NODE_ENV === 'production'
+    ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+    : false
+});
+
 const corsMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
   if (origin) {
@@ -128,7 +160,7 @@ export function createApp() {
   }));
 
   app.use(corsMiddleware);
-  app.use(helmet());
+  app.use(helmetMiddleware);
 
   // Global rate limiting (before specific routes)
   app.use(smartRateLimit);
