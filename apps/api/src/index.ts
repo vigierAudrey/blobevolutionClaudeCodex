@@ -13,6 +13,26 @@ import YAML from 'js-yaml';
 import helmet from 'helmet';
 import type { Request, Response, NextFunction } from 'express';
 
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+
+const REQUIRED_SECRETS = ['SESSION_SECRET', 'JWT_SECRET', 'JWT_REFRESH_SECRET'] as const;
+
+function ensureProductionSecrets() {
+  if (process.env.NODE_ENV !== 'production') {
+    return;
+  }
+
+  const missing = REQUIRED_SECRETS.filter((key) => {
+    const value = process.env[key];
+    return !value || value.length < 32;
+  });
+
+  if (missing.length > 0) {
+    throw new Error(`Missing or weak secrets in production: ${missing.join(', ')}`);
+  }
+}
+
+ensureProductionSecrets();
 
 const corsMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
@@ -34,7 +54,6 @@ const corsMiddleware = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
 import compression from 'compression';
 import { setupCSRF, csrfProtection, getCSRFToken } from './middleware/csrf';
 import { smartRateLimit } from './middleware/enhanced-rate-limit';
