@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.build.json",
     "clean": "rimraf dist",
     "generate": "prisma generate",
+    "db:push": "prisma db push --skip-generate --accept-data-loss --schema prisma/schema.prisma",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
