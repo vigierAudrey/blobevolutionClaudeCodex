@@ -2,7 +2,7 @@ import request, { SuperAgentTest } from 'supertest';
 import jwt from 'jsonwebtoken';
 import { prisma } from '@blobinfini/database';
 import { createApp } from '../../../index';
-import { cleanupTestUsers, createTestUser } from '../../../__tests__/helpers';
+import { cleanupTestUsers, createTestUser } from '../../../test-utils';
 
 type Role = 'RIDER' | 'PRO' | 'ADMIN';
 

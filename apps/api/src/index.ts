@@ -29,7 +29,6 @@ import { matchingRouter } from './modules/matching/matching.controller';
 import { reportsRouter } from './modules/reports/reports.controller';
 import { conversationsRouter } from './modules/chat/conversations.controller';
 import { proRouter } from './modules/pro/pro.controller';
-import { creditsRouter } from './modules/credits/credits.controller';
 import { adminRouter } from './modules/admin/admin.controller';
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
@@ -218,7 +217,9 @@ export function createApp() {
   app.use('/reports', reportsRouter);
   app.use('/conversations', conversationsRouter);
   app.use('/pro', proRouter);
-  app.use('/credits', creditsRouter);
+  app.use('/credits', (_req, res) => {
+    res.status(410).json({ error: 'Payments feature disabled' });
+  });
   app.use('/admin', adminRouter);
   app.use('/contact', contactRouter);
   app.use('/booking', bookingRouter);

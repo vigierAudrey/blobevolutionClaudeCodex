@@ -424,7 +424,7 @@ export class BookingService {
         action,
         requestData: request // Return request data for notifications
       };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     }, 7, 150);
 
     // After successful transaction, send push notifications

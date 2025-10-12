@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import Link from 'next/link';
-import { User, Map, Wallet, Percent, Info, LogOut, MessageSquare, Briefcase } from 'lucide-react';
+import { User, Map, Percent, Info, LogOut, MessageSquare, Briefcase } from 'lucide-react';
 import { AdBannerSidebar } from '../../components/ads/AdBanner';
 
 // Force SSR due to auth context and dynamic user data
@@ -175,18 +175,6 @@ export default function DashboardPage() {
           <CardContent>
             <Link href="/offers" className="inline-block w-full">
               <Button className="w-full" variant="outline">Voir les offres</Button>
-            </Link>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Wallet size={18}/> Mes Crédits</CardTitle>
-            <CardDescription>Consulte ton porte-monnaie virtuel</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link href="/credits" className="inline-block w-full">
-              <Button className="w-full" variant="outline">Voir mes crédits</Button>
             </Link>
           </CardContent>
         </Card>

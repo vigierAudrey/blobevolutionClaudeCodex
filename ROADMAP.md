@@ -45,7 +45,7 @@
   - [x] PushNotificationPrompt / MapComponent / LocationPickerMap (tests unitaires ajoutés)
 - [ ] **Tests composants UI de base** - 50+ composants sans tests (card, dialog, input, etc.)
   - [x] Button/Card/Dialog/Input/Toast couverts (tests unitaires ajoutés)
-- [ ] **Tests E2E paiement complet** - Flux rider→pro (Stripe integration)
+- [ ] **Tests E2E paiement complet** - Flux rider→pro (Stripe integration) _(en pause – paiement désactivé)_
 
 #### **Objectif Couverture**
 - **Actuel:** ~75% (services core 100%, matching/booking good, UI 0%)
@@ -108,8 +108,8 @@
 
 ## 🎯 **NOUVELLES FONCTIONNALITÉS - 2-3 Semaines**
 
-### ✅ **5. Système de Paiement Complet**
-- [ ] **Intégration Stripe Connect** pour les pros
+### ✅ **5. Système de Paiement Complet** _(en pause)_
+- [ ] **Intégration Stripe Connect** pour les pros _(en pause)_
 - [ ] **Calcul automatique commissions**
 - [ ] **Génération factures PDF**
 - [ ] **Gestion remboursements**
@@ -187,7 +187,7 @@
 | ~~Storybook Fix + OpenAPI (Codex)~~ | ~~1j~~ | ~~📚 DevExp~~ | ~~🛠️ Infrastructure~~ | ✅ **Terminé** | 0€ |
 | Déploiement AdSense | 5min | 💰 Revenus 50-300€/mois | 🎯 Business | ⚡ **Quick Win** | 0€ |
 | Tests UI + Analytics Dashboard Open Source | 2j | 📱 UX + 📊 Insights | 🛡️ + 🎯 Business | 🎯 **Suivant** | 0€ |
-| Workflow Business (Stripe/Credits) | ?j | 💰 Revenus core | 🎯 Business | 🤔 **En Réflexion** | 0€ |
+| Workflow Business (Stripe/Credits) | ?j | 💰 Revenus core | 🎯 Business | ⏸️ **En pause** | 0€ |
 | Module Blobosphère | 10j | 📈 SEO/Engagement | 🎯 Fonctionnel | 🚀 **Croissance** | 0€ |
 | Analytics avancées (Grafana/Prometheus) | 6j | 📊 Insights | 🎯 Business | 📈 **Scale** | **200€/mois** |
 
@@ -229,7 +229,7 @@
 - [ ] **UX Mobile:** Score Lighthouse 90+
 
 ### **Moyen Terme (3 mois)**
-- [ ] **Paiements:** Stripe Connect opérationnel
+- [ ] **Paiements:** Stripe Connect opérationnel _(à replanifier)_
 - [ ] **Editorial:** CMS Blobosphère live
 - [ ] **Analytics:** Dashboard complet
 - [ ] **Engagement:** +40% retention utilisateurs

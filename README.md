@@ -16,7 +16,7 @@ Blobinfini connecte les passionnés de sports de glisse en proposant :
 
 - **Matching intelligent** entre riders basé sur géolocalisation, niveau et disponibilités
 - **Réservation de cours** avec moniteurs professionnels certifiés
-- **Paiement sécurisé** via Stripe avec commission plateforme (10-15%)
+- **Paiements en ligne** (désactivés temporairement le temps de repenser l’intégration Stripe)
 - **Messagerie intégrée** avec filtrage anti-contournement
 - **Gamification** : Points "Flocons d'avoine", badges, mascotte Blob personnalisable
 - **Carte interactive** (BloboMap) montrant groupes et spots en temps réel
@@ -48,7 +48,7 @@ Backend:
   - Socket.io (temps réel)
 
 Services:
-  - Stripe (paiements + 3D Secure)
+  - Stripe (paiements + 3D Secure — actuellement désactivé)
   - Twilio (SMS/2FA)
   - Google Maps / OpenStreetMap
   - Firebase (notifications push)
@@ -82,7 +82,7 @@ blobevolutionClaudeCodex/
 │       │   │   ├── users/      # Gestion profils
 │       │   │   ├── matching/   # Algorithme matching
 │       │   │   ├── bookings/   # Réservations
-│       │   │   ├── payments/   # Intégration Stripe
+│       │   │   ├── payments/   # Intégration Stripe (mise en pause)
 │       │   │   ├── messaging/  # Chat Socket.io
 │       │   │   └── blobosphere/ # Contenus éditoriaux & partage social
 │       │   ├── middleware/     # Rate limit, CORS, etc.
@@ -207,13 +207,13 @@ model User {
 - ✅ **PWA avancée** : push notifications, offline-first, installation
 - ✅ **Performance optimisée** : cache Redis, requêtes N+1 éliminées
 - ✅ **Sécurité production** : CSRF, rate limiting, RGPD complet
-- ⏳ **Système paiement** : Stripe Connect (en cours)
+- ⏸️ **Système paiement** : Stripe Connect (intégration suspendue)
 - ⏳ **Blobosphère MVP** : CMS éditorial (en cours)
 
 
 ### 🚀 Phase 2 - Croissance (Prochaines priorités)
 
-- 🔥 **Système paiement complet** : Stripe Connect + facturation automatique
+- 🔥 **Système paiement complet** : Stripe Connect + facturation automatique (replanifié)
 - 🔥 **Tests unitaires** : couverture 80%+ pour stabilité production
 - 📈 **Blobosphère enrichie** : CMS complet + SEO + partage social
 - 📊 **Analytics avancées** : tableau de bord business + métriques
@@ -593,13 +593,11 @@ router.post(
 - Expiration demandes jour-même
 - Système verrouillage groupe (cadenas)
 
-### Paiement & Commission
+### Paiement & Commission (désactivés)
 
-- Stripe Connect pour split payments
-- Commission 10-15% prélevée automatiquement
-- Escrow virtuel jusqu'à validation session
-- Remboursement automatique si annulation -24h
-- Webhooks Stripe sécurisés
+- Intégration Stripe temporairement coupée
+- Aucun prélèvement ni escrow en production
+- Réactivation planifiée une fois le nouveau parcours défini
 
 ### Messagerie
 

@@ -235,39 +235,6 @@
       ]
     },
     {
-      "name": "Credits",
-      "item": [
-        {
-          "name": "Wallet",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/credits/wallet",
-              "host": ["{{baseUrl}}"],
-              "path": ["credits", "wallet"]
-            }
-          }
-        },
-        {
-          "name": "Welcome Bonus",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/credits/welcome-bonus",
-              "host": ["{{baseUrl}}"],
-              "path": ["credits", "welcome-bonus"]
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "Admin",
       "item": [
         {
