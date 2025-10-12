@@ -138,11 +138,12 @@ export function createApp() {
   // Trust proxy configuration - more secure than 'true'
   // In dev, trust localhost. In prod, trust only known proxy IPs or use number of hops
   if (process.env.NODE_ENV === 'production') {
-    // Production: trust first proxy or specific IPs
-    const trustedProxies = process.env.TRUSTED_PROXY_IPS?.split(',') || ['127.0.0.1', '::1'];
-    app.set('trust proxy', trustedProxies);
+    const trustedProxiesEnv = process.env.TRUSTED_PROXY_IPS?.split(',').map(v => v.trim()).filter(Boolean) || [];
+    if (trustedProxiesEnv.length === 0) {
+      throw new Error('TRUSTED_PROXY_IPS must be set in production to a comma-separated list of proxy IPs/CIDR ranges');
+    }
+    app.set('trust proxy', trustedProxiesEnv);
   } else {
-    // Development: trust localhost and private networks
     app.set('trust proxy', ['127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']);
   }
 
