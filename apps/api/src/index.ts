@@ -10,16 +10,31 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'js-yaml';
-// Minimal CORS middleware to avoid ESM/CJS interop issues in dev
-function simpleCors(_req: any, res: any, next: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+import helmet from 'helmet';
+import type { Request, Response, NextFunction } from 'express';
+
+
+const corsMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    const isAllowed = allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production'
+      ? true
+      : allowedOrigins.includes(origin);
+    if (!isAllowed) {
+      return res.status(403).json({ error: 'Origin not allowed' });
+    }
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-XSRF-Token');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  if (_req.method === 'OPTIONS') return res.sendStatus(204);
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
   next();
-}
-import helmet from 'helmet';
+};
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
 import compression from 'compression';
 import { setupCSRF, csrfProtection, getCSRFToken } from './middleware/csrf';
 import { smartRateLimit } from './middleware/enhanced-rate-limit';
@@ -93,7 +108,7 @@ export function createApp() {
     }
   }));
 
-  app.use(simpleCors);
+  app.use(corsMiddleware);
   app.use(helmet());
 
   // Global rate limiting (before specific routes)
