@@ -4,6 +4,7 @@ import { requireAuth, requireVerifiedEmail } from './auth.guard';
 import { AuthService } from './auth.service';
 import { prisma } from '@blobinfini/database';
 import { twoFactorService } from '../../services/two-factor.service';
+import { validate } from '../../middleware/validate';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -59,9 +60,9 @@ const verify2FASchema = z.object({
   code: z.string().length(6, 'Code must be 6 digits'),
 });
 
-authRouter.post('/register', async (req, res) => {
+authRouter.post('/register', validate(registerSchema), async (req, res) => {
   try {
-    const data = registerSchema.parse(req.body);
+    const data = req.body as z.infer<typeof registerSchema>;
     // Extraire la meilleure IP disponible
     // Si trust proxy est activé (voir apps/api/src/index.ts), req.ips[0] reflète le premier IP client
     const ips = (req as any).ips as string[] | undefined;
@@ -79,9 +80,9 @@ authRouter.post('/register', async (req, res) => {
   }
 });
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', validate(loginSchema), async (req, res) => {
   try {
-    const { email, password, consentAccepted } = loginSchema.parse(req.body);
+    const { email, password, consentAccepted } = req.body as z.infer<typeof loginSchema>;
     const ips = (req as any).ips as string[] | undefined;
     const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
     const result = await service.login(email, password, { consentAccepted, consentIp: ip });
@@ -103,9 +104,9 @@ authRouter.post('/login', async (req, res) => {
   }
 });
 
-authRouter.post('/refresh', async (req, res) => {
+authRouter.post('/refresh', validate(refreshSchema), async (req, res) => {
   try {
-    const { refreshToken } = refreshSchema.parse(req.body);
+    const { refreshToken } = req.body as z.infer<typeof refreshSchema>;
     const result = await service.refresh(refreshToken);
     res.json(result);
   } catch (err: any) {

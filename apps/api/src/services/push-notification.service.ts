@@ -68,7 +68,7 @@ export class PushNotificationService {
     try {
       // Here you would save to your database
       // For now, we'll use a simple in-memory store or cache
-      console.log(`💾 Saving FCM token for user ${userId}: ${token.substring(0, 20)}...`);
+      console.log(`💾 Saving FCM token for user ${userId}`);
 
       // TODO: Implement database storage
       // await prisma.pushToken.upsert({
@@ -166,7 +166,7 @@ export class PushNotificationService {
       return true;
     } catch (error: any) {
       if (error.code === 'messaging/registration-token-not-registered') {
-        console.log(`🗑️ Token no longer valid, removing: ${token.substring(0, 20)}...`);
+        console.log('🗑️ Token no longer valid, scheduling removal');
         // TODO: Remove invalid token from database
       } else {
         console.error('❌ Error sending notification:', error);

@@ -3,6 +3,7 @@ export { prisma } from './prismaClient';
 // Réexporte les types Prisma nécessaires aux tests et aux services API
 export type {
   AdminProfile,
+  AuditLog,
   Booking,
   BookingRequest,
   ContactRequest,

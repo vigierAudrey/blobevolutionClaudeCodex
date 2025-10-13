@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '@blobinfini/database';
 import { requireAuth } from '../auth/auth.guard';
+import { validate } from '../../middleware/validate';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import { lookup as mimeLookup, extension as mimeExtension } from 'mime-types';
 import crypto from 'crypto';
@@ -76,7 +77,7 @@ profileRouter.get('/me', requireAuth, async (req, res) => {
   }
 });
 
-profileRouter.put('/me', requireAuth, async (req, res) => {
+profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -91,7 +92,7 @@ profileRouter.put('/me', requireAuth, async (req, res) => {
 
     // Gérer selon le rôle
     if (user.role === 'ADMIN') {
-      const body = adminUpsertSchema.parse(req.body);
+      const body = adminUpsertSchema.parse(req.body); // already validated but keeping existing parse for transformations
       console.log('Updating admin profile for user:', userId, 'with data:', body);
       const ap = await prisma.adminProfile.upsert({
         where: { userId },
@@ -176,7 +177,7 @@ profileRouter.put('/disciplines', requireAuth, async (req, res) => {
 });
 
 // Generate a pre-signed URL for direct upload to S3/MinIO
-profileRouter.post('/photo/upload-url', requireAuth, async (req, res) => {
+profileRouter.post('/photo/upload-url', requireAuth, validate(z.object({ contentType: z.string().min(1) })), async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });

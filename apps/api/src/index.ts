@@ -10,16 +10,82 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'js-yaml';
-// Minimal CORS middleware to avoid ESM/CJS interop issues in dev
-function simpleCors(_req: any, res: any, next: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+import helmet from 'helmet';
+import type { Request, Response, NextFunction } from 'express';
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+
+const REQUIRED_SECRETS = ['SESSION_SECRET', 'JWT_SECRET', 'JWT_REFRESH_SECRET'] as const;
+
+function ensureProductionSecrets() {
+  if (process.env.NODE_ENV !== 'production') {
+    return;
+  }
+
+  const missing = REQUIRED_SECRETS.filter((key) => {
+    const value = process.env[key];
+    return !value || value.length < 32;
+  });
+
+  if (missing.length > 0) {
+    throw new Error(`Missing or weak secrets in production: ${missing.join(', ')}`);
+  }
+}
+
+ensureProductionSecrets();
+
+const cspConnectSrc = ["'self'"];
+if (allowedOrigins.length > 0) {
+  cspConnectSrc.push(...allowedOrigins);
+} else {
+  cspConnectSrc.push('http://localhost:3000');
+}
+
+const helmetMiddleware = helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: cspConnectSrc,
+      imgSrc: ["'self'", 'data:', 'https:'],
+      fontSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: []
+    }
+  },
+  referrerPolicy: { policy: 'no-referrer' },
+  frameguard: { action: 'deny' },
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  crossOriginResourcePolicy: { policy: 'same-origin' },
+  hsts: process.env.NODE_ENV === 'production'
+    ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+    : false
+});
+
+const corsMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    const isAllowed = allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production'
+      ? true
+      : allowedOrigins.includes(origin);
+    if (!isAllowed) {
+      return res.status(403).json({ error: 'Origin not allowed' });
+    }
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-XSRF-Token');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  if (_req.method === 'OPTIONS') return res.sendStatus(204);
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
   next();
-}
-import helmet from 'helmet';
+};
+
 import compression from 'compression';
 import { setupCSRF, csrfProtection, getCSRFToken } from './middleware/csrf';
 import { smartRateLimit } from './middleware/enhanced-rate-limit';
@@ -33,6 +99,7 @@ import { adminRouter } from './modules/admin/admin.controller';
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
+import { requireAuth, requireAdmin } from './modules/auth/auth.guard';
 
 
 const OPENAPI_SPEC_PATH = resolve(process.cwd(), 'docs/openapi/openapi.yaml');
@@ -72,11 +139,12 @@ export function createApp() {
   // Trust proxy configuration - more secure than 'true'
   // In dev, trust localhost. In prod, trust only known proxy IPs or use number of hops
   if (process.env.NODE_ENV === 'production') {
-    // Production: trust first proxy or specific IPs
-    const trustedProxies = process.env.TRUSTED_PROXY_IPS?.split(',') || ['127.0.0.1', '::1'];
-    app.set('trust proxy', trustedProxies);
+    const trustedProxiesEnv = process.env.TRUSTED_PROXY_IPS?.split(',').map(v => v.trim()).filter(Boolean) || [];
+    if (trustedProxiesEnv.length === 0) {
+      throw new Error('TRUSTED_PROXY_IPS must be set in production to a comma-separated list of proxy IPs/CIDR ranges');
+    }
+    app.set('trust proxy', trustedProxiesEnv);
   } else {
-    // Development: trust localhost and private networks
     app.set('trust proxy', ['127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']);
   }
 
@@ -93,8 +161,8 @@ export function createApp() {
     }
   }));
 
-  app.use(simpleCors);
-  app.use(helmet());
+  app.use(corsMiddleware);
+  app.use(helmetMiddleware);
 
   // Global rate limiting (before specific routes)
   app.use(smartRateLimit);
@@ -176,6 +244,32 @@ export function createApp() {
 
   // CSRF token endpoint (GET requests are not protected)
   app.get('/csrf-token', getCSRFToken);
+
+  app.get('/security/health', requireAuth, requireAdmin, (_req, res) => {
+    const issues: string[] = [];
+    const isProd = process.env.NODE_ENV === 'production';
+
+    if (isProd) {
+      if (allowedOrigins.length === 0) {
+        issues.push('ALLOWED_ORIGINS is empty');
+      }
+      const proxies = process.env.TRUSTED_PROXY_IPS?.split(',').map(v => v.trim()).filter(Boolean) || [];
+      if (proxies.length === 0) {
+        issues.push('TRUSTED_PROXY_IPS missing');
+      }
+    }
+
+    const result = {
+      status: issues.length ? 'VULNERABLE' : 'SECURE',
+      helmet: true,
+      csrf: true,
+      rateLimit: true,
+      corsWhitelist: allowedOrigins,
+      issues
+    };
+
+    res.status(issues.length ? 503 : 200).json(result);
+  });
 
   // OpenAPI specification & Swagger UI
   app.get('/openapi.yaml', (_req, res) => {

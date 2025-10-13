@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import type { DecisionKind } from '@prisma/client';
 import { requireAuth, requireAdmin } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
+import { audit } from '../../middleware/audit';
 
 export const adminRouter = Router();
 
@@ -127,7 +128,7 @@ adminRouter.get('/users', async (req, res) => {
 });
 
 // Suspendre/réactiver un utilisateur
-adminRouter.patch('/users/:id/suspend', async (req, res) => {
+adminRouter.patch('/users/:id/suspend', audit('admin:user:suspend', (req) => `user:${req.params.id}`), async (req, res) => {
   try {
     const userId = req.params.id;
     const { suspended } = z.object({
@@ -279,7 +280,7 @@ adminRouter.get('/users/:id', async (req, res) => {
 });
 
 // Vérifier un professionnel
-adminRouter.patch('/pros/:id/verify', async (req, res) => {
+adminRouter.patch('/pros/:id/verify', audit('admin:pro:verify', (req) => `pro:${req.params.id}`), async (req, res) => {
   try {
     const userId = req.params.id;
     const { verified } = z.object({
@@ -440,7 +441,7 @@ adminRouter.get('/admins', async (req, res) => {
 });
 
 // Mettre à jour les permissions d'un admin
-adminRouter.patch('/admins/:id/permissions', async (req, res) => {
+adminRouter.patch('/admins/:id/permissions', audit('admin:permissions:update', (req) => `admin:${req.params.id}`), async (req, res) => {
   try {
     const adminId = req.params.id;
     const { permissions } = z.object({
