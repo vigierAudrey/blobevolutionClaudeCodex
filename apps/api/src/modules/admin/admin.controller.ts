@@ -394,6 +394,16 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   ]
 };
 
+const auditQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  action: z.string().trim().min(1).optional(),
+  userId: z.string().trim().min(1).optional(),
+  resource: z.string().trim().min(1).optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+});
+
 // Lister les permissions disponibles
 adminRouter.get('/permissions', async (req, res) => {
   try {
@@ -1611,3 +1621,57 @@ adminRouter.get('/gdpr/legal-archive/:userId', requireAuth, requireAdmin, async 
     return res.status(500).json({ error: 'Internal error' });
   }
 });
+
+// Audit logs
+adminRouter.get('/audit', async (req, res) => {
+  try {
+    const { page, limit, action, userId, resource, startDate, endDate } = auditQuerySchema.parse(req.query);
+
+    const where: Prisma.AuditLogWhereInput = {};
+    if (action) {
+      where.action = { contains: action, mode: 'insensitive' };
+    }
+    if (userId) {
+      where.userId = userId;
+    }
+    if (resource) {
+      where.resource = { contains: resource, mode: 'insensitive' };
+    }
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = startDate;
+      if (endDate) where.createdAt.lte = endDate;
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      prisma.auditLog.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: { id: true, email: true, role: true }
+          }
+        }
+      }),
+      prisma.auditLog.count({ where })
+    ]);
+
+    return res.json({
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Admin audit logs error:', error);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+

@@ -8,6 +8,60 @@ import type {
   RiderBookingRequest,
 } from './types/booking';
 
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  resource: string;
+  metadata: Record<string, unknown> | null;
+  ip?: string | null;
+  createdAt: string;
+  user?: { id: string; email: string; role: string | null };
+}
+
+export interface AuditLogResponse {
+  items: AuditLogEntry[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export interface AuditLogQuery {
+  page?: number;
+  limit?: number;
+  action?: string;
+  userId?: string;
+  resource?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface GDPRReport {
+  timestamp: string;
+  compliance: {
+    isCompliant: boolean;
+    issues: string[];
+    recommendations: string[];
+  };
+  details: {
+    expiredSessionsCount: number;
+    expiredTokensCount: number;
+    unanonymizedDeletedUsers: number;
+    oldDeletedUsersAwaitingPurge: number;
+  };
+  legalProtection: {
+    consentArchiveEnabled: boolean;
+    retentionPeriod: string;
+    anonymizationDelay: string;
+  };
+}
+
+export interface SecurityHealth {
+  status: 'SECURE' | 'VULNERABLE';
+  helmet: boolean;
+  csrf: boolean;
+  rateLimit: boolean;
+  corsWhitelist: string[];
+  issues: string[];
+}
+
 export type LoginResponse = { accessToken: string; refreshToken: string };
 
 export type AdminAnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
@@ -424,6 +478,22 @@ export const apiClient = {
   },
 
   // Admin
+  getSecurityHealth: () => request('/security/health', { method: 'GET' }, true) as Promise<SecurityHealth>,
+  getGDPRReport: () => request('/admin/gdpr/compliance-report', { method: 'GET' }, true) as Promise<GDPRReport>,
+  runGDPRPurge: () => request('/admin/gdpr/run-purge', { method: 'POST' }, true),
+  searchLegalArchive: (userId: string) => request(`/admin/gdpr/legal-archive/${userId}`, { method: 'GET' }, true),
+  getAuditLogs: (params?: AuditLogQuery) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.action) query.append('action', params.action);
+    if (params?.userId) query.append('userId', params.userId);
+    if (params?.resource) query.append('resource', params.resource);
+    if (params?.startDate) query.append('startDate', params.startDate);
+    if (params?.endDate) query.append('endDate', params.endDate);
+    const qs = query.toString();
+    return request(`/admin/audit${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<AuditLogResponse>;
+  },
   getAdminStats: () => request('/admin/stats', { method: 'GET' }, true),
   getAdminUsers: (params?: { page?: number; limit?: number; role?: string }) => {
     const query = new URLSearchParams();

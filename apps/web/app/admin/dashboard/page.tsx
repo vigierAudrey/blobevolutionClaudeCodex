@@ -236,6 +236,21 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/security">
+                  Statut sécurité
+                </Link>
+              </Button>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/gdpr">
+                  Conformité RGPD
+                </Link>
+              </Button>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/audit">
+                  Audit des actions
+                </Link>
+              </Button>
               <Button variant="outline" className="w-full justify-start" disabled>
                 Tentatives de connexion suspectes
                 <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
