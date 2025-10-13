@@ -1,11 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "buildCommand": "cd apps/web && npm install && npm run build",
-  "devCommand": "cd apps/web && npm run dev",
-  "installCommand": "echo 'Skipping root install'",
-  "framework": null,
-  "outputDirectory": "apps/web/.next",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "rootDirectory": "apps/web",
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
