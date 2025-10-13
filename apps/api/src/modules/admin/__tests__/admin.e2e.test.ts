@@ -281,4 +281,20 @@ describe('Admin Controller', () => {
     expect(reportEntry).toBeTruthy();
     expect(reportEntry.reporter.email).toBe(emails.rider);
   });
+
+  it('retrieves audit logs with pagination and filters', async () => {
+    const res = await request(app)
+      .get('/admin/audit?limit=5')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(res.body.pagination).toMatchObject({ page: 1, limit: 5 });
+    if (res.body.items.length > 0) {
+      const entry = res.body.items[0];
+      expect(entry).toHaveProperty('action');
+      expect(entry).toHaveProperty('resource');
+      expect(entry).toHaveProperty('createdAt');
+    }
+  });
 });
