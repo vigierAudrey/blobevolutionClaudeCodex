@@ -8,3 +8,7 @@ build/
 playwright-report/
 test-results/
 apps/web/storybook-static/
+
+# Vercel
+.vercel
+apps/web/.vercel
