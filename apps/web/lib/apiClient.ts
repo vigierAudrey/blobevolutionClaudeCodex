@@ -8,6 +8,15 @@ import type {
   RiderBookingRequest,
 } from './types/booking';
 
+export interface SecurityHealth {
+  status: 'SECURE' | 'VULNERABLE';
+  helmet: boolean;
+  csrf: boolean;
+  rateLimit: boolean;
+  corsWhitelist: string[];
+  issues: string[];
+}
+
 export type LoginResponse = { accessToken: string; refreshToken: string };
 
 export type AdminAnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
@@ -424,6 +433,7 @@ export const apiClient = {
   },
 
   // Admin
+  getSecurityHealth: () => request('/security/health', { method: 'GET' }, true) as Promise<SecurityHealth>,
   getAdminStats: () => request('/admin/stats', { method: 'GET' }, true),
   getAdminUsers: (params?: { page?: number; limit?: number; role?: string }) => {
     const query = new URLSearchParams();
