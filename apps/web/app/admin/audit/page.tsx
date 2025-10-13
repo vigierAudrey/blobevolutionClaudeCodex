@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Badge } from '../../../components/ui/badge';
-import { apiClient, type AuditLogEntry, type AuditLogResponse } from '../../../lib/apiClient';
+import { apiClient, type AuditLogEntry, type AuditLogResponse, type AuditLogQuery } from '../../../lib/apiClient';
 import { AlertTriangle, Download, Filter, History, RefreshCw, Shield } from 'lucide-react';
 
 interface Filters {
@@ -32,7 +32,7 @@ export default function AdminAuditPage() {
   const fetchLogs = async (nextPage = 1) => {
     setLoading(true);
     try {
-      const params: Record<string, string | number> = {
+      const params: AuditLogQuery = {
         page: nextPage,
         limit: 20,
       };
@@ -104,6 +104,7 @@ export default function AdminAuditPage() {
   }, [logs]);
 
   const pagination = logs?.pagination;
+  const totalPages = pagination?.totalPages ?? 1;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -232,7 +233,7 @@ export default function AdminAuditPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => fetchLogs(page + 1)}
-                  disabled={loading || (pagination.totalPages && page >= pagination.totalPages)}
+                  disabled={loading || page >= totalPages}
                 >
                   Suivant
                 </Button>
