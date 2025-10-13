@@ -246,6 +246,11 @@ export default function AdminDashboard() {
                   Conformité RGPD
                 </Link>
               </Button>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/audit">
+                  Audit des actions
+                </Link>
+              </Button>
               <Button variant="outline" className="w-full justify-start" disabled>
                 Tentatives de connexion suspectes
                 <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
