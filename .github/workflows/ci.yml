@@ -84,8 +84,11 @@ jobs:
         run: |
           psql "postgresql://postgres:postgres@localhost:5432/blobinfini" -c "\dt public.*" | grep -E "(User|ContactRequestResponse)" || echo "⚠️  Warning: Some tables may be missing"
 
-      - name: Build web app
-        run: npm run build --workspace @blobinfini/web
+      # Frontend build is now handled by Vercel (skipped in CI)
+      # Uncomment the following lines if you need to test frontend builds locally with act
+      # - name: Build web app
+      #   if: ${{ env.ACT }}
+      #   run: npm run build --workspace @blobinfini/web
 
       # Type-check each workspace with its own tsconfig to preserve path aliases
       # Web: Next.js App Router requires @/* alias resolved via apps/web/tsconfig.json
