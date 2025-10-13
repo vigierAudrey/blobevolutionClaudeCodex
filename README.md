@@ -281,9 +281,171 @@ npm run db:reset     # Reset complet (drop + migrate + seed)
 npm run db:studio    # Interface admin Prisma
 
 # Build et tests
-npm run build        # Build de production
+npm run build        # Build de production (API uniquement)
 npm run type-check   # Vérification TypeScript
 ```
+
+## 🌐 Déploiement Frontend avec Vercel
+
+### Configuration Initiale
+
+Le frontend Next.js (`apps/web`) est déployé sur **Vercel**, tandis que le backend NestJS (`apps/api`) reste hébergé sur **Clever Cloud**.
+
+#### 1. Installation du CLI Vercel
+
+```bash
+npm i -g vercel
+```
+
+#### 2. Connexion à Vercel
+
+```bash
+vercel login
+```
+
+Suivez les instructions pour vous authentifier (GitHub, GitLab, Bitbucket ou Email).
+
+#### 3. Configuration du Projet
+
+```bash
+cd apps/web
+vercel link
+```
+
+Lors de la première exécution, Vercel vous demandera :
+- **Set up and deploy?** → Oui
+- **Which scope?** → Sélectionnez votre compte/équipe
+- **Link to existing project?** → Non (première fois) puis créez un nouveau projet
+- **Project name** → `blobinfini` (ou nom de votre choix)
+- **In which directory is your code located?** → `./` (déjà dans apps/web)
+
+#### 4. Configuration des Variables d'Environnement
+
+Ajoutez ces variables dans le tableau de bord Vercel (Settings → Environment Variables) :
+
+```bash
+# OBLIGATOIRE
+NEXT_PUBLIC_API_URL=https://votre-api.cleverapps.io
+NEXT_PUBLIC_SITE_URL=https://blobinfini.vercel.app
+
+# OPTIONNEL - Push Notifications (Firebase)
+NEXT_PUBLIC_FIREBASE_API_KEY=votre-clé-firebase
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=votre-projet-id
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=votre-sender-id
+NEXT_PUBLIC_FIREBASE_APP_ID=votre-app-id
+
+# OPTIONNEL - Analytics
+NEXT_PUBLIC_ADSENSE_CLIENT_ID=ca-pub-XXXXXXXXXX
+NEXT_PUBLIC_ADSENSE_ENABLED=true
+```
+
+**Astuce** : Copiez les valeurs depuis `apps/web/.env.example` et adaptez-les pour la production.
+
+#### 5. Déploiement
+
+##### Déploiement Automatique (Recommandé)
+
+Une fois le projet lié, **chaque push sur `main` ou `develop`** déclenche automatiquement un déploiement Vercel.
+
+##### Déploiement Manuel
+
+```bash
+cd apps/web
+vercel --prod
+```
+
+#### 6. URLs de Déploiement
+
+Après chaque déploiement, Vercel génère :
+- **URL de production** : `https://blobinfini.vercel.app` (ou votre domaine custom)
+- **URLs de prévisualisation** : Une URL unique par commit/branche (ex: `https://blobinfini-git-feat-xxx.vercel.app`)
+
+Vous pouvez consulter tous les déploiements sur : `https://vercel.com/dashboard`
+
+### ⚠️ CI/CD et Vercel
+
+**Important** : Les builds frontend sont désormais gérés par **Vercel**, pas par GitHub Actions.
+
+- ✅ **GitHub Actions** : Lint, type-check, tests unitaires et E2E (frontend + backend)
+- ✅ **Vercel** : Build et déploiement du frontend Next.js uniquement
+- ✅ **Clever Cloud** : Déploiement du backend NestJS (via Docker)
+
+Le workflow `.github/workflows/ci.yml` a été adapté pour :
+- **Supprimer** l'étape `Build web app` (gérée par Vercel)
+- **Conserver** les étapes de validation (lint, type-check, tests)
+- **Préserver** la compatibilité avec `act` pour les tests locaux
+
+### 🔧 Tests Locaux avec `act`
+
+Pour tester les workflows GitHub Actions en local avec `act` :
+
+```bash
+# Installer act (si pas déjà fait)
+brew install act  # macOS
+# ou
+curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash  # Linux
+
+# Exécuter les workflows localement
+act -j build-and-test
+```
+
+Les étapes de déploiement Vercel sont automatiquement ignorées dans les runs locaux.
+
+### 📦 Architecture de Déploiement
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    GitHub Repository                     │
+│                 (blobevolutionClaudeCodex)              │
+└────────────┬────────────────────────────┬───────────────┘
+             │                             │
+     ┌───────▼────────┐          ┌────────▼──────────┐
+     │  GitHub Actions │          │      Vercel       │
+     │   (CI/CD)       │          │   (Auto Deploy)   │
+     │                 │          │                   │
+     │ • Lint          │          │ • Build Frontend  │
+     │ • Type-check    │          │ • Deploy Next.js  │
+     │ • Tests         │          │ • CDN Global      │
+     └─────────────────┘          └────────┬──────────┘
+                                            │
+                                   ┌────────▼──────────┐
+                                   │  Production URL   │
+                                   │  *.vercel.app     │
+                                   └───────────────────┘
+                                            │
+                                            │ API Calls
+                                            ▼
+                                   ┌───────────────────┐
+                                   │  Clever Cloud     │
+                                   │  (Backend API)    │
+                                   │  + PostgreSQL     │
+                                   │  + Redis          │
+                                   └───────────────────┘
+```
+
+### 🚀 Workflow de Développement
+
+1. **Développement local** : `npm run dev:all` (API + Frontend)
+2. **Créer une branche** : `git checkout -b feat/nouvelle-fonctionnalite`
+3. **Commit et push** : `git push origin feat/nouvelle-fonctionnalite`
+4. **Vercel crée automatiquement** une URL de prévisualisation
+5. **GitHub Actions** vérifie lint/tests/type-check
+6. **Merge vers `main`** → Déploiement automatique en production sur Vercel
+
+### 🎯 Bonnes Pratiques
+
+- ✅ Testez toujours localement avant de push (`npm run dev:web`)
+- ✅ Vérifiez les logs de build Vercel en cas d'erreur (dashboard Vercel)
+- ✅ Utilisez les URLs de prévisualisation pour tester avant merge
+- ✅ Configurez un domaine custom dans Vercel (Settings → Domains) si besoin
+- ✅ Activez les "Deployment Protection" pour sécuriser la production (Vercel Pro)
+
+### 🔗 Ressources Vercel
+
+- [Documentation Vercel](https://vercel.com/docs)
+- [Next.js sur Vercel](https://vercel.com/docs/frameworks/nextjs)
+- [Variables d'environnement](https://vercel.com/docs/environment-variables)
+- [Domaines personnalisés](https://vercel.com/docs/custom-domains)
 
 
 ## 🔔 Push Notifications - Architecture Hybride
