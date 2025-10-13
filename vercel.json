@@ -3,7 +3,7 @@
   "version": 2,
   "buildCommand": "cd apps/web && npm run build",
   "devCommand": "cd apps/web && npm run dev",
-  "installCommand": "npm install",
+  "installCommand": "npm install --ignore-scripts && npm rebuild --workspace=@blobinfini/web",
   "framework": null,
   "outputDirectory": "apps/web/.next",
   "cleanUrls": true,
