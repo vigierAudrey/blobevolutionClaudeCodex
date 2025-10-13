@@ -122,7 +122,7 @@ export default function AdminGDPRPage() {
               <p className="text-2xl font-semibold">{report?.details.unanonymizedDeletedUsers ?? 0}</p>
             </div>
             <div className="border rounded-md p-4">
-              <p className="text-sm text-muted-foreground">Utilisateurs à purger (> 7j)</p>
+              <p className="text-sm text-muted-foreground">Utilisateurs à purger (&gt; 7j)</p>
               <p className="text-2xl font-semibold">{report?.details.oldDeletedUsersAwaitingPurge ?? 0}</p>
             </div>
           </div>
