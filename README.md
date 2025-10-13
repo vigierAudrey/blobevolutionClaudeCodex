@@ -55,11 +55,44 @@ Services:
 
 Infrastructure:
   - Docker Compose (dev)
-  - Clever Cloud (production hosting)
+  - Vercel (frontend production - gratuit)
+  - Clever Cloud ou alternatives gratuites (backend production)
   - Firebase (push notifications)
   - CI/CD GitHub Actions
   - PostGIS activé (image `postgis/postgis:15-3.4` pour dev & CI)
 ```
+
+### 🆓 Hébergement Backend - Alternatives Gratuites (Phase MVP)
+
+Pour la phase MVP, plusieurs options d'hébergement backend gratuites sont disponibles :
+
+#### Option 1 : **Render** (⭐ Recommandé pour débuter)
+- **Gratuit** : 750h/mois de compute (24/7 pour 1 app)
+- **Inclus** : PostgreSQL (90 jours gratuit) + Redis (25 MB)
+- **Inconvénient** : L'app "s'endort" après 15 min d'inactivité (redémarre en ~30s)
+- **Idéal pour** : MVP, démos, prototypes
+- **Site** : https://render.com
+
+#### Option 2 : **Railway**
+- **Gratuit** : $5 de crédit/mois (~500h de runtime)
+- **Inclus** : PostgreSQL + Redis illimités
+- **Avantage** : Pas de sleep/hibernation
+- **Inconvénient** : Crédit peut s'épuiser avant fin du mois si fort trafic
+- **Site** : https://railway.app
+
+#### Option 3 : **Fly.io**
+- **Gratuit** : 3 VM + PostgreSQL (3GB)
+- **Avantage** : Pas de sleep, bonnes performances
+- **Inconvénient** : Configuration plus technique (Dockerfile requis)
+- **Site** : https://fly.io
+
+#### Option 4 : **Clever Cloud** (Payant)
+- **Payant** : À partir de ~7€/mois
+- **Avantages** : Hébergement France (RGPD), support Docker natif, pas de limitations
+- **Idéal pour** : Production avec budget
+- **Site** : https://www.clever-cloud.com
+
+**Note** : Pour le frontend Next.js, Vercel reste gratuit et illimité (voir section déploiement ci-dessous).
 
 ### Structure Monorepo - Phase MVP (Recommandé pour démarrer)
 
