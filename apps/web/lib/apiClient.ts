@@ -8,6 +8,26 @@ import type {
   RiderBookingRequest,
 } from './types/booking';
 
+export interface GDPRReport {
+  timestamp: string;
+  compliance: {
+    isCompliant: boolean;
+    issues: string[];
+    recommendations: string[];
+  };
+  details: {
+    expiredSessionsCount: number;
+    expiredTokensCount: number;
+    unanonymizedDeletedUsers: number;
+    oldDeletedUsersAwaitingPurge: number;
+  };
+  legalProtection: {
+    consentArchiveEnabled: boolean;
+    retentionPeriod: string;
+    anonymizationDelay: string;
+  };
+}
+
 export interface SecurityHealth {
   status: 'SECURE' | 'VULNERABLE';
   helmet: boolean;
@@ -434,6 +454,9 @@ export const apiClient = {
 
   // Admin
   getSecurityHealth: () => request('/security/health', { method: 'GET' }, true) as Promise<SecurityHealth>,
+  getGDPRReport: () => request('/admin/gdpr/compliance-report', { method: 'GET' }, true) as Promise<GDPRReport>,
+  runGDPRPurge: () => request('/admin/gdpr/run-purge', { method: 'POST' }, true),
+  searchLegalArchive: (userId: string) => request(`/admin/gdpr/legal-archive/${userId}`, { method: 'GET' }, true),
   getAdminStats: () => request('/admin/stats', { method: 'GET' }, true),
   getAdminUsers: (params?: { page?: number; limit?: number; role?: string }) => {
     const query = new URLSearchParams();
