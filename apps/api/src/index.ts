@@ -99,6 +99,7 @@ import { adminRouter } from './modules/admin/admin.controller';
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
+import { requireAuth, requireAdmin } from './modules/auth/auth.guard';
 
 
 const OPENAPI_SPEC_PATH = resolve(process.cwd(), 'docs/openapi/openapi.yaml');
@@ -243,6 +244,32 @@ export function createApp() {
 
   // CSRF token endpoint (GET requests are not protected)
   app.get('/csrf-token', getCSRFToken);
+
+  app.get('/security/health', requireAuth, requireAdmin, (_req, res) => {
+    const issues: string[] = [];
+    const isProd = process.env.NODE_ENV === 'production';
+
+    if (isProd) {
+      if (allowedOrigins.length === 0) {
+        issues.push('ALLOWED_ORIGINS is empty');
+      }
+      const proxies = process.env.TRUSTED_PROXY_IPS?.split(',').map(v => v.trim()).filter(Boolean) || [];
+      if (proxies.length === 0) {
+        issues.push('TRUSTED_PROXY_IPS missing');
+      }
+    }
+
+    const result = {
+      status: issues.length ? 'VULNERABLE' : 'SECURE',
+      helmet: true,
+      csrf: true,
+      rateLimit: true,
+      corsWhitelist: allowedOrigins,
+      issues
+    };
+
+    res.status(issues.length ? 503 : 200).json(result);
+  });
 
   // OpenAPI specification & Swagger UI
   app.get('/openapi.yaml', (_req, res) => {
