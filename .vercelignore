@@ -1,0 +1,33 @@
+# Ignore API and other apps during web deployment
+apps/api
+apps/*/node_modules
+
+# Ignore test and documentation
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+tests
+docs
+
+# Ignore Storybook
+.storybook
+storybook-static
+*.stories.tsx
+*.stories.ts
+
+# Ignore development files
+.env.local
+.env.development
+
+# Ignore CI/CD
+.github
+.gitlab-ci.yml
+.circleci
+
+# Ignore editor files
+.vscode
+.idea
+*.swp
+*.swo
