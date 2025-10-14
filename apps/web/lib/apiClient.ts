@@ -352,6 +352,45 @@ type BookingRequestMeApiItem = {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+let cachedCsrfToken: string | null = null;
+let csrfTokenPromise: Promise<string | null> | null = null;
+
+const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+async function fetchCsrfToken(): Promise<string | null> {
+  try {
+    const res = await fetch(`${API_URL}/csrf-token`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      cachedCsrfToken = null;
+      return cachedCsrfToken;
+    }
+
+    const payload = await res.json();
+    cachedCsrfToken = typeof payload?.csrfToken === 'string' ? payload.csrfToken : null;
+  } catch {
+    cachedCsrfToken = null;
+  } finally {
+    csrfTokenPromise = null;
+  }
+
+  return cachedCsrfToken;
+}
+
+async function ensureCsrfToken(): Promise<string | null> {
+  if (cachedCsrfToken) {
+    return cachedCsrfToken;
+  }
+
+  if (!csrfTokenPromise) {
+    csrfTokenPromise = fetchCsrfToken();
+  }
+
+  return csrfTokenPromise;
+}
 
 function getTokens() {
   if (typeof window === 'undefined') return null;
@@ -377,17 +416,30 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false) {
     'Content-Type': 'application/json',
     ...(opts.headers as any),
   };
+  const method = (opts.method || 'GET').toUpperCase();
+
+  if (!CSRF_SAFE_METHODS.has(method)) {
+    const token = await ensureCsrfToken();
+    if (token) {
+      headers['X-CSRF-Token'] = token;
+    }
+  }
+
   if (withAuth) {
     const t = getTokens();
     if (t?.accessToken) headers['Authorization'] = `Bearer ${t.accessToken}`;
   }
   const res = await fetch(`${API_URL}${path}`, {
     ...opts,
+    credentials: 'include',
     headers,
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) {
+    if (res.status === 403 && typeof data?.error === 'string' && data.error.startsWith('CSRF_')) {
+      cachedCsrfToken = null;
+    }
     const message = data?.error || `HTTP ${res.status}`;
     const error = new Error(message) as any;
     // Passer les détails de validation s'ils existent
@@ -627,4 +679,11 @@ export const apiClient = {
   saveTokens: setTokens,
   clearTokens: clearTokens,
   getTokens,
+};
+
+export const __testUtils = {
+  resetCsrfCache() {
+    cachedCsrfToken = null;
+    csrfTokenPromise = null;
+  },
 };

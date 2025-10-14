@@ -458,7 +458,11 @@ Les étapes de déploiement Vercel sont automatiquement ignorées dans les runs 
 
 ### 🚀 Workflow de Développement
 
-1. **Développement local** : `npm run dev:all` (API + Frontend)
+1. **Développement local** :
+   - Chemin A (API hors Docker): `npm run dev:all`
+   - Chemin B recommandé (API dans Docker): `npm run dev:all:docker`
+     - Démarre l'infra Docker (Postgres, Redis, MinIO, Mailpit) et l'API dans Docker
+     - Lance le frontend Next.js en local sur `http://localhost:3002`
 2. **Créer une branche** : `git checkout -b feat/nouvelle-fonctionnalite`
 3. **Commit et push** : `git push origin feat/nouvelle-fonctionnalite`
 4. **Vercel crée automatiquement** une URL de prévisualisation
@@ -664,8 +668,17 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
   npm run db:reseed
 
   # 2. Lancer les serveurs applicatifs (dans deux terminaux séparés)
-  npm run dev:api
-  npm run dev:web
+# Démarrage dev (Chemin B – API dans Docker)
+npm run dev:all:docker
+
+# Démarrages ciblés
+npm run dev:infra       # Postgres/Redis/MinIO/Mailpit (Docker)
+npm run dev:api:docker  # API dans Docker
+npm run dev:web         # Frontend en local (http://localhost:3002)
+
+Notes:
+- Pour accéder à Swagger: `http://localhost:4000/api/docs` (API dans Docker)
+- Assurez-vous d'avoir `REDIS_PASSWORD` dans votre `.env` pour l'infra Docker
   ```
 
   - API dispo sur `http://localhost:4000`
