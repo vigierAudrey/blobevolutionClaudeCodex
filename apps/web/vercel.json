@@ -3,9 +3,8 @@
   "version": 2,
   "buildCommand": "cd ../.. && npm run build:web",
   "devCommand": "npm run dev",
-  "installCommand": "npm install --prefix ../..",
+  "installCommand": "cd ../.. && npm install",
   "framework": "nextjs",
-  "rootDirectory": "apps/web",
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [

@@ -8,29 +8,33 @@
 
 ## Corrections appliquées
 
-### 1. Mise à jour de `vercel.json` (racine)
+### 1. Mise à jour de `vercel.json` (déplacé dans `apps/web/`)
 
-**Avant :**
+**⚠️ Changement important (2024+) :** `rootDirectory` n'est plus supporté dans `vercel.json`
+
+**Avant (racine du projet) :**
 ```json
 {
   "buildCommand": "npm run build",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "rootDirectory": "apps/web"  // ❌ Non supporté depuis 2024
 }
 ```
 
-**Après :**
+**Après (`apps/web/vercel.json`) :**
 ```json
 {
   "buildCommand": "cd ../.. && npm run build:web",
-  "installCommand": "npm install --prefix ../..",
-  "rootDirectory": "apps/web"
+  "installCommand": "cd ../.. && npm install",
+  "framework": "nextjs"
 }
 ```
 
 **Explications :**
-- `installCommand` : Installe les dépendances depuis la racine du monorepo
-- `buildCommand` : Navigue vers la racine et exécute le nouveau script `build:web`
-- `rootDirectory` : Indique à Vercel que l'application web est dans `apps/web`
+- **Emplacement :** Fichier déplacé de la racine vers `apps/web/vercel.json`
+- **`rootDirectory` supprimé :** Doit être configuré dans le dashboard Vercel (Project Settings → Root Directory → `apps/web`)
+- `installCommand` : Navigue vers la racine et installe les dépendances monorepo
+- `buildCommand` : Navigue vers la racine et exécute le script `build:web`
 
 ### 2. Mise à jour de `package.json` (racine)
 
@@ -61,9 +65,49 @@
   1. Génère les clients Prisma (`db:generate`)
   2. Build l'application Next.js
 
-### 3. Création de `.vercelignore`
+### 3. Configuration Vercel Dashboard (Important !)
 
-Un nouveau fichier `.vercelignore` a été créé pour optimiser le déploiement :
+**⚠️ Action manuelle requise dans le dashboard Vercel :**
+
+1. Allez dans **Project Settings** de votre projet
+2. Section **General** → **Root Directory**
+3. Définissez : `apps/web`
+4. Sauvegardez
+
+Sans cette configuration, Vercel cherchera le projet à la racine et ne trouvera pas `next.config.mjs`.
+
+### 4. Copie du `.vercelignore` vers `apps/web/` pour compatibilité Vercel 2025
+
+**Problème :** Avec `vercel.json` déplacé dans `apps/web/`, le `.vercelignore` à la racine n'est plus pris en compte.
+
+**Solution :** Copie de `.vercelignore` dans `apps/web/.vercelignore` avec ajustement des chemins relatifs.
+
+**Fichier racine (`.vercelignore`) :**
+```
+apps/api
+apps/*/node_modules
+```
+
+**Fichier apps/web (`.vercelignore`) :**
+```
+# Chemins relatifs depuis apps/web/
+../api
+../*/node_modules
+```
+
+**Changements appliqués :**
+- ✅ `.vercelignore` copié vers `apps/web/.vercelignore`
+- ✅ Chemins ajustés : `apps/api` → `../api` (relatif depuis `apps/web/`)
+- ✅ Fichier racine conservé (utile pour le monorepo)
+
+**Avantages :**
+- Vercel ignore correctement `apps/api/` lors du déploiement frontend
+- Optimisation de la taille du déploiement
+- Pas de rupture CI/CD
+
+### 5. Création initiale de `.vercelignore`
+
+Un fichier `.vercelignore` avait été créé pour optimiser le déploiement :
 
 ```
 # Ignore API et autres apps
