@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, afterAll, describe, it, expect, jest } from '@jest/globals';
+import { beforeEach, afterEach, afterAll, beforeAll, describe, it, expect, jest } from '@jest/globals';
 import { CacheService, cacheService, CacheKeys, initializeCache } from '../cache.service';
 
 import { createClient } from 'redis';
@@ -23,7 +23,11 @@ const prepareRedisClient = () => {
 
 describe('CacheService', () => {
   let cacheServiceInstance: CacheService;
+  let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
 
+  beforeAll(() => {
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
   beforeEach(async () => {
     jest.clearAllMocks();
     mockResolveRedisUrl.mockReset();
@@ -46,6 +50,7 @@ describe('CacheService', () => {
   afterAll(async () => {
     // Final cleanup
     await cacheService.close();
+    consoleErrorSpy.mockRestore();
   });
 
   describe('Singleton Pattern', () => {
@@ -166,6 +171,10 @@ describe('CacheService', () => {
         const result = await cacheServiceInstance.get('test:key');
 
         expect(result).toBeNull();
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          'Cache get error for key test:key:',
+          expect.any(SyntaxError)
+        );
       });
 
       it('should handle Redis errors gracefully', async () => {
@@ -174,6 +183,10 @@ describe('CacheService', () => {
         const result = await cacheServiceInstance.get('test:key');
 
         expect(result).toBeNull();
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          'Cache get error for key test:key:',
+          expect.any(Error)
+        );
       });
     });
 
@@ -221,6 +234,10 @@ describe('CacheService', () => {
         const result = await cacheServiceInstance.set('test:key', { test: true });
 
         expect(result).toBe(false);
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          'Cache set error for key test:key:',
+          expect.any(Error)
+        );
       });
     });
 
@@ -249,6 +266,10 @@ describe('CacheService', () => {
         const result = await cacheServiceInstance.del('test:key');
 
         expect(result).toBe(false);
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          'Cache delete error for key test:key:',
+          expect.any(Error)
+        );
       });
     });
   });

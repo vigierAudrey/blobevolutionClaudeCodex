@@ -8,12 +8,20 @@ jest.unmock('../apiClient');
 // Mock fetch BEFORE importing apiClient
 global.fetch = jest.fn();
 
-import { apiClient } from '../apiClient';
+import { apiClient, __testUtils } from '../apiClient';
 
 describe('API Client - Matching Integration', () => {
   const mockTokens = {
     accessToken: 'fake-access-token',
     refreshToken: 'fake-refresh-token',
+  };
+  const API_BASE_URL = 'http://localhost:4000';
+
+  const queueCsrfSuccess = () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ csrfToken: 'test-csrf-token' }),
+    });
   };
 
   beforeEach(() => {
@@ -21,6 +29,7 @@ describe('API Client - Matching Integration', () => {
 
     // Reset fetch mock
     (global.fetch as jest.Mock).mockClear();
+    __testUtils.resetCsrfCache();
 
     // Ensure window is defined (for jsdom)
     if (typeof window === 'undefined') {
@@ -78,7 +87,9 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait envoyer une requête de recherche correctement formatée', async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      const fetchMock = global.fetch as jest.Mock;
+      queueCsrfSuccess();
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify(mockSearchResponse),
       });
@@ -91,14 +102,27 @@ describe('API Client - Matching Integration', () => {
         throw error;
       }
 
-      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/matching/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer fake-access-token',
-        },
-        body: JSON.stringify(mockSearchRequest),
-      });
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        `${API_BASE_URL}/csrf-token`,
+        expect.objectContaining({
+          method: 'GET',
+          credentials: 'include',
+        }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        `${API_BASE_URL}/matching/search`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer fake-access-token',
+          }),
+          credentials: 'include',
+          body: JSON.stringify(mockSearchRequest),
+        }),
+      );
 
       expect(result).toEqual(mockSearchResponse);
     });
@@ -110,30 +134,39 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      const fetchMock = global.fetch as jest.Mock;
+      queueCsrfSuccess();
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ results: [], total: 0 }),
       });
 
       await apiClient.searchMatching(minimalRequest);
 
-      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/matching/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer fake-access-token',
-        },
-        body: JSON.stringify(minimalRequest),
-      });
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        `${API_BASE_URL}/matching/search`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer fake-access-token',
+          }),
+          credentials: 'include',
+          body: JSON.stringify(minimalRequest),
+        }),
+      );
     });
 
     it('devrait gérer les erreurs de réseau', async () => {
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
 
       await expect(apiClient.searchMatching(mockSearchRequest)).rejects.toThrow('Network error');
     });
 
     it('devrait gérer les erreurs HTTP', async () => {
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 400,
@@ -162,26 +195,34 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait envoyer les décisions par batch', async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      const fetchMock = global.fetch as jest.Mock;
+      queueCsrfSuccess();
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify(mockDecisionResponse),
       });
 
       const result = await apiClient.matchDecisions(mockDecisions);
 
-      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/matching/decisions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer fake-access-token',
-        },
-        body: JSON.stringify({ items: mockDecisions }),
-      });
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        `${API_BASE_URL}/matching/decisions`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer fake-access-token',
+          }),
+          credentials: 'include',
+          body: JSON.stringify({ items: mockDecisions }),
+        }),
+      );
 
       expect(result).toEqual(mockDecisionResponse);
     });
 
     it('devrait gérer une liste vide de décisions', async () => {
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ ok: true, count: 0 }),
@@ -193,6 +234,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait gérer les erreurs de conflit (409)', async () => {
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 409,
@@ -210,24 +252,32 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait envoyer un signalement avec motif', async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      const fetchMock = global.fetch as jest.Mock;
+      queueCsrfSuccess();
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ success: true }),
       });
 
       await apiClient.reportProfile(mockReportRequest);
 
-      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/reports/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer fake-access-token',
-        },
-        body: JSON.stringify(mockReportRequest),
-      });
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        `${API_BASE_URL}/reports/profile`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer fake-access-token',
+          }),
+          credentials: 'include',
+          body: JSON.stringify(mockReportRequest),
+        }),
+      );
     });
 
     it('devrait envoyer un signalement sans motif', async () => {
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ success: true }),
@@ -235,14 +285,19 @@ describe('API Client - Matching Integration', () => {
 
       await apiClient.reportProfile({ targetProfileId: 'profile-123' });
 
-      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/reports/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer fake-access-token',
-        },
-        body: JSON.stringify({ targetProfileId: 'profile-123' }),
-      });
+      expect((global.fetch as jest.Mock)).toHaveBeenNthCalledWith(
+        2,
+        `${API_BASE_URL}/reports/profile`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer fake-access-token',
+          }),
+          credentials: 'include',
+          body: JSON.stringify({ targetProfileId: 'profile-123' }),
+        }),
+      );
     });
   });
 
@@ -285,12 +340,13 @@ describe('API Client - Matching Integration', () => {
 
       const result = await apiClient.listConversations();
 
-      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith('http://localhost:4000/conversations', {
+      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith(`${API_BASE_URL}/conversations`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer fake-access-token',
         },
+        credentials: 'include',
       });
 
       expect(result).toEqual(mockConversationsResponse);
@@ -311,6 +367,7 @@ describe('API Client - Matching Integration', () => {
 
   describe('Gestion des tokens et authentification', () => {
     it('devrait inclure le token d\'autorisation dans les requêtes', async () => {
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ results: [] }),
@@ -322,7 +379,7 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       });
 
-      const [, options] = (global.fetch as jest.Mock).mock.calls[0];
+      const [, options] = (global.fetch as jest.Mock).mock.calls[1];
       expect(options.headers).toMatchObject({
         'Authorization': 'Bearer fake-access-token',
       });
@@ -332,6 +389,7 @@ describe('API Client - Matching Integration', () => {
       // Mock l'absence de tokens
       Storage.prototype.getItem = jest.fn(() => null);
 
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ results: [] }),
@@ -343,11 +401,12 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       });
 
-      const [, options] = (global.fetch as jest.Mock).mock.calls[0];
+      const [, options] = (global.fetch as jest.Mock).mock.calls[1];
       expect(options.headers).not.toHaveProperty('Authorization');
     });
 
     it('devrait gérer l\'expiration du token (401)', async () => {
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 401,
@@ -370,7 +429,9 @@ describe('API Client - Matching Integration', () => {
         { sport: 'surf' as const, level: 'advanced' as const, date: '2024-01-16' },
       ];
 
-      (global.fetch as jest.Mock).mockResolvedValue({
+      const fetchMock = global.fetch as jest.Mock;
+      queueCsrfSuccess();
+      fetchMock.mockResolvedValue({
         ok: true,
         text: async () => JSON.stringify({ results: [], total: 0 }),
       });
@@ -378,7 +439,7 @@ describe('API Client - Matching Integration', () => {
       const promises = requests.map(req => apiClient.searchMatching(req));
       const results = await Promise.all(promises);
 
-      expect((global.fetch as jest.Mock)).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
       expect(results).toHaveLength(3);
       results.forEach(result => {
         expect(result).toHaveProperty('results');
@@ -420,6 +481,7 @@ describe('API Client - Matching Integration', () => {
         decision: 'ACCEPT' as const,
       }));
 
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ ok: true, count: 100 }),
@@ -427,7 +489,7 @@ describe('API Client - Matching Integration', () => {
 
       await apiClient.matchDecisions(manyDecisions);
 
-      const [, options] = (global.fetch as jest.Mock).mock.calls[0];
+      const [, options] = (global.fetch as jest.Mock).mock.calls[1];
       const body = JSON.parse(options.body);
 
       // Dans une vraie implémentation, on limiterait à 100 éléments max
@@ -445,6 +507,7 @@ describe('API Client - Matching Integration', () => {
         ],
       };
 
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 400,
@@ -464,6 +527,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait gérer les erreurs de parsing JSON', async () => {
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 500,
@@ -480,6 +544,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait gérer les erreurs de réseau avec des messages explicites', async () => {
+      queueCsrfSuccess();
       (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
       try {
