@@ -44,6 +44,7 @@ export default function ReservationStartPage() {
   const [requestSuccess, setRequestSuccess] = useState<{ spotName: string | null; startAt: string } | null>(null);
 
   const steps = useMemo(() => ['Préférences', 'Zone', 'Résultats'], []);
+  const safeResults = useMemo(() => (Array.isArray(results) ? results : []), [results]);
 
   const canGoNextFromStep1 = selectedSport !== null && selectedLevel !== null;
 
@@ -88,7 +89,7 @@ export default function ReservationStartPage() {
   }, [step, selectedSport, selectedLevel, distanceKm, location]);
 
   const mapItems = useMemo(() => {
-    return results
+    return safeResults
       .filter((slot) => slot.spotLat != null && slot.spotLng != null)
       .map((slot) => {
         const isFull = slot.bookedCount >= slot.capacity;
@@ -104,16 +105,16 @@ export default function ReservationStartPage() {
           disabledReason: isFull ? 'Ce créneau est complet.' : undefined,
         };
       });
-  }, [results]);
+  }, [safeResults]);
 
   const handleMapContactClick = useCallback(
     (slotId: string) => {
-      const slot = results.find((item) => item.id === slotId);
+      const slot = safeResults.find((item) => item.id === slotId);
       if (slot && slot.bookedCount < slot.capacity) {
         setRequestingSlot(slot);
       }
     },
-    [results]
+    [safeResults]
   );
 
   const handleRequestSubmitted = useCallback((slot: BookingAvailabilityResult) => {
@@ -368,13 +369,13 @@ export default function ReservationStartPage() {
               <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
                 {error}
               </div>
-            ) : results.length === 0 ? (
+            ) : safeResults.length === 0 ? (
               <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
                 Aucune offre trouvée dans ce rayon. Essaie d’augmenter la distance ou de modifier ton niveau.
               </div>
             ) : (
               <div className="space-y-4">
-                {results.map((slot) => (
+                {safeResults.map((slot) => (
                   <Card key={slot.id}>
                     <CardHeader className="flex flex-col gap-1">
                       <div className="flex items-center justify-between">

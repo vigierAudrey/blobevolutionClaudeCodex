@@ -13,7 +13,16 @@ export class BookingService {
     // Validate time overlap with existing availabilities
     await this.validateTimeOverlap(proUserId, data.startAt, data.endAt);
 
-    return bookingRepository.createAvailability({ ...data, proUserId });
+    const availability = await bookingRepository.createAvailability({ ...data, proUserId });
+
+    // Invalidate availability caches near this location to keep search results fresh
+    try {
+      await cacheService.invalidateAvailabilities(data.spotLat, data.spotLng);
+    } catch (error) {
+      console.warn('⚠️  Failed to invalidate availability cache after creation', error);
+    }
+
+    return availability;
   }
 
   private validateGeoPoint(lat?: number, lng?: number): void {
@@ -144,7 +153,15 @@ export class BookingService {
       );
     }
 
-    return bookingRepository.updateAvailability(availabilityId, data);
+    const updated = await bookingRepository.updateAvailability(availabilityId, data);
+
+    try {
+      await cacheService.invalidateAvailabilities(updated.spotLat, updated.spotLng);
+    } catch (error) {
+      console.warn('⚠️  Failed to invalidate availability cache after update', error);
+    }
+
+    return updated;
   }
 
   async searchAvailabilities(filters: any) {
@@ -170,32 +187,12 @@ export class BookingService {
         // Cursor-based pagination on cached results
         const startIndex = cursor ? cachedAvailabilities.findIndex(a => a.id === cursor) + 1 : 0;
         const endIndex = Math.min(startIndex + effectiveLimit, cachedAvailabilities.length);
-        const paginatedResults = cachedAvailabilities.slice(startIndex, endIndex);
-        const nextCursor = endIndex < cachedAvailabilities.length ? cachedAvailabilities[endIndex - 1].id : null;
-
-        return {
-          items: paginatedResults,
-          hasMore: endIndex < cachedAvailabilities.length,
-          nextCursor,
-          cached: true
-        };
-      } else {
-        // Legacy pagination on cached results
-        const offset = (page - 1) * effectiveLimit;
-        const paginatedResults = cachedAvailabilities.slice(offset, offset + effectiveLimit);
-
-        return {
-          items: paginatedResults,
-          pagination: {
-            page,
-            pageSize: effectiveLimit,
-            total: cachedAvailabilities.length,
-            hasMore: offset + effectiveLimit < cachedAvailabilities.length
-          },
-          nextCursor: paginatedResults.length > 0 ? paginatedResults[paginatedResults.length - 1].id : null,
-          cached: true
-        };
+        return cachedAvailabilities.slice(startIndex, endIndex);
       }
+
+      // Legacy pagination on cached results
+      const offset = (page - 1) * effectiveLimit;
+      return cachedAvailabilities.slice(offset, offset + effectiveLimit);
     }
 
     const rows = await bookingRepository.searchAvailabilities({

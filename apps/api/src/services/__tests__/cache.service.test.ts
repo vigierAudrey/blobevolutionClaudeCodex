@@ -444,13 +444,16 @@ describe('CacheService', () => {
 
     describe('invalidateAvailabilities method', () => {
       it('should invalidate specific availability cache entries with coordinates', async () => {
-        const mockKeys = ['availabilities:43:-1:1', 'availabilities:43:-1:2'];
+        const mockKeys = [
+          'availabilities:surf:beginner:435:-15:25',
+          'availabilities:surf:beginner:435:-15:50',
+        ];
         mockRedisClient.keys.mockResolvedValue(mockKeys as any);
         mockRedisClient.del.mockResolvedValue(mockKeys.length as any);
 
         await cacheServiceInstance.invalidateAvailabilities(43.5, -1.5);
 
-        expect(mockRedisClient.keys).toHaveBeenCalledWith('availabilities:43:-2:*');
+        expect(mockRedisClient.keys).toHaveBeenCalledWith('availabilities:*:*:435:-15:*');
         expect(mockRedisClient.del).toHaveBeenCalledWith(mockKeys);
       });
 
