@@ -229,6 +229,16 @@ model User {
 - ✅ Détection comportements suspects
 - ✅ Rappel avantages plateforme
 
+### Rate limiting & `/auth/me`
+
+- **Comportement actuel** : toutes les routes `POST /auth/*` (login, refresh, etc.) restent protégées par le profil strict `AUTH` (5 requêtes / 15 min). Les routes `GET /auth/*` — notamment `GET /auth/me` appelé après connexion — sont volontairement routées vers le profil `API_STANDARD` (100 requêtes / 15 min) pour éviter les 429 en développement où les re-rendus se multiplient.
+- **Checklist passage en prod** :
+  1. **Mesurer le trafic réel** (`/auth/me` est instrumenté via les logs rate-limit). Si les clients officiels restent en dessous de ~300 requêtes / 15 min par IP, la configuration actuelle suffit.
+  2. **Besoin de durcir ?** Créer un profil dédié `AUTH_READ` dans `apps/api/src/middleware/enhanced-rate-limit.ts` (ex: 300 req / 15 min) et router les `GET /auth/*` dessus. Les POST `/auth/*` ne doivent jamais quitter le profil `AUTH`.
+  3. **Industrialisation** : exposer les seuils via variables d’environnement (`AUTH_MAX`, `AUTH_READ_MAX`, etc.) pour permettre un ajustement sans redeploiement.
+  4. **Côté front** : garder une déduplication/caching (`optimizedApiClient.me()`, SWR…) afin d’éviter les rafales client. Lors d’une intégration tierce, imposer une limite max de 1 appel `/auth/me` par cycle de rendu.
+  5. **Observabilité** : en production, monitorer les occurrences de `AUTH_RATE_LIMIT_EXCEEDED` et déclencher une alerte si elles réapparaissent une fois les seuils calibrés.
+
 ## 📊 Fonctionnalités par Phase
 
 ### ✅ Phase 1 - MVP (Complétée en grande partie)

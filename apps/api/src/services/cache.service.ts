@@ -147,8 +147,9 @@ export class CacheService {
     if (!this.client) return;
 
     try {
-      const pattern = lat && lng
-        ? `availabilities:${Math.floor(lat)}:${Math.floor(lng)}:*`
+      const hasCoordinates = typeof lat === 'number' && typeof lng === 'number';
+      const pattern = hasCoordinates
+        ? `availabilities:*:*:${Math.floor(lat! * 10)}:${Math.floor(lng! * 10)}:*`
         : 'availabilities:*';
 
       const keys = await this.client.keys(pattern);

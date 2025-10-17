@@ -108,6 +108,13 @@ export default function ProfilePage() {
       }
 
       await apiClient.updateProfile(body);
+
+      // Save disciplines in the same flow
+      const disciplinesPayload: Array<{ sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced' }> = [];
+      if (surfLevel) disciplinesPayload.push({ sport: 'surf', level: surfLevel as 'beginner' | 'intermediate' | 'advanced' });
+      if (kiteLevel) disciplinesPayload.push({ sport: 'kitesurf', level: kiteLevel as 'beginner' | 'intermediate' | 'advanced' });
+      await client.setDisciplines(disciplinesPayload);
+
       toast('Profil sauvegardé', 'success');
       // Redirect to onboarding to refresh completion status
       setTimeout(() => router.push('/onboarding'), 1000);
@@ -216,21 +223,6 @@ export default function ProfilePage() {
                   <option value="advanced">Confirmé</option>
                 </select>
               </div>
-            </div>
-            <div>
-              <Button type="button" variant="secondary" onClick={async ()=>{
-                const items: any[] = [];
-                if (surfLevel) items.push({ sport: 'surf', level: surfLevel });
-                if (kiteLevel) items.push({ sport: 'kitesurf', level: kiteLevel });
-                try {
-                  await client.setDisciplines(items as any);
-                  toast('Disciplines enregistrées', 'success');
-                  // Redirect to onboarding to refresh completion status
-                  setTimeout(() => router.push('/onboarding'), 1000);
-                } catch (e: any) {
-                  toast(e?.message || 'Erreur enregistrement disciplines', 'error');
-                }
-              }}>Enregistrer mes disciplines</Button>
             </div>
           </CardContent>
         </Card>

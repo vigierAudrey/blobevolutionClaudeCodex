@@ -230,7 +230,9 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
   let limiter;
 
   if (path.startsWith('/auth/')) {
-    if (path.includes('/register')) {
+    if (method === 'GET') {
+      limiter = rateLimiters.apiStandard;
+    } else if (path.includes('/register')) {
       limiter = rateLimiters.registration;
     } else {
       limiter = rateLimiters.auth;
