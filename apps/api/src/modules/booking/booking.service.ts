@@ -17,7 +17,7 @@ export class BookingService {
 
     // Invalidate availability caches near this location to keep search results fresh
     try {
-      await cacheService.invalidateAvailabilities(data.spotLat, data.spotLng);
+      await cacheService.invalidateAvailabilities(data.spotLat ?? undefined, data.spotLng ?? undefined);
     } catch (error) {
       console.warn('⚠️  Failed to invalidate availability cache after creation', error);
     }
@@ -156,7 +156,7 @@ export class BookingService {
     const updated = await bookingRepository.updateAvailability(availabilityId, data);
 
     try {
-      await cacheService.invalidateAvailabilities(updated.spotLat, updated.spotLng);
+      await cacheService.invalidateAvailabilities(updated.spotLat ?? undefined, updated.spotLng ?? undefined);
     } catch (error) {
       console.warn('⚠️  Failed to invalidate availability cache after update', error);
     }
