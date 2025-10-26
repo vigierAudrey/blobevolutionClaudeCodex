@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import Link from 'next/link';
-import { User, Map, Percent, Info, LogOut, MessageSquare, Briefcase } from 'lucide-react';
+import { User, Map, Percent, Info, LogOut, MessageSquare, Briefcase, GraduationCap, Search, RadioTower, Tag } from 'lucide-react';
 import { AdBannerSidebar } from '../../components/ads/AdBanner';
 
 // Force SSR due to auth context and dynamic user data
@@ -169,25 +169,36 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Briefcase size={18}/> Offres Pro</CardTitle>
-            <CardDescription>Trouve des cours avec des professionnels près de toi</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <GraduationCap size={18}/> Cours & Bons Plans
+              <Tag size={14} className="text-muted-foreground" />
+            </CardTitle>
+            <CardDescription>
+              Trouve un moniteur, signale que tu cherches un cours ou profite de promos
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Link href="/offers" className="inline-block w-full">
-              <Button className="w-full" variant="outline">Voir les offres</Button>
+          <CardContent className="space-y-2">
+            <Link href="/offers" className="block">
+              <Button className="w-full" variant="outline">
+                <Search size={16} className="mr-2" />
+                Chercher un pro près de moi
+              </Button>
             </Link>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Percent size={18}/> Offres</CardTitle>
-            <CardDescription>Promotions et avantages</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link href="/promos" className="inline-block w-full">
-              <Button className="w-full" variant="outline">Voir les offres</Button>
+            <Link href="/lesson-request" className="block">
+              <Button className="w-full" variant="secondary">
+                <RadioTower size={16} className="mr-2" />
+                Me rendre visible aux pros
+              </Button>
             </Link>
+            <Link href="/promos" className="block">
+              <Button className="w-full" variant="outline">
+                <Tag size={16} className="mr-2" />
+                Voir les bons plans
+              </Button>
+            </Link>
+            <p className="text-xs text-muted-foreground mt-2 px-1">
+              💡 Les pros voient ta demande sur la BloboMap et peuvent te proposer un cours
+            </p>
           </CardContent>
         </Card>
 

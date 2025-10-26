@@ -28,6 +28,7 @@ export default function ConversationPage() {
   const [conversationInfo, setConversationInfo] = useState<any>(null);
   const [showMenu, setShowMenu] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const hasLoadedRef = useRef(false);
 
   const load = async () => {
     try {
@@ -43,6 +44,10 @@ export default function ConversationPage() {
 
   // Load user info and conversation info
   useEffect(() => {
+    // Prevent double execution in React Strict Mode
+    if (hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
+
     const loadInitialData = async () => {
       try {
         const currentUser = await apiClient.me();

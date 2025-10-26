@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import Link from 'next/link';
 import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, Briefcase, Shield, ShieldOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -14,6 +14,7 @@ type ConversationItem = {
   type: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO';
   otherDisplayName: string;
   otherRole: 'RIDER' | 'PRO';
+  otherPhotoUrl?: string | null;
   lastMessage: string;
   lastAt: string;
   unread: number;
@@ -26,6 +27,7 @@ export default function MessagesPage() {
   const [items, setItems] = useState<ConversationItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL'|'FAVORITES'|'UNREAD'|'TRASH'|'RIDERS'|'PROS'>('ALL');
+  const hasLoadedRef = useRef(false);
 
   const load = async () => {
     try {
@@ -42,7 +44,16 @@ export default function MessagesPage() {
     } catch (e: any) { setError(e?.message || 'Erreur'); }
   };
 
-  useEffect(() => { load(); const t=setInterval(load, 15000); return ()=>clearInterval(t); }, [filter]);
+  useEffect(() => {
+    // Prevent double execution in React Strict Mode on initial mount
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+    }
+
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, [filter]);
 
   const counts = useMemo(() => {
     const all = items.filter(it => !it.trashed).length;
@@ -109,11 +120,32 @@ export default function MessagesPage() {
           <div className="divide-y">
             {shown.map((it) => (
               <div key={it.id} className="flex items-center justify-between py-3 rounded-md px-2 hover:bg-accent">
-                <Link href={`/messages/${it.id}`} className="flex-1">
-                  <div>
-                    <div className={(it.unread>0 ? 'font-semibold' : 'font-medium') + " flex items-center gap-2"}>
-                      {it.otherRole === 'PRO' && <Briefcase size={12} className="text-green-600" />}
-                      {it.otherRole === 'RIDER' && <Users size={12} className="text-blue-600" />}
+                <Link href={`/messages/${it.id}`} className="flex-1 flex items-start gap-3">
+                  {/* Photo de profil miniature */}
+                  <div className="relative flex-shrink-0">
+                    {it.otherPhotoUrl ? (
+                      <img
+                        src={it.otherPhotoUrl}
+                        alt={it.otherDisplayName}
+                        className="w-10 h-10 rounded-full object-cover border-2 border-gray-200"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-semibold text-sm">
+                        {it.otherDisplayName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    {/* Icône rôle en badge */}
+                    <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
+                      {it.otherRole === 'PRO' ? (
+                        <Briefcase size={14} className="text-green-600" />
+                      ) : (
+                        <Users size={14} className="text-blue-600" />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className={(it.unread>0 ? 'font-semibold' : 'font-medium') + " flex items-center gap-2 flex-wrap"}>
                       {it.otherDisplayName}
                       {it.favorite && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px]"><Star size={10}/> Favori</span>}
                       {it.blocked && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[10px]"><Shield size={10}/> Bloqué</span>}

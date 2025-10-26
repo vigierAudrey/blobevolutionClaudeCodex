@@ -1,0 +1,262 @@
+"use client";
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Button } from '../../components/ui/button';
+import { Label } from '../../components/ui/label';
+import { Input } from '../../components/ui/input';
+import { BackBar } from '../../components/BackBar';
+import { apiClient } from '../../lib/apiClient';
+import { useToast } from '../../components/ui/toast';
+import { Spinner } from '../../components/ui/spinner';
+
+export const dynamic = 'force-dynamic';
+
+type Sport = 'surf' | 'kitesurf';
+type Level = 'beginner' | 'intermediate' | 'advanced';
+
+const sportLabels: Record<Sport, string> = { surf: 'Surf', kitesurf: 'Kitesurf' };
+const levelLabels: Record<Level, string> = {
+  beginner: 'Débutant',
+  intermediate: 'Intermédiaire',
+  advanced: 'Confirmé',
+};
+
+export default function LessonRequestPage() {
+  const router = useRouter();
+  const toast = useToast();
+
+  const [wantsLesson, setWantsLesson] = useState(false);
+  const [lessonSport, setLessonSport] = useState<Sport | ''>('');
+  const [lessonLevel, setLessonLevel] = useState<Level | ''>('');
+  const [lessonDate, setLessonDate] = useState('');
+  const [lessonPlace, setLessonPlace] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    // Charger les préférences actuelles
+    const loadProfile = async () => {
+      try {
+        const profile = await apiClient.getProfile();
+        setWantsLesson(profile.wantsLesson || false);
+        setLessonSport((profile.lessonSport as Sport) || '');
+        setLessonLevel((profile.lessonLevel as Level) || '');
+
+        // Format date for input[type="date"]
+        if (profile.lessonDate) {
+          const date = new Date(profile.lessonDate);
+          setLessonDate(date.toISOString().slice(0, 10));
+        }
+
+        setLessonPlace(profile.lessonPlace || '');
+      } catch (err) {
+        console.error('Error loading profile:', err);
+        router.replace('/login');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, [router]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (wantsLesson && (!lessonSport || !lessonLevel)) {
+      toast('Veuillez choisir un sport et un niveau', 'error');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const payload: any = {
+        wantsLesson,
+      };
+
+      if (wantsLesson) {
+        payload.lessonSport = lessonSport;
+        payload.lessonLevel = lessonLevel;
+        payload.lessonDate = lessonDate || undefined;
+        payload.lessonPlace = lessonPlace || undefined;
+      } else {
+        // Clear all lesson data when disabling
+        payload.lessonSport = null;
+        payload.lessonLevel = null;
+        payload.lessonDate = null;
+        payload.lessonPlace = null;
+      }
+
+      await apiClient.updateProfile(payload);
+      toast(
+        wantsLesson
+          ? 'Demande de cours enregistrée ! Les pros peuvent maintenant vous voir sur la BloboMap.'
+          : 'Demande de cours désactivée',
+        'success'
+      );
+
+      setTimeout(() => router.push('/dashboard'), 1500);
+    } catch (err: any) {
+      toast(err?.message || 'Erreur lors de la sauvegarde', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        <BackBar fallbackHref="/dashboard" />
+        <div className="flex items-center justify-center py-12">
+          <Spinner />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-4">
+      <BackBar fallbackHref="/dashboard" />
+
+      <div className="text-center space-y-1">
+        <h1 className="text-2xl sm:text-3xl font-semibold">Demander un cours</h1>
+        <p className="text-sm text-muted-foreground">
+          Active ta demande pour être visible aux professionnels sur la BloboMap
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Demande de cours</CardTitle>
+            <CardDescription>
+              Les professionnels verront ta demande et pourront te contacter directement
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg">
+              <input
+                id="wantsLesson"
+                type="checkbox"
+                checked={wantsLesson}
+                onChange={(e) => setWantsLesson(e.target.checked)}
+                className="w-5 h-5"
+              />
+              <label htmlFor="wantsLesson" className="flex items-center gap-2 text-sm font-medium">
+                <span>🎓</span>
+                Je cherche un cours avec un professionnel
+              </label>
+            </div>
+
+            {wantsLesson && (
+              <div className="space-y-4 pt-2">
+                <div>
+                  <Label htmlFor="sport" className="mb-2 block">
+                    Sport <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(['surf', 'kitesurf'] as Sport[]).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setLessonSport(s)}
+                        className={`rounded-md border px-4 py-3 text-sm font-medium transition ${
+                          lessonSport === s
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-input hover:bg-accent'
+                        }`}
+                      >
+                        {s === 'surf' ? '🏄' : '🪁'} {sportLabels[s]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="level" className="mb-2 block">
+                    Niveau <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['beginner', 'intermediate', 'advanced'] as Level[]).map((l) => (
+                      <button
+                        key={l}
+                        type="button"
+                        onClick={() => setLessonLevel(l)}
+                        className={`rounded-md border px-3 py-2 text-xs font-medium transition ${
+                          lessonLevel === l
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-input hover:bg-accent'
+                        }`}
+                      >
+                        {levelLabels[l]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="date" className="mb-2 block">
+                    Date souhaitée (optionnel)
+                  </Label>
+                  <Input
+                    id="date"
+                    type="date"
+                    value={lessonDate}
+                    onChange={(e) => setLessonDate(e.target.value)}
+                    min={new Date().toISOString().slice(0, 10)}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="place" className="mb-2 block">
+                    Lieu / Spot (optionnel)
+                  </Label>
+                  <Input
+                    id="place"
+                    type="text"
+                    placeholder="Ex: Hossegor, La Torche..."
+                    value={lessonPlace}
+                    onChange={(e) => setLessonPlace(e.target.value)}
+                    maxLength={200}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Indique un lieu pour aider les pros à te trouver
+                  </p>
+                </div>
+
+                <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                  <p className="text-xs text-green-700">
+                    ✨ Une fois enregistrée, ta demande sera visible sur la BloboMap Pro.
+                    Les professionnels pourront te contacter via la messagerie.
+                  </p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => router.push('/dashboard')}
+          >
+            Annuler
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner /> Enregistrement...
+              </span>
+            ) : (
+              'Enregistrer'
+            )}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
