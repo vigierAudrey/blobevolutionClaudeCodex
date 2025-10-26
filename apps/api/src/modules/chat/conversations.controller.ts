@@ -52,6 +52,7 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
       // Get the appropriate profile based on conversation type
       let otherDisplayName = 'Profil';
       let otherRole = 'RIDER';
+      let otherPhotoUrl: string | null = null;
 
       if (otherId) {
         const otherUser = await prisma.user.findUnique({
@@ -63,15 +64,17 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
         if (otherRole === 'PRO') {
           const proProfile = await prisma.proProfile.findUnique({
             where: { userId: otherId },
-            select: { businessName: true }
+            select: { businessName: true, photoUrl: true }
           });
           otherDisplayName = proProfile?.businessName || 'Professionnel';
+          otherPhotoUrl = proProfile?.photoUrl || null;
         } else {
           const riderProfile = await prisma.riderProfile.findUnique({
             where: { userId: otherId },
-            select: { displayName: true }
+            select: { displayName: true, photoUrl: true }
           });
           otherDisplayName = riderProfile?.displayName || 'Rider';
+          otherPhotoUrl = riderProfile?.photoUrl || null;
         }
       }
 
@@ -88,6 +91,7 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
         type: conv.type,
         otherDisplayName,
         otherRole,
+        otherPhotoUrl,
         lastMessage: conv.messages[0]?.content ?? '',
         lastAt: conv.messages[0]?.createdAt ?? conv.updatedAt,
         unread,

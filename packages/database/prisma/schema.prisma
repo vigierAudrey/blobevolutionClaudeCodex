@@ -121,6 +121,9 @@ model RiderProfile {
   lng               Float?
   wantsLesson       Boolean           @default(false)
   lessonSport       String?
+  lessonLevel       String?
+  lessonDate        DateTime?
+  lessonPlace       String?
   incomingDecisions MatchDecision[]   @relation("ProfileAsTarget")
   reports           ProfileReport[]   @relation("ProfileAsReported")
   disciplines       RiderDiscipline[]

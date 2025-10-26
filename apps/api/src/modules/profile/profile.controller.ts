@@ -23,7 +23,10 @@ const upsertSchema = z.object({
   lng: z.number().min(-180).max(180).optional(),
   // Lesson intent (visible on BloboMap Pro)
   wantsLesson: z.boolean().optional(),
-  lessonSport: z.enum(['surf','kitesurf']).optional(),
+  lessonSport: z.enum(['surf','kitesurf']).nullable().optional().or(z.literal('').transform(() => null)),
+  lessonLevel: z.enum(['beginner','intermediate','advanced']).nullable().optional().or(z.literal('').transform(() => null)),
+  lessonDate: z.string().nullable().optional().transform(val => (val && val !== '') ? new Date(val) : null),
+  lessonPlace: z.string().max(200).nullable().optional().or(z.literal('').transform(() => null)),
 });
 
 const adminUpsertSchema = z.object({
@@ -82,6 +85,9 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+    // Log incoming request
+    console.log('📥 PUT /profile/me - Raw body:', JSON.stringify(req.body, null, 2));
+
     // Récupérer le rôle de l'utilisateur
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -103,8 +109,9 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
       return res.json(ap);
     } else {
       // Comportement existant pour les riders
-      const body = upsertSchema.parse(req.body);
-      console.log('Updating profile for user:', userId, 'with data:', body);
+      // Body is already validated and parsed by the validate middleware
+      const body = req.body;
+      console.log('✅ Using validated body:', JSON.stringify(body, null, 2));
       const rp = await prisma.riderProfile.upsert({
         where: { userId },
         create: { userId, ...body },

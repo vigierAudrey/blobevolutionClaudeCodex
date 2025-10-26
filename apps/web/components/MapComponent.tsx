@@ -23,6 +23,10 @@ type MapComponentProps = {
     type?: 'availability' | 'rider' | 'default';
     isDisabled?: boolean;
     disabledReason?: string;
+    lessonSport?: string | null;
+    lessonLevel?: string | null;
+    lessonDate?: Date | string | null;
+    lessonPlace?: string | null;
   }>;
   onContactClick: (userId: string) => void;
   legend?: Array<{ label: string; color: string }>;
@@ -298,7 +302,7 @@ export default function MapComponent({
             <Marker key={item.id} position={[item.lat, item.lng]} icon={icon}>
               <Popup
                 minWidth={200}
-                maxWidth={280}
+                maxWidth={300}
                 className="mobile-optimized-popup"
                 closeButton={true}
                 autoPan={true}
@@ -307,8 +311,39 @@ export default function MapComponent({
                 <div className="text-sm p-1">
                   <div className="font-medium text-base mb-1">{item.displayName || 'Rider'}</div>
                   {item.distanceKm != null && (
-                    <div className="text-muted-foreground text-xs mb-3">📍 À ~{item.distanceKm.toFixed(1)} km</div>
+                    <div className="text-muted-foreground text-xs mb-2">📍 À ~{item.distanceKm.toFixed(1)} km</div>
                   )}
+
+                  {/* Lesson details */}
+                  {(item.lessonSport || item.lessonLevel || item.lessonDate || item.lessonPlace) && (
+                    <div className="mb-3 p-2 bg-blue-50 rounded text-xs space-y-1">
+                      {item.lessonSport && (
+                        <div>
+                          <span className="font-medium">Sport:</span> {item.lessonSport === 'surf' ? '🏄 Surf' : '🪁 Kitesurf'}
+                        </div>
+                      )}
+                      {item.lessonLevel && (
+                        <div>
+                          <span className="font-medium">Niveau:</span> {
+                            item.lessonLevel === 'beginner' ? 'Débutant' :
+                            item.lessonLevel === 'intermediate' ? 'Intermédiaire' :
+                            'Confirmé'
+                          }
+                        </div>
+                      )}
+                      {item.lessonDate && (
+                        <div>
+                          <span className="font-medium">Date:</span> {new Date(item.lessonDate).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' })}
+                        </div>
+                      )}
+                      {item.lessonPlace && (
+                        <div>
+                          <span className="font-medium">Lieu:</span> {item.lessonPlace}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div>
                     <button
                       className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium touch-manipulation"
@@ -316,7 +351,7 @@ export default function MapComponent({
                       disabled={item.isDisabled}
                       style={{ minHeight: '44px' }} // iOS touch target recommendation
                     >
-                      {item.isDisabled ? '❌ Indisponible' : '💬 Demander ce créneau'}
+                      {item.isDisabled ? '❌ Indisponible' : '💬 Contacter'}
                     </button>
                     {item.isDisabled && item.disabledReason && (
                       <div className="mt-2 text-xs text-muted-foreground bg-muted/50 p-2 rounded">

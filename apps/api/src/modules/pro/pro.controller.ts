@@ -100,6 +100,9 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
       lat: number;
       lng: number;
       lessonSport: string | null;
+      lessonLevel: string | null;
+      lessonDate: Date | null;
+      lessonPlace: string | null;
       distance_km: number;
       activeMatchCount: number;
     }>>`
@@ -111,6 +114,9 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
         rp."lat",
         rp."lng",
         rp."lessonSport",
+        rp."lessonLevel",
+        rp."lessonDate",
+        rp."lessonPlace",
         ST_Distance(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
           ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
@@ -146,6 +152,10 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
       bio: c.bio,
       lat: c.lat,
       lng: c.lng,
+      lessonSport: c.lessonSport,
+      lessonLevel: c.lessonLevel,
+      lessonDate: c.lessonDate,
+      lessonPlace: c.lessonPlace,
       distanceKm: Math.round(c.distance_km * 10) / 10  // Already calculated in SQL
     }))
       .slice(0, 500);

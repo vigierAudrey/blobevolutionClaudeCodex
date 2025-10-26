@@ -14,6 +14,7 @@ import { BackBar } from '../../components/BackBar';
 import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { apiClient as client } from '../../lib/apiClient';
+import { apiRequest } from '../../lib/csrf';
 
 type Sex = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
 
@@ -92,9 +93,9 @@ export default function ProfilePage() {
       // If there is a new photo file, upload it first
       if (photoFile) {
         const contentType = photoFile.type || 'image/jpeg';
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/profile/photo/upload-url`, {
+        const res = await apiRequest('/profile/photo/upload-url', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiClient.getTokens()?.accessToken || ''}` },
+          headers: { Authorization: `Bearer ${apiClient.getTokens()?.accessToken || ''}` },
           body: JSON.stringify({ contentType }),
         });
         if (!res.ok) throw new Error('Impossible de préparer le téléversement');
