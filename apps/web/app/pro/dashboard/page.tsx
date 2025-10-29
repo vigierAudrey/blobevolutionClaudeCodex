@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
 import { Badge } from '../../../components/ui/badge';
-import { User, Map, CreditCard, Percent, Info, LogOut, BookOpen, MessageSquare, Network } from 'lucide-react';
+import { User, Map, Percent, Info, LogOut, BookOpen, MessageSquare, Gift } from 'lucide-react';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 
 export default function ProDashboardPage() {
@@ -144,24 +144,24 @@ export default function ProDashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Network size={18}/> Réseau Pro</CardTitle>
-            <CardDescription>Découvrir et contacter d'autres professionnels</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Percent size={18}/> Mes Propositions de Sessions</CardTitle>
+            <CardDescription>Créer et gérer vos offres de cours pour attirer des élèves</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/pro/network" className="inline-block w-full">
-              <Button className="w-full" variant="secondary">Explorer le réseau</Button>
+            <Link href="/pro/offers" className="inline-block w-full">
+              <Button className="w-full">Gérer mes sessions</Button>
             </Link>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Percent size={18}/> Mon Offre de Cours</CardTitle>
-            <CardDescription>Créer votre offre pour attirer des élèves</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Gift size={18}/> Offres Promotionnelles</CardTitle>
+            <CardDescription>Découvrir les opportunités de partenariats et promotions</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/pro/offers" className="inline-block w-full">
-              <Button className="w-full">Gérer mon offre</Button>
+            <Link href="/pro/promos" className="inline-block w-full">
+              <Button className="w-full" variant="secondary">Voir les promos</Button>
             </Link>
           </CardContent>
         </Card>
@@ -187,16 +187,6 @@ export default function ProDashboardPage() {
             <Link href="/pro/planning" className="inline-block w-full">
               <Button className="w-full" variant="secondary">Ouvrir mon planning</Button>
             </Link>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><CreditCard size={18}/> Paiements</CardTitle>
-            <CardDescription>Gérer tes revenus et paiements</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full" variant="outline" disabled>En préparation</Button>
           </CardContent>
         </Card>
 

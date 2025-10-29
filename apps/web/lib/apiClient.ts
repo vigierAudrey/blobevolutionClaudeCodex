@@ -214,6 +214,24 @@ export interface AdminMatchingTTFM {
   timeline: Array<{ period: string; averageDays: number; count: number }>;
 }
 
+export type ConsentMode = 'personalized' | 'npa' | 'limited' | 'none';
+export type ConsentSignal = 'granted' | 'denied';
+
+export interface ConsentRecord {
+  userHash: string;
+  consentLevel: ConsentMode;
+  ad_storage: ConsentSignal;
+  ad_user_data: ConsentSignal;
+  ad_personalization: ConsentSignal;
+  cmpVersion?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConsentResponse {
+  consent: ConsentRecord | null;
+}
+
 export type ModerationAction = 'approve' | 'dismiss' | 'ban';
 
 export interface AdminModerationResponse {
@@ -433,6 +451,7 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false) {
     ...opts,
     credentials: 'include',
     headers,
+    cache: 'no-store', // Désactive le cache HTTP pour éviter les conflits entre profils
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
@@ -510,6 +529,21 @@ export const apiClient = {
   trashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'trash' }) }, true),
   untrashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'untrash' }) }, true),
   favoriteConversation: (id: string, value: boolean) => request(`/conversations/${id}/favorite`, { method: 'POST', body: JSON.stringify({ value }) }, true),
+
+  getConsent: (hash: string) =>
+    request(`/consent/${hash}`, { method: 'GET' }) as Promise<ConsentResponse>,
+
+  updateConsent: (
+    hash: string,
+    body: {
+      consentLevel: ConsentMode;
+      ad_storage: ConsentSignal;
+      ad_user_data: ConsentSignal;
+      ad_personalization: ConsentSignal;
+      cmpVersion?: string | null;
+    },
+  ) =>
+    request(`/consent/${hash}`, { method: 'POST', body: JSON.stringify(body) }) as Promise<ConsentResponse>,
 
   // Pro Offers
   getProOffer: () => request('/pro/offers/me', { method: 'GET' }, true),
@@ -617,6 +651,10 @@ export const apiClient = {
     request('/booking/availability/me', { method: 'GET' }, true) as Promise<{ availabilities: BookingAvailability[] }> ,
   createBookingAvailability: (payload: CreateBookingAvailabilityPayload) =>
     request('/booking/availability', { method: 'POST', body: JSON.stringify(payload) }, true) as Promise<BookingAvailability>,
+  updateBookingAvailability: (availabilityId: string, payload: Partial<CreateBookingAvailabilityPayload>) =>
+    request(`/booking/availability/${availabilityId}`, { method: 'PATCH', body: JSON.stringify(payload) }, true) as Promise<BookingAvailability>,
+  deleteBookingAvailability: (availabilityId: string) =>
+    request(`/booking/availability/${availabilityId}`, { method: 'DELETE' }, true) as Promise<{ success: boolean; message: string }>,
   createBookingRequest: (payload: { availabilityId: string; message?: string }) =>
     request('/booking/requests', { method: 'POST', body: JSON.stringify(payload) }, true) as Promise<{ id: string }>,
   getBookingRequestsInbox: async () => {
