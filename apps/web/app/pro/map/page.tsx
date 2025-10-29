@@ -19,6 +19,76 @@ const MapComponent = dynamicImport(() => import('../../../components/MapComponen
   loading: () => <MapSkeleton />
 });
 
+// Fonction pour détecter le navigateur de l'utilisateur
+const detectBrowser = (): 'chrome' | 'firefox' | 'safari' | 'edge' | 'other' => {
+  if (typeof window === 'undefined') return 'other';
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+
+  if (userAgent.includes('edg/')) return 'edge';
+  if (userAgent.includes('chrome') && !userAgent.includes('edg/')) return 'chrome';
+  if (userAgent.includes('firefox')) return 'firefox';
+  if (userAgent.includes('safari') && !userAgent.includes('chrome')) return 'safari';
+
+  return 'other';
+};
+
+// Instructions selon le navigateur
+const getBrowserInstructions = (browser: string): { title: string; steps: string[] } => {
+  switch (browser) {
+    case 'chrome':
+      return {
+        title: 'Chrome',
+        steps: [
+          'Cliquez sur l\'icône 🔒 ou ⓘ à gauche de l\'adresse URL',
+          'Trouvez "Position" ou "Localisation"',
+          'Changez de "Bloquer" à "Autoriser"',
+          'Rechargez la page avec F5'
+        ]
+      };
+    case 'edge':
+      return {
+        title: 'Edge',
+        steps: [
+          'Cliquez sur l\'icône 🔒 à gauche de l\'adresse URL',
+          'Trouvez "Autorisations pour ce site"',
+          'Changez "Emplacement" à "Autoriser"',
+          'Rechargez la page avec F5'
+        ]
+      };
+    case 'firefox':
+      return {
+        title: 'Firefox',
+        steps: [
+          'Cliquez sur l\'icône 🔒 à gauche de l\'adresse URL',
+          'Cliquez sur "Permissions" puis "Position"',
+          'Décochez "Bloquer" ou sélectionnez "Autoriser"',
+          'Rechargez la page avec F5'
+        ]
+      };
+    case 'safari':
+      return {
+        title: 'Safari',
+        steps: [
+          'Ouvrez Safari > Réglages > Sites web',
+          'Dans la section "Localisation", trouvez ce site',
+          'Changez à "Autoriser"',
+          'Rechargez la page'
+        ]
+      };
+    default:
+      return {
+        title: 'Votre navigateur',
+        steps: [
+          'Recherchez l\'icône de sécurité près de l\'adresse URL',
+          'Trouvez les paramètres de localisation/position',
+          'Autorisez l\'accès à votre position',
+          'Rechargez la page'
+        ]
+      };
+  }
+};
+
 export default function ProMapPage() {
   const router = useRouter();
   const [radiusKm, setRadiusKm] = useState(25);
@@ -28,9 +98,13 @@ export default function ProMapPage() {
   const [hasGeolocPermission, setHasGeolocPermission] = useState(false);
   const [geolocEnabled, setGeolocEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [browserType, setBrowserType] = useState<string>('other');
   const debounceRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
+    // Détecter le navigateur au montage du composant
+    setBrowserType(detectBrowser());
+
     // Load pro location via /pro/me
     const t = apiClient.getTokens();
     if (!t?.accessToken) return;
@@ -78,8 +152,8 @@ export default function ProMapPage() {
       },
       (error) => {
         console.error('Erreur géolocalisation:', error);
-        alert('Impossible de récupérer votre position. Vérifiez les autorisations de géolocalisation.');
         setHasGeolocPermission(false);
+        setGeolocEnabled(false);
       },
       {
         enableHighAccuracy: true,
@@ -102,6 +176,7 @@ export default function ProMapPage() {
         { headers: { Authorization: `Bearer ${t.accessToken}` }}
       );
       const data = await r.json();
+      console.log(`📍 Received ${data.items?.length || 0} lesson requests for ${sport} within ${radiusKm}km`, data.items);
       if (r.ok) setItems(data.items || []);
     } catch (error) {
       console.error('Error loading lesson requests:', error);
@@ -154,9 +229,32 @@ export default function ProMapPage() {
                     </Button>
                   </div>
                   {hasGeolocPermission === false && (
-                    <p className="text-xs text-amber-700 mt-2">
-                      ⚠️ Autorisations refusées. Vérifiez les paramètres de votre navigateur.
-                    </p>
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                      <h4 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
+                        <span>⚠️</span>
+                        <span>Autorisations refusées - Comment débloquer</span>
+                      </h4>
+                      <p className="text-sm text-red-800 mb-3">
+                        Votre navigateur bloque l'accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
+                      </p>
+                      <ol className="text-sm text-red-800 space-y-1 ml-4">
+                        {getBrowserInstructions(browserType).steps.map((step, idx) => (
+                          <li key={idx} className="list-decimal">
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                      <p className="text-xs text-red-700 mt-3 italic">
+                        💡 Astuce : Cette protection est normale, elle protège votre vie privée. Nous ne sauvegarderons votre position que si vous cochez "Enregistrer comme position par défaut".
+                      </p>
+                      <Button
+                        onClick={enableGeolocation}
+                        className="mt-3 bg-red-600 hover:bg-red-700 text-white"
+                        size="sm"
+                      >
+                        🔄 Réessayer après avoir autorisé
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>

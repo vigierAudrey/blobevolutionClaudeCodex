@@ -25,7 +25,7 @@ const upsertSchema = z.object({
   wantsLesson: z.boolean().optional(),
   lessonSport: z.enum(['surf','kitesurf']).nullable().optional().or(z.literal('').transform(() => null)),
   lessonLevel: z.enum(['beginner','intermediate','advanced']).nullable().optional().or(z.literal('').transform(() => null)),
-  lessonDate: z.string().nullable().optional().transform(val => (val && val !== '') ? new Date(val) : null),
+  lessonDate: z.string().nullish().transform(val => (val && val !== '') ? new Date(val) : null),
   lessonPlace: z.string().max(200).nullable().optional().or(z.literal('').transform(() => null)),
 });
 

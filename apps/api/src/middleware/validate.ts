@@ -1,12 +1,12 @@
 import type { Request, Response, NextFunction } from 'express';
-import type { ZodSchema } from 'zod';
+import type { ZodTypeAny } from 'zod';
 
 /**
  * Wraps a Zod schema into an Express middleware.
  * Returns 400 with the validation errors when parsing fails.
  */
 export const validate =
-  <T>(schema: ZodSchema<T>) =>
+  (schema: ZodTypeAny) =>
   (req: Request, res: Response, next: NextFunction) => {
     try {
       req.body = schema.parse(req.body);
