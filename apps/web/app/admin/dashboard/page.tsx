@@ -26,6 +26,16 @@ type AdminStats = {
   reportedProfiles: number;
 };
 
+const DEFAULT_ADMIN_STATS: AdminStats = {
+  totalUsers: 0,
+  totalRiders: 0,
+  totalPros: 0,
+  totalAdmins: 0,
+  totalConversations: 0,
+  activeUsers: 0,
+  reportedProfiles: 0
+};
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<AdminUser | null>(null);
@@ -57,15 +67,7 @@ export default function AdminDashboard() {
         } catch (statsError) {
           console.error('Failed to load admin stats:', statsError);
           // Utiliser des valeurs par défaut si les stats échouent
-          setStats({
-            totalUsers: 0,
-            totalRiders: 0,
-            totalPros: 0,
-            totalAdmins: 0,
-            totalConversations: 0,
-            activeUsers: 0,
-            reportedProfiles: 0
-          });
+          setStats({ ...DEFAULT_ADMIN_STATS });
         }
 
       } catch (err: unknown) {
@@ -96,6 +98,8 @@ export default function AdminDashboard() {
   if (loading) return <p>Chargement…</p>;
   if (error) return <p className="text-red-600">{error}</p>;
 
+  const safeStats = stats ?? DEFAULT_ADMIN_STATS;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
@@ -119,9 +123,9 @@ export default function AdminDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalUsers || 0}</div>
+            <div className="text-2xl font-bold">{safeStats.totalUsers}</div>
             <p className="text-xs text-muted-foreground">
-              {stats?.totalRiders || 0} riders, {stats?.totalPros || 0} pros, {stats?.totalAdmins || 0} admins
+              {safeStats.totalRiders} riders, {safeStats.totalPros} pros, {safeStats.totalAdmins} admins
             </p>
           </CardContent>
         </Card>
@@ -132,7 +136,7 @@ export default function AdminDashboard() {
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalConversations || 0}</div>
+            <div className="text-2xl font-bold">{safeStats.totalConversations}</div>
             <p className="text-xs text-muted-foreground">
               Messages échangés
             </p>
@@ -145,7 +149,7 @@ export default function AdminDashboard() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.activeUsers || 0}</div>
+            <div className="text-2xl font-bold">{safeStats.activeUsers}</div>
             <p className="text-xs text-muted-foreground">
               Derniers 30 jours
             </p>
@@ -222,9 +226,9 @@ export default function AdminDashboard() {
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/reports">
                   Signalements en attente
-                  {stats?.reportedProfiles > 0 && (
+                  {safeStats.reportedProfiles > 0 && (
                     <span className="ml-auto bg-red-500 text-white rounded-full px-2 py-1 text-xs">
-                      {stats.reportedProfiles}
+                      {safeStats.reportedProfiles}
                     </span>
                   )}
                 </Link>

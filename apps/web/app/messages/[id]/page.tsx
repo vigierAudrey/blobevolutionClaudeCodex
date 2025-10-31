@@ -57,7 +57,7 @@ export default function ConversationPage() {
   const refreshConversationInfo = useCallback(async () => {
     try {
       const conversations = await apiClient.listConversations() as ThreadListResponse;
-      const convInfo = conversations.items.find((c) => c.id === id) ?? null;
+      const convInfo = (conversations.items ?? []).find((c: ThreadSummary) => c.id === id) ?? null;
       setConversationInfo(convInfo);
     } catch (err) {
       console.error('Error loading conversation info:', err);

@@ -323,7 +323,12 @@ export default function ProMapPage() {
               </div>
               <MapComponent
                 center={center}
-                items={items.map((item) => ({ ...item, type: 'rider' as const }))}
+                items={items.map((item) => ({
+                  ...item,
+                  displayName: item.displayName ?? undefined,
+                  distanceKm: item.distanceKm ?? undefined,
+                  type: 'rider' as const
+                }))}
                 legend={[
                   { label: 'Votre position', color: '#0ea5e9' },
                   { label: 'Demandes de riders', color: '#16a34a' },
