@@ -11,9 +11,9 @@
 |----------|-------------|
 | `NODE_ENV` | doit être `production` |
 | `ALLOWED_ORIGINS` | origines front (CSV) |
-| `SESSION_SECRET` | secret session (>=32 chars) |
-| `JWT_SECRET` | secret JWT access |
-| `JWT_REFRESH_SECRET` | secret JWT refresh |
+| `SESSION_SECRET` | secret session (>=64 chars, généré via script) |
+| `JWT_SECRET` | secret JWT access (>=64 chars) |
+| `JWT_REFRESH_SECRET` | secret JWT refresh (>=64 chars) |
 | `TRUSTED_PROXY_IPS` | IP/CIDR proxies de confiance |
 | `DATABASE_URL` | connexion PostgreSQL |
 | `REDIS_URL` | cache Redis |
@@ -51,6 +51,9 @@
 - [ ] Vérifier les logs (aucun token exposé).
 - [ ] Tester login/register depuis le front autorisé.
 - [ ] Tester `/auth/refresh`, `/profile/me`, `/matching/search` avec payloads invalides → `400`.
+- [ ] `curl -H "Origin: https://front.prod" https://api.blobinfini.com/health` → 200 + `Access-Control-Allow-Origin`.
+- [ ] `curl -H "Origin: https://evil.com" https://api.blobinfini.com/health` → 403.
+- [ ] Lancer l'API avec un secret de 10 caractères → démarrage bloqué (`must be at least 64 characters long`).
 
 ## Notes
 - En cas d'échec secrets/proxy, l'API refuse de démarrer.

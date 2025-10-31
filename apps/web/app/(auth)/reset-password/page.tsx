@@ -34,9 +34,10 @@ function ResetPasswordInner() {
       });
       setStatus('done');
       setMessage('Mot de passe mis à jour. Tu peux te connecter.');
-    } catch (e: any) {
+    } catch (err: unknown) {
       setStatus('error');
-      setMessage(e?.message || 'Impossible de réinitialiser');
+      const errorMessage = err instanceof Error ? err.message : null;
+      setMessage(errorMessage || 'Impossible de réinitialiser');
     }
   };
 

@@ -2,12 +2,14 @@
 
 // Force SSR for dynamic user-specific features
 export const dynamic = 'force-dynamic';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { apiClient } from '../../../lib/apiClient';
 import { Button } from '../../../components/ui/button';
+import type { DashboardUser } from '@/types/user';
+import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, Sport, Level } from '@/types';
 
 function ResultsInner() {
   const router = useRouter();
@@ -23,7 +25,7 @@ function ResultsInner() {
           return;
         }
 
-        const user = await apiClient.me();
+        const user = await apiClient.me() as DashboardUser;
         if (user.role === 'PRO') {
           router.replace('/pro/dashboard');
           return;
@@ -33,31 +35,53 @@ function ResultsInner() {
       }
     })();
   }, [router]);
-  const sport = sp.get('sport') as 'surf' | 'kitesurf' | null;
-  const level = sp.get('level') as 'beginner' | 'intermediate' | 'advanced' | null;
-  // Partner selection removed from flow; using profile default server-side
-  const partner = null as any;
+  const sport = sp.get('sport') as Sport | null;
+  const level = sp.get('level') as Level | null;
   const date = sp.get('date');
   const distanceKm = sp.get('distanceKm');
   const lat = sp.get('lat');
   const lng = sp.get('lng');
   const useGeoloc = sp.get('useGeoloc') === '1';
-  const [data, setData] = useState<{ criteria: any; results: any[]; total?: number; page?: number; pageSize?: number; hasMore?: boolean } | null>(null);
+  type MatchingResults = MatchingSearchResponse & {
+    criteria?: Partial<MatchingSearchParams>;
+    total?: number;
+    page?: number;
+    pageSize?: number;
+  };
+  const [data, setData] = useState<MatchingResults | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 5;
   const [sortBy, setSortBy] = useState<'distance' | 'name'>('distance');
 
-  useEffect(() => {
+  const loadResults = useCallback(async () => {
     if (!sport || !level || !date) return;
-    const body: any = { sport, level, date, page, pageSize, sortBy };
-    if (useGeoloc && distanceKm) body.distanceKm = Number(distanceKm);
-    if (useGeoloc && lat && lng) body.location = { lat: Number(lat), lng: Number(lng) };
-    apiClient
-      .searchMatching(body)
-      .then(setData)
-      .catch((e) => setError(e?.message || 'Erreur recherche'));
-  }, [sport, level, date, useGeoloc, distanceKm, lat, lng, page, sortBy]);
+    const payload: MatchingSearchParams & { page: number; pageSize: number } = {
+      sport,
+      level,
+      date,
+      sortBy,
+      excludeIds: [],
+      limit: pageSize,
+      page,
+      pageSize,
+    };
+    if (useGeoloc && distanceKm) payload.distanceKm = Number(distanceKm);
+    if (useGeoloc && lat && lng) payload.location = { lat: Number(lat), lng: Number(lng) };
+
+    try {
+      const response = await apiClient.searchMatching(payload) as MatchingResults;
+      setData(response);
+      setError(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur recherche');
+    }
+  }, [sport, level, date, sortBy, pageSize, page, useGeoloc, distanceKm, lat, lng]);
+
+  useEffect(() => {
+    void loadResults();
+  }, [loadResults]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -66,7 +90,7 @@ function ResultsInner() {
         <CardHeader>
           <CardTitle>Résultats</CardTitle>
           <CardDescription>
-            Sélection: {sport || '—'} &gt; {level || '—'} &gt; {useGeoloc ? (distanceKm ? `${distanceKm} km` : '—') : 'sans géolocalisation'} &gt; {date || '—'}
+            Sélection : {sport || '—'} &gt; {level || '—'} &gt; {useGeoloc ? (distanceKm ? `${distanceKm} km` : '—') : 'sans géolocalisation'} &gt; {date || '—'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -90,14 +114,14 @@ function ResultsInner() {
           {data && (
             <div className="space-y-3">
               <div className="text-sm">
-                <span className="text-muted-foreground">Critères utilisés:</span>{' '}
+                <span className="text-muted-foreground">Critères utilisés :</span>{' '}
                 <code className="text-xs">{JSON.stringify(data.criteria)}</code>
               </div>
-              {data.results.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Pas de résultats (mock). Prochaine étape: recherche réelle.</p>
+              { (data.results ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">Pas de résultats (mock). Prochaine étape : recherche réelle.</p>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
-                  {data.results.map((r) => (
+                  {(data.results ?? []).map((r: MatchingCandidate) => (
                     <div key={r.id} className="rounded-md border p-3 text-sm flex items-center justify-between">
                       <div>
                         <div className="font-medium flex items-center gap-2">
@@ -107,7 +131,7 @@ function ResultsInner() {
                           )}
                         </div>
                         <div className="text-muted-foreground">
-                          {r.gender === 'FEMALE' ? 'Femme' : 'Homme'} • {r.sport} • {r.level}
+                          {r.gender === 'FEMALE' ? 'Femme' : r.gender === 'MALE' ? 'Homme' : 'Autre'} • {r.sport} • {r.level}
                         </div>
                       </div>
                       <div className="text-right text-muted-foreground">

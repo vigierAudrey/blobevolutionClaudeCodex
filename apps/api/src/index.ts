@@ -1,8 +1,9 @@
-import dotenv from 'dotenv';
+import './config/loadEnv';
 import { resolve } from 'path';
 import fs from 'fs';
-// Load env from repo root by default so workspaces share one .env
-dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env') });
+
+// Initialize Sentry BEFORE any other imports (must be after dotenv)
+import './instrument';
 
 // Standard logging for monitoring (Clever Cloud logs)
 import express from 'express';
@@ -12,19 +13,55 @@ import swaggerUi from 'swagger-ui-express';
 import YAML from 'js-yaml';
 import helmet from 'helmet';
 import type { Request, Response, NextFunction } from 'express';
+import { secureLogger } from './utils/secure-logger';
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+const RAW_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
 
+const DEV_FALLBACK_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173'
+]);
+
+const allowedOriginsSet = (() => {
+  if (RAW_ALLOWED_ORIGINS.length > 0) {
+    return new Set(RAW_ALLOWED_ORIGINS);
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    return DEV_FALLBACK_ORIGINS;
+  }
+  return new Set<string>();
+})();
+
+if (process.env.NODE_ENV === 'production' && allowedOriginsSet.size === 0) {
+  throw new Error('ALLOWED_ORIGINS must be set in production to a comma-separated list of origins');
+}
+
+const MIN_SECRET_LENGTH = 64;
 const REQUIRED_SECRETS = ['SESSION_SECRET', 'JWT_SECRET', 'JWT_REFRESH_SECRET'] as const;
 
 function ensureProductionSecrets() {
   if (process.env.NODE_ENV !== 'production') {
+    const weak = REQUIRED_SECRETS.filter((key) => {
+      const value = process.env[key];
+      return !value || value.length < MIN_SECRET_LENGTH;
+    });
+
+    if (weak.length > 0) {
+      secureLogger.warn('WEAK_SECRETS_DETECTED', { secrets: weak });
+    }
     return;
   }
 
   const missing = REQUIRED_SECRETS.filter((key) => {
     const value = process.env[key];
-    return !value || value.length < 32;
+    return !value || value.length < MIN_SECRET_LENGTH;
   });
 
   if (missing.length > 0) {
@@ -34,11 +71,11 @@ function ensureProductionSecrets() {
 
 ensureProductionSecrets();
 
-const cspConnectSrc = ["'self'"];
-if (allowedOrigins.length > 0) {
-  cspConnectSrc.push(...allowedOrigins);
+const cspConnectSrc = new Set(["'self'"]);
+if (allowedOriginsSet.size > 0) {
+  allowedOriginsSet.forEach(origin => cspConnectSrc.add(origin));
 } else {
-  cspConnectSrc.push('http://localhost:3000');
+  DEV_FALLBACK_ORIGINS.forEach(origin => cspConnectSrc.add(origin));
 }
 
 const helmetMiddleware = helmet({
@@ -47,7 +84,7 @@ const helmetMiddleware = helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      connectSrc: cspConnectSrc,
+      connectSrc: Array.from(cspConnectSrc),
       imgSrc: ["'self'", 'data:', 'https:'],
       fontSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],
@@ -68,17 +105,24 @@ const helmetMiddleware = helmet({
 
 const corsMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
+  res.setHeader('Vary', 'Origin');
+
   if (origin) {
-    const isAllowed = allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production'
-      ? true
-      : allowedOrigins.includes(origin);
-    if (!isAllowed) {
+    if (!allowedOriginsSet.has(origin)) {
+      secureLogger.warn('CORS_ORIGIN_BLOCKED', { origin });
       return res.status(403).json({ error: 'Origin not allowed' });
     }
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
+
+  const requestedHeaders = req.headers['access-control-request-headers'];
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-XSRF-Token');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    typeof requestedHeaders === 'string' && requestedHeaders.length > 0
+      ? requestedHeaders
+      : 'Content-Type, Authorization, X-CSRF-Token, X-XSRF-Token'
+  );
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
@@ -100,6 +144,7 @@ import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
 import { requireAuth, requireAdmin } from './modules/auth/auth.guard';
+import { consentRouter } from './modules/consent/consent.controller';
 
 
 const OPENAPI_SPEC_PATH = resolve(process.cwd(), 'docs/openapi/openapi.yaml');
@@ -250,7 +295,7 @@ export function createApp() {
     const isProd = process.env.NODE_ENV === 'production';
 
     if (isProd) {
-      if (allowedOrigins.length === 0) {
+      if (allowedOriginsSet.size === 0) {
         issues.push('ALLOWED_ORIGINS is empty');
       }
       const proxies = process.env.TRUSTED_PROXY_IPS?.split(',').map(v => v.trim()).filter(Boolean) || [];
@@ -264,7 +309,7 @@ export function createApp() {
       helmet: true,
       csrf: true,
       rateLimit: true,
-      corsWhitelist: allowedOrigins,
+      corsWhitelist: Array.from(allowedOriginsSet),
       issues
     };
 
@@ -314,6 +359,7 @@ export function createApp() {
   app.use('/credits', (_req, res) => {
     res.status(410).json({ error: 'Payments feature disabled' });
   });
+  app.use('/consent', consentRouter);
   app.use('/admin', adminRouter);
   app.use('/contact', contactRouter);
   app.use('/booking', bookingRouter);
@@ -335,7 +381,7 @@ if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT ? Number(process.env.PORT) : 4000;
   app.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`API listening on http://localhost:${port}`);
+    console.info(`[API] Server ready on http://localhost:${port} (env=${process.env.NODE_ENV ?? 'development'})`);
   });
 }
 

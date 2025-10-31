@@ -1,20 +1,35 @@
 "use client";
-import { useEffect, useMemo, useState } from 'react';
+import nextDynamic from 'next/dynamic';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../../lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
 import Link from 'next/link';
-import { User, Map, Percent, Info, LogOut, MessageSquare, Briefcase, GraduationCap, Search, RadioTower, Tag } from 'lucide-react';
-import { AdBannerSidebar } from '../../components/ads/AdBanner';
+import { User, Map, Info, LogOut, MessageSquare, GraduationCap, Search, RadioTower, Tag } from 'lucide-react';
+
+const AdBannerSidebar = nextDynamic(
+  () => import('../../components/ads/AdBanner').then((mod) => mod.AdBannerSidebar),
+  {
+    ssr: false,
+    loading: () => <div className="hidden lg:block h-48 rounded-md bg-slate-200/60" aria-hidden="true" />,
+  },
+);
 
 // Force SSR due to auth context and dynamic user data
 export const dynamic = 'force-dynamic';
 
+type DashboardUser = {
+  id: string;
+  email: string;
+  role: 'RIDER' | 'PRO' | 'ADMIN';
+  emailVerified: boolean;
+  [key: string]: unknown;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<DashboardUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
   const [unreadTotal, setUnreadTotal] = useState<number>(0);
@@ -28,7 +43,7 @@ export default function DashboardPage() {
     apiClient
       .me()
       .then((u) => {
-        setUser(u);
+        setUser(u as DashboardUser);
         // First-login banner heuristic: show once per user until dismissed
         const key = `visited-dashboard-${u?.id}`;
         const visited = typeof window !== 'undefined' ? localStorage.getItem(key) : '1';
@@ -68,7 +83,8 @@ export default function DashboardPage() {
       try {
         const data = await apiClient.listConversations();
         if (!active) return;
-        const total = (data.items || []).reduce((acc: number, it: any) => acc + (Number(it.unread) || 0), 0);
+        const response = data as { items?: Array<{ unread?: number }> };
+        const total = (response.items ?? []).reduce((acc, it) => acc + Number(it.unread ?? 0), 0);
         setUnreadTotal(total);
       } catch {}
     };
@@ -124,7 +140,7 @@ export default function DashboardPage() {
 
       {!user?.emailVerified && (
         <div className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Ton email n'est pas encore vérifié. Pense à confirmer ton adresse pour sécuriser ton compte.
+          Ton email n&rsquo;est pas encore vérifié. Pense à confirmer ton adresse pour sécuriser ton compte.
           <div className="mt-2">
             <Link className="underline" href="/account">Voir mon compte</Link>
           </div>
@@ -206,7 +222,7 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Info size={18}/> À propos & RGPD</CardTitle>
             <CardDescription>
-              Comprendre l'utilisation des données, la sécurité et le fonctionnement du site.
+              Comprendre l&rsquo;utilisation des données, la sécurité et le fonctionnement du site.
             </CardDescription>
           </CardHeader>
           <CardContent>

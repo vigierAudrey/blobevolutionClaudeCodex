@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../auth/auth.guard';
 import { pushNotificationService } from '../../services/push-notification.service';
+import { secureLogger } from '../../utils/secure-logger';
 
 const router = Router();
 
@@ -56,7 +57,7 @@ router.post('/subscribe', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    console.log(`📱 Subscribing user ${userId} to push notifications`);
+    secureLogger.info('PUSH_ROUTE_SUBSCRIBE', { userId });
 
     const success = await pushNotificationService.saveToken(userId, token, userAgent);
 
@@ -77,7 +78,7 @@ router.post('/subscribe', requireAuth, async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('❌ Error in push subscribe:', error);
+    secureLogger.error('PUSH_ROUTE_SUBSCRIBE_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -94,7 +95,7 @@ router.post('/unsubscribe', requireAuth, async (req: Request, res: Response) => 
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    console.log(`🚫 Unsubscribing user ${userId} from push notifications`);
+    secureLogger.info('PUSH_ROUTE_UNSUBSCRIBE', { userId });
 
     const success = await pushNotificationService.removeToken(userId);
 
@@ -109,7 +110,7 @@ router.post('/unsubscribe', requireAuth, async (req: Request, res: Response) => 
       });
     }
   } catch (error) {
-    console.error('❌ Error in push unsubscribe:', error);
+    secureLogger.error('PUSH_ROUTE_UNSUBSCRIBE_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -135,7 +136,7 @@ router.post('/test', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    console.log(`🧪 Sending test notification to user ${userId}`);
+    secureLogger.info('PUSH_ROUTE_TEST_NOTIFICATION', { userId });
 
     const success = await pushNotificationService.sendToUser(userId, {
       ...validation.data,
@@ -153,7 +154,7 @@ router.post('/test', requireAuth, async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('❌ Error sending test notification:', error);
+    secureLogger.error('PUSH_ROUTE_TEST_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -180,7 +181,7 @@ router.post('/send', requireAuth, async (req: Request, res: Response) => {
 
     const { userId, title, body, type, url, data } = validation.data;
 
-    console.log(`📬 Admin sending notification to user ${userId}`);
+    secureLogger.info('PUSH_ROUTE_SEND', { userId });
 
     const success = await pushNotificationService.sendToUser(userId, {
       title,
@@ -202,7 +203,7 @@ router.post('/send', requireAuth, async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('❌ Error sending notification:', error);
+    secureLogger.error('PUSH_ROUTE_SEND_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -229,7 +230,7 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
       timestamp: Date.now()
     });
   } catch (error) {
-    console.error('❌ Error getting push status:', error);
+    secureLogger.error('PUSH_ROUTE_STATUS_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -249,7 +250,7 @@ export async function notifyBookingAccepted(
   try {
     await pushNotificationService.sendBookingAccepted(userId, bookingData);
   } catch (error) {
-    console.error('❌ Error sending booking accepted notification:', error);
+    secureLogger.error('PUSH_NOTIFY_BOOKING_ACCEPTED_FAILED', { userId, error: (error as Error)?.message });
   }
 }
 
@@ -267,7 +268,7 @@ export async function notifyBookingRejected(
   try {
     await pushNotificationService.sendBookingRejected(userId, bookingData);
   } catch (error) {
-    console.error('❌ Error sending booking rejected notification:', error);
+    secureLogger.error('PUSH_NOTIFY_BOOKING_REJECTED_FAILED', { userId, error: (error as Error)?.message });
   }
 }
 
@@ -285,7 +286,7 @@ export async function notifyNewMessage(
   try {
     await pushNotificationService.sendNewMessage(userId, messageData);
   } catch (error) {
-    console.error('❌ Error sending new message notification:', error);
+    secureLogger.error('PUSH_NOTIFY_NEW_MESSAGE_FAILED', { userId, error: (error as Error)?.message });
   }
 }
 
@@ -304,7 +305,7 @@ export async function notifyCourseReminder(
   try {
     await pushNotificationService.sendCourseReminder(userId, reminderData);
   } catch (error) {
-    console.error('❌ Error sending course reminder notification:', error);
+    secureLogger.error('PUSH_NOTIFY_COURSE_REMINDER_FAILED', { userId, error: (error as Error)?.message });
   }
 }
 

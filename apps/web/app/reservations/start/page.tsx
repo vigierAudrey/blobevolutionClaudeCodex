@@ -16,6 +16,19 @@ import { apiClient, type BookingAvailabilityResult } from '../../../lib/apiClien
 
 const AvailabilityMap = dynamicImport(() => import('../../../components/MapComponent'), { ssr: false });
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+  return fallback;
+};
+
 const sports: Array<{ id: 'surf' | 'kitesurf'; label: string }> = [
   { id: 'surf', label: 'Surf' },
   { id: 'kitesurf', label: 'Kitesurf' },
@@ -70,9 +83,9 @@ export default function ReservationStartPage() {
         if (!cancelled) {
           setResults(response.results);
         }
-      } catch (err: any) {
+      } catch (err) {
         if (!cancelled) {
-          setError(err?.message || 'Erreur lors du chargement des disponibilités');
+          setError(getErrorMessage(err, 'Erreur lors du chargement des disponibilités'));
           setResults([]);
         }
       } finally {
@@ -483,8 +496,8 @@ function RequestBookingModal({ slot, onClose, onSubmitted }: RequestBookingModal
         message: message.trim() ? message.trim() : undefined,
       });
       onSubmitted(slot);
-    } catch (err: any) {
-      setError(err?.message || 'Impossible d’envoyer la demande');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible d’envoyer la demande'));
     } finally {
       setSaving(false);
     }

@@ -13,24 +13,30 @@ let redisClient: RedisClientType | null = null;
 async function initializeRedis(): Promise<RedisClientType | null> {
   const redisUrl = resolveRedisUrl();
 
-  if (redisUrl) {
-    try {
-      const client = createClient({
-        url: redisUrl,
-      });
+  console.log('🔗 Connecting to Redis at:', redisUrl);
 
-      await client.connect();
-      await client.ping();
-      console.log('✅ Redis connected for rate limiting');
-      return client;
-    } catch (error) {
-      console.error('❌ Redis connection failed, falling back to memory store:', error);
-      return null;
-    }
+  try {
+    const client = createClient({
+      url: redisUrl,
+      password: process.env.REDIS_PASSWORD?.trim() || undefined,
+      socket: {
+        connectTimeout: 4000,
+        reconnectStrategy: (retries) => Math.min(retries * 200, 2000),
+      },
+    });
+
+    client.on('error', (error) => {
+      console.error('❌ Redis error:', error.message);
+    });
+
+    await client.connect();
+    await client.ping();
+    console.log('✅ Redis connected for rate limiting');
+    return client;
+  } catch (error) {
+    console.error('❌ Redis connection failed, falling back to memory store:', error);
+    return null;
   }
-
-  console.warn('⚠️ Redis rate limiting disabled - no Redis URL available');
-  return null;
 }
 
 // Initialize Redis on module load (not in test mode)
@@ -167,6 +173,17 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
       // Skip rate limiting in test environment
       if (process.env.NODE_ENV === 'test') {
         return true;
+      }
+
+      // ✅ CORRIGÉ : Skip rate limiting in development for localhost
+      if (process.env.NODE_ENV === 'development') {
+        const isLocalhost = req.ip === '::1' ||
+                           req.ip === '127.0.0.1' ||
+                           req.ip === '::ffff:127.0.0.1' ||
+                           req.hostname === 'localhost';
+        if (isLocalhost) {
+          return true;
+        }
       }
 
       // Skip for health checks

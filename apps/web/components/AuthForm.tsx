@@ -1,71 +1,115 @@
 "use client";
 import { useState } from 'react';
 import Link from 'next/link';
-import { apiClient } from '../lib/apiClient';
 import { useRouter } from 'next/navigation';
+import { apiClient } from '../lib/apiClient';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import type { ZodIssue } from 'zod';
+import type { DashboardUser, UserRole } from '@/types/user';
 
 type Mode = 'login' | 'register';
 
-export function AuthForm({ mode }: { mode: Mode }) {
+interface AuthFormProps {
+  mode: Mode;
+}
+
+type FieldErrors = {
+  email?: string;
+  password?: string;
+  role?: string;
+  consent?: string;
+};
+
+const isZodIssueArray = (value: unknown): value is ZodIssue[] => {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (issue) =>
+        typeof issue === 'object' &&
+        issue !== null &&
+        'code' in issue &&
+        'message' in issue &&
+        Array.isArray((issue as { path?: unknown }).path ?? [])
+    )
+  );
+};
+
+const getErrorMessage = (error: unknown, fallback = 'Une erreur est survenue') => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    const { message } = error as { message?: unknown };
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+  return fallback;
+};
+
+export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'RIDER' | 'PRO' | 'ADMIN'>('RIDER');
+  const [role, setRole] = useState<UserRole>('RIDER');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{email?: string; password?: string; role?: string; consent?: string}>({});
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [loginConsentNeeded, setLoginConsentNeeded] = useState(false);
   const [loginConsentAccepted, setLoginConsentAccepted] = useState(false);
   const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
 
-  const handleZodErrors = (details: any[]) => {
-    const errors: {email?: string; password?: string; role?: string; consent?: string} = {};
+  const handleZodErrors = (details: ZodIssue[]) => {
+    const errors: FieldErrors = {};
 
     details.forEach((detail) => {
-      const field = detail.path?.[0];
+      const pathSegment = Array.isArray(detail.path) ? detail.path[0] : undefined;
       const code = detail.code;
       const message = detail.message;
 
-      if (field === 'email') {
-        if (code === 'invalid_string' && message?.includes('email')) {
+      if (pathSegment === 'email') {
+        if (code === 'invalid_string' && typeof message === 'string' && message.includes('email')) {
           errors.email = 'Adresse email invalide.';
         } else {
           errors.email = 'Adresse email invalide.';
         }
-      } else if (field === 'password') {
-        if (code === 'too_small' && detail.minimum === 8) {
+      } else if (pathSegment === 'password') {
+        const minimum =
+          'minimum' in detail && typeof (detail as { minimum?: unknown }).minimum === 'number'
+            ? (detail as { minimum: number }).minimum
+            : null;
+        if (code === 'too_small' && minimum === 8) {
           errors.password = 'Le mot de passe doit contenir au moins 8 caractères.';
         } else {
           errors.password = 'Mot de passe invalide.';
         }
-      } else if (field === 'role') {
+      } else if (pathSegment === 'role') {
         errors.role = 'Rôle invalide.';
-      } else if (field === 'consentAccepted') {
+      } else if (pathSegment === 'consentAccepted') {
         errors.consent = 'Vous devez accepter la charte pour continuer.';
       }
     });
 
     setFieldErrors(errors);
 
-    // Si aucune erreur spécifique n'a été trouvée, afficher un message générique
     if (Object.keys(errors).length === 0) {
       setError('Une erreur est survenue, veuillez vérifier vos informations.');
     }
   };
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setError(null);
     setInfo(null);
     setFieldErrors({});
     setLoading(true);
+
     try {
       if (mode === 'register') {
         if (!consentAccepted) {
@@ -74,43 +118,58 @@ export function AuthForm({ mode }: { mode: Mode }) {
         }
         await apiClient.register({ email, password, role, consentAccepted: true });
         setInfo('Compte créé. Vérifie ta boîte mail pour valider ton email.');
-        // Optionnel: rediriger vers login
         setTimeout(() => router.push('/login'), 800);
-      } else {
-        const res = await apiClient.login({ email, password, consentAccepted: loginConsentNeeded ? loginConsentAccepted : undefined });
-        apiClient.saveTokens(res.accessToken, res.refreshToken);
-
-        // Récupérer le rôle de l'utilisateur pour rediriger correctement
-        try {
-          const user = await apiClient.me();
-          if (user.role === 'PRO') {
-            router.push('/pro/onboarding'); // Les pros vont sur leur onboarding spécifique
-          } else if (user.role === 'ADMIN') {
-            router.push('/admin/dashboard'); // Les admins vont sur leur dashboard
-          } else {
-            router.push('/onboarding'); // Les riders vont sur l'onboarding rider
-          }
-        } catch {
-          router.push('/dashboard'); // Fallback
-        }
+        return;
       }
-    } catch (err: any) {
-      const msg = err?.message || 'Une erreur est survenue';
 
-      // Vérifier si c'est une erreur de validation Zod
-      if (msg === 'Invalid input' && err?.details && Array.isArray(err.details)) {
-        handleZodErrors(err.details);
-      } else if (mode === 'login' && msg.toLowerCase().includes('consent')) {
+      const response = await apiClient.login({
+        email,
+        password,
+        consentAccepted: loginConsentNeeded ? loginConsentAccepted : undefined,
+      });
+      apiClient.saveTokens(response.accessToken, response.refreshToken);
+
+      try {
+        const user = (await apiClient.me()) as DashboardUser;
+        if (user.role === 'PRO') {
+          router.push('/pro/onboarding');
+        } else if (user.role === 'ADMIN') {
+          router.push('/admin/dashboard');
+        } else {
+          router.push('/onboarding');
+        }
+      } catch {
+        router.push('/dashboard');
+      }
+    } catch (submissionError) {
+      const message = getErrorMessage(submissionError);
+
+      if (
+        message === 'Invalid input' &&
+        submissionError &&
+        typeof submissionError === 'object' &&
+        'details' in submissionError &&
+        isZodIssueArray((submissionError as { details?: unknown }).details)
+      ) {
+        handleZodErrors((submissionError as { details: ZodIssue[] }).details);
+        return;
+      }
+
+      const normalized = message.toLowerCase();
+
+      if (mode === 'login' && normalized.includes('consent')) {
         setLoginConsentNeeded(true);
-        setError('Pour continuer, merci d\'accepter la charte.');
+        setError('Pour continuer, merci d’accepter la charte.');
         setEmailNotVerified(false);
-      } else if (mode === 'login' && msg.toLowerCase().includes('email not verified')) {
+      } else if (mode === 'login' && normalized.includes('email not verified')) {
         setEmailNotVerified(true);
         setError(null);
-      } else if (mode === 'register' && msg.toLowerCase().includes('email already registered')) {
-        setFieldErrors({ email: 'Cette adresse email est déjà utilisée. Essayez de vous connecter ou utilisez une autre adresse.' });
+      } else if (mode === 'register' && normalized.includes('email already registered')) {
+        setFieldErrors({
+          email: "Cette adresse email est déjà utilisée. Essayez de vous connecter ou utilisez une autre adresse.",
+        });
       } else {
-        setError(msg);
+        setError(message);
       }
     } finally {
       setLoading(false);
@@ -126,12 +185,11 @@ export function AuthForm({ mode }: { mode: Mode }) {
       await apiClient.resendVerification(email);
       setResendStatus('sent');
       setInfo('Email de vérification renvoyé. Vérifie ta boîte mail.');
-    } catch (e: any) {
+    } catch (resendError) {
       setResendStatus('error');
-      setError(e?.message || 'Impossible de renvoyer email');
+      setError(getErrorMessage(resendError, 'Impossible de renvoyer l’email'));
     }
   };
-
 
   return (
     <Card>
@@ -151,10 +209,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
               required
               autoComplete="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) => setEmail(event.target.value)}
               className={fieldErrors.email ? 'border-red-500 focus-visible:ring-red-500' : ''}
             />
-            {fieldErrors.email && <p className="text-sm text-red-600" role="alert">{fieldErrors.email}</p>}
+            {fieldErrors.email && (
+              <p className="text-sm text-red-600" role="alert">
+                {fieldErrors.email}
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Mot de passe</Label>
@@ -164,10 +226,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
               required
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(event) => setPassword(event.target.value)}
               className={fieldErrors.password ? 'border-red-500 focus-visible:ring-red-500' : ''}
             />
-            {fieldErrors.password && <p className="text-sm text-red-600" role="alert">{fieldErrors.password}</p>}
+            {fieldErrors.password && (
+              <p className="text-sm text-red-600" role="alert">
+                {fieldErrors.password}
+              </p>
+            )}
           </div>
           {mode === 'register' && (
             <div className="space-y-2">
@@ -180,13 +246,17 @@ export function AuthForm({ mode }: { mode: Mode }) {
                     : 'border-input bg-background focus-visible:ring-ring'
                 }`}
                 value={role}
-                onChange={(e) => setRole(e.target.value as any)}
+                onChange={(event) => setRole(event.target.value as UserRole)}
               >
                 <option value="RIDER">Rider</option>
                 <option value="PRO">Pro</option>
                 <option value="ADMIN">Admin</option>
               </select>
-              {fieldErrors.role && <p className="text-sm text-red-600" role="alert">{fieldErrors.role}</p>}
+              {fieldErrors.role && (
+                <p className="text-sm text-red-600" role="alert">
+                  {fieldErrors.role}
+                </p>
+              )}
             </div>
           )}
           {mode === 'register' && (
@@ -199,15 +269,18 @@ export function AuthForm({ mode }: { mode: Mode }) {
                   Blobinfini ne fournit ni assurance, ni encadrement, ni garantie sur les activités organisées entre utilisateurs.
                 </p>
                 <ul className="list-disc pl-5 mt-2 space-y-1">
-                  <li>Donne rendez‑vous dans un lieu public et préviens un proche.</li>
+                  <li>Donne rendez-vous dans un lieu public et préviens un proche.</li>
                   <li>Reste vigilant face aux comportements inappropriés ou malveillants.</li>
-                  <li>Évalue toi‑même les conditions (météo, niveau, matériel) avant de pratiquer.</li>
+                  <li>Évalue toi-même les conditions (météo, niveau, matériel) avant de pratiquer.</li>
                   <li>Interromps toute activité si tu ne te sens pas en sécurité.</li>
                 </ul>
                 <p className="mt-2 text-muted-foreground">
                   En t’inscrivant, tu confirmes avoir lu et accepté cette charte.
                   Pour les détails, consulte la page «
-                  <a className="underline text-primary" href="/charte" target="_blank" rel="noopener noreferrer">Charte et avertissement</a> ».
+                  <a className="underline text-primary" href="/charte" target="_blank" rel="noopener noreferrer">
+                    Charte et avertissement
+                  </a>
+                  ».
                 </p>
               </div>
               <label className="flex items-start gap-2 text-sm mt-2">
@@ -216,12 +289,16 @@ export function AuthForm({ mode }: { mode: Mode }) {
                   type="checkbox"
                   className={`mt-1 ${fieldErrors.consent ? 'border-red-500' : ''}`}
                   checked={consentAccepted}
-                  onChange={(e) => setConsentAccepted(e.target.checked)}
+                  onChange={(event) => setConsentAccepted(event.target.checked)}
                   required
                 />
-                <span>J'ai lu et j'accepte la charte de sécurité et l'avertissement.</span>
+                <span>J&apos;ai lu et j&apos;accepte la charte de sécurité et l&apos;avertissement.</span>
               </label>
-              {fieldErrors.consent && <p className="text-sm text-red-600 mt-2" role="alert">{fieldErrors.consent}</p>}
+              {fieldErrors.consent && (
+                <p className="text-sm text-red-600 mt-2" role="alert">
+                  {fieldErrors.consent}
+                </p>
+              )}
             </div>
           )}
           {mode === 'login' && loginConsentNeeded && (
@@ -231,7 +308,10 @@ export function AuthForm({ mode }: { mode: Mode }) {
                 <p className="mt-1">
                   Pour poursuivre la connexion, confirme avoir lu et accepté la charte.
                   Consulte la page «
-                  <a className="underline text-primary" href="/charte" target="_blank" rel="noopener noreferrer">Charte et avertissement</a> ».
+                  <a className="underline text-primary" href="/charte" target="_blank" rel="noopener noreferrer">
+                    Charte et avertissement
+                  </a>
+                  ».
                 </p>
               </div>
               <label className="flex items-start gap-2 text-sm mt-2">
@@ -240,10 +320,10 @@ export function AuthForm({ mode }: { mode: Mode }) {
                   type="checkbox"
                   className="mt-1"
                   checked={loginConsentAccepted}
-                  onChange={(e) => setLoginConsentAccepted(e.target.checked)}
+                  onChange={(event) => setLoginConsentAccepted(event.target.checked)}
                   required
                 />
-                <span>J’ai lu et j’accepte la charte de sécurité et l’avertissement.</span>
+                <span>J&apos;ai lu et j&apos;accepte la charte de sécurité et l&apos;avertissement.</span>
               </label>
             </div>
           )}
@@ -254,14 +334,18 @@ export function AuthForm({ mode }: { mode: Mode }) {
                 <p className="mt-1">Avant de te connecter, confirme ton adresse email.</p>
               </div>
               <div className="flex gap-2">
-                <Button type="button" variant="secondary" disabled={resendStatus==='loading' || !email} onClick={resend}>
-                  {resendStatus==='loading' ? 'Envoi…' : 'Renvoyer l’email de vérification'}
+                <Button type="button" variant="secondary" disabled={resendStatus === 'loading' || !email} onClick={resend}>
+                  {resendStatus === 'loading' ? 'Envoi…' : 'Renvoyer l’email de vérification'}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">Astuce: vérifie aussi le dossier spam.</p>
+              <p className="text-xs text-muted-foreground">Astuce : vérifie aussi le dossier spam.</p>
             </div>
           )}
-          {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+          {error && (
+            <p className="text-sm text-red-600" role="alert">
+              {error}
+            </p>
+          )}
           {info && <p className="text-sm text-green-600">{info}</p>}
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? 'En cours…' : mode === 'login' ? 'Se connecter' : 'Créer le compte'}

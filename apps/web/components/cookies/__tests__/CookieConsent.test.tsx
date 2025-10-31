@@ -1,154 +1,165 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { CookieConsent, useCookieConsent } from '../CookieConsent';
+import { useConsent } from '../../../hooks/useConsent';
 
-// Mock environment variables
+jest.mock('../../../hooks/useConsent', () => ({
+  useConsent: jest.fn(),
+}));
+
+type MockConsent = ReturnType<typeof useConsent> extends infer T ? (T extends object ? T : never) : never;
+
+const mockUseConsent = useConsent as jest.MockedFunction<typeof useConsent>;
+
+const createConsentState = (overrides: Partial<MockConsent> = {}): MockConsent => ({
+  consentMode: 'none',
+  consentSignals: {
+    ad_storage: 'denied',
+    ad_user_data: 'denied',
+    ad_personalization: 'denied',
+  },
+  consentReady: true,
+  consentSource: 'local',
+  userHash: 'hash',
+  cmpVersion: 'cmp-v',
+  updateConsent: jest.fn(),
+  houseAdsEnabled: true,
+  ...overrides,
+} as MockConsent);
+
 const originalEnv = process.env;
-
-// Spy on localStorage methods
-let getItemSpy: jest.SpyInstance;
-let setItemSpy: jest.SpyInstance;
-let removeItemSpy: jest.SpyInstance;
 
 describe('CookieConsent', () => {
   beforeEach(() => {
-    // Setup localStorage spies
-    Storage.prototype.getItem = jest.fn(() => null);
-    Storage.prototype.setItem = jest.fn();
-    Storage.prototype.removeItem = jest.fn();
-
-    getItemSpy = jest.spyOn(Storage.prototype, 'getItem');
-    setItemSpy = jest.spyOn(Storage.prototype, 'setItem');
-    removeItemSpy = jest.spyOn(Storage.prototype, 'removeItem');
-
+    jest.clearAllMocks();
     process.env = {
       ...originalEnv,
       NEXT_PUBLIC_ADSENSE_ENABLED: 'true',
     };
-    jest.useFakeTimers();
   });
 
   afterEach(() => {
     process.env = originalEnv;
-    jest.runOnlyPendingTimers();
-    jest.useRealTimers();
-    jest.restoreAllMocks();
   });
 
-  it('shows consent modal when no consent exists and AdSense is enabled', async () => {
+  it('shows consent modal when consent is missing', async () => {
+    mockUseConsent.mockReturnValue(createConsentState({ consentMode: 'none' }));
+
     render(<CookieConsent />);
 
-    // Avancer le timer de 2000ms (délai dans le composant)
-    jest.advanceTimersByTime(2000);
-
-    await waitFor(() => {
-      expect(screen.getByText(/Publicités adaptées à tes goûts surf\/kite/)).toBeInTheDocument();
-    });
+    expect(await screen.findByText(/Publicités adaptées à tes goûts surf\/kite/)).toBeInTheDocument();
   });
 
   it('does not show modal when AdSense is disabled', () => {
     process.env.NEXT_PUBLIC_ADSENSE_ENABLED = 'false';
-    render(<CookieConsent />);
+    mockUseConsent.mockReturnValue(createConsentState({ consentMode: 'none' }));
 
-    jest.advanceTimersByTime(2000);
+    render(<CookieConsent />);
 
     expect(screen.queryByText(/Publicités adaptées/)).not.toBeInTheDocument();
   });
 
-  it('allows selecting essential cookies', async () => {
+  it('calls updateConsent with npa for basic ads', async () => {
+    const updateConsent = jest.fn().mockResolvedValue(undefined);
+    mockUseConsent.mockReturnValue(createConsentState({ consentMode: 'none', updateConsent }));
     const onConsentChange = jest.fn();
+
     render(<CookieConsent onConsentChange={onConsentChange} />);
 
+    const button = await screen.findByText(/Continuer avec les pubs basiques/);
     act(() => {
-      jest.advanceTimersByTime(2000);
+      fireEvent.click(button);
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/Continuer avec les pubs basiques/)).toBeInTheDocument();
-    });
-
-    act(() => {
-      fireEvent.click(screen.getByText(/Continuer avec les pubs basiques/));
-    });
-
-    await waitFor(() => {
-      expect(setItemSpy).toHaveBeenCalledWith('cookie-consent', 'essential');
+      expect(updateConsent).toHaveBeenCalledWith('npa');
       expect(onConsentChange).toHaveBeenCalledWith('essential');
     });
   });
 
-  it('allows selecting personalized cookies', async () => {
+  it('calls updateConsent with personalized for full consent', async () => {
+    const updateConsent = jest.fn().mockResolvedValue(undefined);
+    mockUseConsent.mockReturnValue(createConsentState({ consentMode: 'none', updateConsent }));
     const onConsentChange = jest.fn();
+
     render(<CookieConsent onConsentChange={onConsentChange} />);
 
+    const button = await screen.findByText(/J'accepte les pubs personnalisées/);
     act(() => {
-      jest.advanceTimersByTime(2000);
+      fireEvent.click(button);
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/J'accepte les pubs personnalisées/)).toBeInTheDocument();
-    });
-
-    act(() => {
-      fireEvent.click(screen.getByText(/J'accepte les pubs personnalisées/));
-    });
-
-    await waitFor(() => {
-      expect(setItemSpy).toHaveBeenCalledWith('cookie-consent', 'personalized');
+      expect(updateConsent).toHaveBeenCalledWith('personalized');
       expect(onConsentChange).toHaveBeenCalledWith('personalized');
     });
   });
 
-  it('shows cookie management button when consent exists', () => {
-    getItemSpy.mockReturnValue('essential');
+  it('calls updateConsent with limited mode', async () => {
+    const updateConsent = jest.fn().mockResolvedValue(undefined);
+    mockUseConsent.mockReturnValue(createConsentState({ consentMode: 'none', updateConsent }));
+
     render(<CookieConsent />);
 
-    expect(screen.getByTitle(/Gérer les cookies/)).toBeInTheDocument();
+    const button = await screen.findByText(/Utiliser les pubs limitées/);
+    act(() => {
+      fireEvent.click(button);
+    });
+
+    expect(updateConsent).toHaveBeenCalledWith('limited');
   });
 
-  it('can reset consent via management button', async () => {
-    getItemSpy.mockReturnValue('essential');
+  it('calls updateConsent with none when refusing all ads', async () => {
+    const updateConsent = jest.fn().mockResolvedValue(undefined);
+    mockUseConsent.mockReturnValue(createConsentState({ consentMode: 'none', updateConsent }));
+
     render(<CookieConsent />);
 
+    const link = await screen.findByText(/Refuser toutes les publicités/i);
     act(() => {
-      fireEvent.click(screen.getByTitle(/Gérer les cookies/));
+      fireEvent.click(link);
     });
 
-    await waitFor(() => {
-      expect(removeItemSpy).toHaveBeenCalledWith('cookie-consent');
-    });
+    expect(updateConsent).toHaveBeenCalledWith('none');
+  });
+
+  it('shows management button when consent already given', async () => {
+    mockUseConsent.mockReturnValue(
+      createConsentState({
+        consentMode: 'npa',
+        houseAdsEnabled: false,
+      }),
+    );
+
+    render(<CookieConsent />);
+
+    expect(await screen.findByTitle(/Gérer les cookies/)).toBeInTheDocument();
   });
 });
 
 describe('useCookieConsent hook', () => {
-  beforeEach(() => {
-    Storage.prototype.getItem = jest.fn(() => 'personalized');
-    Storage.prototype.setItem = jest.fn();
-    jest.spyOn(Storage.prototype, 'getItem').mockReturnValue('personalized');
-    jest.useRealTimers();
-  });
+  it('maps consent info from useConsent', () => {
+    mockUseConsent.mockReturnValue(
+      createConsentState({
+        consentMode: 'personalized',
+        houseAdsEnabled: false,
+      }),
+    );
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  it('returns correct consent level', async () => {
     const TestComponent = () => {
       const { consentLevel, hasPersonalizedConsent, hasEssentialConsent } = useCookieConsent();
       return (
         <div>
-          <span data-testid="consent-level">{consentLevel}</span>
-          <span data-testid="has-personalized">{hasPersonalizedConsent.toString()}</span>
-          <span data-testid="has-essential">{hasEssentialConsent.toString()}</span>
+          <span data-testid="level">{consentLevel}</span>
+          <span data-testid="personalized">{hasPersonalizedConsent.toString()}</span>
+          <span data-testid="essential">{hasEssentialConsent.toString()}</span>
         </div>
       );
     };
 
     render(<TestComponent />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('consent-level')).toHaveTextContent('personalized');
-    });
-    expect(screen.getByTestId('has-personalized')).toHaveTextContent('true');
-    expect(screen.getByTestId('has-essential')).toHaveTextContent('true');
+    expect(screen.getByTestId('level')).toHaveTextContent('personalized');
+    expect(screen.getByTestId('personalized')).toHaveTextContent('true');
+    expect(screen.getByTestId('essential')).toHaveTextContent('true');
   });
 });

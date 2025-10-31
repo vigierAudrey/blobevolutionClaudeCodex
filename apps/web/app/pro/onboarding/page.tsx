@@ -2,8 +2,8 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient } from '../../../lib/apiClient';
 import { BackBar } from '../../../components/BackBar';
@@ -12,21 +12,29 @@ import { Button } from '../../../components/ui/button';
 
 type ProProfile = {
   id: string;
-  displayName?: string | null;
   bio?: string | null;
   photoUrl?: string | null;
   businessName?: string | null;
-  hourlyRate?: number | null;
+  // Note: pricePerHour n'est plus utilisé dans l'onboarding
 };
 
-export default function ProOnboardingPage() {
+function ProOnboardingInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
 
+  // Forcer le rechargement quand les searchParams changent (ex: ?refresh=timestamp)
+  const refreshTrigger = searchParams.get('refresh');
+
   useEffect(() => {
+    // Reset les états avant de recharger
+    setLoading(true);
+    setError(null);
+    setRedirecting(false);
+
     const t = apiClient.getTokens();
     if (!t?.accessToken) {
       router.replace('/login');
@@ -38,34 +46,59 @@ export default function ProOnboardingPage() {
       .then((user) => {
         if (user.role !== 'PRO') {
           router.replace('/onboarding');
-          return;
+          return null;
         }
 
-        return apiClient.getProfile();
+        // ✅ CORRIGÉ : Appeler /pro/me au lieu de /profile/me
+        return fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${t.accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+        }).then(async (res) => {
+          if (!res.ok) throw new Error('Failed to load profile');
+          return res.json();
+        });
       })
       .then((p) => {
-        setProfile(p);
+        if (p) {
+          console.log('📋 ProProfile loaded:', p);
+          setProfile(p);
+        }
       })
-      .catch((e) => setError(e?.message || 'Erreur'))
+      .catch((e) => {
+        console.error('❌ Error loading profile:', e);
+        setError(e?.message || 'Erreur');
+      })
       .finally(() => setLoading(false));
-  }, [router]);
+  }, [router, refreshTrigger]);
 
   const hasBusinessName = !!profile?.businessName;
-  const hasDisplayName = !!profile?.displayName;
   const hasBio = !!profile?.bio;
   const hasPhoto = !!profile?.photoUrl;
-  const hasRate = !!profile?.hourlyRate;
+
+  // Debug logs
+  console.log('✅ Checklist status:', {
+    hasBusinessName,
+    hasBio,
+    hasPhoto,
+    profile
+  });
 
   // Auto-redirect when everything is complete
   useEffect(() => {
     if (loading || error) return;
-    const complete = hasBusinessName && hasDisplayName && hasBio && hasPhoto && hasRate;
+    const complete = hasBusinessName && hasBio && hasPhoto;
+    console.log('🔍 Onboarding complete?', complete);
     if (complete) {
+      console.log('🎉 Profile complete! Redirecting to dashboard...');
       setRedirecting(true);
       const id = setTimeout(() => router.replace('/pro/dashboard'), 800);
       return () => clearTimeout(id);
     }
-  }, [loading, error, hasBusinessName, hasDisplayName, hasBio, hasPhoto, hasRate, router]);
+  }, [loading, error, hasBusinessName, hasBio, hasPhoto, router]);
 
   return (
     <div className="max-w-md mx-auto space-y-4">
@@ -95,10 +128,8 @@ export default function ProOnboardingPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <ChecklistItem done={hasBusinessName} label="Nom de l'entreprise / activité" />
-            <ChecklistItem done={hasDisplayName} label="Nom d'affichage (prénom ou pseudo)" />
             <ChecklistItem done={hasBio} label="Description de tes services" />
             <ChecklistItem done={hasPhoto} label="Photo de profil ou logo" />
-            <ChecklistItem done={hasRate} label="Tarif horaire indicatif" />
             <div className="pt-2 flex gap-2">
               <Button onClick={() => router.push('/pro/profile')}>Compléter mon profil pro</Button>
               <Link href="/pro/dashboard" className="inline-flex items-center rounded-md border px-4 py-2 text-sm">
@@ -115,8 +146,18 @@ export default function ProOnboardingPage() {
 function ChecklistItem({ done, label }: { done: boolean; label: string }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <span className={`inline-flex h-4 w-4 items-center justify-center rounded-sm border ${done ? 'bg-green-600 border-green-600' : 'bg-white'} text-white`}>{done ? '✓' : ''}</span>
+      <span className={`inline-flex h-5 w-5 items-center justify-center rounded-sm border-2 ${done ? 'bg-green-600 border-green-600' : 'bg-white border-gray-300'} text-white font-bold`}>
+        {done ? '✓' : ''}
+      </span>
       <span className={done ? 'line-through text-muted-foreground' : ''}>{label}</span>
     </div>
+  );
+}
+
+export default function ProOnboardingPage() {
+  return (
+    <Suspense fallback={<div className="max-w-md mx-auto space-y-4"><BackBar fallbackHref="/pro/dashboard" /><p>Chargement…</p></div>}>
+      <ProOnboardingInner />
+    </Suspense>
   );
 }

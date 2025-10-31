@@ -7,9 +7,17 @@ import { apiClient } from '../../lib/apiClient';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../components/BackBar';
 
+type AuthUser = {
+  id: string;
+  email: string;
+  role: 'RIDER' | 'PRO' | 'ADMIN';
+  emailVerified: boolean;
+  [key: string]: unknown;
+};
+
 export default function AccountPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -23,7 +31,9 @@ export default function AccountPage() {
     apiClient
       .me()
       .then(setUser)
-      .catch((e) => setError(e?.message || 'Erreur'))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Erreur');
+      })
       .finally(() => setLoading(false));
   }, [router]);
 
@@ -41,8 +51,9 @@ export default function AccountPage() {
     try {
       await apiClient.resendVerification(user.email);
       setInfo('Email de vérification renvoyé. Vérifie ta boîte mail.');
-    } catch (e: any) {
-      setError(e?.message || 'Erreur lors de l’envoi');
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : null;
+      setError(errorMessage || 'Erreur lors de l’envoi');
     }
   };
 

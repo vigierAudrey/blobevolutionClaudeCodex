@@ -164,6 +164,53 @@ export class BookingService {
     return updated;
   }
 
+  async deleteAvailability(proUserId: string, availabilityId: string) {
+    const availability = await bookingRepository.findAvailabilityById(availabilityId);
+    if (!availability || availability.proUserId !== proUserId) {
+      throw Object.assign(new Error('Availability not found'), { status: 404 });
+    }
+
+    // Check if there are any bookings or pending requests
+    const bookingCount = await prisma.booking.count({
+      where: { availabilityId },
+    });
+
+    const pendingRequestCount = await prisma.bookingRequest.count({
+      where: {
+        availabilityId,
+        status: BookingRequestStatus.PENDING,
+      },
+    });
+
+    if (bookingCount > 0) {
+      throw Object.assign(
+        new Error('Cannot delete availability with existing bookings'),
+        { status: 409 }
+      );
+    }
+
+    if (pendingRequestCount > 0) {
+      throw Object.assign(
+        new Error('Cannot delete availability with pending requests'),
+        { status: 409 }
+      );
+    }
+
+    // Delete the availability
+    await prisma.proAvailability.delete({
+      where: { id: availabilityId },
+    });
+
+    // Invalidate cache
+    try {
+      await cacheService.invalidateAvailabilities(availability.spotLat ?? undefined, availability.spotLng ?? undefined);
+    } catch (error) {
+      console.warn('⚠️  Failed to invalidate availability cache after deletion', error);
+    }
+
+    return { success: true, message: 'Availability deleted' };
+  }
+
   async searchAvailabilities(filters: any) {
     // Support both cursor-based and legacy pagination
     const cursor = filters.cursor;

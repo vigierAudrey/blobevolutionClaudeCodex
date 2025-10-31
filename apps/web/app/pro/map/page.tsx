@@ -1,6 +1,6 @@
 "use client";
 import dynamicImport from 'next/dynamic';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/input';
@@ -9,6 +9,7 @@ import { apiClient } from '../../../lib/apiClient';
 import { useRouter } from 'next/navigation';
 
 import { MapSkeleton } from '../../../components/ui/skeleton';
+import type { LessonRequest, LessonRequestResponse } from '@/types/pro';
 
 // Force SSR due to Leaflet map (dynamic import with ssr:false)
 export const dynamic = 'force-dynamic';
@@ -20,7 +21,9 @@ const MapComponent = dynamicImport(() => import('../../../components/MapComponen
 });
 
 // Fonction pour détecter le navigateur de l'utilisateur
-const detectBrowser = (): 'chrome' | 'firefox' | 'safari' | 'edge' | 'other' => {
+type BrowserType = 'chrome' | 'firefox' | 'safari' | 'edge' | 'other';
+
+const detectBrowser = (): BrowserType => {
   if (typeof window === 'undefined') return 'other';
 
   const userAgent = window.navigator.userAgent.toLowerCase();
@@ -34,15 +37,15 @@ const detectBrowser = (): 'chrome' | 'firefox' | 'safari' | 'edge' | 'other' => 
 };
 
 // Instructions selon le navigateur
-const getBrowserInstructions = (browser: string): { title: string; steps: string[] } => {
+const getBrowserInstructions = (browser: BrowserType): { title: string; steps: string[] } => {
   switch (browser) {
     case 'chrome':
       return {
         title: 'Chrome',
         steps: [
-          'Cliquez sur l\'icône 🔒 ou ⓘ à gauche de l\'adresse URL',
-          'Trouvez "Position" ou "Localisation"',
-          'Changez de "Bloquer" à "Autoriser"',
+          'Cliquez sur l’icône 🔒 ou ⓘ à gauche de l’adresse URL',
+          'Trouvez &quot;Position&quot; ou &quot;Localisation&quot;',
+          'Changez de &quot;Bloquer&quot; à &quot;Autoriser&quot;',
           'Rechargez la page avec F5'
         ]
       };
@@ -50,9 +53,9 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Edge',
         steps: [
-          'Cliquez sur l\'icône 🔒 à gauche de l\'adresse URL',
-          'Trouvez "Autorisations pour ce site"',
-          'Changez "Emplacement" à "Autoriser"',
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
+          'Trouvez &quot;Autorisations pour ce site&quot;',
+          'Changez &quot;Emplacement&quot; à &quot;Autoriser&quot;',
           'Rechargez la page avec F5'
         ]
       };
@@ -60,9 +63,9 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Firefox',
         steps: [
-          'Cliquez sur l\'icône 🔒 à gauche de l\'adresse URL',
-          'Cliquez sur "Permissions" puis "Position"',
-          'Décochez "Bloquer" ou sélectionnez "Autoriser"',
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
+          'Cliquez sur &quot;Permissions&quot; puis &quot;Position&quot;',
+          'Décochez &quot;Bloquer&quot; ou sélectionnez &quot;Autoriser&quot;',
           'Rechargez la page avec F5'
         ]
       };
@@ -71,8 +74,8 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
         title: 'Safari',
         steps: [
           'Ouvrez Safari > Réglages > Sites web',
-          'Dans la section "Localisation", trouvez ce site',
-          'Changez à "Autoriser"',
+          'Dans la section &quot;Localisation&quot;, trouvez ce site',
+          'Changez à &quot;Autoriser&quot;',
           'Rechargez la page'
         ]
       };
@@ -80,9 +83,9 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Votre navigateur',
         steps: [
-          'Recherchez l\'icône de sécurité près de l\'adresse URL',
+          'Recherchez l’icône de sécurité près de l’adresse URL',
           'Trouvez les paramètres de localisation/position',
-          'Autorisez l\'accès à votre position',
+          'Autorisez l’accès à votre position',
           'Rechargez la page'
         ]
       };
@@ -92,14 +95,14 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
 export default function ProMapPage() {
   const router = useRouter();
   const [radiusKm, setRadiusKm] = useState(25);
-  const [sport, setSport] = useState<'surf'|'kitesurf'>('surf');
-  const [items, setItems] = useState<Array<any>>([]);
+  const [sport, setSport] = useState<'surf' | 'kitesurf'>('surf');
+  const [items, setItems] = useState<LessonRequest[]>([]);
   const [center, setCenter] = useState<[number, number] | null>(null);
   const [hasGeolocPermission, setHasGeolocPermission] = useState(false);
   const [geolocEnabled, setGeolocEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [browserType, setBrowserType] = useState<string>('other');
-  const debounceRef = useRef<NodeJS.Timeout>();
+  const [browserType, setBrowserType] = useState<BrowserType>('other');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     // Détecter le navigateur au montage du composant
@@ -121,7 +124,7 @@ export default function ProMapPage() {
 
   const enableGeolocation = () => {
     if (!navigator.geolocation) {
-      alert('La géolocalisation n\'est pas supportée par ce navigateur.');
+      alert('La géolocalisation n’est pas supportée par ce navigateur.');
       return;
     }
 
@@ -147,11 +150,11 @@ export default function ProMapPage() {
             });
           }
         } catch (error) {
-          console.error('Erreur lors de la sauvegarde de la position:', error);
+          console.error('Erreur lors de la sauvegarde de la position :', error);
         }
       },
       (error) => {
-        console.error('Erreur géolocalisation:', error);
+        console.error('Erreur géolocalisation :', error);
         setHasGeolocPermission(false);
         setGeolocEnabled(false);
       },
@@ -173,11 +176,12 @@ export default function ProMapPage() {
 
       const r = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/near/lessons?radiusKm=${radiusKm}&sport=${sport}`,
-        { headers: { Authorization: `Bearer ${t.accessToken}` }}
+        { headers: { Authorization: `Bearer ${t.accessToken}` } },
       );
-      const data = await r.json();
-      console.log(`📍 Received ${data.items?.length || 0} lesson requests for ${sport} within ${radiusKm}km`, data.items);
-      if (r.ok) setItems(data.items || []);
+      const data = (await r.json()) as LessonRequestResponse;
+      if (r.ok) {
+        setItems(data.items ?? []);
+      }
     } catch (error) {
       console.error('Error loading lesson requests:', error);
     } finally {
@@ -235,7 +239,7 @@ export default function ProMapPage() {
                         <span>Autorisations refusées - Comment débloquer</span>
                       </h4>
                       <p className="text-sm text-red-800 mb-3">
-                        Votre navigateur bloque l'accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
+                        Votre navigateur bloque l’accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
                       </p>
                       <ol className="text-sm text-red-800 space-y-1 ml-4">
                         {getBrowserInstructions(browserType).steps.map((step, idx) => (
@@ -245,7 +249,7 @@ export default function ProMapPage() {
                         ))}
                       </ol>
                       <p className="text-xs text-red-700 mt-3 italic">
-                        💡 Astuce : Cette protection est normale, elle protège votre vie privée. Nous ne sauvegarderons votre position que si vous cochez "Enregistrer comme position par défaut".
+                        💡 Astuce : Cette protection est normale, elle protège votre vie privée. Nous ne sauvegarderons votre position que si vous cochez &quot;Enregistrer comme position par défaut&quot;.
                       </p>
                       <Button
                         onClick={enableGeolocation}
@@ -315,11 +319,11 @@ export default function ProMapPage() {
           {geolocEnabled && center ? (
             <div className="space-y-2">
               <div className="text-sm text-green-600 mb-2">
-                ✅ Géolocalisation active - {items.length} demande(s) trouvée(s) dans un rayon de {radiusKm}km
+                ✅ Géolocalisation active – {items.length} demande(s) trouvée(s) dans un rayon de {radiusKm} km
               </div>
               <MapComponent
                 center={center}
-                items={items.map((item: any) => ({ ...item, type: 'rider' as const }))}
+                items={items.map((item) => ({ ...item, type: 'rider' as const }))}
                 legend={[
                   { label: 'Votre position', color: '#0ea5e9' },
                   { label: 'Demandes de riders', color: '#16a34a' },
@@ -333,7 +337,7 @@ export default function ProMapPage() {
                     const r = await apiClient.openConversation(userId);
                     router.push(`/messages/${r.id}`);
                   } catch (error) {
-                    console.error('Erreur lors de l\'ouverture de la conversation:', error);
+                    console.error('Erreur lors de l’ouverture de la conversation :', error);
                   }
                 }}
               />
@@ -341,7 +345,7 @@ export default function ProMapPage() {
           ) : !geolocEnabled && (
             <div className="text-center py-8 text-muted-foreground">
               <p className="text-sm">⚠️ La BloboMap ne peut pas fonctionner sans géolocalisation</p>
-              <p className="text-xs mt-1">Cliquez sur "Activer ma géolocalisation" ci-dessus</p>
+              <p className="text-xs mt-1">Cliquez sur &quot;Activer ma géolocalisation&quot; ci-dessus</p>
             </div>
           )}
         </CardContent>

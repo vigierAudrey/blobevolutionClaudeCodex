@@ -1,6 +1,13 @@
 import { createApp } from '../../../index';
 import { prisma } from '@blobinfini/database';
-import { createTestSession, TestSession, silenceConsoleErrors } from '../../../tests/helpers/auth';
+import { Role } from '@prisma/client';
+import {
+  createTestSession,
+  TestSession,
+  silenceConsoleErrors,
+  getOrCreateUserByEmail,
+  TEST_PASSWORD,
+} from '../../../tests/helpers/auth';
 
 describe('Auth E2E', () => {
   const app = createApp();
@@ -202,6 +209,41 @@ describe('Auth E2E', () => {
       if (prev === undefined) delete process.env.AUTH_REQUIRE_VERIFIED;
       else process.env.AUTH_REQUIRE_VERIFIED = prev;
     }
+  });
+
+  it('rate limits excessive login attempts', async () => {
+    const rateSession = await createTestSession(app);
+    const email = 'ratelimit@test.com';
+    await getOrCreateUserByEmail({ email, role: Role.RIDER, emailVerified: true });
+
+    for (let i = 0; i < 5; i += 1) {
+      await rateSession
+        .post('/auth/login')
+        .send({ email, password: TEST_PASSWORD })
+        .expect(200);
+    }
+
+    const limited = await rateSession
+      .post('/auth/login')
+      .send({ email, password: TEST_PASSWORD })
+      .expect(429);
+
+    expect(limited.body.error).toBe('RATE_LIMIT_EXCEEDED');
+  });
+
+  it('rejects requests with tampered JWT tokens', async () => {
+    const login = await session
+      .post('/auth/login')
+      .send({ email: 'verify@test.com', password: 'Passw0rd!' })
+      .expect(200);
+
+    const validToken = login.body.accessToken as string;
+    const invalidToken = `${validToken.slice(0, -1)}x`;
+
+    await session
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${invalidToken}`)
+      .expect(401);
   });
 
   it('route-level requireVerifiedEmail denies unverified and allows after verify', async () => {

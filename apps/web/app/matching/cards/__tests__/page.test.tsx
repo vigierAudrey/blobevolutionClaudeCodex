@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../../../../lib/apiClient';
@@ -36,7 +36,7 @@ jest.mock('../../../../components/ui/toast', () => {
 });
 jest.mock('framer-motion', () => {
   const mockReact = require('react');
-  const MockMotion = mockReact.forwardRef(({ children, style, onDrag, onDragEnd, drag, whileTap, transition, className, ...rest }, ref) => {
+  const MockMotion = mockReact.forwardRef(({ children, style, onDrag, onDragEnd, drag, whileTap: _unusedWhileTap, transition: _unusedTransition, className, ...rest }, ref) => {
     const handleMouseDown = (e) => {
       if (onDrag) onDrag(e, { offset: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } });
     };
@@ -514,8 +514,8 @@ describe('Matching Cards Component', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("C'est un match !")).toBeInTheDocument();
-        expect(screen.getByText((content, element) => {
+        expect(screen.getByText('C’est un match !')).toBeInTheDocument();
+        expect(screen.getByText((content, _element) => {
           return content.includes('Tu vas pouvoir surfer');
         })).toBeInTheDocument();
         expect(screen.getByText('Match User')).toBeInTheDocument();

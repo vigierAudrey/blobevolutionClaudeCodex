@@ -4,10 +4,32 @@ import { createHash } from 'crypto';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../../lib/mailer';
+import { secureLogger } from '../../utils/secure-logger';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
 const EMAIL_VERIFY_TTL_HOURS = 24;
+const MIN_SECRET_LENGTH = 64;
+
+function ensureStrongSecret(key: 'JWT_SECRET' | 'JWT_REFRESH_SECRET') {
+  const value = process.env[key];
+  if (!value) {
+    secureLogger.error('MISSING_SECRET', { key });
+    throw new Error(`${key} must be set (see scripts/generate-secrets.sh)`);
+  }
+
+  // ✅ CORRIGÉ : En développement, accepter les secrets faibles mais logger un warning
+  if (value.length < MIN_SECRET_LENGTH) {
+    if (process.env.NODE_ENV === 'production') {
+      secureLogger.error('WEAK_SECRET_REJECTED', { key });
+      throw new Error(`${key} must be at least ${MIN_SECRET_LENGTH} characters long`);
+    } else {
+      // En dev, juste un warning (déjà loggé au démarrage via WEAK_SECRETS_DETECTED)
+      secureLogger.warn('WEAK_SECRET_ALLOWED_IN_DEV', { key, length: value.length });
+    }
+  }
+  return value;
+}
 
 export class AuthService {
   private hashToken(raw: string) {
@@ -68,12 +90,12 @@ export class AuthService {
 
     const accessToken = jwt.sign(
       { sub: user.id, role: user.role },
-      process.env.JWT_SECRET as string,
+      ensureStrongSecret('JWT_SECRET'),
       { expiresIn: ACCESS_TTL },
     );
 
     const refreshPayload = { sub: user.id, jti: crypto.randomUUID() } as const;
-    const refreshToken = jwt.sign(refreshPayload, process.env.JWT_REFRESH_SECRET as string, {
+    const refreshToken = jwt.sign(refreshPayload, ensureStrongSecret('JWT_REFRESH_SECRET'), {
       expiresIn: `${REFRESH_TTL_DAYS}d`,
     });
 
@@ -106,7 +128,7 @@ export class AuthService {
     // Vérifier la signature du JWT refresh
     let decoded: any;
     try {
-      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET as string);
+      decoded = jwt.verify(refreshToken, ensureStrongSecret('JWT_REFRESH_SECRET'));
     } catch (e) {
       throw { code: 'UNAUTHORIZED', message: 'Invalid refresh token' };
     }
@@ -136,13 +158,9 @@ export class AuthService {
     if (!dbToken) throw { code: 'UNAUTHORIZED', message: 'Refresh not found' };
 
     // Rotation de refresh token avec garde anti-réutilisation (update conditionnel)
-    const newRefresh = jwt.sign(
-      { sub: userId, jti: crypto.randomUUID() },
-      process.env.JWT_REFRESH_SECRET as string,
-      {
-        expiresIn: `${REFRESH_TTL_DAYS}d`,
-      },
-    );
+    const newRefresh = jwt.sign({ sub: userId, jti: crypto.randomUUID() }, ensureStrongSecret('JWT_REFRESH_SECRET'), {
+      expiresIn: `${REFRESH_TTL_DAYS}d`,
+    });
     const newHash = this.hashToken(newRefresh);
     const newExpiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
 
@@ -174,11 +192,9 @@ export class AuthService {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw { code: 'UNAUTHORIZED' };
 
-    const accessToken = jwt.sign(
-      { sub: user.id, role: user.role },
-      process.env.JWT_SECRET as string,
-      { expiresIn: ACCESS_TTL },
-    );
+    const accessToken = jwt.sign({ sub: user.id, role: user.role }, ensureStrongSecret('JWT_SECRET'), {
+      expiresIn: ACCESS_TTL,
+    });
 
     return { accessToken, refreshToken: newRefresh };
   }

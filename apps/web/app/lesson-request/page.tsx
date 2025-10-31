@@ -23,6 +23,14 @@ const levelLabels: Record<Level, string> = {
   advanced: 'Confirmé',
 };
 
+type LessonPayload = {
+  wantsLesson: boolean;
+  lessonSport?: Sport | null;
+  lessonLevel?: Level | null;
+  lessonDate?: string | null;
+  lessonPlace?: string | null;
+};
+
 export default function LessonRequestPage() {
   const router = useRouter();
   const toast = useToast();
@@ -73,7 +81,7 @@ export default function LessonRequestPage() {
     try {
       setSaving(true);
 
-      const payload: any = {
+      const payload: LessonPayload = {
         wantsLesson,
       };
 
@@ -99,8 +107,9 @@ export default function LessonRequestPage() {
       );
 
       setTimeout(() => router.push('/dashboard'), 1500);
-    } catch (err: any) {
-      toast(err?.message || 'Erreur lors de la sauvegarde', 'error');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      toast(message || 'Erreur lors de la sauvegarde', 'error');
     } finally {
       setSaving(false);
     }

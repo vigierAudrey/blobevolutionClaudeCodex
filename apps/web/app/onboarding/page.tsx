@@ -9,22 +9,26 @@ import { apiClient } from '../../lib/apiClient';
 import { BackBar } from '../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
+import type { DisciplinePreference, UserProfile } from '@/types/user';
 
-type Profile = {
-  id: string;
-  displayName?: string | null;
-  bio?: string | null;
-  photoUrl?: string | null;
-  maxDistanceKm?: number | null;
-  partnerPref?: string | null;
-  emailNotif?: boolean | null;
+const getErrorMessage = (error: unknown, fallback = 'Erreur') => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+  return fallback;
 };
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [disciplines, setDisciplines] = useState<Array<{ sport: string; level: string }>>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [disciplines, setDisciplines] = useState<DisciplinePreference[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
 
@@ -44,20 +48,20 @@ export default function OnboardingPage() {
         }
 
         return Promise.all([
-          apiClient.getProfile().catch((e) => {
-            throw new Error(e?.message || 'Erreur profil');
-          }),
-          apiClient.getDisciplines().catch(() => []),
+          apiClient.getProfile().catch((profileError) => {
+            throw new Error(getErrorMessage(profileError, 'Erreur profil'));
+          }) as Promise<UserProfile>,
+          apiClient.getDisciplines().catch(() => [] as DisciplinePreference[]),
         ]);
       })
       .then((result) => {
         if (result) {
           const [p, d] = result;
           setProfile(p);
-          setDisciplines(d as any);
+          setDisciplines(Array.isArray(d) ? d : []);
         }
       })
-      .catch((e) => setError(e?.message || 'Erreur'))
+      .catch((err) => setError(getErrorMessage(err, 'Erreur')))
       .finally(() => setLoading(false));
   }, [router]);
 

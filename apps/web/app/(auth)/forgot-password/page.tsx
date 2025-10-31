@@ -2,7 +2,6 @@
 
 export const dynamic = 'force-dynamic';
 import { useState } from 'react';
-import { apiClient } from '@/lib/apiClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -26,9 +25,10 @@ export default function ForgotPasswordPage() {
       });
       setStatus('done');
       setMessage('Si le compte existe, un email de réinitialisation a été envoyé.');
-    } catch (e: any) {
+    } catch (err: unknown) {
       setStatus('error');
-      setMessage(e?.message || 'Erreur lors de la demande');
+      const errorMessage = err instanceof Error ? err.message : null;
+      setMessage(errorMessage || 'Erreur lors de la demande');
     }
   };
 

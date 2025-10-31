@@ -2,21 +2,27 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { BackBar } from '../../../components/BackBar';
 import { Button } from '../../../components/ui/button';
 import { Shield, ShieldOff, MoreVertical } from 'lucide-react';
 import { apiClient } from '../../../lib/apiClient';
-
-type Msg = { id: string; senderId: string; type: 'TEXT'|'PROPOSAL'; content: string; meta?: any; createdAt: string };
+import type {
+  Message,
+  MessageListResponse,
+  MessageMeta,
+  SendMessagePayload,
+  ThreadListResponse,
+  ThreadSummary,
+} from '@/types/messages';
 
 export default function ConversationPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
-  const [items, setItems] = useState<Msg[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -24,49 +30,70 @@ export default function ConversationPage() {
   const [pDate, setPDate] = useState('');
   const [pPlace, setPPlace] = useState('');
   const [pNote, setPNote] = useState('');
-  const [user, setUser] = useState<any>(null);
-  const [conversationInfo, setConversationInfo] = useState<any>(null);
+  const [conversationInfo, setConversationInfo] = useState<ThreadSummary | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
-  const hasLoadedRef = useRef(false);
+  const pollingRef = useRef<number | null>(null);
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      const data = await apiClient.getMessages(id);
-      setItems(data.items || []);
-      setError(null);
-      setTimeout(()=>endRef.current?.scrollIntoView({ behavior: 'smooth' }), 0);
-    } catch (e: any) {
-      setError(e?.message || 'Erreur chargement');
-    } finally { setLoading(false); }
+  const scrollToBottom = () => {
+    window.requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }));
   };
 
-  // Load user info and conversation info
+  const loadMessages = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await apiClient.getMessages(id) as MessageListResponse;
+      setMessages(data.items ?? []);
+      setError(null);
+      scrollToBottom();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur chargement');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  const refreshConversationInfo = useCallback(async () => {
+    try {
+      const conversations = await apiClient.listConversations() as ThreadListResponse;
+      const convInfo = conversations.items.find((c) => c.id === id) ?? null;
+      setConversationInfo(convInfo);
+    } catch (err) {
+      console.error('Error loading conversation info:', err);
+    }
+  }, [id]);
+
+  // Load user info and conversation details
   useEffect(() => {
-    // Prevent double execution in React Strict Mode
-    if (hasLoadedRef.current) return;
-    hasLoadedRef.current = true;
-
-    const loadInitialData = async () => {
+    let active = true;
+    const initialize = async () => {
       try {
-        const currentUser = await apiClient.me();
-        setUser(currentUser);
+        await apiClient.me();
+      } catch {
+        router.replace('/login');
+        return;
+      }
 
-        // Get conversation info from the conversations list
-        const conversations = await apiClient.listConversations();
-        const convInfo = conversations.items.find((c: any) => c.id === id);
-        setConversationInfo(convInfo);
-      } catch (err) {
-        console.error('Error loading conversation info:', err);
+      if (!active) return;
+      await Promise.all([refreshConversationInfo(), loadMessages()]);
+      if (pollingRef.current === null) {
+        pollingRef.current = window.setInterval(() => {
+          void loadMessages();
+        }, 10000);
       }
     };
 
-    loadInitialData();
-    load();
-    const t = setInterval(load, 10000);
-    return () => clearInterval(t);
-  }, [id]);
+    initialize();
+
+    return () => {
+      active = false;
+      if (pollingRef.current !== null) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [id, loadMessages, refreshConversationInfo, router]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -79,14 +106,34 @@ export default function ConversationPage() {
 
   const send = async () => {
     if (!input.trim()) return;
-    const body = { type: 'TEXT' as const, content: input.trim() };
-    try { await apiClient.sendMessage(id, body as any); setInput(''); await load(); } catch {}
+    const payload: SendMessagePayload = { type: 'TEXT', content: input.trim() };
+    try {
+      await apiClient.sendMessage(id, payload);
+      setInput('');
+      await loadMessages();
+    } catch (err) {
+      console.error('Failed to send message', err);
+    }
   };
 
   const sendProposal = async () => {
     if (!pDate || !pPlace) return;
-    const meta = { date: pDate, place: pPlace, note: pNote || undefined };
-    try { await apiClient.sendMessage(id, { type: 'PROPOSAL', content: `Proposition de session ${pDate} @ ${pPlace}`, meta }); setShowProposal(false); setPDate(''); setPPlace(''); setPNote(''); await load(); } catch {}
+    const meta: MessageMeta = { date: pDate, place: pPlace, note: pNote || undefined };
+    const payload: SendMessagePayload = {
+      type: 'PROPOSAL',
+      content: `Proposition de session ${pDate} @ ${pPlace}`,
+      meta,
+    };
+    try {
+      await apiClient.sendMessage(id, payload);
+      setShowProposal(false);
+      setPDate('');
+      setPPlace('');
+      setPNote('');
+      await loadMessages();
+    } catch (err) {
+      console.error('Failed to send proposal', err);
+    }
   };
 
   const handleBlock = async () => {
@@ -96,21 +143,17 @@ export default function ConversationPage() {
       if (conversationInfo.blocked) {
         await apiClient.unblockConversation(id);
       } else {
-        if (confirm('Êtes-vous sûr de vouloir bloquer ce contact ? Il ne pourra plus vous envoyer de messages.')) {
-          await apiClient.blockConversation(id);
-        } else {
+        if (!window.confirm('Confirmer le blocage de ce contact ?')) {
           return;
         }
+        await apiClient.blockConversation(id);
       }
 
-      // Refresh conversation info
-      const conversations = await apiClient.listConversations();
-      const updatedConvInfo = conversations.items.find((c: any) => c.id === id);
-      setConversationInfo(updatedConvInfo);
+      await refreshConversationInfo();
       setShowMenu(false);
     } catch (err) {
       console.error('Error blocking/unblocking:', err);
-      alert('Erreur lors du blocage/déblocage');
+      alert('Erreur lors du blocage ou du déblocage');
     }
   };
 
@@ -167,15 +210,15 @@ export default function ConversationPage() {
         </CardHeader>
         <CardContent>
           {error && <p className="text-sm text-red-600">{error}</p>}
-          {loading && items.length === 0 && <p className="text-sm text-muted-foreground">Chargement…</p>}
+          {loading && messages.length === 0 && <p className="text-sm text-muted-foreground">Chargement…</p>}
           <div className="space-y-2 min-h-[300px]">
-            {items.map((m) => (
+            {messages.map((m) => (
               <div key={m.id} className="text-sm">
                 <div className={"inline-block rounded-lg px-3 py-2 " + (m.type === 'PROPOSAL' ? 'bg-amber-50 border border-amber-200' : 'bg-accent') }>
                   <div>{m.content}</div>
                   {m.type === 'PROPOSAL' && m.meta && (
                     <div className="text-xs text-muted-foreground">
-                      {m.meta.date} • {m.meta.place} {m.meta.note ? `• ${m.meta.note}` : ''}
+                      {m.meta?.date} • {m.meta?.place} {m.meta?.note ? `• ${m.meta.note}` : ''}
                     </div>
                   )}
                 </div>
@@ -217,4 +260,3 @@ export default function ConversationPage() {
     </div>
   );
 }
-

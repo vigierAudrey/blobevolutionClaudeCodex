@@ -11,10 +11,11 @@ import Link from 'next/link';
 import { Badge } from '../../../components/ui/badge';
 import { User, Map, Percent, Info, LogOut, BookOpen, MessageSquare, Gift } from 'lucide-react';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
+import type { DashboardUser } from '@/types/user';
 
 export default function ProDashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<DashboardUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [planningStats, setPlanningStats] = useState<{ availabilityCount: number; pendingCount: number } | null>(null);
 
@@ -29,7 +30,7 @@ export default function ProDashboardPage() {
       setPlanningStats({ availabilityCount: availabilities.availabilities.length, pendingCount });
 
       perf.end();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Pro dashboard initialization failed:', error);
       setPlanningStats({ availabilityCount: 0, pendingCount: 0 });
     }
@@ -61,7 +62,9 @@ export default function ProDashboardPage() {
   const logout = async () => {
     try {
       await optimizedApiClient.logoutAll();
-    } catch (_) {}
+    } catch {
+      // ignore
+    }
     optimizedApiClient.clearTokens();
     router.replace('/login');
   };
@@ -97,7 +100,7 @@ export default function ProDashboardPage() {
 
       {!user?.emailVerified && (
         <div className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Ton email n'est pas encore vérifié. Pense à confirmer ton adresse pour sécuriser ton compte.
+          Ton email n’est pas encore vérifié. Pense à confirmer ton adresse pour sécuriser ton compte.
           <div className="mt-2">
             <Link className="underline" href="/account">Voir mon compte</Link>
           </div>
@@ -194,7 +197,7 @@ export default function ProDashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Info size={18}/> À propos & RGPD</CardTitle>
             <CardDescription>
-              Comprendre l'utilisation des données, la sécurité et le fonctionnement du site.
+              Comprendre l&apos;utilisation des données, la sécurité et le fonctionnement du site.
             </CardDescription>
           </CardHeader>
           <CardContent>

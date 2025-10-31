@@ -2,33 +2,22 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, ArrowLeft, Briefcase, Network, Shield, ShieldOff } from 'lucide-react';
+import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, ArrowLeft, Briefcase, Shield, ShieldOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
-
-type ConversationItem = {
-  id: string;
-  type: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' | 'PRO_TO_PRO';
-  otherDisplayName: string;
-  otherRole: 'RIDER' | 'PRO';
-  lastMessage: string;
-  lastAt: string;
-  unread: number;
-  trashed?: boolean;
-  favorite?: boolean;
-  blocked?: boolean;
-};
+import type { ThreadSummary, ThreadListQuery, ThreadListResponse } from '@/types/messages';
 
 export default function ProMessagesPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [items, setItems] = useState<ConversationItem[]>([]);
+  const [authorized, setAuthorized] = useState(false);
+  const [items, setItems] = useState<ThreadSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'ALL'|'FAVORITES'|'UNREAD'|'TRASH'|'RIDERS'|'PROS'>('ALL');
+  const [filter, setFilter] = useState<'ALL'|'FAVORITES'|'UNREAD'|'TRASH'|'RIDERS'>('ALL');
   const [loading, setLoading] = useState(true);
 
   // Vérification auth et rôle PRO
@@ -46,8 +35,7 @@ export default function ProMessagesPage() {
           router.replace('/dashboard');
           return;
         }
-
-        setUser(currentUser);
+        setAuthorized(true);
       } catch (err) {
         console.error('Auth check failed:', err);
         router.replace('/login');
@@ -58,31 +46,26 @@ export default function ProMessagesPage() {
 
     checkAuth();
   }, [router]);
-
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
-      const opts: { includeTrashed?: boolean; type?: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' | 'PRO_TO_PRO' } = {
-        includeTrashed: filter === 'TRASH'
-      };
-
-      // Filtrer par type selon le filtre sélectionné
+      const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH' };
       if (filter === 'RIDERS') opts.type = 'RIDER_TO_PRO';
-      if (filter === 'PROS') opts.type = 'PRO_TO_PRO';
 
-      const data = await apiClient.listConversations(opts);
-      setItems(data.items || []);
-    } catch (e: any) {
-      setError(e?.message || 'Erreur lors du chargement des conversations');
+      const data = (await apiClient.listConversations(opts)) as ThreadListResponse;
+      const onlyRiderThreads = (data.items ?? []).filter((conv) => conv.type !== 'PRO_TO_PRO');
+      setItems(onlyRiderThreads);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors du chargement des conversations');
     }
-  };
+  }, [filter]);
 
   useEffect(() => {
-    if (user) {
-      load();
-      const t = setInterval(load, 15000);
-      return () => clearInterval(t);
-    }
-  }, [filter, user]);
+    if (!authorized) return;
+    void load();
+    const interval = setInterval(load, 15000);
+    return () => clearInterval(interval);
+  }, [authorized, load]);
 
   const counts = useMemo(() => {
     const all = items.filter(it => !it.trashed).length;
@@ -90,8 +73,7 @@ export default function ProMessagesPage() {
     const unread = items.filter(it => !it.trashed && it.unread > 0).length;
     const trash = items.filter(it => it.trashed).length;
     const riders = items.filter(it => !it.trashed && it.type === 'RIDER_TO_PRO').length;
-    const pros = items.filter(it => !it.trashed && it.type === 'PRO_TO_PRO').length;
-    return { all, fav, unread, trash, riders, pros };
+    return { all, fav, unread, trash, riders };
   }, [items]);
 
   const visible = useMemo(() => {
@@ -99,7 +81,6 @@ export default function ProMessagesPage() {
     if (filter === 'FAVORITES') return items.filter(i => !i.trashed && i.favorite);
     if (filter === 'UNREAD') return items.filter(i => !i.trashed && i.unread > 0);
     if (filter === 'RIDERS') return items.filter(i => !i.trashed && i.type === 'RIDER_TO_PRO');
-    if (filter === 'PROS') return items.filter(i => !i.trashed && i.type === 'PRO_TO_PRO');
     return items.filter(i => i.trashed);
   }, [items, filter]);
 
@@ -161,9 +142,6 @@ export default function ProMessagesPage() {
               <button onClick={() => setFilter('RIDERS')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter === 'RIDERS' ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-input text-muted-foreground'}`}>
                 <Users size={14}/> Élèves {counts.riders > 0 ? `(${counts.riders})` : ''}
               </button>
-              <button onClick={() => setFilter('PROS')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter === 'PROS' ? 'border-green-500 text-green-600 bg-green-50' : 'border-input text-muted-foreground'}`}>
-                <Briefcase size={14}/> Autres Pros {counts.pros > 0 ? `(${counts.pros})` : ''}
-              </button>
             </div>
           </div>
 
@@ -173,24 +151,13 @@ export default function ProMessagesPage() {
                 <div>
                   <p>Aucune conversation pour le moment.</p>
                   <p className="text-sm mt-2">
-                    Les riders vous contacteront via votre offre de cours, et vous pouvez échanger avec d'autres professionnels.
+                    Les riders vous contacteront via votre offre de cours.
                   </p>
                 </div>
               ) : filter === 'RIDERS' ? (
                 <div>
                   <p>Aucune conversation avec des élèves.</p>
                   <p className="text-sm mt-2">Les riders vous contacteront via votre offre de cours ou la BloboMap.</p>
-                </div>
-              ) : filter === 'PROS' ? (
-                <div>
-                  <p>Aucune conversation avec d'autres pros.</p>
-                  <p className="text-sm mt-2">Découvrez d'autres professionnels dans le réseau.</p>
-                  <Link href="/pro/network" className="inline-block mt-3">
-                    <Button variant="outline" size="sm" className="flex items-center gap-2">
-                      <Network size={16} />
-                      Explorer le réseau pro
-                    </Button>
-                  </Link>
                 </div>
               ) : (
                 <p>Aucune conversation dans cette catégorie.</p>
@@ -201,16 +168,39 @@ export default function ProMessagesPage() {
           <div className="divide-y">
             {shown.map((it) => (
               <div key={it.id} className="flex items-center justify-between py-3 rounded-md px-2 hover:bg-accent">
-                <Link href={`/messages/${it.id}`} className="flex-1">
-                  <div>
-                    <div className={(it.unread > 0 ? 'font-semibold' : 'font-medium') + " flex items-center gap-2"}>
-                      {it.otherRole === 'PRO' && <Briefcase size={12} className="text-green-600" />}
-                      {it.otherRole === 'RIDER' && <Users size={12} className="text-blue-600" />}
+                <Link href={`/messages/${it.id}`} className="flex-1 flex items-start gap-3">
+                  <div className="relative flex-shrink-0">
+                    {it.otherPhotoUrl ? (
+                      <Image
+                        src={it.otherPhotoUrl}
+                        alt={it.otherDisplayName}
+                        width={40}
+                        height={40}
+                        className="w-10 h-10 rounded-full object-cover border-2 border-gray-200"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-semibold text-sm">
+                        {it.otherDisplayName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
+                      {it.otherRole === 'PRO' ? (
+                        <Briefcase size={14} className="text-green-600" />
+                      ) : (
+                        <Users size={14} className="text-blue-600" />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className={(it.unread > 0 ? 'font-semibold' : 'font-medium') + " flex items-center gap-2 flex-wrap"}>
                       {it.otherDisplayName}
                       {it.favorite && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px]"><Star size={10}/> Favori</span>}
                       {it.blocked && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[10px]"><Shield size={10}/> Bloqué</span>}
-                      {it.otherRole === 'PRO' && <span className="inline-flex items-center rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px]">PRO</span>}
-                      {it.otherRole === 'RIDER' && <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-[10px]">ÉLÈVE</span>}
+                      <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-[10px]">
+                        {it.otherRole === 'PRO' ? 'PRO' : 'ÉLÈVE'}
+                      </span>
                     </div>
                     <div className={(it.unread > 0 ? 'text-foreground' : 'text-muted-foreground') + " text-xs line-clamp-1"}>{it.lastMessage}</div>
                   </div>

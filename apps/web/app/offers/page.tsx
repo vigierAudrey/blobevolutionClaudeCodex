@@ -2,7 +2,8 @@
 
 // Force SSR for dynamic user-specific features
 export const dynamic = 'force-dynamic';
-import { useEffect, useState } from 'react';
+import Image from 'next/image';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -10,31 +11,11 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { apiClient } from '../../lib/apiClient';
-import { MapPin, Clock, Euro, Star, ChevronRight } from 'lucide-react';
+import { MapPin, Euro, Star, ChevronRight } from 'lucide-react';
+import type { Sport, Level } from '@/types/matching';
+import type { OfferCard, OfferFilters, OfferSearchResponse } from '@/types/offers';
 
-type Sport = 'surf' | 'kitesurf';
-type Level = 'beginner' | 'intermediate' | 'advanced';
-
-type ProOffer = {
-  id: string;
-  sport: Sport;
-  level: Level;
-  title: string;
-  description: string;
-  hourlyRate: number;
-  lat: number;
-  lng: number;
-  createdAt: string;
-  distanceKm: number;
-  pro: {
-    id: string;
-    userId: string;
-    businessName?: string;
-    bio?: string;
-    photoUrl?: string;
-    verified: boolean;
-  };
-};
+type OfferSortKey = 'distance' | 'price' | 'sport' | 'recent';
 
 const sportLabels: Record<Sport, string> = {
   surf: 'Surf',
@@ -49,24 +30,72 @@ const levelLabels: Record<Level, string> = {
 
 export default function OffersPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [offers, setOffers] = useState<ProOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasGeolocation, setHasGeolocation] = useState(false);
-  const [userLocation, setUserLocation] = useState<{lat: number; lng: number} | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [filters, setFilters] = useState<OfferFilters>({ sport: '', level: '', radiusKm: 50 });
+  const [sortBy, setSortBy] = useState<OfferSortKey>('distance');
+  const [allOffers, setAllOffers] = useState<OfferCard[]>([]);
+  const [filteredOffers, setFilteredOffers] = useState<OfferCard[]>([]);
 
-  // Filtres et tri
-  const [filters, setFilters] = useState({
-    sport: '' as Sport | '',
-    level: '' as Level | '',
-    radiusKm: 50
-  });
+  const applyFiltersAndSort = useCallback(
+    (offersToFilter: OfferCard[] = allOffers) => {
+      let filtered = [...offersToFilter];
 
-  const [sortBy, setSortBy] = useState<'distance' | 'price' | 'sport' | 'recent'>('distance');
-  const [allOffers, setAllOffers] = useState<ProOffer[]>([]);
-  const [filteredOffers, setFilteredOffers] = useState<ProOffer[]>([]);
+      if (filters.sport) {
+        filtered = filtered.filter((offer) => offer.sport === filters.sport);
+      }
+
+      if (filters.level) {
+        filtered = filtered.filter((offer) => offer.level === filters.level);
+      }
+
+      filtered.sort((a, b) => {
+        switch (sortBy) {
+          case 'distance':
+            return a.distanceKm - b.distanceKm;
+          case 'price':
+            return a.hourlyRate - b.hourlyRate;
+          case 'sport':
+            return a.sport.localeCompare(b.sport) || a.distanceKm - b.distanceKm;
+          case 'recent':
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          default:
+            return 0;
+        }
+      });
+
+      setFilteredOffers(filtered);
+    },
+    [allOffers, filters.level, filters.sport, sortBy],
+  );
+
+  const searchOffers = useCallback(
+    async (lat: number, lng: number) => {
+      setSearching(true);
+      setError(null);
+
+      try {
+        const response = (await apiClient.searchOffers({
+          lat,
+          lng,
+          radiusKm: filters.radiusKm,
+        })) as OfferSearchResponse;
+
+        const fetchedOffers = response.offers ?? [];
+        setAllOffers(fetchedOffers);
+        applyFiltersAndSort(fetchedOffers);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : null;
+        setError(message || 'Erreur lors de la recherche');
+      } finally {
+        setSearching(false);
+      }
+    },
+    [applyFiltersAndSort, filters.radiusKm],
+  );
 
   useEffect(() => {
     const loadUserAndSearch = async () => {
@@ -78,111 +107,38 @@ export default function OffersPage() {
         }
 
         const currentUser = await apiClient.me();
-        setUser(currentUser);
-
-        // Rediriger les PRO vers leur dashboard
         if (currentUser.role === 'PRO') {
           router.replace('/pro/dashboard');
           return;
         }
 
-        // Récupérer la géolocalisation depuis le profil
         const profile = await apiClient.getProfile();
-        if (profile.lat && profile.lng) {
-          setUserLocation({ lat: profile.lat, lng: profile.lng });
+        if (profile.lat != null && profile.lng != null) {
+          const position = { lat: profile.lat, lng: profile.lng };
+          setUserLocation(position);
           setHasGeolocation(true);
-          await searchOffers(profile.lat, profile.lng);
+          await searchOffers(position.lat, position.lng);
         } else {
           setHasGeolocation(false);
         }
-
-      } catch (err: any) {
-        console.error('Erreur lors du chargement:', err);
-        setError(err?.message || 'Erreur lors du chargement');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : null;
+        setError(message || 'Erreur lors du chargement');
       } finally {
         setLoading(false);
       }
     };
 
-    loadUserAndSearch();
-  }, [router]);
+    void loadUserAndSearch();
+  }, [router, searchOffers]);
 
-  const searchOffers = async (lat?: number, lng?: number) => {
-    if (!lat || !lng) return;
-
-    setSearching(true);
-    setError(null);
-
-    try {
-      // Récupérer TOUTES les offres dans le rayon, sans filtres côté serveur
-      const params = new URLSearchParams({
-        lat: lat.toString(),
-        lng: lng.toString(),
-        radiusKm: filters.radiusKm.toString()
-      });
-
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/offers/search?${params}`,
-        {
-          headers: {
-            Authorization: `Bearer ${apiClient.getTokens()?.accessToken}`
-          }
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Erreur lors de la recherche des offres');
-      }
-
-      const data = await response.json();
-      const fetchedOffers = data.offers || [];
-
-      setAllOffers(fetchedOffers);
-      applyFiltersAndSort(fetchedOffers);
-
-    } catch (err: any) {
-      setError(err?.message || 'Erreur lors de la recherche');
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  // Fonction pour appliquer filtres et tri côté client
-  const applyFiltersAndSort = (offersToFilter: ProOffer[] = allOffers) => {
-    let filtered = [...offersToFilter];
-
-    // Appliquer les filtres
-    if (filters.sport) {
-      filtered = filtered.filter(offer => offer.sport === filters.sport);
-    }
-
-    if (filters.level) {
-      filtered = filtered.filter(offer => offer.level === filters.level);
-    }
-
-    // Appliquer le tri
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'distance':
-          return a.distanceKm - b.distanceKm;
-        case 'price':
-          return a.hourlyRate - b.hourlyRate;
-        case 'sport':
-          return a.sport.localeCompare(b.sport) || a.distanceKm - b.distanceKm;
-        case 'recent':
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        default:
-          return a.distanceKm - b.distanceKm;
-      }
-    });
-
-    setFilteredOffers(filtered);
-    setOffers(filtered); // Pour compatibilité avec le reste du code
-  };
+  useEffect(() => {
+    applyFiltersAndSort();
+  }, [applyFiltersAndSort]);
 
   const enableGeolocation = () => {
     if (!navigator.geolocation) {
-      alert('La géolocalisation n\'est pas supportée par ce navigateur.');
+      alert('La géolocalisation n’est pas supportée par ce navigateur.');
       return;
     }
 
@@ -193,31 +149,25 @@ export default function OffersPage() {
         setUserLocation({ lat, lng });
         setHasGeolocation(true);
 
-        // Sauvegarder dans le profil
         try {
           await apiClient.updateProfile({ lat, lng });
         } catch (error) {
-          console.error('Erreur lors de la sauvegarde de la position:', error);
+          console.error('Erreur lors de la sauvegarde de la position :', error);
         }
 
         await searchOffers(lat, lng);
       },
       (error) => {
-        console.error('Erreur géolocalisation:', error);
+        console.error('Erreur géolocalisation :', error);
         alert('Impossible de récupérer votre position. Vérifiez les autorisations de géolocalisation.');
       },
       {
         enableHighAccuracy: true,
         timeout: 10000,
-        maximumAge: 300000
-      }
+        maximumAge: 300000,
+      },
     );
   };
-
-  // Effect pour re-appliquer filtres et tri quand ils changent
-  useEffect(() => {
-    applyFiltersAndSort();
-  }, [filters.sport, filters.level, sortBy]);
 
   const handleRadiusChange = async () => {
     if (userLocation) {
@@ -230,8 +180,8 @@ export default function OffersPage() {
       const conversation = await apiClient.openConversation(proUserId);
       router.push(`/messages/${conversation.id}`);
     } catch (error) {
-      console.error('Erreur lors de l\'ouverture de la conversation:', error);
-      alert('Erreur lors de l\'ouverture de la conversation');
+      console.error('Erreur lors de l’ouverture de la conversation :', error);
+      alert('Erreur lors de l’ouverture de la conversation');
     }
   };
 
@@ -258,10 +208,15 @@ export default function OffersPage() {
               Pour voir les offres près de chez vous, activez votre géolocalisation.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <Button onClick={enableGeolocation} className="w-full">
               🔄 Activer ma géolocalisation
             </Button>
+            <p className="text-xs text-muted-foreground text-center leading-relaxed">
+              ℹ️ Votre position sera sauvegardée dans votre profil et utilisée uniquement
+              pour trouver des offres à proximité. Vous pouvez la modifier ou la supprimer
+              à tout moment dans vos paramètres.
+            </p>
           </CardContent>
         </Card>
       )}
@@ -329,10 +284,10 @@ export default function OffersPage() {
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as 'distance' | 'price' | 'sport' | 'recent')}
                   >
-                    <option value="distance">🗺️ Distance (proche d'abord)</option>
-                    <option value="price">💰 Prix (moins cher d'abord)</option>
+                    <option value="distance">🗺️ Distance (proche d&apos;abord)</option>
+                    <option value="price">💰 Prix (moins cher d&apos;abord)</option>
                     <option value="sport">🏄 Sport (A-Z)</option>
-                    <option value="recent">🆕 Récent (nouveau d'abord)</option>
+                    <option value="recent">🆕 Récent (nouveau d&apos;abord)</option>
                   </select>
                 </div>
               </div>
@@ -405,10 +360,28 @@ export default function OffersPage() {
               </Card>
             )}
 
-            {offers.map((offer) => (
+            {filteredOffers.map((offer) => (
               <Card key={offer.id} className="hover:shadow-md transition-shadow overflow-hidden">
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex flex-col sm:flex-row items-start gap-4">
+                    <div className="flex items-start gap-3 w-full sm:w-auto">
+                      <div className="relative flex-shrink-0">
+                        {offer.pro.photoUrl ? (
+                          <Image
+                            src={offer.pro.photoUrl}
+                            alt={offer.pro.businessName ?? 'Photo du professionnel'}
+                            width={48}
+                            height={48}
+                            className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-semibold text-sm">
+                            {(offer.pro.businessName ?? offer.title).charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <div className="flex-1 min-w-0 w-full">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">

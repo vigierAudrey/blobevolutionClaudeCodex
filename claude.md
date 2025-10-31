@@ -471,19 +471,114 @@ npm test -- --watch auth.test.ts
 - [Prisma Relations](https://www.prisma.io/docs/concepts/components/prisma-schema/relations)
 - [JWT Best Practices](https://datatracker.ietf.org/doc/html/rfc8725)
 
+## 🤖 Configuration MCP pour les IA
+
+### Serveurs MCP Disponibles
+
+Le projet utilise **Model Context Protocol (MCP)** pour enrichir les capacités des IA. Deux configurations distinctes :
+
+#### 1. Claude Code (CLI) - `~/.config/claude-code/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "vercel": {
+      "command": "npx",
+      "args": ["-y", "vercel-mcp"],
+      "env": {
+        "VERCEL_API_KEY": "votre-clé-api"
+      }
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    }
+  }
+}
+```
+
+**Utilisation** :
+- **Vercel MCP** : Gestion déploiements frontend (logs, domaines, projets)
+- **Chrome DevTools MCP** : Tests navigateur, debugging, screenshots, performance
+
+#### 2. Claude Desktop (App) - `~/.config/claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "sentry": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sentry"],
+      "env": {
+        "SENTRY_AUTH_TOKEN": "token",
+        "SENTRY_ORG": "vigier"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@executeautomation/playwright-mcp-server"]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@context7/mcp-server"],
+      "env": {
+        "CONTEXT7_API_KEY": "clé"
+      }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "token"
+      }
+    }
+  }
+}
+```
+
+**Utilisation** :
+- **Sentry** : Analyse erreurs production, stack traces, rapports bugs
+- **Playwright** : Tests E2E automatisés, génération scripts
+- **Chrome DevTools (Puppeteer)** : Navigation web, inspection DOM
+- **Context7** : Recherche documentation technique, exemples code
+- **GitHub** : Gestion issues/PRs, recherche code, historique
+
+### Configuration des Tokens
+
+Voir `docs/mcp-setup.md` pour obtenir les tokens :
+- **Sentry** : https://sentry.io/settings/account/api/auth-tokens/
+- **GitHub** : https://github.com/settings/tokens (scopes: `repo`, `read:org`, `workflow`)
+- **Context7** : https://context7.com
+- **Vercel** : https://vercel.com/account/tokens
+
+### Utilisation MCP dans vos tâches
+
+Les IA peuvent désormais :
+- Analyser les erreurs Sentry en production
+- Générer des tests Playwright basés sur user stories
+- Rechercher de la documentation via Context7
+- Créer des issues GitHub ou analyser le code
+- Gérer les déploiements Vercel
+- Déboguer le frontend avec Chrome DevTools
+
 ## 🤖 Pour Claude/LLMs
 
 Quand tu génères du code pour Blobinfini :
-1. **Reste dans ce repo** : Ne fais référence qu’au code présent ici.
-2. **Renforce la Blobosphère** : contenus shareables, SEO, workflow admin.
-3. **Module auth d'abord** : JWT, 2FA, sessions Redis
-4. **Sécurité systématique** : Valide tout avec Zod
-5. **RGPD strict** : Consentements, anonymisation
-6. **Performance** : Cache Redis, index DB
-7. **UX mobile** : Touch-friendly, offline-first
-8. **Commission protégée** : Filtrage contacts
-9. **Tests inclus** : Au moins un test par fonction
-10. **Accessibilité** : WCAG 2.1 AA minimum
+1. **Reste dans ce repo** : Ne fais référence qu'au code présent ici.
+2. **Utilise les MCP** : Exploite Sentry, GitHub, Playwright, Context7, Chrome DevTools pour enrichir ton analyse.
+3. **Renforce la Blobosphère** : contenus shareables, SEO, workflow admin.
+4. **Module auth d'abord** : JWT, 2FA, sessions Redis
+5. **Sécurité systématique** : Valide tout avec Zod
+6. **RGPD strict** : Consentements, anonymisation
+7. **Performance** : Cache Redis, index DB
+8. **UX mobile** : Touch-friendly, offline-first
+9. **Commission protégée** : Filtrage contacts
+10. **Tests inclus** : Au moins un test par fonction
+11. **Accessibilité** : WCAG 2.1 AA minimum
 
 ### Contexte métier clé
 - Matching : Multi-critères, max 4 riders/groupe, géoloc PostGIS

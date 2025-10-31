@@ -91,6 +91,8 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
     if (!me?.lat || !me?.lng) return res.status(400).json({ error: 'Missing pro location' });
     const plat = me.lat, plng = me.lng;
 
+    console.log(`🗺️  Searching for ${sport} lessons within ${radiusKm}km of (${plat}, ${plng})`);
+
     // Optimized query using PostGIS and SQL filtering instead of JavaScript
     const candidates = await prisma.$queryRaw<Array<{
       id: string;
@@ -137,12 +139,13 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
         AND ST_DWithin(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
           ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography,
-          50000  -- 50km radius
+          ${radiusKm * 1000}  -- Use requested radius from query
         )
-      HAVING "activeMatchCount" > 0
       ORDER BY distance_km ASC
-      LIMIT 500  -- Reduced from 2000 to 500
+      LIMIT 500
     `;
+
+    console.log(`✅ Found ${candidates.length} riders wanting ${sport} lessons`);
 
     // No more JavaScript filtering needed - everything is done in SQL!
     const items = candidates.map((c) => ({
@@ -159,6 +162,8 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
       distanceKm: Math.round(c.distance_km * 10) / 10  // Already calculated in SQL
     }))
       .slice(0, 500);
+
+    console.log(`📤 Returning ${items.length} lesson requests to pro`);
 
     return res.json({ items });
   } catch (err) {

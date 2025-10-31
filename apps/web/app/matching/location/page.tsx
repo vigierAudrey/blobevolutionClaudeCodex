@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Input } from '../../../components/ui/input';
 import { apiClient } from '../../../lib/apiClient';
 import { Button } from '../../../components/ui/button';
+import type { DashboardUser } from '@/types/user';
+import type { Level, Partner, Sport } from '@/types/matching';
 
 // Force SSR due to useSearchParams and localStorage usage
 export const dynamic = 'force-dynamic';
@@ -31,7 +33,7 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Chrome',
         steps: [
-          'Cliquez sur l\'icône 🔒 ou ⓘ à gauche de l\'adresse URL',
+          'Cliquez sur l’icône 🔒 ou ⓘ à gauche de l’adresse URL',
           'Trouvez "Position" ou "Localisation"',
           'Changez de "Bloquer" à "Autoriser"',
           'Rechargez la page avec F5'
@@ -41,7 +43,7 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Edge',
         steps: [
-          'Cliquez sur l\'icône 🔒 à gauche de l\'adresse URL',
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
           'Trouvez "Autorisations pour ce site"',
           'Changez "Emplacement" à "Autoriser"',
           'Rechargez la page avec F5'
@@ -51,7 +53,7 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Firefox',
         steps: [
-          'Cliquez sur l\'icône 🔒 à gauche de l\'adresse URL',
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
           'Cliquez sur "Permissions" puis "Position"',
           'Décochez "Bloquer" ou sélectionnez "Autoriser"',
           'Rechargez la page avec F5'
@@ -71,7 +73,7 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Votre navigateur',
         steps: [
-          'Recherchez l\'icône de sécurité près de l\'adresse URL',
+          'Recherchez l’icône de sécurité près de l’adresse URL',
           'Trouvez les paramètres de localisation/position',
           'Autorisez l\'accès à votre position',
           'Rechargez la page'
@@ -79,10 +81,6 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       };
   }
 };
-
-type Sport = 'surf' | 'kitesurf';
-type Level = 'beginner' | 'intermediate' | 'advanced';
-type Partner = 'ALL' | 'WOMEN' | 'MEN';
 
 const SPORT_KEY = 'matching.sport';
 const LEVEL_KEY = 'matching.level';
@@ -101,7 +99,6 @@ function LocationInner() {
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [saveDefault, setSaveDefault] = useState<boolean>(false);
-  const [user, setUser] = useState<any>(null);
   const [browserType, setBrowserType] = useState<string>('other');
   const [geolocError, setGeolocError] = useState<boolean>(false);
 
@@ -115,8 +112,7 @@ function LocationInner() {
           return;
         }
 
-        const currentUser = await apiClient.me();
-        setUser(currentUser);
+        const currentUser = await apiClient.me() as DashboardUser;
 
         if (currentUser.role === 'PRO') {
           router.replace('/pro/dashboard');
@@ -206,17 +202,17 @@ function LocationInner() {
             <div className="flex items-center gap-3">
               <Button variant="outline" onClick={getLocation}>Activer ma position</Button>
               <div className="text-xs text-muted-foreground">
-                {lat != null && lng != null ? `Position: ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
+                {lat != null && lng != null ? `Position : ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
               </div>
             </div>
             {geolocError && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-md">
                 <h4 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
                   <span>⚠️</span>
-                  <span>Impossible d'accéder à votre position</span>
+                  <span>Impossible d’accéder à votre position</span>
                 </h4>
                 <p className="text-sm text-red-800 mb-3">
-                  Votre navigateur bloque l'accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
+                  Votre navigateur bloque l’accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
                 </p>
                 <ol className="text-sm text-red-800 space-y-1 ml-4">
                   {getBrowserInstructions(browserType).steps.map((step, idx) => (
@@ -226,7 +222,7 @@ function LocationInner() {
                   ))}
                 </ol>
                 <p className="text-xs text-red-700 mt-3 italic">
-                  💡 La géolocalisation est optionnelle pour le matching mais permet d'améliorer les résultats.
+                  💡 La géolocalisation est optionnelle pour le matching mais permet d’améliorer les résultats.
                 </p>
                 <Button
                   onClick={getLocation}

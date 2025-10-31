@@ -121,7 +121,7 @@ describe('Système de Matching - Tests d\'intégration', () => {
 
       let cursor = 0;
       let candidates = [...initialCandidates];
-      let excludeIds: string[] = [];
+      const excludeIds: string[] = [];
 
       // Simuler plusieurs swipes jusqu'à la fin
       for (let i = 0; i < 3; i++) {

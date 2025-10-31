@@ -4,14 +4,21 @@
 export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamicImport from 'next/dynamic';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { Button } from '../../components/ui/button';
 import { apiClient } from '../../lib/apiClient';
-import { AdBannerFeed } from '../../components/ads/AdBanner';
+import type { DashboardUser } from '@/types/user';
+import type { Level, Sport } from '@/types/matching';
 
-type Sport = 'surf' | 'kitesurf';
-type Level = 'beginner' | 'intermediate' | 'advanced';
+const AdBannerFeed = dynamicImport(
+  () => import('../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
+  {
+    ssr: false,
+    loading: () => <div className="my-6 h-24 rounded-md bg-slate-200/60" aria-hidden="true" />,
+  },
+);
 
 const levelLabels: Record<Level, string> = { beginner: 'Débutant', intermediate: 'Intermédiaire', advanced: 'Confirmé' };
 const SPORT_KEY = 'matching.sport';
@@ -22,7 +29,6 @@ export default function MatchingPage() {
   const [surfLevel, setSurfLevel] = useState<Level | ''>('');
   const [kiteLevel, setKiteLevel] = useState<Level | ''>('');
   const [chosenSport, setChosenSport] = useState<Sport | null>(null);
-  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
     (async () => {
@@ -33,9 +39,7 @@ export default function MatchingPage() {
           router.replace('/login');
           return;
         }
-
-        const currentUser = await apiClient.me();
-        setUser(currentUser);
+        const currentUser = await apiClient.me() as DashboardUser;
 
         // Rediriger les PRO vers leur dashboard
         if (currentUser.role === 'PRO') {
@@ -45,12 +49,12 @@ export default function MatchingPage() {
 
         // Vérifier si le profil est complet avant d'accéder au matching
         const [profile, disciplines] = await Promise.all([
-          apiClient.getProfile(),
-          apiClient.getDisciplines().catch(() => []),
+          apiClient.getProfile() as Promise<Partial<DashboardUser> & { displayName?: string | null; photoUrl?: string | null }>,
+          apiClient.getDisciplines().catch(() => []) as Promise<Array<{ sport: Sport; level: Level }>>,
         ]);
 
-        const hasName = !!profile?.displayName;
-        const hasPhoto = !!profile?.photoUrl;
+        const hasName = Boolean(profile?.displayName);
+        const hasPhoto = Boolean(profile?.photoUrl);
         const hasDiscipline = Array.isArray(disciplines) && disciplines.length > 0;
         const incomplete = !hasName || !hasPhoto || !hasDiscipline;
 
@@ -79,16 +83,16 @@ export default function MatchingPage() {
 
         // Prefill from profile disciplines only if nothing was set from URL/localStorage
         if (!effSport) {
-          const discs = await apiClient.getDisciplines();
+          const discs = (await apiClient.getDisciplines()) as Array<{ sport: Sport; level: Level }>;
           const surf = discs.find(d => d.sport === 'surf');
           const kite = discs.find(d => d.sport === 'kitesurf');
 
           if (surf) {
-            setSurfLevel(surf.level as any);
+            setSurfLevel(surf.level);
             if (!kite) setChosenSport('surf');
           }
           if (kite) {
-            setKiteLevel(kite.level as any);
+            setKiteLevel(kite.level);
             if (!surf) setChosenSport('kitesurf');
           }
 

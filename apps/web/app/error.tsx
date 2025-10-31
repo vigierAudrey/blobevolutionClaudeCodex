@@ -22,7 +22,7 @@ export default function Error({
         Une erreur est survenue
       </h2>
       <p className="text-muted-foreground mb-8 max-w-md">
-        {error.message || "Quelque chose s'est mal passé. Veuillez réessayer."}
+        {error.message || 'Quelque chose s\u2019est mal passé. Veuillez réessayer.'}
       </p>
       <div className="flex gap-4">
         <button
@@ -35,12 +35,12 @@ export default function Error({
           href="/"
           className="inline-flex items-center justify-center rounded-md border border-input bg-background px-6 py-3 hover:bg-accent transition-colors"
         >
-          Retour à l'accueil
+          Retour à l&rsquo;accueil
         </Link>
       </div>
       {error.digest && (
         <p className="text-xs text-muted-foreground mt-8">
-          Référence d'erreur : {error.digest}
+          Référence d&rsquo;erreur : {error.digest}
         </p>
       )}
     </div>

@@ -2,6 +2,7 @@
 
 // Force SSR for dynamic user-specific features
 export const dynamic = 'force-dynamic';
+import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Label } from '../../components/ui/label';
@@ -13,116 +14,238 @@ import { useRouter } from 'next/navigation';
 import { BackBar } from '../../components/BackBar';
 import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
-import { apiClient as client } from '../../lib/apiClient';
 import { apiRequest } from '../../lib/csrf';
+import Link from 'next/link';
+import { MapPin, Cookie, FileText, Trash2 } from 'lucide-react';
+import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
+import type { Level } from '@/types/matching';
+type SexOption = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
+type LevelOption = '' | Level;
+type ProfileUpdatePayload = {
+  displayName?: string;
+  bio?: string;
+  sex: Gender;
+  emailNotif: boolean;
+  photoUrl?: string;
+};
 
-type Sex = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
+const labelToGender = (label: SexOption): Gender => {
+  switch (label) {
+    case 'Femme':
+      return 'FEMALE';
+    case 'Homme':
+      return 'MALE';
+    case 'Autre':
+      return 'OTHER';
+    default:
+      return 'UNSPECIFIED';
+  }
+};
+
+const genderToLabel = (value?: Gender | null): SexOption => {
+  switch (value) {
+    case 'FEMALE':
+      return 'Femme';
+    case 'MALE':
+      return 'Homme';
+    case 'OTHER':
+      return 'Autre';
+    default:
+      return 'Ne pas préciser';
+  }
+};
 
 export default function ProfilePage() {
   const router = useRouter();
   const toast = useToast();
   // Photo upload + preview
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const onPickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setPhotoFile(f);
-    const url = URL.createObjectURL(f);
-    setPhotoUrl(url);
+
+  const onPickPhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setPhotoPreviewUrl((previous) => {
+      if (previous) URL.revokeObjectURL(previous);
+      return URL.createObjectURL(file);
+    });
   };
 
   // Form fields
-  const [sex, setSex] = useState<Sex>('Femme');
+  const [sex, setSex] = useState<SexOption>('Ne pas préciser');
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
-  const [/*deprecatedPartnerPref*/] = useState<string>('ALL');
-  const [/*deprecatedMaxDistance*/] = useState<number>(20);
   const [emailNotif, setEmailNotif] = useState<boolean>(false);
 
+  // Geolocation state for privacy section
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [deletingLocation, setDeletingLocation] = useState(false);
+
   useEffect(() => {
-    // Charger le profil existant
-    apiClient
-      .getProfile()
-      .then((p) => {
-        setDisplayName(p.displayName ?? '');
-        setBio(p.bio ?? '');
-        // Map enums -> labels UI
-        setSex(
-          p.sex === 'FEMALE' ? 'Femme' : p.sex === 'MALE' ? 'Homme' : p.sex === 'OTHER' ? 'Autre' : 'Ne pas préciser',
-        );
-        // Partner preference & distance moved to matching flow – no longer editable here
-        setEmailNotif(!!p.emailNotif);
-        setPhotoUrl(p.photoUrl ?? null);
-      })
-      .catch(() => {
-        // si non authentifié
+    return () => {
+      if (photoPreviewUrl) {
+        URL.revokeObjectURL(photoPreviewUrl);
+      }
+    };
+  }, [photoPreviewUrl]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadProfile = async () => {
+      try {
+        const profile = (await apiClient.getProfile()) as UserProfile & {
+          photoUrl?: string | null;
+          lat?: number | null;
+          lng?: number | null;
+        };
+        if (!isMounted) return;
+        setDisplayName(profile.displayName ?? '');
+        setBio(profile.bio ?? '');
+        setSex(genderToLabel(profile.sex));
+        setEmailNotif(Boolean(profile.emailNotif));
+        setPhotoUrl(profile.photoUrl ?? null);
+        setPhotoPreviewUrl((previous) => {
+          if (previous) URL.revokeObjectURL(previous);
+          return null;
+        });
+        if (profile.lat != null && profile.lng != null) {
+          setUserLocation({ lat: profile.lat, lng: profile.lng });
+        } else {
+          setUserLocation(null);
+        }
+      } catch (error) {
+        if (!isMounted) return;
         router.replace('/login');
-      });
+      }
+    };
+    void loadProfile();
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
   // Disciplines state
-  const [surfLevel, setSurfLevel] = useState<'' | 'beginner' | 'intermediate' | 'advanced'>('');
-  const [kiteLevel, setKiteLevel] = useState<'' | 'beginner' | 'intermediate' | 'advanced'>('');
+  const [surfLevel, setSurfLevel] = useState<LevelOption>('');
+  const [kiteLevel, setKiteLevel] = useState<LevelOption>('');
+
+  const displayedPhotoSrc = photoPreviewUrl ?? photoUrl;
+  const photoAlt = useMemo(
+    () => (displayName ? `Photo de ${displayName}` : 'Photo du profil'),
+    [displayName],
+  );
 
   useEffect(() => {
-    client.getDisciplines().then((items) => {
-      const surf = items.find((d) => d.sport === 'surf');
-      const kite = items.find((d) => d.sport === 'kitesurf');
-      setSurfLevel((surf?.level as any) || '');
-      setKiteLevel((kite?.level as any) || '');
-    }).catch(() => {});
+    let isMounted = true;
+    apiClient
+      .getDisciplines()
+      .then((items) => {
+        if (!isMounted) return;
+        const surf = items.find((discipline) => discipline.sport === 'surf');
+        const kite = items.find((discipline) => discipline.sport === 'kitesurf');
+        setSurfLevel(surf ? surf.level : '');
+        setKiteLevel(kite ? kite.level : '');
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const [saving, setSaving] = useState(false);
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // Map UI -> enums API
-    const sexEnum = sex === 'Femme' ? 'FEMALE' : sex === 'Homme' ? 'MALE' : sex === 'Autre' ? 'OTHER' : 'UNSPECIFIED';
-    const body = {
+  const handleDeleteLocation = async () => {
+    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver pour utiliser le matching et voir les offres à proximité.')) {
+      return;
+    }
+
+    setDeletingLocation(true);
+    try {
+      await apiClient.updateProfile({ lat: undefined, lng: undefined });
+      setUserLocation(null);
+      toast('Géolocalisation supprimée', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de la suppression';
+      toast(message, 'error');
+    } finally {
+      setDeletingLocation(false);
+    }
+  };
+
+  const handleReopenCookieConsent = () => {
+    // Re-trigger cookie consent modal by removing the consent cookie
+    document.cookie = 'cookie_consent=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    window.location.reload();
+  };
+
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const payload: ProfileUpdatePayload = {
       displayName: displayName || undefined,
       bio: bio || undefined,
-      sex: sexEnum,
-      // partnerPref and maxDistance moved to matching flow
+      sex: labelToGender(sex),
       emailNotif,
       photoUrl: photoUrl || undefined,
     };
+
     try {
       setSaving(true);
-      // If there is a new photo file, upload it first
-      if (photoFile) {
-        const contentType = photoFile.type || 'image/jpeg';
-        const res = await apiRequest('/profile/photo/upload-url', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${apiClient.getTokens()?.accessToken || ''}` },
-          body: JSON.stringify({ contentType }),
-        });
-        if (!res.ok) throw new Error('Impossible de préparer le téléversement');
-        const data = await res.json();
-        const uploadUrl = data.uploadUrl as string;
-        const finalUrl = data.fileUrl as string | undefined;
-        // Upload direct to S3/MinIO
-        const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: photoFile });
-        if (!put.ok) throw new Error('Échec de l’upload');
-        if (finalUrl) body.photoUrl = finalUrl;
+      const tokens = apiClient.getTokens();
+      if (!tokens?.accessToken) {
+        throw new Error('Session expirée, veuillez vous reconnecter.');
       }
 
-      await apiClient.updateProfile(body);
+      if (photoFile) {
+        const contentType = photoFile.type || 'image/jpeg';
+        const uploadResponse = await apiRequest('/profile/photo/upload-url', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${tokens.accessToken}` },
+          body: JSON.stringify({ contentType }),
+        });
+        if (!uploadResponse.ok) {
+          throw new Error('Impossible de préparer le téléversement');
+        }
+        const uploadData = (await uploadResponse.json()) as { uploadUrl: string; fileUrl?: string };
+        const putResponse = await fetch(uploadData.uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': contentType },
+          body: photoFile,
+        });
+        if (!putResponse.ok) {
+          throw new Error('Échec du téléversement');
+        }
+        if (uploadData.fileUrl) {
+          payload.photoUrl = uploadData.fileUrl;
+          setPhotoUrl(uploadData.fileUrl);
+        }
+        setPhotoPreviewUrl((previous) => {
+          if (previous) URL.revokeObjectURL(previous);
+          return null;
+        });
+        setPhotoFile(null);
+      }
 
-      // Save disciplines in the same flow
-      const disciplinesPayload: Array<{ sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced' }> = [];
-      if (surfLevel) disciplinesPayload.push({ sport: 'surf', level: surfLevel as 'beginner' | 'intermediate' | 'advanced' });
-      if (kiteLevel) disciplinesPayload.push({ sport: 'kitesurf', level: kiteLevel as 'beginner' | 'intermediate' | 'advanced' });
-      await client.setDisciplines(disciplinesPayload);
+      await apiClient.updateProfile(payload);
+
+      const disciplinesPayload: DisciplinePreference[] = [];
+      if (surfLevel) {
+        disciplinesPayload.push({ sport: 'surf', level: surfLevel });
+      }
+      if (kiteLevel) {
+        disciplinesPayload.push({ sport: 'kitesurf', level: kiteLevel });
+      }
+      await apiClient.setDisciplines(disciplinesPayload);
 
       toast('Profil sauvegardé', 'success');
-      // Redirect to onboarding to refresh completion status
       setTimeout(() => router.push('/onboarding'), 1000);
-    } catch (e: any) {
-      toast(e?.message || 'Erreur lors de la sauvegarde', 'error');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde';
+      toast(message, 'error');
+    } finally {
+      setSaving(false);
     }
-    finally { setSaving(false); }
   };
 
   return (
@@ -143,12 +266,18 @@ export default function ProfilePage() {
             <CardContent>
               <div className="flex flex-col items-center gap-4">
                 <div className="rounded-xl border-2 border-rose-300 p-1">
-                  <div className="h-48 w-36 sm:h-56 sm:w-44 overflow-hidden rounded-lg bg-muted flex items-center justify-center">
-                    {photoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={photoUrl} alt="Photo profil" className="h-full w-full object-cover" />
+                  <div className="relative h-48 w-36 sm:h-56 sm:w-44 overflow-hidden rounded-lg bg-muted">
+                    {displayedPhotoSrc ? (
+                      <Image
+                        src={displayedPhotoSrc}
+                        alt={photoAlt}
+                        fill
+                        className="object-cover"
+                        sizes="(min-width: 640px) 176px, 144px"
+                        unoptimized
+                      />
                     ) : (
-                      <span className="text-xs text-muted-foreground">Aperçu</span>
+                      <span className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">Aperçu</span>
                     )}
                   </div>
                 </div>
@@ -164,7 +293,7 @@ export default function ProfilePage() {
                     id="sex"
                     className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={sex}
-                    onChange={(e) => setSex(e.target.value as Sex)}
+                    onChange={(event) => setSex(event.target.value as SexOption)}
                   >
                     <option>Femme</option>
                     <option>Homme</option>
@@ -208,7 +337,7 @@ export default function ProfilePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Surf</Label>
-                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={surfLevel} onChange={(e)=>setSurfLevel(e.target.value as any)}>
+                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={surfLevel} onChange={(event) => setSurfLevel(event.target.value as LevelOption)}>
                   <option value="">— Aucun —</option>
                   <option value="beginner">Débutant</option>
                   <option value="intermediate">Intermédiaire</option>
@@ -217,7 +346,7 @@ export default function ProfilePage() {
               </div>
               <div>
                 <Label>Kitesurf</Label>
-                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={kiteLevel} onChange={(e)=>setKiteLevel(e.target.value as any)}>
+                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={kiteLevel} onChange={(event) => setKiteLevel(event.target.value as LevelOption)}>
                   <option value="">— Aucun —</option>
                   <option value="beginner">Débutant</option>
                   <option value="intermediate">Intermédiaire</option>
@@ -240,6 +369,108 @@ export default function ProfilePage() {
               <Label htmlFor="emailNotif" className="!m-0">
                 Recevoir des emails lorsqu’un partenaire cherche à me joindre
               </Label>
+            </div>
+
+          </CardContent>
+        </Card>
+
+        {/* Privacy and Data Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">🔒 Confidentialité et Données</CardTitle>
+            <CardDescription>Gérez vos données personnelles et préférences de confidentialité</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+
+            {/* Geolocation Management */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Géolocalisation</h3>
+              </div>
+              {userLocation ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    📍 Position enregistrée : {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Utilisée pour le matching et la recherche d&apos;offres à proximité.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDeleteLocation}
+                    disabled={deletingLocation}
+                  >
+                    <Trash2 className="h-3 w-3 mr-2" />
+                    {deletingLocation ? 'Suppression...' : 'Supprimer ma position'}
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    ℹ️ Aucune géolocalisation enregistrée. Vous pouvez l&apos;activer depuis les pages Matching ou Offres.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <hr className="border-t" />
+
+            {/* Cookie Preferences */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Cookie className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Préférences Cookies</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Modifiez vos choix concernant les cookies et le suivi.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReopenCookieConsent}
+              >
+                Gérer mes cookies
+              </Button>
+            </div>
+
+            <hr className="border-t" />
+
+            {/* Legal Links & Data Rights */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Vos droits RGPD</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Conformément au RGPD, vous disposez d&apos;un droit d&apos;accès, de rectification, de suppression et de portabilité de vos données.
+              </p>
+              <div className="flex flex-wrap gap-2 items-center">
+                <Link href="/about" className="text-sm text-primary hover:underline">
+                  📄 Politique RGPD
+                </Link>
+                <span className="text-muted-foreground">•</span>
+                <button
+                  type="button"
+                  className="text-sm text-primary hover:underline"
+                  onClick={() => toast('Fonctionnalité en cours de développement', 'info')}
+                >
+                  📥 Exporter mes données
+                </button>
+                <span className="text-muted-foreground">•</span>
+                <button
+                  type="button"
+                  className="text-sm text-red-600 hover:underline"
+                  onClick={() => {
+                    if (confirm('Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.')) {
+                      toast('Contactez support@blobinfini.com pour supprimer votre compte', 'info');
+                    }
+                  }}
+                >
+                  🗑️ Supprimer mon compte
+                </button>
+              </div>
             </div>
 
           </CardContent>

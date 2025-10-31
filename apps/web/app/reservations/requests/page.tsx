@@ -11,7 +11,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
 import type { RiderBookingRequest } from '../../../lib/types/booking';
-import { ListItemSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
+import { ListItemSkeleton } from '../../../components/ui/skeleton';
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+  return fallback;
+};
 
 function statusLabel(status: RiderBookingRequest['status']) {
   switch (status) {
@@ -53,8 +66,8 @@ export default function RiderRequestsPage() {
           setRequests(res.requests);
         }
       })
-      .catch((err: any) => {
-        setError(err?.message || 'Impossible de charger vos demandes');
+      .catch((err) => {
+        setError(getErrorMessage(err, 'Impossible de charger vos demandes'));
       })
       .finally(() => setLoading(false));
   }, [router]);

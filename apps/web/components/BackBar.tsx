@@ -1,18 +1,21 @@
 "use client";
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from './ui/button';
 
-export function BackBar({ fallbackHref = '/dashboard', label = 'Retour' }: { fallbackHref?: string; label?: string }) {
+type BackBarProps = {
+  fallbackHref?: string;
+  label?: string;
+};
+
+export function BackBar({ fallbackHref = '/dashboard', label = 'Retour' }: BackBarProps) {
   const router = useRouter();
 
   const onBack = () => {
-    // Try history back; if user landed directly, also offer the fallback link
-    try {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
       router.back();
-    } catch {
-      // no-op, link below handles fallback navigation
+    } else {
+      router.push(fallbackHref);
     }
   };
 
@@ -24,4 +27,3 @@ export function BackBar({ fallbackHref = '/dashboard', label = 'Retour' }: { fal
     </div>
   );
 }
-

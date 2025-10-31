@@ -37,6 +37,18 @@
       "files": [
         "src/**/*.{js,jsx,ts,tsx}"
       ]
+    },
+    {
+      "files": [
+        "**/__tests__/**/*.{js,jsx,ts,tsx}",
+        "**/*.test.{js,jsx,ts,tsx}"
+      ],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+        "@typescript-eslint/no-require-imports": "off",
+        "prefer-const": "off"
+      }
     }
   ]
 }

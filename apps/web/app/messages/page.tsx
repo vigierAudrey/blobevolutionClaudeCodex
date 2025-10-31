@@ -1,59 +1,42 @@
 "use client";
-import { useEffect, useMemo, useState, useRef } from 'react';
+import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, Briefcase, Shield, ShieldOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { apiClient } from '../../lib/apiClient';
+import type { ThreadSummary, ThreadListQuery, ThreadListResponse } from '@/types/messages';
 
 // Force SSR for real-time messaging
 export const dynamic = 'force-dynamic';
 
-type ConversationItem = {
-  id: string;
-  type: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO';
-  otherDisplayName: string;
-  otherRole: 'RIDER' | 'PRO';
-  otherPhotoUrl?: string | null;
-  lastMessage: string;
-  lastAt: string;
-  unread: number;
-  trashed?: boolean;
-  favorite?: boolean;
-  blocked?: boolean;
-};
-
 export default function MessagesPage() {
-  const [items, setItems] = useState<ConversationItem[]>([]);
+  const [items, setItems] = useState<ThreadSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL'|'FAVORITES'|'UNREAD'|'TRASH'|'RIDERS'|'PROS'>('ALL');
-  const hasLoadedRef = useRef(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
-      const opts: { includeTrashed?: boolean; type?: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' } = {
-        includeTrashed: filter === 'TRASH'
-      };
+      const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH' };
 
       // Filter by conversation type if needed
       if (filter === 'RIDERS') opts.type = 'RIDER_TO_RIDER';
       if (filter === 'PROS') opts.type = 'RIDER_TO_PRO';
 
-      const data = await apiClient.listConversations(opts);
-      setItems(data.items || []);
-    } catch (e: any) { setError(e?.message || 'Erreur'); }
-  };
+      const data = await apiClient.listConversations(opts) as ThreadListResponse;
+      setItems(data.items ?? []);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur');
+    }
+  }, [filter]);
 
   useEffect(() => {
-    // Prevent double execution in React Strict Mode on initial mount
-    if (!hasLoadedRef.current) {
-      hasLoadedRef.current = true;
-    }
-
-    load();
+    void load();
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
-  }, [filter]);
+  }, [filter, load]);
 
   const counts = useMemo(() => {
     const all = items.filter(it => !it.trashed).length;
@@ -124,10 +107,13 @@ export default function MessagesPage() {
                   {/* Photo de profil miniature */}
                   <div className="relative flex-shrink-0">
                     {it.otherPhotoUrl ? (
-                      <img
+                      <Image
                         src={it.otherPhotoUrl}
                         alt={it.otherDisplayName}
+                        width={40}
+                        height={40}
                         className="w-10 h-10 rounded-full object-cover border-2 border-gray-200"
+                        unoptimized
                       />
                     ) : (
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-semibold text-sm">
