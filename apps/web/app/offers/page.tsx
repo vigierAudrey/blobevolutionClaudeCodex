@@ -239,7 +239,9 @@ export default function OffersPage() {
                     id="sport"
                     className="h-10 w-full rounded-md border px-3 py-2 text-sm"
                     value={filters.sport}
-                    onChange={(e) => setFilters(prev => ({ ...prev, sport: e.target.value as Sport | '' }))}
+                    onChange={(e) =>
+                      setFilters((prev: OfferFilters) => ({ ...prev, sport: e.target.value as Sport | '' }))
+                    }
                   >
                     <option value="">Tous les sports</option>
                     {Object.entries(sportLabels).map(([value, label]) => (
@@ -254,7 +256,9 @@ export default function OffersPage() {
                     id="level"
                     className="h-10 w-full rounded-md border px-3 py-2 text-sm"
                     value={filters.level}
-                    onChange={(e) => setFilters(prev => ({ ...prev, level: e.target.value as Level | '' }))}
+                    onChange={(e) =>
+                      setFilters((prev: OfferFilters) => ({ ...prev, level: e.target.value as Level | '' }))
+                    }
                   >
                     <option value="">Tous les niveaux</option>
                     {Object.entries(levelLabels).map(([value, label]) => (
@@ -272,7 +276,9 @@ export default function OffersPage() {
                     max="200"
                     step="5"
                     value={filters.radiusKm}
-                    onChange={(e) => setFilters(prev => ({ ...prev, radiusKm: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      setFilters((prev: OfferFilters) => ({ ...prev, radiusKm: Number(e.target.value) }))
+                    }
                   />
                 </div>
 

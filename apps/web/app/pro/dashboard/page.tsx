@@ -13,6 +13,8 @@ import { User, Map, Percent, Info, LogOut, BookOpen, MessageSquare, Gift } from 
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
 
+const DEFAULT_PLANNING_STATS = { availabilityCount: 0, pendingCount: 0 };
+
 export default function ProDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<DashboardUser | null>(null);
@@ -32,7 +34,7 @@ export default function ProDashboardPage() {
       perf.end();
     } catch (error: unknown) {
       console.error('Pro dashboard initialization failed:', error);
-      setPlanningStats({ availabilityCount: 0, pendingCount: 0 });
+      setPlanningStats({ ...DEFAULT_PLANNING_STATS });
     }
   }, []);
 
@@ -82,6 +84,15 @@ export default function ProDashboardPage() {
     );
   }
   if (!user) return null;
+
+  const safePlanningStats = planningStats ?? DEFAULT_PLANNING_STATS;
+  const availabilityLabel = planningStats
+    ? `${safePlanningStats.availabilityCount} créneau${safePlanningStats.availabilityCount > 1 ? 'x' : ''}`
+    : '-- créneaux';
+  const pendingLabel = planningStats
+    ? `${safePlanningStats.pendingCount} demande${safePlanningStats.pendingCount > 1 ? 's' : ''} en attente`
+    : '-- demandes';
+  const hasPendingRequests = safePlanningStats.pendingCount > 0;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -177,14 +188,10 @@ export default function ProDashboardPage() {
           <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-2 text-xs font-medium">
               <Badge variant="outline">
-                {planningStats
-                  ? `${planningStats.availabilityCount} créneau${planningStats.availabilityCount > 1 ? 'x' : ''}`
-                  : '-- créneaux'}
+                {availabilityLabel}
               </Badge>
-              <Badge variant={planningStats && planningStats.pendingCount > 0 ? 'secondary' : 'outline'}>
-                {planningStats
-                  ? `${planningStats.pendingCount} demande${planningStats.pendingCount > 1 ? 's' : ''} en attente`
-                  : '-- demandes'}
+              <Badge variant={hasPendingRequests ? 'secondary' : 'outline'}>
+                {pendingLabel}
               </Badge>
             </div>
             <Link href="/pro/planning" className="inline-block w-full">

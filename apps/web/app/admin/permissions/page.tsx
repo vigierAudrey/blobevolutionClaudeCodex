@@ -28,6 +28,27 @@ interface PermissionData {
   roles: Record<string, string[]>;
 }
 
+type AdminsResponse = {
+  admins?: Admin[] | null;
+};
+
+const isAdminsResponse = (value: unknown): value is AdminsResponse => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as { admins?: unknown };
+  return candidate.admins === undefined || Array.isArray(candidate.admins);
+};
+
+const isPermissionData = (value: unknown): value is PermissionData => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Partial<PermissionData>;
+  const roles = candidate.roles;
+  return Array.isArray(candidate.available) && typeof roles === 'object' && roles !== null;
+};
+
 const PERMISSION_LABELS: Record<string, string> = {
   'users.view': 'Voir les utilisateurs',
   'users.suspend': 'Suspendre des utilisateurs',
@@ -90,13 +111,18 @@ export default function AdminPermissions() {
     setLoading(true);
     setError(null);
     try {
-      const [adminsResponse, permissionsResponse] = await Promise.all<[AdminsResponse, PermissionData]>([
+      const [adminsResponseRaw, permissionsResponseRaw] = await Promise.all([
         apiClient.getAdmins(),
         apiClient.getPermissions()
       ]);
 
-      setAdmins(adminsResponse.admins || []);
-      setPermissions(permissionsResponse);
+      const resolvedAdmins = isAdminsResponse(adminsResponseRaw) ? adminsResponseRaw.admins ?? [] : [];
+      const resolvedPermissions = isPermissionData(permissionsResponseRaw)
+        ? permissionsResponseRaw
+        : { available: [], roles: {} };
+
+      setAdmins(resolvedAdmins);
+      setPermissions(resolvedPermissions);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement');

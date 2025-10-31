@@ -123,7 +123,7 @@ export default function ProOffersPage() {
           const profile = (await response.json()) as ProProfileData;
           const { lat, lng } = profile;
           if (typeof lat === 'number' && typeof lng === 'number') {
-            setOffer(prev => ({ ...prev, lat, lng }));
+            setOffer((prev: EditableOffer) => ({ ...prev, lat, lng }));
           }
         }
 
@@ -137,7 +137,7 @@ export default function ProOffersPage() {
                 ? Number(existingOffer.hourlyRate)
                 : existingOffer.hourlyRate;
 
-            setOffer(prev => ({
+            setOffer((prev: EditableOffer) => ({
               ...prev,
               ...existingOffer,
               hourlyRate: Number.isFinite(normalizedRate) ? normalizedRate : prev.hourlyRate,
@@ -225,8 +225,8 @@ export default function ProOffersPage() {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
 
-        setOffer(prev => ({ ...prev, lat, lng }));
-        setFieldErrors(prev => ({ ...prev, geolocation: undefined }));
+        setOffer((prev: EditableOffer) => ({ ...prev, lat, lng }));
+        setFieldErrors((prev) => ({ ...prev, geolocation: undefined }));
 
         // Sauvegarder aussi dans le profil pro
         try {
@@ -312,7 +312,9 @@ export default function ProOffersPage() {
                 id="sport"
                 className="h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={offer.sport}
-                onChange={(e) => setOffer(prev => ({ ...prev, sport: e.target.value as Sport }))}
+                onChange={(e) =>
+                  setOffer((prev: EditableOffer) => ({ ...prev, sport: e.target.value as Sport }))
+                }
               >
                 {Object.entries(sportLabels).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
@@ -326,7 +328,9 @@ export default function ProOffersPage() {
                 id="level"
                 className="h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={offer.level}
-                onChange={(e) => setOffer(prev => ({ ...prev, level: e.target.value as Level }))}
+                onChange={(e) =>
+                  setOffer((prev: EditableOffer) => ({ ...prev, level: e.target.value as Level }))
+                }
               >
                 {Object.entries(levelLabels).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
@@ -342,7 +346,7 @@ export default function ProOffersPage() {
               id="title"
               placeholder="Ex: Cours de surf pour débutants à Biarritz"
               value={offer.title}
-              onChange={(e) => setOffer(prev => ({ ...prev, title: e.target.value }))}
+              onChange={(e) => setOffer((prev: EditableOffer) => ({ ...prev, title: e.target.value }))}
               className={fieldErrors.title ? 'border-red-500' : ''}
             />
             {fieldErrors.title && (
@@ -359,7 +363,9 @@ export default function ProOffersPage() {
               placeholder="Décrivez votre méthode d&apos;enseignement, le matériel fourni, les spots de cours..."
               className="w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
               value={offer.description}
-              onChange={(e) => setOffer(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e) =>
+                setOffer((prev: EditableOffer) => ({ ...prev, description: e.target.value }))
+              }
             />
             {fieldErrors.description && (
               <p className="text-sm text-red-600">{fieldErrors.description}</p>
@@ -379,7 +385,9 @@ export default function ProOffersPage() {
               max="200"
               step="5"
               value={offer.hourlyRate}
-              onChange={(e) => setOffer(prev => ({ ...prev, hourlyRate: Number(e.target.value) }))}
+              onChange={(e) =>
+                setOffer((prev: EditableOffer) => ({ ...prev, hourlyRate: Number(e.target.value) }))
+              }
               className={fieldErrors.hourlyRate ? 'border-red-500' : ''}
             />
             {fieldErrors.hourlyRate && (
@@ -393,7 +401,7 @@ export default function ProOffersPage() {
               id="isActive"
               type="checkbox"
               checked={offer.isActive}
-              onChange={(e) => setOffer(prev => ({ ...prev, isActive: e.target.checked }))}
+              onChange={(e) => setOffer((prev: EditableOffer) => ({ ...prev, isActive: e.target.checked }))}
             />
             <Label htmlFor="isActive" className="text-sm">
               Offre active (visible par les riders)

@@ -52,7 +52,7 @@ export default function ProMessagesPage() {
       if (filter === 'RIDERS') opts.type = 'RIDER_TO_PRO';
 
       const data = (await apiClient.listConversations(opts)) as ThreadListResponse;
-      const onlyRiderThreads = (data.items ?? []).filter((conv) => conv.type !== 'PRO_TO_PRO');
+      const onlyRiderThreads = (data.items ?? []).filter((conv: ThreadSummary) => conv.type !== 'PRO_TO_PRO');
       setItems(onlyRiderThreads);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;

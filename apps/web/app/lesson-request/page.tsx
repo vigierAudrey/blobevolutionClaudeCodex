@@ -36,8 +36,8 @@ export default function LessonRequestPage() {
   const toast = useToast();
 
   const [wantsLesson, setWantsLesson] = useState(false);
-  const [lessonSport, setLessonSport] = useState<Sport | ''>('');
-  const [lessonLevel, setLessonLevel] = useState<Level | ''>('');
+  const [lessonSport, setLessonSport] = useState<Sport | null>(null);
+  const [lessonLevel, setLessonLevel] = useState<Level | null>(null);
   const [lessonDate, setLessonDate] = useState('');
   const [lessonPlace, setLessonPlace] = useState('');
   const [loading, setLoading] = useState(true);
@@ -49,8 +49,8 @@ export default function LessonRequestPage() {
       try {
         const profile = await apiClient.getProfile();
         setWantsLesson(profile.wantsLesson || false);
-        setLessonSport((profile.lessonSport as Sport) || '');
-        setLessonLevel((profile.lessonLevel as Level) || '');
+        setLessonSport((profile.lessonSport as Sport) || null);
+        setLessonLevel((profile.lessonLevel as Level) || null);
 
         // Format date for input[type="date"]
         if (profile.lessonDate) {
@@ -86,8 +86,8 @@ export default function LessonRequestPage() {
       };
 
       if (wantsLesson) {
-        payload.lessonSport = lessonSport;
-        payload.lessonLevel = lessonLevel;
+        payload.lessonSport = lessonSport ?? null;
+        payload.lessonLevel = lessonLevel ?? null;
         payload.lessonDate = lessonDate || undefined;
         payload.lessonPlace = lessonPlace || undefined;
       } else {
