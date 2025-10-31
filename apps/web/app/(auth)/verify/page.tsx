@@ -3,7 +3,6 @@
 export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,7 +11,6 @@ import { BackBar } from '@/components/BackBar';
 
 function VerifyInner() {
   const search = useSearchParams();
-  const router = useRouter();
   const [token, setToken] = useState<string>('');
   const [status, setStatus] = useState<'idle' | 'success' | 'error' | 'loading'>('idle');
   const [message, setMessage] = useState<string>('');
@@ -37,9 +35,10 @@ function VerifyInner() {
       });
       setStatus('success');
       setMessage('Email vérifié avec succès. Redirection…');
-    } catch (e: any) {
+    } catch (err: unknown) {
       setStatus('error');
-      setMessage(e?.message || 'Impossible de vérifier le token');
+      const errorMessage = err instanceof Error ? err.message : null;
+      setMessage(errorMessage || 'Impossible de vérifier le token');
     }
   };
 

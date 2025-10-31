@@ -22,10 +22,12 @@ describe('AuthService', () => {
 
   // Mock environment variables
   const originalEnv = process.env;
+  const STRONG_JWT_SECRET = 'j'.repeat(64);
+  const STRONG_REFRESH_SECRET = 'r'.repeat(64);
 
   beforeAll(() => {
-    process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only';
-    process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-key-for-testing-only';
+    process.env.JWT_SECRET = STRONG_JWT_SECRET;
+    process.env.JWT_REFRESH_SECRET = STRONG_REFRESH_SECRET;
     // NODE_ENV is already set to 'test' in Jest environment
   });
 

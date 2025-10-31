@@ -21,7 +21,7 @@ export default function PromosPage() {
                 </p>
                 <p className="text-sm text-blue-800">
                   Au fur et à mesure du développement de la plateforme, nous proposerons des partenariats
-                  avec des écoles de surf, des loueurs d'équipement et d'autres acteurs de la glisse.
+                  avec des écoles de surf, des loueurs d&apos;équipement et d&apos;autres acteurs de la glisse.
                 </p>
               </div>
             </div>
@@ -33,7 +33,7 @@ export default function PromosPage() {
               <div className="flex-1">
                 <h3 className="font-semibold text-gray-900 mb-2">Vous êtes partenaire ?</h3>
                 <p className="text-sm text-gray-700 mb-3">
-                  Si vous êtes une école de surf, un loueur d'équipement, ou un acteur de la glisse
+                  Si vous êtes une école de surf, un loueur d&apos;équipement, ou un acteur de la glisse
                   intéressé par un partenariat, cet espace pourra accueillir vos offres promotionnelles.
                 </p>
                 <p className="text-xs text-gray-600 italic">
@@ -45,7 +45,7 @@ export default function PromosPage() {
 
           <div className="text-center pt-2">
             <p className="text-xs text-muted-foreground">
-              Cette page sera mise à jour au fur et à mesure de l'évolution du projet
+              Cette page sera mise à jour au fur et à mesure de l&apos;évolution du projet
             </p>
           </div>
         </CardContent>

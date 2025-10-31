@@ -169,7 +169,7 @@ L'authentification est un **module dans l'API principale** pour simplifier le d�
 - ✅ **Sessions multi-devices** (implémenté)
 - ✅ **Logout avec invalidation tokens** (implémenté)
 - ✅ **RGPD: consentement, export, suppression** (implémenté)
-- ⏳ **2FA obligatoire pour pros** (specs définies, implémentation prévue)
+- ✅ **2FA obligatoire pour pros** (implémenté - activation via email + code 2FA)
 - ⏳ **Social login** (Google, Facebook) (Phase 2)
 
 ### Schéma Base de Données
@@ -200,6 +200,7 @@ model User {
 
 - ✅ **Chiffrement AES-256** données personnelles
 - ✅ **Consentement explicite** géolocalisation
+- ✅ **Minimisation** : aucune donnée de paiement collectée (parcours sans transaction intégrée)
 - ✅ **Droit à l'oubli** (soft delete + purge automatique 3 phases)
 - ✅ **Export données utilisateur** (GDPR CLI intégré)
 - ✅ **Logs anonymisés** après 30 jours
@@ -213,7 +214,7 @@ model User {
 - ✅ **CSRF tokens** obligatoires sur toutes mutations
 - ✅ **Headers sécurité** (CSP, HSTS, XSS Protection)
 - ✅ **JWT + refresh tokens** sécurisés (rotation automatique)
-- ⏳ **2FA obligatoire pour pros** (prochaine phase)
+- ✅ **2FA obligatoire pour pros** (déployé)
 
 ### Décision: Refresh tokens (MVP)
 
@@ -260,7 +261,6 @@ model User {
 - 🔥 **Tests unitaires** : couverture 80%+ pour stabilité production
 - 📈 **Blobosphère enrichie** : CMS complet + SEO + partage social
 - 📊 **Analytics avancées** : tableau de bord business + métriques
-- 🔧 **2FA obligatoire** pour pros (sécurité renforcée)
 - 🎯 **Social login** (Google, Facebook) pour conversion
 - 🤖 **Matching ML** multi-critères intelligent
 - 🏆 **Système réputation** (notes/avis post-session)
@@ -275,16 +275,112 @@ model User {
 - [ ] Marketplace équipement
 - [ ] Internationalisation
 
+## 🤖 Configuration MCP (Model Context Protocol)
+
+### Serveurs MCP Disponibles
+
+Le projet **blobevolutionClaudeCodex** est configuré pour utiliser plusieurs serveurs MCP qui enrichissent les capacités des IA :
+
+#### Pour Claude Code (CLI)
+Configuration : `~/.config/claude-code/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "vercel": {
+      "command": "npx",
+      "args": ["-y", "vercel-mcp"],
+      "env": {
+        "VERCEL_API_KEY": "votre-clé-api-vercel"
+      }
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    }
+  }
+}
+```
+
+**Capacités** :
+- **Vercel MCP** : Gestion des déploiements, projets, domaines, logs Vercel
+- **Chrome DevTools MCP** : Automatisation navigateur, debugging, screenshots, analyse de performance
+
+#### Pour Claude Desktop (Application)
+Configuration : `~/.config/claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "sentry": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sentry"],
+      "env": {
+        "SENTRY_AUTH_TOKEN": "votre-token-sentry",
+        "SENTRY_ORG": "votre-organisation"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@executeautomation/playwright-mcp-server"]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@context7/mcp-server"],
+      "env": {
+        "CONTEXT7_API_KEY": "votre-clé-context7"
+      }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "votre-token-github"
+      }
+    }
+  }
+}
+```
+
+**Capacités** :
+- **Sentry** : Surveillance erreurs production, analyse stack traces, création de rapports de bugs
+- **Playwright** : Tests E2E automatisés, génération de scripts de test
+- **Chrome DevTools (Puppeteer)** : Navigation web, inspection DOM, capture de performance
+- **Context7** : Recherche de documentation technique, exemples de code
+- **GitHub** : Gestion issues/PRs, recherche de code, analyse historique
+
+### Configuration des Tokens
+
+Pour activer les serveurs MCP :
+
+1. **Sentry** : https://sentry.io/settings/account/api/auth-tokens/
+2. **Context7** : https://context7.com (compte + clé API)
+3. **GitHub** : https://github.com/settings/tokens (scopes: `repo`, `read:org`, `workflow`)
+4. **Vercel** : https://vercel.com/account/tokens
+
+### Documentation Complète
+
+Voir `docs/mcp-setup.md` pour :
+- Installation détaillée
+- Obtention des tokens
+- Utilisation par les IA
+- Dépannage
+
 ## 🚀 Instructions pour l'IA
 
 ### Lignes directrices
 
 - Travaillez exclusivement dans `blobevolutionClaudeCodex`.
-- Respectez l’architecture modulaire (auth, matching, bookings, payments, messaging).
+- Respectez l'architecture modulaire (auth, matching, bookings, payments, messaging).
 - Intégrez le module `blobosphere` (contenus éditoriaux) pour renforcer la visibilité externe.
+- Utilisez les serveurs MCP disponibles (Sentry, GitHub, Playwright, Chrome DevTools, Context7, Vercel) pour enrichir vos capacités d'analyse et de déploiement.
 - Sécurité systématique : Zod sur tous les inputs, Prisma uniquement, rate limiting, CSRF, headers de sécurité.
 - Auth : JWT 15 min + refresh 30 j, 2FA obligatoire pour les pros, sessions invalidables.
-- RGPD : consentement explicite, anonymisation, droit à l’oubli, export des données.
+- RGPD : consentement explicite, anonymisation, droit à l'oubli, export des données.
 - Performance : PostGIS, Redis, index composites, pagination cursor-based.
 - Qualité : TypeScript strict, tests unitaires/E2E, couverture ≥ 80 %.
 - CI/CD : utilisez les scripts fournis (`npm run build`, `npm test`, etc.) et surveillez la GitHub Action `CI`.
@@ -640,26 +736,51 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ## 👥 Rôles, Profils et BloboMap
 
 - Riders et Pros disposent d’un CTA "Explorer la Blobosphère" pour accéder au hub éditorial (route `/blobosphere`).
-- Riders (particuliers):
-  - Profil `RiderProfile` avec `wantsLesson` (bool) et `lessonSport` (surf|kitesurf).
-  - Matching: bouton "Faire appel à un pro" et interrupteur "Je veux un cours".
-  - Affichage badge "🎓 Cours" sur cartes/résultats si `wantsLesson=true`.
 
-- Pros (professionnels):
-  - Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).
-  - Prix conservé en base mais non exposé en UI publique pour l’instant.
-  - BloboMap (OSM/Leaflet) côté pro: `/pro/map` avec filtres “Surf / Kitesurf” et rayon (km).
-  - Un clic sur un marqueur ouvre/crée une conversation (“Contacter”).
+### Riders (Particuliers)
 
-- API liées:
-  - `PUT /profile/me`: accepte `wantsLesson`, `lessonSport` (rider).
-  - `GET /pro/near/lessons?sport=surf|kitesurf&radiusKm=25`: demandes de cours visibles par tous les pros du périmètre (variante B), Riders ayant au moins un match actif, tri par distance.
-  - `POST /conversations/open`: crée/retourne une conversation directe entre 2 users.
+**Profil & données**
 
-- Web:
-  - `/matching` → interrupteur “Je veux un cours” + badge 🎓 en liste.
-  - `/pro/profile` → lieu de travail (lat/lng), logo; pas de champ prix en UI publique.
-  - `/pro/map` → Leaflet + OpenStreetMap, filtres sport/rayon, bouton “Contacter”.
+- Profil `RiderProfile` avec `wantsLesson` (bool) et `lessonSport` (surf|kitesurf).
+- Matching : bouton "Faire appel à un pro" et interrupteur "Je veux un cours".
+- Affichage badge "🎓 Cours" sur cartes/résultats si `wantsLesson=true`.
+- Données conservées : préférences sport, niveau, zone géographique, demandes de session, consentements RGPD.
+
+**Parcours MVP**
+
+1. Inscription + vérification email (support rider ou pro).
+2. Configuration du profil et consentement géolocalisation.
+3. Exploration de `/matching`, envoi d’une demande de session et échanges avec le pro.
+4. Validation finale hors plateforme (paiement non géré dans Blobinfini pour le MVP).
+
+### Pros (Professionnels)
+
+**Profil & données**
+
+- Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).
+- Informations tarifaires conservées uniquement en base (non exposées) pour préparer le futur retour du paiement.
+- Créneaux publiés, demandes reçues et journal d’audit pro.
+- Pièces justificatives partagées hors plateforme : les utilisateurs doivent vérifier directement les documents fournis par le professionnel.
+- Auth renforcée avec 2FA obligatoire sur connexion.
+
+**Parcours MVP**
+
+1. Inscription via parcours pro + activation email.
+2. Activation du 2FA (code reçu par email) à la première connexion.
+3. Paramétrage du profil public et des créneaux sur `/pro/profile` et `/pro/map`.
+4. Réception des demandes, réponse (acceptation/refus) et suivi depuis le planning pro.
+
+### API liées
+
+- `PUT /profile/me`: accepte `wantsLesson`, `lessonSport` (rider).
+- `GET /pro/near/lessons?sport=surf|kitesurf&radiusKm=25`: demandes de cours visibles par tous les pros du périmètre (variante B), Riders ayant au moins un match actif, tri par distance.
+- `POST /conversations/open`: crée/retourne une conversation directe entre 2 users.
+
+### Web
+
+- `/matching` → interrupteur “Je veux un cours” + badge 🎓 en liste.
+- `/pro/profile` → lieu de travail (lat/lng), logo; pas de champ prix en UI publique.
+- `/pro/map` → Leaflet + OpenStreetMap, filtres sport/rayon, bouton “Contacter”.
 
 ## 🧪 Données de démo (seed)
 
@@ -838,6 +959,8 @@ router.post(
 - [Database Schema](./docs/database.md)
 - [Security Guidelines](./docs/security.md)
 - [RGPD Compliance](./docs/rgpd.md)
+- [Publicités & Consentement](./README_ADS.md)
+- [Tests E2E & CI](./README_TESTS.md)
 
 ## 🤝 Contribution IA
 

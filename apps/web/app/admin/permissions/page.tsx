@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
 import { apiClient } from '../../../lib/apiClient';
-import { ArrowLeft, Shield, Settings, CheckCircle, XCircle, Crown, Users } from 'lucide-react';
+import { ArrowLeft, Shield, Settings, Crown, Users } from 'lucide-react';
 import Link from 'next/link';
 
 interface Admin {
@@ -90,15 +90,16 @@ export default function AdminPermissions() {
     setLoading(true);
     setError(null);
     try {
-      const [adminsResponse, permissionsResponse] = await Promise.all([
+      const [adminsResponse, permissionsResponse] = await Promise.all<[AdminsResponse, PermissionData]>([
         apiClient.getAdmins(),
         apiClient.getPermissions()
       ]);
 
       setAdmins(adminsResponse.admins || []);
       setPermissions(permissionsResponse);
-    } catch (err: any) {
-      setError(err.message || 'Erreur de chargement');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur de chargement');
     } finally {
       setLoading(false);
     }
@@ -134,8 +135,9 @@ export default function AdminPermissions() {
       await apiClient.setAdminRole(admin.id, role);
       await loadData(); // Reload data
       setSelectedAdmin(null);
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la mise à jour du rôle');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors de la mise à jour du rôle');
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }
@@ -150,8 +152,9 @@ export default function AdminPermissions() {
       await loadData(); // Reload data
       setSelectedAdmin(null);
       setEditingPermissions([]);
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la mise à jour des permissions');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors de la mise à jour des permissions');
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }

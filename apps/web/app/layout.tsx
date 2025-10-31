@@ -1,8 +1,15 @@
 import type { Metadata } from 'next';
+import dynamic from 'next/dynamic';
 import Script from 'next/script';
 import './globals.css';
 import ClientProvider from '@/components/ui/ClientProvider';
-import { CookieConsent } from '../components/cookies/CookieConsent';
+
+// Force dynamic rendering for all pages (no static generation)
+export const dynamicParams = true;
+const CookieConsent = dynamic(
+  () => import('../components/cookies/CookieConsent').then((mod) => mod.CookieConsent),
+  { ssr: false },
+);
 
 // Root layout provides HTML shell + ClientProvider for all pages
 // Static pages in (static)/ use ISR with revalidate=300 and avoid using contexts

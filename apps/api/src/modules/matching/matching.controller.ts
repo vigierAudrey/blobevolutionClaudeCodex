@@ -10,13 +10,10 @@ export const matchingRouter = Router();
 const sportEnum = z.enum(['surf', 'kitesurf']);
 const levelEnum = z.enum(['beginner', 'intermediate', 'advanced']);
 
-const partnerEnum = z.enum(['ALL', 'WOMEN', 'MEN']);
-
 const searchSchema = z.object({
   sport: sportEnum,
   level: levelEnum,
   date: z.string().regex(/^(\d{4}-\d{2}-\d{2}|anytime)$/), // YYYY-MM-DD or "anytime"
-  partner: partnerEnum.optional(),
   distanceKm: z.number().int().min(1).max(500).optional(),
   location: z
     .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })
@@ -36,9 +33,7 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { sport, level, date, partner, distanceKm, location, cursor, limit, page, pageSize, sortBy } = searchSchema.parse(req.body);
-
-    const partnerPref = partner ?? 'WOMEN';
+    const { sport, level, date, distanceKm, location, cursor, limit, page, pageSize, sortBy } = searchSchema.parse(req.body);
 
     // Ensure we have a profile to read preferences from
     let profile = await prisma.riderProfile.findUnique({ where: { userId } });
@@ -60,7 +55,6 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
       maxDistanceKm: distanceKm ?? last?.distanceKm ?? profile.maxDistanceKm,
       emailNotif: profile.emailNotif,
       location: effectiveLocation,
-      partnerPref,
     } as const;
 
     // Persist last search (for defaults next time)
@@ -149,13 +143,22 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
     }
 
     // If we have a location, use PostGIS for distance + optional radius filtering
-    let results: Array<{ id: string; displayName: string | null; gender: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED'; sport: string; level: string; distanceKm: number | null }> = [];
+    let results: Array<{
+      id: string;
+      displayName: string | null;
+      gender: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED';
+      photoUrl: string | null;
+      bio: string | null;
+      sport: string;
+      level: string;
+      wantsLesson: boolean;
+      lessonSport: string | null;
+      distanceKm: number | null
+    }> = [];
     let total = 0;
     let hasMore = false;
     let nextCursor: string | null = null;
     if (criteria.location) {
-      const genderCond = Prisma.empty;
-
       const radiusCond = criteria.maxDistanceKm
         ? Prisma.sql`
             AND ST_DWithin(
@@ -165,19 +168,6 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
             )
           `
         : Prisma.empty;
-
-      // Cursor-based or offset pagination
-      let paginationCond = Prisma.empty;
-      let limitClause = Prisma.sql`LIMIT ${effectiveLimit + 1}`; // +1 to check if more results exist
-
-      if (useCursorPagination && cursor) {
-        // Cursor-based: get results after the cursor ID
-        paginationCond = Prisma.sql`AND rp."id" > ${cursor}`;
-      } else if (!useCursorPagination && page) {
-        // Legacy offset pagination
-        const offset = (page - 1) * effectiveLimit;
-        limitClause = Prisma.sql`LIMIT ${effectiveLimit} OFFSET ${offset}`;
-      }
 
       const orderBy = sortBy === 'distance'
         ? Prisma.sql`ORDER BY dist_m ASC, rp."id" ASC` // Add ID for stable cursor ordering
@@ -203,7 +193,6 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
             FROM "RiderProfile" rp
             JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
             WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
-            ${genderCond}
             ${radiusCond}
             ${excludeCond}
             ${notAlreadyActedCond}
@@ -212,98 +201,91 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
         total = (countRows?.[0]?.count ?? 0) as number;
       }
 
-      // Fetch paginated rows with computed distance
-      const rows = await prisma.$queryRaw<Array<{ id: string; displayName: string | null; sex: any; sport: string; level: string; wantsLesson: boolean; lessonSport: string | null; dist_m: number | null }>>(
+      // ✅ OPTIMIZATION: Single query with LIMIT 200, then filter/paginate in JS
+      const rows = await prisma.$queryRaw<Array<{
+        id: string;
+        displayName: string | null;
+        sex: any;
+        photoUrl: string | null;
+        bio: string | null;
+        sport: string;
+        level: string;
+        wantsLesson: boolean;
+        lessonSport: string | null;
+        dist_m: number | null
+      }>>(
         Prisma.sql`
-          SELECT rp."id", rp."displayName", rp."sex", rd."sport", rd."level", rp."wantsLesson", rp."lessonSport",
-                 CASE
-                   WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_Distance(
-                     ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
-                     ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
-                   )
-                   ELSE NULL
-                 END AS dist_m
+          SELECT
+            rp."id",
+            rp."displayName",
+            rp."sex",
+            rp."photoUrl",
+            rp."bio",
+            rd."sport",
+            rd."level",
+            rp."wantsLesson",
+            rp."lessonSport",
+            CASE
+              WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_Distance(
+                ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
+                ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
+              )
+              ELSE NULL
+            END AS dist_m
           FROM "RiderProfile" rp
           JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
           WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
-          ${genderCond}
           ${radiusCond}
-          ${excludeCond}
           ${notAlreadyActedCond}
-          ${paginationCond}
           ${orderBy}
-          ${limitClause}
+          LIMIT 200
         `
       );
 
-      // Process results and determine pagination metadata
-      const processedRows = rows
-        .filter((r) => r.dist_m == null || isFinite(r.dist_m));
+      // Process and filter results
+      const allResults = rows
+        .filter((r) => r.dist_m == null || isFinite(r.dist_m))
+        .map((r) => ({
+          id: r.id,
+          displayName: r.displayName ?? 'Profil',
+          gender: r.sex,
+          photoUrl: r.photoUrl,
+          bio: r.bio,
+          sport: r.sport,
+          level: r.level,
+          wantsLesson: !!r.wantsLesson,
+          lessonSport: r.lessonSport,
+          distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
+        }));
 
-      let actualResults = processedRows;
+      // Apply client-side exclusions
+      const excludeSet = new Set(req.body.excludeIds || []);
+      const filteredResults = allResults.filter(r => !excludeSet.has(r.id));
+
+      // Apply pagination in JavaScript
+      let actualResults = filteredResults;
 
       if (useCursorPagination) {
-        // For cursor pagination, check if we have more results (we fetched limit + 1)
-        hasMore = processedRows.length > effectiveLimit;
-        if (hasMore) {
-          actualResults = processedRows.slice(0, effectiveLimit);
-          nextCursor = actualResults[actualResults.length - 1]?.id || null;
-        }
+        // Cursor-based pagination
+        const startIndex = cursor ? filteredResults.findIndex(r => r.id === cursor) + 1 : 0;
+        const endIndex = Math.min(startIndex + effectiveLimit, filteredResults.length);
+        actualResults = filteredResults.slice(startIndex, endIndex);
+        hasMore = endIndex < filteredResults.length;
+        nextCursor = hasMore && actualResults.length > 0 ? actualResults[actualResults.length - 1].id : null;
       } else {
-        // Legacy pagination
-        hasMore = ((page || 1) - 1) * effectiveLimit + processedRows.length < total;
+        // Legacy offset pagination
+        const offset = ((page || 1) - 1) * effectiveLimit;
+        actualResults = filteredResults.slice(offset, offset + effectiveLimit);
+        hasMore = offset + effectiveLimit < filteredResults.length;
+        total = filteredResults.length;
       }
 
-      results = actualResults.map((r) => ({
-        id: r.id,
-        displayName: r.displayName ?? 'Profil',
-        gender: r.sex,
-        sport: r.sport,
-        level: r.level,
-        wantsLesson: !!r.wantsLesson,
-        lessonSport: r.lessonSport,
-        distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
-      }));
+      results = actualResults;
 
-      // Cache the results for future requests (exclude user-specific filters)
-      if (results.length > 0 && cacheService.isAvailable()) {
-        // Get full results for caching (without pagination/exclusions)
-        const fullResults = await prisma.$queryRaw<Array<{ id: string; displayName: string | null; sex: any; sport: string; level: string; wantsLesson: boolean; lessonSport: string | null; dist_m: number | null }>>(
-          Prisma.sql`
-            SELECT rp."id", rp."displayName", rp."sex", rd."sport", rd."level", rp."wantsLesson", rp."lessonSport",
-                   CASE
-                     WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_Distance(
-                       ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
-                       ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
-                     )
-                     ELSE NULL
-                   END AS dist_m
-            FROM "RiderProfile" rp
-            JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
-            WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
-            ${genderCond}
-            ${radiusCond}
-            ${notAlreadyActedCond}
-            ${orderBy}
-            LIMIT 200
-          `
-        );
-
-        const cacheData = fullResults
-          .filter((r) => r.dist_m == null || isFinite(r.dist_m))
-          .map((r) => ({
-            id: r.id,
-            displayName: r.displayName ?? 'Profil',
-            gender: r.sex,
-            sport: r.sport,
-            level: r.level,
-            wantsLesson: !!r.wantsLesson,
-            lessonSport: r.lessonSport,
-            distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
-          }));
-
-        await cacheService.setMatchingResults(cacheKey, cacheData, 300); // 5 minutes cache
-        console.log(`💾 Cached ${cacheData.length} matching results`);
+      // Cache all results for future requests (reuse allResults, no second query needed)
+      if (allResults.length > 0 && cacheService.isAvailable()) {
+        await cacheService.setMatchingResults(cacheKey, allResults, 300); // 5 minutes cache
+        console.log(`💾 Cached ${allResults.length} matching results`);
       }
     }
 

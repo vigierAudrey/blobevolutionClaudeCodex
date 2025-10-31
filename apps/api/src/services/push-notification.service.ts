@@ -4,6 +4,7 @@
  */
 
 import admin from 'firebase-admin';
+import { secureLogger } from '../utils/secure-logger';
 
 // Firebase Admin configuration
 const firebaseConfig = {
@@ -52,12 +53,12 @@ export class PushNotificationService {
     try {
       if (firebaseConfig.privateKey && firebaseConfig.clientEmail) {
         this.isInitialized = true;
-        console.log('✅ Push Notification Service initialized');
+        secureLogger.info('PUSH_SERVICE_INITIALIZED', { projectId: firebaseConfig.projectId });
       } else {
-        console.log('⚠️ Firebase credentials not configured, push notifications disabled');
+        secureLogger.warn('PUSH_SERVICE_DISABLED', { reason: 'missing_credentials' });
       }
     } catch (error: any) {
-      console.error('❌ Failed to initialize Push Notification Service:', error);
+      secureLogger.error('PUSH_SERVICE_INIT_FAILED', { error: error?.message });
     }
   }
 
@@ -68,7 +69,7 @@ export class PushNotificationService {
     try {
       // Here you would save to your database
       // For now, we'll use a simple in-memory store or cache
-      console.log(`💾 Saving FCM token for user ${userId}`);
+      secureLogger.info('PUSH_TOKEN_SAVE', { userId });
 
       // TODO: Implement database storage
       // await prisma.pushToken.upsert({
@@ -85,7 +86,7 @@ export class PushNotificationService {
 
       return true;
     } catch (error: any) {
-      console.error('❌ Error saving FCM token:', error);
+      secureLogger.error('PUSH_TOKEN_SAVE_FAILED', { userId, error: error?.message });
       return false;
     }
   }
@@ -95,7 +96,7 @@ export class PushNotificationService {
    */
   async removeToken(userId: string, token?: string): Promise<boolean> {
     try {
-      console.log(`🗑️ Removing FCM token for user ${userId}`);
+      secureLogger.info('PUSH_TOKEN_REMOVE', { userId, hasToken: Boolean(token) });
 
       // TODO: Implement database removal
       // if (token) {
@@ -110,7 +111,7 @@ export class PushNotificationService {
 
       return true;
     } catch (error: any) {
-      console.error('❌ Error removing FCM token:', error);
+      secureLogger.error('PUSH_TOKEN_REMOVE_FAILED', { userId, error: error?.message });
       return false;
     }
   }
@@ -120,7 +121,7 @@ export class PushNotificationService {
    */
   async sendToUser(userId: string, notification: PushNotificationData): Promise<boolean> {
     if (!this.isInitialized) {
-      console.log('⚠️ Push notifications not initialized');
+      secureLogger.warn('PUSH_SERVICE_NOT_INITIALIZED', { userId });
       return false;
     }
 
@@ -129,7 +130,7 @@ export class PushNotificationService {
       const tokens = await this.getUserTokens(userId);
 
       if (tokens.length === 0) {
-        console.log(`📱 No FCM tokens found for user ${userId}`);
+        secureLogger.warn('PUSH_NO_TOKENS', { userId });
         return false;
       }
 
@@ -139,11 +140,11 @@ export class PushNotificationService {
 
       const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
 
-      console.log(`📬 Sent notification to ${successCount}/${tokens.length} devices for user ${userId}`);
+      secureLogger.info('PUSH_NOTIFICATION_SENT', { userId, successCount, total: tokens.length });
 
       return successCount > 0;
     } catch (error: any) {
-      console.error('❌ Error sending notification to user:', error);
+      secureLogger.error('PUSH_USER_SEND_FAILED', { userId, error: error?.message });
       return false;
     }
   }
@@ -153,7 +154,7 @@ export class PushNotificationService {
    */
   async sendToToken(token: string, notification: PushNotificationData): Promise<boolean> {
     if (!this.isInitialized) {
-      console.log('⚠️ Push notifications not initialized');
+      secureLogger.warn('PUSH_SERVICE_NOT_INITIALIZED', { reason: 'send_to_token' });
       return false;
     }
 
@@ -161,15 +162,15 @@ export class PushNotificationService {
       const message = this.buildFCMMessage(token, notification);
 
       const response = await admin.messaging().send(message);
-      console.log(`✅ Notification sent successfully: ${response}`);
+      secureLogger.info('PUSH_TOKEN_SENT', { responseId: response });
 
       return true;
     } catch (error: any) {
       if (error.code === 'messaging/registration-token-not-registered') {
-        console.log('🗑️ Token no longer valid, scheduling removal');
+        secureLogger.warn('PUSH_TOKEN_INVALID', { errorCode: error.code });
         // TODO: Remove invalid token from database
       } else {
-        console.error('❌ Error sending notification:', error);
+        secureLogger.error('PUSH_TOKEN_SEND_FAILED', { error: error?.message });
       }
       return false;
     }
@@ -407,7 +408,7 @@ export class PushNotificationService {
     // return tokens.map(t => t.token);
 
     // Mock implementation for development
-    console.log(`🔍 Looking up tokens for user ${userId}`);
+    secureLogger.debug('PUSH_LOOKUP_TOKENS', { userId });
     return []; // Return empty array until database is implemented
   }
 

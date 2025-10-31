@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      E2E_WEB_PORT: 3020
+      E2E_API_PORT: 4020
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build API
+        run: npm run build --workspace @blobinfini/api
+
+      - name: Build Web
+        run: npm run build --workspace @blobinfini/web
+
+      - name: Test API
+        run: npm test --workspace @blobinfini/api
+
+      - name: Test Web
+        run: npm test --workspace @blobinfini/web
+
+      - name: Log E2E ports
+        run: echo "Running E2E on ports $E2E_WEB_PORT / $E2E_API_PORT"
+
+      - name: Run Playwright E2E
+        run: npm run test:e2e

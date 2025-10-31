@@ -1,4 +1,26 @@
 import { defineConfig, devices } from '@playwright/test';
+import waitPort from 'wait-port';
+
+process.env.PLAYWRIGHT_SKIP_LAST_RUN = '1';
+
+const finalWebPort = parseInt(process.env.E2E_WEB_PORT ?? '3020', 10);
+const finalApiPort = parseInt(process.env.E2E_API_PORT ?? '4020', 10);
+
+console.info(`[E2E] Configured ports: web=${finalWebPort}, api=${finalApiPort}`);
+
+const baseURL = `http://localhost:${finalWebPort}`;
+const apiURL = `http://localhost:${finalApiPort}`;
+
+process.env.PLAYWRIGHT_BASE_URL = baseURL;
+process.env.PLAYWRIGHT_API_URL = apiURL;
+
+async function waitForServer(port: number, label: string) {
+  const ready = await waitPort({ host: '127.0.0.1', port, timeout: 180_000 });
+  if (!ready) {
+    throw new Error(`[E2E] ❌ ${label} did not start on port ${port} within 180s`);
+  }
+  console.info(`[E2E] ✅ ${label} ready on port ${port}`);
+}
 
 export default defineConfig({
   testDir: './apps/web/tests/e2e',
@@ -14,7 +36,7 @@ export default defineConfig({
     ? [['github'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
     : 'list',
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3002',
+    baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -22,19 +44,28 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm run dev --workspace @blobinfini/api',
-      url: 'http://localhost:4000/health',
-      reuseExistingServer: !process.env.CI,
+      url: `${apiURL}/health`,
+      env: {
+        ...process.env,
+        PORT: String(finalApiPort),
+      },
+      reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
-      timeout: 120_000,
+      timeout: 180_000,
     },
     {
       command: 'npm run dev --workspace @blobinfini/web',
-      url: 'http://localhost:3002',
-      reuseExistingServer: !process.env.CI,
+      url: baseURL,
+      env: {
+        ...process.env,
+        PORT: String(finalWebPort),
+        NEXT_PUBLIC_API_URL: apiURL,
+      },
+      reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
-      timeout: 120_000,
+      timeout: 180_000,
     },
   ],
   projects: [
@@ -43,4 +74,12 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
+  hooks: {
+    async preRun() {
+      console.info('[E2E] Waiting for servers to start…');
+      await waitForServer(finalApiPort, 'API server');
+      await waitForServer(finalWebPort, 'Web server');
+      console.info('[E2E] Environment ready. Running Playwright tests…');
+    },
+  },
 });

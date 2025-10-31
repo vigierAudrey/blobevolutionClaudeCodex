@@ -2,7 +2,7 @@
 
 // Force SSR for admin auth and dynamic data
 export const dynamic = 'force-dynamic';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
@@ -44,6 +44,11 @@ const getRoleBadge = (role: string) => {
   }
 };
 
+type AdminReportsResponse = {
+  reports: ProfileReport[];
+  pagination?: { totalPages: number };
+};
+
 export default function AdminReports() {
   const router = useRouter();
   const [reports, setReports] = useState<ProfileReport[]>([]);
@@ -76,23 +81,24 @@ export default function AdminReports() {
     checkAuth();
   }, [router]);
 
-  const loadReports = async () => {
+  const loadReports = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiClient.getAdminReports({ page, limit: 20 });
+      const response = await apiClient.getAdminReports({ page, limit: 20 }) as AdminReportsResponse;
       setReports(response.reports || []);
       setTotalPages(response.pagination?.totalPages || 1);
-    } catch (err: any) {
-      setError(err.message || 'Erreur de chargement');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur de chargement');
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
 
   useEffect(() => {
-    loadReports();
-  }, [page]);
+    void loadReports();
+  }, [loadReports]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR', {
@@ -109,7 +115,7 @@ export default function AdminReports() {
     const now = new Date();
     const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
 
-    if (diffInHours < 1) return 'Moins d\'1h';
+    if (diffInHours < 1) return 'Moins d&rsquo;1h';
     if (diffInHours < 24) return `${diffInHours}h`;
 
     const diffInDays = Math.floor(diffInHours / 24);
@@ -125,8 +131,9 @@ export default function AdminReports() {
     try {
       await apiClient.moderateReport(reportId, action);
       setReports(prev => prev.filter(report => report.id !== reportId));
-    } catch (err: any) {
-      setError(err?.message || "Impossible d'exécuter l'action");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Impossible d\u2019exécuter l\u2019action');
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }

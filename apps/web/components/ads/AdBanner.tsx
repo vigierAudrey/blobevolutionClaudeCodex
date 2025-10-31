@@ -1,6 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
+import { usePathname } from 'next/navigation';
+import { useConsent } from '../../hooks/useConsent';
+import { loadAdSense } from '../../lib/ads/loadAdSense';
+import type { ConsentMode } from '../../lib/apiClient';
 
 interface AdBannerProps {
   slot: string;
@@ -11,87 +15,129 @@ interface AdBannerProps {
 
 declare global {
   interface Window {
-    adsbygoogle: any[];
-    gtag?: (...args: any[]) => void;
+    adsbygoogle?: Array<Record<string, unknown>>;
+    gtag?: (...args: unknown[]) => void;
   }
 }
+
+const HOUSE_MESSAGES: Record<'loading' | 'config' | 'refused', { title: string; description: string }> = {
+  loading: {
+    title: 'Préférences en cours',
+    description: 'Les annonces s’afficheront après la prise en compte de ton choix.',
+  },
+  config: {
+    title: 'Espace partenaire',
+    description: 'Paramètre AdSense pour activer les campagnes sur Blobinfini.',
+  },
+  refused: {
+    title: 'Blobinfini House Ads',
+    description: 'Découvre la Blobosphère, les bons plans spots et nos partenaires éthiques.',
+  },
+};
+
+const HouseAd = ({
+  className = '',
+  variant,
+}: {
+  className?: string;
+  variant: keyof typeof HOUSE_MESSAGES;
+}) => {
+  const content = HOUSE_MESSAGES[variant];
+  return (
+    <div
+      className={`rounded-md border border-slate-300/70 bg-slate-100/60 px-6 py-5 text-center text-xs text-slate-600 shadow-sm backdrop-blur-sm ${className}`}
+    >
+      <div className="text-sm font-semibold text-slate-700 tracking-wide uppercase">{content.title}</div>
+      <div className="mt-2 leading-relaxed text-slate-600">{content.description}</div>
+      <div className="mt-3 inline-flex items-center gap-2 text-[10px] text-slate-500">
+        <span className="rounded-full bg-slate-200 px-2 py-0.5 uppercase tracking-wide">
+          Blobinfini&nbsp;•&nbsp;{new Date().getFullYear()}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+const getNpaValue = (mode: ConsentMode) => (mode === 'personalized' ? '0' : '1');
 
 export function AdBanner({
   slot,
   format = 'auto',
   responsive = true,
-  className = ''
+  className = '',
 }: AdBannerProps) {
   const clientId = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID;
   const enabled = process.env.NEXT_PUBLIC_ADSENSE_ENABLED === 'true';
-  const [consentLevel, setConsentLevel] = useState<string | null>(null);
+  const pathname = usePathname();
+  const { consentMode, consentSignals, consentReady } = useConsent();
+
+  const adEnabled = useMemo(
+    () => enabled && Boolean(clientId) && consentReady && consentMode !== 'none',
+    [clientId, consentMode, consentReady, enabled],
+  );
 
   useEffect(() => {
-    // Récupérer le niveau de consentement
-    const savedConsent = localStorage.getItem('cookie-consent');
-    setConsentLevel(savedConsent);
-  }, []);
-
-  useEffect(() => {
-    if (!enabled || !clientId || !consentLevel) return;
-
-    try {
-      // Configurer Google Analytics selon le consentement
-      if (window.gtag) {
-        window.gtag('consent', 'update', {
-          ad_storage: consentLevel === 'personalized' ? 'granted' : 'denied',
-          ad_user_data: consentLevel === 'personalized' ? 'granted' : 'denied',
-          ad_personalization: consentLevel === 'personalized' ? 'granted' : 'denied',
-          analytics_storage: consentLevel === 'personalized' ? 'granted' : 'denied'
-        });
-      }
-
-      // Push l'annonce vers AdSense
-      (window.adsbygoogle = window.adsbygoogle || []).push({});
-    } catch (error) {
-      console.error('Erreur AdSense:', error);
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.debug('[AdBanner]', { slot, consentMode, consentSignals, adEnabled });
     }
-  }, [enabled, clientId, consentLevel]);
+  }, [adEnabled, consentMode, consentSignals, slot]);
 
-  // Si AdSense désactivé, pas configuré, ou pas de consentement
+  useEffect(() => {
+    if (!adEnabled) return;
+
+    loadAdSense()
+      .then(() => {
+        try {
+          window.adsbygoogle = window.adsbygoogle || [];
+          window.adsbygoogle.push({});
+
+          if (typeof window.gtag === 'function') {
+            window.gtag('event', 'ad_impression', {
+              ad_mode: consentMode,
+              ad_slot: slot,
+              page_location: pathname ?? '',
+            });
+          }
+        } catch (error) {
+          console.warn('AdSense rendering error', error);
+        }
+      })
+      .catch((error) => {
+        console.warn('Unable to load AdSense script', error);
+      });
+  }, [adEnabled, consentMode, pathname, slot]);
+
   if (!enabled || !clientId) {
-    return null;
+    return <HouseAd className={className} variant="config" />;
   }
 
-  // Si pas encore de consentement, ne pas afficher
-  if (!consentLevel) {
-    return null;
+  if (!consentReady) {
+    return <HouseAd className={className} variant="loading" />;
   }
 
-  // Si consentement essential seulement, afficher pub contextuelle simple
-  if (consentLevel === 'essential') {
-    return (
-      <div className={`ad-banner-basic border-2 border-dashed border-blue-200 bg-blue-50 p-4 text-center ${className}`}>
-        <div className="text-sm text-blue-700">
-          <div className="font-medium">🏄 Espace partenaire surf/kite</div>
-          <div className="text-xs mt-1">Publicité non personnalisée</div>
-        </div>
-      </div>
-    );
+  if (consentMode === 'none') {
+    return <HouseAd className={className} variant="refused" />;
   }
 
-  // Consentement personnalisé : AdSense complet
   return (
     <div className={`ad-banner ${className}`}>
       <ins
+        key={`${slot}-${consentMode}`}
         className="adsbygoogle"
         style={{ display: 'block' }}
         data-ad-client={clientId}
         data-ad-slot={slot}
         data-ad-format={format}
         data-full-width-responsive={responsive ? 'true' : 'false'}
-        data-npa={consentLevel === 'personalized' ? '0' : '1'} // Non-personalized ads si pas de consentement complet
+        data-npa={getNpaValue(consentMode)}
+        data-adtest={process.env.NODE_ENV !== 'production' ? 'on' : undefined}
+        data-adsbygoogle-status={consentSignals.ad_storage}
       />
     </div>
   );
 }
 
-// Composants pré-configurés pour différents emplacements
 export function AdBannerFeed(props: Omit<AdBannerProps, 'format'>) {
   return (
     <AdBanner

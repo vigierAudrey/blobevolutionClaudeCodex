@@ -89,6 +89,28 @@ Ce document décrit la configuration des serveurs MCP pour le projet BlobEvoluti
 - Créer des pull requests
 - Effectuer des code reviews
 
+### 6. Vercel
+**Package**: `@modelcontextprotocol/server-vercel`
+
+**Fonctionnalités**:
+- Gestion des déploiements Vercel
+- Consultation du statut des builds
+- Accès aux logs de production
+- Gestion des variables d'environnement
+- Gestion des domaines et alias
+- Consultation des métriques de performance
+
+**Configuration requise**:
+- `VERCEL_API_TOKEN`: Token d'API Vercel (créer sur https://vercel.com/account/tokens)
+  - Permissions: Accès complet au projet
+
+**Utilisation par l'IA**:
+- Vérifier le statut des déploiements
+- Analyser les erreurs de build
+- Consulter les logs de production
+- Gérer les variables d'environnement
+- Diagnostiquer les problèmes de déploiement
+
 ## Installation et activation
 
 ### 1. Configuration du fichier MCP
@@ -144,11 +166,18 @@ Une fois Claude Desktop redémarré, vous devriez voir les serveurs MCP disponib
 3. Sélectionner les scopes: `repo`, `read:org`, `workflow`
 4. Générer et copier le token
 
+### Vercel
+1. Aller sur https://vercel.com/account/tokens
+2. Cliquer sur "Create Token"
+3. Donner un nom au token (ex: "Claude MCP")
+4. Sélectionner le scope approprié (Full Account ou limité à certains projets)
+5. Générer et copier le token
+
 ## Sécurité
 
 **Important**: Les tokens d'API sont sensibles. Ne les commitez jamais dans le repository.
 
-- Le fichier `~/.config/claude/claude_desktop_config.json` est local à votre machine
+- Le fichier `claude` est local à votre machine
 - Assurez-vous que les permissions du fichier sont restrictives:
   ```bash
   chmod 600 ~/.config/claude/claude_desktop_config.json

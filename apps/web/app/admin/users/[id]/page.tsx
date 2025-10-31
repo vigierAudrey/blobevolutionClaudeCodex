@@ -58,8 +58,9 @@ export default function AdminUserDetailPage() {
       try {
         const data = await apiClient.getAdminUser(userId);
         setDetail(data);
-      } catch (err: any) {
-        setError(err?.message || 'Erreur de chargement');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : null;
+        setError(message || 'Erreur de chargement');
       } finally {
         setLoading(false);
       }
@@ -294,4 +295,3 @@ export default function AdminUserDetailPage() {
     </div>
   );
 }
-

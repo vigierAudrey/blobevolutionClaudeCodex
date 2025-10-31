@@ -10,10 +10,26 @@ import Link from 'next/link';
 // Force SSR for admin auth and dynamic stats
 export const dynamic = 'force-dynamic';
 
+type AdminUser = {
+  email: string;
+  role: 'ADMIN' | 'PRO' | 'RIDER';
+  [key: string]: unknown;
+};
+
+type AdminStats = {
+  totalUsers: number;
+  totalRiders: number;
+  totalPros: number;
+  totalAdmins: number;
+  totalConversations: number;
+  activeUsers: number;
+  reportedProfiles: number;
+};
+
 export default function AdminDashboard() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [stats, setStats] = useState<any>(null);
+  const [user, setUser] = useState<AdminUser | null>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,9 +68,10 @@ export default function AdminDashboard() {
           });
         }
 
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Auth check failed:', err);
-        setError(err?.message || 'Erreur de chargement');
+        const message = err instanceof Error ? err.message : null;
+        setError(message || 'Erreur de chargement');
         router.replace('/login');
       } finally {
         setLoading(false);
@@ -145,7 +162,7 @@ export default function AdminDashboard() {
               Analytics
             </CardTitle>
             <CardDescription>
-              Visualiser l'engagement et les performances de matching
+              Visualiser l&rsquo;engagement et les performances de matching
             </CardDescription>
           </CardHeader>
           <CardContent>

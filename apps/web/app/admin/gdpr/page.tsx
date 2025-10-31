@@ -5,7 +5,7 @@ import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Badge } from '../../../components/ui/badge';
 import { apiClient } from '../../../lib/apiClient';
-import { Shield, AlertTriangle, CheckCircle, Trash2, Search, Download } from 'lucide-react';
+import { Shield, AlertTriangle, CheckCircle, Trash2, Search } from 'lucide-react';
 
 interface GDPRReport {
   timestamp: string;
@@ -27,12 +27,14 @@ interface GDPRReport {
   };
 }
 
+type ArchiveResult = Record<string, unknown> | { error: string };
+
 export default function AdminGDPRPage() {
   const [report, setReport] = useState<GDPRReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [purging, setPurging] = useState(false);
   const [searchUserId, setSearchUserId] = useState('');
-  const [archiveResult, setArchiveResult] = useState<any>(null);
+  const [archiveResult, setArchiveResult] = useState<ArchiveResult | null>(null);
 
   const loadReport = async () => {
     setLoading(true);
@@ -174,7 +176,7 @@ export default function AdminGDPRPage() {
             Lancer la purge
           </Button>
           <p className="text-sm text-muted-foreground">
-            Cette action peut prendre plusieurs minutes. Vérifiez l'état après exécution.
+            Cette action peut prendre plusieurs minutes. Vérifiez l&rsquo;état après exécution.
           </p>
         </CardContent>
       </Card>
@@ -182,7 +184,7 @@ export default function AdminGDPRPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">Archives légales</CardTitle>
-          <CardDescription>Rechercher l'archive d'un utilisateur supprimé pour consultation légale</CardDescription>
+          <CardDescription>Rechercher l&rsquo;archive d&rsquo;un utilisateur supprimé pour consultation légale</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -210,7 +212,7 @@ export default function AdminGDPRPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">Protection légale</CardTitle>
-          <CardDescription>Paramètres d'archivage et de rétention de la plateforme</CardDescription>
+          <CardDescription>Paramètres d&rsquo;archivage et de rétention de la plateforme</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <p>

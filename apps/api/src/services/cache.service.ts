@@ -9,23 +9,30 @@ export async function initializeCache(): Promise<any> {
   // Enable cache in both development and production
   const redisUrl = resolveRedisUrl();
 
-  if (redisUrl) {
-    try {
-      const client = createClient({
-        url: redisUrl,
-      });
+  console.log('🔗 Connecting to Redis at:', redisUrl);
 
-      await client.connect();
-      await client.ping();
-      console.log('✅ Redis cache connected');
-      return client;
-    } catch (error) {
-      console.error('❌ Redis cache connection failed:', error);
-      return null;
-    }
+  try {
+    const client = createClient({
+      url: redisUrl,
+      password: process.env.REDIS_PASSWORD?.trim() || undefined,
+      socket: {
+        connectTimeout: 4000,
+        reconnectStrategy: (retries) => Math.min(retries * 200, 2000),
+      },
+    });
+
+    client.on('error', (error: Error) => {
+      console.error('❌ Redis error:', error.message);
+    });
+
+    await client.connect();
+    await client.ping();
+    console.log('✅ Redis cache connected');
+    return client;
+  } catch (error) {
+    console.error('❌ Redis cache connection failed:', error);
+    return null;
   }
-  console.log('⚠️ Redis cache disabled - no Redis URL available');
-  return null;
 }
 
 // Cache service class

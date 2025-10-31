@@ -1,24 +1,35 @@
 "use client";
-
 // Force SSR for dynamic user-specific features
 export const dynamic = 'force-dynamic';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import dynamicImport from 'next/dynamic';
+import Image from 'next/image';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
+import { ProfileCardSkeleton } from '../../../components/ui/skeleton';
 import { optimizedApiClient, measureApiPerformance } from '../../../lib/optimizedApiClient';
-import { Spinner } from '../../../components/ui/spinner';
-import { ProfileCardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
-import { useInitializationSkeleton, useSearchSkeleton } from '../../../hooks/useSkeletonState';
 import { useToast } from '../../../components/ui/toast';
 import Link from 'next/link';
-import { AdBannerFeed } from '../../../components/ads/AdBanner';
+const AdBannerFeed = dynamicImport(
+  () => import('../../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
+  {
+    ssr: false,
+    loading: () => <div className="my-6 h-24 rounded-md bg-slate-200/60" aria-hidden="true" />,
+  },
+);
 import { formatDateForDisplay } from './utils';
+import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, Sport, Level } from '@/types';
 
-type Sport = 'surf' | 'kitesurf';
-type Level = 'beginner' | 'intermediate' | 'advanced';
+type ConversationsResponse = {
+  items?: Array<{ unread?: number | string }>;
+};
+
+type MatchDecisionResponse = {
+  createdConversations?: Array<{ conversationId: string; otherDisplayName?: string | null }>;
+};
 
 function CardsInner() {
   const sp = useSearchParams();
@@ -70,7 +81,7 @@ function CardsInner() {
   const lat = sp.get('lat');
   const lng = sp.get('lng');
 
-  const [candidates, setCandidates] = useState<any[]>([]);
+  const [candidates, setCandidates] = useState<MatchingCandidate[]>([]);
   const [cursor, setCursor] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,83 +101,103 @@ function CardsInner() {
   const opacityRefuse = useTransform(x, [-100, 0], [1, 0]);
 
   const current = candidates[cursor] || null;
-  const [lastAction, setLastAction] = useState<null | { id: string; decision: 'ACCEPT'|'REFUSE'; profile: any; wasEndOfBatch: boolean; prevCursor: number; timeout: any }>(null);
+  type LastAction = {
+    id: string;
+    decision: 'ACCEPT' | 'REFUSE';
+    profile: MatchingCandidate;
+    wasEndOfBatch: boolean;
+    prevCursor: number;
+    timeout: ReturnType<typeof setTimeout>;
+  };
+  const [lastAction, setLastAction] = useState<LastAction | null>(null);
   const [newMatch, setNewMatch] = useState<null | { conversationId: string; otherDisplayName: string; sport: 'surf'|'kitesurf' }>(null);
   const [unreadTotal, setUnreadTotal] = useState<number>(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const candidatesRef = useRef<MatchingCandidate[]>([]);
+  const excludeIdsRef = useRef<string[]>([]);
+  const nextCursorRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    candidatesRef.current = candidates;
+  }, [candidates]);
+
+  useEffect(() => {
+    excludeIdsRef.current = excludeIds;
+  }, [excludeIds]);
+
+  useEffect(() => {
+    nextCursorRef.current = nextCursor;
+  }, [nextCursor]);
 
   // Enhanced skeleton states
-  const initSkeleton = useInitializationSkeleton();
-  const searchSkeleton = useSearchSkeleton();
-
-  const fetchBatch = async (merge = false) => {
+  const fetchBatch = useCallback(async (merge = false) => {
     if (!sport || !level || !date) return;
-    setLoading(true); setError(null);
+    setLoading(true);
+    setError(null);
     try {
-      const seen = new Set(excludeIds);
-      for (const c of candidates) seen.add(c.id);
+      const seen = new Set(excludeIdsRef.current);
+      candidatesRef.current.forEach((candidate) => seen.add(candidate.id));
 
-      // Use cursor-based pagination (preferred) or fallback to legacy
-      const body: any = {
+      const body: MatchingSearchParams = {
         sport,
         level,
         date,
         sortBy: 'distance',
         excludeIds: Array.from(seen),
-        limit: 50  // Use cursor-based pagination
+        limit: 50,
       };
 
-      // Include cursor for loading more (but not for initial load)
-      if (merge && nextCursor) {
-        body.cursor = nextCursor;
+      if (merge && nextCursorRef.current) {
+        body.cursor = nextCursorRef.current;
       }
 
       if (useGeoloc && distanceKm) body.distanceKm = Number(distanceKm);
       if (useGeoloc && lat && lng) body.location = { lat: Number(lat), lng: Number(lng) };
 
-      const data = await optimizedApiClient.searchMatching(body);
+      const data = await optimizedApiClient.searchMatching(body) as MatchingSearchResponse;
 
-      // Predictive prefetching for better UX
-      if (!merge && data.results?.length > 0) {
+      if (!merge && data.results?.length) {
         optimizedApiClient.prefetchMatchingData(body);
       }
-      const incoming: any[] = data.results || [];
 
-      // Update cursor and hasMore state
-      setNextCursor(data.nextCursor || null);
-      setHasMore(data.hasMore || false);
+      const incoming: MatchingCandidate[] = data.results ?? [];
+      setNextCursor(data.nextCursor ?? null);
+      setHasMore(Boolean(data.hasMore));
 
       if (!merge) {
         setCandidates(incoming);
         setCursor(0);
       } else {
-        const existingIds = new Set(candidates.map(c => c.id));
-        const dedup = incoming.filter(x => !existingIds.has(x.id));
-        setCandidates(prev => prev.concat(dedup));
+        const existingIds = new Set(candidatesRef.current.map((candidate) => candidate.id));
+        const deduped = incoming.filter((candidate) => !existingIds.has(candidate.id));
+        setCandidates((prev) => prev.concat(deduped));
       }
-    } catch (e: any) {
-      setError(e?.message || 'Erreur chargement');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur chargement');
     } finally {
       setLoading(false);
     }
-  };
+  }, [sport, level, date, useGeoloc, distanceKm, lat, lng]);
 
-  useEffect(() => { fetchBatch(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sport, level, date, useGeoloc, distanceKm, lat, lng]);
+  useEffect(() => {
+    void fetchBatch();
+  }, [fetchBatch]);
 
   // Optimized unread badge loader with caching
-  const loadUnread = async () => {
+  const loadUnread = useCallback(async () => {
     try {
-      const data = await optimizedApiClient.listConversations();
-      const total = (data.items || []).reduce((acc: number, it: any) => acc + (Number(it.unread) || 0), 0);
+      const data = await optimizedApiClient.listConversations() as ConversationsResponse;
+      const total = (data.items || []).reduce((acc, it) => acc + Number(it.unread ?? 0), 0);
       setUnreadTotal(total);
     } catch {}
-  };
+  }, []);
   useEffect(() => {
-    loadUnread();
+    void loadUnread();
     const t = setInterval(loadUnread, 15000);
     return () => clearInterval(t);
-  }, []);
+  }, [loadUnread]);
 
   const next = () => {
     const nextIndex = cursor + 1;
@@ -187,10 +218,9 @@ function CardsInner() {
   useEffect(() => {
     const remaining = candidates.length - cursor - 1;
     if (remaining <= 10 && candidates.length > 0 && !loading && hasMore && nextCursor) {
-      fetchBatch(true);
+      void fetchBatch(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cursor, candidates.length, hasMore, nextCursor]);
+  }, [cursor, candidates.length, hasMore, nextCursor, loading, fetchBatch]);
 
   // Haptic feedback helper
   const triggerHapticFeedback = () => {
@@ -200,7 +230,7 @@ function CardsInner() {
   };
 
   // Handle swipe gesture end
-  const handleDragEnd = (event: any, info: PanInfo) => {
+  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const threshold = 100; // pixels needed to trigger action
     const velocity = info.velocity.x;
     const offset = info.offset.x;
@@ -222,7 +252,7 @@ function CardsInner() {
   };
 
   // Handle drag progress for real-time feedback
-  const handleDrag = (event: any, info: PanInfo) => {
+  const handleDrag = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const threshold = 100;
     const offset = info.offset.x;
 
@@ -242,9 +272,9 @@ function CardsInner() {
     const profileCopy = current;
     setTimeout(() => {
       // Queue decision with timestamp (allows 5s undo before flush)
-      setDecisionQueue((q) => [...q, { targetProfileId: profileCopy.id as string, decision, ts: Date.now() }]);
+      setDecisionQueue((q) => [...q, { targetProfileId: profileCopy.id, decision, ts: Date.now() }]);
       // Exclude current and go next
-      setExcludeIds((arr) => Array.from(new Set([...arr, profileCopy.id as string])).slice(-200));
+      setExcludeIds((arr) => Array.from(new Set([...arr, profileCopy.id])).slice(-200));
       next();
       setAnimDir(null);
       setAnimating(false);
@@ -252,13 +282,13 @@ function CardsInner() {
       const t = setTimeout(() => {
         setLastAction((la) => (la && la.id === profileCopy.id ? null : la));
       }, 5000);
-      setLastAction({ id: profileCopy.id as string, decision, profile: profileCopy, wasEndOfBatch: wasEnd, prevCursor: prevCur, timeout: t });
+      setLastAction({ id: profileCopy.id, decision, profile: profileCopy, wasEndOfBatch: wasEnd, prevCursor: prevCur, timeout: t });
     }, 220);
   };
 
   // Batch flush decisions every 2s and on tab hide; only send items older than 5s
   useEffect(() => {
-    let t: any = null;
+    let t: ReturnType<typeof setInterval> | null = null;
     const flush = async () => {
       if (decisionQueue.length === 0) return;
       const now = Date.now();
@@ -267,9 +297,10 @@ function CardsInner() {
       const pending = decisionQueue.filter((d) => now - d.ts < 5000);
       setDecisionQueue(pending);
       try {
-        const resp = await optimizedApiClient.matchDecisions(due.map(({ targetProfileId, decision }) => ({ targetProfileId, decision })) as any);
-        if (resp?.createdConversations && Array.isArray(resp.createdConversations) && resp.createdConversations.length > 0) {
-          const m = resp.createdConversations[0];
+        const resp = await optimizedApiClient.matchDecisions(due.map(({ targetProfileId, decision }) => ({ targetProfileId, decision })));
+        const decisionResp = resp as MatchDecisionResponse;
+        if (decisionResp?.createdConversations && Array.isArray(decisionResp.createdConversations) && decisionResp.createdConversations.length > 0) {
+          const m = decisionResp.createdConversations[0];
           const s = (sport || 'surf') as 'surf'|'kitesurf';
           setNewMatch({ conversationId: m.conversationId, otherDisplayName: m.otherDisplayName || 'Profil', sport: s });
           // Refresh unread badge quickly
@@ -284,7 +315,7 @@ function CardsInner() {
     const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
     document.addEventListener('visibilitychange', onHide);
     return () => { if (t) clearInterval(t); document.removeEventListener('visibilitychange', onHide); };
-  }, [decisionQueue]);
+  }, [decisionQueue, loadUnread, sport]);
 
   const undo = () => {
     if (!lastAction) return;
@@ -309,8 +340,9 @@ function CardsInner() {
     try {
       await optimizedApiClient.reportProfile({ targetProfileId: current.id, reason });
       toast('Signalement envoyé. Merci pour votre aide.', 'success');
-    } catch (e: any) {
-      toast(e?.message || 'Erreur lors du signalement', 'error');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      toast(message || 'Erreur lors du signalement', 'error');
     }
   };
 
@@ -352,11 +384,11 @@ function CardsInner() {
                 <div className="text-4xl">🏄‍♀️</div>
                 <h3 className="font-semibold text-lg">Plus de profils disponibles</h3>
                 <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                  Désolé si tu n'as pas trouvé de partenaire pour partager ta session ! On reste optimiste,
+                  Désolé si tu n&rsquo;as pas trouvé de partenaire pour partager ta session ! On reste optimiste,
                   la communauté des riders grandit chaque jour.
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  💡 Astuce : essaie d'augmenter ton périmètre de recherche pour découvrir plus de riders
+                  💡 Astuce : essaie d&rsquo;augmenter ton périmètre de recherche pour découvrir plus de riders
                 </p>
               </div>
 
@@ -419,19 +451,54 @@ function CardsInner() {
                   <div className="text-3xl text-red-600 font-bold">✗</div>
                 </motion.div>
 
-                <div className="text-base font-medium flex items-center gap-2 relative z-10">
-                  {current.displayName}
-                  {current.wantsLesson && (
-                    <span title="Souhaite un cours" className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px]">
-                      🎓 Cours
-                    </span>
+                {/* Photo de profil */}
+                <div className="flex items-start gap-3 mb-3 relative z-10">
+                  {current.photoUrl ? (
+                    <Image
+                      src={current.photoUrl}
+                      alt={current.displayName ?? 'Photo de profil'}
+                      width={64}
+                      height={64}
+                      className="w-16 h-16 rounded-full object-cover border-2 border-border flex-shrink-0"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center border-2 border-border flex-shrink-0">
+                      <span className="text-2xl">👤</span>
+                    </div>
                   )}
+
+                  <div className="flex-1 min-w-0">
+                    <div className="text-base font-medium flex items-center gap-2 flex-wrap">
+                      {current.displayName}
+                      {current.wantsLesson && (
+                        <span title="Souhaite un cours" className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px]">
+                          🎓 Cours
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {current.gender === 'FEMALE' ? 'Femme' : current.gender === 'MALE' ? 'Homme' : 'Autre'} • {current.sport} • {current.level}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-sm text-muted-foreground relative z-10">{current.gender === 'FEMALE' ? 'Femme' : 'Homme'} • {current.sport} • {current.level}</div>
-                <div className="text-sm text-muted-foreground relative z-10">{current.distanceKm != null ? `${current.distanceKm} km` : 'distance inconnue'}</div>
-                <div className="text-sm text-muted-foreground flex items-center gap-1 relative z-10">
-                  <span>📅</span>
-                  <span>{formatDateForDisplay(date)}</span>
+
+                {/* Bio */}
+                {current.bio && (
+                  <div className="text-sm text-muted-foreground italic bg-muted/30 p-3 rounded-md mb-3 relative z-10">
+                    &laquo;&nbsp;{current.bio}&nbsp;&raquo;
+                  </div>
+                )}
+
+                {/* Infos complémentaires */}
+                <div className="space-y-1 relative z-10">
+                  <div className="text-sm text-muted-foreground">
+                    📍 {current.distanceKm != null ? `À ${current.distanceKm} km` : 'Distance inconnue'}
+                  </div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-1">
+                    <span>📅</span>
+                    <span>{formatDateForDisplay(date)}</span>
+                  </div>
                 </div>
               </motion.div>
               <div className="text-xs text-center text-muted-foreground mb-2">
@@ -467,7 +534,7 @@ function CardsInner() {
           <div className="w-full max-w-sm rounded-lg bg-background border shadow-lg" onClick={(e)=>e.stopPropagation()}>
             <div className="p-6 space-y-4 text-center">
               <div className="text-2xl">🎉</div>
-              <div className="text-xl font-semibold">C'est un match !</div>
+              <div className="text-xl font-semibold">C&rsquo;est un match !</div>
               <div className="text-base">
                 {newMatch.sport === 'surf' ? 'Tu vas pouvoir surfer' : 'Tu vas pouvoir kiter'} avec <span className="font-semibold text-primary">{newMatch.otherDisplayName}</span>
               </div>

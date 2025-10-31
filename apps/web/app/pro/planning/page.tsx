@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import dynamicImport from 'next/dynamic';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
@@ -19,6 +18,7 @@ import type {
   AvailabilitySport,
   CreateBookingAvailabilityPayload,
 } from '../../../lib/types/booking';
+import type { DashboardUser } from '@/types/user';
 
 type AvailabilityView = BookingAvailability;
 interface RequestView extends BookingRequestInboxItem {}
@@ -36,6 +36,8 @@ export default function ProPlanningPage() {
   const [error, setError] = useState<string | null>(null);
   const [decisionLoadingId, setDecisionLoadingId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingAvailability, setEditingAvailability] = useState<AvailabilityView | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadData = useCallback(async ({ silent } = { silent: false }) => {
     try {
@@ -49,8 +51,9 @@ export default function ProPlanningPage() {
       ]);
       setAvailabilities(availabilityRes.availabilities);
       setRequests(requestsRes.requests);
-    } catch (err: any) {
-      setError(err?.message || 'Erreur de chargement du planning');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erreur de chargement du planning';
+      setError(message);
     } finally {
       if (!silent) {
         setLoading(false);
@@ -66,7 +69,7 @@ export default function ProPlanningPage() {
     }
     apiClient
       .me()
-      .then((u) => {
+      .then((u: DashboardUser) => {
         if (u.role !== 'PRO') {
           router.replace('/dashboard');
           return;
@@ -81,8 +84,9 @@ export default function ProPlanningPage() {
       setDecisionLoadingId(id);
       await apiClient.decideBookingRequest(id, decision);
       await loadData({ silent: true });
-    } catch (err: any) {
-      setError(err?.message || 'Impossible de traiter la demande');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Impossible de traiter la demande';
+      setError(message);
     } finally {
       setDecisionLoadingId(null);
     }
@@ -91,6 +95,23 @@ export default function ProPlanningPage() {
   const handleAvailabilityCreated = useCallback(async () => {
     await loadData({ silent: true });
   }, [loadData]);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce créneau ? Cette action est irréversible.')) {
+      return;
+    }
+    try {
+      setDeletingId(id);
+      setError(null);
+      await apiClient.deleteBookingAvailability(id);
+      await loadData({ silent: true });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Impossible de supprimer le créneau';
+      setError(message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const pendingRequests = useMemo(() => requests.filter((req) => req.status === 'PENDING'), [requests]);
   const pendingCount = pendingRequests.length;
@@ -153,13 +174,36 @@ export default function ProPlanningPage() {
                 <div className="space-y-1">
                   <p className="text-muted-foreground">Niveaux acceptés : {slot.levels.join(', ')}</p>
                   <p>{slot.bookedCount}/{slot.capacity} riders positionnés</p>
+                  {slot.spotName && slot.spotLat && slot.spotLng && (
+                    <p className="text-xs text-muted-foreground">
+                      📍 <a
+                        href={`https://www.google.com/maps?q=${slot.spotLat},${slot.spotLng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-foreground"
+                      >
+                        {slot.spotName}
+                      </a>
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={`/pro/planning/${slot.id}`}>Voir les demandes</Link>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditingAvailability(slot)}
+                    disabled={deletingId === slot.id}
+                  >
+                    Modifier
                   </Button>
-                  <Button variant="ghost" size="sm" asChild>
-                    <Link href={`/pro/planning/${slot.id}/edit`}>Modifier</Link>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDelete(slot.id)}
+                    disabled={deletingId === slot.id}
+                    aria-busy={deletingId === slot.id}
+                  >
+                    {deletingId === slot.id ? 'Suppression...' : 'Supprimer'}
                   </Button>
                 </div>
               </CardContent>
@@ -245,9 +289,13 @@ export default function ProPlanningPage() {
       </section>
 
       <CreateAvailabilityModal
-        open={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
+        open={isCreateOpen || editingAvailability !== null}
+        onClose={() => {
+          setIsCreateOpen(false);
+          setEditingAvailability(null);
+        }}
         onCreated={handleAvailabilityCreated}
+        editingAvailability={editingAvailability}
       />
     </div>
   );
@@ -257,6 +305,7 @@ interface CreateAvailabilityModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: () => Promise<void>;
+  editingAvailability?: AvailabilityView | null;
 }
 
 type CreateAvailabilityFormState = {
@@ -283,7 +332,7 @@ const defaultCreateFormState: CreateAvailabilityFormState = {
   spotLng: '',
 };
 
-function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilityModalProps) {
+function CreateAvailabilityModal({ open, onClose, onCreated, editingAvailability }: CreateAvailabilityModalProps) {
   const [form, setForm] = useState<CreateAvailabilityFormState>(defaultCreateFormState);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -331,8 +380,10 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
   }, []);
 
   useEffect(() => {
-    restorePreferences();
-  }, [restorePreferences]);
+    if (!editingAvailability) {
+      restorePreferences();
+    }
+  }, [restorePreferences, editingAvailability]);
 
   useEffect(() => {
     if (!open) {
@@ -345,9 +396,40 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
       setAddressSuggestions([]);
       setGeocodeError(null);
       setSpotNameEdited(false);
-      restorePreferences();
+      if (!editingAvailability) {
+        restorePreferences();
+      }
     }
-  }, [open, restorePreferences]);
+  }, [open, restorePreferences, editingAvailability]);
+
+  // Pré-remplir le formulaire en mode édition
+  useEffect(() => {
+    if (open && editingAvailability) {
+      const startDate = new Date(editingAvailability.startAt);
+      const endDate = new Date(editingAvailability.endAt);
+      const durationMinutes = Math.round((endDate.getTime() - startDate.getTime()) / 60_000);
+
+      setForm({
+        sport: editingAvailability.sport,
+        levels: editingAvailability.levels,
+        date: startDate.toISOString().split('T')[0],
+        startTime: startDate.toTimeString().slice(0, 5),
+        duration: durationMinutes,
+        capacity: editingAvailability.capacity,
+        spotName: editingAvailability.spotName ?? '',
+        spotLat: editingAvailability.spotLat?.toString() ?? '',
+        spotLng: editingAvailability.spotLng?.toString() ?? '',
+      });
+
+      setAddressQuery(editingAvailability.spotName ?? '');
+      if (editingAvailability.spotLat && editingAvailability.spotLng) {
+        setShowMap(true);
+      }
+      setSpotNameEdited(false);
+      setAddressSuggestions([]);
+      setGeocodeError(null);
+    }
+  }, [open, editingAvailability]);
 
   const LocationPickerMap = useMemo(
     () =>
@@ -405,10 +487,11 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
               setForm((prev) => ({ ...prev, spotName: displayName }));
             }
           }
-        } catch (err: any) {
-          if (err?.name !== 'AbortError') {
-            setGeocodeError('Impossible de récupérer l’adresse exacte.');
+        } catch (err: unknown) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            return;
           }
+          setGeocodeError('Impossible de récupérer l’adresse exacte.');
         } finally {
           setReverseLoading(false);
         }
@@ -529,12 +612,13 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
         enriched.sort((a, b) => b.importance - a.importance);
         setAddressSuggestions(enriched.map(({ label, lat, lng }) => ({ label, lat, lng })));
         setGeocodeError(enriched.length === 0 ? 'Aucun résultat trouvé.' : null);
-      } catch (err: any) {
-        if (err?.name === 'AbortError') {
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
           return;
         }
         setAddressSuggestions([]);
-        setGeocodeError(err?.message ?? 'Erreur lors de la recherche d’adresse.');
+        const message = err instanceof Error ? err.message : 'Erreur lors de la recherche d’adresse.';
+        setGeocodeError(message);
       } finally {
         setGeocodeLoading(false);
       }
@@ -621,22 +705,32 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
 
     try {
       setSaving(true);
-      await apiClient.createBookingAvailability(payload);
-      if (typeof window !== 'undefined') {
-        try {
-          window.localStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify({ version: STORAGE_VERSION, data: form })
-          );
-          setHasStoredPrefs(true);
-        } catch (err) {
-          console.warn('[CreateAvailabilityModal] unable to persist preferences', err);
+      if (editingAvailability) {
+        // Mode édition : PATCH
+        await apiClient.updateBookingAvailability(editingAvailability.id, payload);
+      } else {
+        // Mode création : POST
+        await apiClient.createBookingAvailability(payload);
+        // Sauvegarder les préférences uniquement en création
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(
+              STORAGE_KEY,
+              JSON.stringify({ version: STORAGE_VERSION, data: form })
+            );
+            setHasStoredPrefs(true);
+          } catch (err) {
+            console.warn('[CreateAvailabilityModal] unable to persist preferences', err);
+          }
         }
       }
       await onCreated();
       onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Impossible de créer le créneau');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : undefined;
+      setError(
+        message || (editingAvailability ? 'Impossible de modifier le créneau' : 'Impossible de créer le créneau')
+      );
     } finally {
       setSaving(false);
     }
@@ -669,9 +763,13 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
       >
         <div className="mb-4 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold">Ajouter un créneau</h2>
+            <h2 className="text-lg font-semibold">
+              {editingAvailability ? 'Modifier le créneau' : 'Ajouter un créneau'}
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Prépare un créneau (sport, niveaux, horaires et lieu).
+              {editingAvailability
+                ? 'Modifie les détails de ton créneau.'
+                : 'Prépare un créneau (sport, niveaux, horaires et lieu).'}
             </p>
           </div>
           <button
@@ -932,7 +1030,9 @@ function CreateAvailabilityModal({ open, onClose, onCreated }: CreateAvailabilit
               Annuler
             </Button>
             <Button type="submit" disabled={saving} aria-busy={saving}>
-              {saving ? 'Création…' : 'Créer le créneau'}
+              {saving
+                ? (editingAvailability ? 'Modification…' : 'Création…')
+                : (editingAvailability ? 'Modifier le créneau' : 'Créer le créneau')}
             </Button>
           </div>
         </div>

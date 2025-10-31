@@ -12,7 +12,8 @@ type LocationPickerMapProps = {
 };
 
 // Ensure Leaflet default icons load correctly in Next.js
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+const defaultIconPrototype = L.Icon.Default.prototype as unknown as { _getIconUrl?: () => string };
+delete defaultIconPrototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
@@ -35,7 +36,9 @@ export default function LocationPickerMap({
     link.crossOrigin = '';
     document.head.appendChild(link);
     return () => {
-      document.head.removeChild(link);
+      if (link.parentNode) {
+        link.parentNode.removeChild(link);
+      }
     };
   }, []);
 
@@ -124,9 +127,13 @@ function SelectionMarker({ value, onChange, icon, draggable }: SelectionMarkerPr
       draggable={draggable}
       eventHandlers={{
         dragend(event) {
-          const lat = Number(event.target.getLatLng().lat.toFixed(6));
-          const lng = Number(event.target.getLatLng().lng.toFixed(6));
-          onChange({ lat, lng });
+          const target = event.target;
+          if (target instanceof L.Marker) {
+            const latLng = target.getLatLng();
+            const lat = Number(latLng.lat.toFixed(6));
+            const lng = Number(latLng.lng.toFixed(6));
+            onChange({ lat, lng });
+          }
         },
       }}
     />

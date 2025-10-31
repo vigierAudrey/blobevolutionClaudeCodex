@@ -7,9 +7,9 @@
   ],
   "scripts": {
     "dev": "npm run dev:api",
-    "dev:api": "npm run build --workspace @blobinfini/database && npm run dev --workspace @blobinfini/api",
-    "dev:web": "npm run dev --workspace @blobinfini/web",
-    "dev:all": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npx kill-port 4100 && npm run build --workspace @blobinfini/database && npm run dev --workspace @blobinfini/api",
+    "dev:web": "npx kill-port 3002 && npm run dev --workspace @blobinfini/web",
+    "dev:all": "npm-run-all -p dev:api dev:web",
     "dev:infra": "docker compose up -d postgres redis minio mailpit",
     "dev:api:docker": "docker compose up api",
     "dev:all:docker": "npm run dev:infra && concurrently -n web,api -c magenta,blue \"npm:dev:web\" \"npm:dev:api:docker\"",
@@ -29,7 +29,7 @@
     "db:reseed": "npm run reseed --workspace @blobinfini/database",
     "purge:consent-ip": "tsx apps/api/src/jobs/purgeConsent.ts",
     "test": "npm run test --workspace @blobinfini/api",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/run-e2e.mjs",
     "postinstall": "patch-package",
     "prepare": "(cd packages/database && npx prisma generate) && (npm run build --workspace @blobinfini/database || true)",
     "openapi:lint": "redocly lint docs/openapi/openapi.yaml",
@@ -44,11 +44,15 @@
     "@redocly/cli": "^2.2.2",
     "@storybook/nextjs": "^8.6.14",
     "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
+    "get-port": "^7.1.0",
     "http-server": "^14.1.1",
+    "npm-run-all": "^4.1.5",
     "patch-package": "^8.0.1",
     "pg": "^8.16.3",
     "storybook": "^8.6.14",
-    "wait-on": "^9.0.1"
+    "wait-on": "^9.0.1",
+    "wait-port": "^1.1.0"
   },
   "dependencies": {
     "framer-motion": "^12.23.18",

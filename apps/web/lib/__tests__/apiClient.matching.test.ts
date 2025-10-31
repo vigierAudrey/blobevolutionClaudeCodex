@@ -472,6 +472,9 @@ describe('API Client - Matching Integration', () => {
       // Pour cet exemple, on vérifie juste que la requête est en cours
       expect((global.fetch as jest.Mock)).toHaveBeenCalled();
 
+      jest.advanceTimersByTime(10000);
+      await expect(searchPromise).resolves.toEqual({ results: [] });
+
       jest.useRealTimers();
     });
 

@@ -7,6 +7,7 @@ import type {
   AvailabilityStatus,
   RiderBookingRequest,
 } from './types/booking';
+import type { ThreadListQuery, ThreadListResponse, MessageListResponse, SendMessagePayload } from '@/types/messages';
 
 export interface AuditLogEntry {
   id: string;
@@ -432,8 +433,11 @@ function clearTokens() {
 async function request(path: string, opts: RequestInit = {}, withAuth = false) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(opts.headers as any),
   };
+  const extraHeaders = new Headers(opts.headers ?? {});
+  extraHeaders.forEach((value, key) => {
+    headers[key] = value;
+  });
   const method = (opts.method || 'GET').toUpperCase();
 
   if (!CSRF_SAFE_METHODS.has(method)) {
@@ -460,7 +464,8 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false) {
       cachedCsrfToken = null;
     }
     const message = data?.error || `HTTP ${res.status}`;
-    const error = new Error(message) as any;
+    type ApiError = Error & { details?: unknown };
+    const error: ApiError = new Error(message);
     // Passer les détails de validation s'ils existent
     if (data?.details) {
       error.details = data.details;
@@ -475,7 +480,7 @@ export const apiClient = {
     request('/auth/login', { method: 'POST', body: JSON.stringify(body) }) as Promise<LoginResponse>,
 
   register: (body: { email: string; password: string; role: 'RIDER' | 'PRO' | 'ADMIN'; consentAccepted: true }) =>
-    request('/auth/register', { method: 'POST', body: JSON.stringify(body) }) as Promise<any>,
+    request('/auth/register', { method: 'POST', body: JSON.stringify(body) }) as Promise<Record<string, unknown>>,
 
   me: () => request('/auth/me', { method: 'GET' }, true),
 
@@ -491,7 +496,7 @@ export const apiClient = {
     request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<LoginResponse>,
 
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
-  updateProfile: (body: any) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
+  updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
   getDisciplines: () => request('/profile/disciplines', { method: 'GET' }, true) as Promise<Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced' }>>,
   setDisciplines: (items: Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced' }>) =>
@@ -512,16 +517,20 @@ export const apiClient = {
   reportProfile: (body: { targetProfileId: string; reason?: string }) =>
     request('/reports/profile', { method: 'POST', body: JSON.stringify(body) }, true),
 
-  listConversations: (opts?: { includeTrashed?: boolean; type?: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' | 'PRO_TO_PRO' }) => {
+  listConversations: (opts?: ThreadListQuery) => {
     const params = new URLSearchParams();
     if (opts?.includeTrashed) params.append('includeTrashed', 'true');
     if (opts?.type) params.append('type', opts.type);
     const query = params.toString();
-    return request(`/conversations${query ? `?${query}` : ''}`, { method: 'GET' }, true);
+    return request(`/conversations${query ? `?${query}` : ''}`, { method: 'GET' }, true) as Promise<ThreadListResponse>;
   },
   getMessages: (id: string, cursor?: string, limit: number = 50) =>
-    request(`/conversations/${id}/messages${cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=${limit}` : `?limit=${limit}`}`, { method: 'GET' }, true),
-  sendMessage: (id: string, body: { type?: 'TEXT'|'PROPOSAL'; content: string; meta?: any }) =>
+    request(
+      `/conversations/${id}/messages${cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=${limit}` : `?limit=${limit}`}`,
+      { method: 'GET' },
+      true,
+    ) as Promise<MessageListResponse>,
+  sendMessage: (id: string, body: SendMessagePayload) =>
     request(`/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify(body) }, true),
   blockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({ action: 'block' }) }, true),
   unblockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({ action: 'unblock' }) }, true),

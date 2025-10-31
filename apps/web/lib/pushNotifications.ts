@@ -28,7 +28,7 @@ export interface NotificationData {
   type: 'booking_accepted' | 'booking_rejected' | 'new_message' | 'reminder' | 'general';
   url?: string;
   icon?: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
 }
 
 /**

@@ -57,6 +57,15 @@ describe('CSRF Protection', () => {
       expect(response.body.message).toContain('CSRF token missing');
     });
 
+    it('should reject POST requests without session cookie (simulated cross-site)', async () => {
+      const response = await request(app)
+        .post('/auth/login')
+        .send({ email: 'test@example.com', password: 'password123' });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('CSRF_NO_SECRET');
+    });
+
     it('should reject POST requests with invalid CSRF token', async () => {
       const response = await agent
         .post('/auth/login')

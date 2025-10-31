@@ -2,7 +2,7 @@
 
 // Force SSR for admin auth and dynamic data
 export const dynamic = 'force-dynamic';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
@@ -46,6 +46,11 @@ const getRoleBadge = (role: string) => {
   }
 };
 
+type AdminUsersResponse = {
+  users: User[];
+  pagination?: { totalPages: number };
+};
+
 export default function AdminUsers() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
@@ -79,26 +84,27 @@ export default function AdminUsers() {
     checkAuth();
   }, [router]);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params: any = { page, limit: 20 };
+      const params: Record<string, string | number> = { page, limit: 20 };
       if (roleFilter) params.role = roleFilter;
 
-      const response = await apiClient.getAdminUsers(params);
+      const response = await apiClient.getAdminUsers(params) as AdminUsersResponse;
       setUsers(response.users || []);
       setTotalPages(response.pagination?.totalPages || 1);
-    } catch (err: any) {
-      setError(err.message || 'Erreur de chargement');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur de chargement');
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, roleFilter]);
 
   useEffect(() => {
-    loadUsers();
-  }, [page, roleFilter]);
+    void loadUsers();
+  }, [loadUsers]);
 
   const handleSuspend = async (user: User) => {
     const suspended = !user.deletedAt;
@@ -108,8 +114,9 @@ export default function AdminUsers() {
     try {
       await apiClient.suspendUser(user.id, suspended);
       await loadUsers(); // Reload the list
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la suspension');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors de la suspension');
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }
@@ -125,8 +132,9 @@ export default function AdminUsers() {
     try {
       await apiClient.verifyPro(user.id, verified);
       await loadUsers(); // Reload the list
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la vérification');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors de la vérification');
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }

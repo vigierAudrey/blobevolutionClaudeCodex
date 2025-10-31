@@ -507,3 +507,29 @@ enum ContactResponse {
   ACCEPT
   REJECT
 }
+
+enum ConsentLevel {
+  personalized
+  npa
+  limited
+  none
+}
+
+enum ConsentSignal {
+  granted
+  denied
+}
+
+model UserConsent {
+  id                 String         @id @default(uuid())
+  userHash           String         @unique
+  consentLevel       ConsentLevel
+  ad_storage         ConsentSignal
+  ad_user_data       ConsentSignal
+  ad_personalization ConsentSignal
+  cmpVersion         String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([updatedAt])
+}

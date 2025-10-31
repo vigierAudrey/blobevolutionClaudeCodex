@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { BackBar } from '../../../components/BackBar';
 import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
+import type { DashboardUser } from '@/types/user';
+import type { Level, Sport } from '@/types/matching';
 
 // Fonction pour détecter le navigateur de l'utilisateur
 const detectBrowser = (): 'chrome' | 'firefox' | 'safari' | 'edge' | 'other' => {
@@ -30,7 +32,7 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Chrome',
         steps: [
-          'Cliquez sur l\'icône 🔒 ou ⓘ à gauche de l\'adresse URL',
+          'Cliquez sur l’icône 🔒 ou ⓘ à gauche de l’adresse URL',
           'Trouvez "Position" ou "Localisation"',
           'Changez de "Bloquer" à "Autoriser"',
           'Rechargez la page avec F5'
@@ -40,7 +42,7 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Edge',
         steps: [
-          'Cliquez sur l\'icône 🔒 à gauche de l\'adresse URL',
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
           'Trouvez "Autorisations pour ce site"',
           'Changez "Emplacement" à "Autoriser"',
           'Rechargez la page avec F5'
@@ -50,7 +52,7 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Firefox',
         steps: [
-          'Cliquez sur l\'icône 🔒 à gauche de l\'adresse URL',
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
           'Cliquez sur "Permissions" puis "Position"',
           'Décochez "Bloquer" ou sélectionnez "Autoriser"',
           'Rechargez la page avec F5'
@@ -70,23 +72,13 @@ const getBrowserInstructions = (browser: string): { title: string; steps: string
       return {
         title: 'Votre navigateur',
         steps: [
-          'Recherchez l\'icône de sécurité près de l\'adresse URL',
+          'Recherchez l’icône de sécurité près de l’adresse URL',
           'Trouvez les paramètres de localisation/position',
           'Autorisez l\'accès à votre position',
           'Rechargez la page'
         ]
       };
   }
-};
-
-type Sport = 'surf' | 'kitesurf';
-type Level = 'beginner' | 'intermediate' | 'advanced';
-
-const sportLabels: Record<Sport, string> = { surf: 'Surf', kitesurf: 'Kitesurf' };
-const levelLabels: Record<Level, string> = {
-  beginner: 'Débutant',
-  intermediate: 'Intermédiaire',
-  advanced: 'Confirmé',
 };
 
 const SPORT_KEY = 'matching.sport';
@@ -119,7 +111,6 @@ function DateInner() {
   const [useGeoloc, setUseGeoloc] = useState<boolean>(false);
   const [hasInitialized, setHasInitialized] = useState<boolean>(false);
   const [wantsLesson, setWantsLesson] = useState<boolean>(false);
-  const [user, setUser] = useState<any>(null);
   const [browserType, setBrowserType] = useState<string>('other');
   const [geolocError, setGeolocError] = useState<boolean>(false);
 
@@ -133,8 +124,7 @@ function DateInner() {
           return;
         }
 
-        const currentUser = await apiClient.me();
-        setUser(currentUser);
+        const currentUser = await apiClient.me() as DashboardUser;
 
         if (currentUser.role === 'PRO') {
           router.replace('/pro/dashboard');
@@ -195,12 +185,6 @@ function DateInner() {
     url.searchParams.set('date', iso);
     window.history.replaceState(null, '', url.toString());
   };
-
-  const breadcrumb = useMemo(() => {
-    const dateStr = dateISO === 'anytime' ? 'peu importe' : dateISO ? new Date(dateISO + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
-    const distShort = useGeoloc ? (distanceKm != null ? `${distanceKm} km` : '—') : 'sans géolocalisation';
-    return [sport ? sportLabels[sport] : '—', level ? levelLabels[level] : '—', distShort, dateStr].join(' > ');
-  }, [sport, level, distanceKm, dateISO, useGeoloc]);
 
   const toggleUseGeoloc = (checked: boolean) => {
     setUseGeoloc(checked);
@@ -341,10 +325,10 @@ function DateInner() {
                   <div className="p-3 bg-red-50 border border-red-200 rounded-md">
                     <h4 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
                       <span>⚠️</span>
-                      <span>Impossible d'accéder à votre position</span>
+                      <span>Impossible d’accéder à votre position</span>
                     </h4>
                     <p className="text-sm text-red-800 mb-3">
-                      Votre navigateur bloque l'accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
+                      Votre navigateur bloque l’accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
                     </p>
                     <ol className="text-sm text-red-800 space-y-1 ml-4">
                       {getBrowserInstructions(browserType).steps.map((step, idx) => (
@@ -354,7 +338,7 @@ function DateInner() {
                       ))}
                     </ol>
                     <p className="text-xs text-red-700 mt-3 italic">
-                      💡 La géolocalisation est optionnelle pour le matching mais permet d'améliorer les résultats.
+                      💡 La géolocalisation est optionnelle pour le matching mais permet d’améliorer les résultats.
                     </p>
                     <Button
                       onClick={getLocation}

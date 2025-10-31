@@ -208,9 +208,6 @@ describe('Logique de pagination et de préchargement', () => {
 });
 
 describe('Validation des paramètres de recherche', () => {
-  type Sport = 'surf' | 'kitesurf';
-  type Level = 'beginner' | 'intermediate' | 'advanced';
-
   function validateSearchParams(params: {
     sport?: string | null;
     level?: string | null;
