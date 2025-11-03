@@ -14,6 +14,8 @@ interface CookieConsentProps {
   onConsentChange?: (level: ConsentLevel) => void;
 }
 
+export const COOKIE_CONSENT_REOPEN_EVENT = 'blobinfini:cookie-consent:reopen';
+
 const mapModeToLegacy = (mode: ConsentMode): ConsentLevel => {
   if (mode === 'personalized') return 'personalized';
   if (mode === 'npa') return 'essential';
@@ -27,15 +29,22 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
   const adsenseEnabled = process.env.NEXT_PUBLIC_ADSENSE_ENABLED === 'true';
 
   useEffect(() => {
-    if (!adsenseEnabled) return;
-    if (!consentReady && consentMode === 'none') {
-      const timer = setTimeout(() => setIsVisible(true), 1200);
-      return () => clearTimeout(timer);
+    if (!adsenseEnabled) {
+      if (consentReady) {
+        setIsVisible(consentMode === 'none');
+      }
+      return;
     }
 
-    if (consentReady) {
-      setIsVisible(consentMode === 'none');
+    if (!consentReady) {
+      if (consentMode === 'none') {
+        const timer = setTimeout(() => setIsVisible(true), 1200);
+        return () => clearTimeout(timer);
+      }
+      return;
     }
+
+    setIsVisible(consentMode === 'none');
   }, [adsenseEnabled, consentMode, consentReady]);
 
   const handleSelection = useCallback(
@@ -51,6 +60,19 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
     setShowDetails(false);
     setIsVisible(true);
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleExternalReopen = () => {
+      setShowDetails(false);
+      setIsVisible(true);
+    };
+
+    window.addEventListener(COOKIE_CONSENT_REOPEN_EVENT, handleExternalReopen);
+    return () => {
+      window.removeEventListener(COOKIE_CONSENT_REOPEN_EVENT, handleExternalReopen);
+    };
+  }, []);
 
   if (!isVisible) {
     return adsenseEnabled && consentReady ? (

@@ -53,14 +53,18 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
 
 // Middleware to generate and attach CSRF token to session
 export function setupCSRF(req: Request, res: Response, next: NextFunction) {
-  // Only generate secret if it doesn't exist
-  if (!req.session?.csrfSecret) {
+  const hasSecret = Boolean(req.session?.csrfSecret);
+  const isSafeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  const shouldBootstrapSecret = !hasSecret && (isSafeMethod || req.path === '/csrf-token');
+
+  if (shouldBootstrapSecret) {
     req.session = req.session || {};
     req.session.csrfSecret = csrfTokens.secretSync();
   }
 
-  // Add method to generate tokens
-  res.locals.csrfToken = () => csrfTokens.create(req.session!.csrfSecret!);
+  if (req.session?.csrfSecret) {
+    res.locals.csrfToken = () => csrfTokens.create(req.session!.csrfSecret!);
+  }
 
   next();
 }

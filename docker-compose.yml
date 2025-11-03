@@ -94,6 +94,24 @@ services:
       - .:/workspace
     working_dir: /workspace
 
+  api-cron:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.cron
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini
+      NODE_ENV: production
+    volumes:
+      - ./apps/api/logs:/app/logs
+    networks:
+      - default
+
 volumes:
   pgdata:
   miniodata:

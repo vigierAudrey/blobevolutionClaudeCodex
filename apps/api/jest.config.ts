@@ -18,7 +18,7 @@ const config: Config = {
     '^@blobinfini/database$': '<rootDir>/../../packages/database/src/index.ts'
   },
   roots: ['<rootDir>/src'],
-  setupFiles: ['<rootDir>/jest.setup.secrets.ts'],
+  setupFiles: ['<rootDir>/jest.setup.env.ts', '<rootDir>/jest.setup.secrets.ts'],
   maxWorkers: 1,
   setupFilesAfterEnv: ['<rootDir>/jest.setup.db.ts', '<rootDir>/jest.setup.redis.ts', '<rootDir>/jest.setup.ts'],
   // Force Jest to exit after tests complete

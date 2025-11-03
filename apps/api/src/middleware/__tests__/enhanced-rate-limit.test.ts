@@ -48,7 +48,7 @@ describe('Enhanced Rate Limiting', () => {
 
       // Should fail due to CSRF, not rate limiting
       expect(response.status).toBe(403);
-      expect(response.body.error).toBe('CSRF_NO_TOKEN');
+      expect(response.body.error).toBe('CSRF_NO_SECRET');
     });
   });
 

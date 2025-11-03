@@ -12,11 +12,19 @@ import { Textarea } from '../../../components/ui/textarea';
 import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
 import { apiRequest } from '../../../lib/csrf';
+import { useToast } from '../../../components/ui/toast';
 
 // Configuration de sécurité pour l'upload de fichiers
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+
+type DeletionStatus = {
+  isScheduled: boolean;
+  deletedAt?: string;
+  deletionDate?: string;
+  daysRemaining?: number;
+};
 
 // Helper pour sanitizer les messages d'erreur
 function sanitizeErrorMessage(error: unknown): string {
@@ -59,6 +67,7 @@ function sanitizeErrorMessage(error: unknown): string {
 
 export default function ProProfilePage() {
   const router = useRouter();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [businessName, setBusinessName] = useState('');
@@ -67,6 +76,11 @@ export default function ProProfilePage() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  // Account deletion modal state
+  const [showDeletionModal, setShowDeletionModal] = useState(false);
+  const [deletionStatus, setDeletionStatus] = useState<DeletionStatus | null>(null);
+  const [loadingDeletion, setLoadingDeletion] = useState(false);
 
   // Hook pour vérifier l'authentification
   const ensureAuthenticated = useCallback(() => {
@@ -151,6 +165,86 @@ export default function ProProfilePage() {
     setFile(f);
     setErr(null); // Clear error on successful selection
   };
+
+  const checkDeletionStatus = async () => {
+    try {
+      const t = ensureAuthenticated();
+
+      const response = await apiRequest('/pro/deletion-status', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${t.accessToken}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDeletionStatus(data);
+      }
+    } catch (error) {
+      console.error('Error checking deletion status:', error);
+    }
+  };
+
+  const handleRequestDeletion = async () => {
+    setLoadingDeletion(true);
+    try {
+      const t = ensureAuthenticated();
+
+      const response = await apiRequest('/pro/delete-account', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t.accessToken}` },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de la demande de suppression');
+      }
+
+      setDeletionStatus({
+        isScheduled: true,
+        deletedAt: data.deletedAt,
+        deletionDate: data.deletionDate,
+        daysRemaining: data.daysRemaining,
+      });
+
+      toast('Demande de suppression enregistrée. Vous avez 30 jours pour annuler.', 'success');
+      setShowDeletionModal(false);
+    } catch (e: unknown) {
+      setErr(sanitizeErrorMessage(e));
+    } finally {
+      setLoadingDeletion(false);
+    }
+  };
+
+  const handleCancelDeletion = async () => {
+    setLoadingDeletion(true);
+    try {
+      const t = ensureAuthenticated();
+
+      const response = await apiRequest('/pro/cancel-deletion', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t.accessToken}` },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de l\'annulation');
+      }
+
+      setDeletionStatus({ isScheduled: false });
+      toast('Suppression de compte annulée avec succès', 'success');
+    } catch (e: unknown) {
+      setErr(sanitizeErrorMessage(e));
+    } finally {
+      setLoadingDeletion(false);
+    }
+  };
+
+  // Check deletion status on mount
+  useEffect(() => {
+    void checkDeletionStatus();
+  }, []);
 
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,6 +373,144 @@ export default function ProProfilePage() {
             </form>
           </CardContent>
         </Card>
+
+        {/* RGPD & Privacy Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">🔒 Confidentialité & RGPD</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Conformément au RGPD, vous pouvez exporter ou supprimer vos données personnelles à tout moment.
+              </p>
+              <div className="flex flex-wrap gap-2 items-center">
+                <button
+                  type="button"
+                  className="text-sm text-primary hover:underline"
+                  onClick={async () => {
+                    try {
+                      const tokens = apiClient.getTokens();
+                      if (!tokens?.accessToken) {
+                        toast('Session expirée, veuillez vous reconnecter', 'error');
+                        return;
+                      }
+
+                      toast('Génération de l\'export en cours...', 'info');
+
+                      const response = await apiRequest('/pro/export', {
+                        method: 'GET',
+                        headers: { Authorization: `Bearer ${tokens.accessToken}` },
+                      });
+
+                      if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.error || 'Erreur lors de l\'export');
+                      }
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+
+                      toast('Export téléchargé avec succès', 'success');
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : 'Erreur lors de l\'export';
+                      toast(message, 'error');
+                    }
+                  }}
+                >
+                  📥 Exporter mes données
+                </button>
+                <span className="text-muted-foreground">•</span>
+                {deletionStatus?.isScheduled ? (
+                  <button
+                    type="button"
+                    className="text-sm text-orange-600 hover:underline font-medium"
+                    onClick={handleCancelDeletion}
+                    disabled={loadingDeletion}
+                  >
+                    ⚠️ Annuler la suppression ({deletionStatus.daysRemaining} jours restants)
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-sm text-red-600 hover:underline"
+                    onClick={() => setShowDeletionModal(true)}
+                  >
+                    🗑️ Supprimer mon compte
+                  </button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Account Deletion Modal */}
+      {showDeletionModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowDeletionModal(false)}
+        >
+          <Card
+            className="max-w-lg w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <CardTitle className="text-xl text-red-600">⚠️ Suppression de compte</CardTitle>
+              <CardDescription>
+                Cette action entraînera la suppression définitive de votre compte dans 30 jours
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-2">
+                <h3 className="font-semibold text-sm">📅 Comment fonctionne la suppression ?</h3>
+                <ol className="text-sm space-y-1 list-decimal list-inside text-muted-foreground">
+                  <li>Votre compte sera <strong>immédiatement désactivé</strong></li>
+                  <li>Vos données seront <strong>conservées pendant 30 jours</strong></li>
+                  <li>Vous pourrez <strong>annuler</strong> la suppression durant cette période</li>
+                  <li>Après 30 jours, vos données seront <strong>définitivement supprimées</strong></li>
+                </ol>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+                <h3 className="font-semibold text-sm">💡 Avant de supprimer</h3>
+                <ul className="text-sm space-y-1 list-disc list-inside text-muted-foreground">
+                  <li>Vous pouvez <strong>exporter vos données</strong> (droit RGPD)</li>
+                  <li>Pensez à <strong>clôturer vos offres</strong> en cours</li>
+                  <li>Vos messages seront supprimés définitivement</li>
+                </ul>
+              </div>
+
+              <div className="flex flex-col-reverse sm:flex-row gap-2 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowDeletionModal(false)}
+                  disabled={loadingDeletion}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={handleRequestDeletion}
+                  disabled={loadingDeletion}
+                >
+                  {loadingDeletion ? 'Traitement...' : 'Confirmer la suppression'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

@@ -5,7 +5,13 @@
 ## 🧭 Vision & Stratégie
 
 - **Philosophie 100% Open Source & Gratuit :** Monitoring Clever Cloud + dashboards libres, infrastructure low-cost, outils open source-first pour réinvestir dans les fonctionnalités.
-- **Positionnement MVP :** Fonctionner sans système de paiement — la monétisation initiale repose sur la publicité (AdSense) et sur la consolidation de l’expérience matching.
+- **Positionnement MVP Simplifié :**
+  - ✅ **Auth complète** (register, login, 2FA, reset password)
+  - ✅ **Matching géospatial** (PostGIS, cartes, swipe)
+  - ✅ **Booking & Messaging** (demandes, chat temps réel)
+  - ⏸️ **Pas de paiement** (mis en pause, focus publicité AdSense)
+  - ⏸️ **Pas de gamification** (flocons d'avoine retirés du MVP)
+- **Monétisation initiale :** Publicité AdSense uniquement
 - **Lignes directrices :**
   - Réduire drastiquement les coûts fixes (hébergement, monitoring, analytics).
   - Prioriser la fiabilité (sécurité, tests) avant toute extension fonctionnelle.
@@ -26,15 +32,17 @@
 
 ## 🎯 Priorités Immédiates (Vue Synthétique)
 
-1. **🔒 Sécurité Production-Ready (Phase 1+2 en priorité)**  
+**Note :** Le module Auth est maintenant ✅ **COMPLÉTÉ** avec 100% des fonctionnalités prévues (register, login, 2FA, reset, CSRF, rate limiting, tests).
+
+1. **🔒 Sécurité Production-Ready (Phase 1+2 en priorité)** - BLOCKER PROD
    Corriger CORS, secrets, logs sensibles, validation Zod, renforcer Helmet/SSL/trust proxy. Voir section « Sécurité & Conformité ».
-2. **🧪 Tests & Qualité**  
+2. **🧪 Tests & Qualité**
    Finaliser tests UI (composants de base + matching), nettoyer données Playwright, fiabiliser flux CSRF. Voir section « Tests & Qualité ».
-3. **📢 Publicité / Monétisation initiale**  
+3. **📢 Publicité / Monétisation initiale**
    Finaliser déploiement AdSense, bannière RGPD et analytics revenus. Voir section « Monétisation (Publicité) ».
-4. **⚙️ Performance & DX rapides**  
+4. **⚙️ Performance & DX rapides**
    Connection pooling, compression, CDN gratuit, automatisation déploiement. Voir sections « Performance & UX » et « Developer Experience ».
-5. **📈 Observabilité & Analytics**  
+5. **📈 Observabilité & Analytics**
    Endpoint `/security/health`, audit logs, dashboard analytics open source. Voir sections « Sécurité & Conformité » et « Croissance & Analytics ».
 
 ---
@@ -466,6 +474,129 @@
 - [x] CNIL: harmoniser le bandeau (refus = acceptation en visibilité, apparition ≤1s). ✅ **COMPLÉTÉ**
 - [x] CNIL: parcours d'exercice des droits (export/suppression) accessible self-service. ✅ **COMPLÉTÉ**
 
+### Système RGPD Complet (Export & Suppression) ✅ **COMPLÉTÉ**
+
+**📦 Implémentation complète du droit à la portabilité (Art. 20) et droit à l'effacement (Art. 17)**
+
+**🎯 Fonctionnalités implémentées :**
+
+1. **📥 Export de données RGPD** - Article 20 (Droit à la portabilité)
+   - [x] Service d'export complet (`gdpr-export.service.ts` - 548 lignes)
+   - [x] Endpoint `/profile/export` (riders) avec rate limiting (3/heure)
+   - [x] Endpoint `/pro/export` (pros) avec rate limiting (3/heure)
+   - [x] Protection DoS : Limites de requêtes (10k messages, 1k conversations, etc.)
+   - [x] Conformité P0 : Redaction contenu messages reçus (RGPD Art. 5.1.c)
+   - [x] Optimisation : `_count` SQL au lieu de chargement arrays
+   - [x] Logging metrics : Détection abus + surveillance volumétrie
+   - [x] Format JSON téléchargeable avec nom de fichier daté
+   - [x] Boutons frontend intégrés dans profils (rider + pro)
+   - [x] **Dashboard Admin** : Monitoring exports (`/admin/gdpr-exports`)
+     - Statistiques : Total, 24h, 7j, 30j
+     - Exports par rôle (30 jours)
+     - Top 10 exporteurs
+     - Historique complet avec filtres (userId, dates)
+     - Pagination + détails (IP, taille, items)
+
+2. **🗑️ Suppression de compte avec période de grâce** - Article 17 (Droit à l'effacement)
+   - [x] Endpoints riders (`/profile/delete-account`, `/cancel-deletion`, `/deletion-status`)
+   - [x] Endpoints pros (`/pro/delete-account`, `/cancel-deletion`, `/deletion-status`)
+   - [x] Délai de rétractation de 30 jours (recommandation CNIL)
+   - [x] Modal explicatif avec processus en 4 étapes
+   - [x] Compte à rebours dynamique (X jours restants)
+   - [x] Validation backend : Impossible d'annuler après 30 jours
+   - [x] Traçabilité : Logs dans `AuditLog` (IP, dates, métadonnées)
+   - [x] UX claire : Bouton change d'état selon statut suppression
+   - [ ] **Cron job suppression finale** (après 30 jours) - ⚡ PRIORITÉ
+   - [ ] Notifications email (demande, rappels, confirmation)
+
+**📊 Données exportées :**
+- Profil utilisateur (rider ou pro)
+- Disciplines & préférences
+- Conversations (metadata + messages envoyés)
+- Matches acceptés/refusés
+- Réservations (rider) ou demandes (pro)
+- Disponibilités (pros uniquement)
+- Offres professionnelles (pros uniquement)
+- Demandes de contact
+- Transactions (si applicable)
+- Logs d'audit (100 derniers)
+- Consentements cookies
+
+**🔐 Sécurité & Conformité :**
+- ✅ **RGPD Article 20** : Portabilité des données "fournies par" l'utilisateur
+- ✅ **RGPD Article 5(1)(c)** : Minimisation - Messages reçus redactés
+- ✅ **[P2-8] Pseudonymisation emails de partenaires** — **COMPLÉTÉ** (3 nov 2025)
+  - SHA-256 hash (8 chars) pour emails des partenaires de match
+  - Protection vie privée : emails non-réversibles, unicité maintenue
+  - Tests unitaires : 11/11 passing ✅
+  - Documentation : `apps/api/GDPR_EXPORT_PSEUDONYMIZATION.md`
+- ✅ **CNIL Best Practice** : Période de grâce 30 jours (comme Gmail/Facebook)
+- ✅ **Protection DoS** : Limites volumétriques + rate limiting
+- ✅ **Traçabilité complète** : Audit logs pour conformité légale
+- ✅ **Monitoring administrateur** : Dashboard temps réel des exports
+- ✅ **Performance** : SQL COUNT au lieu de chargement mémoire
+
+**📁 Fichiers modifiés/créés :**
+- `apps/api/src/services/gdpr-export.service.ts` (nouveau - 548 lignes)
+- `apps/api/src/modules/profile/profile.controller.ts` (lignes 240-460)
+- `apps/api/src/modules/pro/pro.controller.ts` (lignes 471-663)
+- `apps/api/src/modules/admin/admin.controller.ts` (lignes 1678-1894)
+- `apps/web/app/profile/page.tsx` (export + suppression UI)
+- `apps/web/app/pro/profile/page.tsx` (export + suppression UI)
+- `apps/web/app/admin/gdpr-exports/page.tsx` (nouveau - dashboard monitoring)
+
+**🚀 Prochaines étapes :**
+- [x] **Cron job suppression finale** - Script quotidien pour purge après 30 jours ✅ **COMPLÉTÉ**
+  - ✅ Script TypeScript avec mode DRY-RUN (`cleanup-deleted-accounts.ts`)
+  - ✅ Service Docker cron (`api-cron` dans `docker-compose.yml`)
+  - ✅ Exécution quotidienne à 2h du matin (gratuit)
+  - ✅ Logs persistants avec rétention 30 jours
+  - ✅ Documentation complète (`GDPR_CLEANUP.md`)
+- [ ] **Emails notifications** - Confirmation, rappels, annulation
+- [ ] **Tests E2E complets** - Flux export + suppression + annulation
+- [ ] **P2 Optionnel** : Centraliser rate limiter, pseudonymiser emails matches, pretty-print JSON
+
+**💰 Coût cron job : GRATUIT ✅**
+- ✅ **Implémenté avec Docker cron** (solution choisie)
+- Pas de service cloud payant
+- Pas de limites d'exécution
+- Logs stockés localement
+
+**🛠️ Architecture Cron Job :**
+```
+apps/api/
+├── scripts/
+│   ├── cleanup-deleted-accounts.ts  # Script principal (209 lignes)
+│   ├── cleanup-cron.sh             # Wrapper bash pour Docker
+│   └── test-cleanup.sh             # Test en mode DRY-RUN
+├── crontab                         # Config cron (quotidien 2h)
+├── Dockerfile.cron                 # Dockerfile service cron
+├── GDPR_CLEANUP.md                 # Documentation complète
+└── logs/                           # Logs persistants (30j rétention)
+```
+
+**⚙️ Fonctionnement du Cleanup :**
+1. Recherche comptes avec `deletedAt > 30 jours`
+2. Anonymisation données personnelles :
+   - Email → `deleted_<userId>_<timestamp>@anonymized.blobinfini.com`
+   - Password → Hash invalide
+   - Profils → Noms génériques, photos/bio supprimées
+   - Géolocalisation → Effacée
+3. Suppression définitive :
+   - Messages envoyés (contenu personnel)
+   - Tokens (email, reset, refresh, sessions)
+4. Traçabilité :
+   - Log dans `AuditLog` pour conformité RGPD
+   - Conservation `deletedAt` + logs d'audit
+
+**🔒 Détails Techniques Importants :**
+- **Singleton Prisma** : Utilise `import { prisma } from '@blobinfini/database'`
+  - Réutilise instance existante (pas de nouvelle connexion DB)
+  - Hérite config centralisée (logs, pool, graceful shutdown)
+  - Évite fuites mémoire et connexions orphelines
+- **Mode DRY-RUN** : Variable `DRY_RUN=true` pour simulation sans modification
+- **Logs automatiques** : Adaptatifs selon `NODE_ENV` (dev: verbose, prod: errors only)
+
   **📋 Intégration RGPD Complète : Section Privacy dans `/profile`**
 
   **Fichier :** `apps/web/app/profile/page.tsx` (lignes 279-383)
@@ -514,14 +645,35 @@
 
 ## 💤 Fonctionnalités en Pause / Backlog Stratégique
 
-### Paiements & Crédit (mis en pause)
+### Paiements & Crédit (🗑️ SUPPRIMÉ DU PROJET - Décision Nov 2025)
 
-- [ ] Intégration Stripe Connect.
-- [ ] Calcul commissions.
-- [ ] Factures PDF.
-- [ ] Gestion remboursements.
-- [ ] Workflow business (Stripe/Credits).
-- Rappel : rester sur modèle publicitaire pour MVP.
+**Décision stratégique :** Le système de paiement est **définitivement exclu** du projet Blobinfini.
+**Rationale :**
+- Focus 100% sur matching/booking gratuit pour les utilisateurs
+- Monétisation publicitaire AdSense uniquement
+- Simplification maximale du MVP
+- Éviter complexité légale/comptable des paiements
+
+**Fonctionnalités supprimées :**
+- ~~Intégration Stripe Connect~~
+- ~~Calcul commissions~~
+- ~~Factures PDF~~
+- ~~Gestion remboursements~~
+- ~~Workflow business (Stripe/Credits)~~
+
+**Statut :** ❌ Non applicable - Ne sera pas implémenté.
+
+### Gamification (⏸️ EXCLU DU MVP - Décision Oct 2025)
+
+**Décision stratégique :** Pas de système de flocons d'avoine ou points dans le MVP.
+**Rationale :** Simplifier l'UX et se concentrer sur les fonctionnalités core.
+
+- [ ] Système de points/flocons
+- [ ] Badges et achievements
+- [ ] Leaderboards
+- [ ] Récompenses engagement
+
+**À réévaluer :** Si besoin d'augmenter engagement utilisateur (post-MVP).
 
 ### Module Blobosphère (Editorial)
 
