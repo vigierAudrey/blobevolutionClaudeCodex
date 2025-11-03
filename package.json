@@ -32,6 +32,7 @@
     "test:e2e": "node scripts/run-e2e.mjs",
     "postinstall": "patch-package",
     "prepare": "(cd packages/database && npx prisma generate) && (npm run build --workspace @blobinfini/database || true)",
+    "lint": "npm run lint --workspace @blobinfini/web",
     "openapi:lint": "redocly lint docs/openapi/openapi.yaml",
     "storybook": "npm run storybook --workspace @blobinfini/web",
     "storybook:build": "npm run build-storybook --workspace @blobinfini/web",
