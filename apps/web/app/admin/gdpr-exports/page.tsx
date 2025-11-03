@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { apiClient } from '../../../lib/apiClient';
 import { useRouter } from 'next/navigation';
@@ -54,7 +54,7 @@ export default function GDPRExportsPage() {
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
 
-  const loadExports = async () => {
+  const loadExports = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -95,11 +95,11 @@ export default function GDPRExportsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterEndDate, filterStartDate, filterUserId, page, router]);
 
   useEffect(() => {
-    loadExports();
-  }, [page, filterUserId, filterStartDate, filterEndDate]);
+    void loadExports();
+  }, [loadExports]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('fr-FR', {
@@ -127,7 +127,7 @@ export default function GDPRExportsPage() {
         <div>
           <h1 className="text-3xl font-bold">📥 Monitoring Exports GDPR</h1>
           <p className="text-muted-foreground mt-1">
-            Surveillance des demandes d'export de données personnelles
+            Surveillance des demandes d&apos;export de données personnelles
           </p>
         </div>
       </div>
@@ -203,7 +203,7 @@ export default function GDPRExportsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Top 10 Exporteurs (30 jours)</CardTitle>
-              <CardDescription>Utilisateurs avec le plus d'exports</CardDescription>
+              <CardDescription>Utilisateurs avec le plus d&apos;exports</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">

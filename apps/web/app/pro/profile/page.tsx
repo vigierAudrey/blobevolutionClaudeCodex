@@ -166,7 +166,7 @@ export default function ProProfilePage() {
     setErr(null); // Clear error on successful selection
   };
 
-  const checkDeletionStatus = async () => {
+  const checkDeletionStatus = useCallback(async () => {
     try {
       const t = ensureAuthenticated();
 
@@ -182,7 +182,7 @@ export default function ProProfilePage() {
     } catch (error) {
       console.error('Error checking deletion status:', error);
     }
-  };
+  }, [ensureAuthenticated]);
 
   const handleRequestDeletion = async () => {
     setLoadingDeletion(true);
@@ -244,7 +244,7 @@ export default function ProProfilePage() {
   // Check deletion status on mount
   useEffect(() => {
     void checkDeletionStatus();
-  }, []);
+  }, [checkDeletionStatus]);
 
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -307,149 +307,151 @@ export default function ProProfilePage() {
       {loading ? (
         <p>Chargement…</p>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Mes infos pro</CardTitle>
-            <CardDescription>Ces informations seront visibles par les clients.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={onSave} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Nom commercial</Label>
-                <Input
-                  value={businessName}
-                  onChange={(e) => setBusinessName(e.target.value)}
-                  placeholder="Ex: BlobPro School"
-                  maxLength={100}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Présentation</Label>
-                <Textarea
-                  value={bio}
-                  onChange={(e)=>setBio(e.target.value)}
-                  placeholder="Ce que tu proposes, ton expérience, ton spot préféré…"
-                  maxLength={500}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Photo/Logo</Label>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  onChange={onPick}
-                  aria-label="Sélectionner une photo de profil"
-                />
-                {photoUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={photoUrl}
-                    alt="Aperçu de la photo de profil"
-                    className="h-32 w-32 object-cover rounded"
-                    referrerPolicy="no-referrer"
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Mes infos pro</CardTitle>
+              <CardDescription>Ces informations seront visibles par les clients.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={onSave} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Nom commercial</Label>
+                  <Input
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                    placeholder="Ex: BlobPro School"
+                    maxLength={100}
                   />
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  id="notif"
-                  type="checkbox"
-                  checked={emailNotif}
-                  onChange={(e)=>setEmailNotif(e.target.checked)}
-                  aria-label="Recevoir des emails pour les nouvelles demandes"
-                />
-                <Label htmlFor="notif" className="!m-0">Recevoir des emails pour les nouvelles demandes</Label>
-              </div>
-              {err && (
-                <div
-                  className="text-sm text-red-600 p-3 bg-red-50 rounded border border-red-200"
-                  role="alert"
-                  aria-live="assertive"
-                >
-                  {err}
                 </div>
-              )}
-              <Button type="submit" className="w-full sm:w-auto">Enregistrer</Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* RGPD & Privacy Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">🔒 Confidentialité & RGPD</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Conformément au RGPD, vous pouvez exporter ou supprimer vos données personnelles à tout moment.
-              </p>
-              <div className="flex flex-wrap gap-2 items-center">
-                <button
-                  type="button"
-                  className="text-sm text-primary hover:underline"
-                  onClick={async () => {
-                    try {
-                      const tokens = apiClient.getTokens();
-                      if (!tokens?.accessToken) {
-                        toast('Session expirée, veuillez vous reconnecter', 'error');
-                        return;
-                      }
-
-                      toast('Génération de l\'export en cours...', 'info');
-
-                      const response = await apiRequest('/pro/export', {
-                        method: 'GET',
-                        headers: { Authorization: `Bearer ${tokens.accessToken}` },
-                      });
-
-                      if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        throw new Error(errorData.error || 'Erreur lors de l\'export');
-                      }
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-
-                      toast('Export téléchargé avec succès', 'success');
-                    } catch (error) {
-                      const message = error instanceof Error ? error.message : 'Erreur lors de l\'export';
-                      toast(message, 'error');
-                    }
-                  }}
-                >
-                  📥 Exporter mes données
-                </button>
-                <span className="text-muted-foreground">•</span>
-                {deletionStatus?.isScheduled ? (
-                  <button
-                    type="button"
-                    className="text-sm text-orange-600 hover:underline font-medium"
-                    onClick={handleCancelDeletion}
-                    disabled={loadingDeletion}
+                <div className="space-y-2">
+                  <Label>Présentation</Label>
+                  <Textarea
+                    value={bio}
+                    onChange={(e)=>setBio(e.target.value)}
+                    placeholder="Ce que tu proposes, ton expérience, ton spot préféré…"
+                    maxLength={500}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Photo/Logo</Label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={onPick}
+                    aria-label="Sélectionner une photo de profil"
+                  />
+                  {photoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={photoUrl}
+                      alt="Aperçu de la photo de profil"
+                      className="h-32 w-32 object-cover rounded"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="notif"
+                    type="checkbox"
+                    checked={emailNotif}
+                    onChange={(e)=>setEmailNotif(e.target.checked)}
+                    aria-label="Recevoir des emails pour les nouvelles demandes"
+                  />
+                  <Label htmlFor="notif" className="!m-0">Recevoir des emails pour les nouvelles demandes</Label>
+                </div>
+                {err && (
+                  <div
+                    className="text-sm text-red-600 p-3 bg-red-50 rounded border border-red-200"
+                    role="alert"
+                    aria-live="assertive"
                   >
-                    ⚠️ Annuler la suppression ({deletionStatus.daysRemaining} jours restants)
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="text-sm text-red-600 hover:underline"
-                    onClick={() => setShowDeletionModal(true)}
-                  >
-                    🗑️ Supprimer mon compte
-                  </button>
+                    {err}
+                  </div>
                 )}
+                <Button type="submit" className="w-full sm:w-auto">Enregistrer</Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* RGPD & Privacy Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">🔒 Confidentialité & RGPD</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Conformément au RGPD, vous pouvez exporter ou supprimer vos données personnelles à tout moment.
+                </p>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <button
+                    type="button"
+                    className="text-sm text-primary hover:underline"
+                    onClick={async () => {
+                      try {
+                        const tokens = apiClient.getTokens();
+                        if (!tokens?.accessToken) {
+                          toast('Session expirée, veuillez vous reconnecter', 'error');
+                          return;
+                        }
+
+                        toast('Génération de l\'export en cours...', 'info');
+
+                        const response = await apiRequest('/pro/export', {
+                          method: 'GET',
+                          headers: { Authorization: `Bearer ${tokens.accessToken}` },
+                        });
+
+                        if (!response.ok) {
+                          const errorData = await response.json().catch(() => ({}));
+                          throw new Error(errorData.error || 'Erreur lors de l\'export');
+                        }
+
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+
+                        toast('Export téléchargé avec succès', 'success');
+                      } catch (error) {
+                        const message = error instanceof Error ? error.message : 'Erreur lors de l\'export';
+                        toast(message, 'error');
+                      }
+                    }}
+                  >
+                    📥 Exporter mes données
+                  </button>
+                  <span className="text-muted-foreground">•</span>
+                  {deletionStatus?.isScheduled ? (
+                    <button
+                      type="button"
+                      className="text-sm text-orange-600 hover:underline font-medium"
+                      onClick={handleCancelDeletion}
+                      disabled={loadingDeletion}
+                    >
+                      ⚠️ Annuler la suppression ({deletionStatus.daysRemaining} jours restants)
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-sm text-red-600 hover:underline"
+                      onClick={() => setShowDeletionModal(true)}
+                    >
+                      🗑️ Supprimer mon compte
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {/* Account Deletion Modal */}
