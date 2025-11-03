@@ -170,8 +170,11 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
 
     // Skip function for certain conditions
     skip: (req: Request): boolean => {
-      // Skip rate limiting in test environment
-      if (process.env.NODE_ENV === 'test') {
+      const enableInTests = String(process.env.ENABLE_RATE_LIMIT_IN_TESTS || '')
+        .toLowerCase() === 'true';
+
+      // Skip rate limiting in test environment unless explicitly enabled
+      if (process.env.NODE_ENV === 'test' && !enableInTests) {
         return true;
       }
 

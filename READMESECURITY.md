@@ -405,7 +405,36 @@ for (const t of candidates) {
 }
 ```
 
-### [P2-8] Console.log du path des requêtes pourrait logger des query params sensibles
+### [P2-8] Exposition d'emails de partenaires dans l'export GDPR
+
+- **Localisation** : `apps/api/src/services/gdpr-export.service.ts`
+- **Description** : L'export GDPR exposait les emails complets des partenaires de match, violant le principe de minimisation des données (Article 5.1.c).
+- **Impact** : Moyen - Données personnelles tierces exposées sans nécessité, risque de réutilisation non autorisée.
+- **Statut** : ✅ **CORRIGÉ** (3 novembre 2025)
+- **Solution implémentée** : Pseudonymisation avec SHA-256 (8 caractères)
+  - Les emails des partenaires sont hashés de manière non-réversible
+  - Maintient l'unicité pour l'identification tout en protégeant la vie privée
+  - Conforme RGPD Article 5.1.c (minimisation) + Article 20 (portabilité)
+  - Documentation complète : `apps/api/GDPR_EXPORT_PSEUDONYMIZATION.md`
+  - Tests unitaires : 11/11 passing ✅
+
+```typescript
+// AVANT (violation RGPD)
+{
+  "matches": [{
+    "otherUserEmail": "partner@example.com"  // ❌ Email complet exposé
+  }]
+}
+
+// APRÈS (conforme RGPD)
+{
+  "matches": [{
+    "otherUserEmailHash": "a3f5d9e2"  // ✅ Pseudonymisé (SHA-256)
+  }]
+}
+```
+
+### [P2-9] Console.log du path des requêtes pourrait logger des query params sensibles
 
 - **Localisation** : `apps/api/src/index.ts:305`
 - **Description** : Le middleware de logging simple log `req.path` qui pourrait contenir des query parameters sensibles.
@@ -523,10 +552,12 @@ Le projet démontre de nombreuses excellentes pratiques de sécurité :
 #### Droits utilisateurs
 - ✅ Export données (GDPRPurgeService.getGDPRComplianceReport disponible)
 - ✅ Suppression soft delete + purge 30 jours (voir gdpr-purge.service.ts)
+- ✅ **Pseudonymisation emails dans export** (Article 5.1.c - minimisation) — **COMPLÉTÉ** (3 nov 2025)
 
 #### Minimisation & Sécurité
 - ✅ Chiffrement des données sensibles au repos (bcrypt pour passwords)
 - ✅ Journalisation anonymisée ≤ 30 jours (purge automatique)
+- ✅ **Pseudonymisation SHA-256 des emails de partenaires** (export GDPR conforme Art. 5.1.c)
 
 **Score RGPD : 90/100** (excellent travail sur la conformité)
 
@@ -548,7 +579,8 @@ Aucune action critique bloquante.
 5. **[P2-5]** Appliquer rate limiting explicite sur /resend-verification
 6. **[P2-6]** Améliorer le logging et la protection du endpoint /security/health
 7. **[P2-7]** Utiliser crypto.timingSafeEqual() pour les comparaisons de tokens
-8. **[P2-8]** Filtrer les query params dans le logging des requêtes
+8. ✅ **[P2-8]** ~~Pseudonymiser les emails dans l'export GDPR~~ — **COMPLÉTÉ** (3 nov 2025)
+9. **[P2-9]** Filtrer les query params dans le logging des requêtes
 
 ## 📊 Roadmap de Sécurisation
 

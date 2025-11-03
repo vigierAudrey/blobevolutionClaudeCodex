@@ -1,0 +1,7 @@
+# Crontab pour Blobinfini API
+# Format: minute hour day month weekday command
+
+# Nettoyage des comptes supprimés (tous les jours à 2h du matin)
+0 2 * * * /app/scripts/cleanup-cron.sh >> /app/logs/cron.log 2>&1
+
+# Ligne vide requise à la fin du fichier crontab

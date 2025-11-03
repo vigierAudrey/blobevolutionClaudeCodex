@@ -1,7 +1,17 @@
 import dotenv from 'dotenv';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
-// Localisation du fichier .env à la racine du monorepo
-const envPath = path.resolve(__dirname, '../../../.env');
-dotenv.config({ path: envPath });
-console.log('✅ .env loaded from', envPath);
+const projectRoot = path.resolve(__dirname, '../../../../');
+const candidates = process.env.NODE_ENV === 'test' ? ['.env.test', '.env'] : ['.env'];
+
+const loadedPath = candidates
+  .map((file) => path.join(projectRoot, file))
+  .find((candidate) => fs.existsSync(candidate));
+
+if (loadedPath) {
+  dotenv.config({ path: loadedPath });
+  console.log('✅ .env loaded from', loadedPath);
+} else {
+  console.warn('⚠️ No .env file found for', candidates.join(' / '));
+}

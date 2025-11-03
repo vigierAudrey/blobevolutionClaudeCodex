@@ -1675,3 +1675,221 @@ adminRouter.get('/audit', async (req, res) => {
   }
 });
 
+// GDPR Exports Monitoring Dashboard
+adminRouter.get('/gdpr/exports', async (req, res) => {
+  try {
+    const {
+      page = '1',
+      limit = '50',
+      userId,
+      startDate,
+      endDate,
+    } = req.query;
+
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build filters
+    const filters: any = {
+      action: 'GDPR_EXPORT_REQUESTED',
+    };
+
+    if (userId && typeof userId === 'string') {
+      filters.userId = userId;
+    }
+
+    if (startDate || endDate) {
+      filters.createdAt = {};
+      if (startDate && typeof startDate === 'string') {
+        filters.createdAt.gte = new Date(startDate);
+      }
+      if (endDate && typeof endDate === 'string') {
+        filters.createdAt.lte = new Date(endDate);
+      }
+    }
+
+    // Get total count
+    const total = await prisma.auditLog.count({ where: filters });
+
+    // Get exports with user info
+    const exports = await prisma.auditLog.findMany({
+      where: filters,
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limitNum,
+    });
+
+    // Parse metadata to extract export details
+    const formattedExports = exports.map(log => {
+      const metadata = log.metadata as any;
+      return {
+        id: log.id,
+        userId: log.userId,
+        userEmail: log.user?.email || 'Unknown',
+        userRole: log.user?.role || 'Unknown',
+        ip: log.ip || metadata?.ip || 'Unknown',
+        exportDate: log.createdAt,
+        dataSize: metadata?.dataSize || 0,
+        dataSizeMB: metadata?.dataSizeMB || ((metadata?.dataSize || 0) / 1024 / 1024).toFixed(2),
+        itemCounts: metadata?.itemCounts || {},
+      };
+    });
+
+    // Get summary statistics
+    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const last7days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const last30days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const [exports24h, exports7d, exports30d] = await Promise.all([
+      prisma.auditLog.count({
+        where: {
+          action: 'GDPR_EXPORT_REQUESTED',
+          createdAt: { gte: last24h },
+        },
+      }),
+      prisma.auditLog.count({
+        where: {
+          action: 'GDPR_EXPORT_REQUESTED',
+          createdAt: { gte: last7days },
+        },
+      }),
+      prisma.auditLog.count({
+        where: {
+          action: 'GDPR_EXPORT_REQUESTED',
+          createdAt: { gte: last30days },
+        },
+      }),
+    ]);
+
+    // Get exports by role
+    const exportsByRole = await prisma.auditLog.findMany({
+      where: {
+        action: 'GDPR_EXPORT_REQUESTED',
+        createdAt: { gte: last30days },
+      },
+      include: {
+        user: {
+          select: { role: true },
+        },
+      },
+    });
+
+    const roleStats = exportsByRole.reduce((acc, log) => {
+      const role = log.user?.role || 'Unknown';
+      acc[role] = (acc[role] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    // Get top exporters (users with most exports)
+    const topExporters = await prisma.auditLog.groupBy({
+      by: ['userId'],
+      where: {
+        action: 'GDPR_EXPORT_REQUESTED',
+        createdAt: { gte: last30days },
+        userId: { not: null },
+      },
+      _count: { userId: true },
+      orderBy: { _count: { userId: 'desc' } },
+      take: 10,
+    });
+
+    const topExportersWithEmails = await Promise.all(
+      topExporters.map(async (item) => {
+        const user = await prisma.user.findUnique({
+          where: { id: item.userId! },
+          select: { email: true, role: true },
+        });
+        return {
+          userId: item.userId,
+          email: user?.email || 'Unknown',
+          role: user?.role || 'Unknown',
+          exportCount: item._count.userId,
+        };
+      })
+    );
+
+    return res.json({
+      exports: formattedExports,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+      summary: {
+        total,
+        last24h: exports24h,
+        last7days: exports7d,
+        last30days: exports30d,
+        byRole: roleStats,
+        topExporters: topExportersWithEmails,
+      },
+    });
+  } catch (error) {
+    console.error('GDPR exports monitoring error:', error);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Get detailed export info for a specific user
+adminRouter.get('/gdpr/exports/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Get user info
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get all exports for this user
+    const exports = await prisma.auditLog.findMany({
+      where: {
+        userId,
+        action: 'GDPR_EXPORT_REQUESTED',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const formattedExports = exports.map(log => {
+      const metadata = log.metadata as any;
+      return {
+        id: log.id,
+        ip: log.ip || metadata?.ip || 'Unknown',
+        exportDate: log.createdAt,
+        dataSize: metadata?.dataSize || 0,
+        dataSizeMB: metadata?.dataSizeMB || ((metadata?.dataSize || 0) / 1024 / 1024).toFixed(2),
+        itemCounts: metadata?.itemCounts || {},
+      };
+    });
+
+    return res.json({
+      user,
+      exports: formattedExports,
+      totalExports: exports.length,
+    });
+  } catch (error) {
+    console.error('GDPR user exports error:', error);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+

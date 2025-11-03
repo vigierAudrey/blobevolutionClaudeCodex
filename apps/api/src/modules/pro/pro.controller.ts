@@ -4,8 +4,24 @@ import { prisma } from '@blobinfini/database';
 import { requireAuth } from '../auth/auth.guard';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import crypto from 'crypto';
+import { gdprExportService } from '../../services/gdpr-export.service';
+import rateLimit from 'express-rate-limit';
 
 export const proRouter = Router();
+
+// GDPR Export rate limiter: max 3 exports per hour per user
+const exportRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  message: 'Trop de demandes d\'export. Veuillez réessayer dans une heure.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Rate limit per authenticated user
+    const userId = (req as any).user?.id;
+    return userId || req.ip || 'anonymous';
+  },
+});
 
 const upsertSchema = z.object({
   businessName: z.string().min(1).max(120).optional().or(z.literal('').transform(() => undefined)),
@@ -448,5 +464,200 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Error searching offers:', err);
     return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// GDPR Data Export endpoint (Article 20 - Right to data portability)
+proRouter.get('/export', requireAuth, exportRateLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Extract IP for audit logging
+    const ips = (req as any).ips as string[] | undefined;
+    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+
+    // Generate export data
+    const exportData = await gdprExportService.exportUserData(userId, ip);
+
+    // Set appropriate headers for JSON download
+    const filename = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    // Send the data
+    return res.json(exportData);
+  } catch (err: any) {
+    // eslint-disable-next-line no-console
+    console.error('GDPR export error', err);
+    return res.status(500).json({ error: 'Erreur lors de l\'export de vos données' });
+  }
+});
+
+// Account deletion with 30-day grace period (CNIL best practice)
+proRouter.post('/delete-account', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true, email: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.deletedAt) {
+      return res.status(400).json({
+        error: 'Account already scheduled for deletion',
+        deletedAt: user.deletedAt,
+        deletionDate: new Date(user.deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
+      });
+    }
+
+    // Mark account for deletion
+    const now = new Date();
+    const deletionDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { deletedAt: now },
+    });
+
+    // Log the deletion request for audit
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'ACCOUNT_DELETION_REQUESTED',
+        resource: 'User',
+        metadata: {
+          requestedAt: now.toISOString(),
+          scheduledDeletionDate: deletionDate.toISOString(),
+          email: user.email,
+          userRole: 'PRO',
+        },
+        ip: (req as any).ip || 'unknown',
+      },
+    });
+
+    // TODO: Send email notification about deletion schedule
+
+    return res.json({
+      message: 'Demande de suppression enregistrée',
+      deletedAt: now,
+      deletionDate,
+      daysRemaining: 30,
+    });
+  } catch (err: any) {
+    console.error('Account deletion error', err);
+    return res.status(500).json({ error: 'Erreur lors de la demande de suppression' });
+  }
+});
+
+// Cancel account deletion (within 30-day grace period)
+proRouter.post('/cancel-deletion', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true, email: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.deletedAt) {
+      return res.status(400).json({
+        error: 'No deletion scheduled for this account',
+      });
+    }
+
+    // Check if still within grace period (30 days)
+    const now = new Date();
+    const daysSinceDeletion = Math.floor((now.getTime() - user.deletedAt.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysSinceDeletion >= 30) {
+      return res.status(400).json({
+        error: 'Grace period expired - account cannot be recovered',
+      });
+    }
+
+    // Cancel deletion
+    await prisma.user.update({
+      where: { id: userId },
+      data: { deletedAt: null },
+    });
+
+    // Log the cancellation for audit
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'ACCOUNT_DELETION_CANCELLED',
+        resource: 'User',
+        metadata: {
+          cancelledAt: now.toISOString(),
+          originalDeletionDate: user.deletedAt.toISOString(),
+          daysSinceDeletion,
+          email: user.email,
+          userRole: 'PRO',
+        },
+        ip: (req as any).ip || 'unknown',
+      },
+    });
+
+    // TODO: Send email notification about cancellation
+
+    return res.json({
+      message: 'Suppression de compte annulée',
+      cancelledAt: now,
+    });
+  } catch (err: any) {
+    console.error('Cancel deletion error', err);
+    return res.status(500).json({ error: 'Erreur lors de l\'annulation' });
+  }
+});
+
+// Get deletion status
+proRouter.get('/deletion-status', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.deletedAt) {
+      return res.json({
+        isScheduled: false,
+      });
+    }
+
+    const now = new Date();
+    const deletionDate = new Date(user.deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const daysRemaining = Math.max(0, Math.ceil((deletionDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
+    return res.json({
+      isScheduled: true,
+      deletedAt: user.deletedAt,
+      deletionDate,
+      daysRemaining,
+    });
+  } catch (err: any) {
+    console.error('Deletion status error', err);
+    return res.status(500).json({ error: 'Erreur lors de la vérification du statut' });
   }
 });

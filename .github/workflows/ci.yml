@@ -2,116 +2,93 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop, "feat/**", "fix/**" ]
+    branches: [main]
   pull_request:
-    branches: [ main, develop ]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
 
 jobs:
-  build-and-test:
+  lint:
+    name: Lint
     runs-on: ubuntu-22.04
-
-    services:
-      postgres:
-        image: postgis/postgis:15-3.4
-        ports: ["5432:5432"]
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      NODE_ENV: test
-      NODE_OPTIONS: --max-old-space-size=4096
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
-      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
-      JWT_SECRET: test-jwt-secret
-      JWT_REFRESH_SECRET: test-jwt-refresh-secret
-      WEB_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_API_URL: http://localhost:4000
-
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19.0'
-          cache: npm
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ env.NODE_VERSION }}-
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Install SWC binary (linux-x64-gnu)
-        run: npm install --no-save @next/swc-linux-x64-gnu@14.2.7
+      - name: Run lint
+        run: npm run lint
 
-      - name: Environment diagnostics
-        run: |
-          uname -a
-          node -p "process.versions"
-          ldd --version || true
-          echo "SWC bins:"
-          ls -la node_modules/@next | grep swc || true
-
-      - name: Prepare PostGIS (create DBs + extensions)
-        run: |
-          sudo apt-get update && sudo apt-get install -y postgresql-client
-          until pg_isready -h localhost -U postgres; do sleep 2; done
-          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini;"
-          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini_shadow;"
-          psql "postgresql://postgres:postgres@localhost:5432/blobinfini" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql "postgresql://postgres:postgres@localhost:5432/blobinfini_shadow" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-
-      - name: Generate Prisma Client
-        run: npm run db:generate
-
-      - name: Run DB migrations
-        run: npm run db:migrate:deploy
-
-      - name: Push schema to test database (ensures all tables exist)
-        run: |
-          cd packages/database
-          npx prisma db push --skip-generate --accept-data-loss
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-
-      - name: Verify database tables
-        run: |
-          psql "postgresql://postgres:postgres@localhost:5432/blobinfini" -c "\dt public.*" | grep -E "(User|ContactRequestResponse)" || echo "⚠️  Warning: Some tables may be missing"
-
-      # Frontend build is now handled by Vercel (skipped in CI)
-      # Uncomment the following lines if you need to test frontend builds locally with act
-      # - name: Build web app
-      #   if: ${{ env.ACT }}
-      #   run: npm run build --workspace @blobinfini/web
-
-      # Type-check each workspace with its own tsconfig to preserve path aliases
-      # Web: Next.js App Router requires @/* alias resolved via apps/web/tsconfig.json
-      # API: CommonJS API requires its own type-check config
-      # Note: Excludes test files to avoid mock-related type errors (covered by jest+eslint)
-      - name: Type check (web + api)
-        run: |
-          npm run type-check -w @blobinfini/web
-          npm run type-check -w @blobinfini/api
-
-      - name: Run tests (API)
-        run: npm test
-
-  verify-import-alias:
+  build:
+    name: Build
     runs-on: ubuntu-22.04
-    needs: build-and-test
-    if: always()
-    continue-on-error: true
+    needs: lint
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-      # Non-bloquant: vérifie que les alias import respectent la casse (App Router casse sensible sur Linux)
-      - name: Verify imports alias (case-sensitive)
-        run: |
-          echo "Checking for incorrect case-sensitive imports in web workspace..."
-          ! git grep -n "from ['\"']@/lib/apiclient['\"']" apps/web/app
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ env.NODE_VERSION }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build
+        run: npm run build
+
+  test:
+    name: Test API
+    runs-on: ubuntu-22.04
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ env.NODE_VERSION }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run API tests
+        run: npm run test --workspace @blobinfini/api

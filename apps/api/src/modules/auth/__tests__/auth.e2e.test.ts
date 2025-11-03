@@ -212,23 +212,34 @@ describe('Auth E2E', () => {
   });
 
   it('rate limits excessive login attempts', async () => {
-    const rateSession = await createTestSession(app);
-    const email = 'ratelimit@test.com';
-    await getOrCreateUserByEmail({ email, role: Role.RIDER, emailVerified: true });
+    const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+    const rateLimitedApp = createApp();
+    try {
+      const rateSession = await createTestSession(rateLimitedApp);
+      const email = 'ratelimit@test.com';
+      await getOrCreateUserByEmail({ email, role: Role.RIDER, emailVerified: true });
 
-    for (let i = 0; i < 5; i += 1) {
-      await rateSession
+      for (let i = 0; i < 5; i += 1) {
+        await rateSession
+          .post('/auth/login')
+          .send({ email, password: TEST_PASSWORD })
+          .expect(200);
+      }
+
+      const limited = await rateSession
         .post('/auth/login')
         .send({ email, password: TEST_PASSWORD })
-        .expect(200);
+        .expect(429);
+
+      expect(limited.body.error).toBe('AUTH_RATE_LIMIT_EXCEEDED');
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      } else {
+        process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+      }
     }
-
-    const limited = await rateSession
-      .post('/auth/login')
-      .send({ email, password: TEST_PASSWORD })
-      .expect(429);
-
-    expect(limited.body.error).toBe('RATE_LIMIT_EXCEEDED');
   });
 
   it('rejects requests with tampered JWT tokens', async () => {

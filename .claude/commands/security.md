@@ -60,4 +60,31 @@ Délègue cette tâche à l'agent **cybersecurite** qui va :
 
 ---
 
-**Délègue maintenant à l'agent cybersecurite avec les arguments : $ARGUMENTS**
+**ACTION IMMÉDIATE** : Lance l'agent cybersecurite avec le Task tool :
+
+```
+Task tool:
+- subagent_type: cybersecurite
+- description: Audit de sécurité Blobinfini
+- prompt: "Effectue un audit de sécurité avec les arguments : '$ARGUMENTS'.
+
+Si aucun argument :
+- Audit complet du projet (npm audit, secrets, headers, validation, rate limiting)
+- Scan OWASP Top 10
+- Rapport avec niveau de risque + vulnérabilités P0/P1/P2
+- Code de correction pour chaque problème
+
+Si argument spécifique :
+- 'auth' → module authentification uniquement
+- 'api' → endpoints API
+- 'frontend' → Next.js et composants
+- 'roadmap' → créer roadmap de sécurisation
+- 'harden' → implémenter mesures dissuasives
+- chemin fichier → audit ce fichier
+
+Références :
+- Checklists: /ai/checklists/securite_auth.md, /ai/checklists/rgpd.md
+- ROADMAP.md section Sécurité (lignes 42-209)
+
+Produis un rapport actionnable avec corrections prêtes à appliquer."
+```

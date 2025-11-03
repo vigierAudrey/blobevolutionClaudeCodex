@@ -9,3 +9,7 @@ const ensureSecretLength = (key: 'SESSION_SECRET' | 'JWT_SECRET' | 'JWT_REFRESH_
 ensureSecretLength('SESSION_SECRET');
 ensureSecretLength('JWT_SECRET');
 ensureSecretLength('JWT_REFRESH_SECRET');
+
+if (!process.env.CSRF_SECRET) {
+  process.env.CSRF_SECRET = 'csrf-test-secret'.padEnd(32, 'x');
+}
