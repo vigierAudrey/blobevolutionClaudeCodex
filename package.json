@@ -14,6 +14,7 @@
     "dev:api:docker": "docker compose up api",
     "dev:all:docker": "npm run dev:infra && concurrently -n web,api -c magenta,blue \"npm:dev:web\" \"npm:dev:api:docker\"",
     "build": "npm run build --workspace @blobinfini/api && npm run build --workspace @blobinfini/database",
+    "build:api": "npm run build --workspace @blobinfini/api",
     "build:web": "npm run db:generate && npm run build --workspace @blobinfini/web",
     "type-check": "npm run type-check --workspace @blobinfini/api && npm run type-check --workspace @blobinfini/web",
     "type-check:legacy": "tsc -p tsconfig.base.json && tsc -p apps/api/tsconfig.json",

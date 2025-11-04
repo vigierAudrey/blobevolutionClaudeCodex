@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '@blobinfini/database';
-import { Prisma } from '@prisma/client';
-import type { DecisionKind } from '@prisma/client';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
+import type { DecisionKind } from '@blobinfini/database';
 import { requireAuth, requireAdmin } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
 import { audit } from '../../middleware/audit';
@@ -1892,4 +1891,3 @@ adminRouter.get('/gdpr/exports/:userId', async (req, res) => {
     return res.status(500).json({ error: 'Internal error' });
   }
 });
-

@@ -1,7 +1,6 @@
 import request, { SuperAgentTest, Test as SupertestRequest } from 'supertest';
 import bcrypt from 'bcrypt';
-import { prisma } from '@blobinfini/database';
-import { Role, User } from '@prisma/client';
+import { clientPrisma as prisma, Role, User } from '@blobinfini/database';
 import { jest } from '@jest/globals';
 
 export const TEST_PASSWORD = 'Passw0rd!';

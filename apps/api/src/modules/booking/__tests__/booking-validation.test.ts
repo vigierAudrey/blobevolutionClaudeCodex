@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, it, expect } from '@jest/globals';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { BookingService } from '../booking.service';
 
 const bookingService = new BookingService();
@@ -40,6 +40,10 @@ describe('BookingService Validation', () => {
     await prisma.user.deleteMany({
       where: { id: { in: [testProUserId, anotherProUserId] } }
     });
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
   });
 
   describe('Geographic validation', () => {

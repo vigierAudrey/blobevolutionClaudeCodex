@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { resolve } from 'path';
 dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env') });
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 
 async function main() {
   const days = Number(process.env.CONSENT_PURGE_RETENTION_DAYS || 730); // ~24 mois

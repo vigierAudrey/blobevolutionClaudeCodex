@@ -1,4 +1,4 @@
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import crypto from 'crypto';
 
 /**

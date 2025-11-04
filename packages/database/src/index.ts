@@ -1,7 +1,28 @@
-export { prisma } from './prismaClient';
+export { clientPrisma } from './client';
+export { default } from './client';
+export {
+  Prisma,
+  AvailabilityStatus,
+  BookingRequestStatus,
+  BookingStatus,
+  ContactRequestStatus,
+  ContactResponse,
+  ConsentLevel,
+  ConsentSignal,
+  ConversationType,
+  CreditTransactionType,
+  DecisionKind,
+  Level,
+  MatchStatus,
+  MessageType,
+  Role,
+  Sex,
+  Sport
+} from '@prisma/client';
 
 // Réexporte les types Prisma nécessaires aux tests et aux services API
 export type {
+  PrismaClient,
   AdminProfile,
   AuditLog,
   Booking,
@@ -27,18 +48,5 @@ export type {
   User,
   UserWallet,
   spatial_ref_sys,
-  AvailabilityStatus,
-  BookingRequestStatus,
-  BookingStatus,
-  ContactRequestStatus,
-  ContactResponse,
-  ConversationType,
-  CreditTransactionType,
-  DecisionKind,
-  Level,
-  MatchStatus,
-  MessageType,
-  Role,
-  Sex,
-  Sport
+  UserConsent
 } from '@prisma/client';

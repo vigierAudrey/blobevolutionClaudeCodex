@@ -1,9 +1,12 @@
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { execSync } from 'child_process';
 import path from 'node:path';
 
 let dbSetupDone = false;
 const repoRoot = path.resolve(__dirname, '..', '..');
+
+// Touch Prisma client to satisfy no-unused-locals and ensure singleton initialises when tests run.
+void prisma;
 
 beforeAll(async () => {
   if (dbSetupDone) return;

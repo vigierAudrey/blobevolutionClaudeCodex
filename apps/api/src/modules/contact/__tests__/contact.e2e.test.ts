@@ -1,6 +1,6 @@
 import request, { SuperAgentTest } from 'supertest';
 import jwt from 'jsonwebtoken';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { createApp } from '../../../index';
 import { cleanupTestUsers, createTestUser } from '../../../test-utils';
 

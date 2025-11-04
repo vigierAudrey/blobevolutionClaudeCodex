@@ -7,7 +7,7 @@
  * Cron expression : 0 2 * * *
  */
 
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 
 // Constantes
 const GRACE_PERIOD_DAYS = 30;

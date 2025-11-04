@@ -1,5 +1,4 @@
-import { prisma } from '@blobinfini/database';
-import { Role } from '@prisma/client';
+import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import { createApp } from '../../../index';
 import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
 

@@ -1,4 +1,5 @@
-import { PrismaClient, Role, Prisma } from '@prisma/client';
+import { Role, Prisma } from '@blobinfini/database';
+import type { PrismaClient } from '@blobinfini/database';
 import bcrypt from 'bcrypt';
 
 type UserCreateInput = Parameters<PrismaClient['user']['create']>[0]['data'];

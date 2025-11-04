@@ -16,6 +16,7 @@ describe('CORS middleware', () => {
     process.env.SESSION_SECRET = STRONG_SESSION_SECRET;
     process.env.JWT_SECRET = STRONG_JWT_SECRET;
     process.env.JWT_REFRESH_SECRET = STRONG_REFRESH_SECRET;
+    process.env.CSP_REPORT_ONLY = 'false';
   });
 
   afterEach(() => {
@@ -70,5 +71,28 @@ describe('CORS middleware', () => {
     expect(response.status).toBe(204);
     expect(response.headers['access-control-allow-origin']).toBe(allowedOrigin);
     expect(response.headers['access-control-allow-headers']).toBe('Content-Type,X-Test-Header');
+  });
+
+  it('emits a strict CSP header with nonces', async () => {
+    const app = await buildApp();
+
+    const response = await request(app).get('/health');
+
+    const cspHeader = response.headers['content-security-policy'] ?? response.headers['content-security-policy-report-only'];
+    expect(cspHeader).toBeDefined();
+    expect(cspHeader).toContain("script-src 'self'");
+    expect(cspHeader).toContain("'nonce-");
+    expect(cspHeader).not.toContain("'unsafe-inline'");
+    expect(cspHeader).not.toContain("'unsafe-eval'");
+  });
+
+  it('injects CSP nonces into the Swagger UI HTML', async () => {
+    const app = await buildApp();
+
+    const response = await request(app).get('/api/docs/');
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain('nonce="');
+    expect(response.text).toContain('<style nonce="');
   });
 });

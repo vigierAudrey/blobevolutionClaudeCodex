@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../auth/auth.guard';
-import { prisma } from '@blobinfini/database';
-import { Prisma } from '@prisma/client';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 
 export const conversationsRouter = Router();
 

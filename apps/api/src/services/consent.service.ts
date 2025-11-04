@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import { prisma } from '@blobinfini/database';
-import type { ConsentLevel, ConsentSignal, UserConsent } from '@prisma/client';
+import { clientPrisma as prisma } from '@blobinfini/database';
+import type { ConsentLevel, ConsentSignal, UserConsent } from '@blobinfini/database';
 
 const CONSENT_TTL_MONTHS = 13;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes

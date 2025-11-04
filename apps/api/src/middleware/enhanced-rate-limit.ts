@@ -139,6 +139,19 @@ export const RATE_LIMIT_PROFILES = {
     }
   },
 
+  // Email verification resend - prevent spam (P2-5)
+  EMAIL_VERIFICATION: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 3, // 3 resend attempts per hour per email
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'EMAIL_VERIFICATION_RATE_LIMIT_EXCEEDED',
+      message: 'Too many verification email requests. Please check your inbox or try again later.',
+      retryAfter: '1 hour'
+    }
+  },
+
   // Global API protection - catch-all
   GLOBAL: {
     windowMs: 15 * 60 * 1000, // 15 minutes

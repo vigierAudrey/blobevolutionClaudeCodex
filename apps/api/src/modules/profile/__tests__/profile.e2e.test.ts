@@ -1,6 +1,5 @@
 import { createApp } from '../../../index';
-import { prisma } from '@blobinfini/database';
-import { Role } from '@prisma/client';
+import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
 
 describe('Profile E2E', () => {

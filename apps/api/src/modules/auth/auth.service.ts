@@ -1,4 +1,4 @@
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 import crypto from 'crypto';

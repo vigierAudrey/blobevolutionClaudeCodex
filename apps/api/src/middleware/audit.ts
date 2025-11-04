@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 
 export type AuditResourceResolver = (req: Request, res: Response) => string;
 

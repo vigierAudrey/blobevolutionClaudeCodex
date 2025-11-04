@@ -1,4 +1,4 @@
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
 import * as crypto from 'crypto';
 

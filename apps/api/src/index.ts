@@ -1,6 +1,7 @@
 import './config/loadEnv';
 import { resolve } from 'path';
 import fs from 'fs';
+import { randomBytes } from 'crypto';
 
 // Initialize Sentry BEFORE any other imports (must be after dotenv)
 import './instrument';
@@ -78,19 +79,66 @@ if (allowedOriginsSet.size > 0) {
   DEV_FALLBACK_ORIGINS.forEach(origin => cspConnectSrc.add(origin));
 }
 
-const helmetMiddleware = helmet({
+const generateNonce = () => randomBytes(16).toString('base64');
+
+const resolveCspReportOnly = () => {
+  if (typeof process.env.CSP_REPORT_ONLY === 'string') {
+    return process.env.CSP_REPORT_ONLY.toLowerCase() === 'true';
+  }
+  return process.env.NODE_ENV !== 'production';
+};
+
+const applyNoncesToHtml = (html: string, scriptNonce?: string, styleNonce?: string) => {
+  let result = html;
+  if (typeof scriptNonce === 'string' && scriptNonce.length > 0) {
+    result = result.replace(/<script\b(?![^>]*\bnonce=)/g, `<script nonce="${scriptNonce}"`);
+  }
+  if (typeof styleNonce === 'string' && styleNonce.length > 0) {
+    result = result.replace(/<style\b(?![^>]*\bnonce=)/g, `<style nonce="${styleNonce}"`);
+  }
+  return result;
+};
+
+const createHelmetMiddleware = () => helmet({
   contentSecurityPolicy: {
+    reportOnly: resolveCspReportOnly(),
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: [
+        "'self'",
+        (_req, res) => {
+          const expressRes = res as Response;
+          const nonce = expressRes.locals?.cspNonceScript;
+          if (typeof nonce === 'string' && nonce.length > 0) {
+            return `'nonce-${nonce}'`;
+          }
+          const fallback = generateNonce();
+          expressRes.locals.cspNonceScript = fallback;
+          return `'nonce-${fallback}'`;
+        }
+      ],
+      styleSrc: [
+        "'self'",
+        (_req, res) => {
+          const expressRes = res as Response;
+          const nonce = expressRes.locals?.cspNonceStyle;
+          if (typeof nonce === 'string' && nonce.length > 0) {
+            return `'nonce-${nonce}'`;
+          }
+          const fallback = generateNonce();
+          expressRes.locals.cspNonceStyle = fallback;
+          return `'nonce-${fallback}'`;
+        }
+      ],
       connectSrc: Array.from(cspConnectSrc),
       imgSrc: ["'self'", 'data:', 'https:'],
       fontSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
+      frameSrc: ["'none'"],
+      baseUri: ["'self'"],
       formAction: ["'self'"],
-      upgradeInsecureRequests: []
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
     }
   },
   referrerPolicy: { policy: 'no-referrer' },
@@ -207,7 +255,12 @@ export function createApp() {
   }));
 
   app.use(corsMiddleware);
-  app.use(helmetMiddleware);
+  app.use((_req, res, next) => {
+    res.locals.cspNonceScript = generateNonce();
+    res.locals.cspNonceStyle = generateNonce();
+    next();
+  });
+  app.use(createHelmetMiddleware());
 
   // Global rate limiting (before specific routes)
   app.use(smartRateLimit);
@@ -224,7 +277,7 @@ export function createApp() {
   async function purgeOnce() {
     try {
       const threshold = new Date(Date.now() - purgeDays * 24 * 60 * 60 * 1000);
-      const { prisma } = await import('@blobinfini/database');
+      const { clientPrisma: prisma } = await import('@blobinfini/database');
       await prisma.user.updateMany({
         where: { consentIp: { not: null }, consentedAt: { lt: threshold } },
         data: { consentIp: null },
@@ -272,7 +325,7 @@ export function createApp() {
   async function purgeTrashedConversations() {
     try {
       const cutoff = new Date(Date.now() - convTrashDays * 24 * 60 * 60 * 1000);
-      const { prisma } = await import('@blobinfini/database');
+      const { clientPrisma: prisma } = await import('@blobinfini/database');
       // Remove memberships older than cutoff
       await prisma.conversationMember.deleteMany({ where: { trashedAt: { not: null, lt: cutoff } } });
       // Remove orphan conversations (no members)
@@ -331,13 +384,22 @@ export function createApp() {
 
   const swaggerDocument = loadOpenApiDocument();
   if (swaggerDocument) {
+    const swaggerOptions = {
+      explorer: true,
+      customSiteTitle: 'Blobinfini API – Swagger UI',
+      swaggerOptions: {
+        deepLinking: true
+      }
+    };
     app.use(
       '/api/docs',
       swaggerUi.serve,
-      swaggerUi.setup(swaggerDocument, {
-        explorer: true,
-        customSiteTitle: 'Blobinfini API – Swagger UI',
-      })
+      (_req: Request, res: Response) => {
+        const scriptNonce = res.locals.cspNonceScript as string | undefined;
+        const styleNonce = res.locals.cspNonceStyle as string | undefined;
+        const html = swaggerUi.generateHTML(swaggerDocument, swaggerOptions);
+        res.send(applyNoncesToHtml(html, scriptNonce, styleNonce));
+      }
     );
   }
 

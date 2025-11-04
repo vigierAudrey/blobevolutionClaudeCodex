@@ -2,8 +2,7 @@ import { createApp } from '../../../index';
 import request, { SuperAgentTest } from 'supertest';
 import type { Response as SupertestResponse } from 'supertest';
 import { ensureProProfile, ensureRiderProfile, createUser } from '../../../tests/helpers/prismaFactories';
-import { Role } from '@prisma/client';
-import { prisma } from '@blobinfini/database';
+import { Role, clientPrisma as prisma } from '@blobinfini/database';
 
 describe('Conversations E2E', () => {
   const app = createApp();

@@ -1,6 +1,5 @@
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, BookingRequestStatus } from '@blobinfini/database';
 import { bookingService } from '../booking.service';
-import { BookingRequestStatus } from '@prisma/client';
 
 describe('Système anti-overbooking et gestion des capacités', () => {
   let proUserId: string;

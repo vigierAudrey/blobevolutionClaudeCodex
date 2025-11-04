@@ -1,5 +1,5 @@
-import { prisma } from '@blobinfini/database';
-import type { ConsentLevel, ConsentSignal } from '@prisma/client';
+import { clientPrisma as prisma } from '@blobinfini/database';
+import type { ConsentLevel, ConsentSignal } from '@blobinfini/database';
 import {
   __clearConsentCache,
   createOrUpdateConsent,

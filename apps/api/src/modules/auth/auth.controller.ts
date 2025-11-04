@@ -2,19 +2,21 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireVerifiedEmail } from './auth.guard';
 import { AuthService } from './auth.service';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { twoFactorService } from '../../services/two-factor.service';
 import { validate } from '../../middleware/validate';
+import { passwordSchema } from '../../utils/password-validator';
+import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
 
 export const authRouter = Router();
 const service = new AuthService();
 
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: passwordSchema, // P1-3: OWASP-compliant password validation
   role: z.enum(['RIDER', 'PRO', 'ADMIN']).default('RIDER'),
   consentAccepted: z.literal(true, {
-    errorMap: () => ({ message: 'Vous devez accepter la charte et l’avertissement.' }),
+    errorMap: () => ({ message: 'Vous devez accepter la charte et l\'avertissement.' }),
   }),
 });
 
@@ -39,7 +41,7 @@ const forgotSchema = z.object({
 
 const resetSchema = z.object({
   token: z.string().min(10),
-  password: z.string().min(8),
+  password: passwordSchema, // P1-3: OWASP-compliant password validation
 });
 
 const verifyEmailSchema = z.object({
@@ -157,18 +159,23 @@ authRouter.post('/verify-email', async (req, res) => {
 });
 
 // Resend verification email (generic response)
-authRouter.post('/resend-verification', async (req, res) => {
-  try {
-    const { email } = resendVerifySchema.parse(req.body);
-    const result = await service.resendEmailVerification(email);
-    res.json(result);
-  } catch (err: any) {
-    if (err?.name === 'ZodError') {
-      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+// P2-5: Rate limiting to prevent email spam (3 attempts/hour per email)
+authRouter.post(
+  '/resend-verification',
+  createRateLimiter('EMAIL_VERIFICATION'),
+  async (req, res) => {
+    try {
+      const { email } = resendVerifySchema.parse(req.body);
+      const result = await service.resendEmailVerification(email);
+      res.json(result);
+    } catch (err: any) {
+      if (err?.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid input', details: err.errors });
+      }
+      return res.status(500).json({ error: 'Internal error' });
     }
-    return res.status(500).json({ error: 'Internal error' });
   }
-});
+);
 
 authRouter.get('/me', requireAuth, async (req, res) => {
   try {
