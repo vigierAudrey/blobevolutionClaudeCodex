@@ -1,8 +1,7 @@
 import request from 'supertest';
 import { createApp } from './index';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import { getAccessToken, TEST_PASSWORD } from './tests/helpers/auth';
-import { Role } from '@prisma/client';
 
 describe('/security/health endpoint', () => {
   const app = createApp();

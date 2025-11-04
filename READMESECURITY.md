@@ -65,53 +65,17 @@ Sentry.init({
 - **Contrôle** : Logger centralisé `secureLogger` assure la redaction côté backend.
 - **Référence** : OWASP A09:2021 – Security Logging and Monitoring Failures
 
-### [P1-2] CSP trop permissif avec 'unsafe-inline' et 'unsafe-eval'
+### [P1-2] CSP trop permissif avec 'unsafe-inline' et 'unsafe-eval' ✅ 2025-11-03 (Codex)
 
-- **Localisation** : `apps/api/src/index.ts:49-50`
-- **Description** : La Content Security Policy autorise l'exécution de scripts inline et eval(), ce qui réduit considérablement la protection contre les attaques XSS.
-- **Impact** : Un attaquant pourrait injecter et exécuter du JavaScript malveillant si une vulnérabilité XSS est découverte ailleurs dans l'application.
-- **Exploitation** : Combiné avec une vulnérabilité XSS (même mineure), permet l'exécution de code JavaScript arbitraire dans le navigateur de la victime.
-- **Code actuel** :
-```typescript
-scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // ❌ PROBLÈME
-styleSrc: ["'self'", "'unsafe-inline'"], // ⚠️ À améliorer
-```
-- **Recommandation** : Utiliser des nonces ou des hashes pour les scripts/styles légitimes
-```typescript
-const helmetMiddleware = helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: [
-        "'self'",
-        // Ajouter des nonces pour Swagger UI si nécessaire
-        // Supprimer 'unsafe-inline' et 'unsafe-eval'
-      ],
-      styleSrc: [
-        "'self'",
-        // Utiliser un hash pour les styles inline critiques si nécessaire
-        // "'sha256-HASH_DU_STYLE'"
-      ],
-      connectSrc: cspConnectSrc,
-      imgSrc: ["'self'", 'data:', 'https:'],
-      fontSrc: ["'self'", 'data:'],
-      objectSrc: ["'none'"],
-      frameAncestors: ["'none'"],
-      formAction: ["'self'"],
-      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : undefined
-    }
-  },
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }, // Améliorer
-  frameguard: { action: 'deny' },
-  crossOriginEmbedderPolicy: false,
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
-  crossOriginResourcePolicy: { policy: 'same-origin' },
-  hsts: process.env.NODE_ENV === 'production'
-    ? { maxAge: 31536000, includeSubDomains: true, preload: true }
-    : false
-});
-```
-- **Priorité** : IMPORTANT - Corriger progressivement (peut nécessiter des ajustements frontend)
+- **Localisation** : `apps/api/src/index.ts`
+- **Correctif** : directives Helmet désormais sans `unsafe-inline` / `unsafe-eval`, avec nonces dynamiques (`res.locals.cspNonceScript`, `res.locals.cspNonceStyle`) injectées dans toutes les balises `<script>` et `<style>` de Swagger UI via `swaggerUi.generateHTML`.
+- **Mode progressif** : nouvel env `CSP_REPORT_ONLY`. Défaut `true` hors production, `false` en production. Positionner explicitement `CSP_REPORT_ONLY=true` avant déploiement pour collecter les rapports CSP (header `Content-Security-Policy-Report-Only`), puis basculer à `false` pour l'enforcement.
+- **Directives clés** :
+  - `script-src 'self' 'nonce-<dynamic>'`
+  - `style-src 'self' 'nonce-<dynamic>'`
+  - `base-uri 'self'`, `frame-src 'none'`, `upgrade-insecure-requests` (prod uniquement)
+- **Swagger UI** : HTML servi avec nonces, plus de dépendance `unsafe-inline`. Assets toujours fournis via `swaggerUi.serve`.
+- **Tests** : `npm run type-check` ✅, `npm test --workspace @blobinfini/api -- auth.e2e.test.ts` ✅ (inclut scénarios P1-3) ; relancer la suite complète API en CI pour couverture exhaustive ; swagger manuel conseillé sur `/api/docs`.
 - **Référence** : OWASP A05:2021 – Security Misconfiguration, CWE-1021
 
 ### [P1-3] Absence de validation de force du mot de passe côté backend
@@ -307,13 +271,32 @@ export async function redisWithTimeout<T>(
 
 ### [P2-5] Manque de rate limiting sur les endpoints de vérification email
 
-- **Localisation** : `apps/api/src/modules/auth/auth.controller.ts:160`
+- **Localisation** : `apps/api/src/modules/auth/auth.controller.ts:163`
 - **Description** : L'endpoint `/auth/resend-verification` n'a pas de rate limiting spécifique, permettant un spam d'emails.
 - **Impact** : Un attaquant pourrait spam l'endpoint pour envoyer des centaines d'emails de vérification.
-- **Recommandation** : Appliquer le rate limiter AUTH sur cet endpoint
+- **Statut** : ✅ **CORRIGÉ** (3 novembre 2025)
+- **Solution implémentée** : Rate limiting EMAIL_VERIFICATION (3 requêtes/heure)
+  - Profil dédié avec limite stricte (3/heure par email)
+  - Message d'erreur explicite pour l'utilisateur
+  - Test E2E vérifiant le comportement 429
+  - Skip automatique en dev/test sauf activation explicite
+
 ```typescript
-authRouter.post('/resend-verification',
-  rateLimiters.auth, // Ajouter explicitement le rate limiter
+// Profil dédié dans enhanced-rate-limit.ts
+EMAIL_VERIFICATION: {
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3, // 3 resend attempts per hour per email
+  message: {
+    error: 'EMAIL_VERIFICATION_RATE_LIMIT_EXCEEDED',
+    message: 'Too many verification email requests. Please check your inbox or try again later.',
+    retryAfter: '1 hour'
+  }
+}
+
+// Application dans auth.controller.ts
+authRouter.post(
+  '/resend-verification',
+  createRateLimiter('EMAIL_VERIFICATION'), // ✅ Rate limiting appliqué
   async (req, res) => {
     // ... code existant
   }
@@ -576,7 +559,7 @@ Aucune action critique bloquante.
 2. **[P2-2]** Créer un logger centralisé qui filtre les PII
 3. **[P2-3]** Ajuster referrerPolicy à 'strict-origin-when-cross-origin'
 4. **[P2-4]** Ajouter des timeouts sur les opérations Redis
-5. **[P2-5]** Appliquer rate limiting explicite sur /resend-verification
+5. ✅ **[P2-5]** ~~Appliquer rate limiting explicite sur /resend-verification~~ — **COMPLÉTÉ** (3 nov 2025)
 6. **[P2-6]** Améliorer le logging et la protection du endpoint /security/health
 7. **[P2-7]** Utiliser crypto.timingSafeEqual() pour les comparaisons de tokens
 8. ✅ **[P2-8]** ~~Pseudonymiser les emails dans l'export GDPR~~ — **COMPLÉTÉ** (3 nov 2025)

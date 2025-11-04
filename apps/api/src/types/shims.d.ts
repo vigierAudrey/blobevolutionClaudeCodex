@@ -2,6 +2,7 @@ declare module '@blobinfini/database' {
   import type {
     PrismaClient,
     AdminProfile,
+    AuditLog,
     Booking,
     BookingRequest,
     ContactRequest,
@@ -25,11 +26,21 @@ declare module '@blobinfini/database' {
     User,
     UserWallet,
     spatial_ref_sys,
+    UserConsent
+  } from '@prisma/client';
+
+  export const clientPrisma: PrismaClient;
+  export default clientPrisma;
+
+  export {
+    Prisma,
     AvailabilityStatus,
     BookingRequestStatus,
     BookingStatus,
     ContactRequestStatus,
     ContactResponse,
+    ConsentLevel,
+    ConsentSignal,
     ConversationType,
     CreditTransactionType,
     DecisionKind,
@@ -41,10 +52,10 @@ declare module '@blobinfini/database' {
     Sport
   } from '@prisma/client';
 
-  export const prisma: PrismaClient;
-
   export type {
+    PrismaClient,
     AdminProfile,
+    AuditLog,
     Booking,
     BookingRequest,
     ContactRequest,
@@ -68,19 +79,6 @@ declare module '@blobinfini/database' {
     User,
     UserWallet,
     spatial_ref_sys,
-    AvailabilityStatus,
-    BookingRequestStatus,
-    BookingStatus,
-    ContactRequestStatus,
-    ContactResponse,
-    ConversationType,
-    CreditTransactionType,
-    DecisionKind,
-    Level,
-    MatchStatus,
-    MessageType,
-    Role,
-    Sex,
-    Sport
+    UserConsent
   };
 }

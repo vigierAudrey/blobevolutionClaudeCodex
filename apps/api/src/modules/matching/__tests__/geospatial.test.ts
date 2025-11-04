@@ -1,5 +1,4 @@
-import { prisma } from '@blobinfini/database';
-import { Prisma } from '@prisma/client';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 
 describe('Algorithme de matching géospatial PostGIS', () => {
   beforeAll(async () => {

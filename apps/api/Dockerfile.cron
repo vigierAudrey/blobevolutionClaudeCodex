@@ -1,31 +1,32 @@
 # Dockerfile pour le service cron de nettoyage GDPR
 FROM node:20-alpine
 
-# Installer cron et ts-node
+# Installer cron
 RUN apk add --no-cache dcron
 
 WORKDIR /app
 
-# Copier package.json et installer les dépendances
-COPY package*.json ./
-COPY prisma ./prisma/
-RUN npm ci --only=production && \
-    npm install -g ts-node typescript
+# Copier les fichiers de manifeste (racine + workspaces nécessaires)
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/database/prisma packages/database/prisma
 
-# Copier le code source
+# Installer les dépendances (toutes boutiques pour garantir @blobinfini/database)
+RUN npm ci && npm install -g ts-node typescript
+
+# Copier le reste du code
 COPY . .
 
-# Générer le client Prisma
+# Générer le client Prisma du package database
+WORKDIR /app/packages/database
 RUN npx prisma generate
 
-# Copier le crontab
-COPY crontab /etc/crontabs/root
-
-# Créer le répertoire de logs
-RUN mkdir -p /app/logs
-
-# Rendre les scripts exécutables
-RUN chmod +x /app/scripts/*.sh
+# Préparer l'app API (scripts + logs + crontab)
+WORKDIR /app/apps/api
+RUN mkdir -p /app/apps/api/logs \
+  && chmod +x /app/apps/api/scripts/*.sh \
+  && cp /app/apps/api/crontab /etc/crontabs/root
 
 # Commande pour démarrer cron en foreground
 CMD ["crond", "-f", "-l", "2"]

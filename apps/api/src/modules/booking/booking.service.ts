@@ -1,5 +1,4 @@
-import { Prisma, BookingRequestStatus } from '@prisma/client';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma, BookingRequestStatus } from '@blobinfini/database';
 import { bookingRepository } from './booking.repository';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { notifyBookingAccepted, notifyBookingRejected } from '../push/push.controller';

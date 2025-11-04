@@ -1,4 +1,4 @@
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { closeRateLimitStore } from './src/middleware/enhanced-rate-limit';
 import { cacheService } from './src/services/cache.service';
 

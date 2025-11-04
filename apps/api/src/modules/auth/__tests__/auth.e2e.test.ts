@@ -1,6 +1,5 @@
 import { createApp } from '../../../index';
-import { prisma } from '@blobinfini/database';
-import { Role } from '@prisma/client';
+import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import {
   createTestSession,
   TestSession,
@@ -292,5 +291,202 @@ describe('Auth E2E', () => {
       if (prev === undefined) delete process.env.AUTH_REQUIRE_VERIFIED;
       else process.env.AUTH_REQUIRE_VERIFIED = prev;
     }
+  });
+
+  // P1-3: Password validation tests (OWASP-compliant)
+  describe('Password Validation (P1-3)', () => {
+    const expectValidationMessage = (body: any, substring: string) => {
+      expect(body.error).toBe('Invalid input');
+      const details = Array.isArray(body.details) ? body.details : [];
+      const hasMessage = details.some(
+        (detail: any) => typeof detail?.message === 'string' && detail.message.includes(substring)
+      );
+      expect(hasMessage).toBe(true);
+    };
+
+    it('should reject password without lowercase', async () => {
+      const res = await session
+        .post('/auth/register')
+        .send({
+          email: `test-${Date.now()}@example.com`,
+          password: 'PASSWORD123!',
+          role: 'RIDER',
+          consentAccepted: true
+        })
+        .expect(400);
+
+      expectValidationMessage(res.body, 'minuscule');
+    });
+
+    it('should reject password without uppercase', async () => {
+      const res = await session
+        .post('/auth/register')
+        .send({
+          email: `test-${Date.now()}@example.com`,
+          password: 'password123!',
+          role: 'RIDER',
+          consentAccepted: true
+        })
+        .expect(400);
+
+      expectValidationMessage(res.body, 'majuscule');
+    });
+
+    it('should reject password without digit', async () => {
+      const res = await session
+        .post('/auth/register')
+        .send({
+          email: `test-${Date.now()}@example.com`,
+          password: 'Password!',
+          role: 'RIDER',
+          consentAccepted: true
+        })
+        .expect(400);
+
+      expectValidationMessage(res.body, 'chiffre');
+    });
+
+    it('should reject password without special character', async () => {
+      const res = await session
+        .post('/auth/register')
+        .send({
+          email: `test-${Date.now()}@example.com`,
+          password: 'Password123',
+          role: 'RIDER',
+          consentAccepted: true
+        })
+        .expect(400);
+
+      expectValidationMessage(res.body, 'spécial');
+    });
+
+    it('should reject password shorter than 8 characters', async () => {
+      const res = await session
+        .post('/auth/register')
+        .send({
+          email: `test-${Date.now()}@example.com`,
+          password: 'Pass1!',
+          role: 'RIDER',
+          consentAccepted: true
+        })
+        .expect(400);
+
+      expectValidationMessage(res.body, '8 caractères');
+    });
+
+    it('should reject common passwords', async () => {
+      const commonPasswords = ['Password123!', 'Motdepasse1!', 'Azerty123!'];
+
+      for (const pwd of commonPasswords) {
+        const res = await session
+          .post('/auth/register')
+          .send({
+            email: `test-${Date.now()}-${Math.random()}@example.com`,
+            password: pwd,
+            role: 'RIDER',
+            consentAccepted: true
+          })
+          .expect(400);
+
+        expectValidationMessage(res.body, 'commun');
+      }
+    });
+
+    it('should accept strong password', async () => {
+      const res = await session
+        .post('/auth/register')
+        .send({
+          email: `strong-${Date.now()}@example.com`,
+          password: 'MyS3cur3!Pass',
+          role: 'RIDER',
+          consentAccepted: true
+        })
+        .expect(201);
+
+      expect(res.body).toHaveProperty('userId');
+    });
+
+    it('should enforce password validation on reset-password', async () => {
+      // Create user with strong password
+      const userEmail = `reset-test-${Date.now()}@example.com`;
+      await session
+        .post('/auth/register')
+        .send({
+          email: userEmail,
+          password: 'ValidPass123!',
+          role: 'RIDER',
+          consentAccepted: true
+        })
+        .expect(201);
+
+      // Request password reset
+      const forgot = await session
+        .post('/auth/forgot-password')
+        .send({ email: userEmail })
+        .expect(200);
+
+      const resetToken = forgot.body.resetToken as string | undefined;
+      expect(resetToken).toBeDefined();
+
+      // Try to reset with weak password
+      const resWeak = await session
+        .post('/auth/reset-password')
+        .send({
+          token: resetToken,
+          password: 'weak'
+        })
+        .expect(400);
+
+      expect(resWeak.body.error).toBeDefined();
+
+      // Reset with strong password should work
+      const resStrong = await session
+        .post('/auth/reset-password')
+        .send({
+          token: resetToken,
+          password: 'NewS3cur3!Pass'
+        })
+        .expect(200);
+
+      expect(resStrong.body.message).toContain('Password updated');
+    });
+  });
+
+  // P2-5: Rate limiting on resend-verification
+  describe('Rate Limiting (P2-5)', () => {
+    it('should apply rate limiting on /resend-verification', async () => {
+      const testEmail = `rate-limit-test-${Date.now()}@example.com`;
+
+      // Enable rate limiting for this test
+      const originalEnv = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+
+      try {
+        // First 3 requests should succeed (or return generic response)
+        for (let i = 0; i < 3; i++) {
+          const res = await session
+            .post('/auth/resend-verification')
+            .send({ email: testEmail });
+
+          // Should not be rate limited yet
+          expect([200, 404]).toContain(res.status);
+        }
+
+        // 4th request should be rate limited
+        const res = await session
+          .post('/auth/resend-verification')
+          .send({ email: testEmail })
+          .expect(429); // Too Many Requests
+
+        expect(res.body.error).toContain('EMAIL_VERIFICATION_RATE_LIMIT_EXCEEDED');
+      } finally {
+        // Restore original environment
+        if (originalEnv === undefined) {
+          delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+        } else {
+          process.env.ENABLE_RATE_LIMIT_IN_TESTS = originalEnv;
+        }
+      }
+    });
   });
 });
