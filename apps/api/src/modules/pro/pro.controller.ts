@@ -5,7 +5,8 @@ import { requireAuth } from '../auth/auth.guard';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import crypto from 'crypto';
 import { gdprExportService } from '../../services/gdpr-export.service';
-import rateLimit from 'express-rate-limit';
+import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 export const proRouter = Router();
 
@@ -19,7 +20,11 @@ const exportRateLimiter = rateLimit({
   keyGenerator: (req) => {
     // Rate limit per authenticated user
     const userId = (req as any).user?.id;
-    return userId || req.ip || 'anonymous';
+    if (userId) {
+      return `user:${userId}`;
+    }
+    const ip = req.ip || req.socket?.remoteAddress;
+    return ip ? ipKeyGenerator(ip) : 'anonymous';
   },
 });
 
@@ -545,7 +550,7 @@ proRouter.post('/delete-account', requireAuth, async (req, res) => {
       },
     });
 
-    // TODO: Send email notification about deletion schedule
+    await sendAccountDeletionEmail(user.email, deletionDate, 'PRO');
 
     return res.json({
       message: 'Demande de suppression enregistrée',
@@ -613,7 +618,7 @@ proRouter.post('/cancel-deletion', requireAuth, async (req, res) => {
       },
     });
 
-    // TODO: Send email notification about cancellation
+    await sendAccountDeletionCancelledEmail(user.email, 'PRO');
 
     return res.json({
       message: 'Suppression de compte annulée',
