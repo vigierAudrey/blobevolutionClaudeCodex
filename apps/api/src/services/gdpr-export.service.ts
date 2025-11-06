@@ -30,6 +30,14 @@ function pseudonymizeEmail(email: string): string {
     .substring(0, 8);
 }
 
+function pseudonymizeIdentifier(identifier: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(`id:${identifier}`)
+    .digest('hex')
+    .substring(0, 8);
+}
+
 // Export limits for DoS protection
 const EXPORT_LIMITS = {
   CONVERSATIONS: 1000,
@@ -459,13 +467,27 @@ export class GdprExportService {
 
     if (matches.length > 0) {
       exportData.matches = matches.map(match => {
-        const otherUserEmail = match.userOneId === userId ? match.userTwo.email : match.userOne.email;
+        const isUserOne = match.userOneId === userId;
+        const otherUserEmail = isUserOne ? match.userTwo?.email : match.userOne?.email;
+        const otherUserId = isUserOne ? match.userTwoId : match.userOneId;
+
+        let otherUserEmailHash: string;
+        if (otherUserEmail) {
+          otherUserEmailHash = pseudonymizeEmail(otherUserEmail);
+        } else {
+          secureLogger.warn('GDPR_EXPORT_MISSING_MATCH_EMAIL', {
+            userId,
+            matchId: match.id,
+            otherUserId,
+          });
+          otherUserEmailHash = pseudonymizeIdentifier(otherUserId);
+        }
 
         return {
           matchId: match.id,
           // Pseudonymize other user's email for privacy (GDPR Art. 5.1.c - Data minimization)
           // User doesn't need full email, only a unique identifier
-          otherUserEmailHash: pseudonymizeEmail(otherUserEmail),
+          otherUserEmailHash,
           status: match.status,
           createdAt: match.createdAt.toISOString(),
           lastActivityAt: match.lastActivityAt.toISOString(),

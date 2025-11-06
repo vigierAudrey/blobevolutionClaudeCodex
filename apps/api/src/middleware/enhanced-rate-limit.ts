@@ -1,8 +1,9 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { Request, Response, NextFunction } from 'express';
 import { resolveRedisUrl } from '../lib/redisConfig';
+import { createHash } from 'crypto';
 
 type RedisClientType = ReturnType<typeof createClient>;
 
@@ -239,6 +240,21 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
     }
   };
 
+  if (!customOptions?.keyGenerator && profile === 'EMAIL_VERIFICATION') {
+    options.keyGenerator = (req: Request) => {
+      const fromBody = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+      const fromQuery = typeof req.query?.email === 'string' ? String(req.query.email).trim().toLowerCase() : '';
+      const identifierSource = fromBody || fromQuery;
+
+      if (identifierSource) {
+        return `email:${createHash('sha256').update(identifierSource).digest('hex')}`;
+      }
+
+      const ip = req.ip || req.socket?.remoteAddress;
+      return ip ? ipKeyGenerator(ip) : 'anonymous';
+    };
+  }
+
   return rateLimit(options);
 }
 
@@ -261,6 +277,11 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
 
   // Determine appropriate rate limiter based on path and method
   let limiter;
+
+  if (path === '/auth/resend-verification') {
+    // Route has its own limiter configured to guard by email
+    return next();
+  }
 
   if (path.startsWith('/auth/')) {
     if (method === 'GET') {

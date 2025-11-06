@@ -4,11 +4,12 @@ import { clientPrisma as prisma } from '@blobinfini/database';
 import { requireAuth } from '../auth/auth.guard';
 import { validate } from '../../middleware/validate';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
+import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
 import { lookup as mimeLookup, extension as mimeExtension } from 'mime-types';
 import crypto from 'crypto';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { gdprExportService } from '../../services/gdpr-export.service';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 export const profileRouter = Router();
 
@@ -22,7 +23,11 @@ const exportRateLimiter = rateLimit({
   keyGenerator: (req) => {
     // Rate limit per authenticated user
     const userId = (req as any).user?.id;
-    return userId || req.ip || 'anonymous';
+    if (userId) {
+      return `user:${userId}`;
+    }
+    const ip = req.ip || req.socket?.remoteAddress;
+    return ip ? ipKeyGenerator(ip) : 'anonymous';
   },
 });
 
@@ -314,8 +319,7 @@ profileRouter.post('/delete-account', requireAuth, async (req, res) => {
       },
     });
 
-    // TODO: Send email notification
-    // await sendAccountDeletionEmail(user.email, deletionDate);
+    await sendAccountDeletionEmail(user.email, deletionDate, 'RIDER');
 
     return res.json({
       message: 'Demande de suppression enregistrée',
@@ -379,8 +383,7 @@ profileRouter.post('/cancel-deletion', requireAuth, async (req, res) => {
       },
     });
 
-    // TODO: Send email notification
-    // await sendAccountDeletionCancelledEmail(user.email);
+    await sendAccountDeletionCancelledEmail(user.email, 'RIDER');
 
     return res.json({
       message: 'Suppression annulée - votre compte est réactivé',
