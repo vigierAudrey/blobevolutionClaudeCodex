@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { clientPrisma as prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth } from '../auth/auth.guard';
 
 export const creditsRouter = Router();
@@ -15,7 +15,7 @@ async function addCredits(
   description?: string,
   metadata?: any
 ) {
-  return await prisma.$transaction(async (tx) => {
+  return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Récupérer ou créer le wallet
     let wallet = await tx.userWallet.findUnique({ where: { userId } });
     if (!wallet) {
@@ -80,7 +80,7 @@ creditsRouter.get('/wallet', requireAuth, async (req, res) => {
         createdAt: wallet.createdAt,
         updatedAt: wallet.updatedAt
       },
-      transactions: transactions.map(t => ({
+      transactions: transactions.map((t: Prisma.CreditTransaction) => ({
         id: t.id,
         type: t.type,
         amount: Number(t.amount),
@@ -118,7 +118,7 @@ creditsRouter.get('/transactions', requireAuth, async (req, res) => {
     ]);
 
     return res.json({
-      transactions: transactions.map(t => ({
+      transactions: transactions.map((t: Prisma.CreditTransaction) => ({
         id: t.id,
         type: t.type,
         amount: Number(t.amount),

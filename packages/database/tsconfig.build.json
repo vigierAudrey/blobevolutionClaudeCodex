@@ -4,6 +4,8 @@
     "rootDir": "src",
     "outDir": "dist",
     "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
     "target": "ES2021",
     "module": "CommonJS",
     "moduleResolution": "Node",

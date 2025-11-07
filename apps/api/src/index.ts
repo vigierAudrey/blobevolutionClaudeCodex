@@ -290,7 +290,7 @@ export function createApp() {
   // Enhanced GDPR purge system
   async function performGDPRPurge() {
     try {
-      const { gdprPurgeService } = await import('./services/gdpr-purge.service');
+      const { gdprPurgeService } = await import('./services/gdpr-purge.service.js');
       await gdprPurgeService.performFullPurge();
     } catch (e) {
       console.error('GDPR purge failed', e);

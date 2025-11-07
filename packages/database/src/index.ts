@@ -2,6 +2,7 @@ export { clientPrisma } from './client';
 export { default } from './client';
 export {
   Prisma,
+  PrismaClient,
   AvailabilityStatus,
   BookingRequestStatus,
   BookingStatus,
@@ -20,33 +21,5 @@ export {
   Sport
 } from '@prisma/client';
 
-// Réexporte les types Prisma nécessaires aux tests et aux services API
-export type {
-  PrismaClient,
-  AdminProfile,
-  AuditLog,
-  Booking,
-  BookingRequest,
-  ContactRequest,
-  ContactRequestResponse,
-  Conversation,
-  ConversationMember,
-  CreditTransaction,
-  EmailVerificationToken,
-  LastSearch,
-  Match,
-  MatchDecision,
-  Message,
-  PasswordResetToken,
-  ProAvailability,
-  ProOffer,
-  ProProfile,
-  RefreshToken,
-  RiderDiscipline,
-  RiderProfile,
-  Session,
-  User,
-  UserWallet,
-  spatial_ref_sys,
-  UserConsent
-} from '@prisma/client';
+// Réexporte toutes les définitions de types Prisma pour les consommateurs du package
+export type * from '@prisma/client';

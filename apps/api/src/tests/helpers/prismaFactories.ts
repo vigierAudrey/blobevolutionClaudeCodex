@@ -2,7 +2,7 @@ import { Role, Prisma } from '@blobinfini/database';
 import type { PrismaClient } from '@blobinfini/database';
 import bcrypt from 'bcrypt';
 
-type UserCreateInput = Parameters<PrismaClient['user']['create']>[0]['data'];
+type UserCreateInput = Prisma.UserCreateArgs['data'];
 type RiderProfileOverrides = Omit<Prisma.RiderProfileUncheckedCreateInput, 'userId'>;
 type ProProfileOverrides = Omit<Prisma.ProProfileUncheckedCreateInput, 'userId'>;
 

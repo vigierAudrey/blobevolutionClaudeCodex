@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { clientPrisma as prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth } from '../auth/auth.guard';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import crypto from 'crypto';
@@ -45,6 +45,57 @@ const offerSchema = z.object({
   hourlyRate: z.number().min(10).max(200),
   isActive: z.boolean().optional().default(true),
 });
+
+type LessonCandidateRow = {
+  id: string;
+  userId: string;
+  displayName: string | null;
+  bio: string | null;
+  lat: number;
+  lng: number;
+  lessonSport: string | null;
+  lessonLevel: string | null;
+  lessonDate: Date | null;
+  lessonPlace: string | null;
+  distance_km: number;
+  activeMatchCount: number;
+};
+
+type ProOfferWithProfile = Prisma.ProOfferGetPayload<{
+  include: {
+    proProfile: {
+      include: {
+        user: {
+          select: {
+            id: true;
+            email: true;
+          };
+        };
+      };
+    };
+  };
+}>;
+
+type OfferWithDistance = {
+  id: string;
+  sport: string;
+  level: string;
+  title: string;
+  description: string | null;
+  hourlyRate: number;
+  lat: number;
+  lng: number;
+  createdAt: Date;
+  distanceKm: number;
+  pro: {
+    id: string;
+    userId: string;
+    businessName: string | null;
+    bio: string | null;
+    photoUrl: string | null;
+    verified: boolean;
+  };
+};
 
 proRouter.get('/me', requireAuth, async (req, res) => {
   try {
@@ -115,20 +166,7 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
     console.log(`🗺️  Searching for ${sport} lessons within ${radiusKm}km of (${plat}, ${plng})`);
 
     // Optimized query using PostGIS and SQL filtering instead of JavaScript
-    const candidates = await prisma.$queryRaw<Array<{
-      id: string;
-      userId: string;
-      displayName: string | null;
-      bio: string | null;
-      lat: number;
-      lng: number;
-      lessonSport: string | null;
-      lessonLevel: string | null;
-      lessonDate: Date | null;
-      lessonPlace: string | null;
-      distance_km: number;
-      activeMatchCount: number;
-    }>>`
+    const candidates = await prisma.$queryRaw<LessonCandidateRow[]>`
       SELECT
         rp."id",
         rp."userId",
@@ -169,7 +207,7 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
     console.log(`✅ Found ${candidates.length} riders wanting ${sport} lessons`);
 
     // No more JavaScript filtering needed - everything is done in SQL!
-    const items = candidates.map((c) => ({
+    const items = candidates.map((c: LessonCandidateRow) => ({
       id: c.id,
       userId: c.userId,
       displayName: c.displayName,
@@ -397,7 +435,7 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
     }
 
     // Récupérer toutes les offres actives avec les filtres
-    const offers = await prisma.proOffer.findMany({
+    const offers: ProOfferWithProfile[] = await prisma.proOffer.findMany({
       where,
       include: {
         proProfile: {
@@ -426,8 +464,8 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
     }
 
     // Calculer les distances et filtrer par rayon
-    const offersWithDistance = offers
-      .map(offer => {
+    const offersWithDistance: OfferWithDistance[] = offers
+      .map((offer: ProOfferWithProfile) => {
         const distance = haversine(searchLat!, searchLng!, offer.lat, offer.lng);
         return {
           id: offer.id,
@@ -450,8 +488,8 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
           }
         };
       })
-      .filter(offer => offer.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .filter((offer: OfferWithDistance) => offer.distanceKm <= radiusKm)
+      .sort((a: OfferWithDistance, b: OfferWithDistance) => a.distanceKm - b.distanceKm)
       .slice(0, 50); // Limiter le résultat final
 
     return res.json({
