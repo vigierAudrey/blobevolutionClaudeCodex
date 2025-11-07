@@ -1,4 +1,4 @@
-import { clientPrisma as prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
 import * as crypto from 'crypto';
 
@@ -189,6 +189,43 @@ interface AdminProfileExport {
   updatedAt: string;
 }
 
+type BookingRequestSummary = Prisma.BookingRequestGetPayload<{
+  select: { availabilityId: true; message: true; status: true; createdAt: true };
+}>;
+type BookingSummary = Prisma.BookingGetPayload<{
+  select: { availabilityId: true; status: true; createdAt: true };
+}>;
+type ProOfferSummary = Prisma.ProOffer;
+type ProAvailabilitySummary = Prisma.ProAvailability;
+type ContactRequestSummary = Prisma.ContactRequestGetPayload<{
+  select: { conversationId: true; message: true; status: true; createdAt: true };
+}>;
+type MatchWithUsers = Prisma.MatchGetPayload<{
+  include: {
+    userOne: { select: { email: true } };
+    userTwo: { select: { email: true } };
+  };
+}>;
+type ConversationMemberSummary = Prisma.ConversationMemberGetPayload<{
+  include: {
+    conversation: {
+      select: {
+        id: true;
+        type: true;
+        createdAt: true;
+        _count: { select: { messages: true } };
+      };
+    };
+  };
+}>;
+type MessageSummary = Prisma.MessageGetPayload<{
+  select: { conversationId: true; senderId: true; type: true; content: true; createdAt: true };
+}>;
+type CreditTransactionSummary = Prisma.CreditTransaction;
+type AuditLogSummary = Prisma.AuditLogGetPayload<{
+  select: { action: true; resource: true; createdAt: true };
+}>;
+
 export class GdprExportService {
   /**
    * Export all user data in JSON format (GDPR Article 20)
@@ -323,7 +360,7 @@ export class GdprExportService {
     });
 
     if (bookingRequests.length > 0) {
-      exportData.bookingRequests = bookingRequests.map(req => ({
+      exportData.bookingRequests = bookingRequests.map((req: BookingRequestSummary) => ({
         availabilityId: req.availabilityId,
         message: req.message,
         status: req.status,
@@ -344,7 +381,7 @@ export class GdprExportService {
     });
 
     if (bookings.length > 0) {
-      exportData.bookings = bookings.map(booking => ({
+      exportData.bookings = bookings.map((booking: BookingSummary) => ({
         availabilityId: booking.availabilityId,
         status: booking.status,
         createdAt: booking.createdAt.toISOString(),
@@ -380,7 +417,7 @@ export class GdprExportService {
       });
 
       if (offers.length > 0) {
-        exportData.proOffers = offers.map(offer => ({
+        exportData.proOffers = offers.map((offer: ProOfferSummary) => ({
           sport: offer.sport,
           level: offer.level,
           title: offer.title,
@@ -400,7 +437,7 @@ export class GdprExportService {
     });
 
     if (availabilities.length > 0) {
-      exportData.proAvailabilities = availabilities.map(avail => ({
+      exportData.proAvailabilities = availabilities.map((avail: ProAvailabilitySummary) => ({
         sport: avail.sport,
         levels: avail.levels,
         startAt: avail.startAt.toISOString(),
@@ -426,7 +463,7 @@ export class GdprExportService {
     });
 
     if (contactRequests.length > 0) {
-      exportData.contactRequests = contactRequests.map(req => ({
+      exportData.contactRequests = contactRequests.map((req: ContactRequestSummary) => ({
         conversationId: req.conversationId,
         message: req.message,
         status: req.status,
@@ -466,7 +503,7 @@ export class GdprExportService {
     });
 
     if (matches.length > 0) {
-      exportData.matches = matches.map(match => {
+      exportData.matches = matches.map((match: MatchWithUsers) => {
         const isUserOne = match.userOneId === userId;
         const otherUserEmail = isUserOne ? match.userTwo?.email : match.userOne?.email;
         const otherUserId = isUserOne ? match.userTwoId : match.userOneId;
@@ -515,7 +552,7 @@ export class GdprExportService {
     });
 
     if (conversationMembers.length > 0) {
-      exportData.conversations = conversationMembers.map(member => ({
+      exportData.conversations = conversationMembers.map((member: ConversationMemberSummary) => ({
         conversationId: member.conversationId,
         type: member.conversation.type,
         createdAt: member.conversation.createdAt.toISOString(),
@@ -526,7 +563,7 @@ export class GdprExportService {
 
     // Messages (ALL messages from user's conversations - sent AND received)
     // GDPR Article 20 requires complete export of personal data
-    const userConversationIds = conversationMembers.map(m => m.conversationId);
+    const userConversationIds = conversationMembers.map((m: ConversationMemberSummary) => m.conversationId);
 
     // Log metrics for monitoring and abuse detection
     secureLogger.info('GDPR_EXPORT_CONVERSATIONS', {
@@ -565,7 +602,7 @@ export class GdprExportService {
     });
 
     if (messages.length > 0) {
-      exportData.messages = messages.map(msg => {
+      exportData.messages = messages.map((msg: MessageSummary) => {
         const isSentByMe = msg.senderId === userId;
 
         return {
@@ -603,7 +640,7 @@ export class GdprExportService {
     });
 
     if (transactions.length > 0) {
-      exportData.transactions = transactions.map(tx => ({
+      exportData.transactions = transactions.map((tx: CreditTransactionSummary) => ({
         type: tx.type,
         amount: tx.amount.toString(),
         balanceBefore: tx.balanceBefore.toString(),
@@ -626,7 +663,7 @@ export class GdprExportService {
     });
 
     if (auditLogs.length > 0) {
-      exportData.auditLogs = auditLogs.map(log => ({
+      exportData.auditLogs = auditLogs.map((log: AuditLogSummary) => ({
         action: log.action,
         resource: log.resource,
         createdAt: log.createdAt.toISOString(),

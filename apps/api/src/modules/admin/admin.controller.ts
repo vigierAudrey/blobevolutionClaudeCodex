@@ -17,7 +17,7 @@ adminRouter.get('/stats', async (req, res) => {
   try {
     // Compter les utilisateurs par rôle
     const totalUsers = await prisma.user.count();
-    const usersByRole = await prisma.user.groupBy({
+    const usersByRole: Prisma.UserGroupByOutputType[] = await prisma.user.groupBy({
       by: ['role'],
       _count: { role: true }
     });
@@ -47,9 +47,9 @@ adminRouter.get('/stats', async (req, res) => {
     // Formater les statistiques
     const stats = {
       totalUsers,
-      totalRiders: usersByRole.find(g => g.role === 'RIDER')?._count.role || 0,
-      totalPros: usersByRole.find(g => g.role === 'PRO')?._count.role || 0,
-      totalAdmins: usersByRole.find(g => g.role === 'ADMIN')?._count.role || 0,
+      totalRiders: usersByRole.find((group: Prisma.UserGroupByOutputType) => group.role === 'RIDER')?._count.role || 0,
+      totalPros: usersByRole.find((group: Prisma.UserGroupByOutputType) => group.role === 'PRO')?._count.role || 0,
+      totalAdmins: usersByRole.find((group: Prisma.UserGroupByOutputType) => group.role === 'ADMIN')?._count.role || 0,
       totalConversations,
       activeUsers,
       reportedProfiles
@@ -626,7 +626,9 @@ adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
     );
 
     const sampleSize = firstMatchesRaw.length;
-    const daysValues = firstMatchesRaw.map(row => {
+    type FirstMatchRow = (typeof firstMatchesRaw)[number];
+
+    const daysValues = firstMatchesRaw.map((row: FirstMatchRow) => {
       const value = Number(row.days_to_match ?? 0);
       return value < 0 ? 0 : value;
     });
@@ -709,7 +711,7 @@ adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
       return normalized.toISOString();
     };
 
-    firstMatchesRaw.forEach(entry => {
+    firstMatchesRaw.forEach((entry: FirstMatchRow) => {
       const value = entry.days_to_match ?? 0;
       const days = value < 0 ? 0 : value;
       const key = normalizeDate(entry.first_conversation_at, groupBy);
@@ -719,9 +721,11 @@ adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
       timelineMap.set(key, bucket);
     });
 
+    type TimelineEntry = [string, { totalDays: number; count: number }];
+
     const timeline = Array.from(timelineMap.entries())
-      .sort(([a], [b]) => (a > b ? 1 : -1))
-      .map(([periodIso, data]) => ({
+      .sort(([a]: TimelineEntry, [b]: TimelineEntry) => (a > b ? 1 : -1))
+      .map(([periodIso, data]: TimelineEntry) => ({
         period: periodIso,
         averageDays: data.count > 0 ? data.totalDays / data.count : 0,
         count: data.count
@@ -804,7 +808,9 @@ adminRouter.get('/analytics/engagement', async (req, res) => {
       `
     );
 
-    const registrations = registrationsRaw.map(item => ({
+    type RegistrationRow = (typeof registrationsRaw)[number];
+
+    const registrations = registrationsRaw.map((item: RegistrationRow) => ({
       period: item.period instanceof Date ? item.period.toISOString() : String(item.period),
       total: Number(item.count),
       riders: Number(item.riders),
@@ -829,7 +835,9 @@ adminRouter.get('/analytics/engagement', async (req, res) => {
       `
     );
 
-    const activeUsers = activeUsersRaw.map(item => ({
+    type ActiveUsersRow = (typeof activeUsersRaw)[number];
+
+    const activeUsers = activeUsersRaw.map((item: ActiveUsersRow) => ({
       period: item.period instanceof Date ? item.period.toISOString() : String(item.period),
       count: Number(item.active_users)
     }));
@@ -932,7 +940,7 @@ adminRouter.get('/analytics/matching', async (req, res) => {
     }
 
     // Statistiques des décisions de matching
-    const matchingStats = await prisma.matchDecision.groupBy({
+    const matchingStats: Prisma.MatchDecisionGroupByOutputType[] = await prisma.matchDecision.groupBy({
       by: ['decision'],
       where: {
         createdAt: {
@@ -944,9 +952,16 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const totalDecisions = matchingStats.reduce((sum, stat) => sum + stat._count.decision, 0);
-    const acceptedCount = matchingStats.find(s => s.decision === 'ACCEPT')?._count.decision || 0;
-    const refusedCount = matchingStats.find(s => s.decision === 'REFUSE')?._count.decision || 0;
+    const totalDecisions = matchingStats.reduce(
+      (sum: number, stat: Prisma.MatchDecisionGroupByOutputType) => sum + stat._count.decision,
+      0
+    );
+    const acceptedCount = matchingStats.find(
+      (stat: Prisma.MatchDecisionGroupByOutputType) => stat.decision === 'ACCEPT'
+    )?._count.decision || 0;
+    const refusedCount = matchingStats.find(
+      (stat: Prisma.MatchDecisionGroupByOutputType) => stat.decision === 'REFUSE'
+    )?._count.decision || 0;
     const acceptRate = totalDecisions > 0 ? (acceptedCount / totalDecisions) * 100 : 0;
     const refuseRate = totalDecisions > 0 ? (refusedCount / totalDecisions) * 100 : 0;
 
@@ -976,7 +991,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       `
     );
 
-    const conversationTimeline = conversationTimelineRaw.map(item => ({
+    type ConversationTimelineRow = (typeof conversationTimelineRaw)[number];
+
+    const conversationTimeline = conversationTimelineRaw.map((item: ConversationTimelineRow) => ({
       period: item.period instanceof Date ? item.period.toISOString() : String(item.period),
       conversations: Number(item.conversations)
     }));
@@ -1013,9 +1030,11 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       decisionsTimelineMap.set(key, entry);
     }
 
+    type DecisionTimelineEntry = [string, { accepted: number; refused: number; total: number }];
+
     const decisionTimeline = Array.from(decisionsTimelineMap.entries())
-      .sort(([a], [b]) => (a > b ? 1 : -1))
-      .map(([periodIso, values]) => ({ period: periodIso, ...values }));
+      .sort(([a]: DecisionTimelineEntry, [b]: DecisionTimelineEntry) => (a > b ? 1 : -1))
+      .map(([periodIso, values]: DecisionTimelineEntry) => ({ period: periodIso, ...values }));
 
     // Préférences de sport (via RiderDiscipline)
     const sportPreferencesRaw = await prisma.riderDiscipline.groupBy({
@@ -1030,7 +1049,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const sportPreferences = sportPreferencesRaw.map(item => ({
+    type SportPreference = (typeof sportPreferencesRaw)[number];
+
+    const sportPreferences = sportPreferencesRaw.map((item: SportPreference) => ({
       sport: item.sport,
       count: Number(item._count.sport)
     }));
@@ -1048,7 +1069,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const levelPreferences = levelPreferencesRaw.map(item => ({
+    type LevelPreference = (typeof levelPreferencesRaw)[number];
+
+    const levelPreferences = levelPreferencesRaw.map((item: LevelPreference) => ({
       level: item.level,
       count: Number(item._count.level)
     }));
@@ -1066,9 +1089,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const searchesBySport = searchesBySportRaw.map(item => ({
+    const searchesBySport = searchesBySportRaw.map((item: Prisma.LastSearchGroupByOutputType) => ({
       sport: item.sport,
-      count: Number(item._count.sport)
+      count: Number(item._count?.sport ?? 0)
     }));
 
     // Recherches avec géolocalisation
@@ -1113,7 +1136,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const matchesOverTime = matchesOverTimeRaw.map(item => ({
+    type MatchesOverTimeItem = (typeof matchesOverTimeRaw)[number];
+
+    const matchesOverTime = matchesOverTimeRaw.map((item: MatchesOverTimeItem) => ({
       period: item.createdAt instanceof Date ? item.createdAt.toISOString() : String(item.createdAt),
       count: Number(item._count.id)
     }));
@@ -1187,7 +1212,7 @@ adminRouter.post('/reports/:id/action', async (req, res) => {
       return res.status(403).json({ error: 'Cannot ban administrators' });
     }
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       if (action === 'ban' && targetUser) {
         await tx.user.update({
           where: { id: targetUser.id },
@@ -1405,12 +1430,15 @@ adminRouter.get('/analytics/behavior', async (req, res) => {
     const maxSessionDuration = sessionSummary?.max_duration_seconds ? Number(sessionSummary.max_duration_seconds) : 0;
 
     const uniqueSessionUsers = sessionsPerUser.length;
-    const totalSessionsComputed = sessionsPerUser.reduce((sum, entry) => sum + entry._count._all, 0);
+    const totalSessionsComputed = sessionsPerUser.reduce(
+      (sum: number, entry: Prisma.SessionGroupByOutputType) => sum + (entry._count?._all ?? 0),
+      0
+    );
     const avgSessionsPerUser = uniqueSessionUsers > 0 ? totalSessionsComputed / uniqueSessionUsers : 0;
 
     const sessionDistributionMap = new Map<number, number>();
     for (const entry of sessionsPerUser) {
-      const count = entry._count._all;
+      const count = entry._count?._all ?? 0;
       sessionDistributionMap.set(count, (sessionDistributionMap.get(count) ?? 0) + 1);
     }
 
@@ -1419,7 +1447,10 @@ adminRouter.get('/analytics/behavior', async (req, res) => {
       .slice(0, 10)
       .map(([sessions, users]) => ({ sessions, users }));
 
-    const totalMessages = messageByConversation.reduce((sum, item) => sum + item._count._all, 0);
+    const totalMessages = messageByConversation.reduce(
+      (sum: number, item: Prisma.MessageGroupByOutputType) => sum + (item._count?._all ?? 0),
+      0
+    );
     const activeConversations = messageByConversation.length;
     const avgMessagesPerConversation = activeConversations > 0 ? totalMessages / activeConversations : 0;
 
@@ -1497,9 +1528,9 @@ adminRouter.get('/analytics/behavior', async (req, res) => {
       },
       support: {
         totalReports: reportsTotal,
-        reportsByReason: reportsByReason.map(item => ({
+        reportsByReason: reportsByReason.map((item: Prisma.ProfileReportGroupByOutputType) => ({
           reason: item.reason ?? 'Autre',
-          count: item._count._all
+          count: item._count?._all ?? 0
         }))
       }
     };
@@ -1729,20 +1760,22 @@ adminRouter.get('/gdpr/exports', async (req, res) => {
     });
 
     // Parse metadata to extract export details
-    const formattedExports = exports.map(log => {
-      const metadata = log.metadata as any;
-      return {
-        id: log.id,
-        userId: log.userId,
-        userEmail: log.user?.email || 'Unknown',
-        userRole: log.user?.role || 'Unknown',
-        ip: log.ip || metadata?.ip || 'Unknown',
-        exportDate: log.createdAt,
-        dataSize: metadata?.dataSize || 0,
-        dataSizeMB: metadata?.dataSizeMB || ((metadata?.dataSize || 0) / 1024 / 1024).toFixed(2),
-        itemCounts: metadata?.itemCounts || {},
-      };
-    });
+    const formattedExports = exports.map(
+      (log: Prisma.AuditLogGetPayload<{ include: { user: { select: { id: true; email: true; role: true } } } }>) => {
+        const metadata = log.metadata as any;
+        return {
+          id: log.id,
+          userId: log.userId,
+          userEmail: log.user?.email || 'Unknown',
+          userRole: log.user?.role || 'Unknown',
+          ip: log.ip || metadata?.ip || 'Unknown',
+          exportDate: log.createdAt,
+          dataSize: metadata?.dataSize || 0,
+          dataSizeMB: metadata?.dataSizeMB || ((metadata?.dataSize || 0) / 1024 / 1024).toFixed(2),
+          itemCounts: metadata?.itemCounts || {},
+        };
+      }
+    );
 
     // Get summary statistics
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -1783,11 +1816,17 @@ adminRouter.get('/gdpr/exports', async (req, res) => {
       },
     });
 
-    const roleStats = exportsByRole.reduce((acc, log) => {
-      const role = log.user?.role || 'Unknown';
-      acc[role] = (acc[role] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    const roleStats = exportsByRole.reduce(
+      (
+        acc: Record<string, number>,
+        log: Prisma.AuditLogGetPayload<{ include: { user: { select: { role: true } } } }>
+      ) => {
+        const role = log.user?.role || 'Unknown';
+        acc[role] = (acc[role] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
 
     // Get top exporters (users with most exports)
     const topExporters = await prisma.auditLog.groupBy({
@@ -1803,7 +1842,7 @@ adminRouter.get('/gdpr/exports', async (req, res) => {
     });
 
     const topExportersWithEmails = await Promise.all(
-      topExporters.map(async (item) => {
+      topExporters.map(async (item: Prisma.AuditLogGroupByOutputType) => {
         const user = await prisma.user.findUnique({
           where: { id: item.userId! },
           select: { email: true, role: true },
@@ -1812,7 +1851,7 @@ adminRouter.get('/gdpr/exports', async (req, res) => {
           userId: item.userId,
           email: user?.email || 'Unknown',
           role: user?.role || 'Unknown',
-          exportCount: item._count.userId,
+          exportCount: item._count?.userId ?? 0,
         };
       })
     );
@@ -1869,7 +1908,7 @@ adminRouter.get('/gdpr/exports/:userId', async (req, res) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    const formattedExports = exports.map(log => {
+    const formattedExports = exports.map((log: Prisma.AuditLog) => {
       const metadata = log.metadata as any;
       return {
         id: log.id,

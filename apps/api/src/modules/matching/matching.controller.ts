@@ -27,6 +27,39 @@ const searchSchema = z.object({
   excludeIds: z.array(z.string()).optional(),
 });
 
+type GeospatialMatchRow = {
+  id: string;
+  displayName: string | null;
+  sex: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED' | null;
+  photoUrl: string | null;
+  bio: string | null;
+  sport: string;
+  level: string;
+  wantsLesson: boolean;
+  lessonSport: string | null;
+  dist_m: number | null;
+};
+
+type MatchingResponseItem = {
+  id: string;
+  displayName: string;
+  gender: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED' | null;
+  photoUrl: string | null;
+  bio: string | null;
+  sport: string;
+  level: string;
+  wantsLesson: boolean;
+  lessonSport: string | null;
+  distanceKm: number | null;
+};
+
+type TargetProfileSummary = Prisma.RiderProfileGetPayload<{
+  select: { id: true; userId: true; displayName: true };
+}>;
+type ReciprocalDecisionSummary = Prisma.MatchDecisionGetPayload<{
+  select: { actorUserId: true; decision: true };
+}>;
+
 matchingRouter.post('/search', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
@@ -142,18 +175,7 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
     }
 
     // If we have a location, use PostGIS for distance + optional radius filtering
-    let results: Array<{
-      id: string;
-      displayName: string | null;
-      gender: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED';
-      photoUrl: string | null;
-      bio: string | null;
-      sport: string;
-      level: string;
-      wantsLesson: boolean;
-      lessonSport: string | null;
-      distanceKm: number | null
-    }> = [];
+    let results: MatchingResponseItem[] = [];
     let total = 0;
     let hasMore = false;
     let nextCursor: string | null = null;
@@ -201,18 +223,7 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
       }
 
       // ✅ OPTIMIZATION: Single query with LIMIT 200, then filter/paginate in JS
-      const rows = await prisma.$queryRaw<Array<{
-        id: string;
-        displayName: string | null;
-        sex: any;
-        photoUrl: string | null;
-        bio: string | null;
-        sport: string;
-        level: string;
-        wantsLesson: boolean;
-        lessonSport: string | null;
-        dist_m: number | null
-      }>>(
+      const rows = await prisma.$queryRaw<GeospatialMatchRow[]>(
         Prisma.sql`
           SELECT
             rp."id",
@@ -242,9 +253,9 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
       );
 
       // Process and filter results
-      const allResults = rows
-        .filter((r) => r.dist_m == null || isFinite(r.dist_m))
-        .map((r) => ({
+      const allResults: MatchingResponseItem[] = rows
+        .filter((r: GeospatialMatchRow) => r.dist_m == null || isFinite(r.dist_m))
+        .map((r: GeospatialMatchRow) => ({
           id: r.id,
           displayName: r.displayName ?? 'Profil',
           gender: r.sex,
@@ -258,15 +269,15 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
         }));
 
       // Apply client-side exclusions
-      const excludeSet = new Set(req.body.excludeIds || []);
-      const filteredResults = allResults.filter(r => !excludeSet.has(r.id));
+      const excludeSet = new Set<string>(req.body.excludeIds || []);
+      const filteredResults = allResults.filter((r: MatchingResponseItem) => !excludeSet.has(r.id));
 
       // Apply pagination in JavaScript
       let actualResults = filteredResults;
 
       if (useCursorPagination) {
         // Cursor-based pagination
-        const startIndex = cursor ? filteredResults.findIndex(r => r.id === cursor) + 1 : 0;
+        const startIndex = cursor ? filteredResults.findIndex((r: MatchingResponseItem) => r.id === cursor) + 1 : 0;
         const endIndex = Math.min(startIndex + effectiveLimit, filteredResults.length);
         actualResults = filteredResults.slice(startIndex, endIndex);
         hasMore = endIndex < filteredResults.length;
@@ -330,7 +341,7 @@ matchingRouter.post('/decision', requireAuth, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const { targetProfileId, decision } = decisionSchema.parse(req.body);
     const createdConversations: Array<{ conversationId: string; otherDisplayName: string | null }> = [];
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.matchDecision.upsert({
         where: { actorUserId_targetProfileId: { actorUserId: userId, targetProfileId } as any },
         update: { decision },
@@ -386,9 +397,9 @@ matchingRouter.post('/decisions', requireAuth, async (req, res) => {
     if (items.length === 0) return res.json({ ok: true, count: 0 });
     // Optimized batch decisions - Fix N+1 queries
     const createdConversations: Array<{ conversationId: string; otherDisplayName: string | null }> = [];
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // 1. Batch upsert all decisions first
-      const decisions = items.map(it => ({
+      const decisions = items.map((it) => ({
         where: { actorUserId_targetProfileId: { actorUserId: userId, targetProfileId: it.targetProfileId } as any },
         update: { decision: it.decision },
         create: { actorUserId: userId, targetProfileId: it.targetProfileId, decision: it.decision },
@@ -400,11 +411,11 @@ matchingRouter.post('/decisions', requireAuth, async (req, res) => {
       }
 
       // 2. Pre-fetch all target profiles in one query
-      const acceptedItems = items.filter(it => it.decision === 'ACCEPT');
+      const acceptedItems = items.filter((it) => it.decision === 'ACCEPT');
       if (acceptedItems.length === 0) return;
 
-      const targetProfileIds = acceptedItems.map(it => it.targetProfileId);
-      const targetProfiles = await tx.riderProfile.findMany({
+      const targetProfileIds = acceptedItems.map((it) => it.targetProfileId);
+      const targetProfiles: TargetProfileSummary[] = await tx.riderProfile.findMany({
         where: { id: { in: targetProfileIds } },
         select: { id: true, userId: true, displayName: true }
       });
@@ -417,7 +428,9 @@ matchingRouter.post('/decisions', requireAuth, async (req, res) => {
       if (!myProfile?.id) return;
 
       // 4. Pre-fetch all reciprocal decisions in one query
-      const targetUserIds = targetProfiles.map(p => p.userId).filter(Boolean);
+      const targetUserIds = targetProfiles
+        .map((p: TargetProfileSummary) => p.userId)
+        .filter((id): id is string => Boolean(id));
       const reciprocalDecisions = await tx.matchDecision.findMany({
         where: {
           actorUserId: { in: targetUserIds },
@@ -427,8 +440,12 @@ matchingRouter.post('/decisions', requireAuth, async (req, res) => {
       });
 
       // 5. Create maps for efficient lookup
-      const profileMap = new Map(targetProfiles.map(p => [p.id, p]));
-      const reciprocalMap = new Map(reciprocalDecisions.map(r => [r.actorUserId, r.decision]));
+      const profileMap = new Map<string, TargetProfileSummary>(
+        targetProfiles.map((p: TargetProfileSummary) => [p.id, p])
+      );
+      const reciprocalMap = new Map<string, ReciprocalDecisionSummary['decision']>(
+        reciprocalDecisions.map((r: ReciprocalDecisionSummary) => [r.actorUserId, r.decision])
+      );
 
       // 6. Process matches efficiently
       for (const it of acceptedItems) {

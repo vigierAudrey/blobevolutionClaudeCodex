@@ -1,4 +1,4 @@
-import { clientPrisma as prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 import crypto from 'crypto';
@@ -165,7 +165,7 @@ export class AuthService {
     const newExpiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
 
     const now = new Date();
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Politique simple et sûre: invalider tous les refresh actifs de l'utilisateur
       // pour empêcher toute réutilisation du token précédent (même en cas de duplication inattendue).
       const { count } = await tx.refreshToken.updateMany({

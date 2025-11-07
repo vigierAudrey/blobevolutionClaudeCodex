@@ -69,7 +69,7 @@ export class BookingService {
 
     if (overlappingAvailabilities.length > 0) {
       const conflictTimes = overlappingAvailabilities
-        .map(a => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .map((a: Prisma.ProAvailability) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
         .join(', ');
       throw Object.assign(
         new Error(`Time overlap detected with existing availability: ${conflictTimes}`),
@@ -118,7 +118,7 @@ export class BookingService {
 
     if (overlappingAvailabilities.length > 0) {
       const conflictTimes = overlappingAvailabilities
-        .map(a => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .map((a: Prisma.ProAvailability) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
         .join(', ');
       throw Object.assign(
         new Error(`Time overlap detected with existing availability: ${conflictTimes}`),
@@ -384,7 +384,7 @@ export class BookingService {
   async decideRequest(proUserId: string, requestId: string, action: 'accept' | 'reject') {
     // Execute the database transaction with retry logic for serialization failures
     const result = await withTransactionRetry(async () => {
-      return await prisma.$transaction(async (tx) => {
+      return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const request = await tx.bookingRequest.findUnique({
         where: { id: requestId },
         include: {
@@ -500,7 +500,7 @@ export class BookingService {
 
   async addManualBooking(proUserId: string, data: any) {
     return await withTransactionRetry(async () => {
-      return await prisma.$transaction(async (tx) => {
+      return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const availability = await tx.proAvailability.findUnique({
           where: { id: data.availabilityId }
         });
