@@ -525,11 +525,6 @@
 **🔐 Sécurité & Conformité :**
 - ✅ **RGPD Article 20** : Portabilité des données "fournies par" l'utilisateur
 - ✅ **RGPD Article 5(1)(c)** : Minimisation - Messages reçus redactés
-- ✅ **[P2-8] Pseudonymisation emails de partenaires** — **COMPLÉTÉ** (3 nov 2025)
-  - SHA-256 hash (8 chars) pour emails des partenaires de match
-  - Protection vie privée : emails non-réversibles, unicité maintenue
-  - Tests unitaires : 11/11 passing ✅
-  - Documentation : `apps/api/GDPR_EXPORT_PSEUDONYMIZATION.md`
 - ✅ **CNIL Best Practice** : Période de grâce 30 jours (comme Gmail/Facebook)
 - ✅ **Protection DoS** : Limites volumétriques + rate limiting
 - ✅ **Traçabilité complète** : Audit logs pour conformité légale
@@ -645,23 +640,18 @@ apps/api/
 
 ## 💤 Fonctionnalités en Pause / Backlog Stratégique
 
-### Paiements & Crédit (🗑️ SUPPRIMÉ DU PROJET - Décision Nov 2025)
+### Paiements & Crédit (⏸️ EXCLU DU MVP - Décision Oct 2025)
 
-**Décision stratégique :** Le système de paiement est **définitivement exclu** du projet Blobinfini.
-**Rationale :**
-- Focus 100% sur matching/booking gratuit pour les utilisateurs
-- Monétisation publicitaire AdSense uniquement
-- Simplification maximale du MVP
-- Éviter complexité légale/comptable des paiements
+**Décision stratégique :** Simplifier le MVP en excluant complètement le système de paiement.
+**Rationale :** Focus sur matching/booking + monétisation publicitaire AdSense uniquement.
 
-**Fonctionnalités supprimées :**
-- ~~Intégration Stripe Connect~~
-- ~~Calcul commissions~~
-- ~~Factures PDF~~
-- ~~Gestion remboursements~~
-- ~~Workflow business (Stripe/Credits)~~
+- [ ] Intégration Stripe Connect
+- [ ] Calcul commissions
+- [ ] Factures PDF
+- [ ] Gestion remboursements
+- [ ] Workflow business (Stripe/Credits)
 
-**Statut :** ❌ Non applicable - Ne sera pas implémenté.
+3**À réévaluer :** Post-MVP si besoin monétisation additionnelle (pas avant 3-6 mois).
 
 ### Gamification (⏸️ EXCLU DU MVP - Décision Oct 2025)
 
