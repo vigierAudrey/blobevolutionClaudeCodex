@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../lib/apiClient';
@@ -9,6 +9,16 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import type { ZodIssue } from 'zod';
 import type { DashboardUser, UserRole } from '@/types/user';
+import { Eye, EyeOff } from 'lucide-react';
+import { getPasswordRequirementStatuses } from '../../api/src/utils/password-validator';
+import { PasswordRequirementsList } from './PasswordRequirementsList';
+
+const PUBLIC_ROLES = [
+  { value: 'RIDER', label: 'Rider' },
+  { value: 'PRO', label: 'Pro' },
+] as const satisfies ReadonlyArray<{ value: Extract<UserRole, 'RIDER' | 'PRO'>; label: string }>;
+
+type PublicRole = (typeof PUBLIC_ROLES)[number]['value'];
 
 type Mode = 'login' | 'register';
 
@@ -54,7 +64,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('RIDER');
+  const [role, setRole] = useState<PublicRole>('RIDER');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -64,6 +74,8 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [loginConsentAccepted, setLoginConsentAccepted] = useState(false);
   const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
+  const [showPassword, setShowPassword] = useState(false);
+  const passwordStatuses = useMemo(() => getPasswordRequirementStatuses(password), [password]);
 
   const handleZodErrors = (details: ZodIssue[]) => {
     const errors: FieldErrors = {};
@@ -86,6 +98,8 @@ export function AuthForm({ mode }: AuthFormProps) {
             : null;
         if (code === 'too_small' && minimum === 8) {
           errors.password = 'Le mot de passe doit contenir au moins 8 caractères.';
+        } else if (typeof message === 'string' && message.trim()) {
+          errors.password = message;
         } else {
           errors.password = 'Mot de passe invalide.';
         }
@@ -220,20 +234,31 @@ export function AuthForm({ mode }: AuthFormProps) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Mot de passe</Label>
-            <Input
-              id="password"
-              type="password"
-              required
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className={fieldErrors.password ? 'border-red-500 focus-visible:ring-red-500' : ''}
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className={`${fieldErrors.password ? 'border-red-500 focus-visible:ring-red-500' : ''} pr-10`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+              </button>
+            </div>
             {fieldErrors.password && (
               <p className="text-sm text-red-600" role="alert">
                 {fieldErrors.password}
               </p>
             )}
+            {mode === 'register' && <PasswordRequirementsList statuses={passwordStatuses} />}
           </div>
           {mode === 'register' && (
             <div className="space-y-2">
@@ -246,17 +271,22 @@ export function AuthForm({ mode }: AuthFormProps) {
                     : 'border-input bg-background focus-visible:ring-ring'
                 }`}
                 value={role}
-                onChange={(event) => setRole(event.target.value as UserRole)}
+                onChange={(event) => setRole(event.target.value as PublicRole)}
               >
-                <option value="RIDER">Rider</option>
-                <option value="PRO">Pro</option>
-                <option value="ADMIN">Admin</option>
+                {PUBLIC_ROLES.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
               {fieldErrors.role && (
                 <p className="text-sm text-red-600" role="alert">
                   {fieldErrors.role}
                 </p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Les comptes administrateur sont gérés par l’équipe Blobinfini.
+              </p>
             </div>
           )}
           {mode === 'register' && (

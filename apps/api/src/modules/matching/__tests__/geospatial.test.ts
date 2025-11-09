@@ -1,4 +1,4 @@
-import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma, User } from '@blobinfini/database';
 
 describe('Algorithme de matching géospatial PostGIS', () => {
   beforeAll(async () => {
@@ -254,7 +254,7 @@ describe('Algorithme de matching géospatial PostGIS', () => {
       );
 
       await Promise.all(
-        users.map((user, i) =>
+        users.map((user: User, i: number) =>
           prisma.riderProfile.create({
             data: {
               userId: user.id,

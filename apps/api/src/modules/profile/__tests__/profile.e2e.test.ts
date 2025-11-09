@@ -7,7 +7,7 @@ describe('Profile E2E', () => {
   let accessToken = '';
   let session: TestSession;
 
-  beforeAll(async () => {
+  const seedProfileUser = async () => {
     await prisma.refreshToken.deleteMany();
     await prisma.session.deleteMany();
     await prisma.passwordResetToken.deleteMany();
@@ -22,6 +22,10 @@ describe('Profile E2E', () => {
     });
     accessToken = auth.accessToken;
     session = auth.session;
+  };
+
+  beforeEach(async () => {
+    await seedProfileUser();
   });
 
   afterAll(async () => {

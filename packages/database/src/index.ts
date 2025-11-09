@@ -11,7 +11,6 @@ export {
   ConsentLevel,
   ConsentSignal,
   ConversationType,
-  CreditTransactionType,
   DecisionKind,
   Level,
   MatchStatus,

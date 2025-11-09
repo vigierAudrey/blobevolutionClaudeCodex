@@ -8,8 +8,9 @@ const nextConfig = {
   experimental: {
     // Désactiver l'optimisation ISR par défaut
     isrFlushToDisk: false,
+    // Autoriser l'import de modules en dehors du répertoire Next (monorepo)
+    externalDir: true,
   },
 };
 
 export default nextConfig;
-

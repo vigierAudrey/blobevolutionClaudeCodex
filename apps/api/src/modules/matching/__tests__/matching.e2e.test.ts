@@ -7,7 +7,7 @@ describe('Matching search E2E', () => {
   let accessToken = '';
   let session: TestSession;
 
-  beforeAll(async () => {
+  const seedMatchingUser = async () => {
     await prisma.refreshToken.deleteMany();
     await prisma.session.deleteMany();
     await prisma.passwordResetToken.deleteMany();
@@ -29,6 +29,10 @@ describe('Matching search E2E', () => {
       create: { userId: user.id, maxDistanceKm: 35, emailNotif: true },
       update: { maxDistanceKm: 35, emailNotif: true },
     });
+  };
+
+  beforeEach(async () => {
+    await seedMatchingUser();
   });
 
   afterAll(async () => {

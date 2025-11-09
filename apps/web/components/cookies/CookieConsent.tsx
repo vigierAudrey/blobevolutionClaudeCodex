@@ -107,7 +107,6 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
                 <div className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-green-500" />
                   <span className="font-medium">Publicités basiques</span>
-                  <Badge variant="secondary">Gratuit</Badge>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mb-3">

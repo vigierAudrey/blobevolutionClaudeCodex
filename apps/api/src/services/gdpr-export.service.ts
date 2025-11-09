@@ -94,19 +94,6 @@ interface ExportedData {
     createdAt: string;
     isSentByMe: boolean;
   }>;
-  wallet?: {
-    balance: string;
-    createdAt: string;
-    updatedAt: string;
-  };
-  transactions?: Array<{
-    type: string;
-    amount: string;
-    balanceBefore: string;
-    balanceAfter: string;
-    description: string | null;
-    createdAt: string;
-  }>;
   bookingRequests?: Array<{
     availabilityId: string;
     message: string | null;
@@ -221,7 +208,6 @@ type ConversationMemberSummary = Prisma.ConversationMemberGetPayload<{
 type MessageSummary = Prisma.MessageGetPayload<{
   select: { conversationId: true; senderId: true; type: true; content: true; createdAt: true };
 }>;
-type CreditTransactionSummary = Prisma.CreditTransaction;
 type AuditLogSummary = Prisma.AuditLogGetPayload<{
   select: { action: true; resource: true; createdAt: true };
 }>;
@@ -282,7 +268,7 @@ export class GdprExportService {
         await this.addAdminData(userId, exportData);
       }
 
-      // Export common data (conversations, messages, wallet, etc.)
+      // Export common data (conversations, messages, bookings, etc.)
       await this.addCommonData(userId, exportData);
 
       // Log successful export
@@ -617,37 +603,6 @@ export class GdprExportService {
           isSentByMe,
         };
       });
-    }
-
-    // Wallet
-    const wallet = await prisma.userWallet.findUnique({
-      where: { userId },
-    });
-
-    if (wallet) {
-      exportData.wallet = {
-        balance: wallet.balance.toString(),
-        createdAt: wallet.createdAt.toISOString(),
-        updatedAt: wallet.updatedAt.toISOString(),
-      };
-    }
-
-    // Credit transactions
-    const transactions = await prisma.creditTransaction.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: EXPORT_LIMITS.TRANSACTIONS,
-    });
-
-    if (transactions.length > 0) {
-      exportData.transactions = transactions.map((tx: CreditTransactionSummary) => ({
-        type: tx.type,
-        amount: tx.amount.toString(),
-        balanceBefore: tx.balanceBefore.toString(),
-        balanceAfter: tx.balanceAfter.toString(),
-        description: tx.description,
-        createdAt: tx.createdAt.toISOString(),
-      }));
     }
 
     // Audit logs (last 100 entries for performance)

@@ -56,7 +56,7 @@ async function cleanupFixtureData() {
 }
 
 describe('Admin Controller', () => {
-  beforeAll(async () => {
+  const seedAdminFixture = async () => {
     ensureSecrets();
     await cleanupFixtureData();
 
@@ -160,6 +160,10 @@ describe('Admin Controller', () => {
     adminToken = signToken(admin.id, 'ADMIN');
     riderToken = signToken(rider.id, 'RIDER');
     proToken = signToken(pro.id, 'PRO');
+  };
+
+  beforeEach(async () => {
+    await seedAdminFixture();
   });
 
   afterAll(async () => {

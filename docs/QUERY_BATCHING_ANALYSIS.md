@@ -103,7 +103,6 @@ Les modules suivants utilisent des patterns efficaces :
 - ✅ **Contact Module** : `include` complet pour charger pro + conversation + membres
 - ✅ **Matching Module** : Query optimisée PostGIS + cache Redis
 - ✅ **Pro Module** : Pas de boucles avec requêtes
-- ✅ **Credits Module** : Requêtes simples sans N+1
 
 ---
 

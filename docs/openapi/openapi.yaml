@@ -34,8 +34,6 @@ tags:
     description: Disponibilités, demandes et réservations de cours
   - name: Conversations
     description: Messagerie temps réel et gestion de conversations
-  - name: Wallet
-    description: Portefeuille de crédits et bonus
   - name: Contact
     description: Demandes de contact rider ⇄ pro
   - name: Push
@@ -2103,7 +2101,8 @@ components:
           minLength: 8
         role:
           type: string
-          enum: [RIDER, PRO, ADMIN]
+          description: Rôle public sélectionné lors de l'inscription (les comptes ADMIN sont gérés en interne)
+          enum: [RIDER, PRO]
           default: RIDER
         consentAccepted:
           type: boolean

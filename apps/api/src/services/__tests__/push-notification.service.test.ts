@@ -68,14 +68,16 @@ describe('PushNotificationService', () => {
   });
 
   describe('initialisation', () => {
-    it('marks service as initialised when credentials are provided', async () => {
+    it('marks service as initialised when credentials are provided', () => {
       setFirebaseEnv(true);
       adminMock.apps.length = 0;
 
-      await jest.isolateModulesAsync(async () => {
-        const { secureLogger: isolatedLogger } = await import('../../utils/secure-logger');
+      jest.isolateModules(() => {
+        const { secureLogger: isolatedLogger } =
+          jest.requireActual<typeof import('../../utils/secure-logger')>('../../utils/secure-logger');
         const infoSpyLocal = jest.spyOn(isolatedLogger, 'info').mockImplementation(() => {});
-        const { PushNotificationService: LocalService } = await import('../push-notification.service');
+        const { PushNotificationService: LocalService } =
+          jest.requireActual<typeof import('../push-notification.service')>('../push-notification.service');
         const instance = new LocalService();
         expect(instance['isInitialized']).toBe(true);
         expect(infoSpyLocal).toHaveBeenCalledWith(

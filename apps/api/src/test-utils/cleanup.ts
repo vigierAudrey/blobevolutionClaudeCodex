@@ -65,13 +65,6 @@ export async function cleanupTestUsers(emails: string[]) {
       where: { reporter: { email: { in: emails } } }
     });
 
-    await prisma.creditTransaction.deleteMany({
-      where: { user: { email: { in: emails } } }
-    });
-    await prisma.userWallet.deleteMany({
-      where: { user: { email: { in: emails } } }
-    });
-
     await prisma.proProfile.deleteMany({ where: { user: { email: { in: emails } } } });
     await prisma.riderDiscipline.deleteMany({
       where: { profile: { user: { email: { in: emails } } } }

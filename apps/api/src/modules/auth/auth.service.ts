@@ -38,7 +38,7 @@ export class AuthService {
   private static readonly CONSENT_VERSION = 'v1.0.0';
 
   async register(
-    data: { email: string; password: string; role: 'RIDER' | 'PRO' | 'ADMIN'; consentAccepted?: boolean },
+    data: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted?: boolean },
     opts?: { consentIp?: string },
   ) {
     try {

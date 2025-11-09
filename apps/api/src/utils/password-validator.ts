@@ -21,6 +21,13 @@ import { z } from 'zod';
  * Common passwords blacklist (French + English)
  * Source: Top 100 most common passwords + French variations
  */
+const MIN_LENGTH = 8;
+const MAX_LENGTH = 128;
+const LOWERCASE_REGEX = /[a-z]/;
+const UPPERCASE_REGEX = /[A-Z]/;
+const DIGIT_REGEX = /[0-9]/;
+const SPECIAL_CHAR_REGEX = /[^a-zA-Z0-9]/;
+
 const COMMON_PASSWORDS = [
   // English common
   'password',
@@ -83,25 +90,74 @@ const COMMON_PASSWORDS = [
  * });
  * ```
  */
+export type PasswordRequirementId =
+  | 'length'
+  | 'lowercase'
+  | 'uppercase'
+  | 'digit'
+  | 'special'
+  | 'common';
+
+export type PasswordRequirement = {
+  id: PasswordRequirementId;
+  label: string;
+  test: (password: string) => boolean;
+  hint?: string;
+};
+
+export const PASSWORD_REQUIREMENTS: PasswordRequirement[] = [
+  {
+    id: 'length',
+    label: `Entre ${MIN_LENGTH} et ${MAX_LENGTH} caractères`,
+    hint: `${MIN_LENGTH} caractères minimum`,
+    test: (password) => password.length >= MIN_LENGTH && password.length <= MAX_LENGTH,
+  },
+  {
+    id: 'lowercase',
+    label: 'Au moins une lettre minuscule',
+    test: (password) => LOWERCASE_REGEX.test(password),
+  },
+  {
+    id: 'uppercase',
+    label: 'Au moins une lettre majuscule',
+    test: (password) => UPPERCASE_REGEX.test(password),
+  },
+  {
+    id: 'digit',
+    label: 'Au moins un chiffre',
+    test: (password) => DIGIT_REGEX.test(password),
+  },
+  {
+    id: 'special',
+    label: 'Au moins un caractère spécial (!@#$%^&*...)',
+    test: (password) => SPECIAL_CHAR_REGEX.test(password),
+  },
+  {
+    id: 'common',
+    label: 'Ne pas contenir un mot de passe trop commun',
+    hint: 'Évite « password », « azerty »…',
+    test: (password) =>
+      !COMMON_PASSWORDS.some((common) => password.toLowerCase().includes(common.toLowerCase())),
+  },
+];
+
 export const passwordSchema = z
   .string()
-  .min(8, 'Le mot de passe doit contenir au moins 8 caractères')
-  .max(128, 'Le mot de passe ne peut pas dépasser 128 caractères')
-  .regex(/[a-z]/, 'Le mot de passe doit contenir au moins une minuscule')
-  .regex(/[A-Z]/, 'Le mot de passe doit contenir au moins une majuscule')
-  .regex(/[0-9]/, 'Le mot de passe doit contenir au moins un chiffre')
+  .min(MIN_LENGTH, 'Le mot de passe doit contenir au moins 8 caractères')
+  .max(MAX_LENGTH, 'Le mot de passe ne peut pas dépasser 128 caractères')
+  .regex(LOWERCASE_REGEX, 'Le mot de passe doit contenir au moins une minuscule')
+  .regex(UPPERCASE_REGEX, 'Le mot de passe doit contenir au moins une majuscule')
+  .regex(DIGIT_REGEX, 'Le mot de passe doit contenir au moins un chiffre')
   .regex(
-    /[^a-zA-Z0-9]/,
-    'Le mot de passe doit contenir au moins un caractère spécial (!@#$%^&*...)'
+    SPECIAL_CHAR_REGEX,
+    'Le mot de passe doit contenir au moins un caractère spécial (!@#$%^&*...)',
   )
   .refine(
     (password) =>
-      !COMMON_PASSWORDS.some((common) =>
-        password.toLowerCase().includes(common.toLowerCase())
-      ),
+      !COMMON_PASSWORDS.some((common) => password.toLowerCase().includes(common.toLowerCase())),
     {
       message: 'Ce mot de passe est trop commun et vulnérable aux attaques',
-    }
+    },
   );
 
 /**
@@ -136,4 +192,20 @@ export function validatePassword(password: string) {
  */
 export function isStrongPassword(password: string): boolean {
   return passwordSchema.safeParse(password).success;
+}
+
+export type PasswordRequirementStatus = {
+  id: PasswordRequirementId;
+  label: string;
+  satisfied: boolean;
+  hint?: string;
+};
+
+export function getPasswordRequirementStatuses(password: string): PasswordRequirementStatus[] {
+  return PASSWORD_REQUIREMENTS.map((requirement) => ({
+    id: requirement.id,
+    label: requirement.label,
+    hint: requirement.hint,
+    satisfied: requirement.test(password),
+  }));
 }
