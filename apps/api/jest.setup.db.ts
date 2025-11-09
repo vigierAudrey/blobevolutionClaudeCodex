@@ -47,12 +47,6 @@ afterEach(async () => {
   const skipCleanupPatterns = [
     'anti-overbooking.test.ts',
     'booking.e2e.test.ts',
-    'auth.e2e.test.ts',
-    'conversations.e2e.test.ts',
-    'matching.e2e.test.ts',
-    'profile.e2e.test.ts',
-    'admin.e2e.test.ts',
-    'contact.e2e.test.ts',
   ];
 
   const shouldSkipCleanup = skipCleanupPatterns.some(pattern => testPath.includes(pattern));

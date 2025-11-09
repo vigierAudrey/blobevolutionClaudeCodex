@@ -17,9 +17,8 @@
 - **Impact** : Les tests ne génèrent plus de warnings push service
 
 ### 3. Warning Prisma deprecated config
-- ⚠️ **Toujours présent** : Prisma 6.19.0 continue de logger `package.json#prisma is deprecated` lors de chaque `prisma generate` / `prisma db push`.
-- ❌ La migration vers `prisma.config.ts` a été tentée mais Prisma 6 ne supporte pas encore ce chemin (rollback dans `packages/database/package.json:41-43`).
-- **Impact** : warning à traiter plus tard (bloquant uniquement à l'arrivée de Prisma 7).
+- ✅ **Corrigé** : Création de `packages/database/prisma.config.ts` + suppression du bloc `package.json#prisma`.
+- **Impact** : plus aucun warning `package.json#prisma`, les commandes Prisma chargent explicitement la config (cf. logs `Loaded Prisma config from prisma.config.ts.`).
 
 ### 4. Warning Sentry open handles
 - ✅ **Corrigé** : Désactivation de Sentry en environnement test (`apps/api/src/instrument.ts:9`)
@@ -52,6 +51,9 @@
 4. **Validation finale**  
    - `npm run type-check` (API + Web) ✅  
    - `npm run test --workspace @blobinfini/api` ✅ (23 suites / 303 tests / 0 échec / 1 skipped).
+5. **Cleanup global réactivé**  
+   - Les suites e2e `auth`, `conversations`, `matching`, `profile`, `admin`, `contact` reconstruisent désormais leurs fixtures dans des `beforeEach` dédiés (`apps/api/src/modules/**/__tests__`).  
+   - `apps/api/jest.setup.db.ts` ne skip plus que les tests historiquement exclus (`anti-overbooking`, `booking.e2e`) : le nettoyage global homogène est effectif.
 
 ## ⏳ Restants
 
