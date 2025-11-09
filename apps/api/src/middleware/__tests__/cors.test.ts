@@ -35,13 +35,13 @@ describe('CORS middleware', () => {
     });
   });
 
-  const buildApp = async () => {
-    const module = await import('../../index');
+  const buildApp = () => {
+    const module = jest.requireActual<typeof import('../../index')>('../../index');
     return module.createApp();
   };
 
   it('allows configured origins and sets the response headers', async () => {
-    const app = await buildApp();
+    const app = buildApp();
 
     const response = await request(app).get('/health').set('Origin', allowedOrigin);
 
@@ -51,7 +51,7 @@ describe('CORS middleware', () => {
   });
 
   it('blocks origins that are not configured', async () => {
-    const app = await buildApp();
+    const app = buildApp();
 
     const response = await request(app).get('/health').set('Origin', blockedOrigin);
 
@@ -60,7 +60,7 @@ describe('CORS middleware', () => {
   });
 
   it('handles preflight requests correctly', async () => {
-    const app = await buildApp();
+    const app = buildApp();
 
     const response = await request(app)
       .options('/health')
@@ -74,7 +74,7 @@ describe('CORS middleware', () => {
   });
 
   it('emits a strict CSP header with nonces', async () => {
-    const app = await buildApp();
+    const app = buildApp();
 
     const response = await request(app).get('/health');
 
@@ -87,7 +87,7 @@ describe('CORS middleware', () => {
   });
 
   it('injects CSP nonces into the Swagger UI HTML', async () => {
-    const app = await buildApp();
+    const app = buildApp();
 
     const response = await request(app).get('/api/docs/');
 
