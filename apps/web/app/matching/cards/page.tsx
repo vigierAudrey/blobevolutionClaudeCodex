@@ -117,6 +117,7 @@ function CardsInner() {
   const candidatesRef = useRef<MatchingCandidate[]>([]);
   const excludeIdsRef = useRef<string[]>([]);
   const nextCursorRef = useRef<string | null>(null);
+  const decisionQueueRef = useRef<QueuedDecision[]>([]);
 
   useEffect(() => {
     candidatesRef.current = candidates;
@@ -129,6 +130,10 @@ function CardsInner() {
   useEffect(() => {
     nextCursorRef.current = nextCursor;
   }, [nextCursor]);
+
+  useEffect(() => {
+    decisionQueueRef.current = decisionQueue;
+  }, [decisionQueue]);
 
   // Enhanced skeleton states
   const fetchBatch = useCallback(async (merge = false) => {
@@ -210,7 +215,9 @@ function CardsInner() {
       setExcludeIds(newEx);
       setCandidates([]);
       setCursor(0);
-      fetchBatch();
+      flushDecisions(true).finally(() => {
+        fetchBatch();
+      });
     }
   };
 
@@ -286,36 +293,59 @@ function CardsInner() {
     }, 220);
   };
 
-  // Batch flush decisions every 2s and on tab hide; only send items older than 5s
-  useEffect(() => {
-    let t: ReturnType<typeof setInterval> | null = null;
-    const flush = async () => {
-      if (decisionQueue.length === 0) return;
+  const flushDecisions = useCallback(
+    async (force = false) => {
+      const queue = decisionQueueRef.current;
+      if (queue.length === 0) return;
       const now = Date.now();
-      const due = decisionQueue.filter((d) => now - d.ts >= 5000);
+      const due = force ? queue : queue.filter((d) => now - d.ts >= 5000);
       if (due.length === 0) return;
-      const pending = decisionQueue.filter((d) => now - d.ts < 5000);
+      const pending = force ? [] : queue.filter((d) => now - d.ts < 5000);
       setDecisionQueue(pending);
       try {
-        const resp = await optimizedApiClient.matchDecisions(due.map(({ targetProfileId, decision }) => ({ targetProfileId, decision })));
+        const resp = await optimizedApiClient.matchDecisions(
+          due.map(({ targetProfileId, decision }) => ({ targetProfileId, decision })),
+        );
         const decisionResp = resp as MatchDecisionResponse;
-        if (decisionResp?.createdConversations && Array.isArray(decisionResp.createdConversations) && decisionResp.createdConversations.length > 0) {
+        if (
+          decisionResp?.createdConversations &&
+          Array.isArray(decisionResp.createdConversations) &&
+          decisionResp.createdConversations.length > 0
+        ) {
           const m = decisionResp.createdConversations[0];
-          const s = (sport || 'surf') as 'surf'|'kitesurf';
+          const s = (sport || 'surf') as 'surf' | 'kitesurf';
           setNewMatch({ conversationId: m.conversationId, otherDisplayName: m.otherDisplayName || 'Profil', sport: s });
           // Refresh unread badge quickly
-          loadUnread();
+          void loadUnread();
         }
       } catch {
         // If failed, requeue keeping original timestamps
         setDecisionQueue((q) => [...due, ...q]);
       }
+    },
+    [loadUnread, optimizedApiClient, sport],
+  );
+
+  // Batch flush decisions every 2s and on tab hide; only send items older than 5s
+  useEffect(() => {
+    const t = setInterval(() => {
+      void flushDecisions();
+    }, 2000);
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') void flushDecisions();
     };
-    t = setInterval(flush, 2000);
-    const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
     document.addEventListener('visibilitychange', onHide);
-    return () => { if (t) clearInterval(t); document.removeEventListener('visibilitychange', onHide); };
-  }, [decisionQueue, loadUnread, sport]);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [flushDecisions]);
+
+  useEffect(() => {
+    return () => {
+      void flushDecisions(true);
+    };
+  }, [flushDecisions]);
 
   const undo = () => {
     if (!lastAction) return;
@@ -457,14 +487,14 @@ function CardsInner() {
                     <Image
                       src={current.photoUrl}
                       alt={current.displayName ?? 'Photo de profil'}
-                      width={64}
-                      height={64}
-                      className="w-16 h-16 rounded-full object-cover border-2 border-border flex-shrink-0"
+                      width={120}
+                      height={120}
+                      className="w-28 h-28 rounded-[1.4rem] object-cover border-2 border-border shadow-md flex-shrink-0"
                       unoptimized
                     />
                   ) : (
-                    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center border-2 border-border flex-shrink-0">
-                      <span className="text-2xl">👤</span>
+                    <div className="w-28 h-28 rounded-[1.4rem] bg-muted flex items-center justify-center border-2 border-border flex-shrink-0 text-4xl">
+                      <span>👤</span>
                     </div>
                   )}
 

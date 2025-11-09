@@ -9,7 +9,6 @@ declare module '@blobinfini/database' {
     ContactRequestResponse,
     Conversation,
     ConversationMember,
-    CreditTransaction,
     EmailVerificationToken,
     LastSearch,
     Match,
@@ -24,7 +23,6 @@ declare module '@blobinfini/database' {
     RiderProfile,
     Session,
     User,
-    UserWallet,
     spatial_ref_sys,
     UserConsent
   } from '@prisma/client';
@@ -42,7 +40,6 @@ declare module '@blobinfini/database' {
     ConsentLevel,
     ConsentSignal,
     ConversationType,
-    CreditTransactionType,
     DecisionKind,
     Level,
     MatchStatus,
@@ -62,7 +59,6 @@ declare module '@blobinfini/database' {
     ContactRequestResponse,
     Conversation,
     ConversationMember,
-    CreditTransaction,
     EmailVerificationToken,
     LastSearch,
     Match,
@@ -77,7 +73,6 @@ declare module '@blobinfini/database' {
     RiderProfile,
     Session,
     User,
-    UserWallet,
     spatial_ref_sys,
     UserConsent
   };

@@ -3,7 +3,7 @@
 // Force SSR for dynamic user-specific features
 export const dynamic = 'force-dynamic';
 import Image from 'next/image';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -28,49 +28,52 @@ const levelLabels: Record<Level, string> = {
   advanced: 'Confirmé'
 };
 
+type GeoStatus = 'loading' | 'ready' | 'missing';
+
 export default function OffersPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasGeolocation, setHasGeolocation] = useState(false);
+  const [geoStatus, setGeoStatus] = useState<GeoStatus>('loading');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [filters, setFilters] = useState<OfferFilters>({ sport: '', level: '', radiusKm: 50 });
   const [sortBy, setSortBy] = useState<OfferSortKey>('distance');
   const [allOffers, setAllOffers] = useState<OfferCard[]>([]);
-  const [filteredOffers, setFilteredOffers] = useState<OfferCard[]>([]);
+  const filtersRef = useRef(filters);
 
-  const applyFiltersAndSort = useCallback(
-    (offersToFilter: OfferCard[] = allOffers) => {
-      let filtered = [...offersToFilter];
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
-      if (filters.sport) {
-        filtered = filtered.filter((offer) => offer.sport === filters.sport);
+  const filteredOffers = useMemo(() => {
+    let filtered = [...allOffers];
+
+    if (filters.sport) {
+      filtered = filtered.filter((offer) => offer.sport === filters.sport);
+    }
+
+    if (filters.level) {
+      filtered = filtered.filter((offer) => offer.level === filters.level);
+    }
+
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'distance':
+          return a.distanceKm - b.distanceKm;
+        case 'price':
+          return a.hourlyRate - b.hourlyRate;
+        case 'sport':
+          return a.sport.localeCompare(b.sport) || a.distanceKm - b.distanceKm;
+        case 'recent':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        default:
+          return 0;
       }
+    });
 
-      if (filters.level) {
-        filtered = filtered.filter((offer) => offer.level === filters.level);
-      }
-
-      filtered.sort((a, b) => {
-        switch (sortBy) {
-          case 'distance':
-            return a.distanceKm - b.distanceKm;
-          case 'price':
-            return a.hourlyRate - b.hourlyRate;
-          case 'sport':
-            return a.sport.localeCompare(b.sport) || a.distanceKm - b.distanceKm;
-          case 'recent':
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-          default:
-            return 0;
-        }
-      });
-
-      setFilteredOffers(filtered);
-    },
-    [allOffers, filters.level, filters.sport, sortBy],
-  );
+    return filtered;
+  }, [allOffers, filters.level, filters.sport, sortBy]);
 
   const searchOffers = useCallback(
     async (lat: number, lng: number) => {
@@ -81,12 +84,11 @@ export default function OffersPage() {
         const response = (await apiClient.searchOffers({
           lat,
           lng,
-          radiusKm: filters.radiusKm,
+          radiusKm: filtersRef.current.radiusKm,
         })) as OfferSearchResponse;
 
         const fetchedOffers = response.offers ?? [];
         setAllOffers(fetchedOffers);
-        applyFiltersAndSort(fetchedOffers);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : null;
         setError(message || 'Erreur lors de la recherche');
@@ -94,7 +96,7 @@ export default function OffersPage() {
         setSearching(false);
       }
     },
-    [applyFiltersAndSort, filters.radiusKm],
+    [],
   );
 
   useEffect(() => {
@@ -116,14 +118,15 @@ export default function OffersPage() {
         if (profile.lat != null && profile.lng != null) {
           const position = { lat: profile.lat, lng: profile.lng };
           setUserLocation(position);
-          setHasGeolocation(true);
+          setGeoStatus('ready');
           await searchOffers(position.lat, position.lng);
         } else {
-          setHasGeolocation(false);
+          setGeoStatus('missing');
         }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : null;
         setError(message || 'Erreur lors du chargement');
+        setGeoStatus('missing');
       } finally {
         setLoading(false);
       }
@@ -131,10 +134,6 @@ export default function OffersPage() {
 
     void loadUserAndSearch();
   }, [router, searchOffers]);
-
-  useEffect(() => {
-    applyFiltersAndSort();
-  }, [applyFiltersAndSort]);
 
   const enableGeolocation = () => {
     if (!navigator.geolocation) {
@@ -147,7 +146,7 @@ export default function OffersPage() {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
         setUserLocation({ lat, lng });
-        setHasGeolocation(true);
+        setGeoStatus('ready');
 
         try {
           await apiClient.updateProfile({ lat, lng });
@@ -198,7 +197,20 @@ export default function OffersPage() {
         </p>
       </div>
 
-      {!hasGeolocation && (
+      {geoStatus === 'loading' && (
+        <Card className="animate-pulse">
+          <CardHeader>
+            <div className="h-5 w-32 rounded-md bg-muted" />
+            <div className="h-4 w-56 rounded-md bg-muted/80" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="h-10 w-full rounded-md bg-muted" />
+            <div className="h-3 w-40 rounded-md bg-muted/80" />
+          </CardContent>
+        </Card>
+      )}
+
+      {geoStatus === 'missing' && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -221,7 +233,7 @@ export default function OffersPage() {
         </Card>
       )}
 
-      {hasGeolocation && (
+      {geoStatus === 'ready' && (
         <>
           {/* Filtres et tri */}
           <Card>
@@ -347,7 +359,15 @@ export default function OffersPage() {
               </div>
             </div>
 
-            {filteredOffers.length === 0 && !searching && hasGeolocation && (
+            {searching && (
+              <Card className="border-dashed">
+                <CardContent className="py-6 text-center text-sm text-muted-foreground">
+                  Recherche des offres à proximité…
+                </CardContent>
+              </Card>
+            )}
+
+            {filteredOffers.length === 0 && !searching && geoStatus === 'ready' && (
               <Card>
                 <CardContent className="text-center py-8">
                   <p className="text-muted-foreground">

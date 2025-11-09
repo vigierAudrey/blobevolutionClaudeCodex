@@ -9,6 +9,7 @@ import { Label } from '../../components/ui/label';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Button } from '../../components/ui/button';
+import { Badge } from '../../components/ui/badge';
 import { apiClient } from '../../lib/apiClient';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../components/BackBar';
@@ -16,7 +17,8 @@ import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { apiRequest } from '../../lib/csrf';
 import Link from 'next/link';
-import { MapPin, Cookie, FileText, Trash2 } from 'lucide-react';
+import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
 import type { Level } from '@/types/matching';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../components/cookies/CookieConsent';
@@ -67,7 +69,47 @@ const genderToLabel = (value?: Gender | null): SexOption => {
 export default function ProfilePage() {
   const router = useRouter();
   const toast = useToast();
-  const { updateConsent: resetConsent, consentReady: consentStateReady } = useCookieConsent();
+  const { updateConsent: resetConsent, consentReady: consentStateReady, consentLevel } = useCookieConsent();
+  const consentSummary = useMemo(() => {
+    type Summary = {
+      label: string;
+      description: string;
+      Icon: LucideIcon;
+      badge?: { text: string; className?: string };
+      cardClasses: string;
+      iconClasses: string;
+    };
+    const baseBadge = 'border-none text-xs font-semibold';
+
+    const summaries: Record<string, Summary> = {
+      personalized: {
+        label: 'Publicités personnalisées',
+        description: 'Équipements sélectionnés selon ton niveau et tes spots favoris. Aide aussi à financer la plateforme.',
+        Icon: Target,
+        badge: { text: 'Recommandé', className: `${baseBadge} bg-blue-100 text-blue-700` },
+        cardClasses: 'border-blue-200 bg-blue-50/70',
+        iconClasses: 'text-blue-600',
+      },
+      essential: {
+        label: 'Publicités basiques',
+        description: 'Annonces générales sans profilage ; aucune donnée personnelle n’est utilisée pour la personnalisation.',
+        Icon: Shield,
+        badge: { text: 'Essentiel', className: `${baseBadge} bg-emerald-100 text-emerald-700` },
+        cardClasses: 'border-emerald-200 bg-emerald-50/70',
+        iconClasses: 'text-emerald-600',
+      },
+      none: {
+        label: 'Publicités limitées',
+        description: 'Seules les annonces internes (House Ads) sont affichées, sans cookies publicitaires.',
+        Icon: Ban,
+        badge: { text: 'House ads', className: `${baseBadge} bg-slate-200 text-slate-700` },
+        cardClasses: 'border-slate-200 bg-slate-50',
+        iconClasses: 'text-slate-500',
+      },
+    };
+
+    return summaries[consentLevel] ?? summaries.none;
+  }, [consentLevel]);
   // Photo upload + preview
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
@@ -362,8 +404,15 @@ export default function ProfilePage() {
       }
       await apiClient.setDisciplines(disciplinesPayload);
 
+      const nextDisplayName = (payload.displayName ?? displayName ?? '').trim();
+      const hasDisplayName = nextDisplayName.length > 0;
+      const hasPhoto = Boolean(payload.photoUrl ?? photoUrl);
+      const hasDisciplines = disciplinesPayload.length > 0;
+
       toast('Profil sauvegardé', 'success');
-      setTimeout(() => router.push('/onboarding'), 1000);
+      if (!hasDisplayName || !hasPhoto || !hasDisciplines) {
+        setTimeout(() => router.push('/onboarding'), 1000);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde';
       toast(message, 'error');
@@ -523,6 +572,7 @@ export default function ProfilePage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    type="button"
                     onClick={handleDeleteLocation}
                     disabled={deletingLocation}
                   >
@@ -547,16 +597,40 @@ export default function ProfilePage() {
                 <Cookie className="h-4 w-4 text-muted-foreground" />
                 <h3 className="text-sm font-medium">Préférences Cookies</h3>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Modifiez vos choix concernant les cookies et le suivi.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleReopenCookieConsent}
-              >
-                Gérer mes cookies
-              </Button>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">Modifiez vos choix concernant les cookies et le suivi.</p>
+                {consentStateReady ? (
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
+                    <div className={`flex flex-1 items-start gap-3 rounded-2xl border p-4 ${consentSummary.cardClasses}`}>
+                      <consentSummary.Icon className={`h-5 w-5 ${consentSummary.iconClasses}`} />
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold text-foreground">{consentSummary.label}</p>
+                          {consentSummary.badge && (
+                            <Badge className={consentSummary.badge.className}>{consentSummary.badge.text}</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{consentSummary.description}</p>
+                      </div>
+                    </div>
+                    <div className="lg:w-48">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={handleReopenCookieConsent}
+                        className="w-full h-full"
+                      >
+                        Gérer mes cookies
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                    Chargement des préférences en cours…
+                  </div>
+                )}
+              </div>
             </div>
 
             <hr className="border-t" />

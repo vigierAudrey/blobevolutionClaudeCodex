@@ -418,9 +418,6 @@ export function createApp() {
   app.use('/reports', reportsRouter);
   app.use('/conversations', conversationsRouter);
   app.use('/pro', proRouter);
-  app.use('/credits', (_req, res) => {
-    res.status(410).json({ error: 'Payments feature disabled' });
-  });
   app.use('/consent', consentRouter);
   app.use('/admin', adminRouter);
   app.use('/contact', contactRouter);

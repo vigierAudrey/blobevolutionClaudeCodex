@@ -430,7 +430,54 @@ function clearTokens() {
   localStorage.removeItem('refreshToken');
 }
 
-async function request(path: string, opts: RequestInit = {}, withAuth = false) {
+let refreshPromise: Promise<boolean> | null = null;
+
+async function refreshAccessToken() {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  const tokens = getTokens();
+  const refreshToken = tokens?.refreshToken;
+  if (!refreshToken) {
+    return false;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Unable to refresh session');
+      }
+
+      const payload = await response.json();
+      if (payload?.accessToken && payload?.refreshToken) {
+        setTokens(payload.accessToken, payload.refreshToken);
+        return true;
+      }
+
+      throw new Error('Invalid refresh payload');
+    } catch (error) {
+      console.warn('[apiClient] Refresh token failed', error);
+      clearTokens();
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+async function request(path: string, opts: RequestInit = {}, withAuth = false, retry = false) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -460,6 +507,16 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false) {
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) {
+    if (res.status === 401 && withAuth) {
+      const refreshed = !retry ? await refreshAccessToken() : false;
+      if (refreshed) {
+        return request(path, opts, withAuth, true);
+      }
+      clearTokens();
+      const sessionError: Error & { code?: string } = new Error('Session expirée, veuillez vous reconnecter');
+      sessionError.code = 'SESSION_EXPIRED';
+      throw sessionError;
+    }
     if (res.status === 403 && typeof data?.error === 'string' && data.error.startsWith('CSRF_')) {
       cachedCsrfToken = null;
     }
@@ -479,7 +536,7 @@ export const apiClient = {
   login: (body: { email: string; password: string; consentAccepted?: boolean }) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(body) }) as Promise<LoginResponse>,
 
-  register: (body: { email: string; password: string; role: 'RIDER' | 'PRO' | 'ADMIN'; consentAccepted: true }) =>
+  register: (body: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted: true }) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(body) }) as Promise<Record<string, unknown>>,
 
   me: () => request('/auth/me', { method: 'GET' }, true),

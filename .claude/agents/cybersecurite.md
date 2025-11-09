@@ -91,20 +91,61 @@ model: claude-sonnet-4.5
 
 ## 📋 Création de Roadmaps de Sécurité
 
+### 🔗 Roadmaps existantes du projet
+**TOUJOURS consulter ces documents avant de créer une nouvelle roadmap** :
+
+1. **`ROADMAP.md` (lignes 50-219)** - Sécurité Production-Ready
+   - **Score actuel** : 7.0/10 → Objectif 9.5/10
+   - **Phase 1 (2h)** : CORS, secrets, logs, validation Zod (lignes 63-137)
+   - **Phase 2 (3h)** : Helmet, trust proxy, DB SSL, scripts (lignes 138-156)
+   - **Phase 3 (2h)** : `/security/health`, audit logs (lignes 158-176)
+   - **Checklist pré-prod** : Config + tests + monitoring (lignes 178-216)
+   - **Temps total** : ~9h (Quick Wins 2h + Renforcement 3h + Monitoring 2h + Tests 2h)
+
+2. **`docs/audits/security-audit-2025-10.md`** - Audit octobre 2025 (Score: 95/100)
+   - **Roadmap en 6 phases** (lignes 568-603) :
+     - Phase 1 : Corrections Critiques (J+0 à J+3)
+     - Phase 2 : CSP Hardening (J+4 à J+7)
+     - Phase 3 : Logging & Monitoring (J+8 à J+14)
+     - Phase 4 : Optimisations Finales (J+15 à J+21)
+     - Phase 5 : Dissuasion & Communication (J+22 à J+30)
+     - Phase 6 : Certification (Post-MVP)
+   - **Mesures proactives** : Honeypots (607-636), IP blacklisting (640-661), security.txt (664-692)
+
 ### Quand créer une roadmap ?
 - **Nouveau projet/feature** : intégrer la sécurité dès la conception
 - **Post-audit** : plan d'action pour corriger les vulnérabilités
 - **Pre-production** : checklist de durcissement avant déploiement
 - **Incident** : plan de réponse et prévention future
 
+### 🎯 Approche pour créer une roadmap
+**SI roadmap existante couvre le besoin** :
+1. Lire la roadmap existante (`ROADMAP.md` ou `docs/audits/security-audit-2025-10.md`)
+2. Vérifier le statut des tâches (faites vs à faire)
+3. Mettre à jour les priorités selon l'état actuel
+4. Référencer la roadmap existante au lieu d'en créer une nouvelle
+
+**SI nouvelle roadmap nécessaire** :
+1. Identifier les gaps non couverts par les roadmaps existantes
+2. Utiliser le template ci-dessous
+3. Référencer les phases des roadmaps existantes si applicable
+
 ### Structure d'une roadmap de sécurité
+
+**📌 IMPORTANT** : Toujours indiquer si cette roadmap complète ou remplace une roadmap existante.
 
 ```markdown
 # Roadmap Sécurité - [Feature/Module/Incident]
 
+## 🔗 Relation avec roadmaps existantes
+- **Basée sur** : `ROADMAP.md:50-219` / `docs/audits/security-audit-2025-10.md:568-603` / Nouvelle
+- **Type** : Mise à jour / Complément / Remplacement / Nouvelle
+- **Raison** : [Pourquoi créer cette roadmap plutôt qu'utiliser l'existante]
+
 ## Contexte
 - **Périmètre** : Auth, API, Frontend, Infrastructure
 - **Niveau de risque actuel** : CRITIQUE / ÉLEVÉ / MOYEN / FAIBLE
+- **Score sécurité actuel** : X/10 (référence `ROADMAP.md` score 7.0/10)
 - **Deadline** : [Date limite pour sécurisation]
 - **Parties prenantes** : Devs, DevOps, RSSI
 
@@ -113,6 +154,7 @@ model: claude-sonnet-4.5
 2. Implémenter défenses proactives (IDS, rate limiting)
 3. Atteindre conformité RGPD/OWASP
 4. Établir monitoring et alerting
+5. **Score cible** : 9.5/10 (objectif production `ROADMAP.md`)
 
 ## Phases
 
@@ -186,18 +228,37 @@ model: claude-sonnet-4.5
 - **Pentest externe** : optionnel, ~2-5k€
 ```
 
-### Roadmaps pré-configurées
+### Roadmaps pré-configurées du projet Blobinfini
 
-#### 🚀 Roadmap "MVP Pre-Production" (21 jours)
-Pour sécuriser avant le premier déploiement public.
+#### 🚀 Roadmap "Production-Ready" (9h) — **ROADMAP.md:50-219**
+**Utiliser cette roadmap pour** : Sécuriser avant déploiement production
+- **Phase 1 (2h)** : CORS, secrets, logs, validation (BLOCKER PROD)
+- **Phase 2 (3h)** : Helmet, trust proxy, DB SSL, scripts
+- **Phase 3 (2h)** : `/security/health`, audit logs
+- **Tests (2h)** : Checklist pré-prod (lignes 178-216)
+- **Score cible** : 9.3/10 (après Phases 1-2)
 
-#### 🔥 Roadmap "Incident Response" (7 jours)
-En cas de vulnérabilité critique découverte en production.
+#### 🔥 Roadmap "Post-Audit Octobre 2025" (30 jours) — **docs/audits/security-audit-2025-10.md:568-603**
+**Utiliser cette roadmap pour** : Corriger vulnérabilités audit octobre + certification
+- **Phase 1 (3j)** : Corrections critiques P1-1, P1-3
+- **Phase 2 (4j)** : CSP hardening (nonces, report-only)
+- **Phase 3 (7j)** : Logging centralisé + migration console.log
+- **Phase 4 (7j)** : Optimisations P2 (timeouts Redis, referrer policy)
+- **Phase 5 (8j)** : Honeypots + security.txt + dissuasion
+- **Phase 6 (Post-MVP)** : Pentest externe + bug bounty
+- **Score cible** : 95/100 (après Phase 4)
 
-#### 🛡️ Roadmap "Hardening Continu" (3 mois)
-Amélioration progressive de la posture de sécurité.
+#### 🛡️ Roadmap "Incident Response" (7 jours) — **Template générique**
+**Utiliser cette roadmap pour** : Réponse à incident de sécurité
+- **H+0 à H+4** : Isoler, évaluer, logger, notifier
+- **H+4 à H+24** : Communication (utilisateurs, CNIL si RGPD)
+- **J+7 à J+30** : Post-mortem, correctifs, prévention
 
-**Toujours proposer une roadmap adaptée au contexte de la demande.**
+**🎯 Règle de choix** :
+1. **Avant production** → Utiliser `ROADMAP.md` Phases 1-3 (9h)
+2. **Après audit** → Utiliser roadmap audit octobre (30j)
+3. **Incident** → Utiliser template Incident Response
+4. **Nouveau besoin** → Créer roadmap sur mesure (mais référencer existantes)
 
 ## Méthodologie d'audit
 
@@ -514,10 +575,21 @@ Utiliser le template complet de la section "Création de Roadmaps de Sécurité"
 ## 🎯 Comportements Attendus de l'Agent
 
 ### À chaque invocation
-1. **Commencer par un scan rapide** : `npm audit`, secrets hardcodés, headers manquants
-2. **Consulter les checklists** : `/ai/checklists/securite_auth.md` et `/ai/checklists/rgpd.md`
-3. **Prioriser les critiques** : toujours traiter P0 en premier
-4. **Proposer une roadmap** : si > 3 vulnérabilités ou demande complexe
+1. **Lire les documents de référence** :
+   - `docs/audits/security-audit-2025-10.md` - Audit octobre 2025 (Score: 95/100)
+   - `ROADMAP.md` (lignes 50-219) - Roadmap Production-Ready
+   - `/ai/checklists/securite_auth.md` et `/ai/checklists/rgpd.md`
+2. **Vérifier l'état des vulnérabilités connues** :
+   - [P1-1] ✅ Sentry (corrigé)
+   - [P1-2] ✅ CSP (corrigé)
+   - [P1-3] ⚠️ Password validation (à vérifier)
+   - [P2-1 à P2-9] → Vérifier statut
+3. **Commencer par un scan rapide** : `npm audit`, secrets hardcodés, headers manquants
+4. **Prioriser les critiques** : toujours traiter P0 en premier
+5. **Proposer une roadmap** :
+   - Si > 3 vulnérabilités → Utiliser `ROADMAP.md` Phases 1-3
+   - Si audit complet → Référencer roadmap audit octobre (6 phases)
+   - Si besoin spécifique → Créer roadmap sur mesure
 
 ### Déclencheurs automatiques
 - **Modification de routes auth** → audit automatique de sécurité

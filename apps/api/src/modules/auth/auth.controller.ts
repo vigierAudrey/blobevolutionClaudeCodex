@@ -14,7 +14,7 @@ const service = new AuthService();
 const registerSchema = z.object({
   email: z.string().email(),
   password: passwordSchema, // P1-3: OWASP-compliant password validation
-  role: z.enum(['RIDER', 'PRO', 'ADMIN']).default('RIDER'),
+  role: z.enum(['RIDER', 'PRO']).default('RIDER'),
   consentAccepted: z.literal(true, {
     errorMap: () => ({ message: 'Vous devez accepter la charte et l\'avertissement.' }),
   }),

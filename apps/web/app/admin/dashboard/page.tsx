@@ -305,7 +305,7 @@ export default function AdminDashboard() {
                 Paramètres généraux
               </Button>
               <Button variant="outline" className="w-full justify-start">
-                Gestion des crédits
+                Monétisation & publicités
               </Button>
               <Button variant="outline" className="w-full justify-start">
                 Maintenance système
