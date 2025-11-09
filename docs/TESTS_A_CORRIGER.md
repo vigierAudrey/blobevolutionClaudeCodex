@@ -34,11 +34,11 @@
 
 ---
 
-## ✅ Résolus (2025-11-08)
+## ✅ Résolus (2025-11-09)
 
-1. **Cleanup sélectif pour les suites e2e**  
-   - Extension de `skipCleanupPatterns` dans `apps/api/jest.setup.db.ts` pour couvrir `auth`, `conversations`, `matching`, `profile`, `admin` et `contact`.  
-   - Les bases de tests construites dans les `beforeAll` ne sont plus effacées entre deux `it`, ce qui supprime les 401/404 observés précédemment.
+1. **Normalisation du nettoyage Jest**  
+   - Toutes les suites e2e (`auth`, `conversations`, `matching`, `profile`, `admin`, `contact`, `anti-overbooking`, `booking`) reconstruisent désormais leurs fixtures dans un `beforeEach()`, assurant l’isolation parfaite de chaque scénario.  
+   - `apps/api/jest.setup.db.ts` applique un nettoyage homogène entre les suites sans aucune exception restante dans `skipCleanupPatterns`.
 
 2. **Compatibilité Jest ESM sans flag Node global**  
    - Réécriture des tests `enhanced-rate-limit`, `push-notification.service` et `cors` pour utiliser `jest.requireActual` au lieu de `await import()`.  
@@ -51,14 +51,17 @@
 4. **Validation finale**  
    - `npm run type-check` (API + Web) ✅  
    - `npm run test --workspace @blobinfini/api` ✅ (23 suites / 303 tests / 0 échec / 1 skipped).
-5. **Cleanup global réactivé**  
-   - Les suites e2e `auth`, `conversations`, `matching`, `profile`, `admin`, `contact` reconstruisent désormais leurs fixtures dans des `beforeEach` dédiés (`apps/api/src/modules/**/__tests__`).  
-   - `apps/api/jest.setup.db.ts` ne skip plus que les tests historiquement exclus (`anti-overbooking`, `booking.e2e`) : le nettoyage global homogène est effectif.
+5. **Cleanup global opérationnel**  
+   - La combinaison `beforeEach()` + nettoyage central stabilise la CI et prépare la migration vers Prisma 7, où la cohérence de schema sera strictement vérifiée.
 
-## ⏳ Restants
+> 🧠 Coach pédago : chaque train (suite e2e) dispose maintenant de son mini-atelier de remise à zéro avant le départ, pendant que la grande équipe de nettoyage repasse entre chaque passage.
 
-- **Durcir le cleanup global** : refactorer progressivement les suites e2e pour qu’elles créent/flushent leurs fixtures dans `beforeEach/afterEach`, puis retirer les exceptions de `skipCleanupPatterns`.  
-- **Suivi Prisma 7** : surveiller les breaking changes à venir (ex. suppression complète de `package.json#prisma`) et documenter dans `docs/migration-prisma6.md` les actions à mener lors de la prochaine montée de version.
+## ⏳ Prochaines étapes (2025-11-09)
+
+1. **Veille continue**  
+   - Surveiller l’apparition de nouvelles suites e2e et documenter rapidement toute spécificité afin de préserver l’isolation intégrale acquise.
+2. **Suivi Prisma 7**  
+   - Garder `docs/migration-prisma6.md` à jour et surveiller les prochaines annonces Prisma pour activer `prisma.config.ts` partout (CI incluse).
 
 ---
 

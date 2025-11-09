@@ -530,6 +530,14 @@ act -j build-and-test
 
 Les étapes de déploiement Vercel sont automatiquement ignorées dans les runs locaux.
 
+### 2025-11-09 — Politique de nettoyage Jest (2025)
+
+1. **Résumé** – Toutes les suites e2e critiques (`auth`, `conversations`, `matching`, `profile`, `admin`, `contact`, `anti-overbooking`, `booking`) reconstruisent leurs fixtures dans un `beforeEach()`. Chaque scénario repart ainsi d’un environnement neuf, sans dépendre des créations effectuées par un test précédent.
+2. **Description technique** – `apps/api/jest.setup.db.ts` vide désormais l’ensemble des tables entre les suites Jest sans aucune exception dans `skipCleanupPatterns`. Cette politique rend la CI plus prévisible et prépare la migration Prisma 7.
+
+> 🧠 Coach pédago : chaque train (suite e2e) passe désormais par son atelier de remise à zéro avant le départ, pendant que la grande équipe de nettoyage repasse entre chaque passage.  
+> 🧭 Prochaine balade naturelle : surveiller l’arrivée de nouvelles suites e2e et documenter immédiatement tout besoin spécifique pour conserver cette isolation totale.
+
 ### 📦 Architecture de Déploiement
 
 ```

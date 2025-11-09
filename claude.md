@@ -7,10 +7,78 @@
 ## 📌 Contexte Projet
 
 **Blobinfini** = Marketplace communautaire pour sports de glisse (surf/kitesurf)
+
+### Fonctionnalités clés
+
 - **Matching** : Algorithme multi-critères (géoloc, niveau, dispo) pour connecter riders
-- **Réservation** : Cours avec pros, paiement Stripe (désactivé), QR codes validation
-- **Social** : Messagerie temps réel, groupes, favoris, réputation
-- **Gamification** : Points "Flocons d'avoine", badges, mascotte Blob personnalisable
+- **Réservation** : Mise en relation riders/pros pour cours
+- **Sécurité riders** : Contrôle d'identité pro obligatoire avant session
+- **Social** : Messagerie temps réel, groupes, favoris, système de réputation
+- **Blobosphère** : Hub éditorial SEO pour contenus communautaires
+- **Modèle économique** : Association loi 1901, financée par publicité et sponsors
+
+## 🫧 Philosophie Blobinfini
+
+- 🌍 **Sobriété numérique** : code léger, dépendances open-source et hébergement français pour limiter l’empreinte carbone.
+- 🧭 **Utilité avant tout** : chaque ligne doit améliorer l’expérience rider/pro ou simplifier l’opérationnel.
+- 🕊️ **Accessibilité & inclusion** : mobile-first, contrastes respectés et parcours compatibles WCAG 2.1 AA.
+- 🔐 **Éthique & RGPD** : aucun dark pattern, consentement explicite, données personnelles minimisées.
+- ⚙️ **Robustesse > nouveauté** : on privilégie un MVP stable plutôt qu’une fonctionnalité inachevée.
+- 🤝 **Apprentissage collectif** : commits lisibles, documentation à jour et commentaires pédagogiques lorsqu’une logique est subtile.
+
+## 🧠 Comportement attendu des IA
+
+### Lecture & préparation
+- Lire au moins trois fichiers proches (implémentation, tests, pattern analogue) avant toute modification pour comprendre le contexte.
+- Inspecter systématiquement les imports afin d’identifier DTO, services partagés et conventions typées.
+- Vérifier la cohérence API ↔ UI ↔ tests (schémas OpenAPI, validations Zod, types partagés) avant de proposer un changement.
+
+### Contributions attendues
+- Suivre le workflow AGENTS : persona explicite, plan clair (>1 étape), exploration avant code, tests annoncés.
+- Chaque proposition inclut une explication, une justification, un extrait cohérent et un plan de test (ou les raisons de son absence).
+- Tout changement fonctionnel entraîne la mise à jour des documents concernés (README, claude.md, ROADMAP, docs/*).
+
+### Outils & patterns obligatoires
+- Valider toutes les entrées avec **Zod** côté API (DTO) et synchroniser les types partagés (`packages/database`, `apps/web/types`).
+- Utiliser **Prisma** et les services existants : pas de SQL brut ni de bypass des couches métier.
+- Côté frontend, passer par `apps/web/lib/apiClient.ts` (gestion CSRF, tokens, retry) au lieu de `fetch` direct.
+- Réutiliser les composants **Shadcn/Tailwind** situés dans `apps/web/components/ui/*` (Button, Card, Switch, Dialog, etc.).
+- Les logs passent par `secureLogger` ou les utilitaires existants, jamais `console.log` en production.
+
+### Interdits immédiats
+- Aucun secret ni donnée personnelle en clair dans le code, les fixtures ou les tests.
+- Pas de cookies, tracking ou publicité sans consentement CMP explicite.
+- Ne jamais supprimer une validation Zod ni affaiblir un guard de sécurité sans validation sécurité/produit.
+- Pas d’ajout de champs liés au paiement/marketing sans décision produit documentée et revue RGPD.
+
+### Support & diagnostic
+- Proposer les commandes/logs/tests pertinents (ex. `npm run test`, `npm run openapi:lint`, `docker logs -f blobinfini-api`) lors d’un triage.
+- Remonter immédiatement toute ambiguïté documentaire ou divergence détectée dans le code.
+
+### Mini-règles anti-hallucinations
+- Toujours citer les fichiers/références du repo utilisés comme source lorsqu’on argumente.
+- Vérifier la présence réelle d’une dépendance ou d’un outil (package.json, docs) avant de l’évoquer.
+- Limiter la portée des modifications et expliciter toute hypothèse ou inconnue dans la PR.
+- Escalader vers l’humain quand une consigne est ambiguë ou contradictoire.
+
+## 🧩 Boîte à outils IA (commandes clés)
+
+| Commande | Usage |
+| --- | --- |
+| `npm run dev:all` | Lance API (4000) + Web (3002) avec watchers et hot reload |
+| `npm run type-check` | Vérification TypeScript stricte sur API + Web |
+| `npm run lint` | ESLint + règles Next.js côté frontend |
+| `npm run test` | Tests Jest côté API (unitaires/intégration, target 80% coverage) |
+| `npm run test:e2e` | Scénarios Playwright sur les parcours critiques |
+| `npm run openapi:lint` | Validation du schéma OpenAPI (`docs/openapi/openapi.yaml`) |
+| `npm run db:seed` | Recharge la base de démo (Prisma seed) |
+| `npm run db:studio` | Ouvre Prisma Studio pour inspection/migration |
+| `npm run storybook` | Lancement Storybook pour développement composants UI |
+| `npm run storybook:test` | Validation visuelle + snapshots des composants UI (target 70% coverage frontend) |
+
+⚠️ **Tests obligatoires avant PR** :
+- Modules critiques (auth, matching, bookings, blobosphère, ads) : `npm run test` + `npm run test:e2e` + `npm run storybook:test` si composants UI modifiés.
+- Pour toute modification d'un module critique, citer explicitement les commandes recommandées avant de livrer.
 
 ## 🧭 Source de vérité & IA
 
@@ -30,8 +98,29 @@
 - **Modification composants UI ou props** :
   - Actualiser les stories Storybook (`*.stories.tsx`) pour couvrir les nouveaux états (default/loading/error/disabled/etc.).
   - Régénérer les tests visuels (Storybook test runner, Playwright snapshots, Chromatic… selon outillage disponible) et accepter explicitement les diffs attendus.
-  - Vérifier la cohérence des types côté front (`packages/ui`, `apps/web`) et mettre à jour la doc utilisateur si nécessaire.
+  - Vérifier la cohérence des types côté front (`apps/web/components`, `apps/web/types`) et mettre à jour la doc utilisateur si nécessaire.
 - **Check PR obligatoire** : inclure dans la description la checklist Contrats/UI (OpenAPI à jour, stories/tests visuels à jour) avant demande de review.
+
+## 🎨 Règles UI Blobinfini
+
+- **Design system** : Tailwind + Shadcn, composants disponibles dans `apps/web/components/ui/*` (Button, Card, Switch, Dialog, Input, etc.). Pas de `<div>` ou `<button>` custom pour recréer ces patterns.
+  - ⚠️ **Pas de package `packages/ui` pour le MVP** : tous les composants restent dans `apps/web/components/ui/*` tant qu'il n'y a pas de deuxième frontend (admin séparé, mobile app).
+- **Formulaires** : suivre les patterns existants (`apps/web/components/AuthForm.tsx`, `components/reservations/*`).
+  - **Pattern standard** : validation côté API via DTO Zod → gestion d'état locale React (useState) → appels via `apps/web/lib/apiClient.ts` → affichage erreurs UX.
+  - **Pas de librairie de formulaires** pour le MVP (react-hook-form, formik). On garde le pattern simple actuel. À réévaluer si formulaires multi-étapes complexes.
+- **Icônes & illustrations** : utiliser `lucide-react` exclusivement, variantes accessibles (aria-label, title).
+- **Accessibilité** : focus visible, labels explicites, navigation clavier complète, sémantique respectée (role/aria). Tester via Storybook + axe.
+- **Design tokens** : ne jamais hardcoder les couleurs/espaces ; puiser dans `tailwind.config.ts` et les variables CSS globales.
+- **Stories & visual tests** : tout nouveau state/prop doit avoir sa story (`*.stories.tsx`) et être couvert par `npm run storybook:test` (snapshots ou visuels).
+
+## 🔐 IA Security Contracts
+
+- Refuser toute proposition qui stocke une donnée personnelle sans consentement explicite ou hors finalité documentée.
+- Alerter si un cookie, tracking ou publicité est introduit avant consentement CMP ou sans option d’opt-out.
+- Pas de champs liés au paiement ou au marketing agressif tant que le produit n’a pas validé l’usage et que la doc RGPD n’est pas mise à jour.
+- Vérifier systématiquement : JWT ≥ 64 caractères, secrets en `.env`, logs via `secureLogger`, tokens persistés chiffrés.
+- Aucun `console.log` en production, aucune dépendance propriétaire sans justification écrite et validation légale.
+- Ces garde-fous complètent la section **🔒 Règles de Sécurité CRITIQUES** : escalader immédiatement si une demande utilisateur les contredit.
 
 ## 📋 Changements récents importants
 
@@ -141,9 +230,9 @@ model RiderProfile {
 Frontend:  Next.js 14 (App Router) • TypeScript • Tailwind CSS • Shadcn/ui • PWA
 Backend:   Node.js • Express • Prisma ORM • PostgreSQL + PostGIS
 Temps réel: Socket.IO • Redis (cache + pub/sub)
-Paiements: Stripe (webhooks, 3D Secure — désactivé pour l'instant)
 Auth:      JWT + Refresh tokens • bcrypt • 2FA (TOTP)
-Infra:     Docker Compose (dev) • Cloud scalable (prod)
+Publicité: Google Adsense • Consentement RGPD strict
+Infra:     Docker Compose (dev) • Clever Cloud (prod) 🇫🇷
 ```
 
 ### Structure Monorepo - MVP
@@ -157,10 +246,10 @@ blobinfini/
 │               ├── auth/    # 🔐 Module authentification
 │               ├── users/   # Profils riders/pros
 │               ├── matching/# Algorithme matching
-│               ├── bookings/# Réservations
-│               ├── payments/# Stripe integration (mise en pause)
+│               ├── bookings/# Réservations & mise en relation
 │               ├── messaging/# Chat Socket.io
-│               └── blobosphere/# Contenus éditoriaux & partage social
+│               ├── blobosphere/# Contenus éditoriaux
+│               └── ads/     # Gestion publicité & consentement
 ├── packages/
 │   ├── database/            # Prisma schemas + client
 │   ├── shared/              # Types TypeScript partagés
@@ -223,6 +312,8 @@ modules/auth/
 - `POST /auth/forgot-password` - Demande reset
 - `POST /auth/reset-password` - Reset avec token
 
+> ℹ️ Les comptes `ADMIN` sont provisionnés manuellement par le core team : l’API d’inscription n’accepte plus ce rôle et l’UI publique ne l’expose pas.
+
 ## 🔒 Règles de Sécurité CRITIQUES
 
 ### RGPD & Données
@@ -240,10 +331,50 @@ modules/auth/
 - ✅ JWT access token (15min) + refresh token (30j)
 - ✅ 2FA obligatoire pour pros
 
-### Anti-contournement Commission
-- ✅ Filtrer numéros/emails dans messages
-- ✅ QR codes uniques par session
-- ✅ Tracking comportements suspects
+### Publicité & Consentement RGPD
+
+**Règles strictes pour la publicité** :
+
+```typescript
+// ✅ Gestion consentement publicité
+interface UserAdPreferences {
+  adsEnabled: boolean;           // Opt-out possible
+  personalizedAds: boolean;      // Consentement explicite requis
+  adProviders: string[];         // Liste providers acceptés
+  lastUpdated: Date;
+}
+
+// Interface dans profil utilisateur
+function AdPreferencesSettings() {
+  return (
+    <Card>
+      <CardTitle>🍪 Gestion de la publicité</CardTitle>
+      <CardDescription>
+        Blobinfini est une association gratuite financée par la publicité.
+        Vous pouvez désactiver les pubs, mais cela limite nos revenus.
+      </CardDescription>
+      <Switch
+        checked={adsEnabled}
+        label="Afficher les publicités (soutenir l'association)"
+      />
+      <Switch
+        checked={personalizedAds}
+        label="Publicités personnalisées (optionnel)"
+      />
+    </Card>
+  );
+}
+```
+
+**Emplacements publicitaires** :
+- Sidebar desktop (300x250)
+- Entre résultats matching (tous les 10 profils)
+- Footer articles Blobosphère
+
+**JAMAIS** :
+- ❌ Cookies pub avant consentement
+- ❌ Publicité intrusive (popup, interstitiel)
+- ❌ Saturation de l'UX (max 10% de l'espace)
 
 ## 🌐 Module Blobosphère
 
@@ -397,25 +528,28 @@ export function BookingCard({ booking, onUpdate }: BookingCardProps) {
 
 ### Phase 1 - MVP (Actuel)
 - [x] Setup monorepo Turborepo
-- [ ] Module auth complet (JWT, 2FA, reset)
-- [ ] Profils riders/pros avec validation
-- [ ] Matching géolocalisé simple
-- [ ] Réservation + paiement Stripe _(en pause)_
+- [x] Module auth complet (JWT, 2FA, reset)
+- [x] Profils riders/pros avec validation
+- [x] Matching géolocalisé
+- [ ] Création association loi 1901
+- [ ] Intégration Google Adsense + consentement RGPD
 - [ ] Chat basique Socket.IO
+- [ ] Blobosphère MVP (articles + SEO)
 
-### Phase 2 - Croissance
+### Phase 2 - Sponsors & Partenaires (T2 2026)
+- [ ] Page /sponsors sur le site
+- [ ] Démarchage marques surf/kite (5 sponsors)
+- [ ] Marketplace offres partenaires (/offres-partenaires)
+- [ ] Newsletter mensuelle avec sponsors
 - [ ] Social login (Google, Facebook)
-- [ ] Algorithme matching ML
-- [ ] PWA offline-first
-- [ ] Système de réputation
-- [ ] Programme fidélité
+- [ ] Système de réputation avancé
 
-### Phase 3 - Scale
-- [ ] Migration vers microservices
-- [ ] Multi-sports (windsurf, paddle)
-- [ ] API publique
-- [ ] Mascotte IA (chatbot)
-- [ ] Internationalisation
+### Phase 3 - Pérennisation (2027+)
+- [ ] Subventions publiques (DRAJES, Région)
+- [ ] Événements physiques sponsorisés
+- [ ] Multi-sports (windsurf, paddle, skate)
+- [ ] API publique pour partenaires
+- [ ] Internationalisation (Espagne, Portugal)
 
 ## 🐛 Debug & Monitoring
 
@@ -444,9 +578,21 @@ npm test -- --watch auth.test.ts
 ### Code
 - TypeScript strict mode
 - Pas de `any`, utiliser `unknown`
-- Tests min 80% coverage
+- **Tests & couverture** :
+  - **API** : Min 80% coverage (`npm run test` via Jest)
+  - **Frontend** : Min 70% coverage progressive (Storybook + snapshots visuels prioritaires)
+  - **E2E** : Parcours critiques via Playwright (`npm run test:e2e`)
+  - **Commandes clés** : `npm run test`, `npm run storybook:test`, `npm run test:e2e`
 - Commentaires en français OK
 - Noms variables/fonctions en anglais
+
+### 2025-11-09 — Normalisation du nettoyage Jest & isolation des suites e2e
+
+1. **Résumé pédagogique** – Toutes les suites end-to-end (`auth`, `conversations`, `matching`, `profile`, `admin`, `contact`, `anti-overbooking`, `booking`) reconstruisent désormais leurs fixtures dans un `beforeEach()`. Chaque test repart donc d’un état neuf et n’hérite plus des mutations du test précédent.
+2. **Description technique** – Le nettoyage Jest central (`apps/api/jest.setup.db.ts`) repasse systématiquement sur toutes les tables entre les suites, sans exceptions restantes dans `skipCleanupPatterns`. Cette uniformisation stabilise la CI et prépare la bascule vers Prisma 7, où les différences de schema seront immédiatement détectées.
+
+> 🧠 Coach pédago : imagine une gare où chaque train (suite e2e) dispose d’un mini-atelier de remise à zéro avant le départ, pendant que la grande équipe de nettoyage repasse entre chaque passage.  
+> 🧭 Prochaine balade naturelle : surveiller les futures suites e2e et documenter rapidement toute nouvelle exception afin de préserver cette isolation totale.
 
 ### Base de données
 - Migrations versionnées
@@ -465,17 +611,48 @@ npm test -- --watch auth.test.ts
 
 ## 🔗 Ressources Clés
 
-- [Stripe Docs](https://stripe.com/docs)
+### Documentation technique
+
 - [PostGIS Spatial](https://postgis.net/docs/)
 - [Socket.IO Rooms](https://socket.io/docs/v4/rooms/)
 - [Prisma Relations](https://www.prisma.io/docs/concepts/components/prisma-schema/relations)
 - [JWT Best Practices](https://datatracker.ietf.org/doc/html/rfc8725)
+- [Google Adsense Policies](https://support.google.com/adsense/answer/48182)
+
+### RGPD & Sécurité 🇫🇷
+
+- [CNIL - Guide RGPD du développeur](https://www.cnil.fr/fr/guide-rgpd-du-developpeur)
+- [CNIL - Cookies et traceurs](https://www.cnil.fr/fr/cookies-et-autres-traceurs)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [ANSSI - Bonnes pratiques](https://www.ssi.gouv.fr/)
+
+### Association loi 1901
+
+- [Service-Public - Créer une association](https://www.service-public.fr/associations/vosdroits/F1119)
+- [Associations.gouv.fr - RNA](https://www.associations.gouv.fr/)
+- [Légifrance - Loi 1901](https://www.legifrance.gouv.fr/loda/id/JORFTEXT000000497458/)
+
+## 📚 Documentation Annexe Détaillée
+
+Pour des guides approfondis, consultez le dossier `/docs` :
+
+- **[Modèle Économique](docs/business-model.md)** ⭐ : Association, publicité, sponsors, offres partenaires
+- **[Configuration MCP](docs/mcp-config.md)** : Serveurs MCP pour IA (GitHub, Sentry, Playwright, etc.)
+- **[Blobosphère](docs/blobosphere.md)** : Guide complet avec focus RGPD/sécurité
+- **[Changelog](docs/changelog.md)** : Historique détaillé des changements
+- **[Migration Prisma 6](docs/migration-prisma6.md)** : Guide migration Prisma 5 → 6
+- **[CI/E2E](docs/ci-e2e.md)** : Tests end-to-end et CI/CD
+- **[Storybook](docs/storybook.md)** : Guide Storybook composants UI
 
 ## 🤖 Configuration MCP pour les IA
 
 ### Serveurs MCP Disponibles
 
-Le projet utilise **Model Context Protocol (MCP)** pour enrichir les capacités des IA. Deux configurations distinctes :
+Le projet utilise **Model Context Protocol (MCP)** pour enrichir les capacités des IA.
+
+> 📖 **Documentation complète** : Voir [docs/mcp-config.md](docs/mcp-config.md) pour la configuration détaillée.
+
+**Serveurs disponibles** :
 
 #### 1. Claude Code (CLI) - `~/.config/claude-code/mcp.json`
 
@@ -575,16 +752,24 @@ Quand tu génères du code pour Blobinfini :
 5. **Sécurité systématique** : Valide tout avec Zod
 6. **RGPD strict** : Consentements, anonymisation
 7. **Performance** : Cache Redis, index DB
-8. **UX mobile** : Touch-friendly, offline-first
-9. **Commission protégée** : Filtrage contacts
-10. **Tests inclus** : Au moins un test par fonction
+8. **UX mobile** : Touch-friendly, offline-first (PWA)
+9. **Publicité éthique** : Consentement RGPD, opt-out facile, max 10% espace
+10. **Tests inclus** : Au moins un test par fonction (min 80% coverage)
 11. **Accessibilité** : WCAG 2.1 AA minimum
 
 ### Contexte métier clé
-- Matching : Multi-critères, max 4 riders/groupe, géoloc PostGIS
-- Paiement : Stripe uniquement, 3D Secure, commission 10-15% (désactivé temporairement)
-- Social : Messages filtrés, groupes verrouillables
-- Auth : JWT 15min + refresh 30j, 2FA pros obligatoire
+
+**Modèle économique** :
+- **Association loi 1901** (gratuit pour tous)
+- **Revenus** : Publicité (Google Adsense) + Sponsors surf/kite + Offres partenaires
+- **Pas de commission** sur transactions
+- **Pas de paiement intégré** (mise en relation uniquement)
+
+**Fonctionnalités** :
+- **Matching** : Multi-critères, max 4 riders/groupe, géoloc PostGIS
+- **Social** : Messages temps réel, groupes, favoris
+- **Auth** : JWT 15min + refresh 30j, 2FA pros obligatoire
+- **Sécurité** : Contrôle identité pro par riders avant session
 
 ### Rôles Claude Code
 - Impl rapide: `ai/personas/yolo.md` + `ai/prompts/yolo_task.md`.
@@ -605,13 +790,17 @@ Quand tu génères du code pour Blobinfini :
 - Claude Code dépose des `.diff`/`.md` dans `proposals/`; Codex applique/valide et renvoie feedback.
 ## 👥 Rôles & Profils (Rider/Pro)
 
-- RiderProfile
-  - Champs clés: `displayName`, `sex`, `lat/lng`, `wantsLesson` (bool), `lessonSport` ('surf'|'kitesurf').
-  - Badge “🎓 Cours” en matching si `wantsLesson=true` (visible sur cartes et résultats).
+### RiderProfile
 
-- ProProfile
-  - Champs clés: `businessName`, `bio`, `photoUrl`, `lat/lng` (lieu de travail), `verified` (bool).
-  - `pricePerHour` conservé en base mais non exposé dans l’UI publique pour l’instant.
+- **Champs clés** : `displayName`, `sex`, `lat/lng`, `wantsLesson` (bool), `lessonSport` ('surf'|'kitesurf')
+- **Matching** : Préférence cours affichée dans les résultats
+- **Sécurité** : Conseils contrôle identité pro avant session
+
+### ProProfile
+
+- **Champs clés** : `businessName`, `bio`, `photoUrl`, `lat/lng` (lieu de travail)
+- **Vérification** : Badge `verified` (bool) après validation admin (SIRET, assurance, diplômes)
+- **Tarification** : Affichage tarifs indicatifs (négociation directe rider/pro)
 
 ### BloboMap (Pros)
 - Front: `/pro/map` (Leaflet + OpenStreetMap, gratuit). Filtres: sport (surf/kite) et rayon (km).
@@ -620,8 +809,10 @@ Quand tu génères du code pour Blobinfini :
 - Page `/pro/profile`: renseigner lat/lng + logo (sinon la carte affiche un message invitant à compléter le profil).
 
 ### Matching (Rider)
-- Page `/matching`: interrupteur “Je veux un cours avec un pro” → met `wantsLesson=true` et `lessonSport` selon le sport choisi; bouton dédié “Faire appel à un pro”.
-- Résultats/cartes: badge “🎓 Cours” sur les profils qui souhaitent un cours.
+
+- **Page `/matching`** : Interrupteur "Je veux un cours avec un pro" → `wantsLesson=true` + `lessonSport`
+- **Résultats** : Indication "Recherche cours" visible sur les profils
+- **Sécurité** : Avertissement contrôle identité pro avant confirmation réservation
 
 ### Seeds & Commandes utiles
 - `npm run db:seed` → injecte tous les comptes de démo.

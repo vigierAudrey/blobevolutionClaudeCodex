@@ -44,10 +44,7 @@ beforeAll(async () => {
 afterEach(async () => {
   // Skip cleanup si le test gère son propre cycle de vie
   const testPath = expect.getState().testPath || '';
-  const skipCleanupPatterns = [
-    'anti-overbooking.test.ts',
-    'booking.e2e.test.ts',
-  ];
+  const skipCleanupPatterns: string[] = [];
 
   const shouldSkipCleanup = skipCleanupPatterns.some(pattern => testPath.includes(pattern));
 

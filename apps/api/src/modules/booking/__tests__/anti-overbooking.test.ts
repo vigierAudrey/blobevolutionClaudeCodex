@@ -8,8 +8,7 @@ describe('Système anti-overbooking et gestion des capacités', () => {
   let riderUserId3: string;
   let availabilityId: string;
 
-  beforeAll(async () => {
-    // Nettoyer les données
+  const seedUsers = async () => {
     await prisma.booking.deleteMany();
     await prisma.bookingRequest.deleteMany();
     await prisma.proAvailability.deleteMany();
@@ -17,26 +16,29 @@ describe('Système anti-overbooking et gestion des capacités', () => {
     await prisma.proProfile.deleteMany();
     await prisma.user.deleteMany();
 
-    // Créer des utilisateurs de test
     const proUser = await prisma.user.create({
-      data: { email: 'pro-overbooking@test.com', password: 'testpass', role: 'PRO', emailVerified: true },
+      data: { email: 'pro-overbooking@test.com', password: 'testpass', role: 'PRO', emailVerified: true }
     });
     proUserId = proUser.id;
 
     const rider1 = await prisma.user.create({
-      data: { email: 'rider1-overbooking@test.com', password: 'testpass', emailVerified: true },
+      data: { email: 'rider1-overbooking@test.com', password: 'testpass', emailVerified: true }
     });
     riderUserId1 = rider1.id;
 
     const rider2 = await prisma.user.create({
-      data: { email: 'rider2-overbooking@test.com', password: 'testpass', emailVerified: true },
+      data: { email: 'rider2-overbooking@test.com', password: 'testpass', emailVerified: true }
     });
     riderUserId2 = rider2.id;
 
     const rider3 = await prisma.user.create({
-      data: { email: 'rider3-overbooking@test.com', password: 'testpass', emailVerified: true },
+      data: { email: 'rider3-overbooking@test.com', password: 'testpass', emailVerified: true }
     });
     riderUserId3 = rider3.id;
+  };
+
+  beforeEach(async () => {
+    await seedUsers();
   });
 
   afterAll(async () => {
