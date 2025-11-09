@@ -49,22 +49,3 @@ npm run build --workspace=@blobinfini/web
 **Moyenne** - Le dev server fonctionne probablement, mais le build de production échoue.
 
 ---
-
-**Créé par** : Claude Code (Sonnet 4.5)
-**À traiter après** : (OK 08/11/2025) Suppression module credits finalisée
-
-## 🧪 Investigation 08/11/2025 (Codex)
-
-- Build reproduit deux fois via `npm run build --workspace=@blobinfini/web` : compilation, lint et SSG terminent sans erreur `useContext`.
-- Audit des usages `useContext` (`rg "useContext" apps/web`) : uniquement `components/ui/toast.tsx` et `components/ui/dialog.tsx`, tous deux marqués `'use client'` et wrapés par `ClientProvider` dans `app/layout.tsx`.
-- Vérification du provider toast : `ClientProvider` entoure tout le `<body>`, supprimant l'hypothèse d'un context absent sur `/login`, `/messages`, `/pro/offers`.
-- Chunk `4375.js` correspond principalement aux icônes Lucide + utilitaires Next (`AppRouterAnnouncer`). L’erreur vue précédemment indique que le module React était résolu à `null`, vraisemblablement dû à un cache `.next`/`node_modules` corrompu pendant la suppression de `credits`.
-
-## ✅ Statut actuel
-
-- ✅ Build Next.js stable (2 runs consécutifs).
-- ⚠️ Aucune modif code nécessaire pour l'instant. Si l'erreur réapparaît, lancer un `rm -rf apps/web/.next node_modules && npm install` pour repartir d'un cache sain avant de relancer le build.
-
-## 🧾 Tests exécutés
-
-- `npm run build --workspace=@blobinfini/web`

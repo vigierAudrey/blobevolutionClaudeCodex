@@ -30,6 +30,7 @@ blobevolutionClaudeCodex/
 │        │  ├─ chat/            # ✅ Messagerie temps réel (Socket.IO)
 │        │  ├─ consent/         # ✅ Consentement pub/cookies (RGPD)
 │        │  ├─ contact/         # Contact/support
+│        │  ├─ credits/         # Système de crédits
 │        │  ├─ matching/        # ✅ Algorithme matching géolocalisé
 │        │  ├─ pro/             # ✅ Gestion pros (offres, profils)
 │        │  ├─ profile/         # ✅ Profils riders/pros
@@ -70,8 +71,6 @@ blobevolutionClaudeCodex/
   - Sport (surf/kitesurf)
   - Niveau (±1 niveau toléré)
   - Disponibilités
-- Scoring : distance (40%) + niveau (30%) + dispo (30%)
-- Max 4 riders par groupe
 
 ### Booking (Réservations)
 - Mise en relation riders ↔ pros
@@ -102,7 +101,7 @@ blobevolutionClaudeCodex/
 
 ### Pro Offers (Offres Pros) ✅
 - **Page** : `/pro/offers` (`apps/web/app/pro/offers/page.tsx`)
-- Gestion tarifs cours par sport/niveau
+- Gestion cours par sport/niveau
 - Configuration disponibilités
 - API : `apps/api/src/modules/pro/`
 
@@ -216,6 +215,7 @@ Infra:     Docker Compose (dev) • Clever Cloud (prod) 🇫🇷
 |--------|--------------|--------|
 | **Admin** | `modules/admin/` | ✅ Fonctionnel |
 | **Contact** | `modules/contact/` | ✅ Fonctionnel |
+| **Credits** | `modules/credits/` | ✅ Fonctionnel |
 
 ---
 
