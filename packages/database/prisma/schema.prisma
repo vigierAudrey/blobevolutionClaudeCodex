@@ -154,6 +154,7 @@ model AdminProfile {
   userId      String    @unique
   displayName String?
   permissions String[]  @default([])
+  allowedIPs  String[]  @default([])  // IPs autorisées pour ce compte admin
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -410,6 +411,21 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([userId])
+}
+
+model LegalConsentArchive {
+  id             Int       @id @default(autoincrement())
+  originalUserId String
+  consentedAt    DateTime?
+  consentVersion String?
+  consentIpHash  String?
+  deletedAt      DateTime
+  archivedAt     DateTime  @default(now())
+
+  @@unique([originalUserId, deletedAt])
+  @@index([originalUserId])
+  @@index([consentedAt])
+  @@index([archivedAt])
 }
 
 enum Role {

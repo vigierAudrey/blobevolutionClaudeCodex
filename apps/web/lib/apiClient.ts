@@ -202,6 +202,39 @@ export interface AdminBehaviorAnalytics {
   };
 }
 
+export interface AdminBlockedConversation {
+  conversationId: string;
+  blockedAt: string | null;
+  user: {
+    id: string;
+    email: string;
+    role: string;
+  };
+  conversation?: {
+    id: string;
+    type: string;
+    createdAt: string;
+    members: Array<{
+      user: { id: string; email: string; role: string };
+      blockedAt: string | null;
+    }>;
+  };
+}
+
+export interface AdminSecurityEvent {
+  id: string;
+  action: string;
+  resource: string;
+  createdAt: string;
+  ip?: string | null;
+  user?: { id: string; email: string; role: string | null } | null;
+}
+
+export interface AdminSecuritySummary {
+  since: string;
+  items: Array<{ action: string; count: number }>;
+}
+
 export interface AdminMatchingTTFM {
   period: AdminAnalyticsPeriod;
   sampleSize: number;
@@ -549,8 +582,8 @@ export const apiClient = {
   send2FA: (email: string) =>
     request('/auth/2fa/send', { method: 'POST', body: JSON.stringify({ email }) }),
 
-  verify2FA: (email: string, code: string) =>
-    request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<LoginResponse>,
+  verify2FA: (userId: string, code: string, consentAccepted?: boolean) =>
+    request('/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ userId, code, consentAccepted }) }) as Promise<LoginResponse>,
 
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
   updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
@@ -674,6 +707,28 @@ export const apiClient = {
     request(`/admin/admins/${adminId}/permissions`, { method: 'PATCH', body: JSON.stringify({ permissions }) }, true),
   setAdminRole: (adminId: string, role: string) =>
     request(`/admin/admins/${adminId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }, true),
+  setAdminAllowedIPs: (adminId: string, allowedIPs: string[]) =>
+    request(`/admin/admins/${adminId}/allowed-ips`, { method: 'PATCH', body: JSON.stringify({ allowedIPs }) }, true),
+  getBlockedConversations: (limit: number = 5) => {
+    const query = new URLSearchParams({ limit: limit.toString() });
+    return request(`/admin/conversations/blocked?${query.toString()}`, { method: 'GET' }, true) as Promise<{
+      blocked: AdminBlockedConversation[];
+    }>;
+  },
+  getSecurityEvents: (limit: number = 5) => {
+    const query = new URLSearchParams({ limit: limit.toString() });
+    return request(`/admin/security/events?${query.toString()}`, { method: 'GET' }, true) as Promise<{
+      events: AdminSecurityEvent[];
+    }>;
+  },
+  getSecurityLogsSummary: (days: number = 7) =>
+    request(`/admin/security/logs/summary?days=${days}`, { method: 'GET' }, true) as Promise<AdminSecuritySummary>,
+  setAdminAllowedIPs: (adminId: string, allowedIPs: string[]) =>
+    request(
+      `/admin/admins/${adminId}/allowed-ips`,
+      { method: 'PATCH', body: JSON.stringify({ allowedIPs }) },
+      true
+    ),
   getEngagementAnalytics: (period?: AdminAnalyticsPeriod) => {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/engagement${query}`, { method: 'GET' }, true) as Promise<AdminEngagementAnalytics>;

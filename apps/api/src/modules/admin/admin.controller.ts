@@ -5,6 +5,8 @@ import type { DecisionKind } from '@blobinfini/database';
 import { requireAuth, requireAdmin } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
 import { audit } from '../../middleware/audit';
+import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
+import { requirePermissions } from './admin.guard';
 
 export const adminRouter = Router();
 
@@ -13,7 +15,7 @@ adminRouter.use(requireAuth);
 adminRouter.use(requireAdmin);
 
 // Statistiques principales
-adminRouter.get('/stats', async (req, res) => {
+adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:stats:view', () => 'admin:stats'), async (req, res) => {
   try {
     // Compter les utilisateurs par rôle
     const totalUsers = await prisma.user.count();
@@ -63,7 +65,11 @@ adminRouter.get('/stats', async (req, res) => {
 });
 
 // Lister tous les utilisateurs avec pagination
-adminRouter.get('/users', async (req, res) => {
+adminRouter.get(
+  '/users',
+  requirePermissions('users.view'),
+  audit('admin:users:list', (req) => `admin:users:page:${req.query.page ?? 1}`),
+  async (req, res) => {
   try {
     const page = parseInt(req.query.page as string || '1');
     const limit = parseInt(req.query.limit as string || '20');
@@ -127,7 +133,11 @@ adminRouter.get('/users', async (req, res) => {
 });
 
 // Suspendre/réactiver un utilisateur
-adminRouter.patch('/users/:id/suspend', audit('admin:user:suspend', (req) => `user:${req.params.id}`), async (req, res) => {
+adminRouter.patch(
+  '/users/:id/suspend',
+  requirePermissions('users.suspend'),
+  audit('admin:user:suspend', (req) => `user:${req.params.id}`),
+  async (req, res) => {
   try {
     const userId = req.params.id;
     const { suspended } = z.object({
@@ -170,7 +180,11 @@ adminRouter.patch('/users/:id/suspend', audit('admin:user:suspend', (req) => `us
   }
 });
 
-adminRouter.get('/users/:id', async (req, res) => {
+adminRouter.get(
+  '/users/:id',
+  requirePermissions('users.view'),
+  audit('admin:users:get', (req) => `user:${req.params.id}`),
+  async (req, res) => {
   try {
     const userId = req.params.id;
 
@@ -279,7 +293,11 @@ adminRouter.get('/users/:id', async (req, res) => {
 });
 
 // Vérifier un professionnel
-adminRouter.patch('/pros/:id/verify', audit('admin:pro:verify', (req) => `pro:${req.params.id}`), async (req, res) => {
+adminRouter.patch(
+  '/pros/:id/verify',
+  requirePermissions('pros.verify'),
+  audit('admin:pro:verify', (req) => `pro:${req.params.id}`),
+  async (req, res) => {
   try {
     const userId = req.params.id;
     const { verified } = z.object({
@@ -307,7 +325,11 @@ adminRouter.patch('/pros/:id/verify', audit('admin:pro:verify', (req) => `pro:${
 });
 
 // Lister les signalements
-adminRouter.get('/reports', async (req, res) => {
+adminRouter.get(
+  '/reports',
+  requirePermissions('reports.view'),
+  audit('admin:reports:list', () => 'admin:reports'),
+  async (req, res) => {
   try {
     const page = parseInt(req.query.page as string || '1');
     const limit = parseInt(req.query.limit as string || '20');
@@ -360,39 +382,6 @@ adminRouter.get('/reports', async (req, res) => {
   }
 });
 
-// Définition des permissions disponibles
-export const AVAILABLE_PERMISSIONS = [
-  'users.view',
-  'users.suspend',
-  'users.delete',
-  'pros.verify',
-  'pros.manage',
-  'reports.view',
-  'reports.moderate',
-  'analytics.view',
-  'permissions.manage',
-  'system.configure'
-] as const;
-
-export type Permission = typeof AVAILABLE_PERMISSIONS[number];
-
-// Rôles prédéfinis avec leurs permissions
-export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
-  SUPER_ADMIN: AVAILABLE_PERMISSIONS as any,
-  MODERATOR: [
-    'users.view',
-    'users.suspend',
-    'pros.verify',
-    'reports.view',
-    'reports.moderate',
-    'analytics.view'
-  ],
-  ANALYTICS: [
-    'users.view',
-    'analytics.view'
-  ]
-};
-
 const auditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -404,7 +393,11 @@ const auditQuerySchema = z.object({
 });
 
 // Lister les permissions disponibles
-adminRouter.get('/permissions', async (req, res) => {
+adminRouter.get(
+  '/permissions',
+  requirePermissions('permissions.manage'),
+  audit('admin:permissions:list', () => 'admin:permissions'),
+  async (req, res) => {
   try {
     return res.json({
       available: AVAILABLE_PERMISSIONS,
@@ -417,7 +410,11 @@ adminRouter.get('/permissions', async (req, res) => {
 });
 
 // Lister les administrateurs avec leurs permissions
-adminRouter.get('/admins', async (req, res) => {
+adminRouter.get(
+  '/admins',
+  requirePermissions('permissions.manage'),
+  audit('admin:admins:list', () => 'admin:admins'),
+  async (req, res) => {
   try {
     const admins = await prisma.user.findMany({
       where: {
@@ -433,7 +430,8 @@ adminRouter.get('/admins', async (req, res) => {
           select: {
             displayName: true,
             permissions: true,
-            lastLoginAt: true
+            lastLoginAt: true,
+            allowedIPs: true
           }
         }
       },
@@ -450,7 +448,11 @@ adminRouter.get('/admins', async (req, res) => {
 });
 
 // Mettre à jour les permissions d'un admin
-adminRouter.patch('/admins/:id/permissions', audit('admin:permissions:update', (req) => `admin:${req.params.id}`), async (req, res) => {
+adminRouter.patch(
+  '/admins/:id/permissions',
+  requirePermissions('permissions.manage'),
+  audit('admin:permissions:update', (req) => `admin:${req.params.id}`),
+  async (req, res) => {
   try {
     const adminId = req.params.id;
     const { permissions } = z.object({
@@ -510,7 +512,11 @@ adminRouter.patch('/admins/:id/permissions', audit('admin:permissions:update', (
 });
 
 // Appliquer un rôle prédéfini à un admin
-adminRouter.patch('/admins/:id/role', async (req, res) => {
+adminRouter.patch(
+  '/admins/:id/role',
+  requirePermissions('permissions.manage'),
+  audit('admin:role:apply', (req) => `admin:${req.params.id}`),
+  async (req, res) => {
   try {
     const adminId = req.params.id;
     const { role } = z.object({
@@ -565,7 +571,73 @@ adminRouter.patch('/admins/:id/role', async (req, res) => {
   }
 });
 
-adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
+// ✅ NOUVEAU : Gérer les IPs autorisées pour un admin
+adminRouter.patch(
+  '/admins/:id/allowed-ips',
+  requirePermissions('permissions.manage'),
+  audit('admin:allowed-ips:update', (req) => `admin:${req.params.id}`),
+  async (req, res) => {
+  try {
+    const adminId = req.params.id;
+    const { allowedIPs } = z.object({
+      allowedIPs: z.array(z.string().ip())
+    }).parse(req.body);
+
+    // Vérifier que l'admin cible existe
+    const targetAdmin = await prisma.user.findUnique({
+      where: { id: adminId, role: 'ADMIN' },
+      select: { id: true }
+    });
+
+    if (!targetAdmin) {
+      return res.status(404).json({ error: 'Admin not found' });
+    }
+
+    // Ne pas permettre de modifier ses propres IPs (risque de se bloquer)
+    const currentUser = (req as any).user as { id: string };
+    if (targetAdmin.id === currentUser.id) {
+      return res.status(403).json({
+        error: 'Cannot modify your own IP whitelist',
+        message: 'Pour des raisons de sécurité, vous ne pouvez pas modifier votre propre liste d\'IPs autorisées'
+      });
+    }
+
+    // Mettre à jour les IPs autorisées
+    const adminProfile = await prisma.adminProfile.upsert({
+      where: { userId: adminId },
+      create: {
+        userId: adminId,
+        allowedIPs: allowedIPs
+      },
+      update: {
+        allowedIPs: allowedIPs
+      },
+      select: {
+        id: true,
+        allowedIPs: true,
+        user: {
+          select: {
+            email: true
+          }
+        }
+      }
+    });
+
+    return res.json(adminProfile);
+  } catch (error) {
+    console.error('Admin allowed IPs update error:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+adminRouter.get(
+  '/analytics/matching/ttfm',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:ttfm', () => 'admin:analytics:ttfm'),
+  async (req, res) => {
   try {
     const periodParam = typeof req.query.period === 'string' ? req.query.period : '30d';
     const period: AnalyticsPeriod = ['7d', '30d', '90d', '1y'].includes(periodParam)
@@ -753,7 +825,11 @@ adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
 // Analytics détaillées - Engagement
 type AnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
 
-adminRouter.get('/analytics/engagement', async (req, res) => {
+adminRouter.get(
+  '/analytics/engagement',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:engagement', () => 'admin:analytics:engagement'),
+  async (req, res) => {
   try {
     const periodParam = typeof req.query.period === 'string' ? req.query.period : '30d';
     const period: AnalyticsPeriod = ['7d', '30d', '90d', '1y'].includes(periodParam)
@@ -909,7 +985,11 @@ adminRouter.get('/analytics/engagement', async (req, res) => {
 });
 
 // Analytics détaillées - Matching
-adminRouter.get('/analytics/matching', async (req, res) => {
+adminRouter.get(
+  '/analytics/matching',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:matching', () => 'admin:analytics:matching'),
+  async (req, res) => {
   try {
     const periodParam = typeof req.query.period === 'string' ? req.query.period : '30d';
     const period: AnalyticsPeriod = ['7d', '30d', '90d', '1y'].includes(periodParam)
@@ -1174,7 +1254,11 @@ const reportActionSchema = z.object({
   action: z.enum(['approve', 'dismiss', 'ban'])
 });
 
-adminRouter.post('/reports/:id/action', async (req, res) => {
+adminRouter.post(
+  '/reports/:id/action',
+  requirePermissions('reports.moderate'),
+  audit('admin:report:action', (req) => `report:${req.params.id}`),
+  async (req, res) => {
   try {
     const reportId = req.params.id;
     const { action } = reportActionSchema.parse(req.body);
@@ -1241,7 +1325,147 @@ adminRouter.post('/reports/:id/action', async (req, res) => {
   }
 });
 
-adminRouter.get('/analytics/behavior', async (req, res) => {
+adminRouter.get(
+  '/conversations/blocked',
+  requirePermissions('reports.view'),
+  audit('admin:conversations:blocked', () => 'admin:conversations:blocked'),
+  async (req, res) => {
+    try {
+      const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 100);
+      const blockedMembers = await prisma.conversationMember.findMany({
+        where: { blockedAt: { not: null } },
+        orderBy: { blockedAt: 'desc' },
+        take: limit,
+        include: {
+          user: {
+            select: { id: true, email: true, role: true }
+          },
+          conversation: {
+            select: {
+              id: true,
+              type: true,
+              createdAt: true,
+              members: {
+                select: {
+                  user: {
+                    select: { id: true, email: true, role: true }
+                  },
+                  blockedAt: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const items = blockedMembers.map(member => ({
+        conversationId: member.conversationId,
+        blockedAt: member.blockedAt,
+        user: member.user,
+        conversation: {
+          id: member.conversation?.id,
+          type: member.conversation?.type,
+          createdAt: member.conversation?.createdAt,
+          members: member.conversation?.members.map(cm => ({
+            user: cm.user,
+            blockedAt: cm.blockedAt
+          }))
+        }
+      }));
+
+      return res.json({
+        blocked: items,
+        pagination: {
+          limit,
+          count: items.length
+        }
+      });
+    } catch (error) {
+      console.error('Admin blocked conversations list error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+const securityActionPrefixes = ['security:', 'admin:gdpr:', 'admin:allowed-ips', 'admin:user:', 'admin:report:'];
+const securityActionsExact = ['admin:permissions:update', 'admin:role:apply'];
+
+adminRouter.get(
+  '/security/events',
+  requirePermissions('system.configure'),
+  audit('admin:security:events', () => 'admin:security:events'),
+  async (req, res) => {
+    try {
+      const limit = Math.min(parseInt((req.query.limit as string) || '100', 10), 200);
+      const events = await prisma.auditLog.findMany({
+        where: {
+          OR: [
+            ...securityActionPrefixes.map(prefix => ({ action: { startsWith: prefix } })),
+            { action: { in: securityActionsExact } }
+          ]
+        },
+        include: {
+          user: {
+            select: { id: true, email: true, role: true }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit
+      });
+
+      return res.json({ events });
+    } catch (error) {
+      console.error('Admin security events error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.get(
+  '/security/logs/summary',
+  requirePermissions('system.configure'),
+  audit('admin:security:logs:summary', () => 'admin:security:logs:summary'),
+  async (req, res) => {
+    try {
+      const days = Math.min(parseInt((req.query.days as string) || '7', 10), 90);
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const grouped = await prisma.auditLog.groupBy({
+        by: ['action'],
+        where: {
+          createdAt: { gte: since },
+          OR: [
+            ...securityActionPrefixes.map(prefix => ({ action: { startsWith: prefix } })),
+            { action: { in: securityActionsExact } }
+          ]
+        },
+        _count: { action: true },
+        orderBy: {
+          _count: {
+            action: 'desc'
+          }
+        },
+        take: 25
+      });
+
+      return res.json({
+        since,
+        items: grouped.map(item => ({
+          action: item.action,
+          count: item._count.action
+        }))
+      });
+    } catch (error) {
+      console.error('Admin security logs summary error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.get(
+  '/analytics/behavior',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:behavior', () => 'admin:analytics:behavior'),
+  async (req, res) => {
   try {
     const periodParam = typeof req.query.period === 'string' ? req.query.period : '30d';
     const period: AnalyticsPeriod = ['7d', '30d', '90d', '1y'].includes(periodParam)
@@ -1545,7 +1769,11 @@ adminRouter.get('/analytics/behavior', async (req, res) => {
 // ===== ENDPOINTS RGPD =====
 
 // Rapport de conformité RGPD
-adminRouter.get('/gdpr/compliance-report', requireAuth, requireAdmin, async (req, res) => {
+adminRouter.get(
+  '/gdpr/compliance-report',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:report', () => 'admin:gdpr:report'),
+  async (req, res) => {
   try {
     const report = await gdprPurgeService.getGDPRComplianceReport();
 
@@ -1592,7 +1820,11 @@ adminRouter.get('/gdpr/compliance-report', requireAuth, requireAdmin, async (req
 });
 
 // Exécution manuelle de la purge RGPD
-adminRouter.post('/gdpr/run-purge', requireAuth, requireAdmin, async (req, res) => {
+adminRouter.post(
+  '/gdpr/run-purge',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:run-purge', () => 'gdpr:purge'),
+  async (req, res) => {
   try {
     const result = await gdprPurgeService.performFullPurge();
 
@@ -1613,26 +1845,21 @@ adminRouter.post('/gdpr/run-purge', requireAuth, requireAdmin, async (req, res) 
 });
 
 // Recherche dans l'archive légale (pour litiges)
-adminRouter.get('/gdpr/legal-archive/:userId', requireAuth, requireAdmin, async (req, res) => {
+adminRouter.get(
+  '/gdpr/legal-archive/:userId',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:legal-archive', (req) => `gdpr:archive:${req.params.userId}`),
+  async (req, res) => {
   try {
     const { userId } = req.params;
 
     // Rechercher dans l'archive légale
-    const legalRecord = await prisma.$queryRaw`
-      SELECT
-        original_user_id,
-        consented_at,
-        consent_version,
-        consent_ip_hash,
-        deleted_at,
-        archived_at
-      FROM legal_consent_archive
-      WHERE original_user_id = ${userId}
-      ORDER BY archived_at DESC
-      LIMIT 1
-    `;
+    const legalRecord = await prisma.legalConsentArchive.findFirst({
+      where: { originalUserId: userId },
+      orderBy: { archivedAt: 'desc' }
+    });
 
-    if (!Array.isArray(legalRecord) || legalRecord.length === 0) {
+    if (!legalRecord) {
       return res.status(404).json({
         error: 'Aucune archive légale trouvée pour cet utilisateur',
         userId
@@ -1642,7 +1869,7 @@ adminRouter.get('/gdpr/legal-archive/:userId', requireAuth, requireAdmin, async 
     return res.json({
       found: true,
       userId,
-      legalEvidence: legalRecord[0],
+      legalEvidence: legalRecord,
       purpose: 'Archive légale pour protection en cas de litige',
       note: 'Ces données sont conservées conformément aux obligations légales de preuve'
     });
@@ -1653,7 +1880,11 @@ adminRouter.get('/gdpr/legal-archive/:userId', requireAuth, requireAdmin, async 
 });
 
 // Audit logs
-adminRouter.get('/audit', async (req, res) => {
+adminRouter.get(
+  '/audit',
+  requirePermissions('system.configure'),
+  audit('admin:audit:list', () => 'admin:audit'),
+  async (req, res) => {
   try {
     const { page, limit, action, userId, resource, startDate, endDate } = auditQuerySchema.parse(req.query);
 
@@ -1706,7 +1937,11 @@ adminRouter.get('/audit', async (req, res) => {
 });
 
 // GDPR Exports Monitoring Dashboard
-adminRouter.get('/gdpr/exports', async (req, res) => {
+adminRouter.get(
+  '/gdpr/exports',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:exports', () => 'admin:gdpr:exports'),
+  async (req, res) => {
   try {
     const {
       page = '1',
@@ -1880,7 +2115,11 @@ adminRouter.get('/gdpr/exports', async (req, res) => {
 });
 
 // Get detailed export info for a specific user
-adminRouter.get('/gdpr/exports/:userId', async (req, res) => {
+adminRouter.get(
+  '/gdpr/exports/:userId',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:exports:user', (req) => `admin:gdpr:exports:${req.params.userId}`),
+  async (req, res) => {
   try {
     const { userId } = req.params;
 

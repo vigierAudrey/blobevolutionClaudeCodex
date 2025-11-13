@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '../auth/auth.guard';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { cacheService, CacheKeys } from '../../services/cache.service';
+import { notifyNewMatch, notifyMatchDecision, notifyNewMatchingCard } from '../../lib/socket';
 
 export const matchingRouter = Router();
 
@@ -139,9 +140,30 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
     if (cachedResults && cacheService.isAvailable()) {
       console.log('🚀 Cache hit for matching results');
 
+      const myProfileId = profile?.id ?? null;
+      const excludeIdsSet = new Set<string>(
+        Array.isArray(req.body.excludeIds) ? (req.body.excludeIds as string[]) : []
+      );
+      if (myProfileId) {
+        excludeIdsSet.add(myProfileId);
+      }
+
+      const candidateIds = cachedResults.map(result => result.id);
+      let actedSet = new Set<string>();
+      if (candidateIds.length > 0) {
+        const actedDecisions = await prisma.matchDecision.findMany({
+          where: { actorUserId: userId, targetProfileId: { in: candidateIds } },
+          select: { targetProfileId: true }
+        });
+        actedSet = new Set(actedDecisions.map(decision => decision.targetProfileId));
+      }
+
       // Apply exclusions to cached results
-      const excludeIds = req.body.excludeIds || [];
-      const filtered = cachedResults.filter(result => !excludeIds.includes(result.id));
+      const filtered = cachedResults.filter((result) => {
+        if (excludeIdsSet.has(result.id)) return false;
+        if (actedSet.has(result.id)) return false;
+        return true;
+      });
 
       if (useCursorPagination) {
         // Cursor-based pagination on cached results
@@ -246,6 +268,7 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
           JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
           WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
           ${radiusCond}
+          ${excludeCond}
           ${notAlreadyActedCond}
           ${orderBy}
           LIMIT 200
@@ -375,6 +398,42 @@ matchingRouter.post('/decision', requireAuth, async (req, res) => {
                 });
               }
               createdConversations.push({ conversationId: conv.id, otherDisplayName: targetProfile.displayName ?? 'Profil' });
+
+              // ✨ Notifier les deux utilisateurs du nouveau match (WebSocket)
+              // Get my profile info for the notification
+              const myFullProfile = await tx.riderProfile.findUnique({
+                where: { userId },
+                select: { displayName: true, photoUrl: true }
+              });
+
+              // Notifier l'autre utilisateur
+              notifyNewMatch(targetProfile.userId, {
+                matchId: match.id,
+                conversationId: conv.id,
+                otherUser: {
+                  id: userId,
+                  displayName: myFullProfile?.displayName || 'Un rider',
+                  photoUrl: myFullProfile?.photoUrl
+                }
+              });
+
+              // Notifier moi-même
+              notifyNewMatch(userId, {
+                matchId: match.id,
+                conversationId: conv.id,
+                otherUser: {
+                  id: targetProfile.userId,
+                  displayName: targetProfile.displayName || 'Un rider',
+                  photoUrl: null // On pourrait fetch photoUrl ici si nécessaire
+                }
+              });
+            } else {
+              // ✨ Notifier l'autre utilisateur de ma décision (sans match mutuel)
+              notifyMatchDecision(targetProfile.userId, {
+                actorUserId: userId,
+                decision: 'ACCEPT',
+                mutualMatch: false
+              });
             }
           }
         }

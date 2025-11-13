@@ -1885,6 +1885,43 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/admins/{adminId}/allowed-ips:
+    patch:
+      tags: [Admin]
+      summary: Définit la liste d'IPs autorisées pour un compte admin
+      operationId: adminUpdateAllowedIps
+      parameters:
+        - in: path
+          name: adminId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowedIPs:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Liste mise à jour
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /admin/analytics/matching/ttfm:
     get:
       tags: [Admin]
@@ -2013,6 +2050,75 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /admin/conversations/blocked:
+    get:
+      tags: [Admin]
+      summary: Liste les conversations récemment bloquées
+      operationId: adminBlockedConversations
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Conversations bloquées
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/security/events:
+    get:
+      tags: [Admin]
+      summary: Journal des événements de sécurité
+      operationId: adminSecurityEvents
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Liste d'événements
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/security/logs/summary:
+    get:
+      tags: [Admin]
+      summary: Synthèse des actions de sécurité sur une période
+      operationId: adminSecurityLogsSummary
+      parameters:
+        - in: query
+          name: days
+          schema:
+            type: integer
+            default: 7
+      responses:
+        '200':
+          description: Agrégats par action
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
 components:
   securitySchemes:

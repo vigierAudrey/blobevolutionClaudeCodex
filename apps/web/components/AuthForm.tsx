@@ -77,6 +77,11 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const passwordStatuses = useMemo(() => getPasswordRequirementStatuses(password), [password]);
 
+  // ✅ NOUVEAU : États pour 2FA admin
+  const [requires2FA, setRequires2FA] = useState(false);
+  const [twoFAUserId, setTwoFAUserId] = useState<string | null>(null);
+  const [twoFACode, setTwoFACode] = useState('');
+
   const handleZodErrors = (details: ZodIssue[]) => {
     const errors: FieldErrors = {};
 
@@ -141,6 +146,16 @@ export function AuthForm({ mode }: AuthFormProps) {
         password,
         consentAccepted: loginConsentNeeded ? loginConsentAccepted : undefined,
       });
+
+      // ✅ NOUVEAU : Vérifier si 2FA est requis
+      if ('requires2FA' in response && response.requires2FA && 'userId' in response) {
+        setRequires2FA(true);
+        setTwoFAUserId(response.userId as string);
+        setInfo('Un code de vérification a été envoyé à votre adresse email');
+        setLoading(false);
+        return;
+      }
+
       apiClient.saveTokens(response.accessToken, response.refreshToken);
 
       try {
@@ -201,9 +216,102 @@ export function AuthForm({ mode }: AuthFormProps) {
       setInfo('Email de vérification renvoyé. Vérifie ta boîte mail.');
     } catch (resendError) {
       setResendStatus('error');
-      setError(getErrorMessage(resendError, 'Impossible de renvoyer l’email'));
+      setError(getErrorMessage(resendError, "Impossible de renvoyer l'email"));
     }
   };
+
+  // ✅ NOUVEAU : Soumettre le code 2FA
+  const submit2FA = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!twoFAUserId || !twoFACode) return;
+
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+
+    try {
+      const response = await apiClient.verify2FA(
+        twoFAUserId,
+        twoFACode,
+        loginConsentNeeded ? loginConsentAccepted : undefined
+      );
+
+      apiClient.saveTokens(response.accessToken, response.refreshToken);
+
+      // Redirection vers le dashboard admin
+      router.push('/admin/dashboard');
+    } catch (verifyError) {
+      setError(getErrorMessage(verifyError, 'Code invalide ou expiré'));
+      setTwoFACode('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ NOUVEAU : Si 2FA est requis, afficher le formulaire 2FA
+  if (requires2FA && twoFAUserId) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>🔐 Vérification en deux étapes</CardTitle>
+          <CardDescription>
+            Un code de vérification a été envoyé à votre adresse email
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit2FA} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="2fa-code">Code de vérification (6 chiffres)</Label>
+              <Input
+                id="2fa-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                required
+                autoComplete="one-time-code"
+                value={twoFACode}
+                onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, ''))}
+                placeholder="123456"
+                className="text-center text-2xl tracking-widest"
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm text-red-600" role="alert">
+                {error}
+              </p>
+            )}
+
+            {info && (
+              <p className="text-sm text-green-600" role="alert">
+                {info}
+              </p>
+            )}
+
+            <Button type="submit" className="w-full" disabled={loading || twoFACode.length !== 6}>
+              {loading ? 'Vérification...' : 'Vérifier le code'}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setRequires2FA(false);
+                setTwoFAUserId(null);
+                setTwoFACode('');
+                setError(null);
+                setInfo(null);
+              }}
+            >
+              Annuler
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

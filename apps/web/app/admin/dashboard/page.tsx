@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
-import { apiClient } from '../../../lib/apiClient';
-import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react';
+import { apiClient, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary } from '../../../lib/apiClient';
+import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity } from 'lucide-react';
 import Link from 'next/link';
 
 // Force SSR for admin auth and dynamic stats
@@ -42,6 +42,31 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [blockedConversations, setBlockedConversations] = useState<AdminBlockedConversation[]>([]);
+  const [securityEvents, setSecurityEvents] = useState<AdminSecurityEvent[]>([]);
+  const [securitySummary, setSecuritySummary] = useState<AdminSecuritySummary | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+
+  const loadInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    setInsightsError(null);
+    try {
+      const [blockedRes, eventsRes, summaryRes] = await Promise.all([
+        apiClient.getBlockedConversations(5),
+        apiClient.getSecurityEvents(5),
+        apiClient.getSecurityLogsSummary(7)
+      ]);
+      setBlockedConversations(blockedRes.blocked || []);
+      setSecurityEvents(eventsRes.events || []);
+      setSecuritySummary(summaryRes ?? null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Impossible de charger les insights sécurité';
+      setInsightsError(message);
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -66,9 +91,10 @@ export default function AdminDashboard() {
           setStats(adminStats);
         } catch (statsError) {
           console.error('Failed to load admin stats:', statsError);
-          // Utiliser des valeurs par défaut si les stats échouent
           setStats({ ...DEFAULT_ADMIN_STATS });
         }
+
+        void loadInsights();
 
       } catch (err: unknown) {
         console.error('Auth check failed:', err);
@@ -81,7 +107,7 @@ export default function AdminDashboard() {
     };
 
     checkAuth();
-  }, [router]);
+  }, [router, loadInsights]);
 
   const handleLogout = async () => {
     try {
@@ -311,6 +337,93 @@ export default function AdminDashboard() {
                 Maintenance système
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Insights Sécurité & Modération */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Lock className="h-4 w-4" />
+              Conversations bloquées
+            </CardTitle>
+            <CardDescription>Derniers blocages côté messagerie</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {insightsLoading && <p>Chargement...</p>}
+            {insightsError && !insightsLoading && (
+              <p className="text-sm text-red-600">{insightsError}</p>
+            )}
+            {!insightsLoading && !blockedConversations.length && !insightsError && (
+              <p className="text-sm text-muted-foreground">Aucun blocage récent.</p>
+            )}
+            {!insightsLoading && blockedConversations.length > 0 && (
+              <ul className="space-y-3">
+                {blockedConversations.map(item => (
+                  <li key={`${item.conversationId}-${item.user.id}`} className="border rounded-md p-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="font-medium">{item.user.email}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {item.blockedAt ? new Date(item.blockedAt).toLocaleString('fr-FR') : '—'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Conversation {item.conversation?.type || 'N/A'} – {item.conversation?.members?.length ?? 0} membre(s)
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Événements sécurité
+            </CardTitle>
+            <CardDescription>Actions sensibles sur les 48 dernières heures</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {insightsLoading && <p>Chargement...</p>}
+            {!insightsLoading && securityEvents.length === 0 && !insightsError && (
+              <p className="text-sm text-muted-foreground">Aucun événement récent.</p>
+            )}
+            {!insightsLoading && securityEvents.length > 0 && (
+              <ul className="space-y-2 text-sm">
+                {securityEvents.map(event => (
+                  <li key={event.id} className="border rounded-md p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs">{event.action}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(event.createdAt).toLocaleString('fr-FR')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {event.user?.email || 'Compte inconnu'} – {event.resource}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {securitySummary && (
+              <div className="text-xs text-muted-foreground">
+                <p className="font-medium text-sm mb-1 flex items-center gap-2">
+                  <Activity className="h-3 w-3" /> Tendances depuis le {new Date(securitySummary.since).toLocaleDateString('fr-FR')}
+                </p>
+                <ul className="space-y-1">
+                  {securitySummary.items.slice(0, 4).map(item => (
+                    <li key={item.action} className="flex justify-between">
+                      <span className="font-mono">{item.action}</span>
+                      <span>{item.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

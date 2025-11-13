@@ -57,7 +57,7 @@ const send2FASchema = z.object({
   email: z.string().email(),
 });
 
-const verify2FASchema = z.object({
+const verify2FAProSchema = z.object({
   email: z.string().email(),
   code: z.string().length(6, 'Code must be 6 digits'),
 });
@@ -101,6 +101,78 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     }
     if (err?.code === 'EMAIL_NOT_VERIFIED') {
       return res.status(403).json({ error: 'Email not verified' });
+    }
+    // ✅ NOUVEAU : Gestion 2FA admin
+    if (err?.code === '2FA_REQUIRED') {
+      // Envoyer le code 2FA par email
+      await twoFactorService.sendCode(err.userId, err.email);
+      return res.status(200).json({
+        requires2FA: true,
+        userId: err.userId,
+        message: 'Code de vérification envoyé par email'
+      });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ✅ NOUVEAU : Endpoint pour vérifier le code 2FA admin
+const verify2FASchema = z.object({
+  userId: z.string().uuid(),
+  code: z.string().length(6),
+  consentAccepted: z.boolean().optional().default(false),
+});
+
+authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
+  try {
+    const { userId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
+
+    // Vérifier le code 2FA
+    const verification = await twoFactorService.verifyCode(userId, code);
+
+    if (!verification.valid) {
+      return res.status(401).json({ error: verification.message });
+    }
+
+    // Code valide - récupérer l'utilisateur et générer les tokens
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { adminProfile: true }
+    });
+
+    if (!user || user.role !== 'ADMIN') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Vérifier IP whitelisting si configuré
+    const ips = (req as any).ips as string[] | undefined;
+    const clientIP = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress;
+
+    if (user.adminProfile?.allowedIPs && user.adminProfile.allowedIPs.length > 0) {
+      if (!clientIP || !user.adminProfile.allowedIPs.includes(clientIP)) {
+        return res.status(403).json({
+          error: 'IP non autorisée',
+          clientIP,
+          message: 'Votre adresse IP n\'est pas autorisée à accéder à ce compte admin'
+        });
+      }
+    }
+
+    // Mettre à jour lastLoginAt
+    await prisma.adminProfile.update({
+      where: { userId: user.id },
+      data: { lastLoginAt: new Date() }
+    });
+
+    // Générer les tokens
+    const ip = clientIP || undefined;
+    const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip });
+
+    return res.json(tokens);
+  } catch (err: any) {
+    console.error('2FA verification error:', err);
+    if (err?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -268,7 +340,7 @@ authRouter.post('/2fa/send', async (req, res) => {
 
 authRouter.post('/2fa/verify', async (req, res) => {
   try {
-    const { email, code } = verify2FASchema.parse(req.body);
+    const { email, code } = verify2FAProSchema.parse(req.body);
 
     // Vérifier que l'utilisateur existe et est PRO
     const user = await prisma.user.findUnique({

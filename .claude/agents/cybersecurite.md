@@ -96,11 +96,22 @@ model: claude-sonnet-4.5
 
 1. **`ROADMAP.md` (lignes 50-219)** - Sécurité Production-Ready
    - **Score actuel** : 7.0/10 → Objectif 9.5/10
-   - **Phase 1 (2h)** : CORS, secrets, logs, validation Zod (lignes 63-137)
-   - **Phase 2 (3h)** : Helmet, trust proxy, DB SSL, scripts (lignes 138-156)
-   - **Phase 3 (2h)** : `/security/health`, audit logs (lignes 158-176)
-   - **Checklist pré-prod** : Config + tests + monitoring (lignes 178-216)
-   - **Temps total** : ~9h (Quick Wins 2h + Renforcement 3h + Monitoring 2h + Tests 2h)
+   - **État au 10 novembre 2025** :
+     - ✅ **Phase 1 TERMINÉE** (lignes 63-146) : CORS, secrets, logs, validation Zod
+     - 🔄 **Phase 2 EN COURS** (lignes 147-165) : Helmet strict, trust proxy, DB SSL
+     - ⏳ **Phase 3 À FAIRE** (lignes 167-186) : `/security/health`, audit logs
+   - **Détails Phase 1 (✅ complétée le 10 nov. 2025)** :
+     - ✅ CORS wildcard corrigé (whitelist dynamique)
+     - ✅ Secrets par défaut renforcés (MIN_SECRET_LENGTH = 64)
+     - ✅ Logs de tokens sécurisés (secureLogger)
+     - ✅ Validation d'entrée (logging sécurisé, 12 tests unitaires)
+     - ✅ Script génération secrets (`scripts/generate-secrets.sh`)
+   - **Détails Phase 2 (🔄 en cours, ~3h restantes)** :
+     - [ ] Helmet.js configuré strictement (CSP, HSTS, referrerPolicy)
+     - [ ] Trust proxy sécurisé (TRUSTED_PROXY_IPS)
+     - [ ] Database SSL obligatoire (sslmode=require)
+   - **Checklist pré-prod** : Config + tests + monitoring (lignes 187-217)
+   - **Temps restant estimé** : ~5h (Phase 2: 3h + Phase 3: 2h)
 
 2. **`docs/audits/security-audit-2025-10.md`** - Audit octobre 2025 (Score: 95/100)
    - **Roadmap en 6 phases** (lignes 568-603) :
