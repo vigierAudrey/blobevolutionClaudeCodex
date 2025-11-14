@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { gdprExportService } from '../../services/gdpr-export.service';
 import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { requireProRole } from './pro.guard';
 
 export const proRouter = Router();
 
@@ -57,27 +58,12 @@ type LessonCandidateRow = {
   lessonLevel: string | null;
   lessonDate: Date | null;
   lessonPlace: string | null;
-  distance_km: number;
+  distanceKm: number;
   activeMatchCount: number;
 };
 
-type ProOfferWithProfile = Prisma.ProOfferGetPayload<{
-  include: {
-    proProfile: {
-      include: {
-        user: {
-          select: {
-            id: true;
-            email: true;
-          };
-        };
-      };
-    };
-  };
-}>;
-
-type OfferWithDistance = {
-  id: string;
+type OfferSearchRow = {
+  offerId: string;
   sport: string;
   level: string;
   title: string;
@@ -87,14 +73,12 @@ type OfferWithDistance = {
   lng: number;
   createdAt: Date;
   distanceKm: number;
-  pro: {
-    id: string;
-    userId: string;
-    businessName: string | null;
-    bio: string | null;
-    photoUrl: string | null;
-    verified: boolean;
-  };
+  proProfileId: string;
+  proUserId: string;
+  businessName: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  verified: boolean;
 };
 
 proRouter.get('/me', requireAuth, async (req, res) => {
@@ -151,7 +135,7 @@ proRouter.post('/photo/upload-url', requireAuth, async (req, res) => {
 });
 
 // List riders wanting lessons (variant B: visible to all pros in radius)
-proRouter.get('/near/lessons', requireAuth, async (req, res) => {
+proRouter.get('/near/lessons', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -166,7 +150,21 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
     console.log(`🗺️  Searching for ${sport} lessons within ${radiusKm}km of (${plat}, ${plng})`);
 
     // Optimized query using PostGIS and SQL filtering instead of JavaScript
-    const candidates = await prisma.$queryRaw<LessonCandidateRow[]>`
+    const candidates = await prisma.$queryRaw<LessonCandidateRow[]>(Prisma.sql`
+      WITH active_matches AS (
+        SELECT "userOneId" AS "userId"
+        FROM "Match"
+        WHERE "status" = 'ACTIVE'
+        UNION ALL
+        SELECT "userTwoId" AS "userId"
+        FROM "Match"
+        WHERE "status" = 'ACTIVE'
+      ),
+      match_counts AS (
+        SELECT "userId", COUNT(*) AS total
+        FROM active_matches
+        GROUP BY "userId"
+      )
       SELECT
         rp."id",
         rp."userId",
@@ -181,16 +179,10 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
         ST_Distance(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
           ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
-        ) / 1000.0 AS distance_km,
-        (
-          COALESCE(
-            (SELECT COUNT(*) FROM "Match" m1 WHERE m1."userOneId" = rp."userId" AND m1."status" = 'ACTIVE'), 0
-          ) +
-          COALESCE(
-            (SELECT COUNT(*) FROM "Match" m2 WHERE m2."userTwoId" = rp."userId" AND m2."status" = 'ACTIVE'), 0
-          )
-        ) AS "activeMatchCount"
+        ) / 1000.0 AS "distanceKm",
+        COALESCE(mc.total, 0) AS "activeMatchCount"
       FROM "RiderProfile" rp
+      LEFT JOIN match_counts mc ON mc."userId" = rp."userId"
       WHERE rp."wantsLesson" = true
         AND rp."lat" IS NOT NULL
         AND rp."lng" IS NOT NULL
@@ -198,11 +190,11 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
         AND ST_DWithin(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
           ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography,
-          ${radiusKm * 1000}  -- Use requested radius from query
+          ${radiusKm * 1000}
         )
-      ORDER BY distance_km ASC
+      ORDER BY "distanceKm" ASC
       LIMIT 500
-    `;
+    `);
 
     console.log(`✅ Found ${candidates.length} riders wanting ${sport} lessons`);
 
@@ -218,7 +210,7 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
       lessonLevel: c.lessonLevel,
       lessonDate: c.lessonDate,
       lessonPlace: c.lessonPlace,
-      distanceKm: Math.round(c.distance_km * 10) / 10  // Already calculated in SQL
+      distanceKm: Math.round(c.distanceKm * 10) / 10  // Already calculé en SQL
     }))
       .slice(0, 500);
 
@@ -233,14 +225,10 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
 // ========== PRO OFFERS ENDPOINTS ==========
 
 // Get my offer
-proRouter.get('/offers/me', requireAuth, async (req, res) => {
+proRouter.get('/offers/me', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    // Vérifier que l'utilisateur est bien un PRO
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
 
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
@@ -258,14 +246,10 @@ proRouter.get('/offers/me', requireAuth, async (req, res) => {
 });
 
 // Create or update my offer
-proRouter.post('/offers', requireAuth, async (req, res) => {
+proRouter.post('/offers', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    // Vérifier que l'utilisateur est bien un PRO
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
 
     // Valider les données
     const body = offerSchema.parse(req.body);
@@ -324,14 +308,10 @@ proRouter.post('/offers', requireAuth, async (req, res) => {
 });
 
 // Delete my offer
-proRouter.delete('/offers/me', requireAuth, async (req, res) => {
+proRouter.delete('/offers/me', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    // Vérifier que l'utilisateur est bien un PRO
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
 
     // Récupérer le profil pro
     const proProfile = await prisma.proProfile.findUnique({ where: { userId } });
@@ -354,14 +334,10 @@ proRouter.delete('/offers/me', requireAuth, async (req, res) => {
 });
 
 // Toggle offer active status
-proRouter.patch('/offers/me/toggle', requireAuth, async (req, res) => {
+proRouter.patch('/offers/me/toggle', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    // Vérifier que l'utilisateur est bien un PRO
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
 
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
@@ -422,75 +398,67 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
     }
 
     // Construire les filtres
-    const where: any = {
-      isActive: true,
-    };
+    const selectedSport = sport && ['surf', 'kitesurf'].includes(sport) ? sport : undefined;
+    const selectedLevel = level && ['beginner', 'intermediate', 'advanced'].includes(level) ? level : undefined;
 
-    if (sport && ['surf', 'kitesurf'].includes(sport)) {
-      where.sport = sport;
-    }
+    const offerRows = await prisma.$queryRaw<OfferSearchRow[]>(Prisma.sql`
+      SELECT
+        o."id" AS "offerId",
+        o."sport",
+        o."level",
+        o."title",
+        o."description",
+        o."hourlyRate"::float AS "hourlyRate",
+        o."lat",
+        o."lng",
+        o."createdAt",
+        pp."id" AS "proProfileId",
+        u."id" AS "proUserId",
+        pp."businessName",
+        pp."bio",
+        pp."photoUrl",
+        pp."verified",
+        ST_Distance(
+          ST_SetSRID(ST_MakePoint(${searchLng!}, ${searchLat!}), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(o."lng", o."lat"), 4326)::geography
+        ) / 1000.0 AS "distanceKm"
+      FROM "ProOffer" o
+      JOIN "ProProfile" pp ON pp."id" = o."proProfileId"
+      JOIN "User" u ON u."id" = pp."userId"
+      WHERE o."isActive" = true
+        AND o."lat" IS NOT NULL
+        AND o."lng" IS NOT NULL
+        ${selectedSport ? Prisma.sql`AND o."sport" = CAST(${selectedSport} AS "Sport")` : Prisma.sql``}
+        ${selectedLevel ? Prisma.sql`AND o."level" = CAST(${selectedLevel} AS "Level")` : Prisma.sql``}
+        AND ST_DWithin(
+          ST_SetSRID(ST_MakePoint(${searchLng!}, ${searchLat!}), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(o."lng", o."lat"), 4326)::geography,
+          ${radiusKm * 1000}
+        )
+      ORDER BY "distanceKm" ASC
+      LIMIT 50
+    `);
 
-    if (level && ['beginner', 'intermediate', 'advanced'].includes(level)) {
-      where.level = level;
-    }
-
-    // Récupérer toutes les offres actives avec les filtres
-    const offers: ProOfferWithProfile[] = await prisma.proOffer.findMany({
-      where,
-      include: {
-        proProfile: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true
-              }
-            }
-          }
-        }
-      },
-      take: 1000 // Limite pour éviter les gros datasets
-    });
-
-    // Fonction de calcul de distance (Haversine)
-    function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
-      const toRad = (d: number) => (d * Math.PI) / 180;
-      const R = 6371; // km
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    }
-
-    // Calculer les distances et filtrer par rayon
-    const offersWithDistance: OfferWithDistance[] = offers
-      .map((offer: ProOfferWithProfile) => {
-        const distance = haversine(searchLat!, searchLng!, offer.lat, offer.lng);
-        return {
-          id: offer.id,
-          sport: offer.sport,
-          level: offer.level,
-          title: offer.title,
-          description: offer.description,
-          hourlyRate: Number(offer.hourlyRate), // Convertir Decimal en number
-          lat: offer.lat,
-          lng: offer.lng,
-          createdAt: offer.createdAt,
-          distanceKm: Math.round(distance * 10) / 10,
-          pro: {
-            id: offer.proProfile.id,
-            userId: offer.proProfile.user.id,
-            businessName: offer.proProfile.businessName,
-            bio: offer.proProfile.bio,
-            photoUrl: offer.proProfile.photoUrl,
-            verified: offer.proProfile.verified,
-          }
-        };
-      })
-      .filter((offer: OfferWithDistance) => offer.distanceKm <= radiusKm)
-      .sort((a: OfferWithDistance, b: OfferWithDistance) => a.distanceKm - b.distanceKm)
-      .slice(0, 50); // Limiter le résultat final
+    const offersWithDistance = offerRows.map((row) => ({
+      id: row.offerId,
+      sport: row.sport,
+      level: row.level,
+      title: row.title,
+      description: row.description,
+      hourlyRate: Math.round(row.hourlyRate * 100) / 100,
+      lat: row.lat,
+      lng: row.lng,
+      createdAt: row.createdAt,
+      distanceKm: Math.round(row.distanceKm * 10) / 10,
+      pro: {
+        id: row.proProfileId,
+        userId: row.proUserId,
+        businessName: row.businessName,
+        bio: row.bio,
+        photoUrl: row.photoUrl,
+        verified: row.verified,
+      }
+    }));
 
     return res.json({
       offers: offersWithDistance,
@@ -499,8 +467,8 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
         lat: searchLat,
         lng: searchLng,
         radiusKm,
-        sport,
-        level
+        sport: selectedSport,
+        level: selectedLevel
       }
     });
 

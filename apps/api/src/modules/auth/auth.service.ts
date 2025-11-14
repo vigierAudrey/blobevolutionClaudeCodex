@@ -121,6 +121,15 @@ export class AuthService {
       throw { code: 'EMAIL_NOT_VERIFIED' };
     }
 
+    // ✅ NOUVEAU : Si admin, déclencher 2FA obligatoire
+    if (user.role === 'ADMIN') {
+      throw {
+        code: '2FA_REQUIRED',
+        userId: user.id,
+        email: user.email
+      };
+    }
+
     return this.generateTokens(user, opts);
   }
 

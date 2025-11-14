@@ -29,6 +29,8 @@ export class GDPRPurgeService {
     oldLogsDeleted: number;
   }> {
     const now = new Date();
+    const logRetentionDays = Number(process.env.AUDIT_LOG_RETENTION_DAYS || '365');
+    const logThreshold = new Date(now.getTime() - logRetentionDays * 24 * 60 * 60 * 1000);
 
     // Supprimer les sessions expirées
     const sessionsResult = await prisma.session.deleteMany({
@@ -52,12 +54,18 @@ export class GDPRPurgeService {
 
     const tokensDeleted = passwordTokensResult.count + emailTokensResult.count + refreshTokensResult.count;
 
+    const oldLogsResult = await prisma.auditLog.deleteMany({
+      where: {
+        createdAt: { lt: logThreshold }
+      }
+    });
+
     console.log(`✅ GDPR: Purged ${sessionsResult.count} sessions, ${tokensDeleted} expired tokens`);
 
     return {
       sessionsDeleted: sessionsResult.count,
       tokensDeleted,
-      oldLogsDeleted: 0 // TODO: implémenter si des logs existent
+      oldLogsDeleted: oldLogsResult.count
     };
   }
 
@@ -154,25 +162,30 @@ export class GDPRPurgeService {
 
     let phase3Count = 0;
     for (const user of phase3Users) {
-      // Créer un enregistrement de preuve légale avant suppression
-      await prisma.$executeRaw`
-        INSERT INTO legal_consent_archive (
-          original_user_id,
-          consented_at,
-          consent_version,
-          consent_ip_hash,
-          deleted_at,
-          archived_at
-        ) VALUES (
-          ${user.id},
-          ${user.consentedAt},
-          ${user.consentVersion},
-          ${user.consentIp ? this.anonymizeData(user.consentIp, user.id) : null},
-          ${user.deletedAt},
-          NOW()
-        )
-        ON DUPLICATE KEY UPDATE archived_at = NOW()
-      `;
+      if (!user.deletedAt) continue;
+
+      await prisma.legalConsentArchive.upsert({
+        where: {
+          originalUserId_deletedAt: {
+            originalUserId: user.id,
+            deletedAt: user.deletedAt
+          }
+        },
+        create: {
+          originalUserId: user.id,
+          consentedAt: user.consentedAt ?? null,
+          consentVersion: user.consentVersion ?? null,
+          consentIpHash: user.consentIp ? this.anonymizeData(user.consentIp, user.id) : null,
+          deletedAt: user.deletedAt,
+          archivedAt: new Date()
+        },
+        update: {
+          consentedAt: user.consentedAt ?? null,
+          consentVersion: user.consentVersion ?? null,
+          consentIpHash: user.consentIp ? this.anonymizeData(user.consentIp, user.id) : null,
+          archivedAt: new Date()
+        }
+      });
 
       // Supprimer définitivement l'utilisateur et ses données
       await prisma.user.delete({

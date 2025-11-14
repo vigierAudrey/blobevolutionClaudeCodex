@@ -12,6 +12,7 @@ import { Button } from '../../../components/ui/button';
 import { ProfileCardSkeleton } from '../../../components/ui/skeleton';
 import { optimizedApiClient, measureApiPerformance } from '../../../lib/optimizedApiClient';
 import { useToast } from '../../../components/ui/toast';
+import { useMatching } from '../../../hooks/useMatching';
 import Link from 'next/link';
 const AdBannerFeed = dynamicImport(
   () => import('../../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
@@ -34,6 +35,7 @@ type MatchDecisionResponse = {
 function CardsInner() {
   const sp = useSearchParams();
   const router = useRouter();
+  const [accessToken, setAccessToken] = useState(() => optimizedApiClient.getTokens()?.accessToken || '');
 
   // Optimized user initialization with parallel requests and caching
   useEffect(() => {
@@ -46,6 +48,7 @@ function CardsInner() {
           router.replace('/login');
           return;
         }
+        setAccessToken(tokens.accessToken);
 
         // Use optimized parallel initialization
         const { user, profile, disciplines } = await optimizedApiClient.initializeUser();
@@ -75,6 +78,7 @@ function CardsInner() {
   }, [router]);
   const sport = sp.get('sport') as Sport | null;
   const level = sp.get('level') as Level | null;
+  const activeSport = (sport ?? 'surf') as 'surf' | 'kitesurf';
   const date = sp.get('date');
   const useGeoloc = sp.get('useGeoloc') === '1';
   const distanceKm = sp.get('distanceKm');
@@ -88,6 +92,11 @@ function CardsInner() {
   const [excludeIds, setExcludeIds] = useState<string[]>([]);
   type QueuedDecision = { targetProfileId: string; decision: 'ACCEPT'|'REFUSE'; ts: number };
   const [decisionQueue, setDecisionQueue] = useState<QueuedDecision[]>([]);
+  const mutateDecisionQueue = useCallback((updater: (prev: QueuedDecision[]) => QueuedDecision[]) => {
+    const nextQueue = updater(decisionQueueRef.current);
+    decisionQueueRef.current = nextQueue;
+    setDecisionQueue(nextQueue);
+  }, []);
   const [animDir, setAnimDir] = useState<'left' | 'right' | null>(null);
   const [animating, setAnimating] = useState(false);
   const toast = useToast();
@@ -131,9 +140,6 @@ function CardsInner() {
     nextCursorRef.current = nextCursor;
   }, [nextCursor]);
 
-  useEffect(() => {
-    decisionQueueRef.current = decisionQueue;
-  }, [decisionQueue]);
 
   // Enhanced skeleton states
   const fetchBatch = useCallback(async (merge = false) => {
@@ -198,6 +204,43 @@ function CardsInner() {
       setUnreadTotal(total);
     } catch {}
   }, []);
+
+  const handleRealtimeMatch = useCallback((match: NewMatchNotification) => {
+    if (match.conversationId) {
+      setNewMatch({
+        conversationId: match.conversationId,
+        otherDisplayName: match.otherUser.displayName || 'Profil',
+        sport: activeSport,
+      });
+    }
+    void loadUnread();
+  }, [activeSport, loadUnread]);
+
+  const handleRealtimeDecision = useCallback((decision: MatchDecisionNotification) => {
+    if (decision.mutualMatch && decision.conversationId) {
+      setNewMatch({
+        conversationId: decision.conversationId,
+        otherDisplayName: 'Nouveau match',
+        sport: activeSport,
+      });
+      void loadUnread();
+    }
+  }, [activeSport, loadUnread]);
+
+  const handleRealtimeCard = useCallback(() => {
+    void fetchBatch(true);
+  }, [fetchBatch]);
+
+  useMatching({
+    token: accessToken,
+    onNewMatch: handleRealtimeMatch,
+    onMatchDecision: handleRealtimeDecision,
+    onNewCard: handleRealtimeCard,
+    currentCriteria: {
+      sport: sport ?? undefined,
+      level: level ?? undefined,
+    },
+  });
   useEffect(() => {
     void loadUnread();
     const t = setInterval(loadUnread, 15000);
@@ -279,7 +322,7 @@ function CardsInner() {
     const profileCopy = current;
     setTimeout(() => {
       // Queue decision with timestamp (allows 5s undo before flush)
-      setDecisionQueue((q) => [...q, { targetProfileId: profileCopy.id, decision, ts: Date.now() }]);
+      mutateDecisionQueue((q) => [...q, { targetProfileId: profileCopy.id, decision, ts: Date.now() }]);
       // Exclude current and go next
       setExcludeIds((arr) => Array.from(new Set([...arr, profileCopy.id])).slice(-200));
       next();
@@ -301,7 +344,7 @@ function CardsInner() {
       const due = force ? queue : queue.filter((d) => now - d.ts >= 5000);
       if (due.length === 0) return;
       const pending = force ? [] : queue.filter((d) => now - d.ts < 5000);
-      setDecisionQueue(pending);
+      mutateDecisionQueue(() => pending);
       try {
         const resp = await optimizedApiClient.matchDecisions(
           due.map(({ targetProfileId, decision }) => ({ targetProfileId, decision })),
@@ -313,14 +356,13 @@ function CardsInner() {
           decisionResp.createdConversations.length > 0
         ) {
           const m = decisionResp.createdConversations[0];
-          const s = (sport || 'surf') as 'surf' | 'kitesurf';
-          setNewMatch({ conversationId: m.conversationId, otherDisplayName: m.otherDisplayName || 'Profil', sport: s });
+          setNewMatch({ conversationId: m.conversationId, otherDisplayName: m.otherDisplayName || 'Profil', sport: activeSport });
           // Refresh unread badge quickly
           void loadUnread();
         }
       } catch {
         // If failed, requeue keeping original timestamps
-        setDecisionQueue((q) => [...due, ...q]);
+        mutateDecisionQueue((q) => [...due, ...q]);
       }
     },
     [loadUnread, optimizedApiClient, sport],
@@ -351,7 +393,7 @@ function CardsInner() {
     if (!lastAction) return;
     try { clearTimeout(lastAction.timeout); } catch {}
     // Remove from queue if still pending
-    setDecisionQueue((q) => q.filter((d) => d.targetProfileId !== lastAction.id));
+    mutateDecisionQueue((q) => q.filter((d) => d.targetProfileId !== lastAction.id));
     // Remove from excludes
     setExcludeIds((arr) => arr.filter((id) => id !== lastAction.id));
     // Restore position/profile

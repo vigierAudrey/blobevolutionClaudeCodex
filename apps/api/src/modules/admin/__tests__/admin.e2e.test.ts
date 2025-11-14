@@ -2,6 +2,8 @@ import request, { SuperAgentTest } from 'supertest';
 import jwt from 'jsonwebtoken';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { createApp } from '../../../index';
+import { gdprPurgeService } from '../../../services/gdpr-purge.service';
+import { AVAILABLE_PERMISSIONS } from '../permissions';
 
 type Role = 'RIDER' | 'PRO' | 'ADMIN';
 
@@ -17,6 +19,7 @@ const emails = {
 
 let adminId = '';
 let adminTwoId = '';
+let adminTwoToken = '';
 let riderId = '';
 let targetProfileId = '';
 let proId = '';
@@ -55,6 +58,21 @@ async function cleanupFixtureData() {
   await prisma.user.deleteMany({ where: { email: { in: Object.values(emails) } } });
 }
 
+async function waitForAuditEntry(action: string, resource: string, timeoutMs = 1000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const log = await prisma.auditLog.findFirst({
+      where: { action, resource },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (log) {
+      return log;
+    }
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  return null;
+}
+
 describe('Admin Controller', () => {
   const seedAdminFixture = async () => {
     ensureSecrets();
@@ -73,7 +91,7 @@ describe('Admin Controller', () => {
       data: {
         userId: admin.id,
         displayName: 'Root Admin',
-        permissions: ['users.view', 'analytics.view']
+        permissions: [...AVAILABLE_PERMISSIONS]
       }
     });
 
@@ -86,6 +104,7 @@ describe('Admin Controller', () => {
       }
     });
     adminTwoId = adminTwo.id;
+    adminTwoToken = signToken(adminTwo.id, 'ADMIN');
     await prisma.adminProfile.create({
       data: {
         userId: adminTwo.id,
@@ -187,6 +206,13 @@ describe('Admin Controller', () => {
     expect(res.body.reportedProfiles).toBeGreaterThanOrEqual(1);
   });
 
+  it('rejects admins without required permissions', async () => {
+    await request(app)
+      .get('/admin/users')
+      .set('Authorization', `Bearer ${adminTwoToken}`)
+      .expect(403);
+  });
+
   it('lists users with pagination', async () => {
     const res = await request(app)
       .get('/admin/users?page=1&limit=10')
@@ -274,6 +300,28 @@ describe('Admin Controller', () => {
     expect(res.body.permissions).toEqual(expect.arrayContaining(['users.view', 'analytics.view']));
   });
 
+  it('logs an audit entry when applying admin role presets', async () => {
+    await prisma.auditLog.deleteMany({ where: { action: 'admin:role:apply' } });
+
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    await agent
+      .patch(`/admin/admins/${adminTwoId}/role`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({ role: 'MODERATOR' })
+      .expect(200);
+
+    const log = await waitForAuditEntry('admin:role:apply', `admin:${adminTwoId}`);
+
+    expect(log).toBeTruthy();
+    expect(log?.metadata).toMatchObject({
+      method: 'PATCH',
+      statusCode: 200
+    });
+  });
+
   it('returns reported profiles with reporter context', async () => {
     const res = await request(app)
       .get('/admin/reports?page=1&limit=10')
@@ -284,6 +332,28 @@ describe('Admin Controller', () => {
     const reportEntry = res.body.reports.find((r: any) => r.id === reportId);
     expect(reportEntry).toBeTruthy();
     expect(reportEntry.reporter.email).toBe(emails.rider);
+  });
+
+  it('logs audits when moderating user reports', async () => {
+    await prisma.auditLog.deleteMany({ where: { action: 'admin:report:action' } });
+
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    await agent
+      .post(`/admin/reports/${reportId}/action`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({ action: 'dismiss' })
+      .expect(200);
+
+    const log = await waitForAuditEntry('admin:report:action', `report:${reportId}`);
+
+    expect(log).toBeTruthy();
+    expect(log?.metadata).toMatchObject({
+      method: 'POST',
+      statusCode: 200
+    });
   });
 
   it('retrieves audit logs with pagination and filters', async () => {
@@ -300,5 +370,30 @@ describe('Admin Controller', () => {
       expect(entry).toHaveProperty('resource');
       expect(entry).toHaveProperty('createdAt');
     }
+  });
+
+  it('audits manual GDPR purges for traceability', async () => {
+    await prisma.auditLog.deleteMany({ where: { action: 'admin:gdpr:run-purge' } });
+    const purgeSpy = jest.spyOn(gdprPurgeService, 'performFullPurge').mockResolvedValue({
+      deletedSessions: 0,
+      deletedTokens: 0,
+      anonymizedUsers: 0
+    } as any);
+
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    await agent
+      .post('/admin/gdpr/run-purge')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({})
+      .expect(200);
+
+    const log = await waitForAuditEntry('admin:gdpr:run-purge', 'gdpr:purge');
+
+    expect(purgeSpy).toHaveBeenCalled();
+    expect(log).toBeTruthy();
+    purgeSpy.mockRestore();
   });
 });

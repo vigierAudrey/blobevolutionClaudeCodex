@@ -12,9 +12,12 @@ description: Audit de sécurité complet ou ciblé du projet - Blocage de TOUTES
   - `/ai/checklists/rgpd.md`
 - **Roadmaps existantes** :
   - `ROADMAP.md` (lignes 50-219) - Section "🔒 Sécurité & Conformité"
+    - ✅ Phase 1 TERMINÉE (10 nov. 2025) : CORS, secrets, logs, validation
+    - 🔄 Phase 2 EN COURS : Helmet strict, trust proxy, DB SSL
+    - ⏳ Phase 3 À FAIRE : `/security/health`, audit logs
   - `docs/audits/security-audit-2025-10.md` - Audit complet (Score: 95/100)
 - **Niveau d'exigence** : ZÉRO TOLÉRANCE pour les vulnérabilités P0/P1
-- **Score actuel** : 7.0/10 → Objectif 9.5/10 avant production
+- **Score actuel** : 7.0/10 → Objectif 9.5/10 avant production (Phase 1 ✅, ~5h restantes)
 
 ## Ton rôle
 

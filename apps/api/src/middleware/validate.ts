@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { ZodTypeAny } from 'zod';
+import { secureLogger } from '../utils/secure-logger';
 
 /**
  * Wraps a Zod schema into an Express middleware.
@@ -13,11 +14,16 @@ export const validate =
       return next();
     } catch (error: any) {
       if (error?.name === 'ZodError') {
-        console.error('❌ Zod validation error:', JSON.stringify(error.errors, null, 2));
-        console.error('📦 Request body was:', JSON.stringify(req.body, null, 2));
+        secureLogger.error('VALIDATION_ERROR', {
+          path: req.path,
+          errorCount: error.errors?.length
+        });
         return res.status(400).json({ error: 'Invalid input', details: error.errors });
       }
-      console.error('❌ Unknown validation error:', error);
+      secureLogger.error('UNKNOWN_VALIDATION_ERROR', {
+        path: req.path,
+        error: error?.message
+      });
       return res.status(400).json({ error: 'Invalid input' });
     }
   };

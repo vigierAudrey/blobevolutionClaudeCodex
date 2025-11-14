@@ -2,6 +2,7 @@ import './config/loadEnv';
 import { resolve } from 'path';
 import fs from 'fs';
 import { randomBytes } from 'crypto';
+import { createServer } from 'http';
 
 // Initialize Sentry BEFORE any other imports (must be after dotenv)
 import './instrument';
@@ -188,6 +189,7 @@ import { reportsRouter } from './modules/reports/reports.controller';
 import { conversationsRouter } from './modules/chat/conversations.controller';
 import { proRouter } from './modules/pro/pro.controller';
 import { adminRouter } from './modules/admin/admin.controller';
+import { securityRouter } from './modules/security/security.controller';
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
@@ -420,6 +422,7 @@ export function createApp() {
   app.use('/pro', proRouter);
   app.use('/consent', consentRouter);
   app.use('/admin', adminRouter);
+  app.use('/security', securityRouter);
   app.use('/contact', contactRouter);
   app.use('/booking', bookingRouter);
   app.use('/push', pushRouter);
@@ -438,9 +441,19 @@ const app = createApp();
 
 if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT ? Number(process.env.PORT) : 4000;
-  app.listen(port, () => {
+
+  // Create HTTP server for both Express and Socket.io
+  const httpServer = createServer(app);
+
+  // Initialize Socket.io
+  const { initializeSocket } = require('./lib/socket');
+  initializeSocket(httpServer);
+
+  httpServer.listen(port, () => {
     // eslint-disable-next-line no-console
     console.info(`[API] Server ready on http://localhost:${port} (env=${process.env.NODE_ENV ?? 'development'})`);
+    // eslint-disable-next-line no-console
+    console.info(`[WebSocket] Socket.io ready on ws://localhost:${port}`);
   });
 }
 
