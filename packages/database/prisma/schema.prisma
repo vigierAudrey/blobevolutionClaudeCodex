@@ -41,6 +41,7 @@ model User {
   bookingRequests         BookingRequest[]         @relation("BookingRequestOnUser")
   bookings                Booking[]                @relation("BookingOnUser")
   auditLogs              AuditLog[]
+  pushTokens             PushToken[]
 }
 
 model Session {
@@ -140,11 +141,23 @@ model ProProfile {
   photoUrl     String?
   lat          Float?
   lng          Float?
+  radiusKm     Int        @default(25)
   verified     Boolean    @default(false)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   offers          ProOffer[]
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PushToken {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }

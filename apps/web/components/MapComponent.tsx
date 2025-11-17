@@ -210,7 +210,7 @@ export default function MapComponent({
   return (
     <div className="relative">
       {legend && legend.length > 0 && (
-        <div className="absolute left-3 top-3 z-[1000] text-xs">
+        <div className="absolute left-3 bottom-3 z-[1000] text-xs md:left-3 md:bottom-3">
           <button
             type="button"
             className="md:hidden rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-slate-700 shadow"

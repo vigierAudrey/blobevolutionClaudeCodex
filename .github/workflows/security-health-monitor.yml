@@ -1,9 +1,9 @@
 name: Security Health Monitor
 
 on:
-  schedule:
-    - cron: '*/30 * * * *'
-  workflow_dispatch: {}
+  # schedule:
+  #   - cron: '*/30 * * * *'
+  workflow_dispatch: {}  # Vous pouvez toujours lancer manuellement si besoin
 
 jobs:
   check-security-health:

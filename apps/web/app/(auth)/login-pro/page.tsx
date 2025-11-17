@@ -52,7 +52,7 @@ export default function ProLoginPage() {
     setLoading(true);
 
     try {
-      const res = await apiClient.verify2FA(email, code);
+      const res = await apiClient.verifyPro2FA(email, code);
       apiClient.saveTokens(res.accessToken, res.refreshToken);
 
       // Récupérer le rôle de l'utilisateur pour rediriger correctement

@@ -4,6 +4,7 @@
  */
 
 import admin from 'firebase-admin';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
 
 // Firebase Admin configuration
@@ -57,6 +58,7 @@ export class PushNotificationService {
       } else {
         secureLogger.warn('PUSH_SERVICE_DISABLED', { reason: 'missing_credentials' });
       }
+      await this.cleanupInvalidTokens();
     } catch (error: any) {
       secureLogger.error('PUSH_SERVICE_INIT_FAILED', { error: error?.message });
     }
@@ -67,22 +69,19 @@ export class PushNotificationService {
    */
   async saveToken(userId: string, token: string, userAgent?: string): Promise<boolean> {
     try {
-      // Here you would save to your database
-      // For now, we'll use a simple in-memory store or cache
-      secureLogger.info('PUSH_TOKEN_SAVE', { userId });
+      secureLogger.info('PUSH_TOKEN_SAVE', { userId, platform: this.getPlatformFromUserAgent(userAgent) });
 
-      // TODO: Implement database storage
-      // await prisma.pushToken.upsert({
-      //   where: { userId_token: { userId, token } },
-      //   update: { isActive: true, lastUsed: new Date() },
-      //   create: {
-      //     userId,
-      //     token,
-      //     userAgent,
-      //     platform: this.getPlatformFromUserAgent(userAgent),
-      //     isActive: true
-      //   }
-      // });
+      await prisma.pushToken.upsert({
+        where: { token },
+        create: {
+          token,
+          userId,
+        },
+        update: {
+          userId,
+          updatedAt: new Date(),
+        },
+      });
 
       return true;
     } catch (error: any) {
@@ -97,17 +96,11 @@ export class PushNotificationService {
   async removeToken(userId: string, token?: string): Promise<boolean> {
     try {
       secureLogger.info('PUSH_TOKEN_REMOVE', { userId, hasToken: Boolean(token) });
-
-      // TODO: Implement database removal
-      // if (token) {
-      //   await prisma.pushToken.delete({
-      //     where: { userId_token: { userId, token } }
-      //   });
-      // } else {
-      //   await prisma.pushToken.deleteMany({
-      //     where: { userId }
-      //   });
-      // }
+      if (token) {
+        await prisma.pushToken.deleteMany({ where: { token, userId } });
+      } else {
+        await prisma.pushToken.deleteMany({ where: { userId } });
+      }
 
       return true;
     } catch (error: any) {
@@ -168,7 +161,7 @@ export class PushNotificationService {
     } catch (error: any) {
       if (error.code === 'messaging/registration-token-not-registered') {
         secureLogger.warn('PUSH_TOKEN_INVALID', { errorCode: error.code });
-        // TODO: Remove invalid token from database
+        await this.cleanupInvalidTokens(token);
       } else {
         secureLogger.error('PUSH_TOKEN_SEND_FAILED', { error: error?.message });
       }
@@ -400,16 +393,43 @@ export class PushNotificationService {
    * Get user's FCM tokens (mock implementation)
    */
   private async getUserTokens(userId: string): Promise<string[]> {
-    // TODO: Implement database query
-    // const tokens = await prisma.pushToken.findMany({
-    //   where: { userId, isActive: true },
-    //   select: { token: true }
-    // });
-    // return tokens.map(t => t.token);
+    const tokens = await prisma.pushToken.findMany({
+      where: { userId },
+      select: { token: true },
+    });
+    if (tokens.length === 0) {
+      secureLogger.debug('PUSH_LOOKUP_TOKENS_EMPTY', { userId });
+    }
+    return tokens.map((t) => t.token);
+  }
 
-    // Mock implementation for development
-    secureLogger.debug('PUSH_LOOKUP_TOKENS', { userId });
-    return []; // Return empty array until database is implemented
+  async hasActiveTokens(userId: string): Promise<boolean> {
+    try {
+      const count = await prisma.pushToken.count({ where: { userId } });
+      return count > 0;
+    } catch (error: any) {
+      secureLogger.error('PUSH_TOKEN_STATUS_FAILED', { userId, error: error?.message });
+      return false;
+    }
+  }
+
+  private async cleanupInvalidTokens(token?: string): Promise<void> {
+    try {
+      if (token) {
+        await prisma.pushToken.deleteMany({ where: { token } });
+        return;
+      }
+
+      await prisma.pushToken.deleteMany({
+        where: {
+          user: {
+            deletedAt: { not: null },
+          },
+        },
+      });
+    } catch (error: any) {
+      secureLogger.warn('PUSH_TOKEN_CLEANUP_FAILED', { error: error?.message });
+    }
   }
 
   /**

@@ -120,6 +120,7 @@ export class PushNotificationManager {
       const success = await unsubscribeFromPush();
 
       if (success) {
+        const storedToken = localStorage.getItem('fcmToken');
         // Clear local storage
         localStorage.removeItem('pushSubscribed');
         localStorage.removeItem('fcmToken');
@@ -128,12 +129,13 @@ export class PushNotificationManager {
         this.currentToken = null;
 
         // Notify backend
-        await fetch('/api/push/unsubscribe', {
+        await fetch('/api/push/unregister', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`
-          }
+          },
+          body: JSON.stringify(storedToken ? { token: storedToken } : {})
         }).catch(e => console.log('Failed to notify backend:', e));
 
         console.log('✅ Successfully unsubscribed from push notifications');

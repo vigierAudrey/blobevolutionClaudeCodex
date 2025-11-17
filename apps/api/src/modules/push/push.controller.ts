@@ -19,6 +19,10 @@ const subscribeSchema = z.object({
   timestamp: z.number().optional()
 });
 
+const unsubscribeSchema = z.object({
+  token: z.string().optional()
+});
+
 const testNotificationSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   body: z.string().min(1, 'Body is required'),
@@ -35,11 +39,7 @@ const sendNotificationSchema = z.object({
   data: z.record(z.any()).optional()
 });
 
-/**
- * POST /api/push/subscribe
- * Subscribe to push notifications
- */
-router.post('/subscribe', requireAuth, async (req: Request, res: Response) => {
+const handleSubscribe = async (req: Request, res: Response) => {
   try {
     const validation = subscribeSchema.safeParse(req.body);
 
@@ -81,14 +81,25 @@ router.post('/subscribe', requireAuth, async (req: Request, res: Response) => {
     secureLogger.error('PUSH_ROUTE_SUBSCRIBE_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+};
 
 /**
- * POST /api/push/unsubscribe
- * Unsubscribe from push notifications
+ * POST /api/push/subscribe
+ * Subscribe to push notifications
  */
-router.post('/unsubscribe', requireAuth, async (req: Request, res: Response) => {
+router.post('/subscribe', requireAuth, handleSubscribe);
+router.post('/register', requireAuth, handleSubscribe);
+
+const handleUnsubscribe = async (req: Request, res: Response) => {
   try {
+    const validation = unsubscribeSchema.safeParse(req.body ?? {});
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid request data',
+        details: validation.error.errors
+      });
+    }
+
     const userId = (req as any).user?.id;
 
     if (!userId) {
@@ -97,7 +108,7 @@ router.post('/unsubscribe', requireAuth, async (req: Request, res: Response) => 
 
     secureLogger.info('PUSH_ROUTE_UNSUBSCRIBE', { userId });
 
-    const success = await pushNotificationService.removeToken(userId);
+    const success = await pushNotificationService.removeToken(userId, validation.data.token);
 
     if (success) {
       res.status(200).json({
@@ -113,7 +124,10 @@ router.post('/unsubscribe', requireAuth, async (req: Request, res: Response) => 
     secureLogger.error('PUSH_ROUTE_UNSUBSCRIBE_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+};
+
+router.post('/unsubscribe', requireAuth, handleUnsubscribe);
+router.post('/unregister', requireAuth, handleUnsubscribe);
 
 /**
  * POST /api/push/test
@@ -220,12 +234,11 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    // TODO: Check if user has active push tokens in database
-    // const hasActiveTokens = await checkUserPushTokens(userId);
+    const hasActiveTokens = await pushNotificationService.hasActiveTokens(userId);
 
     res.status(200).json({
       userId,
-      hasActiveTokens: false, // TODO: implement actual check
+      hasActiveTokens,
       isConfigured: process.env.FIREBASE_PROJECT_ID ? true : false,
       timestamp: Date.now()
     });

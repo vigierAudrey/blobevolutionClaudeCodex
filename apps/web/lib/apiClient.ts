@@ -585,6 +585,9 @@ export const apiClient = {
   verify2FA: (userId: string, code: string, consentAccepted?: boolean) =>
     request('/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ userId, code, consentAccepted }) }) as Promise<LoginResponse>,
 
+  verifyPro2FA: (email: string, code: string) =>
+    request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<LoginResponse>,
+
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
   updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 

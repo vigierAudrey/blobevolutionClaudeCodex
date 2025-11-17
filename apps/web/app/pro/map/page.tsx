@@ -94,7 +94,7 @@ const getBrowserInstructions = (browser: BrowserType): { title: string; steps: s
 
 export default function ProMapPage() {
   const router = useRouter();
-  const [radiusKm, setRadiusKm] = useState(25);
+  const [radiusKm, setRadiusKm] = useState<number | null>(null);
   const [sport, setSport] = useState<'surf' | 'kitesurf'>('surf');
   const [items, setItems] = useState<LessonRequest[]>([]);
   const [center, setCenter] = useState<[number, number] | null>(null);
@@ -103,6 +103,9 @@ export default function ProMapPage() {
   const [loading, setLoading] = useState(false);
   const [browserType, setBrowserType] = useState<BrowserType>('other');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const radiusPersistRef = useRef<ReturnType<typeof setTimeout>>();
+  const lastSavedRadiusRef = useRef<number | null>(null);
+  const [radiusSaving, setRadiusSaving] = useState(false);
 
   useEffect(() => {
     // Détecter le navigateur au montage du composant
@@ -119,6 +122,19 @@ export default function ProMapPage() {
           setGeolocEnabled(true);
           setHasGeolocPermission(true);
         }
+        if (ok) {
+          const storedRadius = typeof body?.radiusKm === 'number' ? body.radiusKm : 25;
+          const clamped = Math.max(1, Math.min(200, storedRadius));
+          setRadiusKm(clamped);
+          lastSavedRadiusRef.current = clamped;
+        } else {
+          setRadiusKm(25);
+          lastSavedRadiusRef.current = 25;
+        }
+      })
+      .catch(() => {
+        setRadiusKm(25);
+        lastSavedRadiusRef.current = 25;
       });
   }, []);
 
@@ -167,7 +183,7 @@ export default function ProMapPage() {
   };
 
   const load = useCallback(async () => {
-    if (!geolocEnabled) return;
+    if (!geolocEnabled || radiusKm === null) return;
 
     setLoading(true);
     try {
@@ -198,13 +214,56 @@ export default function ProMapPage() {
   }, [load]);
 
   useEffect(() => {
-    debouncedLoad();
+    if (radiusKm !== null) {
+      debouncedLoad();
+    }
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
     };
-  }, [debouncedLoad]);
+  }, [debouncedLoad, radiusKm]);
+
+  useEffect(() => {
+    if (radiusKm === null) return;
+    if (lastSavedRadiusRef.current === null) {
+      lastSavedRadiusRef.current = radiusKm;
+      return;
+    }
+    if (lastSavedRadiusRef.current === radiusKm) return;
+
+    const persist = async () => {
+      try {
+        const t = apiClient.getTokens();
+        if (!t?.accessToken) return;
+        setRadiusSaving(true);
+        await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${t.accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ radiusKm })
+        });
+        lastSavedRadiusRef.current = radiusKm;
+      } catch (error) {
+        console.error('Erreur lors de la sauvegarde du rayon :', error);
+      } finally {
+        setRadiusSaving(false);
+      }
+    };
+
+    if (radiusPersistRef.current) {
+      clearTimeout(radiusPersistRef.current);
+    }
+    radiusPersistRef.current = setTimeout(persist, 500);
+
+    return () => {
+      if (radiusPersistRef.current) {
+        clearTimeout(radiusPersistRef.current);
+      }
+    };
+  }, [radiusKm]);
 
 
   return (
@@ -290,25 +349,37 @@ export default function ProMapPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">Rayon :</label>
-              <Input
-                type="number"
-                min={1}
-                max={200}
-                value={radiusKm}
-                onChange={(e) => setRadiusKm(Number(e.target.value || 25))}
-                className="w-20 text-center"
-                disabled={!geolocEnabled}
-                style={{ minHeight: '44px' }}
-              />
-              <span className="text-sm text-muted-foreground">km</span>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Rayon :</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={radiusKm ?? ''}
+                  onChange={(e) => {
+                    const nextValue = Number(e.target.value);
+                    if (!Number.isFinite(nextValue)) {
+                      setRadiusKm(25);
+                      return;
+                    }
+                    setRadiusKm(Math.max(1, Math.min(200, nextValue)));
+                  }}
+                  className="w-20 text-center"
+                  disabled={radiusKm === null}
+                  style={{ minHeight: '44px' }}
+                />
+                <span className="text-sm text-muted-foreground">km</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Le rayon sélectionné s’applique pour le surf et le kite.
+              </p>
             </div>
 
             <Button
               variant="outline"
               onClick={load}
-              disabled={!geolocEnabled || loading}
+              disabled={!geolocEnabled || loading || radiusKm === null}
               className="touch-manipulation"
               style={{ minHeight: '44px' }}
             >
@@ -319,7 +390,7 @@ export default function ProMapPage() {
           {geolocEnabled && center ? (
             <div className="space-y-2">
               <div className="text-sm text-green-600 mb-2">
-                ✅ Géolocalisation active – {items.length} demande(s) trouvée(s) dans un rayon de {radiusKm} km
+                ✅ Géolocalisation active – {items.length} demande(s) trouvée(s) dans un rayon de {radiusKm ?? 25} km {radiusSaving ? '(sauvegarde…)' : ''}
               </div>
               <MapComponent
                 center={center}
@@ -335,7 +406,7 @@ export default function ProMapPage() {
                 ]}
                 centerMarker={{
                   label: 'Vous êtes ici',
-                  description: `Rayon de ${radiusKm} km`,
+                  description: `Rayon de ${radiusKm ?? 25} km`,
                 }}
                 onContactClick={async (userId: string) => {
                   try {
