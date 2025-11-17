@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    ignore:
+      # Ignore js-yaml vulnerabilities in dev dependencies (Istanbul/Jest)
+      # These affect only development/test tools, not production code
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+      # Ignore glob CLI vulnerabilities (affects only ESLint tools, not runtime)
+      # Advisory GHSA-5j98-mcp5-4vw2: Command injection only via CLI -c flag
+      - dependency-name: "glob"
+        update-types: ["version-update:semver-patch", "version-update:semver-minor"]
