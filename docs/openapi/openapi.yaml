@@ -502,6 +502,27 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags: [Pros]
+      summary: Met à jour partiellement le profil pro (rayon, infos)
+      operationId: proPatchMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProProfileUpdateRequest'
+      responses:
+        '200':
+          description: Profil pro mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProProfile'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /pro/photo/upload-url:
     post:
@@ -1481,11 +1502,65 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /push/register:
+    post:
+      tags: [Push]
+      summary: Alias de /push/subscribe (inscription push)
+      operationId: pushRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushSubscribeRequest'
+      responses:
+        '200':
+          description: Token enregistré
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /push/unsubscribe:
     post:
       tags: [Push]
       summary: Supprime les tokens push de l'utilisateur
       operationId: pushUnsubscribe
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Désinscription effectuée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /push/unregister:
+    post:
+      tags: [Push]
+      summary: Alias de /push/unsubscribe (désinscription push)
+      operationId: pushUnregister
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
       responses:
         '200':
           description: Désinscription effectuée
@@ -2437,6 +2512,10 @@ components:
           type: number
         lng:
           type: number
+        radiusKm:
+          type: integer
+          minimum: 1
+          maximum: 200
         createdAt:
           type: string
           format: date-time
@@ -2460,6 +2539,10 @@ components:
           type: number
         lng:
           type: number
+        radiusKm:
+          type: integer
+          minimum: 1
+          maximum: 200
     LessonLead:
       type: object
       properties:
@@ -2816,6 +2899,8 @@ components:
       required: [token]
       properties:
         token:
+          type: string
+        userId:
           type: string
         userAgent:
           type: string

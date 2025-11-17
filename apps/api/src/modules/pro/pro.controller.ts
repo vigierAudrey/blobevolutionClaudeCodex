@@ -36,6 +36,7 @@ const upsertSchema = z.object({
   photoUrl: z.string().url().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
+  radiusKm: z.number().int().min(1).max(200).optional(),
 });
 
 const offerSchema = z.object({
@@ -93,16 +94,52 @@ proRouter.get('/me', requireAuth, async (req, res) => {
   }
 });
 
+const persistProProfile = async (userId: string, body: z.infer<typeof upsertSchema>) => {
+  const radiusSegment = (value: number | undefined) => (value !== undefined ? { radiusKm: value } : {});
+
+  return prisma.proProfile.upsert({
+    where: { userId },
+    create: {
+      userId,
+      businessName: body.businessName,
+      bio: body.bio,
+      emailNotif: body.emailNotif ?? false,
+      photoUrl: body.photoUrl,
+      lat: body.lat,
+      lng: body.lng,
+      ...radiusSegment(body.radiusKm),
+    },
+    update: {
+      businessName: body.businessName,
+      bio: body.bio,
+      emailNotif: body.emailNotif,
+      photoUrl: body.photoUrl,
+      lat: body.lat,
+      lng: body.lng,
+      ...radiusSegment(body.radiusKm),
+    },
+  });
+};
+
 proRouter.put('/me', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const body = upsertSchema.parse(req.body);
-    const pp = await prisma.proProfile.upsert({
-      where: { userId },
-      create: { userId, businessName: body.businessName, bio: body.bio, emailNotif: body.emailNotif ?? false, photoUrl: body.photoUrl, lat: body.lat, lng: body.lng },
-      update: { businessName: body.businessName, bio: body.bio, emailNotif: body.emailNotif, photoUrl: body.photoUrl, lat: body.lat, lng: body.lng },
-    });
+    const pp = await persistProProfile(userId, body);
+    return res.json(pp);
+  } catch (err: any) {
+    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+proRouter.patch('/me', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const body = upsertSchema.parse(req.body || {});
+    const pp = await persistProProfile(userId, body);
     return res.json(pp);
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
@@ -139,12 +176,14 @@ proRouter.get('/near/lessons', requireAuth, requireProRole, async (req, res) => 
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const radiusKm = Math.max(1, Math.min(200, Number(req.query.radiusKm) || 25));
+    const rawRadius = req.query.radiusKm ? Number(req.query.radiusKm) : undefined;
+    const me = await prisma.proProfile.findUnique({ where: { userId }, select: { lat: true, lng: true, radiusKm: true } });
+    if (!me?.lat || !me?.lng) return res.status(400).json({ error: 'Missing pro location' });
+    const radiusFallback = me.radiusKm ?? 25;
+    const safeRadius = typeof rawRadius === 'number' && !Number.isNaN(rawRadius) ? rawRadius : radiusFallback;
+    const radiusKm = Math.max(1, Math.min(200, safeRadius));
     const sport = String(req.query.sport || 'surf');
     if (sport !== 'surf' && sport !== 'kitesurf') return res.status(400).json({ error: 'Invalid sport' });
-
-    const me = await prisma.proProfile.findUnique({ where: { userId }, select: { lat: true, lng: true } });
-    if (!me?.lat || !me?.lng) return res.status(400).json({ error: 'Missing pro location' });
     const plat = me.lat, plng = me.lng;
 
     console.log(`🗺️  Searching for ${sport} lessons within ${radiusKm}km of (${plat}, ${plng})`);

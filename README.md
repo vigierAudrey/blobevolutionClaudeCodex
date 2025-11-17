@@ -788,7 +788,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 
 - `/matching` → interrupteur “Je veux un cours” + badge 🎓 en liste.
 - `/pro/profile` → lieu de travail (lat/lng), logo; pas de champ prix en UI publique.
-- `/pro/map` → Leaflet + OpenStreetMap, filtres sport/rayon, bouton “Contacter”.
+- `/pro/map` → Leaflet + OpenStreetMap, filtres sport/rayon, bouton “Contacter”. Le rayon unique est partagé pour le surf **et** le kite et est sauvegardé côté pro.
 
 ## 🧪 Données de démo (seed)
 

@@ -65,6 +65,10 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini
       REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379/0
+      SMTP_HOST: mailpit
+      S3_ENDPOINT: http://minio:9000
+      S3_PRESIGN_ENDPOINT: http://localhost:9000
+      S3_PUBLIC_URL_BASE: http://localhost:9000/blobinfini-dev
     ports:
       - "4000:4000"
     volumes:
@@ -107,6 +111,10 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini
       NODE_ENV: production
+      SMTP_HOST: mailpit
+      S3_ENDPOINT: http://minio:9000
+      S3_PRESIGN_ENDPOINT: http://localhost:9000
+      S3_PUBLIC_URL_BASE: http://localhost:9000/blobinfini-dev
     volumes:
       - ./apps/api/logs:/app/apps/api/logs
     networks:

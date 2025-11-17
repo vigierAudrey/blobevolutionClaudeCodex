@@ -7,6 +7,7 @@ export interface ProProfileData {
   photoUrl?: string | null;
   lat?: number | null;
   lng?: number | null;
+  radiusKm?: number | null;
 }
 
 export interface LessonRequest {

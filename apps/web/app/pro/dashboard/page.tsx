@@ -147,7 +147,7 @@ export default function ProDashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><MessageSquare size={18}/> Messages</CardTitle>
-            <CardDescription>Communiquer avec vos élèves et collègues</CardDescription>
+            <CardDescription>Communiquer avec tes riders</CardDescription>
           </CardHeader>
           <CardContent>
             <Link href="/pro/messages" className="inline-block w-full">

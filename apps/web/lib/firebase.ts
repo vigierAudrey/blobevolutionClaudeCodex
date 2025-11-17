@@ -146,7 +146,7 @@ function showForegroundNotification(notification: ForegroundNotification) {
  */
 export async function saveFCMToken(token: string, userId?: string): Promise<boolean> {
   try {
-    const response = await fetch('/api/push/subscribe', {
+    const response = await fetch('/api/push/register', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

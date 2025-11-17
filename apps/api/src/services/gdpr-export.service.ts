@@ -163,6 +163,7 @@ interface ProProfileExport {
   photoUrl: string | null;
   lat: number | null;
   lng: number | null;
+  radiusKm: number;
   verified: boolean;
   createdAt: string;
   updatedAt: string;
@@ -390,6 +391,7 @@ export class GdprExportService {
         photoUrl: proProfile.photoUrl,
         lat: proProfile.lat,
         lng: proProfile.lng,
+        radiusKm: proProfile.radiusKm,
         verified: proProfile.verified,
         createdAt: proProfile.createdAt.toISOString(),
         updatedAt: proProfile.updatedAt.toISOString(),
