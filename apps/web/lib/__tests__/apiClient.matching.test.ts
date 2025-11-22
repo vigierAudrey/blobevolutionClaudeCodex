@@ -347,6 +347,7 @@ describe('API Client - Matching Integration', () => {
           'Authorization': 'Bearer fake-access-token',
         },
         credentials: 'include',
+        cache: 'no-store',
       });
 
       expect(result).toEqual(mockConversationsResponse);
@@ -473,7 +474,7 @@ describe('API Client - Matching Integration', () => {
       expect((global.fetch as jest.Mock)).toHaveBeenCalled();
 
       jest.advanceTimersByTime(10000);
-      await expect(searchPromise).resolves.toEqual({ results: [] });
+      await expect(searchPromise).resolves.toEqual({ results: [], total: 0 });
 
       jest.useRealTimers();
     });

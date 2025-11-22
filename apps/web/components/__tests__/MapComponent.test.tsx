@@ -122,7 +122,7 @@ describe('MapComponent', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /demander ce créneau/i }));
+    await user.click(screen.getByRole('button', { name: /contacter/i }));
     expect(onContactClick).toHaveBeenCalledWith('user-123');
   });
 

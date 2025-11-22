@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSocket } from './useSocket';
 
-interface NewMatchNotification {
+export interface NewMatchNotification {
   matchId: string;
   conversationId?: string;
   otherUser: {
@@ -13,7 +13,7 @@ interface NewMatchNotification {
   };
 }
 
-interface MatchDecisionNotification {
+export interface MatchDecisionNotification {
   actorUserId: string;
   decision: 'ACCEPT' | 'DECLINE';
   mutualMatch: boolean;

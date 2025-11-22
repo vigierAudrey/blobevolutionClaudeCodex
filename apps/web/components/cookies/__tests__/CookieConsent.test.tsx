@@ -49,13 +49,13 @@ describe('CookieConsent', () => {
     expect(await screen.findByText(/Publicités adaptées à tes goûts surf\/kite/)).toBeInTheDocument();
   });
 
-  it('does not show modal when AdSense is disabled', () => {
+  it('continue d’afficher le consentement même sans AdSense quand le consentement manque', async () => {
     process.env.NEXT_PUBLIC_ADSENSE_ENABLED = 'false';
     mockUseConsent.mockReturnValue(createConsentState({ consentMode: 'none' }));
 
     render(<CookieConsent />);
 
-    expect(screen.queryByText(/Publicités adaptées/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Publicités adaptées/)).toBeInTheDocument();
   });
 
   it('calls updateConsent with npa for basic ads', async () => {
@@ -105,7 +105,7 @@ describe('CookieConsent', () => {
       fireEvent.click(button);
     });
 
-    expect(updateConsent).toHaveBeenCalledWith('limited');
+    expect(updateConsent).toHaveBeenCalledWith('npa');
   });
 
   it('calls updateConsent with none when refusing all ads', async () => {

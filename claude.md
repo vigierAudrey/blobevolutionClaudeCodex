@@ -43,6 +43,7 @@
 - Utiliser **Prisma** et les services existants : pas de SQL brut ni de bypass des couches métier.
 - Côté frontend, passer par `apps/web/lib/apiClient.ts` (gestion CSRF, tokens, retry) au lieu de `fetch` direct.
 - Réutiliser les composants **Shadcn/Tailwind** situés dans `apps/web/components/ui/*` (Button, Card, Switch, Dialog, etc.).
+- Les préférences d’accessibilité (contraste, police, animations) sont centralisées dans `apps/web/components/accessibility/AccessibilityProvider`. Les layouts/pages doivent rester sous ce provider et utiliser `useAccessibility` pour exposer ou consommer ces réglages.
 - Les logs passent par `secureLogger` ou les utilitaires existants, jamais `console.log` en production.
 
 ### Interdits immédiats

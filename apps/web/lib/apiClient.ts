@@ -726,12 +726,6 @@ export const apiClient = {
   },
   getSecurityLogsSummary: (days: number = 7) =>
     request(`/admin/security/logs/summary?days=${days}`, { method: 'GET' }, true) as Promise<AdminSecuritySummary>,
-  setAdminAllowedIPs: (adminId: string, allowedIPs: string[]) =>
-    request(
-      `/admin/admins/${adminId}/allowed-ips`,
-      { method: 'PATCH', body: JSON.stringify({ allowedIPs }) },
-      true
-    ),
   getEngagementAnalytics: (period?: AdminAnalyticsPeriod) => {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/engagement${query}`, { method: 'GET' }, true) as Promise<AdminEngagementAnalytics>;
