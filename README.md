@@ -28,6 +28,13 @@ Blobinfini connecte les passionnés de sports de glisse en proposant :
 - **Professionnels** : Moniteurs indépendants et écoles cherchant visibilité
 - **Objectif inclusion** : Interface accessible, effort particulier pour attirer les femmes dans ces sports
 
+### ♿ Accessibilité
+
+- **Panneau accessibilité** : un module persistant (`apps/web/components/accessibility`) permet d’activer contraste élevé, police agrandie, police Atkinson Hyperlegible et réduction des animations (stockage local + respect `prefers-reduced-motion`).
+- **Navigation clavier** : lien “Aller au contenu principal”, `main#main-content` focusable et annonceur de changement de route `RouteAnnouncer` pour lecteurs d’écran.
+- **Contrastes dynamiques** : les thèmes reposent sur les variables CSS Tailwind ; activer le mode contraste élevé force des valeurs RGAA (texte clair, bordures renforcées, focus visibles).
+- **Mode clair/sombre** : un bouton persistant en bas à droite permet de basculer à tout moment entre clair et sombre (préférence mémorisée dans le navigateur et initialisée selon `prefers-color-scheme`).
+
 ## 🏗️ Architecture Cible
 
 ### Stack Technique Requis

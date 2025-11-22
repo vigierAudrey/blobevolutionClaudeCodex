@@ -9,6 +9,12 @@ interface Message {
   senderId: string;
   type: 'TEXT' | 'PROPOSAL';
   content: string;
+  meta?: {
+    date?: string;
+    place?: string;
+    note?: string;
+    [key: string]: unknown;
+  } | null;
   createdAt: Date;
   sender?: {
     id: string;

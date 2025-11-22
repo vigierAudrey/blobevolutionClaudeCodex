@@ -279,6 +279,7 @@
 - [x] Carte matching mobile optimisée (swipe, haptics).
 - [x] Loading skeletons généralisés.
 - [x] Push notifications (service worker + Firebase FCM).
+- [x] Contrôles d’accessibilité WCAG (skip link, annonceur de route, contraste élevé, préférences persistantes).
 
 ### Optimisations restantes
 

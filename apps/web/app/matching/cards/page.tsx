@@ -13,6 +13,7 @@ import { ProfileCardSkeleton } from '../../../components/ui/skeleton';
 import { optimizedApiClient, measureApiPerformance } from '../../../lib/optimizedApiClient';
 import { useToast } from '../../../components/ui/toast';
 import { useMatching } from '../../../hooks/useMatching';
+import type { NewMatchNotification, MatchDecisionNotification } from '../../../hooks/useMatching';
 import Link from 'next/link';
 const AdBannerFeed = dynamicImport(
   () => import('../../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),

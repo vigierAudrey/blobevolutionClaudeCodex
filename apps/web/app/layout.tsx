@@ -3,6 +3,7 @@ import dynamic from 'next/dynamic';
 import Script from 'next/script';
 import './globals.css';
 import ClientProvider from '@/components/ui/ClientProvider';
+import { ThemeScript } from '@/components/theme/ThemeScript';
 
 // Force dynamic rendering for all pages (no static generation)
 export const dynamicParams = true;
@@ -26,6 +27,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr">
       <head>
+        {/* Apply theme class before paint to avoid FOUC */}
+        <ThemeScript />
         {adsenseEnabled && adsenseClientId && (
           <Script
             async
@@ -35,7 +38,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         )}
       </head>
-      <body className="min-h-screen bg-gray-50 text-gray-900">
+      {/* Use design tokens so dark mode can flip background/foreground */}
+      <body className="min-h-screen bg-background text-foreground">
         <ClientProvider>
           <main className="container-responsive py-6 sm:py-10">{children}</main>
           <CookieConsent />
