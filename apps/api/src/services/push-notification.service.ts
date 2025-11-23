@@ -393,7 +393,7 @@ export class PushNotificationService {
    * Get user's FCM tokens (mock implementation)
    */
   private async getUserTokens(userId: string): Promise<string[]> {
-    const tokens = await prisma.pushToken.findMany({
+    const tokens: Array<{ token: string }> = await prisma.pushToken.findMany({
       where: { userId },
       select: { token: true },
     });

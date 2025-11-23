@@ -1004,3 +1004,57 @@ router.post(
 ---
 
 _Blobinfini - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
+
+## ✍️ Blobosphère – MDX + Git + Decap CMS (nouveau)
+
+L’édition de la Blobosphère repose sur des fichiers **MDX** versionnés dans Git et éditables via **Decap CMS** (ancien Netlify CMS).
+
+Chemins et structure
+- Dossiers de contenu: `apps/web/content/blobosphere/`
+  - `surf/`, `kitesurf/`, `communaute/`, `impact/`
+  - Chaque dossier contient des fichiers `.mdx` avec frontmatter YAML:
+
+```yaml
+---
+title: string
+slug: string
+category: "surf" | "kitesurf" | "communaute" | "impact"
+tags: [string]
+excerpt: string
+status: "draft" | "published"
+publishedAt: YYYY-MM-DD
+updatedAt: YYYY-MM-DD | null
+coverImage: string | null
+readingTime: number | null
+language: "fr"
+---
+```
+
+Exemples inclus
+- `apps/web/content/blobosphere/surf/wax-debutant.mdx`
+- `apps/web/content/blobosphere/kitesurf/choisir-aile.mdx`
+- `apps/web/content/blobosphere/communaute/mentorat.mdx`
+- `apps/web/content/blobosphere/impact/eco-gestes.mdx`
+
+Admin (Decap CMS)
+- Fichiers: `apps/web/public/admin/index.html` + `apps/web/public/admin/config.yml`
+- Ouvre: `http://localhost:PORT/admin` (ex: 3011)
+- Par défaut `local_backend: true`. Pour GitHub, remplace `backend` dans `config.yml` (voir commentaires) et configure l’auth.
+
+Chargement des articles (côté Next)
+- Le listing `/blobosphere` lit réellement les `.mdx` via `apps/web/lib/blobosphere/content.ts` (fs + frontmatter minimal)
+- Le frontmatter est parsé, l’extrait et un temps de lecture approximatif sont calculés si absents.
+- Les filtres (thèmes) et le JSON‑LD continuent de fonctionner.
+
+Ajouter un article via /admin
+1) Va sur `/admin`, choisis la rubrique (Surf, Kitesurf, Communauté, Impact)
+2) “New” → saisis le frontmatter + corps Markdown
+3) Publie (ou enregistre en brouillon). Le fichier `.mdx` sera créé dans le dossier correspondant.
+
+Automatisations IA (préparation)
+- Les fichiers MDX permettent des workflows n8n: extraction des titres, génération d’extrait, calcul des tags, push PR Git.
+- Un connecteur MCP (LM Studio) pourra générer des brouillons MDX à partir d’un prompt ou d’un lien source.
+
+Notes SEO
+- Les thèmes surf/kitesurf/communauté/impact structurent la navigation et le maillage interne.
+- JSON‑LD Collection + Article + FAQ sont émis depuis `/blobosphere`.

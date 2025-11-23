@@ -1332,7 +1332,26 @@ adminRouter.get(
   async (req, res) => {
     try {
       const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 100);
-      const blockedMembers = await prisma.conversationMember.findMany({
+      type BlockedMember = Prisma.ConversationMemberGetPayload<{
+        include: {
+          user: { select: { id: true; email: true; role: true } };
+          conversation: {
+            select: {
+              id: true;
+              type: true;
+              createdAt: true;
+              members: {
+                select: {
+                  user: { select: { id: true; email: true; role: true } };
+                  blockedAt: true;
+                };
+              };
+            };
+          };
+        };
+      }>;
+
+      const blockedMembers: BlockedMember[] = await prisma.conversationMember.findMany({
         where: { blockedAt: { not: null } },
         orderBy: { blockedAt: 'desc' },
         take: limit,
@@ -1358,7 +1377,9 @@ adminRouter.get(
         }
       });
 
-      const items = blockedMembers.map(member => ({
+      type ConvMember = NonNullable<BlockedMember['conversation']>['members'][number];
+
+      const items = blockedMembers.map((member) => ({
         conversationId: member.conversationId,
         blockedAt: member.blockedAt,
         user: member.user,
@@ -1366,7 +1387,7 @@ adminRouter.get(
           id: member.conversation?.id,
           type: member.conversation?.type,
           createdAt: member.conversation?.createdAt,
-          members: member.conversation?.members.map(cm => ({
+          members: member.conversation?.members.map((cm: ConvMember) => ({
             user: cm.user,
             blockedAt: cm.blockedAt
           }))
@@ -1429,7 +1450,7 @@ adminRouter.get(
     try {
       const days = Math.min(parseInt((req.query.days as string) || '7', 10), 90);
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      const grouped = await prisma.auditLog.groupBy({
+      const grouped: Prisma.AuditLogGroupByOutputType[] = await prisma.auditLog.groupBy({
         by: ['action'],
         where: {
           createdAt: { gte: since },
@@ -1449,7 +1470,7 @@ adminRouter.get(
 
       return res.json({
         since,
-        items: grouped.map(item => ({
+        items: grouped.map((item) => ({
           action: item.action,
           count: item._count.action
         }))
