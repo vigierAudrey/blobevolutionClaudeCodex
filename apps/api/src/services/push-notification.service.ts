@@ -69,7 +69,7 @@ export class PushNotificationService {
    */
   async saveToken(userId: string, token: string, userAgent?: string): Promise<boolean> {
     try {
-      secureLogger.info('PUSH_TOKEN_SAVE', { userId, platform: this.getPlatformFromUserAgent(userAgent) });
+      secureLogger.info('PUSH_TOKEN_SAVE', { userId });
 
       await prisma.pushToken.upsert({
         where: { token },

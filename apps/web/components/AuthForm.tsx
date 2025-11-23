@@ -160,6 +160,15 @@ export function AuthForm({ mode }: AuthFormProps) {
 
       try {
         const user = (await apiClient.me()) as DashboardUser;
+        // Set a lightweight cookie for edge middleware gating on /admin
+        if (typeof document !== 'undefined') {
+          if (user.role === 'ADMIN') {
+            document.cookie = 'admin_session=1; Path=/; Max-Age=604800; SameSite=Lax';
+          } else {
+            document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
+          }
+        }
+
         if (user.role === 'PRO') {
           router.push('/pro/onboarding');
         } else if (user.role === 'ADMIN') {
@@ -238,8 +247,25 @@ export function AuthForm({ mode }: AuthFormProps) {
 
       apiClient.saveTokens(response.accessToken, response.refreshToken);
 
-      // Redirection vers le dashboard admin
-      router.push('/admin/dashboard');
+      try {
+        const user = (await apiClient.me()) as DashboardUser;
+        if (typeof document !== 'undefined') {
+          if (user.role === 'ADMIN') {
+            document.cookie = 'admin_session=1; Path=/; Max-Age=604800; SameSite=Lax';
+          } else {
+            document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
+          }
+        }
+        if (user.role === 'PRO') {
+          router.push('/pro/onboarding');
+        } else if (user.role === 'ADMIN') {
+          router.push('/admin/dashboard');
+        } else {
+          router.push('/onboarding');
+        }
+      } catch {
+        router.push('/dashboard');
+      }
     } catch (verifyError) {
       setError(getErrorMessage(verifyError, 'Code invalide ou expiré'));
       setTwoFACode('');
@@ -392,9 +418,6 @@ export function AuthForm({ mode }: AuthFormProps) {
                   {fieldErrors.role}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Les comptes administrateur sont gérés par l’équipe Blobinfini.
-              </p>
             </div>
           )}
           {mode === 'register' && (

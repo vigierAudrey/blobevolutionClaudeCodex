@@ -18,6 +18,13 @@ const CookieConsent = dynamic(
 export const metadata: Metadata = {
   title: 'Blobinfini — Auth',
   description: 'Inscription, connexion et gestion du compte',
+  icons: {
+    icon: '/favicon.ico',
+    apple: [
+      { url: '/apple-icon-180.png', sizes: '180x180' },
+      { url: '/apple-icon-512.png', sizes: '512x512' },
+    ],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -2195,12 +2195,217 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /admin/blobosphere/posts:
+    get:
+      tags: [Admin]
+      summary: Liste les articles MDX (métadonnées)
+      operationId: adminBlobosphereList
+      responses:
+        '200':
+          description: Liste des fichiers MDX présents dans le repo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        category:
+                          type: string
+                          enum: [surf, kitesurf, communaute, impact]
+                        file:
+                          type: string
+                        slug:
+                          type: string
+                        title:
+                          type: string
+                        status:
+                          type: string
+                        publishedAt:
+                          type: string
+                          nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      summary: Crée un article MDX
+      operationId: adminBlobosphereCreate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlobospherePost'
+      responses:
+        '201':
+          description: Article créé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  path:
+                    type: string
+                  pr:
+                    type: object
+                    nullable: true
+                    properties:
+                      prUrl:
+                        type: string
+                      prNumber:
+                        type: integer
+                      branchName:
+                        type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/blobosphere/posts/{category}/{slug}:
+    get:
+      tags: [Admin]
+      summary: Récupère un article MDX brut
+      operationId: adminBlobosphereGet
+      parameters:
+        - in: path
+          name: category
+          required: true
+          schema:
+            type: string
+            enum: [surf, kitesurf, communaute, impact]
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Fichier MDX brut
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  raw:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Admin]
+      summary: Met à jour un article MDX
+      operationId: adminBlobosphereUpdate
+      parameters:
+        - in: path
+          name: category
+          required: true
+          schema:
+            type: string
+            enum: [surf, kitesurf, communaute, impact]
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BlobospherePost'
+                - type: object
+                  properties:
+                    newSlug:
+                      type: string
+                    newCategory:
+                      type: string
+                      enum: [surf, kitesurf, communaute, impact]
+      responses:
+        '200':
+          description: Article mis à jour
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  path:
+                    type: string
+                  pr:
+                    type: object
+                    nullable: true
+                    properties:
+                      prUrl:
+                        type: string
+                      prNumber:
+                        type: integer
+                      branchName:
+                        type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  schemas:
+    BlobospherePost:
+      type: object
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+        category:
+          type: string
+          enum: [surf, kitesurf, communaute, impact]
+        tags:
+          type: array
+          items:
+            type: string
+        excerpt:
+          type: string
+        status:
+          type: string
+          enum: [draft, published]
+        publishedAt:
+          type: string
+        updatedAt:
+          type: string
+          nullable: true
+        coverImage:
+          type: string
+          nullable: true
+        readingTime:
+          type: integer
+          nullable: true
+        language:
+          type: string
+          enum: [fr]
+        body:
+          type: string
   responses:
     Unauthorized:
       description: Authentification requise

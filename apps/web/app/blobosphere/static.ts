@@ -11,7 +11,7 @@ export const blobosphereFaqs = [
   {
     question: 'Comment ajouter un article ?',
     answer:
-      'Ouvre /admin (Decap CMS), connecte‑toi et ajoute un fichier MDX dans la rubrique voulue. Le contenu est stocké en Git.',
+      "L’édition est réservée aux membres autorisés. Connecte‑toi puis demande l’accès rédaction. Les contenus sont des fichiers MDX versionnés dans Git (via Decap CMS).",
   },
   {
     question: 'Comment sont gérés SEO et maillage ?',
@@ -21,7 +21,7 @@ export const blobosphereFaqs = [
   {
     question: 'Puis‑je proposer un sujet ? ',
     answer:
-      'Oui, crée un compte puis utilise le bouton « Proposer un sujet ». La publication suit une relecture et les règles RGPD.',
+      "Oui, une fois connecté. Les propositions passent par une modération (relecture, RGPD) avant publication. L’accès et les formulaires ne sont disponibles qu’aux membres authentifiés.",
   },
 ] as const;
 
@@ -30,4 +30,3 @@ export const blobosphereInsights = [
   { title: 'Decap CMS', detail: 'Edition simple des MDX sans toucher au code.' },
   { title: 'JSON‑LD + liens', detail: 'Visibilité SEO, maillage thématique vers les parcours clés.' },
 ] as const;
-

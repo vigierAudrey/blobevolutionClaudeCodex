@@ -100,6 +100,9 @@ export async function loadBlobospherePreviews(): Promise<BlobosphereArticlePrevi
       if (!file.endsWith('.mdx') && !file.endsWith('.md')) continue;
       const raw = await fs.readFile(path.join(dir, file), 'utf8');
       const { data, body } = parseFrontmatter(raw);
+      // Ne pas exposer les brouillons en liste publique
+      const status = (data.status as string) || 'draft';
+      if (status !== 'published') continue;
       const title = (data.title as string) || stripMdExt(file);
       const slug = (data.slug as string) || stripMdExt(file);
       const excerpt = (data.excerpt as string) || body.split(/\n\n/)[0]?.replace(/[#*>`]/g, '').slice(0, 220) || '';
@@ -120,4 +123,3 @@ export async function loadBlobospherePreviews(): Promise<BlobosphereArticlePrevi
   // newest first
   return previews.sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1));
 }
-

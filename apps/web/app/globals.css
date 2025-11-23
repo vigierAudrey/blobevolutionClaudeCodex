@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prism theme for code blocks */
+@import "prismjs/themes/prism-tomorrow.css";
+
 /* Skeleton animations */
 @keyframes shimmer {
   0% {

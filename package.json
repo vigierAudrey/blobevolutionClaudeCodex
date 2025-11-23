@@ -63,7 +63,9 @@
   },
   "dependencies": {
     "framer-motion": "^12.23.18",
-    "react-leaflet": "^4.2.1"
+    "prismjs": "^1.30.0",
+    "react-leaflet": "^4.2.1",
+    "rehype-prism-plus": "^2.0.1"
   },
   "overrides": {
     "glob": "^10.3.6",

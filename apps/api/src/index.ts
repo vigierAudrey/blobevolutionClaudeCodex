@@ -190,6 +190,7 @@ import { conversationsRouter } from './modules/chat/conversations.controller';
 import { proRouter } from './modules/pro/pro.controller';
 import { adminRouter } from './modules/admin/admin.controller';
 import { securityRouter } from './modules/security/security.controller';
+import { blobosphereAdminRouter } from './modules/blobosphere/blobosphere.controller';
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
@@ -422,7 +423,10 @@ export function createApp() {
   app.use('/pro', proRouter);
   app.use('/consent', consentRouter);
   app.use('/admin', adminRouter);
+  app.use('/admin/blobosphere', blobosphereAdminRouter);
   app.use('/security', securityRouter);
+  // Back-compat alias for tests and clients using '/api/security/*'
+  app.use('/api/security', securityRouter);
   app.use('/contact', contactRouter);
   app.use('/booking', bookingRouter);
   app.use('/push', pushRouter);

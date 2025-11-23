@@ -31,6 +31,40 @@ beforeAll(async () => {
     });
     console.log('✅ Database schema ready');
 
+    // Seed minimal users required by some tests (only in test env)
+    if (process.env.NODE_ENV === 'test') {
+      const adminEmail = 'dev+admin@test.com';
+      const riderEmail = 'dev+rider@test.com';
+      // Seed Admin
+      const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+      if (!existingAdmin) {
+        await prisma.user.create({
+          data: {
+            email: adminEmail,
+            password: 'hash',
+            role: 'ADMIN',
+            emailVerified: true,
+            consentedAt: new Date(),
+            consentVersion: 'v1.0.0',
+          },
+        });
+      }
+      // Seed Rider
+      const existingRider = await prisma.user.findUnique({ where: { email: riderEmail } });
+      if (!existingRider) {
+        await prisma.user.create({
+          data: {
+            email: riderEmail,
+            password: 'hash',
+            role: 'RIDER',
+            emailVerified: true,
+            consentedAt: new Date(),
+            consentVersion: 'v1.0.0',
+          },
+        });
+      }
+    }
+
     dbSetupDone = true;
   } catch (error) {
     console.error('❌ Failed to setup database:', error);
@@ -75,7 +109,13 @@ afterEach(async () => {
     await prisma.adminProfile.deleteMany({});
     await prisma.riderProfile.deleteMany({});
     await prisma.proProfile.deleteMany({});
-    await prisma.user.deleteMany({});
+    await prisma.user.deleteMany({
+      where: {
+        email: {
+          notIn: ['dev+admin@test.com', 'dev+rider@test.com']
+        }
+      }
+    });
   } catch (error) {
     // En cas d'erreur de cleanup, logger mais ne pas faire échouer le test
     console.error('⚠️  Cleanup error (non-fatal):', error);
