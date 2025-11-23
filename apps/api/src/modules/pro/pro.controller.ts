@@ -440,7 +440,7 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
     const selectedSport = sport && ['surf', 'kitesurf'].includes(sport) ? sport : undefined;
     const selectedLevel = level && ['beginner', 'intermediate', 'advanced'].includes(level) ? level : undefined;
 
-    const offerRows = await prisma.$queryRaw<OfferSearchRow[]>(Prisma.sql`
+    const offerRows: OfferSearchRow[] = await prisma.$queryRaw<OfferSearchRow[]>(Prisma.sql`
       SELECT
         o."id" AS "offerId",
         o."sport",
@@ -478,7 +478,7 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
       LIMIT 50
     `);
 
-    const offersWithDistance = offerRows.map((row) => ({
+    const offersWithDistance = offerRows.map((row: OfferSearchRow) => ({
       id: row.offerId,
       sport: row.sport,
       level: row.level,

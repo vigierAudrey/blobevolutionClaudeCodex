@@ -148,14 +148,14 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
         excludeIdsSet.add(myProfileId);
       }
 
-      const candidateIds = cachedResults.map(result => result.id);
+      const candidateIds = cachedResults.map((result) => result.id);
       let actedSet = new Set<string>();
       if (candidateIds.length > 0) {
-        const actedDecisions = await prisma.matchDecision.findMany({
+        const actedDecisions: Array<{ targetProfileId: string }> = await prisma.matchDecision.findMany({
           where: { actorUserId: userId, targetProfileId: { in: candidateIds } },
           select: { targetProfileId: true }
         });
-        actedSet = new Set(actedDecisions.map(decision => decision.targetProfileId));
+        actedSet = new Set(actedDecisions.map((decision) => decision.targetProfileId));
       }
 
       // Apply exclusions to cached results

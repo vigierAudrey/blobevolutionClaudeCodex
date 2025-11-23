@@ -1,0 +1,56 @@
+local_backend: true
+backend:
+  name: git-gateway # ou 'github'
+  branch: main
+# Si GitHub :
+# backend:
+#   name: github
+#   repo: <votre-org/votre-repo>
+
+media_folder: "apps/web/public/uploads"
+public_folder: "/uploads"
+
+collections:
+  - name: "surf"
+    label: "Surf"
+    folder: "apps/web/content/blobosphere/surf"
+    create: true
+    extension: "mdx"
+    format: "frontmatter"
+    fields: &fields
+      - { label: Titre, name: title, widget: string }
+      - { label: Slug, name: slug, widget: string }
+      - { label: Catégorie, name: category, widget: select, options: [surf, kitesurf, communaute, impact], default: surf }
+      - { label: Tags, name: tags, widget: list, default: [] }
+      - { label: Extrait, name: excerpt, widget: text }
+      - { label: Statut, name: status, widget: select, options: [draft, published], default: draft }
+      - { label: Publié le, name: publishedAt, widget: datetime, format: "YYYY-MM-DD" }
+      - { label: Mis à jour le, name: updatedAt, widget: datetime, required: false, format: "YYYY-MM-DD" }
+      - { label: Image, name: coverImage, widget: image, required: false }
+      - { label: Lecture (min), name: readingTime, widget: number, required: false, min: 1 }
+      - { label: Langue, name: language, widget: select, options: [fr], default: fr }
+      - { label: Contenu, name: body, widget: markdown }
+
+  - name: "kitesurf"
+    label: "Kitesurf"
+    folder: "apps/web/content/blobosphere/kitesurf"
+    create: true
+    extension: "mdx"
+    format: "frontmatter"
+    fields: *fields
+
+  - name: "communaute"
+    label: "Communauté"
+    folder: "apps/web/content/blobosphere/communaute"
+    create: true
+    extension: "mdx"
+    format: "frontmatter"
+    fields: *fields
+
+  - name: "impact"
+    label: "Impact"
+    folder: "apps/web/content/blobosphere/impact"
+    create: true
+    extension: "mdx"
+    format: "frontmatter"
+    fields: *fields

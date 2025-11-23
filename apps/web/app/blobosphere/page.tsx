@@ -5,15 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import {
-  blobosphereArticles,
-  blobosphereFaqs,
-  blobosphereHeroStats,
-  blobosphereInsights,
-  blobosphereTopics,
-  type BlobosphereArticlePreview,
-  type BlobosphereTopicSlug,
-} from './data';
+import { blobosphereFaqs, blobosphereInsights, blobosphereTopics, type BlobosphereTopicSlug } from './static';
+import { loadBlobospherePreviews, type BlobosphereArticlePreview } from '@/lib/blobosphere/content';
 
 type TopicFilterValue = BlobosphereTopicSlug | 'all';
 
@@ -32,9 +25,9 @@ const topicMap = new Map(blobosphereTopics.map((topic) => [topic.slug, topic]));
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'Blobosphère — Conseils surf & kite',
+  title: 'Blobosphère — Le guide surf & kite',
   description:
-    'Des articles simples pour bien démarrer: choix du matériel, environnement et sécurité/santé. Bientôt des interviews inspirantes. Avec des liens vers des ressources de confiance pour aller plus loin.',
+    'Guides débutants pour bien t’équiper, rider responsable et rester en forme. Articles courts + liens utiles, et bientôt des interviews inspirantes. Par la communauté Blobinfini.',
 };
 
 type BlobospherePageProps = {
@@ -48,7 +41,7 @@ function isBlobosphereTopic(value?: string): value is BlobosphereTopicSlug {
   return blobosphereTopics.some((topic) => topic.slug === value);
 }
 
-export default function BlobospherePage({ searchParams }: BlobospherePageProps) {
+export default async function BlobospherePage({ searchParams }: BlobospherePageProps) {
   const AdBannerSidebar = dynamic(
     () => import('@/components/ads/AdBanner').then((m) => m.AdBannerSidebar),
     { ssr: false },
@@ -61,23 +54,21 @@ export default function BlobospherePage({ searchParams }: BlobospherePageProps) 
   const rightSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_RIGHT || 'blobosphere-right';
   const mobileFeedSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_MOBILE || 'blobosphere-mobile';
   const activeTopic: TopicFilterValue = isBlobosphereTopic(searchParams?.topic) ? searchParams!.topic : 'all';
-  const filteredArticles =
-    activeTopic === 'all'
-      ? blobosphereArticles
-      : blobosphereArticles.filter((article) => article.topic === activeTopic);
+  const allArticles = await loadBlobospherePreviews();
+  const filteredArticles = activeTopic === 'all' ? allArticles : allArticles.filter((a) => a.topic === activeTopic);
 
   const collectionJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
     name: 'Blobosphère - Blobinfini',
     description: metadata.description,
-    hasPart: blobosphereArticles.map((article) => ({
+    hasPart: allArticles.map((article) => ({
       '@type': 'Article',
       headline: article.title,
       description: article.excerpt,
       datePublished: article.publishedAt,
       inLanguage: 'fr-FR',
-      about: topicMap.get(article.topic)?.label,
+      about: topicMap.get(article.topic as BlobosphereTopicSlug)?.label,
       url: `https://blobinfini.com/blobosphere#${article.slug}`,
     })),
     audience: {
@@ -122,27 +113,20 @@ export default function BlobospherePage({ searchParams }: BlobospherePageProps) 
         <div className="space-y-6">
           <div className="flex flex-wrap gap-3">
             <Badge variant="secondary">Blobosphère</Badge>
+            <Badge variant="outline">Débutant friendly</Badge>
             <Badge variant="outline">Équipement · Environnement · Santé</Badge>
           </div>
           <div className="space-y-4">
             <h1 className="text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl">
-              Le coin conseils pour bien choisir et progresser
+              Le guide pour t’équiper, rider responsable et rester en forme
             </h1>
             <p className="text-lg text-muted-foreground">
-              Tu y trouveras des guides débutants (matériel, réglages), des articles sur l’environnement et la santé
-              en milieu nautique, et bientôt des interviews de personnes inspirantes du surf/kite. Certains articles
-              renvoient vers des sites de référence pour approfondir — utile pour toi et bon pour le SEO.
+              Des articles courts pour bien choisir ton matériel, comprendre l’environnement (météo, spots, impact)
+              et prendre soin de ta santé en milieu nautique. Bientôt: des interviews inspirantes. Chaque article
+              pointe aussi vers des ressources de confiance pour aller plus loin.
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {blobosphereHeroStats.map((stat) => (
-              <div key={stat.label} className="rounded-2xl border bg-white/80 p-4 shadow-sm">
-                <p className="text-sm font-semibold text-sky-700">{stat.label}</p>
-                <p className="text-2xl font-semibold text-gray-900">{stat.value}</p>
-                <p className="text-sm text-muted-foreground">{stat.detail}</p>
-              </div>
-            ))}
-          </div>
+          {/* Bloc statistiques retiré pour alléger la page */}
           <div className="flex flex-wrap gap-3">
             <Button asChild size="lg">
               <Link href="/register?intent=blobosphere">Créer un compte</Link>
@@ -156,6 +140,11 @@ export default function BlobospherePage({ searchParams }: BlobospherePageProps) 
                 <span aria-hidden="true">→</span>
               </Link>
             </Button>
+            <Button asChild variant="ghost" size="lg">
+              <Link href="/register?intent=blobosphere-contrib" className="inline-flex items-center gap-2">
+                Proposer un sujet <span aria-hidden>✍️</span>
+              </Link>
+            </Button>
           </div>
         </div>
       </section>
@@ -164,12 +153,13 @@ export default function BlobospherePage({ searchParams }: BlobospherePageProps) 
         <div className="space-y-3">
           <p className="text-sm font-semibold text-sky-700">Rubriques</p>
           <h2 id="topics-title" className="text-3xl font-semibold tracking-tight text-gray-900">
-            Choisis un topic pour filtrer les publications
+            Choisis un thème et commence à lire
           </h2>
           <p className="text-base text-muted-foreground">
-            Chaque rubrique possède un calendrier, un JSON-LD dédié et des CTA contextualisés.
+            Commence par Équipement, Environnement ou Santé. Les interviews arrivent très vite.
           </p>
         </div>
+        <TopicCardList activeTopic={activeTopic} />
         <TopicFilter activeTopic={activeTopic} />
       </section>
 
@@ -188,7 +178,7 @@ export default function BlobospherePage({ searchParams }: BlobospherePageProps) 
           </div>
           <span className="text-sm text-muted-foreground">
             {activeTopic === 'all'
-              ? `${blobosphereArticles.length} formats prêts`
+              ? `${allArticles.length} formats prêts`
               : `${filteredArticles.length} format(s) ${topicMap.get(activeTopic)?.label?.toLowerCase()}`}
           </span>
         </div>
@@ -255,12 +245,10 @@ export default function BlobospherePage({ searchParams }: BlobospherePageProps) 
         <div className="grid gap-8 md:grid-cols-2">
           <div className="space-y-4">
             <p className="text-sm font-semibold text-sky-700">CTA final</p>
-            <h2 className="text-3xl font-semibold tracking-tight text-gray-900">
-              Relier lecture et action sur Blobinfini
-            </h2>
+            <h2 className="text-3xl font-semibold tracking-tight text-gray-900">Relier lecture et action</h2>
             <p className="text-base text-muted-foreground">
-              Chaque carte renvoie vers les parcours clés : matching, offres pros, promos ou formulaire d&apos;inscription. C&apos;est la porte
-              d&apos;entrée officielle pour rester aligné avec notre vision.
+              Pars d’un article, continue vers le matching ou les offres pros. Bientôt, la publication sera alimentée
+              en MDX (Git) via Decap CMS pour faciliter la contribution de la communauté.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -313,6 +301,39 @@ function TopicFilter({ activeTopic }: { activeTopic: TopicFilterValue }) {
   );
 }
 
+function TopicCardList({ activeTopic }: { activeTopic: TopicFilterValue }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {blobosphereTopics.map((topic) => {
+        const href = `/blobosphere?topic=${topic.slug}`;
+        const isActive = topic.slug === activeTopic;
+        return (
+          <Link
+            key={topic.slug}
+            href={href}
+            className={cn(
+              'group rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-lg',
+              isActive ? 'border-sky-500 bg-sky-50' : 'bg-white',
+            )}
+            aria-current={isActive ? 'true' : undefined}
+          >
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-sky-700">
+                  <span aria-hidden className="mr-1">{topic.icon}</span>
+                  {topic.label}
+                </p>
+                <p className="text-sm text-muted-foreground">{topic.description}</p>
+              </div>
+              <span aria-hidden className="text-sky-700">→</span>
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
 function ArticleCard({
   article,
   topicLabel,
@@ -322,6 +343,7 @@ function ArticleCard({
   topicLabel: string;
   topicIcon: string;
 }) {
+  const href = `/blobosphere?topic=${article.topic}#${article.slug}`;
   return (
     <article id={article.slug} className="flex h-full flex-col rounded-2xl border bg-white/95 p-6 shadow-sm">
       <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-600">
@@ -329,31 +351,11 @@ function ArticleCard({
           <span aria-hidden="true">{topicIcon}</span>
           {topicLabel}
         </span>
-        <span>{article.type}</span>
-        <span>•</span>
         <span>{article.readingTime}</span>
       </div>
       <div className="mt-4 space-y-2">
         <h3 className="text-xl font-semibold text-gray-900">{article.title}</h3>
         <p className="text-sm text-muted-foreground">{article.excerpt}</p>
-      </div>
-      <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
-        {article.keyPoints.map((point) => (
-          <li key={point} className="flex gap-2">
-            <span aria-hidden="true" className="text-sky-600">
-              ▹
-            </span>
-            <span>{point}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
-        <p className="font-semibold text-slate-900">TL;DR</p>
-        <p>{article.tldr}</p>
-      </div>
-      <div className="mt-4 rounded-2xl border border-dashed p-4 text-sm text-slate-600">
-        <p className="font-semibold text-slate-900">Impact attendu</p>
-        <p>{article.impact}</p>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {article.tags.map((tag) => (
@@ -362,12 +364,9 @@ function ArticleCard({
           </Badge>
         ))}
       </div>
-      <div className="mt-6 flex flex-wrap gap-3">
+      <div className="mt-6">
         <Button asChild size="sm">
-          <Link href={article.ctaHref}>{article.ctaLabel}</Link>
-        </Button>
-        <Button asChild variant="ghost" size="sm">
-          <Link href={`/register?intent=${article.intent}`}>Rejoindre la Blobosphère</Link>
+          <Link href={href}>Lire</Link>
         </Button>
       </div>
     </article>
