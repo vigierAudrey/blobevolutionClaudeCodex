@@ -140,11 +140,6 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
                 <span aria-hidden="true">→</span>
               </Link>
             </Button>
-            <Button asChild variant="ghost" size="lg">
-              <Link href="/register?intent=blobosphere-contrib" className="inline-flex items-center gap-2">
-                Proposer un sujet <span aria-hidden>✍️</span>
-              </Link>
-            </Button>
           </div>
         </div>
       </section>
@@ -153,10 +148,10 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
         <div className="space-y-3">
           <p className="text-sm font-semibold text-sky-700">Rubriques</p>
           <h2 id="topics-title" className="text-3xl font-semibold tracking-tight text-gray-900">
-            Choisis un thème et commence à lire
+            Choisis un thème et plonge dans la lecture !
           </h2>
           <p className="text-base text-muted-foreground">
-            Commence par Équipement, Environnement ou Santé. Les interviews arrivent très vite.
+            Un seul auteur, une seule perspective. Bientôt, un forum pour vos tips, vos idées et enrichir notre communauté !
           </p>
         </div>
         <TopicCardList activeTopic={activeTopic} />

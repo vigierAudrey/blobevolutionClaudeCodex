@@ -25,6 +25,8 @@ async function waitForServer(port: number, label: string) {
 export default defineConfig({
   testDir: './apps/web/tests/e2e',
   timeout: 45_000,
+  // Avoid root-owned default 'test-results' folder in some environments
+  outputDir: 'playwright-out',
   globalSetup: './playwright.global-setup.ts',
   expect: {
     timeout: 7_000,

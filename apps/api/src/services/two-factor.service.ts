@@ -1,7 +1,8 @@
 import { cacheService } from './cache.service';
 import { send2FACode } from '../lib/mailer';
 
-const allowMemoryFallback = process.env.NODE_ENV !== 'production';
+// Memory fallback is only allowed in development, not in tests or production
+const allowMemoryFallback = process.env.NODE_ENV === 'development';
 const memoryStore = allowMemoryFallback ? new Map<string, { code: string; expiresAt: number }>() : null;
 
 if (memoryStore && process.env.NODE_ENV !== 'test') {

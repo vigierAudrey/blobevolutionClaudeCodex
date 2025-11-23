@@ -61,7 +61,8 @@ test.describe('Admin dashboard access control', () => {
     const page = await context.newPage();
     await page.goto('/admin/dashboard');
     await page.waitForLoadState('networkidle');
-    await expect(page).toHaveURL(/\/dashboard/);
+    // Middleware redirection kicks in first for non-admin → /login
+    await expect(page).toHaveURL(/\/login/);
     await context.close();
   });
 
@@ -75,6 +76,19 @@ test.describe('Admin dashboard access control', () => {
       },
       tokens
     );
+    // Set gating cookie expected by Next.js middleware for /admin/*
+    await context.addCookies([
+      {
+        name: 'admin_session',
+        value: '1',
+        domain: 'localhost',
+        path: '/',
+        httpOnly: false,
+        secure: false,
+        sameSite: 'Lax',
+        expires: Math.floor(Date.now() / 1000) + 7 * 24 * 3600,
+      },
+    ]);
     const page = await context.newPage();
     await page.goto('/admin/dashboard');
     await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible();

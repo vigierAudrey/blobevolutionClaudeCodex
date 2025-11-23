@@ -22,3 +22,38 @@ Objectif: générer/éditer des brouillons MDX à partir de prompts ou de liens 
 - MCP/LM Studio: modèle local pour la rédaction (évite coût cloud). Prompt dans `ai/prompts/` (à créer).
 - n8n: pipeline simple (Webhook → Function → HTTP Request → Git). Exemple à ajouter ultérieurement dans `docs/`.
 
+## Intégration GitHub App (SSO Admin)
+
+L’API interne peut pousser les modifications MDX sur GitHub et créer une PR automatiquement.
+
+Activer via variables d’environnement:
+
+```
+# Active l’ouverture de PRs à chaque création/mise à jour
+BLOBOSPHERE_GITHUB_PUSH=true
+
+# Mode authentification: "app" (GitHub App) ou "token" (PAT)
+GITHUB_MODE=app
+
+# Si mode=app
+GITHUB_APP_ID=123456
+GITHUB_APP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"  # \n échappés si en .env
+GITHUB_INSTALLATION_ID=987654
+
+# Si mode=token
+# GITHUB_TOKEN=ghp_xxx
+
+GITHUB_REPO_OWNER=blobinfini
+GITHUB_REPO_NAME=blobevolutionClaudeCodex
+GITHUB_DEFAULT_BASE_BRANCH=main
+```
+
+Comportement:
+- Crée une branche `feature/blobosphere-<slug>-<timestamp>`.
+- Upsert le fichier `apps/web/content/blobosphere/<cat>/<slug>.mdx`.
+- Ouvre une PR vers `main` (URL renvoyée dans la réponse API).
+
+Sécurité:
+- RBAC `ADMIN` obligatoire côté API.
+- Les erreurs GitHub n’empêchent pas l’écriture locale (les appels réseau sont en “best‑effort”).
+
