@@ -4,6 +4,7 @@
 export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { BackBar } from '../../../components/BackBar';
 import { Button } from '../../../components/ui/button';
@@ -294,8 +295,18 @@ function DateInner() {
           </div>
           {wantsLesson && (
             <div className="mt-3 p-3 bg-blue-50 rounded-md">
-              <p className="text-xs text-blue-700">
-                Les professionnels à proximité verront ta demande et pourront te proposer un cours pour la date sélectionnée.
+              <p className="text-xs text-blue-700 space-y-1">
+                <span className="block">
+                  Activer ce badge informe les autres riders que tu veux suivre un cours avec un pro. Si tu trouves un binôme avec la même envie, vous pourrez ensuite signaler votre demande à un professionnel.
+                </span>
+                <span className="block">
+                  Pour publier officiellement une demande visible sur la BloboMap, rendez-vous sur{' '}
+                  <Link href="/lesson-request" className="font-medium underline">
+                    http://localhost:3002/lesson-request
+                  </Link>
+                  . Désignez une seule personne dans votre binôme pour remplir le formulaire afin d’éviter les doublons.
+                </span>
+                <span className="block">Aucun cours n’est réservé automatiquement pour le moment.</span>
               </p>
             </div>
           )}

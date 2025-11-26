@@ -15,6 +15,7 @@
     "dev:web": "npx kill-port 3002 || true && npm run dev:web:start",
     "dev:all": "npm run dev:kill-ports && npm-run-all -p dev:api:start dev:web:start",
     "dev:web:port": "node scripts/dev-web-port.mjs",
+    "dev:web:nokill": "cd apps/web && cross-env-shell \"NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000} PORT=${PORT:-3010} npx next dev -p ${PORT:-3010}\"",
     "dev:infra": "docker compose up -d postgres redis minio mailpit",
     "dev:api:docker": "docker compose up api",
     "dev:all:docker": "npm run dev:infra && concurrently -n web,api -c magenta,blue \"npm:dev:web\" \"npm:dev:api:docker\"",
@@ -62,6 +63,8 @@
     "wait-port": "^1.1.0"
   },
   "dependencies": {
+    "@mdx-js/mdx": "^3.1.1",
+    "@mdx-js/react": "^3.1.1",
     "framer-motion": "^12.23.18",
     "prismjs": "^1.30.0",
     "react-leaflet": "^4.2.1",

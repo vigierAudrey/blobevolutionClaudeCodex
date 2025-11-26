@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { apiClient, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary } from '../../../lib/apiClient';
-import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity } from 'lucide-react';
+import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity, BookOpen, PenSquare } from 'lucide-react';
 import Link from 'next/link';
 
 // Force SSR for admin auth and dynamic stats
@@ -207,6 +207,33 @@ export default function AdminDashboard() {
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/analytics">
                   Analytics détaillées
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen size={20} />
+              Hub éditorial (Blobosphère)
+            </CardTitle>
+            <CardDescription>
+              Rédiger en MDX, prévisualiser et publier via Git/Decap
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/blobosphere/editor">
+                  <PenSquare className="mr-2 h-4 w-4" />
+                  Ouvrir l’éditeur interne
+                </Link>
+              </Button>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/blobosphere">
+                  Décap CMS (iframe)
                 </Link>
               </Button>
             </div>

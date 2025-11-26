@@ -2637,6 +2637,23 @@ components:
         lessonSport:
           type: string
           enum: [surf, kitesurf]
+        lessonLevel:
+          type: string
+          enum: [beginner, intermediate, advanced]
+          nullable: true
+        lessonDate:
+          type: string
+          format: date-time
+          nullable: true
+        lessonPlace:
+          type: string
+          nullable: true
+        lessonStudentCount:
+          type: integer
+          minimum: 1
+          nullable: true
+        blobosphereContributor:
+          type: boolean
         lat:
           type: number
         lng:
@@ -2674,6 +2691,23 @@ components:
         lessonSport:
           type: string
           enum: [surf, kitesurf]
+        lessonLevel:
+          type: string
+          enum: [beginner, intermediate, advanced]
+          nullable: true
+        lessonDate:
+          type: string
+          format: date-time
+          nullable: true
+        lessonPlace:
+          type: string
+          nullable: true
+        lessonStudentCount:
+          type: integer
+          minimum: 1
+          nullable: true
+        blobosphereContributor:
+          type: boolean
     Discipline:
       type: object
       required: [sport, level]
@@ -2765,6 +2799,25 @@ components:
           type: number
         distanceKm:
           type: number
+        lessonSport:
+          type: string
+          enum: [surf, kitesurf]
+          nullable: true
+        lessonLevel:
+          type: string
+          enum: [beginner, intermediate, advanced]
+          nullable: true
+        lessonDate:
+          type: string
+          format: date-time
+          nullable: true
+        lessonPlace:
+          type: string
+          nullable: true
+        lessonStudentCount:
+          type: integer
+          minimum: 1
+          nullable: true
     ProOffer:
       type: object
       properties:

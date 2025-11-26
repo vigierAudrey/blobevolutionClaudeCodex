@@ -151,6 +151,8 @@ interface RiderProfileExport {
   lessonLevel: string | null;
   lessonDate: string | null;
   lessonPlace: string | null;
+  lessonStudentCount: number | null;
+  blobosphereContributor: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -307,6 +309,8 @@ export class GdprExportService {
         lessonLevel: riderProfile.lessonLevel,
         lessonDate: riderProfile.lessonDate?.toISOString() ?? null,
         lessonPlace: riderProfile.lessonPlace,
+        lessonStudentCount: riderProfile.lessonStudentCount,
+        blobosphereContributor: riderProfile.blobosphereContributor,
         createdAt: riderProfile.createdAt.toISOString(),
         updatedAt: riderProfile.updatedAt.toISOString(),
       };

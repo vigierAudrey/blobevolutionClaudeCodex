@@ -1,12 +1,12 @@
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { loadBlobospherePreviews, type BlobosphereArticlePreview } from '@/lib/blobosphere/loadBlobospherePreviews';
+import { cn } from '@/lib/utils';
 import type { Metadata } from 'next';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import { blobosphereFaqs, blobosphereInsights, blobosphereTopics, type BlobosphereTopicSlug } from './static';
-import { loadBlobospherePreviews, type BlobosphereArticlePreview } from '@/lib/blobosphere/content';
+import { blobosphereTopics, type BlobosphereTopicSlug } from './static';
 
 type TopicFilterValue = BlobosphereTopicSlug | 'all';
 
@@ -77,19 +77,6 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
     },
   };
 
-  const faqJsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'FAQPage',
-    mainEntity: blobosphereFaqs.map((faq) => ({
-      '@type': 'Question',
-      name: faq.question,
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: faq.answer,
-      },
-    })),
-  };
-
   return (
     <div className="pb-12 xl:grid xl:grid-cols-[220px,1fr,220px] xl:gap-6">
       {/* Left sidebar ad on desktop */}
@@ -103,18 +90,13 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
         dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
         suppressHydrationWarning
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-        suppressHydrationWarning
-      />
-
       <section className="rounded-3xl border bg-gradient-to-br from-white via-sky-50 to-blue-50 px-6 py-10 shadow-sm sm:px-10 lg:py-14">
         <div className="space-y-6">
           <div className="flex flex-wrap gap-3">
             <Badge variant="secondary">Blobosphère</Badge>
-            <Badge variant="outline">Débutant friendly</Badge>
+            <Badge variant="outline">Surf · Kite</Badge>
             <Badge variant="outline">Équipement · Environnement · Santé</Badge>
+            <Badge variant="outline">Sécurité</Badge>
           </div>
           <div className="space-y-4">
             <h1 className="text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl">
@@ -122,9 +104,14 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
             </h1>
             <p className="text-lg text-muted-foreground">
               Des articles courts pour bien choisir ton matériel, comprendre l’environnement (météo, spots, impact)
-              et prendre soin de ta santé en milieu nautique. Bientôt: des interviews inspirantes. Chaque article
+              et prendre soin de ta santé. Bientôt: des interviews inspirantes. Chaque article
               pointe aussi vers des ressources de confiance pour aller plus loin.
             </p>
+            <div>
+              <Button asChild variant="outline">
+                <Link href="/">← Retour à l’accueil</Link>
+              </Button>
+            </div>
           </div>
           {/* Bloc statistiques retiré pour alléger la page */}
           <div className="flex flex-wrap gap-3">
@@ -148,14 +135,49 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
         <div className="space-y-3">
           <p className="text-sm font-semibold text-sky-700">Rubriques</p>
           <h2 id="topics-title" className="text-3xl font-semibold tracking-tight text-gray-900">
-            Choisis un thème et plonge dans la lecture !
+            Choisis un thème
           </h2>
           <p className="text-base text-muted-foreground">
-            Un seul auteur, une seule perspective. Bientôt, un forum pour vos tips, vos idées et enrichir notre communauté !
+            Commence par Équipement, Environnement ou Santé. Les interviews arrivent très vite.
           </p>
         </div>
         <TopicCardList activeTopic={activeTopic} />
         <TopicFilter activeTopic={activeTopic} />
+      </section>
+
+      <section aria-labelledby="articles-title" className="space-y-6">
+        <div className="space-y-3">
+          <p className="text-sm font-semibold text-sky-700">Articles</p>
+          <h2 id="articles-title" className="text-3xl font-semibold tracking-tight text-gray-900">
+            Sélection {activeTopic === 'all' ? 'Blobosphère' : topicMap.get(activeTopic)?.label}
+          </h2>
+          <p className="text-base text-muted-foreground">
+            Les guides publiés sont tirés directement des fichiers MDX (`apps/web/content/blobosphere`). Les brouillons restent cachés tant qu’ils ne sont pas publiés.
+          </p>
+        </div>
+        {filteredArticles.length === 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="py-10 text-center">
+              <p className="text-base text-muted-foreground">
+                Aucun article publié pour cette rubrique pour l’instant. Sélectionne “Tous les sujets” ou publie un nouveau guide via l’admin.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {filteredArticles.map((article) => {
+              const topic = topicMap.get(article.topic as BlobosphereTopicSlug);
+              return (
+                <ArticleCard
+                  key={article.slug}
+                  article={article}
+                  topicLabel={topic?.label ?? article.topic}
+                  topicIcon={topic?.icon ?? '📘'}
+                />
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Mobile in-content ad (hidden on large screens) */}
@@ -163,101 +185,51 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
         <AdBannerFeed slot={mobileFeedSlot} className="my-4" />
       </div>
 
-      <section aria-labelledby="articles-title" className="space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <p className="text-sm font-semibold text-sky-700">Blobosphère</p>
-            <h2 id="articles-title" className="text-3xl font-semibold tracking-tight text-gray-900">
-              Articles prêts à publier
-            </h2>
-          </div>
-          <span className="text-sm text-muted-foreground">
-            {activeTopic === 'all'
-              ? `${allArticles.length} formats prêts`
-              : `${filteredArticles.length} format(s) ${topicMap.get(activeTopic)?.label?.toLowerCase()}`}
-          </span>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {filteredArticles.map((article) => {
-            const topic = topicMap.get(article.topic);
-            if (!topic) return null;
-            return <ArticleCard key={article.slug} article={article} topicLabel={topic.label} topicIcon={topic.icon} />;
-          })}
-        </div>
-      </section>
-
-      <section aria-labelledby="insights-title" className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle id="insights-title">Pourquoi c&apos;est SEO friendly</CardTitle>
-            <CardDescription>Architecture de site, maillage interne et instrumentation.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-3">
-            {blobosphereInsights.map((insight) => (
-              <div key={insight.title} className="rounded-2xl border bg-white p-4">
-                <p className="text-sm font-semibold text-gray-900">{insight.title}</p>
-                <p className="text-sm text-muted-foreground">{insight.detail}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle>Bloc Pour les IA</CardTitle>
-            <CardDescription>
-              Extraits Speakable + tracking `blobosphere.ai.redirect` pour encourager les assistants.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>• TL;DR courts (max 40 mots) pour être cités facilement.</p>
-            <p>• Liens deep-link `/matching` ou `/register` avec utm_source=blobosphere.</p>
-            <p>• JSON-LD Article + FAQ pour guider Google et les LLM.</p>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section aria-labelledby="faq-title" className="space-y-6">
+      <section aria-labelledby="contrib-title" className="space-y-6">
         <div>
-          <p className="text-sm font-semibold text-sky-700">FAQ & gouvernance</p>
-          <h2 id="faq-title" className="text-3xl font-semibold tracking-tight text-gray-900">
-            Règles pour contribuer à la Blobosphère
+          <p className="text-sm font-semibold text-sky-700">Participer</p>
+          <h2 id="contrib-title" className="text-3xl font-semibold tracking-tight text-gray-900">
+            Comment proposer un article ?
           </h2>
+          <p className="text-base text-muted-foreground">
+            Toute contribution passe par le profil Blobinfini. Nous étudions chaque sujet avant publication pour
+            garantir le respect du RGPD et de la charte éditoriale.
+          </p>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {blobosphereFaqs.map((faq) => (
-            <Card key={faq.question} className="h-full">
-              <CardHeader>
-                <CardTitle className="text-base">{faq.question}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">{faq.answer}</CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-3xl border bg-white px-6 py-10 shadow-sm sm:px-10">
-        <div className="grid gap-8 md:grid-cols-2">
-          <div className="space-y-4">
-            <p className="text-sm font-semibold text-sky-700">CTA final</p>
-            <h2 className="text-3xl font-semibold tracking-tight text-gray-900">Relier lecture et action</h2>
-            <p className="text-base text-muted-foreground">
-              Pars d’un article, continue vers le matching ou les offres pros. Bientôt, la publication sera alimentée
-              en MDX (Git) via Decap CMS pour faciliter la contribution de la communauté.
+        <Card className="bg-white">
+          <CardContent className="space-y-4 pt-6">
+            <ol className="space-y-3 text-sm text-muted-foreground list-decimal pl-5">
+              <li>
+                <span className="font-medium text-foreground">Inscris-toi ou connecte-toi.</span> Les contributions sont
+                réservées aux membres authentifiés.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Ouvre ton profil &gt; Confidentialité.</span> Active la case
+                « Je veux contribuer à la Blobosphère » pour signaler ton intention.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Retourne sur ton tableau de bord.</span> Le bouton « Proposer
+                un sujet » apparaît alors et ta proposition est transmise à l’équipe éditoriale pour relecture.
+              </li>
+            </ol>
+            <p className="text-xs text-muted-foreground">
+              💡 Tant que l’option n’est pas activée dans ton profil, les formulaires de contribution restent cachés.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Button asChild size="lg">
-              <Link href="/register">Créer un compte</Link>
-            </Button>
-            <Button asChild variant="outline" size="lg">
-              <Link href="/matching">Explorer le matching</Link>
-            </Button>
-            <Button asChild variant="ghost" size="lg">
-              <Link href="/pro/onboarding">Activer mon profil pro</Link>
-            </Button>
-          </div>
-        </div>
+            <div className="flex flex-wrap gap-3">
+              <Button asChild>
+                <Link href="/register">Créer un compte</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/profile">Accéder à mon profil</Link>
+              </Button>
+            </div>
+            <div className="flex">
+              <Button asChild variant="ghost">
+                <Link href="/">← Retour à l’accueil</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </section>
       </div>
 

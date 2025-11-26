@@ -29,6 +29,7 @@ type LessonPayload = {
   lessonLevel?: Level | null;
   lessonDate?: string | null;
   lessonPlace?: string | null;
+  lessonStudentCount?: number | null;
 };
 
 export default function LessonRequestPage() {
@@ -40,6 +41,7 @@ export default function LessonRequestPage() {
   const [lessonLevel, setLessonLevel] = useState<Level | null>(null);
   const [lessonDate, setLessonDate] = useState('');
   const [lessonPlace, setLessonPlace] = useState('');
+  const [lessonStudentCount, setLessonStudentCount] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -59,6 +61,11 @@ export default function LessonRequestPage() {
         }
 
         setLessonPlace(profile.lessonPlace || '');
+        setLessonStudentCount(
+          typeof profile.lessonStudentCount === 'number' && profile.lessonStudentCount > 0
+            ? profile.lessonStudentCount
+            : 1
+        );
       } catch (err) {
         console.error('Error loading profile:', err);
         router.replace('/login');
@@ -77,6 +84,10 @@ export default function LessonRequestPage() {
       toast('Veuillez choisir un sport et un niveau', 'error');
       return;
     }
+    if (wantsLesson && (!lessonStudentCount || lessonStudentCount < 1 || lessonStudentCount > 6)) {
+      toast('Indique un nombre de participants entre 1 et 6', 'error');
+      return;
+    }
 
     try {
       setSaving(true);
@@ -90,12 +101,14 @@ export default function LessonRequestPage() {
         payload.lessonLevel = lessonLevel ?? null;
         payload.lessonDate = lessonDate || undefined;
         payload.lessonPlace = lessonPlace || undefined;
+        payload.lessonStudentCount = Math.max(1, Math.min(6, lessonStudentCount || 1));
       } else {
         // Clear all lesson data when disabling
         payload.lessonSport = null;
         payload.lessonLevel = null;
         payload.lessonDate = null;
         payload.lessonPlace = null;
+        payload.lessonStudentCount = null;
       }
 
       await apiClient.updateProfile(payload);
@@ -136,6 +149,11 @@ export default function LessonRequestPage() {
           Active ta demande pour être visible aux professionnels sur la BloboMap
         </p>
       </div>
+      <div className="p-3 bg-amber-50 border border-amber-200 text-sm text-amber-900 rounded-md">
+        ℹ️ Si tu as matché avec d’autres riders, publie une seule demande commune ici
+        (<span className="font-semibold">http://localhost:3002/lesson-request</span>) afin d’éviter les doublons.
+        Indique le nombre total de personnes qui souhaitent participer au cours.
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Card>
@@ -162,6 +180,9 @@ export default function LessonRequestPage() {
 
             {wantsLesson && (
               <div className="space-y-4 pt-2">
+                <div className="p-3 bg-blue-50 rounded text-xs text-blue-800">
+                  Pour éviter les doublons, décidez quel rider soumettra cette demande et renseignez le nombre total de participants (binôme, trio, etc.).
+                </div>
                 <div>
                   <Label htmlFor="sport" className="mb-2 block">
                     Sport <span className="text-red-500">*</span>
@@ -181,6 +202,33 @@ export default function LessonRequestPage() {
                         {s === 'surf' ? '🏄' : '🪁'} {sportLabels[s]}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="students" className="mb-2 block">
+                    Nombre d'élèves <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      id="students"
+                      type="number"
+                      min={1}
+                      max={6}
+                      value={lessonStudentCount}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        if (!Number.isFinite(next)) {
+                          setLessonStudentCount(1);
+                          return;
+                        }
+                        setLessonStudentCount(Math.max(1, Math.min(6, Math.trunc(next))));
+                      }}
+                      className="w-24"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Ex. 1 = toi seul, 2 = binôme, 3+ = petit groupe (max 6).
+                    </p>
                   </div>
                 </div>
 
@@ -237,9 +285,11 @@ export default function LessonRequestPage() {
                 </div>
 
                 <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-                  <p className="text-xs text-green-700">
-                    ✨ Une fois enregistrée, ta demande sera visible sur la BloboMap Pro.
-                    Les professionnels pourront te contacter via la messagerie.
+                  <p className="text-xs text-green-700 space-y-1">
+                    <span className="block">
+                      ✨ Une fois enregistrée, ta demande sera visible sur la BloboMap Pro et les professionnels pourront te contacter via la messagerie.
+                    </span>
+                    <span className="block">Un seul enregistrement par groupe suffit pour éviter les doublons.</span>
                   </p>
                 </div>
               </div>

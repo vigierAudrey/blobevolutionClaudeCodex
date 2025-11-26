@@ -4,7 +4,6 @@
 export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { apiClient } from '../../lib/apiClient';
 import { BackBar } from '../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -122,9 +121,6 @@ export default function OnboardingPage() {
             <ChecklistItem done={hasPhoto} label="Ajouter une photo de profil" />
             <div className="pt-2 flex gap-2">
               <Button onClick={() => router.push('/profile')}>Ouvrir mon profil</Button>
-              <Link href="/matching" className="inline-flex items-center rounded-md border px-4 py-2 text-sm">
-                Passer au matching
-              </Link>
             </div>
           </CardContent>
         </Card>

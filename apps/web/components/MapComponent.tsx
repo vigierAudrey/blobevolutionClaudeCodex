@@ -28,6 +28,7 @@ type MapComponentProps = {
     lessonLevel?: string | null;
     lessonDate?: Date | string | null;
     lessonPlace?: string | null;
+    lessonStudentCount?: number | null;
   }>;
   onContactClick: (userId: string) => void;
   legend?: Array<{ label: string; color: string }>;
@@ -316,8 +317,13 @@ export default function MapComponent({
                   )}
 
                   {/* Lesson details */}
-                  {(item.lessonSport || item.lessonLevel || item.lessonDate || item.lessonPlace) && (
+                  {(item.lessonSport || item.lessonLevel || item.lessonDate || item.lessonPlace || item.lessonStudentCount) && (
                     <div className="mb-3 p-2 bg-blue-50 rounded text-xs space-y-1">
+                      {item.lessonStudentCount && item.lessonStudentCount > 0 && (
+                        <div>
+                          <span className="font-medium">Groupe:</span> {item.lessonStudentCount} {item.lessonStudentCount > 1 ? 'personnes' : 'personne'}
+                        </div>
+                      )}
                       {item.lessonSport && (
                         <div>
                           <span className="font-medium">Sport:</span> {item.lessonSport === 'surf' ? '🏄 Surf' : '🪁 Kitesurf'}

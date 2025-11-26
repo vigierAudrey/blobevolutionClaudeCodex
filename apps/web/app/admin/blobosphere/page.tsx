@@ -1,78 +1,59 @@
-"use client";
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
-import { Button } from '../../../components/ui/button';
-import { apiClient } from '../../../lib/apiClient';
+import Link from 'next/link';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 export const dynamic = 'force-dynamic';
 
-type AdminUser = { email: string; role: 'ADMIN' | 'PRO' | 'RIDER' };
-
-export default function BlobosphereAdminEditor() {
-  const router = useRouter();
-  const [user, setUser] = useState<AdminUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-        const me = (await apiClient.me()) as AdminUser;
-        if (me.role !== 'ADMIN') {
-          router.replace('/dashboard');
-          return;
-        }
-        setUser(me);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Accès refusé');
-        router.replace('/login');
-      } finally {
-        setLoading(false);
-      }
-    };
-    check();
-  }, [router]);
-
-  if (loading) return <p>Chargement…</p>;
-  if (error) return <p className="text-red-600">{error}</p>;
-
+export default function BlobosphereAdminDecapPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Blobosphère — Éditeur</h1>
-          <p className="text-muted-foreground">Connecté en tant que {user?.email}</p>
-        </div>
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold">Blobosphère — Décap CMS</h1>
+        <p className="text-muted-foreground">
+          L’éditeur Git (Décap CMS) est isolé du reste de l’admin pour éviter toute requête API parasite.
+          Utilise cette page pour te connecter via GitHub et modifier les fichiers `.mdx` de la Blobosphère.
+        </p>
       </div>
 
-      <Card className="mb-6">
+      <Card>
         <CardHeader>
-          <CardTitle>Éditeur interne (SSO Admin)</CardTitle>
+          <CardTitle>Accès éditeurs</CardTitle>
           <CardDescription>
-            Créer/éditer des articles MDX et ouvrir une PR GitHub automatiquement.
+            Choisis l’expérience qui te convient pour créer ou éditer les articles. Les deux alimentent les fichiers
+            `apps/web/content/blobosphere`.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex items-center gap-3">
-          <Button asChild>
-            <a href="/admin/blobosphere/editor">Ouvrir l’éditeur interne</a>
+        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="font-medium">Éditeur interne (SSO admin)</p>
+            <p className="text-sm text-muted-foreground">
+              Ouvre le formulaire MDX natif pour les tests ou pour pré-remplir un article sans passer par GitHub.
+            </p>
+          </div>
+          <Button asChild variant="outline">
+            <Link href="/admin/blobosphere/editor">Ouvrir l’éditeur interne</Link>
           </Button>
-          <p className="text-sm text-muted-foreground">
-            Recommandé — tout est géré par votre compte admin.
-          </p>
+        </CardContent>
+        <CardContent className="flex flex-col gap-3 border-t pt-6 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="font-medium">Décap CMS (GitHub)</p>
+            <p className="text-sm text-muted-foreground">
+              Authentification GitHub + commits directs sur le repo. Fonctionne via le proxy `/api/decap/auth`.
+            </p>
+          </div>
+          <Button asChild>
+            <Link href="/admin/index.html" target="_blank" rel="noreferrer">
+              Ouvrir dans un nouvel onglet
+            </Link>
+          </Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Décap CMS (MDX + Git)</CardTitle>
+          <CardTitle>Décap CMS</CardTitle>
           <CardDescription>
-            L’éditeur charge la configuration depuis <code>/admin/config.yml</code>. Les droits d’écriture restent gérés par Git.
+            Si l’iframe n’affiche pas l’auth GitHub, utilise le bouton ci-dessus pour l’ouvrir dans un nouvel onglet.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -83,14 +64,6 @@ export default function BlobosphereAdminEditor() {
               className="w-full"
               style={{ minHeight: '80vh', border: '0' }}
             />
-          </div>
-          <div className="mt-3 flex items-center gap-3">
-            <Button asChild variant="outline">
-              <a href="/admin/index.html" target="_blank" rel="noreferrer">Ouvrir dans un nouvel onglet</a>
-            </Button>
-            <p className="text-sm text-muted-foreground">
-              Astuce: si l’iframe ne se charge pas, utilisez le bouton ci‑dessus.
-            </p>
           </div>
         </CardContent>
       </Card>
