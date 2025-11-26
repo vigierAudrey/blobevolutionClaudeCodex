@@ -26,6 +26,11 @@ export interface UserProfile {
   emailNotif?: boolean;
   wantsLesson?: boolean;
   lessonSport?: Sport | null;
+  lessonLevel?: Level | null;
+  lessonDate?: string | null;
+  lessonPlace?: string | null;
+  lessonStudentCount?: number | null;
+  blobosphereContributor?: boolean;
   lat?: number | null;
   lng?: number | null;
   photoUrl?: string | null;

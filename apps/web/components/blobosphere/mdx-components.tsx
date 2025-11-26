@@ -1,10 +1,12 @@
 "use client";
 import * as React from 'react';
-import type { MDXComponents } from '@mdx-js/react';
+import type { MDXComponents } from 'mdx/types';
 import { MDXProvider } from '@mdx-js/react';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+
+const mergeClasses = (base: string, extra?: string) => [base, extra].filter(Boolean).join(' ');
 
 export function Callout(props: { type?: 'info' | 'warning' | 'success' | 'error'; title?: string; children?: React.ReactNode }) {
   const color = props.type || 'info';
@@ -37,14 +39,20 @@ export function Alert(props: { variant?: 'default' | 'destructive' | 'success' |
   return <div className={`my-3 rounded-md border px-4 py-3 text-sm ${klass}`}>{props.children}</div>;
 }
 
-export function CodeBlock(props: React.HTMLAttributes<HTMLPreElement> & { children?: React.ReactNode }) {
-  // Accept <pre><code class="language-xxx">...</code></pre> or direct children string
-  const child = Array.isArray(props.children) ? props.children[0] : props.children;
-  const code = React.isValidElement(child) ? (child.props?.children ?? '') : child ?? '';
-  const langClass = React.isValidElement(child) ? String(child.props?.className || '') : '';
+export function CodeBlock({ children, className, ...rest }: React.HTMLAttributes<HTMLPreElement>) {
+  const child = Array.isArray(children) ? children[0] : children;
+  let code: React.ReactNode = child ?? '';
+  let langClass = '';
+
+  if (React.isValidElement(child)) {
+    const element = child as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
+    code = element.props.children ?? '';
+    langClass = String(element.props.className ?? '');
+  }
+
   const lang = (langClass.match(/language-([a-z0-9]+)/i)?.[1] || '').toLowerCase();
   return (
-    <pre className="my-3 overflow-x-auto rounded-md border bg-slate-50 p-3 text-xs">
+    <pre {...rest} className={mergeClasses('my-3 overflow-x-auto rounded-md border bg-slate-50 p-3 text-xs', className)}>
       <code className={lang ? `language-${lang}` : undefined}>{code}</code>
     </pre>
   );
@@ -102,7 +110,10 @@ function toText(node: React.ReactNode): string {
   if (node == null || node === false) return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map((n) => toText(n)).join(' ');
-  if (React.isValidElement(node)) return toText((node.props as any)?.children);
+  if (React.isValidElement(node)) {
+    const props = node.props as { children?: React.ReactNode };
+    return toText(props.children);
+  }
   return '';
 }
 
@@ -118,12 +129,12 @@ export function QA({ question, children }: QAProps) {
 
 export function FAQ({ children, title }: { children?: React.ReactNode; title?: string }) {
   const items = React.Children.toArray(children).flatMap((child) => {
-    if (React.isValidElement(child) && (child.type === QA || (child.props && 'question' in child.props))) {
-      const q = (child.props as any).question as string;
-      const a = toText((child.props as any).children);
-      return [{ question: q, answer: a }];
+    if (!React.isValidElement(child)) return [];
+    const props = child.props as { question?: string; children?: React.ReactNode };
+    if (child.type === QA || props.question) {
+      return [{ question: props.question ?? '', answer: toText(props.children) }];
     }
-    return [] as Array<{ question: string; answer: string }>;
+    return [];
   });
 
   const jsonLd = items.length
@@ -228,16 +239,35 @@ export function getMdxComponents(): MDXComponents {
     Material,
     Gear,
     // HTML element overrides for consistent styling
-    h1: (props) => <h1 {...props} className={`mt-6 text-2xl font-semibold ${props.className || ''}`.trim()} />,
-    h2: (props) => <h2 {...props} className={`mt-5 text-xl font-semibold ${props.className || ''}`.trim()} />,
-    h3: (props) => <h3 {...props} className={`mt-4 text-lg font-semibold ${props.className || ''}`.trim()} />,
-    p: (props) => <p {...props} className={`my-3 text-sm leading-relaxed text-slate-800 ${props.className || ''}`.trim()} />,
-    ul: (props) => <ul {...props} className={`my-3 list-disc pl-5 ${props.className || ''}`.trim()} />,
-    ol: (props) => <ol {...props} className={`my-3 list-decimal pl-5 ${props.className || ''}`.trim()} />,
-    li: (props) => <li {...props} className={`${props.className || ''}`.trim()} />,
-    a: (props) => <a {...props} className={`text-sky-700 underline ${props.className || ''}`.trim()} target="_blank" rel="noreferrer" />,
-    img: (props) => <img {...props} className={`my-2 max-w-full rounded-md border ${props.className || ''}`.trim()} />,
-    pre: (props) => <CodeBlock {...props} />,
+    h1: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+      <h1 {...props} className={mergeClasses('mt-6 text-2xl font-semibold', className)} />
+    ),
+    h2: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+      <h2 {...props} className={mergeClasses('mt-5 text-xl font-semibold', className)} />
+    ),
+    h3: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+      <h3 {...props} className={mergeClasses('mt-4 text-lg font-semibold', className)} />
+    ),
+    p: ({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => (
+      <p {...props} className={mergeClasses('my-3 text-sm leading-relaxed text-slate-800', className)} />
+    ),
+    ul: ({ className, ...props }: React.HTMLAttributes<HTMLUListElement>) => (
+      <ul {...props} className={mergeClasses('my-3 list-disc pl-5', className)} />
+    ),
+    ol: ({ className, ...props }: React.HTMLAttributes<HTMLOListElement>) => (
+      <ol {...props} className={mergeClasses('my-3 list-decimal pl-5', className)} />
+    ),
+    li: ({ className, ...props }: React.LiHTMLAttributes<HTMLLIElement>) => (
+      <li {...props} className={mergeClasses('', className)} />
+    ),
+    a: ({ className, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+      <a {...props} className={mergeClasses('text-sky-700 underline', className)} target="_blank" rel="noreferrer" />
+    ),
+    img: ({ alt, className, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
+      // `img` fallback is only used in preview mode, Next/Image handles production rendering.
+      <img {...props} alt={alt ?? ''} className={mergeClasses('my-2 max-w-full rounded-md border', className)} />
+    ),
+    pre: (props: React.HTMLAttributes<HTMLPreElement>) => <CodeBlock {...props} />,
   };
   return components;
 }

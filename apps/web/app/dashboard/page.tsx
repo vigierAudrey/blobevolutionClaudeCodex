@@ -6,7 +6,7 @@ import { apiClient } from '../../lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import Link from 'next/link';
-import { User, Map, Info, LogOut, MessageSquare, GraduationCap, Search, RadioTower, Tag } from 'lucide-react';
+import { User, Map, Info, LogOut, MessageSquare, GraduationCap, Search, RadioTower, Tag, BookOpen } from 'lucide-react';
 
 const AdBannerSidebar = nextDynamic(
   () => import('../../components/ads/AdBanner').then((mod) => mod.AdBannerSidebar),
@@ -68,7 +68,11 @@ export default function DashboardPage() {
         const hasPhoto = !!p?.photoUrl;
         const hasDiscipline = Array.isArray(d) && d.length > 0;
         const incomplete = !hasName || !hasPhoto || !hasDiscipline;
-        if (incomplete) router.replace('/onboarding');
+        if (incomplete) {
+          router.replace('/onboarding');
+        } else {
+          setShowProfilePrompt(false);
+        }
       } catch (_) {
         // ignore
       }
@@ -150,12 +154,12 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><MessageSquare size={18}/> Messagerie {unreadTotal>0 && (<span className="ml-2 inline-flex items-center rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5">{unreadTotal}</span>)}</CardTitle>
-            <CardDescription>Retrouve tes conversations</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Map size={18}/> Matching</CardTitle>
+            <CardDescription>Trouve des partenaires proches</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/messages" className="inline-block w-full">
-              <Button className="w-full" variant="outline">Ouvrir la messagerie</Button>
+            <Link href="/matching" className="inline-block w-full">
+              <Button className="w-full" variant="secondary">Accéder au matching</Button>
             </Link>
           </CardContent>
         </Card>
@@ -173,12 +177,12 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Map size={18}/> Matching</CardTitle>
-            <CardDescription>Trouve des partenaires proches</CardDescription>
+            <CardTitle className="flex items-center gap-2"><MessageSquare size={18}/> Messagerie {unreadTotal>0 && (<span className="ml-2 inline-flex items-center rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5">{unreadTotal}</span>)}</CardTitle>
+            <CardDescription>Retrouve tes conversations</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/matching" className="inline-block w-full">
-              <Button className="w-full" variant="secondary">Accéder au matching</Button>
+            <Link href="/messages" className="inline-block w-full">
+              <Button className="w-full" variant="outline">Ouvrir la messagerie</Button>
             </Link>
           </CardContent>
         </Card>
@@ -200,29 +204,53 @@ export default function DashboardPage() {
                 Chercher un pro près de moi
               </Button>
             </Link>
-            <Link href="/lesson-request" className="block">
-              <Button className="w-full" variant="secondary">
-                <RadioTower size={16} className="mr-2" />
-                Me rendre visible aux pros
-              </Button>
-            </Link>
+            <div className="space-y-1">
+              <Link href="/lesson-request" className="block">
+                <Button className="w-full" variant="secondary">
+                  <RadioTower size={16} className="mr-2" />
+                  Me rendre visible aux pros
+                </Button>
+              </Link>
+              <p className="text-xs text-muted-foreground px-1">
+                💡 Les pros voient ta demande sur la BloboMap et peuvent te proposer un cours
+              </p>
+            </div>
             <Link href="/promos" className="block">
               <Button className="w-full" variant="outline">
                 <Tag size={16} className="mr-2" />
                 Voir les bons plans
               </Button>
             </Link>
-            <p className="text-xs text-muted-foreground mt-2 px-1">
-              💡 Les pros voient ta demande sur la BloboMap et peuvent te proposer un cours
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><BookOpen size={18}/> Blobosphère</CardTitle>
+            <CardDescription>Accède aux récits, tutos et actus partagés par la communauté</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Link href="/blobosphere" className="block">
+              <Button className="w-full" variant="outline">
+                Explorer la Blobosphère
+              </Button>
+            </Link>
+            <Link href="/blobosphere#faq-title" className="block">
+              <Button className="w-full" variant="secondary">
+                Proposer un sujet
+              </Button>
+            </Link>
+            <p className="text-xs text-muted-foreground px-1">
+              💬 Active l’option « Je veux contribuer à la Blobosphère » dans ton profil avant d’envoyer ton idée.
             </p>
           </CardContent>
         </Card>
 
-        <Card className="sm:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Info size={18}/> À propos & RGPD</CardTitle>
             <CardDescription>
-              Comprendre l&rsquo;utilisation des données, la sécurité et le fonctionnement du site.
+              Comprendre l’utilisation des données, la sécurité et le fonctionnement du site.
             </CardDescription>
           </CardHeader>
           <CardContent>

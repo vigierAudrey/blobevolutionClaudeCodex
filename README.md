@@ -1005,56 +1005,93 @@ router.post(
 
 _Blobinfini - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
 
-## ✍️ Blobosphère – MDX + Git + Decap CMS (nouveau)
+## ✍️ Blobosphère – MDX + Git + Décap CMS
 
-L’édition de la Blobosphère repose sur des fichiers **MDX** versionnés dans Git et éditables via **Decap CMS** (ancien Netlify CMS).
+L’édition de la Blobosphère repose désormais uniquement sur des fichiers **MDX** versionnés. Décap CMS et l’éditeur interne écrivent directement dans `apps/web/content/blobosphere`. Aucune donnée n’est chargée depuis `data.ts` (supprimé).
 
-Chemins et structure
-- Dossiers de contenu: `apps/web/content/blobosphere/`
-  - `surf/`, `kitesurf/`, `communaute/`, `impact/`
-  - Chaque dossier contient des fichiers `.mdx` avec frontmatter YAML:
+### ✅ To-do immédiat
+- [ ] **TODO**: remplacer `repo: "<OWNER>/<REPO>"` dans `apps/web/public/admin/config.yml` par le dépôt GitHub cible avant de lancer Décap.
+
+### Structure des fichiers
+- Racine contenu: `apps/web/content/blobosphere/`
+  - Sous-dossiers par catégorie: `surf/`, `kitesurf/`, `communaute/`, `impact`
+  - Fichiers `.mdx` avec frontmatter standard :
 
 ```yaml
 ---
-title: string
-slug: string
+title: "Titre"
+slug: "titre-en-kebab"
 category: "surf" | "kitesurf" | "communaute" | "impact"
-tags: [string]
-excerpt: string
+excerpt: "Aperçu court"
+tags: ["tag1","tag2"]
 status: "draft" | "published"
-publishedAt: YYYY-MM-DD
-updatedAt: YYYY-MM-DD | null
-coverImage: string | null
-readingTime: number | null
-language: "fr"
+publishedAt: "2025-01-08"
+updatedAt: "2025-01-08"
+coverImage: "/uploads/cover.jpg"
+readingTime: 7
 ---
 ```
 
-Exemples inclus
-- `apps/web/content/blobosphere/surf/wax-debutant.mdx`
-- `apps/web/content/blobosphere/kitesurf/choisir-aile.mdx`
-- `apps/web/content/blobosphere/communaute/mentorat.mdx`
-- `apps/web/content/blobosphere/impact/eco-gestes.mdx`
+- Création/écriture locale : `apps/web/lib/blobosphere/saveMdx.ts` (utilisé par les routes `/api/blobosphere/posts`).
+- Lecture côté Next : `apps/web/lib/blobosphere/loadBlobospherePreviews.ts` (utilisé par `/blobosphere`, filtre automatiquement les drafts).
 
-Admin (Decap CMS)
-- Fichiers: `apps/web/public/admin/index.html` + `apps/web/public/admin/config.yml`
-- Ouvre: `http://localhost:PORT/admin` (ex: 3011)
-- Par défaut `local_backend: true`. Pour GitHub, remplace `backend` dans `config.yml` (voir commentaires) et configure l’auth.
+### Export automatique des articles
+- Routes Next.js dédiées (dev uniquement) :
+  - `POST /api/blobosphere/posts` → crée `apps/web/content/blobosphere/<category>/<slug>.mdx`
+  - `PUT /api/blobosphere/posts/:category/:slug` → met à jour le fichier MDX existant
+  - `GET /api/blobosphere/posts` et `/posts/:category/:slug` → listent/chargent les fichiers pour l’éditeur interne
+- Les routes ci-dessus appellent `saveMdx.ts` et calculent automatiquement `readingTime`, `publishedAt`, etc.
+- L’éditeur interne (`/admin/blobosphere/editor`) consomme ces routes, pas besoin d’API externe pour tester en local.
 
-Chargement des articles (côté Next)
-- Le listing `/blobosphere` lit réellement les `.mdx` via `apps/web/lib/blobosphere/content.ts` (fs + frontmatter minimal)
-- Le frontmatter est parsé, l’extrait et un temps de lecture approximatif sont calculés si absents.
-- Les filtres (thèmes) et le JSON‑LD continuent de fonctionner.
+### Lancer Décap CMS (GitHub backend)
+1. **Config `config.yml`**  
+   ```yaml
+   backend:
+     name: github
+     repo: "<OWNER>/<REPO>"    # TODO à renseigner
+     branch: "main"
+     base_url: "http://localhost:3002"
+     auth_endpoint: "api/decap/auth"
+   media_folder: "apps/web/public/uploads"
+   public_folder: "/uploads"
+   load_config_file: false
+   collections: # … voir fichier pour le détail des champs
+   ```
+2. **Proxy Décap**  
+   Le fichier `apps/web/app/api/decap/auth/route.ts` relaye `/api/decap/auth` vers `https://api.netlify.com/api/v1/auth/github`. Il évite les `ERR_CONNECTION_REFUSED` en local.
+3. **GitHub OAuth App**  
+   - GitHub > Settings > Developer settings > OAuth Apps > New OAuth App  
+   - Homepage URL : `http://localhost:3002`  
+   - Authorization callback URL : `http://localhost:3002/api/decap/auth/callback`  
+   - Récupère `Client ID` / `Client Secret` pour la configuration Décap (popup d’auth).
+4. **Démarrage**  
+   - `npm run dev --workspace @blobinfini/web` (écoute sur `3002`)  
+   - Navigue vers `/admin/blobosphere` pour charger l’iframe Décap isolée.  
+   - Le bouton “Ouvrir dans un nouvel onglet” pointe vers `/admin/index.html` si l’iframe est bloquée.
 
-Ajouter un article via /admin
-1) Va sur `/admin`, choisis la rubrique (Surf, Kitesurf, Communauté, Impact)
-2) “New” → saisis le frontmatter + corps Markdown
-3) Publie (ou enregistre en brouillon). Le fichier `.mdx` sera créé dans le dossier correspondant.
+### Exporter un article `.mdx`
+1. Via l’éditeur interne : `/admin/blobosphere/editor`
+   - Remplis le formulaire (slug + catégorie + contenu).  
+   - Clique “Enregistrer” → `POST /api/blobosphere/posts` → fichier écrit dans `apps/web/content/blobosphere/<cat>/<slug>.mdx`.
+2. Via Décap CMS : `/admin/index.html`
+   - Auth GitHub, sélectionne “Blobosphère”, crée ou édite un article.  
+   - Les commits GitHub contiennent directement les fichiers `.mdx`.
+3. Via API :  
+   ```bash
+   curl -X POST http://localhost:3002/api/blobosphere/posts \
+     -H "Content-Type: application/json" \
+     -d '{"title":"Test","slug":"test","category":"surf","status":"draft","body":"Contenu"}'
+   ```
 
-Automatisations IA (préparation)
-- Les fichiers MDX permettent des workflows n8n: extraction des titres, génération d’extrait, calcul des tags, push PR Git.
-- Un connecteur MCP (LM Studio) pourra générer des brouillons MDX à partir d’un prompt ou d’un lien source.
+### Vérifier la lecture côté `/blobosphere`
+1. `npm run dev --workspace @blobinfini/web`
+2. Ajoute/modifie un fichier dans `apps/web/content/blobosphere`
+3. Ouvre `http://localhost:3002/blobosphere` → les articles publiés doivent apparaître.  
+   - `loadBlobospherePreviews()` filtre automatiquement `status: draft` et calcule `readingTime`.
 
-Notes SEO
-- Les thèmes surf/kitesurf/communauté/impact structurent la navigation et le maillage interne.
-- JSON‑LD Collection + Article + FAQ sont émis depuis `/blobosphere`.
+### Checklist debug (403 / 404 / proxy)
+- Next.js doit tourner sur **`http://localhost:3002`** (sinon adapter `base_url` dans `config.yml`).
+- `repo` doit être remplacé par le vrai dépôt GitHub (sinon Décap renvoie 404 GitHub).
+- Vérifie l’URL de callback de l’OAuth App (`/api/decap/auth/callback` exactement).
+- Si Décap affiche des 401/403, vider les tokens locaux : onglet Application > Local Storage > supprimer `accessToken`/`refreshToken`.
+- L’éditeur interne n’utilise plus `apiClient` sur `/admin/blobosphere`, évitant les requêtes parasites sur `/api/v1`.

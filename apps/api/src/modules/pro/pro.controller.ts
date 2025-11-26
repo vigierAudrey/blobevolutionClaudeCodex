@@ -59,6 +59,7 @@ type LessonCandidateRow = {
   lessonLevel: string | null;
   lessonDate: Date | null;
   lessonPlace: string | null;
+  lessonStudentCount: number | null;
   distanceKm: number;
   activeMatchCount: number;
 };
@@ -204,18 +205,19 @@ proRouter.get('/near/lessons', requireAuth, requireProRole, async (req, res) => 
         FROM active_matches
         GROUP BY "userId"
       )
-      SELECT
-        rp."id",
-        rp."userId",
-        rp."displayName",
-        rp."bio",
-        rp."lat",
-        rp."lng",
-        rp."lessonSport",
-        rp."lessonLevel",
-        rp."lessonDate",
-        rp."lessonPlace",
-        ST_Distance(
+          SELECT
+            rp."id",
+            rp."userId",
+            rp."displayName",
+            rp."bio",
+            rp."lat",
+            rp."lng",
+            rp."lessonSport",
+            rp."lessonLevel",
+            rp."lessonDate",
+            rp."lessonPlace",
+            rp."lessonStudentCount",
+            ST_Distance(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
           ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
         ) / 1000.0 AS "distanceKm",
@@ -249,6 +251,7 @@ proRouter.get('/near/lessons', requireAuth, requireProRole, async (req, res) => 
       lessonLevel: c.lessonLevel,
       lessonDate: c.lessonDate,
       lessonPlace: c.lessonPlace,
+      lessonStudentCount: c.lessonStudentCount,
       distanceKm: Math.round(c.distanceKm * 10) / 10  // Already calculé en SQL
     }))
       .slice(0, 500);

@@ -17,7 +17,7 @@ import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { apiRequest } from '../../lib/csrf';
 import Link from 'next/link';
-import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban } from 'lucide-react';
+import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, BookOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
 import type { Level } from '@/types/matching';
@@ -38,6 +38,7 @@ type ProfileUpdatePayload = {
   sex: Gender;
   emailNotif: boolean;
   photoUrl?: string;
+  blobosphereContributor?: boolean;
 };
 
 const labelToGender = (label: SexOption): Gender => {
@@ -130,6 +131,7 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
   const [emailNotif, setEmailNotif] = useState<boolean>(false);
+  const [blobosphereContributor, setBlobosphereContributor] = useState<boolean>(false);
 
   // Geolocation state for privacy section
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -167,6 +169,7 @@ export default function ProfilePage() {
         setBio(profile.bio ?? '');
         setSex(genderToLabel(profile.sex));
         setEmailNotif(Boolean(profile.emailNotif));
+        setBlobosphereContributor(Boolean(profile.blobosphereContributor));
         setPhotoUrl(profile.photoUrl ?? null);
         setPhotoPreviewUrl((previous) => {
           if (previous) URL.revokeObjectURL(previous);
@@ -191,6 +194,7 @@ export default function ProfilePage() {
   // Disciplines state
   const [surfLevel, setSurfLevel] = useState<LevelOption>('');
   const [kiteLevel, setKiteLevel] = useState<LevelOption>('');
+  const [showDashboardShortcut, setShowDashboardShortcut] = useState(false);
 
   const displayedPhotoSrc = photoPreviewUrl ?? photoUrl;
   const photoAlt = useMemo(
@@ -347,6 +351,9 @@ export default function ProfilePage() {
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setShowDashboardShortcut(false);
 
     const payload: ProfileUpdatePayload = {
       displayName: displayName || undefined,
@@ -354,10 +361,10 @@ export default function ProfilePage() {
       sex: labelToGender(sex),
       emailNotif,
       photoUrl: photoUrl || undefined,
+      blobosphereContributor,
     };
 
     try {
-      setSaving(true);
       const tokens = apiClient.getTokens();
       if (!tokens?.accessToken) {
         throw new Error('Session expirée, veuillez vous reconnecter.');
@@ -412,6 +419,8 @@ export default function ProfilePage() {
       toast('Profil sauvegardé', 'success');
       if (!hasDisplayName || !hasPhoto || !hasDisciplines) {
         setTimeout(() => router.push('/onboarding'), 1000);
+      } else {
+        setShowDashboardShortcut(true);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde';
@@ -635,6 +644,29 @@ export default function ProfilePage() {
 
             <hr className="border-t" />
 
+            {/* Blobosphère contribution */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Contribution Blobosphère</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Active cette option pour pouvoir proposer des sujets ou témoignages qui apparaîtront dans le module
+                Blobosphère. Le consentement est vérifié par l’équipe avant publication.
+              </p>
+              <label className="flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={blobosphereContributor}
+                  onChange={(e) => setBlobosphereContributor(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span>Je veux contribuer à la Blobosphère</span>
+              </label>
+            </div>
+
+            <hr className="border-t" />
+
             {/* Legal Links & Data Rights */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -716,14 +748,32 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
-        <div className="flex justify-end">
-          <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
-            {saving ? (
-              <span className="inline-flex items-center gap-2"><Spinner /> Enregistrement…</span>
-            ) : (
-              'Enregistrer'
-            )}
-          </Button>
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
+              {saving ? (
+                <span className="inline-flex items-center gap-2"><Spinner /> Enregistrement…</span>
+              ) : (
+                'Enregistrer'
+              )}
+            </Button>
+          </div>
+          {showDashboardShortcut && (
+            <div className="rounded-lg border border-green-200 bg-green-50/70 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold text-green-900">Profil à jour ✅</p>
+                <p className="text-sm text-green-800">Tu peux retourner sur le dashboard pour explorer les sessions et messages.</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => router.push('/dashboard')}
+              >
+                Retourner au dashboard
+              </Button>
+            </div>
+          )}
         </div>
       </form>
 

@@ -21,6 +21,7 @@ export interface LessonRequest {
   lessonLevel?: Level | null;
   lessonDate?: string | null;
   lessonPlace?: string | null;
+  lessonStudentCount?: number | null;
   note?: string | null;
 }
 

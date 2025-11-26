@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MDXProvider } from '@mdx-js/react';
+import type { MDXModule } from 'mdx/types';
+import type { Plugin } from 'unified';
 import { getMdxComponents } from './mdx-components';
 import * as runtime from 'react/jsx-runtime';
 
@@ -42,22 +44,29 @@ export function MdxRuntimePreview({ markdown, frontmatter, className }: MdxRunti
       setError(null);
       try {
         // Lazy import to keep bundle smaller
-        const { evaluate } = await import('@mdx-js/mdx');
-        const rehypePrism = (await import('rehype-prism-plus')).default as any;
-        const mod: any = await evaluate(markdown, {
+        const [{ evaluate }, rehypePrismModule] = await Promise.all([
+          import('@mdx-js/mdx'),
+          import('rehype-prism-plus'),
+        ]);
+        const prismPlugin = (rehypePrismModule as { default: Plugin }).default;
+        const runtimeWithDev = runtime as typeof runtime & { jsxDEV?: typeof runtime.jsx };
+        const mod = (await evaluate(markdown, {
           ...runtime,
-          // We wrap with MDXProvider, no need for providerImportSource
           development: process.env.NODE_ENV !== 'production',
-          useDynamicImport: false,
-          rehypePlugins: [rehypePrism],
-        });
+          rehypePlugins: [prismPlugin],
+          jsx: runtime.jsx,
+          jsxDEV: runtimeWithDev.jsxDEV ?? runtime.jsx,
+          jsxs: runtime.jsxs,
+          Fragment: runtime.Fragment,
+        })) as MDXModule;
         if (cancelRef.current) return;
         const MDXContent: React.ComponentType = mod.default || (() => null);
         setComp(() => MDXContent);
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (cancelRef.current) return;
         setComp(null);
-        setError(e?.message || 'Erreur de compilation MDX');
+        const message = e instanceof Error ? e.message : 'Erreur de compilation MDX';
+        setError(message);
       } finally {
         if (!cancelRef.current) setCompiling(false);
       }

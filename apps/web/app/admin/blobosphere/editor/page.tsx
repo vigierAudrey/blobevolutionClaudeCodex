@@ -11,12 +11,25 @@ import { MdxRuntimePreview } from '@/components/blobosphere/MdxRuntimePreview';
 
 type Category = 'surf'|'kitesurf'|'communaute'|'impact';
 
+type BlobosphereListItem = { category: Category; slug: string; title: string; status: string };
+
+async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, init);
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!res.ok) {
+    const message = typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`;
+    throw new Error(message);
+  }
+  return data as T;
+}
+
 export default function BlobosphereEditorPage() {
   const router = useRouter();
   const params = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string|null>(null);
-  const [items, setItems] = useState<Array<{ category: Category; slug: string; title: string; status: string }>>([]);
+  const [items, setItems] = useState<BlobosphereListItem[]>([]);
   const [mode, setMode] = useState<'create'|'edit'>('create');
   const [category, setCategory] = useState<Category>('surf');
   const [slug, setSlug] = useState('');
@@ -27,7 +40,6 @@ export default function BlobosphereEditorPage() {
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
   const [info, setInfo] = useState<string|null>(null);
-  const [prUrl, setPrUrl] = useState<string|null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -42,8 +54,10 @@ export default function BlobosphereEditorPage() {
           router.replace('/dashboard');
           return;
         }
-        const list = await apiClient.adminBlobosphereList();
-        setItems(list.items as any);
+        const list = await fetchJson<{ items: BlobosphereListItem[] }>('/api/blobosphere/posts', {
+          cache: 'no-store',
+        });
+        setItems(list.items);
 
         const qCat = (params.get('category') as Category | null);
         const qSlug = params.get('slug');
@@ -51,13 +65,15 @@ export default function BlobosphereEditorPage() {
           setMode('edit');
           setCategory(qCat);
           setSlug(qSlug);
-          const raw = await apiClient.adminBlobosphereGet(qCat, qSlug);
+          const raw = await fetchJson<{ raw: string }>(`/api/blobosphere/posts/${qCat}/${qSlug}`, {
+            cache: 'no-store',
+          });
           // crude parse: split frontmatter
           const start = raw.raw.indexOf('---');
           const end = raw.raw.indexOf('\n---', 3);
           const fm = start === 0 && end > 0 ? raw.raw.slice(3, end + 1) : '';
           const content = end > 0 ? raw.raw.slice(end + 4) : raw.raw;
-          const meta: Record<string,string> = {} as any;
+          const meta: Record<string, string> = {};
           if (fm) {
             for (const line of fm.split(/\r?\n/)) {
               const m = line.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
@@ -67,12 +83,13 @@ export default function BlobosphereEditorPage() {
           }
           setTitle(meta.title || '');
           setExcerpt(meta.excerpt || '');
-          setStatus((meta.status as any) === 'published' ? 'published' : 'draft');
+          setStatus(meta.status === 'published' ? 'published' : 'draft');
           setTags(meta.tags || '');
           setBody(content);
         }
-      } catch (e: any) {
-        setError(e?.message || 'Erreur de chargement');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Erreur de chargement';
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -87,34 +104,37 @@ export default function BlobosphereEditorPage() {
     setError(null);
     setInfo(null);
     try {
+      const payload = {
+        title,
+        slug,
+        category,
+        excerpt,
+        status,
+        tags: tags.split(',').map(s => s.trim()).filter(Boolean),
+        body,
+      };
       if (mode === 'create') {
-        const res = await apiClient.adminBlobosphereCreate({
-          title,
-          slug,
-          category,
-          excerpt,
-          status,
-          tags: tags.split(',').map(s => s.trim()).filter(Boolean),
-          body,
-          language: 'fr'
+        const res = await fetchJson<{ success: boolean; path: string }>('/api/blobosphere/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
         });
-        setInfo('Article créé');
-        // @ts-expect-error dynamic shape
-        if (res?.pr?.prUrl) setPrUrl(res.pr.prUrl as string);
+        setInfo(`Article créé (${res.path})`);
       } else {
-        const res = await apiClient.adminBlobosphereUpdate(category, slug, {
-          title,
-          excerpt,
-          status,
-          tags: tags.split(',').map(s => s.trim()).filter(Boolean),
-          body,
+        const res = await fetchJson<{ success: boolean; path: string }>(`/api/blobosphere/posts/${category}/${slug}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
         });
-        setInfo('Article mis à jour');
-        // @ts-expect-error dynamic shape
-        if (res?.pr?.prUrl) setPrUrl(res.pr.prUrl as string);
+        setInfo(`Article mis à jour (${res.path})`);
       }
-    } catch (e: any) {
-      setError(e?.message || 'Erreur lors de la sauvegarde');
+      const updatedList = await fetchJson<{ items: BlobosphereListItem[] }>('/api/blobosphere/posts', {
+        cache: 'no-store',
+      });
+      setItems(updatedList.items);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erreur lors de la sauvegarde';
+      setError(message);
     } finally {
       setSaving(false);
     }
@@ -182,9 +202,6 @@ export default function BlobosphereEditorPage() {
               <Button onClick={save} disabled={!canSave || saving}>{saving ? 'Sauvegarde…' : 'Enregistrer'}</Button>
             </div>
             {info && <p className="text-green-700 text-sm">{info}</p>}
-            {prUrl && (
-              <p className="text-sm">PR ouverte: <a className="text-blue-700 underline" href={prUrl} target="_blank" rel="noreferrer">{prUrl}</a></p>
-            )}
             {error && <p className="text-red-700 text-sm">{error}</p>}
           </CardContent>
         </Card>

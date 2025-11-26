@@ -154,6 +154,9 @@ export async function runSeed(client?: PrismaClient) {
   const riders = [];
   for (let i = 0; i < 20; i++) {
     const location = locations[i % locations.length];
+    const wantsLessonFlag = Math.random() > 0.6;
+    const preferredLessonSport = Math.random() > 0.5 ? Sport.surf : Sport.kitesurf;
+    const lessonStudents = wantsLessonFlag ? (Math.random() > 0.6 ? 2 : 1) : null;
     const rider = await prisma.user.create({
       data: {
         email: `dev+rider${i+1}@test.com`,
@@ -170,8 +173,9 @@ export async function runSeed(client?: PrismaClient) {
             sex: sexes[i % sexes.length],
             emailNotif: Math.random() > 0.3,
             maxDistanceKm: [15, 25, 30, 50, 75][i % 5],
-            wantsLesson: Math.random() > 0.6,
-            lessonSport: Math.random() > 0.5 ? Sport.surf : Sport.kitesurf,
+            wantsLesson: wantsLessonFlag,
+            lessonSport: preferredLessonSport,
+            lessonStudentCount: lessonStudents,
             lat: location.lat + (Math.random() - 0.5) * 0.1, // Petit décalage aléatoire
             lng: location.lng + (Math.random() - 0.5) * 0.1,
           },
@@ -236,7 +240,22 @@ export async function runSeed(client?: PrismaClient) {
     riders.push(rider);
   }
 
-  const southWestRiderSeeds = [
+  type SouthWestRiderSeed = {
+    emailSuffix: number;
+    displayName: string;
+    bio: string;
+    sex: Sex;
+    emailNotif: boolean;
+    maxDistanceKm: number;
+    wantsLesson: boolean;
+    lessonSport?: Sport;
+    location: { lat: number; lng: number };
+    disciplines: Array<{ sport: Sport; level: Level }>;
+    preferredSearch: { sport: Sport; level: Level; distanceKm: number };
+    lessonStudentCount?: number;
+  };
+
+  const southWestRiderSeeds: SouthWestRiderSeed[] = [
     {
       emailSuffix: 21,
       displayName: 'Maelys Lacanau',
@@ -262,6 +281,7 @@ export async function runSeed(client?: PrismaClient) {
       maxDistanceKm: 40,
       wantsLesson: true,
       lessonSport: Sport.kitesurf,
+      lessonStudentCount: 2,
       location: { lat: 45.209, lng: -1.132 },
       disciplines: [
         { sport: Sport.kitesurf, level: Level.advanced },
@@ -278,6 +298,7 @@ export async function runSeed(client?: PrismaClient) {
       maxDistanceKm: 25,
       wantsLesson: true,
       lessonSport: Sport.surf,
+      lessonStudentCount: 1,
       location: { lat: 45.1905, lng: -1.1483 },
       disciplines: [
         { sport: Sport.surf, level: Level.beginner },
@@ -339,6 +360,7 @@ export async function runSeed(client?: PrismaClient) {
       maxDistanceKm: 40,
       wantsLesson: true,
       lessonSport: Sport.kitesurf,
+      lessonStudentCount: 3,
       location: { lat: 44.4203, lng: -1.2589 },
       disciplines: [
         { sport: Sport.surf, level: Level.advanced },
@@ -355,6 +377,7 @@ export async function runSeed(client?: PrismaClient) {
       maxDistanceKm: 25,
       wantsLesson: true,
       lessonSport: Sport.surf,
+      lessonStudentCount: 2,
       location: { lat: 44.4051, lng: -1.2825 },
       disciplines: [
         { sport: Sport.surf, level: Level.beginner }
@@ -400,6 +423,7 @@ export async function runSeed(client?: PrismaClient) {
       maxDistanceKm: 30,
       wantsLesson: true,
       lessonSport: Sport.surf,
+      lessonStudentCount: 2,
       location: { lat: 43.6662, lng: -1.3921 },
       disciplines: [
         { sport: Sport.surf, level: Level.advanced },
@@ -444,6 +468,7 @@ export async function runSeed(client?: PrismaClient) {
             maxDistanceKm: seed.maxDistanceKm,
             wantsLesson: seed.wantsLesson,
             lessonSport: seed.lessonSport ?? seed.disciplines[0].sport,
+            lessonStudentCount: seed.wantsLesson ? seed.lessonStudentCount ?? 2 : null,
             lat: seed.location.lat,
             lng: seed.location.lng,
           },

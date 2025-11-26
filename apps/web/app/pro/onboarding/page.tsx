@@ -133,7 +133,7 @@ function ProOnboardingInner() {
             <div className="pt-2 flex gap-2">
               <Button onClick={() => router.push('/pro/profile')}>Compléter mon profil pro</Button>
               <Link href="/pro/dashboard" className="inline-flex items-center rounded-md border px-4 py-2 text-sm">
-                Accéder au dashboard
+                Accéder au dashboard pro
               </Link>
             </div>
           </CardContent>

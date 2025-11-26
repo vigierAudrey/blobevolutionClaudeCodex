@@ -69,6 +69,7 @@ services:
       S3_ENDPOINT: http://minio:9000
       S3_PRESIGN_ENDPOINT: http://localhost:9000
       S3_PUBLIC_URL_BASE: http://localhost:9000/blobinfini-dev
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3010,http://localhost:3011}
     ports:
       - "4000:4000"
     volumes:

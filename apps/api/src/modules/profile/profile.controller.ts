@@ -48,6 +48,8 @@ const upsertSchema = z.object({
   lessonLevel: z.enum(['beginner','intermediate','advanced']).nullable().optional().or(z.literal('').transform(() => null)),
   lessonDate: z.string().nullish().transform(val => (val && val !== '') ? new Date(val) : null),
   lessonPlace: z.string().max(200).nullable().optional().or(z.literal('').transform(() => null)),
+  lessonStudentCount: z.number().int().min(1).max(6).nullable().optional(),
+  blobosphereContributor: z.boolean().optional(),
 });
 
 const adminUpsertSchema = z.object({
