@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
-import { saveMdx } from '@/lib/blobosphere/saveMdx';
+import { buildUpdatePayload } from '@/lib/blobosphere/payload';
+import { saveMdx, type SaveMdxPayload } from '@/lib/blobosphere/saveMdx';
 import { BLOBOSPHERE_CONTENT_ROOT, ensureCategory, sanitizeSlug } from '@/lib/blobosphere/utils';
 
 export const runtime = 'nodejs';
@@ -50,43 +51,37 @@ export async function PUT(
     const raw = await fs.readFile(currentPath, 'utf8');
     const { data, content } = matter(raw);
 
-    const body = await req.json();
-    const nextCategory = ensureCategory(
-      typeof body.newCategory === 'string' ? body.newCategory : (data.category as string) || params.category,
-    );
-    const nextSlug = sanitizeSlug(
-      typeof body.newSlug === 'string' && body.newSlug.length > 0 ? body.newSlug : (body.slug as string) || (data.slug as string) || params.slug,
-    );
-    const tags: string[] = Array.isArray(body.tags)
-      ? body.tags.map((tag: unknown) => String(tag))
-      : typeof body.tags === 'string'
-        ? body.tags.split(',').map((tag: string) => tag.trim()).filter(Boolean)
-        : Array.isArray(data.tags)
-          ? data.tags.map((tag: unknown) => String(tag))
-          : [];
+    const defaultPayload: SaveMdxPayload = {
+      title: typeof data.title === 'string' ? data.title : params.slug,
+      slug: typeof data.slug === 'string' ? sanitizeSlug(data.slug) : params.slug,
+      category: ensureCategory(typeof data.category === 'string' ? data.category : params.category),
+      excerpt: typeof data.excerpt === 'string' ? data.excerpt : '',
+      tags: Array.isArray(data.tags) ? data.tags.map((tag) => String(tag)) : [],
+      status: data.status === 'published' ? 'published' : 'draft',
+      publishedAt: typeof data.publishedAt === 'string' ? data.publishedAt : undefined,
+      updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined,
+      coverImage: typeof data.coverImage === 'string' ? data.coverImage : '',
+      readingTime: typeof data.readingTime === 'number' ? data.readingTime : null,
+      body: content,
+    };
 
-    const payload = {
-      title: typeof body.title === 'string' ? body.title : (typeof data.title === 'string' ? data.title : nextSlug),
-      slug: nextSlug,
-      category: nextCategory,
-      excerpt: typeof body.excerpt === 'string' ? body.excerpt : (typeof data.excerpt === 'string' ? data.excerpt : ''),
+    const overrides = buildUpdatePayload(await req.json());
+    const targetCategory = overrides.newCategory ?? overrides.category ?? defaultPayload.category;
+    const targetSlug = sanitizeSlug(overrides.newSlug ?? overrides.slug ?? defaultPayload.slug);
+    const tags = overrides.tags && overrides.tags.length > 0 ? overrides.tags : defaultPayload.tags;
+    const payload: SaveMdxPayload = {
+      ...defaultPayload,
+      title: overrides.title ? overrides.title.trim() : defaultPayload.title,
+      slug: targetSlug,
+      category: targetCategory,
+      excerpt: overrides.excerpt ?? defaultPayload.excerpt,
       tags,
-      status:
-        body.status === 'published'
-          ? 'published'
-          : typeof data.status === 'string'
-            ? (data.status as 'draft' | 'published')
-            : 'draft',
-      publishedAt: typeof body.publishedAt === 'string' ? body.publishedAt : (data.publishedAt as string) || undefined,
-      updatedAt: typeof body.updatedAt === 'string' ? body.updatedAt : new Date().toISOString(),
-      coverImage: typeof body.coverImage === 'string' ? body.coverImage : (typeof data.coverImage === 'string' ? data.coverImage : ''),
-      readingTime:
-        typeof body.readingTime === 'number'
-          ? body.readingTime
-          : typeof data.readingTime === 'number'
-            ? data.readingTime
-            : null,
-      body: typeof body.body === 'string' ? body.body : content,
+      status: overrides.status ?? defaultPayload.status,
+      publishedAt: overrides.publishedAt ?? defaultPayload.publishedAt,
+      updatedAt: overrides.updatedAt ?? new Date().toISOString(),
+      coverImage: overrides.coverImage ?? defaultPayload.coverImage,
+      readingTime: overrides.readingTime ?? defaultPayload.readingTime,
+      body: overrides.body ?? defaultPayload.body,
     };
 
     const newPath = await saveMdx(payload, { overwrite: true });
@@ -96,12 +91,35 @@ export async function PUT(
       await fs.rm(currentPath, { force: true });
     }
 
-    return NextResponse.json({ success: true, path: normalizedNew });
+    return NextResponse.json({ success: true, item: payload, path: normalizedNew, previousPath: normalizedCurrent });
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
       return NextResponse.json({ error: 'Article introuvable' }, { status: 404 });
     }
     const message = err instanceof Error ? err.message : 'Erreur lors de la mise à jour';
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { category: string; slug: string } },
+) {
+  if (!isDevRequest()) {
+    return devOnlyResponse();
+  }
+  try {
+    const filePath = await resolveFile(params.category, params.slug);
+    await fs.rm(filePath);
+    return NextResponse.json({
+      success: true,
+      path: path.relative(process.cwd(), filePath).replace(/\\/g, '/'),
+    });
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      return NextResponse.json({ error: 'Article introuvable' }, { status: 404 });
+    }
+    const message = err instanceof Error ? err.message : 'Erreur lors de la suppression';
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

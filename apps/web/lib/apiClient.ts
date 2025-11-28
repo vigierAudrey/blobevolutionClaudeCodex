@@ -54,6 +54,31 @@ export interface GDPRReport {
   };
 }
 
+export interface GDPRPurgeResponse {
+  success: boolean;
+  timestamp: string;
+  durationMs: number;
+  message: string;
+  result: {
+    summary: string;
+    technicalData: {
+      sessionsDeleted: number;
+      tokensDeleted: number;
+      oldLogsDeleted: number;
+    };
+    userAnonymization: {
+      phase1Anonymized: number;
+      phase2Anonymized: number;
+      phase3Purged: number;
+    };
+    relationalData: {
+      conversationsDeleted: number;
+      matchesDeleted: number;
+      oldSearchesDeleted: number;
+    };
+  };
+}
+
 export interface SecurityHealth {
   status: 'SECURE' | 'VULNERABLE';
   helmet: boolean;
@@ -221,6 +246,29 @@ export interface AdminBlockedConversation {
   };
 }
 
+export interface AdminConversationBlockActionResult {
+  conversationId: string;
+  action: 'block' | 'unblock';
+  updatedMembers: Array<{
+    userId: string;
+    email: string | null;
+    role: string | null;
+    blockedAt: string | null;
+  }>;
+}
+
+export interface ConversationBlockHistoryResponse {
+  items: AuditLogEntry[];
+  pagination?: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export interface AdminBroadcastResponse {
+  success: boolean;
+  target: 'ALL' | 'RIDERS' | 'PROS' | 'CUSTOM';
+  sentCount: number;
+  missingEmails?: string[];
+}
+
 export interface AdminSecurityEvent {
   id: string;
   action: string;
@@ -233,6 +281,27 @@ export interface AdminSecurityEvent {
 export interface AdminSecuritySummary {
   since: string;
   items: Array<{ action: string; count: number }>;
+}
+
+export interface LoginAttempt {
+  id: string;
+  email: string;
+  ip: string | null;
+  userAgent: string | null;
+  success: boolean;
+  reason: string | null;
+  createdAt: string;
+  userId: string | null;
+  user?: { id: string; email: string; role: string | null } | null;
+}
+
+export interface LoginAttemptsResponse {
+  attempts: LoginAttempt[];
+  stats: {
+    total: number;
+    failed: number;
+    successRate: string;
+  };
 }
 
 export interface AdminMatchingTTFM {
@@ -668,7 +737,7 @@ export const apiClient = {
   // Admin
   getSecurityHealth: () => request('/security/health', { method: 'GET' }, true) as Promise<SecurityHealth>,
   getGDPRReport: () => request('/admin/gdpr/compliance-report', { method: 'GET' }, true) as Promise<GDPRReport>,
-  runGDPRPurge: () => request('/admin/gdpr/run-purge', { method: 'POST' }, true),
+  runGDPRPurge: () => request('/admin/gdpr/run-purge', { method: 'POST' }, true) as Promise<GDPRPurgeResponse>,
   searchLegalArchive: (userId: string) => request(`/admin/gdpr/legal-archive/${userId}`, { method: 'GET' }, true),
   getAuditLogs: (params?: AuditLogQuery) => {
     const query = new URLSearchParams();
@@ -718,6 +787,30 @@ export const apiClient = {
       blocked: AdminBlockedConversation[];
     }>;
   },
+  adminSetConversationBlock: (
+    conversationId: string,
+    body: { action?: 'block' | 'unblock'; userId?: string }
+  ) =>
+    request(
+      `/admin/conversations/${conversationId}/block`,
+      { method: 'POST', body: JSON.stringify(body) },
+      true
+    ) as Promise<AdminConversationBlockActionResult>,
+  adminUnblockAllConversations: () =>
+    request('/admin/conversations/unblock-all', { method: 'POST' }, true) as Promise<{ success: boolean; count: number }>,
+  getConversationBlockHistory: (params?: { page?: number; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    const qs = query.toString();
+    return request(
+      `/admin/conversations/blocked/history${qs ? `?${qs}` : ''}`,
+      { method: 'GET' },
+      true
+    ) as Promise<ConversationBlockHistoryResponse>;
+  },
+  sendAdminBroadcast: (body: { message: string; target: 'ALL' | 'RIDERS' | 'PROS' | 'CUSTOM'; emails?: string[] }) =>
+    request('/admin/conversations/broadcast', { method: 'POST', body: JSON.stringify(body) }, true) as Promise<AdminBroadcastResponse>,
   getSecurityEvents: (limit: number = 5) => {
     const query = new URLSearchParams({ limit: limit.toString() });
     return request(`/admin/security/events?${query.toString()}`, { method: 'GET' }, true) as Promise<{
@@ -726,6 +819,14 @@ export const apiClient = {
   },
   getSecurityLogsSummary: (days: number = 7) =>
     request(`/admin/security/logs/summary?days=${days}`, { method: 'GET' }, true) as Promise<AdminSecuritySummary>,
+  getLoginAttempts: (options?: { limit?: number; onlyFailed?: boolean; suspiciousOnly?: boolean }) => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.onlyFailed) params.append('onlyFailed', 'true');
+    if (options?.suspiciousOnly) params.append('suspiciousOnly', 'true');
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request(`/admin/security/login-attempts${query}`, { method: 'GET' }, true) as Promise<LoginAttemptsResponse>;
+  },
   getEngagementAnalytics: (period?: AdminAnalyticsPeriod) => {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/engagement${query}`, { method: 'GET' }, true) as Promise<AdminEngagementAnalytics>;

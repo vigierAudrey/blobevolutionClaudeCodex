@@ -3,8 +3,9 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { listMdxFiles } from '@/lib/blobosphere/fs';
-import { saveMdx, type SaveMdxPayload } from '@/lib/blobosphere/saveMdx';
-import { BLOBOSPHERE_CONTENT_ROOT, BlobosphereCategory, ensureCategory, sanitizeSlug } from '@/lib/blobosphere/utils';
+import { buildCreatePayload } from '@/lib/blobosphere/payload';
+import { saveMdx } from '@/lib/blobosphere/saveMdx';
+import { BLOBOSPHERE_CONTENT_ROOT, BlobosphereCategory } from '@/lib/blobosphere/utils';
 
 export const runtime = 'nodejs';
 
@@ -64,49 +65,17 @@ export async function GET() {
   return NextResponse.json({ items });
 }
 
-function parsePayload(data: unknown): SaveMdxPayload {
-  if (!data || typeof data !== 'object') {
-    throw new Error('Payload invalide');
-  }
-  const payload = data as Record<string, unknown>;
-  const title = typeof payload.title === 'string' && payload.title.trim().length > 0 ? payload.title.trim() : null;
-  const slugValue = typeof payload.slug === 'string' && payload.slug.trim().length > 0 ? payload.slug : title;
-  const categoryValue = typeof payload.category === 'string' ? payload.category : '';
-  if (!title || !slugValue) {
-    throw new Error('Titre et slug requis');
-  }
-  const category = ensureCategory(categoryValue);
-  const tags: string[] = Array.isArray(payload.tags)
-    ? payload.tags.map((tag: unknown) => String(tag))
-    : typeof payload.tags === 'string'
-      ? payload.tags.split(',').map((tag: string) => tag.trim()).filter(Boolean)
-      : [];
-
-  return {
-    title,
-    slug: sanitizeSlug(slugValue),
-    category,
-    excerpt: typeof payload.excerpt === 'string' ? payload.excerpt : '',
-    tags,
-    status: payload.status === 'published' ? 'published' : 'draft',
-    publishedAt: typeof payload.publishedAt === 'string' ? payload.publishedAt : undefined,
-    updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : undefined,
-    coverImage: typeof payload.coverImage === 'string' ? payload.coverImage : '',
-    readingTime: typeof payload.readingTime === 'number' ? payload.readingTime : null,
-    body: typeof payload.body === 'string' ? payload.body : '',
-  };
-}
-
 export async function POST(req: NextRequest) {
   if (!isDevRequest()) {
     return devOnlyResponse();
   }
 
   try {
-    const payload = parsePayload(await req.json());
+    const payload = buildCreatePayload(await req.json());
     const filePath = await saveMdx(payload, { overwrite: false });
     return NextResponse.json({
       success: true,
+      item: payload,
       path: path.relative(process.cwd(), filePath).replace(/\\/g, '/'),
     }, { status: 201 });
   } catch (err: unknown) {

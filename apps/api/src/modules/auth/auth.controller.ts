@@ -82,24 +82,71 @@ authRouter.post('/register', validate(registerSchema), async (req, res) => {
   }
 });
 
+/**
+ * Catégorise un User-Agent pour minimiser les données stockées (RGPD Article 5.1.c)
+ * Au lieu de stocker le UA complet, on stocke seulement : mobile/desktop/bot
+ */
+function categorizeUserAgent(userAgent: string | undefined): string | undefined {
+  if (!userAgent) return undefined;
+
+  const ua = userAgent.toLowerCase();
+  if (ua.includes('mobile') || ua.includes('iphone') || ua.includes('android')) {
+    return 'mobile';
+  }
+  if (ua.includes('bot') || ua.includes('crawler') || ua.includes('spider')) {
+    return 'bot';
+  }
+  return 'desktop';
+}
+
 authRouter.post('/login', validate(loginSchema), async (req, res) => {
+  const { email, password, consentAccepted } = req.body as z.infer<typeof loginSchema>;
+  const ips = (req as any).ips as string[] | undefined;
+  const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+  const userAgent = categorizeUserAgent(req.get('User-Agent'));
+
   try {
-    const { email, password, consentAccepted } = req.body as z.infer<typeof loginSchema>;
-    const ips = (req as any).ips as string[] | undefined;
-    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
     const result = await service.login(email, password, { consentAccepted, consentIp: ip });
+
+    // Log successful login attempt
+    const user = await prisma.user.findUnique({ where: { email } });
+    await prisma.loginAttempt.create({
+      data: {
+        email,
+        ip,
+        userAgent,
+        success: true,
+        userId: user?.id
+      }
+    }).catch(() => {}); // Ignore logging errors
+
     res.json(result);
   } catch (err: any) {
+    // Log failed login attempt
+    let reason = 'Unknown error';
     if (err?.name === 'ZodError') {
+      reason = 'Invalid input';
+      await prisma.loginAttempt.create({
+        data: { email, ip, userAgent, success: false, reason }
+      }).catch(() => {});
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
+      reason = 'Invalid credentials';
+      await prisma.loginAttempt.create({
+        data: { email, ip, userAgent, success: false, reason }
+      }).catch(() => {});
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     if (err?.code === 'CONSENT_REQUIRED') {
+      // Don't log consent required as failed attempt
       return res.status(403).json({ error: 'Consent required', code: 'CONSENT_REQUIRED', consentVersion: 'v1.0.0' });
     }
     if (err?.code === 'EMAIL_NOT_VERIFIED') {
+      reason = 'Email not verified';
+      await prisma.loginAttempt.create({
+        data: { email, ip, userAgent, success: false, reason }
+      }).catch(() => {});
       return res.status(403).json({ error: 'Email not verified' });
     }
     // ✅ NOUVEAU : Gestion 2FA admin
@@ -112,6 +159,12 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
         message: 'Code de vérification envoyé par email'
       });
     }
+
+    // Log unexpected errors
+    reason = 'Internal server error';
+    await prisma.loginAttempt.create({
+      data: { email, ip, userAgent, success: false, reason }
+    }).catch(() => {});
     return res.status(500).json({ error: 'Internal error' });
   }
 });

@@ -57,6 +57,7 @@ export default function AdminReports() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -127,10 +128,18 @@ export default function AdminReports() {
   const handleAction = async (reportId: string, action: 'approve' | 'dismiss' | 'ban') => {
     const actionKey = `${action}-${reportId}`;
     setActionLoading(prev => ({ ...prev, [actionKey]: true }));
+    setActionMessage(null);
 
     try {
       await apiClient.moderateReport(reportId, action);
-      setReports(prev => prev.filter(report => report.id !== reportId));
+      await loadReports();
+      setActionMessage(
+        action === 'approve'
+          ? 'Signalement approuvé ✅'
+          : action === 'dismiss'
+            ? 'Signalement rejeté'
+            : 'Utilisateur banni'
+      );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Impossible d\u2019exécuter l\u2019action');
@@ -150,7 +159,7 @@ export default function AdminReports() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4">
           <Link href="/admin/dashboard">
             <Button variant="outline" size="sm">
@@ -165,6 +174,11 @@ export default function AdminReports() {
             </p>
           </div>
         </div>
+        <Button variant="secondary" asChild>
+          <Link href="/admin/reports/history">
+            Voir l’historique
+          </Link>
+        </Button>
       </div>
 
       {/* Statistiques rapides */}
@@ -206,11 +220,16 @@ export default function AdminReports() {
         </Card>
       </div>
 
-      {/* Erreurs */}
-      {error && (
+      {/* Statuts */}
+      {(error || actionMessage) && (
         <Card>
-          <CardContent className="pt-6">
-            <p className="text-red-600">{error}</p>
+          <CardContent className="pt-6 space-y-2">
+            {error && <p className="text-red-600">{error}</p>}
+            {actionMessage && (
+              <p className="text-sm text-green-600">
+                {actionMessage}
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

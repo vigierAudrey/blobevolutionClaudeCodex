@@ -1,6 +1,6 @@
 backend:
   name: github
-  repo: "<OWNER>/<REPO>"
+  repo: "VigierAudrey/blobevolutionClaudeCodex"
   branch: "main"
   base_url: "http://localhost:3002"
   auth_endpoint: "api/decap/auth"
@@ -8,14 +8,13 @@ backend:
 media_folder: "apps/web/public/uploads"
 public_folder: "/uploads"
 
-load_config_file: false
-
 collections:
   - name: "blobosphere"
     label: "Blobosphère"
     folder: "apps/web/content/blobosphere"
     create: true
     extension: "mdx"
+    format: "frontmatter"
     slug: "{{slug}}"
     nested:
       depth: 2

@@ -19,6 +19,19 @@ export async function runSeed(client?: PrismaClient) {
     .concat(Array.from({length: 9}, (_, i) => `dev+pro${i+1}@test.com`))
     .concat(['dev+admin@test.com']);
 
+  const SUPER_ADMIN_PERMISSIONS = [
+    'users.view',
+    'users.suspend',
+    'users.delete',
+    'pros.verify',
+    'pros.manage',
+    'reports.view',
+    'reports.moderate',
+    'analytics.view',
+    'permissions.manage',
+    'system.configure'
+  ];
+
   await prisma.message.deleteMany({
     where: {
       conversation: {
@@ -751,6 +764,7 @@ export async function runSeed(client?: PrismaClient) {
       adminProfile: {
         create: {
           displayName: 'Admin Dev',
+          permissions: SUPER_ADMIN_PERMISSIONS,
         },
       },
     },
@@ -801,6 +815,18 @@ export async function runSeed(client?: PrismaClient) {
       },
     ],
     skipDuplicates: true,
+  });
+
+  await prisma.conversationMember.update({
+    where: {
+      conversationId_userId: {
+        conversationId: conv1.id,
+        userId: pros[0].id,
+      },
+    },
+    data: {
+      blockedAt: new Date(),
+    },
   });
 
   // Conversation rider-rider

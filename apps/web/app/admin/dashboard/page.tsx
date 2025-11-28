@@ -293,13 +293,25 @@ export default function AdminDashboard() {
                   )}
                 </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start" disabled>
-                Conversations bloquées
-                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/conversations/blocked">
+                  Conversations bloquées
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start" disabled>
-                Historique modération
-                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/conversations/history">
+                  Historique blocages
+                </Link>
+              </Button>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/conversations/broadcast">
+                  Diffusion admin
+                </Link>
+              </Button>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/reports/history">
+                  Historique modération
+                </Link>
               </Button>
             </div>
           </CardContent>
@@ -332,13 +344,15 @@ export default function AdminDashboard() {
                   Audit des actions
                 </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start" disabled>
-                Tentatives de connexion suspectes
-                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/security/login-attempts">
+                  Tentatives de connexion suspectes
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start" disabled>
-                Logs de sécurité
-                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/security/logs">
+                  Logs de sécurité
+                </Link>
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/permissions">

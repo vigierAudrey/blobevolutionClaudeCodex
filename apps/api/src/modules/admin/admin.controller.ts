@@ -7,6 +7,43 @@ import { gdprPurgeService } from '../../services/gdpr-purge.service';
 import { audit } from '../../middleware/audit';
 import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
 import { requirePermissions } from './admin.guard';
+import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
+
+async function ensureAdminConversation(adminId: string, targetUserId: string) {
+  const existing = await prisma.conversation.findFirst({
+    where: {
+      type: 'ADMIN_TO_USER',
+      members: {
+        some: { userId: adminId }
+      },
+      AND: {
+        members: {
+          some: { userId: targetUserId }
+        }
+      }
+    },
+    select: { id: true }
+  });
+
+  if (existing) {
+    return existing.id;
+  }
+
+  const conversation = await prisma.conversation.create({
+    data: {
+      type: 'ADMIN_TO_USER',
+      members: {
+        create: [
+          { userId: adminId },
+          { userId: targetUserId }
+        ]
+      }
+    },
+    select: { id: true }
+  });
+
+  return conversation.id;
+}
 
 export const adminRouter = Router();
 
@@ -1254,6 +1291,110 @@ const reportActionSchema = z.object({
   action: z.enum(['approve', 'dismiss', 'ban'])
 });
 
+const conversationBroadcastSchema = z.object({
+  message: z.string().min(5).max(2000),
+  target: z.enum(['ALL', 'RIDERS', 'PROS', 'CUSTOM']).default('ALL'),
+  emails: z.array(z.string().email()).optional()
+});
+
+adminRouter.post(
+  '/conversations/broadcast',
+  requirePermissions('reports.moderate'),
+  audit('admin:conversations:broadcast', () => 'admin:conversations:broadcast'),
+  async (req, res) => {
+    try {
+      const adminId = (req as any).user?.id as string | undefined;
+      if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const { message, target, emails } = conversationBroadcastSchema.parse(req.body ?? {});
+      let recipients: Array<{ id: string; email: string }> = [];
+      const baseWhere: Prisma.UserWhereInput = {
+        deletedAt: null
+      };
+
+      if (target === 'RIDERS') {
+        baseWhere.role = 'RIDER';
+      } else if (target === 'PROS') {
+        baseWhere.role = 'PRO';
+      } else if (target === 'ALL') {
+        baseWhere.role = { in: ['RIDER', 'PRO'] };
+      }
+
+      if (target === 'CUSTOM') {
+        const normalizedEmails = (emails ?? [])
+          .map((email) => email.trim().toLowerCase())
+          .filter(Boolean);
+        if (normalizedEmails.length === 0) {
+          return res.status(400).json({ error: 'Emails required for CUSTOM target' });
+        }
+        recipients = await prisma.user.findMany({
+          where: {
+            ...baseWhere,
+            email: { in: normalizedEmails }
+          },
+          select: { id: true, email: true }
+        });
+      } else {
+        recipients = await prisma.user.findMany({
+          where: baseWhere,
+          select: { id: true, email: true }
+        });
+      }
+
+      if (recipients.length === 0) {
+        return res.status(404).json({ error: 'No recipients found' });
+      }
+
+      const missingEmails: string[] = [];
+      if (target === 'CUSTOM' && emails) {
+        const foundEmails = new Set(recipients.map((user) => user.email.toLowerCase()));
+        emails.forEach((email) => {
+          if (!foundEmails.has(email.toLowerCase())) {
+            missingEmails.push(email);
+          }
+        });
+      }
+
+      let sentCount = 0;
+      for (const recipient of recipients) {
+        const conversationId = await ensureAdminConversation(adminId, recipient.id);
+        await prisma.message.create({
+          data: {
+            conversationId,
+            senderId: adminId,
+            type: 'TEXT',
+            content: message
+          }
+        });
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: { updatedAt: new Date() }
+        });
+        sentCount++;
+      }
+
+      res.locals.auditMetadata = {
+        target,
+        sentCount,
+        missingEmails
+      };
+
+      return res.json({
+        success: true,
+        target,
+        sentCount,
+        missingEmails
+      });
+    } catch (error) {
+      console.error('Admin conversation broadcast error:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
 adminRouter.post(
   '/reports/:id/action',
   requirePermissions('reports.moderate'),
@@ -1295,6 +1436,12 @@ adminRouter.post(
     if (targetUser?.role === 'ADMIN' && action === 'ban') {
       return res.status(403).json({ error: 'Cannot ban administrators' });
     }
+
+    res.locals.auditMetadata = {
+      moderationAction: action,
+      reportId,
+      targetUserId: targetUser?.id ?? null
+    };
 
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       if (action === 'ban' && targetUser) {
@@ -1408,6 +1555,168 @@ adminRouter.get(
   }
 );
 
+const adminConversationBlockSchema = z.object({
+  userId: z.string().uuid().optional(),
+  action: z.enum(['block', 'unblock']).default('block')
+});
+
+adminRouter.post(
+  '/conversations/:conversationId/block',
+  requirePermissions('reports.moderate'),
+  audit('admin:conversations:block', (req) => `admin:conversation:${req.params.conversationId}`),
+  async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+      const { action, userId } = adminConversationBlockSchema.parse(req.body ?? {});
+
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: {
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  role: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!conversation) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+
+      const targetMembers = userId
+        ? conversation.members.filter((member) => member.userId === userId)
+        : conversation.members;
+
+      if (targetMembers.length === 0) {
+        return res.status(404).json({ error: 'Member not found in conversation' });
+      }
+
+      await prisma.conversationMember.updateMany({
+        where: {
+          conversationId,
+          userId: { in: targetMembers.map((member) => member.userId) }
+        },
+        data: {
+          blockedAt: action === 'unblock' ? null : new Date()
+        }
+      });
+
+      const refreshedMembers = await prisma.conversationMember.findMany({
+        where: {
+          conversationId,
+          userId: { in: targetMembers.map((member) => member.userId) }
+        },
+        include: {
+          user: { select: { id: true, email: true, role: true } }
+        }
+      });
+
+      if (!res.locals.auditMetadata) {
+        res.locals.auditMetadata = {};
+      }
+      res.locals.auditMetadata = {
+        ...(res.locals.auditMetadata || {}),
+        conversationId,
+        action,
+        targetUserIds: targetMembers.map((member) => member.userId)
+      };
+
+      return res.json({
+        conversationId,
+        action,
+        updatedMembers: refreshedMembers.map((member) => ({
+          userId: member.userId,
+          email: member.user?.email ?? null,
+          role: member.user?.role ?? null,
+          blockedAt: member.blockedAt
+        }))
+      });
+    } catch (error) {
+      console.error('Admin conversation block error:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.post(
+  '/conversations/unblock-all',
+  requirePermissions('reports.moderate'),
+  audit('admin:conversations:unblock-all', () => 'admin:conversations:bulk-unblock'),
+  async (_req, res) => {
+    try {
+      const result = await prisma.conversationMember.updateMany({
+        where: { blockedAt: { not: null } },
+        data: { blockedAt: null }
+      });
+
+      res.locals.auditMetadata = {
+        affectedCount: result.count
+      };
+
+      return res.json({
+        success: true,
+        count: result.count
+      });
+    } catch (error) {
+      console.error('Admin unblock all conversations error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.get(
+  '/conversations/blocked/history',
+  requirePermissions('reports.view'),
+  audit('admin:conversations:block-history', () => 'admin:conversations:block-history'),
+  async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string || '1');
+      const limit = Math.min(parseInt(req.query.limit as string || '25', 10), 100);
+      const skip = (page - 1) * limit;
+
+      const where = { action: 'admin:conversations:block' } as const;
+
+      const [items, total] = await Promise.all([
+        prisma.auditLog.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: {
+            user: {
+              select: { id: true, email: true, role: true }
+            }
+          }
+        }),
+        prisma.auditLog.count({ where })
+      ]);
+
+      return res.json({
+        items,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      });
+    } catch (error) {
+      console.error('Admin conversation block history error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
 const securityActionPrefixes = ['security:', 'admin:gdpr:', 'admin:allowed-ips', 'admin:user:', 'admin:report:'];
 const securityActionsExact = ['admin:permissions:update', 'admin:role:apply'];
 
@@ -1477,6 +1786,154 @@ adminRouter.get(
       });
     } catch (error) {
       console.error('Admin security logs summary error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+/**
+ * Pseudonymise une adresse IP pour conformité RGPD Article 5.1.c
+ * IPv4: Masque les 2 derniers octets (192.168.xxx.xxx)
+ * IPv6: Masque les 64 derniers bits
+ */
+function pseudonymizeIP(ip: string | null): string {
+  if (!ip) return 'N/A';
+
+  // IPv4: masquer les 2 derniers octets
+  if (ip.includes('.')) {
+    const parts = ip.split('.');
+    if (parts.length === 4) {
+      return `${parts[0]}.${parts[1]}.xxx.xxx`;
+    }
+  }
+
+  // IPv6: masquer les 64 derniers bits
+  if (ip.includes(':')) {
+    const parts = ip.split(':');
+    if (parts.length >= 4) {
+      return `${parts.slice(0, 4).join(':')}:xxxx:xxxx:xxxx:xxxx`;
+    }
+  }
+
+  return 'xxx.xxx.xxx.xxx'; // Fallback
+}
+
+// Rate limiting pour endpoints admin sécurité
+const adminSecurityRateLimit = createRateLimiter('ADMIN');
+
+// Schema de validation pour l'endpoint /security/login-attempts
+const loginAttemptsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  onlyFailed: z.enum(['true', 'false']).optional().transform(val => val === 'true'),
+  suspiciousOnly: z.enum(['true', 'false']).optional().transform(val => val === 'true')
+});
+
+adminRouter.get(
+  '/security/login-attempts',
+  adminSecurityRateLimit,
+  requirePermissions('system.configure'),
+  audit('admin:security:login-attempts', () => 'admin:security:login-attempts'),
+  async (req, res) => {
+    try {
+      // Validation Zod des paramètres
+      const parsed = loginAttemptsQuerySchema.safeParse(req.query);
+
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: 'Invalid query parameters',
+          details: parsed.error.format()
+        });
+      }
+
+      const { limit, onlyFailed, suspiciousOnly } = parsed.data;
+
+      const where: any = {};
+      if (onlyFailed) {
+        where.success = false;
+      }
+
+      // Suspicious criteria: multiple failed attempts from same IP or email
+      let attempts;
+      if (suspiciousOnly) {
+        // Get IPs and emails with multiple failed attempts in the last 24 hours
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        const failedAttempts = await prisma.loginAttempt.findMany({
+          where: {
+            success: false,
+            createdAt: { gte: oneDayAgo }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        // Group by IP and email to find suspicious patterns
+        const ipCounts = new Map<string, number>();
+        const emailCounts = new Map<string, number>();
+
+        for (const attempt of failedAttempts) {
+          if (attempt.ip) {
+            ipCounts.set(attempt.ip, (ipCounts.get(attempt.ip) || 0) + 1);
+          }
+          emailCounts.set(attempt.email, (emailCounts.get(attempt.email) || 0) + 1);
+        }
+
+        // Filter suspicious IPs (3+ failed attempts) and emails (5+ failed attempts)
+        const suspiciousIPs = Array.from(ipCounts.entries())
+          .filter(([, count]) => count >= 3)
+          .map(([ip]) => ip);
+        const suspiciousEmails = Array.from(emailCounts.entries())
+          .filter(([, count]) => count >= 5)
+          .map(([email]) => email);
+
+        attempts = await prisma.loginAttempt.findMany({
+          where: {
+            OR: [
+              { ip: { in: suspiciousIPs } },
+              { email: { in: suspiciousEmails } }
+            ]
+          },
+          include: {
+            user: {
+              select: { id: true, email: true, role: true }
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit
+        });
+      } else {
+        attempts = await prisma.loginAttempt.findMany({
+          where,
+          include: {
+            user: {
+              select: { id: true, email: true, role: true }
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit
+        });
+      }
+
+      // Calculate stats
+      const total = await prisma.loginAttempt.count({ where });
+      const failed = await prisma.loginAttempt.count({ where: { success: false } });
+      const successRate = total > 0 ? ((total - failed) / total) * 100 : 0;
+
+      // Pseudonymiser les IPs avant de retourner (conformité RGPD Article 5.1.c)
+      const pseudonymizedAttempts = attempts.map(attempt => ({
+        ...attempt,
+        ip: pseudonymizeIP(attempt.ip)
+      }));
+
+      return res.json({
+        attempts: pseudonymizedAttempts,
+        stats: {
+          total,
+          failed,
+          successRate: successRate.toFixed(2)
+        }
+      });
+    } catch (error) {
+      console.error('Admin login attempts error:', error);
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1847,11 +2304,13 @@ adminRouter.post(
   audit('admin:gdpr:run-purge', () => 'gdpr:purge'),
   async (req, res) => {
   try {
+    const startedAt = Date.now();
     const result = await gdprPurgeService.performFullPurge();
 
     return res.json({
       success: true,
       timestamp: new Date().toISOString(),
+      durationMs: Date.now() - startedAt,
       result,
       message: 'Purge RGPD exécutée avec succès'
     });

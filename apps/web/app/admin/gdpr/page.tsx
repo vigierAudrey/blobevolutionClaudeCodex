@@ -5,27 +5,8 @@ import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Badge } from '../../../components/ui/badge';
 import { apiClient } from '../../../lib/apiClient';
+import type { GDPRReport, GDPRPurgeResponse } from '../../../lib/apiClient';
 import { Shield, AlertTriangle, CheckCircle, Trash2, Search } from 'lucide-react';
-
-interface GDPRReport {
-  timestamp: string;
-  compliance: {
-    isCompliant: boolean;
-    issues: string[];
-    recommendations: string[];
-  };
-  details: {
-    expiredSessionsCount: number;
-    expiredTokensCount: number;
-    unanonymizedDeletedUsers: number;
-    oldDeletedUsersAwaitingPurge: number;
-  };
-  legalProtection: {
-    consentArchiveEnabled: boolean;
-    retentionPeriod: string;
-    anonymizationDelay: string;
-  };
-}
 
 type ArchiveResult = Record<string, unknown> | { error: string };
 
@@ -33,6 +14,8 @@ export default function AdminGDPRPage() {
   const [report, setReport] = useState<GDPRReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [purging, setPurging] = useState(false);
+  const [purgeResult, setPurgeResult] = useState<GDPRPurgeResponse | null>(null);
+  const [purgeError, setPurgeError] = useState<string | null>(null);
   const [searchUserId, setSearchUserId] = useState('');
   const [archiveResult, setArchiveResult] = useState<ArchiveResult | null>(null);
 
@@ -56,12 +39,15 @@ export default function AdminGDPRPage() {
     if (!confirm('Confirmer la purge RGPD ? Cette action est irréversible.')) return;
 
     setPurging(true);
+    setPurgeError(null);
     try {
-      await apiClient.runGDPRPurge();
-      alert('Purge RGPD exécutée avec succès');
-      loadReport();
+      const response = await apiClient.runGDPRPurge();
+      setPurgeResult(response);
+      await loadReport();
     } catch (error) {
-      alert('Erreur lors de la purge');
+      const message = error instanceof Error ? error.message : 'Erreur lors de la purge';
+      setPurgeResult(null);
+      setPurgeError(message);
     } finally {
       setPurging(false);
     }
@@ -178,6 +164,48 @@ export default function AdminGDPRPage() {
           <p className="text-sm text-muted-foreground">
             Cette action peut prendre plusieurs minutes. Vérifiez l&rsquo;état après exécution.
           </p>
+          {purgeError && (
+            <p className="text-sm text-red-600">
+              {purgeError}
+            </p>
+          )}
+          {purgeResult && !purgeError && (
+            <div className="border rounded-md p-4 bg-muted/60 space-y-3 text-sm">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="font-semibold text-green-700">{purgeResult.message}</p>
+                <span className="text-xs text-muted-foreground">
+                  Exécutée le {new Date(purgeResult.timestamp).toLocaleString('fr-FR')} · {(purgeResult.durationMs / 1000).toFixed(1)}s
+                </span>
+              </div>
+              <p className="text-muted-foreground">{purgeResult.result.summary}</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">Technique</p>
+                  <ul className="text-xs space-y-1">
+                    <li>Sessions supprimées : {purgeResult.result.technicalData.sessionsDeleted}</li>
+                    <li>Tokens supprimés : {purgeResult.result.technicalData.tokensDeleted}</li>
+                    <li>Logs nettoyés : {purgeResult.result.technicalData.oldLogsDeleted}</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">Anonymisation</p>
+                  <ul className="text-xs space-y-1">
+                    <li>Phase 1 : {purgeResult.result.userAnonymization.phase1Anonymized}</li>
+                    <li>Phase 2 : {purgeResult.result.userAnonymization.phase2Anonymized}</li>
+                    <li>Phase 3 : {purgeResult.result.userAnonymization.phase3Purged}</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">Données relationnelles</p>
+                  <ul className="text-xs space-y-1">
+                    <li>Conversations supprimées : {purgeResult.result.relationalData.conversationsDeleted}</li>
+                    <li>Matches supprimés : {purgeResult.result.relationalData.matchesDeleted}</li>
+                    <li>Recherches nettoyées : {purgeResult.result.relationalData.oldSearchesDeleted}</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
