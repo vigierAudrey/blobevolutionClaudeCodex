@@ -1,12 +1,22 @@
 import type { Request, Response, NextFunction } from 'express';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import type { Permission } from './permissions';
+import { ROLE_PERMISSIONS } from './permissions';
 
 type AdminGuardRequest = Request & {
   adminProfile?: {
-    permissions: string[];
+    permissions: Permission[];
+    email?: string | null;
+    isPrimary?: boolean;
   };
 };
+
+const primaryAdminEmails = new Set(
+  (process.env.PRIMARY_ADMIN_EMAILS || 'dev+admin@test.com')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 async function loadAdminProfile(req: AdminGuardRequest) {
   if (req.adminProfile) {
@@ -18,14 +28,43 @@ async function loadAdminProfile(req: AdminGuardRequest) {
     return null;
   }
 
-  const profile = await prisma.adminProfile.findUnique({
-    where: { userId: user.id },
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
     select: {
-      permissions: true
+      email: true,
+      adminProfile: {
+        select: {
+          permissions: true
+        }
+      }
     }
   });
 
-  req.adminProfile = profile ?? { permissions: [] };
+  const email = dbUser?.email ?? null;
+  const isPrimary = email ? primaryAdminEmails.has(email.toLowerCase()) : false;
+
+  let permissions = dbUser?.adminProfile?.permissions ?? [];
+
+  if (isPrimary) {
+    permissions = [...ROLE_PERMISSIONS.SUPER_ADMIN];
+    // Synchronise la base pour éviter les divergences sur le compte principal
+    await prisma.adminProfile.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        displayName: dbUser?.email || 'Primary Admin',
+        permissions
+      },
+      update: { permissions }
+    });
+  }
+
+  req.adminProfile = {
+    permissions,
+    email,
+    isPrimary
+  };
+
   return req.adminProfile;
 }
 

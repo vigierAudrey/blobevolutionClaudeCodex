@@ -2088,13 +2088,127 @@ paths:
       summary: Lance le job de purge RGPD
       operationId: adminGdprRunPurge
       responses:
-        '202':
-          description: Purge déclenchée
+        '200':
+          description: Purge exécutée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GdprPurgeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/blocked:
+    get:
+      tags: [Admin]
+      summary: Liste des conversations bloquées récemment
+      operationId: adminConversationsBlocked
+      responses:
+        '200':
+          description: Liste des conversations
           content:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
+                properties:
+                  blocked:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminBlockedConversation'
+                  pagination:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/{conversationId}/block:
+    post:
+      tags: [Admin]
+      summary: Force le blocage ou déblocage d'une conversation
+      operationId: adminConversationBlock
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConversationBlockRequest'
+      responses:
+        '200':
+          description: État des membres mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConversationBlockResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/broadcast:
+    post:
+      tags: [Admin]
+      summary: Diffuse un message admin vers les messageries utilisateurs
+      operationId: adminConversationsBroadcast
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConversationBroadcastRequest'
+      responses:
+        '200':
+          description: Diffusion effectuée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConversationBroadcastResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/unblock-all:
+    post:
+      tags: [Admin]
+      summary: Débloque toutes les conversations actuellement verrouillées
+      operationId: adminConversationsUnblockAll
+      responses:
+        '200':
+          description: Résultat du déblocage en masse
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConversationUnblockAllResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/blocked/history:
+    get:
+      tags: [Admin]
+      summary: Historique des blocages/déblocages de conversation
+      operationId: adminConversationsBlockedHistory
+      responses:
+        '200':
+          description: Liste paginée d'actions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLogEntry'
+                  pagination:
+                    type: object
+                    additionalProperties: true
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2406,6 +2520,56 @@ components:
           enum: [fr]
         body:
           type: string
+    GdprPurgeTechnicalStats:
+      type: object
+      properties:
+        sessionsDeleted:
+          type: integer
+        tokensDeleted:
+          type: integer
+        oldLogsDeleted:
+          type: integer
+    GdprPurgeUserStats:
+      type: object
+      properties:
+        phase1Anonymized:
+          type: integer
+        phase2Anonymized:
+          type: integer
+        phase3Purged:
+          type: integer
+    GdprPurgeRelationalStats:
+      type: object
+      properties:
+        conversationsDeleted:
+          type: integer
+        matchesDeleted:
+          type: integer
+        oldSearchesDeleted:
+          type: integer
+    GdprPurgeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+        message:
+          type: string
+        result:
+          type: object
+          properties:
+            summary:
+              type: string
+            technicalData:
+              $ref: '#/components/schemas/GdprPurgeTechnicalStats'
+            userAnonymization:
+              $ref: '#/components/schemas/GdprPurgeUserStats'
+            relationalData:
+              $ref: '#/components/schemas/GdprPurgeRelationalStats'
   responses:
     Unauthorized:
       description: Authentification requise
@@ -3208,3 +3372,136 @@ components:
           type: boolean
         message:
           type: string
+    AdminBlockedConversation:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        blockedAt:
+          type: string
+          format: date-time
+          nullable: true
+        user:
+          type: object
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+        conversation:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            type: { type: string }
+            createdAt:
+              type: string
+              format: date-time
+            members:
+              type: array
+              items:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      email: { type: string, format: email }
+                      role: { type: string }
+                  blockedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+    AdminConversationBlockRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [block, unblock]
+          default: block
+    AdminConversationBlockResponse:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        action:
+          type: string
+          enum: [block, unblock]
+        updatedMembers:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+              email:
+                type: string
+                nullable: true
+              role:
+                type: string
+                nullable: true
+              blockedAt:
+                type: string
+                format: date-time
+                nullable: true
+    AdminConversationUnblockAllResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        count:
+          type: integer
+    AdminConversationBroadcastRequest:
+      type: object
+      properties:
+        message:
+          type: string
+        target:
+          type: string
+          enum: [ALL, RIDERS, PROS, CUSTOM]
+          default: ALL
+        emails:
+          type: array
+          items:
+            type: string
+            format: email
+    AdminConversationBroadcastResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        target:
+          type: string
+        sentCount:
+          type: integer
+        missingEmails:
+          type: array
+          items:
+            type: string
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        resource:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        ip:
+          type: string
+          nullable: true
+        user:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true

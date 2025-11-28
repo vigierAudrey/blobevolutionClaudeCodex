@@ -10,10 +10,14 @@ export const audit = (action: string, resolveResource?: AuditResourceResolver) =
       const userId = (req as any).user?.id as string | undefined;
       const ip = ((req as any).ips?.[0]) || req.ip || (req.socket as any)?.remoteAddress || null;
       const resource = resolveResource ? resolveResource(req, res) : req.originalUrl;
+      const extraMetadata = res.locals?.auditMetadata && typeof res.locals.auditMetadata === 'object'
+        ? res.locals.auditMetadata
+        : undefined;
       const metadata = {
         method: req.method,
         statusCode: res.statusCode,
         params: req.params,
+        ...(extraMetadata || {})
       };
       prisma.auditLog.create({
         data: {

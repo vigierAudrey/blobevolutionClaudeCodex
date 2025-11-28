@@ -711,6 +711,8 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 
 ### Gestion éditoriale (Admin)
 - Les comptes `ADMIN` accèdent à `/admin/blobosphere` (guardé) pour rédiger, prévisualiser et publier.
+- Configurez le compte admin principal via `PRIMARY_ADMIN_EMAILS` (par défaut `dev+admin@test.com`). Les emails listés y possèdent automatiquement **toutes** les permissions admin pour débloquer les sections `/admin/*`.
+- Nouveauté diffusions : depuis `/admin/conversations/broadcast`, un admin peut envoyer un message dans la messagerie interne de tous les riders, de tous les pros ou d'une liste d'emails précise (conversation `ADMIN_TO_USER`). Les actions sont historisées et peuvent être désactivées via `/admin/conversations/unblock-all` en cas d'incident.
 - Workflow statut : `draft` → `review` → `published` → `archived`.
 - Possibilité d’épingler un contenu sur la page d’accueil Blobosphère et dans les univers Riders/Pros.
 - Outils de modération : signalements utilisateurs, bannière “contenu signalé”, archivage rapide.
@@ -1082,6 +1084,29 @@ readingTime: 7
      -H "Content-Type: application/json" \
      -d '{"title":"Test","slug":"test","category":"surf","status":"draft","body":"Contenu"}'
    ```
+
+### Éditeur interne `/admin/blobosphere/editor`
+1. **Créer**  
+   - Accède à `/admin/blobosphere/editor`.  
+   - Renseigne `title`, `slug`, `category`, `status` (draft/published), `excerpt`, `tags` et le contenu MDX.  
+   - Sauvegarde → appel `POST /api/blobosphere/posts` (validation simple) → `saveMdx.ts` écrit `apps/web/content/blobosphere/<categorie>/<slug>.mdx`.
+2. **Modifier**  
+   - Sélectionne un article existant dans la liste.  
+   - Mets à jour les champs. Un changement de slug ou de catégorie renomme automatiquement le fichier (`PUT /api/blobosphere/posts/<cat>/<slug>`).  
+   - Après sauvegarde, l’éditeur recharge le fichier réel pour garder l’aperçu synchronisé.
+3. **Publier**  
+   - Passe `status` à `published`, puis clique sur “Prévisualiser l’article final” pour recharger `loadBlobospherePreviews()` via `/api/blobosphere/previews`.  
+   - Si l’article est publié, un lien ouvre directement `/blobosphere?topic=<cat>#<slug>`.
+4. **Supprimer**  
+   - Passe en mode édition (sélectionne l’article).  
+   - Clique sur “Supprimer l’article” puis confirme : la route `DELETE /api/blobosphere/posts/<cat>/<slug>` supprime physiquement le fichier `.mdx`.  
+   - Le formulaire est remis à zéro et l’article disparaît de la liste. (Décap CMS continue à gérer la suppression via GitHub pour les commits distants.)
+5. **Où se trouvent les fichiers ?**  
+   - Tous les articles sont physiquement stockés dans `apps/web/content/blobosphere/<category>/<slug>.mdx`.  
+   - Les dossiers sont créés à la volée si besoin.
+6. **Vérifier dans `/blobosphere`**  
+   - `npm run dev --workspace @blobinfini/web`  
+   - Ouvre `http://localhost:3002/blobosphere` et filtre par catégorie : seuls les MDX `status: published` apparaissent (chargés par `loadBlobospherePreviews()`).
 
 ### Vérifier la lecture côté `/blobosphere`
 1. `npm run dev --workspace @blobinfini/web`

@@ -42,6 +42,7 @@ model User {
   bookings                Booking[]                @relation("BookingOnUser")
   auditLogs              AuditLog[]
   pushTokens             PushToken[]
+  loginAttempts          LoginAttempt[]
 }
 
 model Session {
@@ -89,6 +90,23 @@ model EmailVerificationToken {
 
   @@index([userId])
   @@index([tokenHash])
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  ip        String?
+  userAgent String?
+  success   Boolean
+  reason    String?
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([ip])
+  @@index([createdAt])
+  @@index([success])
 }
 
 model LastSearch {
@@ -471,6 +489,7 @@ enum ConversationType {
   RIDER_TO_RIDER
   RIDER_TO_PRO
   PRO_TO_PRO
+  ADMIN_TO_USER
 }
 
 enum DecisionKind {
