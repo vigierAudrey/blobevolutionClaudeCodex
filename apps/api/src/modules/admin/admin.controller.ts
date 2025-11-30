@@ -4,10 +4,35 @@ import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import type { DecisionKind } from '@blobinfini/database';
 import { requireAuth, requireAdmin } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
+import { systemAlertService } from '../../services/system-alert.service';
 import { audit } from '../../middleware/audit';
 import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
 import { requirePermissions } from './admin.guard';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
+
+type ConversationMemberWithUser = Prisma.ConversationMemberGetPayload<{
+  include: {
+    user: {
+      select: {
+        id: true;
+        email: true;
+        role: string;
+      };
+    };
+  };
+}>;
+
+type LoginAttemptWithUser = Prisma.LoginAttemptGetPayload<{
+  include: {
+    user: {
+      select: {
+        id: true;
+        email: true;
+        role: true;
+      };
+    };
+  };
+}>;
 
 async function ensureAdminConversation(adminId: string, targetUserId: string) {
   const existing = await prisma.conversation.findFirst({
@@ -1291,6 +1316,14 @@ const reportActionSchema = z.object({
   action: z.enum(['approve', 'dismiss', 'ban'])
 });
 
+const createSystemAlertSchema = z.object({
+  type: z.string().min(3),
+  message: z.string().min(5),
+  severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).default('INFO'),
+  link: z.string().url().optional(),
+  dedupeKey: z.string().optional()
+});
+
 const conversationBroadcastSchema = z.object({
   message: z.string().min(5).max(2000),
   target: z.enum(['ALL', 'RIDERS', 'PROS', 'CUSTOM']).default('ALL'),
@@ -1378,6 +1411,15 @@ adminRouter.post(
         sentCount,
         missingEmails
       };
+
+      if (missingEmails.length > 0) {
+        await systemAlertService.ensureAlert({
+          type: 'messaging:broadcast-missing',
+          message: `Emails introuvables lors d'une diffusion admin (${missingEmails.length})`,
+          severity: 'WARNING',
+          metadata: { missingEmails }
+        });
+      }
 
       return res.json({
         success: true,
@@ -1473,6 +1515,81 @@ adminRouter.post(
 });
 
 adminRouter.get(
+  '/alerts',
+  requirePermissions('system.configure'),
+  audit('admin:alerts:list', () => 'admin:alerts:list'),
+  async (req, res) => {
+    try {
+      const status = req.query.status as 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | undefined;
+      const severity = req.query.severity as 'INFO' | 'WARNING' | 'CRITICAL' | undefined;
+      const page = parseInt(req.query.page as string || '1');
+      const limit = parseInt(req.query.limit as string || '20');
+
+      const result = await systemAlertService.list({ status, severity, page, limit });
+      return res.json(result);
+    } catch (error) {
+      console.error('Admin alerts list error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.post(
+  '/alerts',
+  requirePermissions('system.configure'),
+  audit('admin:alerts:create', () => 'admin:alerts:create'),
+  async (req, res) => {
+    try {
+      const adminId = (req as any).user?.id as string | undefined;
+      const payload = createSystemAlertSchema.parse(req.body ?? {});
+      const alert = await systemAlertService.createAlert({
+        ...payload,
+        createdById: adminId ?? null,
+        dedupeKey: payload.dedupeKey ?? undefined
+      });
+
+      return res.status(201).json(alert);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      console.error('Admin alert create error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.post(
+  '/alerts/:id/ack',
+  requirePermissions('system.configure'),
+  audit('admin:alerts:ack', (req) => `admin:alert:${req.params.id}`),
+  async (req, res) => {
+    try {
+      const alert = await systemAlertService.acknowledge(req.params.id);
+      return res.json(alert);
+    } catch (error) {
+      console.error('Admin alert ack error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.post(
+  '/alerts/:id/resolve',
+  requirePermissions('system.configure'),
+  audit('admin:alerts:resolve', (req) => `admin:alert:${req.params.id}`),
+  async (req, res) => {
+    try {
+      const alert = await systemAlertService.resolve(req.params.id);
+      return res.json(alert);
+    } catch (error) {
+      console.error('Admin alert resolve error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.get(
   '/conversations/blocked',
   requirePermissions('reports.view'),
   audit('admin:conversations:blocked', () => 'admin:conversations:blocked'),
@@ -1526,7 +1643,7 @@ adminRouter.get(
 
       type ConvMember = NonNullable<BlockedMember['conversation']>['members'][number];
 
-      const items = blockedMembers.map((member) => ({
+      const items = blockedMembers.map((member: BlockedMember) => ({
         conversationId: member.conversationId,
         blockedAt: member.blockedAt,
         user: member.user,
@@ -1590,8 +1707,8 @@ adminRouter.post(
         return res.status(404).json({ error: 'Conversation not found' });
       }
 
-      const targetMembers = userId
-        ? conversation.members.filter((member) => member.userId === userId)
+      const targetMembers: ConversationMemberWithUser[] = userId
+        ? conversation.members.filter((member: ConversationMemberWithUser) => member.userId === userId)
         : conversation.members;
 
       if (targetMembers.length === 0) {
@@ -1601,17 +1718,17 @@ adminRouter.post(
       await prisma.conversationMember.updateMany({
         where: {
           conversationId,
-          userId: { in: targetMembers.map((member) => member.userId) }
+          userId: { in: targetMembers.map((member: ConversationMemberWithUser) => member.userId) }
         },
         data: {
           blockedAt: action === 'unblock' ? null : new Date()
         }
       });
 
-      const refreshedMembers = await prisma.conversationMember.findMany({
+      const refreshedMembers: ConversationMemberWithUser[] = await prisma.conversationMember.findMany({
         where: {
           conversationId,
-          userId: { in: targetMembers.map((member) => member.userId) }
+          userId: { in: targetMembers.map((member: ConversationMemberWithUser) => member.userId) }
         },
         include: {
           user: { select: { id: true, email: true, role: true } }
@@ -1625,13 +1742,13 @@ adminRouter.post(
         ...(res.locals.auditMetadata || {}),
         conversationId,
         action,
-        targetUserIds: targetMembers.map((member) => member.userId)
+        targetUserIds: targetMembers.map((member: ConversationMemberWithUser) => member.userId)
       };
 
       return res.json({
         conversationId,
         action,
-        updatedMembers: refreshedMembers.map((member) => ({
+        updatedMembers: refreshedMembers.map((member: ConversationMemberWithUser) => ({
           userId: member.userId,
           email: member.user?.email ?? null,
           role: member.user?.role ?? null,
@@ -1853,12 +1970,12 @@ adminRouter.get(
       }
 
       // Suspicious criteria: multiple failed attempts from same IP or email
-      let attempts;
+      let attempts: LoginAttemptWithUser[];
       if (suspiciousOnly) {
         // Get IPs and emails with multiple failed attempts in the last 24 hours
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        const failedAttempts = await prisma.loginAttempt.findMany({
+        const failedAttempts: Prisma.LoginAttempt[] = await prisma.loginAttempt.findMany({
           where: {
             success: false,
             createdAt: { gte: oneDayAgo }
@@ -1884,6 +2001,15 @@ adminRouter.get(
         const suspiciousEmails = Array.from(emailCounts.entries())
           .filter(([, count]) => count >= 5)
           .map(([email]) => email);
+
+        if (suspiciousIPs.length > 0 || suspiciousEmails.length > 0) {
+          await systemAlertService.ensureAlert({
+            type: 'security:suspicious-login',
+            message: 'Tentatives de connexion suspectes détectées',
+            severity: 'WARNING',
+            metadata: { suspiciousIPs, suspiciousEmails }
+          });
+        }
 
         attempts = await prisma.loginAttempt.findMany({
           where: {
@@ -1919,7 +2045,7 @@ adminRouter.get(
       const successRate = total > 0 ? ((total - failed) / total) * 100 : 0;
 
       // Pseudonymiser les IPs avant de retourner (conformité RGPD Article 5.1.c)
-      const pseudonymizedAttempts = attempts.map(attempt => ({
+      const pseudonymizedAttempts = attempts.map((attempt: LoginAttemptWithUser) => ({
         ...attempt,
         ip: pseudonymizeIP(attempt.ip)
       }));

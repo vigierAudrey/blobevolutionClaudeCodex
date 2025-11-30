@@ -10,7 +10,6 @@ import { Label } from '../../../../components/ui/label';
 import { Textarea } from '../../../../components/ui/textarea';
 import { MdxRuntimePreview } from '@/components/blobosphere/MdxRuntimePreview';
 import type { BlobosphereArticlePreview } from '@/lib/blobosphere/loadBlobospherePreviews';
-import type { BlobosphereArticlePreview } from '@/lib/blobosphere/loadBlobospherePreviews';
 
 type Category = 'surf'|'kitesurf'|'communaute'|'impact';
 

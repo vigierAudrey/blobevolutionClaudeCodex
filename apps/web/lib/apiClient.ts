@@ -269,6 +269,26 @@ export interface AdminBroadcastResponse {
   missingEmails?: string[];
 }
 
+export interface SystemAlert {
+  id: string;
+  type: string;
+  message: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
+  link?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  acknowledgedAt?: string | null;
+  resolvedAt?: string | null;
+  createdBy?: { id: string; email: string | null } | null;
+}
+
+export interface SystemAlertListResponse {
+  items: SystemAlert[];
+  pagination?: { page: number; limit: number; total: number; totalPages: number };
+}
+
 export interface AdminSecurityEvent {
   id: string;
   action: string;
@@ -811,6 +831,17 @@ export const apiClient = {
   },
   sendAdminBroadcast: (body: { message: string; target: 'ALL' | 'RIDERS' | 'PROS' | 'CUSTOM'; emails?: string[] }) =>
     request('/admin/conversations/broadcast', { method: 'POST', body: JSON.stringify(body) }, true) as Promise<AdminBroadcastResponse>,
+  getSystemAlerts: (params?: { status?: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED'; severity?: 'INFO' | 'WARNING' | 'CRITICAL'; page?: number; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.append('status', params.status);
+    if (params?.severity) query.append('severity', params.severity);
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    const qs = query.toString();
+    return request(`/admin/alerts${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<SystemAlertListResponse>;
+  },
+  acknowledgeAlert: (id: string) => request(`/admin/alerts/${id}/ack`, { method: 'POST' }, true) as Promise<SystemAlert>,
+  resolveAlert: (id: string) => request(`/admin/alerts/${id}/resolve`, { method: 'POST' }, true) as Promise<SystemAlert>,
   getSecurityEvents: (limit: number = 5) => {
     const query = new URLSearchParams({ limit: limit.toString() });
     return request(`/admin/security/events?${query.toString()}`, { method: 'GET' }, true) as Promise<{
