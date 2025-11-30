@@ -7,6 +7,7 @@ import { twoFactorService } from '../../services/two-factor.service';
 import { validate } from '../../middleware/validate';
 import { passwordSchema } from '../../utils/password-validator';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { secureLogger } from '../../utils/secure-logger';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -223,7 +224,11 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
 
     return res.json(tokens);
   } catch (err: any) {
-    console.error('2FA verification error:', err);
+    secureLogger.error('2FA_VERIFICATION_ERROR', {
+      error: err?.message,
+      name: err?.name,
+      userId: req.body?.userId
+    });
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
