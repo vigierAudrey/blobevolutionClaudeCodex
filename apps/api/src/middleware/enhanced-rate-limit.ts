@@ -24,6 +24,8 @@ async function initializeRedis(): Promise<RedisClientType | null> {
         connectTimeout: 4000,
         reconnectStrategy: (retries) => Math.min(retries * 200, 2000),
       },
+      commandsQueueMaxLength: 100, // P2-4: Limiter la queue de commandes
+      disableOfflineQueue: true, // P2-4: Éviter accumulation en mode offline
     });
 
     client.on('error', (error) => {
