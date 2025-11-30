@@ -38,10 +38,16 @@ Acknowledgments: https://blobinfini.fr/security-hall-of-fame
 # - Social engineering
 
 ## Récompenses indicatives
-# - Critical (RCE, SQLi, Auth bypass) : 500-2000€
-# - High (XSS stocké, IDOR sensible, Mass assignment) : 200-500€
-# - Medium (XSS réfléchi, CSRF, Info disclosure) : 50-200€
-# - Low (Recommendations, Best practices) : Reconnaissance publique
+# Blobinfini est une startup éducative avec des moyens limités.
+# Nous offrons des récompenses modestes mais valorisons la reconnaissance publique :
+#
+# - High (XSS stocké, IDOR sensible) : 20€ + Remerciements publics + Hall of Fame
+# - Medium (XSS réfléchi, CSRF, Info disclosure) : 10€ + Remerciements publics + Hall of Fame
+# - Low (Recommendations, Best practices) : Reconnaissance publique + Hall of Fame
+#
+# Alternatives aux récompenses financières (au choix) :
+# - Lettre de recommandation pour votre CV/portfolio
+# - Session de coaching surf gratuit par la créatrice du site (si disponible)
 
 ## Contact
 # Merci de reporter les vulnérabilités à : security@blobinfini.fr

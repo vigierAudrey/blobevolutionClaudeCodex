@@ -142,7 +142,7 @@ const createHelmetMiddleware = () => helmet({
       upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
     }
   },
-  referrerPolicy: { policy: 'no-referrer' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }, // P2-3: Compatible avec OAuth
   frameguard: { action: 'deny' },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
@@ -245,8 +245,16 @@ export function createApp() {
   }
 
   // Session configuration for CSRF
+  const sessionSecret = process.env.SESSION_SECRET || (() => {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('SESSION_SECRET must be set in production');
+    }
+    console.warn('⚠️  WARNING: Using development SESSION_SECRET - DO NOT USE IN PRODUCTION');
+    return 'blobinfini-dev-secret-change-in-production';
+  })();
+
   app.use(session({
-    secret: process.env.SESSION_SECRET || 'blobinfini-dev-secret-change-in-production',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -346,7 +354,13 @@ export function createApp() {
   // CSRF token endpoint (GET requests are not protected)
   app.get('/csrf-token', getCSRFToken);
 
-  app.get('/security/health', requireAuth, requireAdmin, (_req, res) => {
+  app.get('/security/health', requireAuth, requireAdmin, (req, res) => {
+    // P2-6: Logger qui accède à cet endpoint sensible
+    secureLogger.security('SECURITY_HEALTH_CHECK_ACCESSED', {
+      adminId: (req as any).user?.id,
+      ip: req.ip
+    });
+
     const issues: string[] = [];
     const isProd = process.env.NODE_ENV === 'production';
 
@@ -360,13 +374,17 @@ export function createApp() {
       }
     }
 
+    // P2-6: Mode verbose pour détails (seulement si SECURITY_HEALTH_VERBOSE=true)
+    const verbose = process.env.SECURITY_HEALTH_VERBOSE === 'true';
+
     const result = {
       status: issues.length ? 'VULNERABLE' : 'SECURE',
       helmet: true,
       csrf: true,
       rateLimit: true,
-      corsWhitelist: Array.from(allowedOriginsSet),
-      issues
+      corsWhitelist: verbose ? Array.from(allowedOriginsSet) : allowedOriginsSet.size, // P2-6: Ne pas exposer les origins en mode normal
+      issuesCount: issues.length,
+      issues: verbose ? issues : undefined // P2-6: Détails uniquement en mode verbose
     };
 
     res.status(issues.length ? 503 : 200).json(result);
@@ -409,9 +427,13 @@ export function createApp() {
   // Apply CSRF protection to all routes
   app.use(csrfProtection);
 
-  // Simple request logging for debugging
+  // Simple request logging for debugging (P2-9: Use secureLogger to prevent logging sensitive query params)
   app.use((req, _res, next) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+    secureLogger.info('HTTP_REQUEST', {
+      method: req.method,
+      path: req.path, // Path only (no query params)
+      // Query params are automatically redacted by secureLogger if they contain sensitive keys
+    });
     next();
   });
 
