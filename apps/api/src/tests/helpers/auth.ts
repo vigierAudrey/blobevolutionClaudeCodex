@@ -2,6 +2,7 @@ import request, { SuperAgentTest, Test as SupertestRequest } from 'supertest';
 import bcrypt from 'bcrypt';
 import { clientPrisma as prisma, Role, User } from '@blobinfini/database';
 import { jest } from '@jest/globals';
+import { AVAILABLE_PERMISSIONS } from '../../modules/admin/permissions';
 
 export const TEST_PASSWORD = 'Passw0rd!';
 const CONSENT_VERSION = 'v1.0.0';
@@ -48,21 +49,44 @@ export async function getOrCreateUserByEmail({
   emailVerified = true,
 }: GetOrCreateUserOptions): Promise<User> {
   const existing = await prisma.user.findUnique({ where: { email } });
+
+  let user: User;
   if (existing) {
-    return existing;
+    if (existing.role !== role || existing.emailVerified !== emailVerified) {
+      user = await prisma.user.update({
+        where: { id: existing.id },
+        data: { role, emailVerified },
+      });
+    } else {
+      user = existing;
+    }
+  } else {
+    const hashed = await bcrypt.hash(password, 12);
+    user = await prisma.user.create({
+      data: {
+        email,
+        password: hashed,
+        role,
+        consentedAt: new Date(),
+        consentVersion: CONSENT_VERSION,
+        emailVerified,
+      },
+    });
   }
 
-  const hashed = await bcrypt.hash(password, 12);
-  return prisma.user.create({
-    data: {
-      email,
-      password: hashed,
-      role,
-      consentedAt: new Date(),
-      consentVersion: CONSENT_VERSION,
-      emailVerified,
-    },
-  });
+  if (role === Role.ADMIN) {
+    await prisma.adminProfile.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        displayName: user.email,
+        permissions: [...AVAILABLE_PERMISSIONS],
+      },
+      update: { permissions: [...AVAILABLE_PERMISSIONS] },
+    });
+  }
+
+  return user;
 }
 
 type AccessTokenOptions = GetOrCreateUserOptions & {

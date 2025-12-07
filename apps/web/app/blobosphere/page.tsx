@@ -27,7 +27,7 @@ export const revalidate = 300;
 export const metadata: Metadata = {
   title: 'Blobosphère — Le guide surf & kite',
   description:
-    'Guides débutants pour bien t’équiper, rider responsable et rester en forme. Articles courts + liens utiles, et bientôt des interviews inspirantes. Par la communauté Blobinfini.',
+    'Guides débutants pour bien t’équiper, rider responsable et rester en forme. Articles courts + liens utiles, et bientôt des interviews inspirantes. Par la communauté BlobConnect.',
 };
 
 type BlobospherePageProps = {
@@ -60,7 +60,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
   const collectionJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
-    name: 'Blobosphère - Blobinfini',
+    name: 'Blobosphère - BlobConnect',
     description: metadata.description,
     hasPart: allArticles.map((article) => ({
       '@type': 'Article',
@@ -192,7 +192,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
             Comment proposer un article ?
           </h2>
           <p className="text-base text-muted-foreground">
-            Toute contribution passe par le profil Blobinfini. Nous étudions chaque sujet avant publication pour
+            Toute contribution passe par le profil BlobConnect. Nous étudions chaque sujet avant publication pour
             garantir le respect du RGPD et de la charte éditoriale.
           </p>
         </div>

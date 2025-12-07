@@ -182,7 +182,7 @@ export default function AdminReportHistoryPage() {
                   <div>
                     <p className="text-sm text-muted-foreground">Détails</p>
                     <p className="text-sm text-muted-foreground">
-                      Statut HTTP&nbsp;{log.metadata?.statusCode}
+                      Statut HTTP&nbsp;{log.metadata?.statusCode ? String(log.metadata.statusCode) : 'N/A'}
                     </p>
                   </div>
                 </div>

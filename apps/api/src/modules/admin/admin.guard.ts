@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import type { Permission } from './permissions';
 import { ROLE_PERMISSIONS } from './permissions';
+import { secureLogger } from '../../utils/secure-logger';
 
 type AdminGuardRequest = Request & {
   adminProfile?: {
@@ -47,6 +48,11 @@ async function loadAdminProfile(req: AdminGuardRequest) {
 
   if (isPrimary) {
     permissions = [...ROLE_PERMISSIONS.SUPER_ADMIN];
+    secureLogger.info('PRIMARY_ADMIN_SYNC', {
+      userId: user.id,
+      email,
+      permissionsCount: permissions.length,
+    });
     // Synchronise la base pour éviter les divergences sur le compte principal
     await prisma.adminProfile.upsert({
       where: { userId: user.id },
@@ -72,6 +78,11 @@ export const requirePermissions = (...permissions: Permission[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const user = (req as any).user as { id: string; role: string } | undefined;
     if (!user || user.role !== 'ADMIN') {
+      secureLogger.warn('ADMIN_ACCESS_DENIED', {
+        userId: user?.id,
+        role: user?.role,
+        path: req.path,
+      });
       return res.status(403).json({ error: 'Admin role required' });
     }
 
@@ -85,6 +96,12 @@ export const requirePermissions = (...permissions: Permission[]) => {
 
       const missing = permissions.filter(permission => !assignedPermissions.includes(permission));
       if (missing.length > 0) {
+        secureLogger.warn('ADMIN_PERMISSION_DENIED', {
+          userId: user.id,
+          required: permissions,
+          missing,
+          assigned: assignedPermissions,
+        });
         return res.status(403).json({
           error: 'Forbidden: missing permissions',
           required: permissions,
@@ -94,7 +111,10 @@ export const requirePermissions = (...permissions: Permission[]) => {
 
       return next();
     } catch (error) {
-      console.error('Admin permissions guard error:', error);
+      secureLogger.error('ADMIN_GUARD_ERROR', {
+        error: error instanceof Error ? error.message : String(error),
+        userId: user?.id,
+      });
       return res.status(500).json({ error: 'Internal error' });
     }
   };

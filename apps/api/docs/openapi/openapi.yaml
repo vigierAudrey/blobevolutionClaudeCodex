@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Blobinfini API
+  title: BlobConnect API
   version: 0.1.0
 servers:
   - url: http://localhost:4000

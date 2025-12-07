@@ -13,7 +13,7 @@ const urlsToCache = [
 
 // Install event - cache essential resources
 self.addEventListener('install', function(event) {
-  console.log('🏄 Blobinfini SW: Installing...');
+  console.log('🏄 BlobConnect SW: Installing...');
 
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -29,7 +29,7 @@ self.addEventListener('install', function(event) {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', function(event) {
-  console.log('✅ Blobinfini SW: Activated');
+  console.log('✅ BlobConnect SW: Activated');
 
   event.waitUntil(
     caches.keys().then(function(cacheNames) {
@@ -53,7 +53,7 @@ self.addEventListener('push', function(event) {
   console.log('📬 SW: Push received');
 
   let notificationData = {
-    title: 'Blobinfini',
+    title: 'BlobConnect',
     body: 'Nouvelle notification',
     icon: '/icons/icon-192x192.png',
     badge: '/icons/icon-72x72.png',
@@ -267,4 +267,4 @@ self.addEventListener('fetch', function(event) {
   );
 });
 
-console.log('🏄 Blobinfini Service Worker loaded successfully!');
+console.log('🏄 BlobConnect Service Worker loaded successfully!');

@@ -58,10 +58,38 @@ export function buildCreatePayload(data: unknown): SaveMdxPayload {
   };
 }
 
-export type ParsedUpdatePayload = ReturnType<typeof buildUpdatePayload>;
+export type ParsedUpdatePayload = {
+  title?: string;
+  slug: string | undefined;
+  category: BlobosphereCategory | undefined;
+  excerpt?: string;
+  tags: string[];
+  status?: 'draft' | 'published';
+  publishedAt?: string;
+  updatedAt?: string;
+  coverImage?: string;
+  readingTime?: number;
+  body?: string;
+  newSlug: string | undefined;
+  newCategory: BlobosphereCategory | undefined;
+};
 
-export function buildUpdatePayload(data: unknown) {
-  const parsed = UpdateSchema.parse(data ?? {});
+export function buildUpdatePayload(data: unknown): ParsedUpdatePayload {
+  const parsed = UpdateSchema.parse(data ?? {}) as {
+    title?: string;
+    slug?: string;
+    category?: BlobosphereCategory;
+    excerpt?: string;
+    tags?: string | string[];
+    status?: 'draft' | 'published';
+    publishedAt?: string;
+    updatedAt?: string;
+    coverImage?: string;
+    readingTime?: number;
+    body?: string;
+    newSlug?: string;
+    newCategory?: BlobosphereCategory;
+  };
   return {
     ...parsed,
     slug: parsed.slug ? sanitizeSlug(parsed.slug) : undefined,

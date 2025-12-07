@@ -42,7 +42,7 @@ describe('Health & core endpoints', () => {
 
     const loginRes = await riderSession
       .post('/auth/login')
-      .send({ email: riderEmail, password: TEST_PASSWORD })
+      .send({ email: riderEmail, password: TEST_PASSWORD, consentAccepted: true })
       .expect(200);
     expect(loginRes.body).toHaveProperty('accessToken');
 

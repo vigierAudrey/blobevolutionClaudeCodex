@@ -30,25 +30,36 @@ describe('/security/health endpoint', () => {
   });
 
   it('returns status payload for admin users', async () => {
-    const { accessToken } = await getAccessToken({
-      app,
-      email: 'security-health-admin@test.com',
-      password: TEST_PASSWORD,
-      role: Role.ADMIN,
-      emailVerified: true,
-    });
+    const previousVerbose = process.env.SECURITY_HEALTH_VERBOSE;
+    process.env.SECURITY_HEALTH_VERBOSE = 'true';
 
-    const response = await request(app)
-      .get('/security/health')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
+    try {
+      const { accessToken } = await getAccessToken({
+        app,
+        email: 'security-health-admin@test.com',
+        password: TEST_PASSWORD,
+        role: Role.ADMIN,
+        emailVerified: true,
+      });
 
-    expect(response.body).toHaveProperty('status');
-    expect(Array.isArray(response.body.issues)).toBe(true);
-    expect(response.body).toMatchObject({
-      helmet: true,
-      csrf: true,
-      rateLimit: true,
-    });
+      const response = await request(app)
+        .get('/security/health')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('status');
+      expect(Array.isArray(response.body.issues)).toBe(true);
+      expect(response.body).toMatchObject({
+        helmet: true,
+        csrf: true,
+        rateLimit: true,
+      });
+    } finally {
+      if (previousVerbose === undefined) {
+        delete process.env.SECURITY_HEALTH_VERBOSE;
+      } else {
+        process.env.SECURITY_HEALTH_VERBOSE = previousVerbose;
+      }
+    }
   });
 });

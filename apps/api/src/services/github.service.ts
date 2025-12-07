@@ -190,7 +190,7 @@ export async function pushBlobosphereChange({
   await ensureBranch(owner, repo, token, base, branchName);
   await upsertContent(owner, repo, token, fileRelPath, content, message, branchName);
   const prTitle = message;
-  const prBody = 'Automated editorial change from Blobinfini Admin UI';
+  const prBody = 'Automated editorial change from BlobConnect Admin UI';
   const pr = await openPr(owner, repo, token, branchName, base, prTitle, prBody);
   try {
     await decoratePr(owner, repo, token, pr.number);

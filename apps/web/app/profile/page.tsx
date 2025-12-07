@@ -10,6 +10,7 @@ import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { apiClient } from '../../lib/apiClient';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../components/BackBar';
@@ -17,11 +18,12 @@ import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { apiRequest } from '../../lib/csrf';
 import Link from 'next/link';
-import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, BookOpen } from 'lucide-react';
+import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, BookOpen, AlertTriangle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
 import type { Level } from '@/types/matching';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../components/cookies/CookieConsent';
+import { ChangePasswordCard } from './ChangePasswordCard';
 
 type SexOption = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
 type LevelOption = '' | Level;
@@ -37,7 +39,7 @@ type ProfileUpdatePayload = {
   bio?: string;
   sex: Gender;
   emailNotif: boolean;
-  photoUrl?: string;
+  photoUrl?: string | null;
   blobosphereContributor?: boolean;
 };
 
@@ -115,6 +117,9 @@ export default function ProfilePage() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [deletePhotoModalOpen, setDeletePhotoModalOpen] = useState(false);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
+  const [hasEverHadPhoto, setHasEverHadPhoto] = useState(false);
 
   const onPickPhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -191,6 +196,10 @@ export default function ProfilePage() {
     };
   }, [router]);
 
+  useEffect(() => {
+    setHasEverHadPhoto((prev) => prev || Boolean(photoUrl));
+  }, [photoUrl]);
+
   // Disciplines state
   const [surfLevel, setSurfLevel] = useState<LevelOption>('');
   const [kiteLevel, setKiteLevel] = useState<LevelOption>('');
@@ -201,6 +210,7 @@ export default function ProfilePage() {
     () => (displayName ? `Photo de ${displayName}` : 'Photo du profil'),
     [displayName],
   );
+  const showPhotoWarning = hasEverHadPhoto && !photoPreviewUrl && !photoUrl;
 
   useEffect(() => {
     let isMounted = true;
@@ -236,6 +246,27 @@ export default function ProfilePage() {
       toast(message, 'error');
     } finally {
       setDeletingLocation(false);
+    }
+  };
+
+  const handleConfirmDeletePhoto = async () => {
+    if (removingPhoto) return;
+    setRemovingPhoto(true);
+    try {
+      await apiClient.updateProfile({ photoUrl: null });
+      setPhotoUrl(null);
+      setPhotoPreviewUrl((previous) => {
+        if (previous) URL.revokeObjectURL(previous);
+        return null;
+      });
+      setPhotoFile(null);
+      toast('Photo supprimée. Ajoute une nouvelle photo pour réactiver le matching.', 'info');
+      setDeletePhotoModalOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de la suppression';
+      toast(message, 'error');
+    } finally {
+      setRemovingPhoto(false);
     }
   };
 
@@ -431,7 +462,8 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <>
+      <div className="mx-auto max-w-5xl space-y-6">
       <BackBar fallbackHref="/dashboard" />
       <div className="text-center space-y-1">
         <h1 className="text-2xl sm:text-3xl font-semibold">Modifier mon Profil 🏄‍♀️</h1>
@@ -469,6 +501,28 @@ export default function ProfilePage() {
                   onChange={onPickPhoto}
                   className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-secondary-foreground hover:file:bg-secondary/80"
                 />
+                {(photoUrl || showPhotoWarning) && (
+                  <div className="w-full space-y-2">
+                    {photoUrl && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setDeletePhotoModalOpen(true)}
+                      >
+                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                        Supprimer la photo
+                      </Button>
+                    )}
+                    {showPhotoWarning && (
+                      <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/80 px-3 py-2 text-sm text-amber-900">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                        <span>Sans photo, l’accès au matching reste bloqué. Ajoute une nouvelle photo pour débloquer la sélection.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="w-full">
                   <Label htmlFor="sex">Sexe</Label>
                   <select
@@ -555,6 +609,8 @@ export default function ProfilePage() {
 
           </CardContent>
         </Card>
+
+        <ChangePasswordCard />
 
         {/* Privacy and Data Section */}
         <Card>
@@ -843,6 +899,30 @@ export default function ProfilePage() {
           </Card>
         </div>
       )}
-    </div>
+      </div>
+
+      <Dialog open={deletePhotoModalOpen} onOpenChange={setDeletePhotoModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Supprimer la photo de profil</DialogTitle>
+            <DialogDescription>
+              Confirme la suppression de ta photo. Le matching restera inaccessible tant qu&rsquo;une nouvelle photo ne sera pas
+              ajoutée.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Sans photo de profil, les autres riders ne pourront plus te voir dans le matching. Ajoute-en une nouvelle dès que possible.
+          </p>
+          <DialogFooter className="mt-6">
+            <Button type="button" variant="outline" onClick={() => setDeletePhotoModalOpen(false)} disabled={removingPhoto}>
+              Annuler
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleConfirmDeletePhoto} disabled={removingPhoto}>
+              {removingPhoto ? 'Suppression…' : 'Supprimer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

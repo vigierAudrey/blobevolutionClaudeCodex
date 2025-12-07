@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { apiClient, type AdminBlockedConversation } from '@/lib/apiClient';
 import { ArrowLeft, History, RefreshCcw } from 'lucide-react';
-import { ArrowLeft, History, RefreshCcw } from 'lucide-react';
 
 export default function AdminBlockedConversationsPage() {
   const [blocked, setBlocked] = useState<AdminBlockedConversation[]>([]);

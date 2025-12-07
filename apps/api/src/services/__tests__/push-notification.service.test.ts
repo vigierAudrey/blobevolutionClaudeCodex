@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll, jest } from '@jest/globals';
 import { PushNotificationService, type PushNotificationData } from '../push-notification.service';
 import { secureLogger } from '../../utils/secure-logger';
+import { clientPrisma as prisma } from '@blobinfini/database';
+import bcrypt from 'bcrypt';
 
 // --- Firebase admin mock ----------------------------------------------------
 var adminMock: any;
@@ -45,6 +47,22 @@ const createService = (withCredentials = true) => {
   return new PushNotificationService();
 };
 
+const ensureTestUser = async (userId: string) => {
+  const existing = await prisma.user.findUnique({ where: { id: userId } });
+  if (!existing) {
+    await prisma.user.create({
+      data: {
+        id: userId,
+        email: `${userId}@test.local`,
+        password: await bcrypt.hash('test-password', 12),
+        role: 'RIDER',
+        consentedAt: new Date(),
+        consentVersion: 'v1.0.0',
+      },
+    });
+  }
+};
+
 describe('PushNotificationService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -63,7 +81,9 @@ describe('PushNotificationService', () => {
     setFirebaseEnv(true); // default back to valid
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    await prisma.user.deleteMany({ where: { email: { endsWith: '@test.local' } } });
+    await prisma.$disconnect();
     process.env = { ...ORIGINAL_ENV };
   });
 
@@ -98,6 +118,7 @@ describe('PushNotificationService', () => {
 
   describe('token lifecycle', () => {
     it('saves tokens without failing', async () => {
+      await ensureTestUser('user-1');
       const service = createService(false);
 
       await expect(service.saveToken('user-1', 'token-xyz')).resolves.toBe(true);
@@ -105,6 +126,7 @@ describe('PushNotificationService', () => {
     });
 
     it('returns false when an error occurs while saving', async () => {
+      await ensureTestUser('user-1');
       const service = createService(false);
       infoSpy.mockImplementationOnce(() => {
         throw new Error('storage unavailable');
@@ -119,6 +141,7 @@ describe('PushNotificationService', () => {
     });
 
     it('removes tokens and logs the action', async () => {
+      await ensureTestUser('user-1');
       const service = createService(false);
 
       await expect(service.removeToken('user-1', 'token-xyz')).resolves.toBe(true);
@@ -126,6 +149,7 @@ describe('PushNotificationService', () => {
     });
 
     it('handles removal errors gracefully', async () => {
+      await ensureTestUser('user-1');
       const service = createService(false);
       infoSpy.mockImplementationOnce(() => {
         throw new Error('db unavailable');
@@ -193,6 +217,7 @@ describe('PushNotificationService', () => {
     });
 
     it('broadcasts to each user token via sendToUser', async () => {
+      await ensureTestUser('user-1');
       const service = createService(true);
       service['isInitialized'] = true;
 
@@ -212,7 +237,8 @@ describe('PushNotificationService', () => {
     let service: PushNotificationService;
     let sendSpy: jest.SpiedFunction<(userId: string, payload: PushNotificationData) => Promise<boolean>>;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+      await ensureTestUser('user-1');
       service = createService(true);
       service['isInitialized'] = true;
       sendSpy = jest.spyOn(service, 'sendToUser').mockResolvedValue(true);

@@ -570,4 +570,30 @@ describe('Admin Controller', () => {
     expect(conversation).toBeTruthy();
     expect(conversation?.messages[0]?.content).toContain('Alerte admin');
   });
+
+  it('manages system alerts lifecycle', async () => {
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    const created = await agent
+      .post('/admin/alerts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({ type: 'test:alert', message: 'Alerte de test', severity: 'INFO' })
+      .expect(201);
+
+    const alertId = created.body.id;
+
+    await agent
+      .post(`/admin/alerts/${alertId}/ack`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .expect(200);
+
+    await agent
+      .post(`/admin/alerts/${alertId}/resolve`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .expect(200);
+  });
 });

@@ -6,6 +6,11 @@ interface DialogProps {
   children: React.ReactNode;
 }
 
+interface DialogRootProps extends DialogProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
 interface DialogContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -13,8 +18,18 @@ interface DialogContextValue {
 
 const DialogContext = React.createContext<DialogContextValue | undefined>(undefined);
 
-export function Dialog({ children }: DialogProps) {
-  const [open, setOpen] = React.useState(false);
+export function Dialog({ children, open: controlledOpen, onOpenChange }: DialogRootProps) {
+  const isControlled = typeof controlledOpen === 'boolean';
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const open = isControlled ? (controlledOpen as boolean) : uncontrolledOpen;
+
+  const setOpen = (value: boolean) => {
+    if (!isControlled) {
+      setUncontrolledOpen(value);
+    }
+    onOpenChange?.(value);
+  };
+
   return (
     <DialogContext.Provider value={{ open, setOpen }}>
       {children}

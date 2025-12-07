@@ -293,6 +293,34 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
 
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Met à jour le mot de passe d'un utilisateur authentifié
+      operationId: authChangePassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Mot de passe mis à jour
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/2fa/send:
     post:
       tags: [Auth]
@@ -2213,6 +2241,87 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/alerts:
+    get:
+      tags: [Admin]
+      summary: Liste les alertes système
+      operationId: adminSystemAlerts
+      responses:
+        '200':
+          description: Liste d'alertes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemAlertListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      summary: Crée une alerte système
+      operationId: adminAlertCreate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSystemAlertCreateRequest'
+      responses:
+        '200':
+          description: Alerte créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemAlert'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/alerts/{alertId}/ack:
+    post:
+      tags: [Admin]
+      summary: Marque une alerte comme reconnue
+      operationId: adminAlertAcknowledge
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Alerte mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemAlert'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/alerts/{alertId}/resolve:
+    post:
+      tags: [Admin]
+      summary: Résout une alerte
+      operationId: adminAlertResolve
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Alerte résolue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemAlert'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /admin/gdpr/legal-archive/{userId}:
     get:
       tags: [Admin]
@@ -2735,6 +2844,14 @@ components:
           type: string
         password:
           type: string
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
     TwoFactorSendRequest:
       type: object
       required: [email]
@@ -2846,6 +2963,7 @@ components:
         photoUrl:
           type: string
           format: uri
+          nullable: true
         lat:
           type: number
         lng:
@@ -3480,6 +3598,66 @@ components:
           type: array
           items:
             type: string
+    SystemAlert:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [INFO, WARNING, CRITICAL]
+        status:
+          type: string
+          enum: [OPEN, ACKNOWLEDGED, RESOLVED]
+        link:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+    SystemAlertListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemAlert'
+        pagination:
+          type: object
+          additionalProperties: true
+    AdminSystemAlertCreateRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [INFO, WARNING, CRITICAL]
+        link:
+          type: string
+        dedupeKey:
+          type: string
     AuditLogEntry:
       type: object
       properties:

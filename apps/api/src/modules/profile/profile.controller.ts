@@ -39,7 +39,7 @@ const upsertSchema = z.object({
   sex: sexEnum.optional(),
   maxDistanceKm: z.number().int().min(1).max(500).optional(),
   emailNotif: z.boolean().optional(),
-  photoUrl: z.string().url().optional(),
+  photoUrl: z.string().url().nullable().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   // Lesson intent (visible on BloboMap Pro)

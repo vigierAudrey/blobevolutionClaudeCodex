@@ -523,6 +523,40 @@ describe('AuthService', () => {
     });
   });
 
+  describe('Change Password', () => {
+    const originalPassword = 'OldPass123!';
+    const newPassword = 'NewPass456!';
+
+    beforeEach(async () => {
+      const result = await authService.register({
+        email: 'change@example.com',
+        password: originalPassword,
+        role: 'RIDER'
+      });
+      testUserId = result.userId;
+    });
+
+    it('should update password and revoke refresh tokens', async () => {
+      await authService.login('change@example.com', originalPassword);
+
+      const result = await authService.changePassword(testUserId, originalPassword, newPassword);
+      expect(result.message).toBe('Password updated');
+
+      const updated = await prisma.user.findUnique({ where: { id: testUserId } });
+      const matchesNew = await bcrypt.compare(newPassword, updated!.password);
+      expect(matchesNew).toBe(true);
+
+      const tokens = await prisma.refreshToken.findMany({ where: { userId: testUserId } });
+      expect(tokens.length).toBeGreaterThan(0);
+      expect(tokens.every((token) => token.revokedAt !== null)).toBe(true);
+    });
+
+    it('should reject invalid current password', async () => {
+      await expect(authService.changePassword(testUserId, 'WrongPass123!', newPassword))
+        .rejects.toEqual({ code: 'UNAUTHORIZED', message: 'Invalid current password' });
+    });
+  });
+
   describe('Email Verification', () => {
     beforeEach(async () => {
       const result = await authService.register({

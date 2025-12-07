@@ -144,6 +144,25 @@ describe('Auth E2E', () => {
     expect(loginNew.body).toHaveProperty('refreshToken');
   });
 
+  it('change-password updates password for authenticated users', async () => {
+    await registerUser();
+    const login = await session
+      .post('/auth/login')
+      .send({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD })
+      .expect(200);
+    const access = login.body.accessToken as string;
+
+    await session
+      .post('/auth/change-password')
+      .set('Authorization', `Bearer ${access}`)
+      .send({ currentPassword: DEFAULT_PASSWORD, newPassword: 'BrandNew1!' })
+      .expect(200);
+
+    await session.post('/auth/login').send({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD }).expect(401);
+
+    await session.post('/auth/login').send({ email: DEFAULT_EMAIL, password: 'BrandNew1!' }).expect(200);
+  });
+
   it('verify-email marks user as verified', async () => {
     const reg = await session
       .post('/auth/register')

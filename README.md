@@ -1,26 +1,26 @@
-# 🏄 Blobinfini – Monorepo IA
+# 🏄 BlobConnect – Monorepo IA
 
 ## 📋 Mission pour l'IA
 
-Ce monorepo contient la version vivante de Blobinfini, marketplace de mise en relation pour les sports de glisse (surf/kitesurf).
+Ce monorepo contient la version vivante de BlobConnect, marketplace de mise en relation pour les sports de glisse (surf/kitesurf).
 
 **Votre mission** : Contribuer directement ici. Ignorez l'ancien projet `/blobevolution` (archivé). Pour un rappel historique uniquement, consultez `ai/context/migration_from_blobevolution.md`.
 
 **Référence IA** : Ce README, `AGENTS.md` et `claude.md` sont les guides officiels pour nos IA (Codex, ChatGPT-5, Claude Code) et l’équipe humaine.
 
-**Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de Blobinfini via du contenu partageable (SEO + réseaux sociaux).
+**Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de BlobConnect via du contenu partageable (SEO + réseaux sociaux).
 
 ## 🎯 Vision Produit
 
-Blobinfini connecte les passionnés de sports de glisse en proposant :
+BlobConnect connecte les passionnés de sports de glisse en proposant :
 
 - **Matching intelligent** entre riders basé sur géolocalisation, niveau et disponibilités
 - **Réservation de cours** avec moniteurs professionnels certifiés
 - **Paiements en ligne** (désactivés temporairement le temps de repenser l’intégration Stripe)
 - **Messagerie intégrée** avec filtrage anti-contournement
-- **Gamification** : Points "Flocons d'avoine", badges, mascotte Blob personnalisable
+- **(Reporté)** Gamification communautaire (systèmes de points/badges) – hors scope MVP
 - **Carte interactive** (BloboMap) montrant groupes et spots en temps réel
-- **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de Blobinfini
+- **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de BlobConnect
 
 ### Utilisateurs cibles
 
@@ -277,7 +277,7 @@ model User {
 - [ ] **Migration auth vers service dédié**
 - [ ] Multi-sports (windsurf, paddle)
 - [ ] API publique REST/GraphQL
-- [ ] Chatbot IA (Blobot)
+- [ ] Chatbot IA (Blobot – R&D, non activé dans le MVP)
 - [ ] Camps/stages réservables
 - [ ] Marketplace équipement
 - [ ] Internationalisation
@@ -700,7 +700,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ## 🌐 Blobosphère – Hub éditorial
 
 ### Objectif produit
-- Amplifier la visibilité de Blobinfini via un espace éditorial riche (articles, interviews, reportages photo).
+- Amplifier la visibilité de BlobConnect via un espace éditorial riche (articles, interviews, reportages photo).
 - Créer un tunnel d’entrée SEO/social : chaque contenu dispose d’URL publiques optimisées et de métadonnées partageables.
 - Offrir aux riders/pros un lien direct depuis leurs univers respectifs pour explorer l’actualité de la communauté.
 
@@ -768,7 +768,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 1. Inscription + vérification email (support rider ou pro).
 2. Configuration du profil et consentement géolocalisation.
 3. Exploration de `/matching`, envoi d’une demande de session et échanges avec le pro.
-4. Validation finale hors plateforme (paiement non géré dans Blobinfini pour le MVP).
+4. Validation finale hors plateforme (paiement non géré dans BlobConnect pour le MVP).
 
 ### Pros (Professionnels)
 
@@ -962,12 +962,9 @@ router.post(
 - Archivage auto après 30 jours inactivité
 - Modération IA contenus inappropriés
 
-### Gamification
+### Gamification (retirée)
 
-- Points "Flocons d'avoine" par action
-- Badges débloquables (Top Rider, Pro Elite)
-- Mascotte Blob personnalisable (accessoires)
-- Événements communautaires (élection Blob)
+> Les mécaniques de points, badges, concours ou mascottes personnalisées sont désactivées pour le MVP afin de concentrer l'équipe sur le matching, la réservation et la Blobosphère.
 
 ## 📚 Documentation Technique
 
@@ -1005,7 +1002,7 @@ router.post(
 
 ---
 
-_Blobinfini - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
+_BlobConnect - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
 
 ## ✍️ Blobosphère – MDX + Git + Décap CMS
 

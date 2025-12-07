@@ -8,6 +8,7 @@ import { validate } from '../../middleware/validate';
 import { passwordSchema } from '../../utils/password-validator';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
+import { createHash } from 'crypto';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -44,6 +45,15 @@ const resetSchema = z.object({
   token: z.string().min(10),
   password: passwordSchema, // P1-3: OWASP-compliant password validation
 });
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(8),
+  newPassword: passwordSchema,
+});
+
+function hashEmail(email: string) {
+  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+}
 
 const verifyEmailSchema = z.object({
   token: z.string().min(10),
@@ -296,6 +306,7 @@ authRouter.post(
   async (req, res) => {
     try {
       const { email } = resendVerifySchema.parse(req.body);
+      secureLogger.info('AUTH_RESEND_VERIFICATION_REQUEST', { emailHash: hashEmail(email) });
       const result = await service.resendEmailVerification(email);
       res.json(result);
     } catch (err: any) {
@@ -336,6 +347,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
 authRouter.post('/forgot-password', async (req, res) => {
   try {
     const { email } = forgotSchema.parse(req.body);
+    secureLogger.info('AUTH_FORGOT_PASSWORD_REQUEST', { emailHash: hashEmail(email) });
     const result = await service.forgotPassword(email);
     res.json(result);
   } catch (err: any) {
@@ -357,6 +369,24 @@ authRouter.post('/reset-password', async (req, res) => {
     }
     if (err?.code === 'UNAUTHORIZED') {
       return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+authRouter.post('/change-password', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+    const result = await service.changePassword(userId, currentPassword, newPassword);
+    res.json(result);
+  } catch (err: any) {
+    if (err?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    if (err?.code === 'UNAUTHORIZED') {
+      return res.status(401).json({ error: err?.message || 'Unauthorized' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }

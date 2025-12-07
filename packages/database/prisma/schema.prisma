@@ -43,6 +43,7 @@ model User {
   auditLogs              AuditLog[]
   pushTokens             PushToken[]
   loginAttempts          LoginAttempt[]
+  createdAlerts          SystemAlert[]            @relation("UserSystemAlerts")
 }
 
 model Session {
@@ -446,6 +447,29 @@ model AuditLog {
   @@index([userId])
 }
 
+model SystemAlert {
+  id             String        @id @default(uuid())
+  type           String
+  message        String
+  severity       AlertSeverity @default(INFO)
+  status         AlertStatus   @default(OPEN)
+  link           String?
+  dedupeKey      String?
+  metadata       Json?
+  createdById    String?
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  createdBy User? @relation("UserSystemAlerts", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@index([dedupeKey])
+}
+
 model LegalConsentArchive {
   id             Int       @id @default(autoincrement())
   originalUserId String
@@ -490,6 +514,18 @@ enum ConversationType {
   RIDER_TO_PRO
   PRO_TO_PRO
   ADMIN_TO_USER
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
 }
 
 enum DecisionKind {

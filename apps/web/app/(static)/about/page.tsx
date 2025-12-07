@@ -16,7 +16,7 @@ export default function AboutPage() {
         </CardHeader>
         <CardContent className="space-y-4 text-sm text-muted-foreground">
           <p>
-            Nous collectons uniquement les données indispensables au fonctionnement de Blobinfini. Aucune donnée de paiement n’est stockée : la mise en relation se fait sans transaction intégrée.
+            Nous collectons uniquement les données indispensables au fonctionnement de BlobConnect. Aucune donnée de paiement n’est stockée : la mise en relation se fait sans transaction intégrée.
           </p>
           <div className="space-y-3">
             <div>
@@ -56,7 +56,7 @@ export default function AboutPage() {
       <Card>
         <CardHeader>
           <CardTitle>Fonctionnement du site</CardTitle>
-          <CardDescription>Choisis ton run : plusieurs parcours cohabitent sur Blobinfini.</CardDescription>
+          <CardDescription>Choisis ton run : plusieurs parcours cohabitent sur BlobConnect.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
           <div>
@@ -81,7 +81,7 @@ export default function AboutPage() {
       <Card>
         <CardHeader>
           <CardTitle>Esprit communauté</CardTitle>
-          <CardDescription>Blobinfini, c’est une tribu de riders et de pros qui partagent la même vibe.</CardDescription>
+          <CardDescription>BlobConnect, c’est une tribu de riders et de pros qui partagent la même vibe.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>Chaque profil est une mise à l’eau possible avec un rider bienveillant.</p>

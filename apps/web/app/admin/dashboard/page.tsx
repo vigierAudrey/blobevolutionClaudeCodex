@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
-import { apiClient, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary } from '../../../lib/apiClient';
+import { apiClient, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary, type SystemAlert } from '../../../lib/apiClient';
 import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity, BookOpen, PenSquare } from 'lucide-react';
 import Link from 'next/link';
 
@@ -47,6 +47,9 @@ export default function AdminDashboard() {
   const [securitySummary, setSecuritySummary] = useState<AdminSecuritySummary | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [systemAlerts, setSystemAlerts] = useState<SystemAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
 
   const loadInsights = useCallback(async () => {
     setInsightsLoading(true);
@@ -65,6 +68,20 @@ export default function AdminDashboard() {
       setInsightsError(message);
     } finally {
       setInsightsLoading(false);
+    }
+  }, []);
+
+  const loadAlerts = useCallback(async () => {
+    setAlertsLoading(true);
+    setAlertsError(null);
+    try {
+      const response = await apiClient.getSystemAlerts({ status: 'OPEN', limit: 3 });
+      setSystemAlerts(response.items ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Impossible de charger les alertes';
+      setAlertsError(message);
+    } finally {
+      setAlertsLoading(false);
     }
   }, []);
 
@@ -95,6 +112,7 @@ export default function AdminDashboard() {
         }
 
         void loadInsights();
+        void loadAlerts();
 
       } catch (err: unknown) {
         console.error('Auth check failed:', err);
@@ -107,7 +125,7 @@ export default function AdminDashboard() {
     };
 
     checkAuth();
-  }, [router, loadInsights]);
+  }, [router, loadInsights, loadAlerts]);
 
   const handleLogout = async () => {
     try {
@@ -484,10 +502,24 @@ export default function AdminDashboard() {
             Alertes système
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="text-sm text-muted-foreground">
-            Aucune alerte pour le moment. La plateforme fonctionne normalement.
-          </div>
+        <CardContent className="space-y-3">
+          {alertsLoading && <p className="text-sm text-muted-foreground">Chargement...</p>}
+          {alertsError && <p className="text-sm text-red-600">{alertsError}</p>}
+          {!alertsLoading && !alertsError && systemAlerts.length === 0 && (
+            <p className="text-sm text-muted-foreground">Aucune alerte pour le moment.</p>
+          )}
+          {systemAlerts.map((alert) => (
+            <div key={alert.id} className="border rounded-md p-3 text-sm space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{alert.type}</span>
+                <span className="text-xs text-muted-foreground">{alert.severity}</span>
+              </div>
+              <p className="text-xs text-muted-foreground line-clamp-2">{alert.message}</p>
+            </div>
+          ))}
+          <Button variant="outline" className="w-full justify-start" asChild>
+            <Link href="/admin/alerts">Voir toutes les alertes</Link>
+          </Button>
         </CardContent>
       </Card>
     </div>

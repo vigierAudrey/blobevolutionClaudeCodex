@@ -30,13 +30,13 @@ export const Vide: Story = {
 export const PresqueBon: Story = {
   name: 'Presque valide',
   args: {
-    statuses: getPasswordRequirementStatuses('Blobinfini1'),
+    statuses: getPasswordRequirementStatuses('BlobConnect1'),
   },
 };
 
 export const Solide: Story = {
   name: 'Mot de passe robuste',
   args: {
-    statuses: getPasswordRequirementStatuses('Blob!nfini42'),
+    statuses: getPasswordRequirementStatuses('BlobC0nnect42'),
   },
 };
