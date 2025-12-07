@@ -103,7 +103,7 @@ function ProOnboardingInner() {
   return (
     <div className="max-w-md mx-auto space-y-4">
       <BackBar fallbackHref="/pro/dashboard" />
-      <h1 className="text-2xl font-semibold">Bienvenue sur Blobinfini Pro !</h1>
+      <h1 className="text-2xl font-semibold">Bienvenue sur BlobConnect Pro !</h1>
       <p className="text-muted-foreground">Complète ces informations obligatoires pour accéder à ton espace professionnel.</p>
 
       {loading ? (

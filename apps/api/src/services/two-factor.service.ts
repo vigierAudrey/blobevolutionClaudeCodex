@@ -1,9 +1,10 @@
 import { cacheService } from './cache.service';
 import { send2FACode } from '../lib/mailer';
+import { secureLogger } from '../utils/secure-logger';
 
-// Memory fallback is only allowed in development, not in tests or production
-const allowMemoryFallback = process.env.NODE_ENV === 'development';
-const memoryStore = allowMemoryFallback ? new Map<string, { code: string; expiresAt: number }>() : null;
+// Memory fallback is allowed outside production (dev + tests) to keep UX smooth; prod must rely on Redis
+const allowMemoryFallback = process.env.NODE_ENV !== 'production';
+export const memoryStore = allowMemoryFallback ? new Map<string, { code: string; expiresAt: number }>() : null;
 
 if (memoryStore && process.env.NODE_ENV !== 'test') {
   setInterval(() => {
@@ -42,19 +43,21 @@ export class TwoFactorService {
       const redisSuccess = await cacheService.set(cacheKey, code, 300);
       if (!redisSuccess) {
         if (!memoryStore) {
-          console.error('Redis indisponible pour le 2FA et aucun fallback autorisé');
+          secureLogger.error('TWO_FACTOR_CACHE_UNAVAILABLE', { userId, cacheKey });
           return {
             success: false,
             message: 'Service 2FA indisponible (cache)'
           };
         }
         memoryStore.set(cacheKey, { code, expiresAt: Date.now() + 300000 });
+        secureLogger.warn('TWO_FACTOR_MEMORY_FALLBACK_USED', { userId, cacheKey });
       }
 
       // Envoyer l'email
       const emailResult = await send2FACode(email, code);
 
       if (emailResult.sent === false) {
+        secureLogger.warn('TWO_FACTOR_EMAIL_FAILED', { userId, cacheKey });
         return {
           success: false,
           message: 'Erreur lors de l\'envoi de l\'email'
@@ -62,7 +65,7 @@ export class TwoFactorService {
       }
 
       if (emailResult.skipped) {
-        console.warn(`2FA code for user ${userId}: ${code} (email skipped - dev mode)`);
+        secureLogger.info('TWO_FACTOR_EMAIL_SKIPPED', { userId, cacheKey });
       }
 
       return {
@@ -70,7 +73,9 @@ export class TwoFactorService {
         message: 'Code envoyé par email'
       };
     } catch (error) {
-      console.error('Erreur envoi code 2FA:', error);
+      secureLogger.error('TWO_FACTOR_SEND_ERROR', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return {
         success: false,
         message: 'Erreur interne'
@@ -122,7 +127,9 @@ export class TwoFactorService {
         message: 'Code valide'
       };
     } catch (error) {
-      console.error('Erreur vérification code 2FA:', error);
+      secureLogger.error('TWO_FACTOR_VERIFY_ERROR', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return {
         valid: false,
         message: 'Erreur interne'
@@ -144,7 +151,9 @@ export class TwoFactorService {
       }
       return false;
     } catch (error) {
-      console.error('Erreur vérification code en attente:', error);
+      secureLogger.error('TWO_FACTOR_PENDING_CHECK_ERROR', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   }
@@ -160,7 +169,9 @@ export class TwoFactorService {
         memoryStore.delete(cacheKey);
       }
     } catch (error) {
-      console.error('Erreur suppression code 2FA:', error);
+      secureLogger.error('TWO_FACTOR_CANCEL_ERROR', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

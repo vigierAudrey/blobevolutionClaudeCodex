@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { BackBar } from '@/components/BackBar';
+import { apiClient } from '@/lib/apiClient';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -18,11 +19,7 @@ export default function ForgotPasswordPage() {
     setStatus('loading');
     setMessage('');
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
+      await apiClient.requestPasswordReset(email);
       setStatus('done');
       setMessage('Si le compte existe, un email de réinitialisation a été envoyé.');
     } catch (err: unknown) {

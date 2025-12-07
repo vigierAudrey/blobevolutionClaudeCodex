@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
-import { buildUpdatePayload } from '@/lib/blobosphere/payload';
+import { buildUpdatePayload, type ParsedUpdatePayload } from '@/lib/blobosphere/payload';
 import { saveMdx, type SaveMdxPayload } from '@/lib/blobosphere/saveMdx';
 import { BLOBOSPHERE_CONTENT_ROOT, ensureCategory, sanitizeSlug } from '@/lib/blobosphere/utils';
 
@@ -35,6 +35,7 @@ export async function GET(
       return NextResponse.json({ error: 'Article introuvable' }, { status: 404 });
     }
     const message = err instanceof Error ? err.message : 'Erreur lecture fichier';
+    console.error('[blobosphere] GET failed', { category: params.category, slug: params.slug, message });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -65,23 +66,24 @@ export async function PUT(
       body: content,
     };
 
-    const overrides = buildUpdatePayload(await req.json());
+    const overrides: ParsedUpdatePayload = buildUpdatePayload(await req.json());
     const targetCategory = overrides.newCategory ?? overrides.category ?? defaultPayload.category;
     const targetSlug = sanitizeSlug(overrides.newSlug ?? overrides.slug ?? defaultPayload.slug);
     const tags = overrides.tags && overrides.tags.length > 0 ? overrides.tags : defaultPayload.tags;
+
     const payload: SaveMdxPayload = {
       ...defaultPayload,
-      title: overrides.title ? overrides.title.trim() : defaultPayload.title,
+      ...(overrides.title && { title: overrides.title.trim() }),
       slug: targetSlug,
       category: targetCategory,
-      excerpt: overrides.excerpt ?? defaultPayload.excerpt,
+      ...(overrides.excerpt !== undefined && { excerpt: overrides.excerpt }),
       tags,
-      status: overrides.status ?? defaultPayload.status,
-      publishedAt: overrides.publishedAt ?? defaultPayload.publishedAt,
+      ...(overrides.status && { status: overrides.status }),
+      ...(overrides.publishedAt && { publishedAt: overrides.publishedAt }),
       updatedAt: overrides.updatedAt ?? new Date().toISOString(),
-      coverImage: overrides.coverImage ?? defaultPayload.coverImage,
-      readingTime: overrides.readingTime ?? defaultPayload.readingTime,
-      body: overrides.body ?? defaultPayload.body,
+      ...(overrides.coverImage !== undefined && { coverImage: overrides.coverImage }),
+      ...(overrides.readingTime !== undefined && { readingTime: overrides.readingTime }),
+      ...(overrides.body !== undefined && { body: overrides.body }),
     };
 
     const newPath = await saveMdx(payload, { overwrite: true });
@@ -97,6 +99,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Article introuvable' }, { status: 404 });
     }
     const message = err instanceof Error ? err.message : 'Erreur lors de la mise à jour';
+    console.error('[blobosphere] PUT failed', { category: params.category, slug: params.slug, message });
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
@@ -120,6 +123,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Article introuvable' }, { status: 404 });
     }
     const message = err instanceof Error ? err.message : 'Erreur lors de la suppression';
+    console.error('[blobosphere] DELETE failed', { category: params.category, slug: params.slug, message });
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

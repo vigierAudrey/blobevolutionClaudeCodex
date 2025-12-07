@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, it, expect, jest, beforeAll, afterAll } from '@jest/globals';
-import { TwoFactorService, twoFactorService } from '../two-factor.service';
+import { TwoFactorService, twoFactorService, memoryStore as twoFactorMemoryStore } from '../two-factor.service';
 import { cacheService } from '../cache.service';
 
 // Mock mailer module
@@ -50,10 +50,7 @@ describe('TwoFactorService', () => {
   afterEach(() => {
     // Clear any memory store entries that might exist
     // Access memory store through any type to avoid type issues
-    const memoryStore = (require('../two-factor.service') as any).memoryStore;
-    if (memoryStore) {
-      memoryStore.clear();
-    }
+    twoFactorMemoryStore?.clear();
   });
 
   describe('Code Generation', () => {
@@ -243,7 +240,7 @@ describe('TwoFactorService', () => {
       const result = await twoFactorServiceInstance.verifyCode(userId, testCode);
 
       expect(result.valid).toBe(false);
-      expect(result.message).toBe('Code incorrect');
+      expect(result.message).toBe('Code expiré ou inexistant');
 
       expect(mockCacheService.del).not.toHaveBeenCalled();
     });
@@ -259,18 +256,15 @@ describe('TwoFactorService', () => {
       mockCacheService.get.mockResolvedValue(null);
 
       // Manually add to memory store to simulate fallback scenario
-      const memoryStore = (require('../two-factor.service') as any).memoryStore;
-      if (memoryStore) {
-        memoryStore.set('2fa:user123', {
-          code: testCode,
-          expiresAt: Date.now() + 300000
-        });
-      }
+      twoFactorMemoryStore?.set('2fa:user123', {
+        code: testCode,
+        expiresAt: Date.now() + 300000
+      });
 
       const result = await twoFactorServiceInstance.verifyCode(userId, testCode);
 
-      expect(result.valid).toBe(false);
-      expect(result.message).toBe('Code incorrect');
+      expect(result.valid).toBe(true);
+      expect(result.message).toBe('Code valide');
       expect(mockCacheService.get).toHaveBeenCalled();
     });
 
@@ -278,18 +272,15 @@ describe('TwoFactorService', () => {
       mockCacheService.get.mockResolvedValue(null);
 
       // Add expired entry to memory store
-      const memoryStore = (require('../two-factor.service') as any).memoryStore;
-      if (memoryStore) {
-        memoryStore.set('2fa:user123', {
-          code: testCode,
-          expiresAt: Date.now() - 1000 // Expired 1 second ago
-        });
-      }
+      twoFactorMemoryStore?.set('2fa:user123', {
+        code: testCode,
+        expiresAt: Date.now() - 1000 // Expired 1 second ago
+      });
 
       const result = await twoFactorServiceInstance.verifyCode(userId, testCode);
 
       expect(result.valid).toBe(false);
-      expect(result.message).toBe('Code incorrect');
+      expect(result.message).toBe('Code expiré ou inexistant');
     });
 
     it('should handle cache service errors', async () => {
@@ -310,21 +301,15 @@ describe('TwoFactorService', () => {
       mockCacheService.get.mockResolvedValue(null);
 
       // Add to memory store
-      const memoryStore = (require('../two-factor.service') as any).memoryStore;
-      if (memoryStore) {
-        memoryStore.set('2fa:user123', {
-          code: testCode,
-          expiresAt: Date.now() + 300000
-        });
-      }
+      twoFactorMemoryStore?.set('2fa:user123', {
+        code: testCode,
+        expiresAt: Date.now() + 300000
+      });
 
       const result = await twoFactorServiceInstance.verifyCode(userId, testCode);
 
-      expect(result.valid).toBe(false);
-
-      if (memoryStore) {
-        expect(memoryStore.has('2fa:user123')).toBe(true);
-      }
+      expect(result.valid).toBe(true);
+      expect(twoFactorMemoryStore?.has('2fa:user123')).toBe(false);
     });
   });
 

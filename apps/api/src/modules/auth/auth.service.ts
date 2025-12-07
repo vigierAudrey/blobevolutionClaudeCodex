@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../../lib/mailer';
 import { secureLogger } from '../../utils/secure-logger';
+import { AVAILABLE_PERMISSIONS } from '../admin/permissions';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
@@ -58,7 +59,13 @@ export class AuthService {
       // Envoi d'email (meilleure-effort)
       try {
         await sendVerificationEmail(user.email, verification.token);
-      } catch (_) {}
+      } catch (error) {
+        secureLogger.warn('EMAIL_SEND_FAILED', {
+          type: 'verification',
+          email: user.email,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return {
         message: 'Account created. Please verify your email.',
         userId: user.id,
@@ -124,13 +131,18 @@ export class AuthService {
     // In tests, ensure admin has an AdminProfile with permissive defaults to satisfy integration tests
     if (process.env.NODE_ENV === 'test' && user.role === 'ADMIN') {
       try {
-        const { AVAILABLE_PERMISSIONS } = await import('../admin/permissions.js');
         await prisma.adminProfile.upsert({
           where: { userId: user.id },
           create: { userId: user.id, permissions: [...AVAILABLE_PERMISSIONS] },
           update: { permissions: [...AVAILABLE_PERMISSIONS] },
         });
-      } catch (_) {}
+      } catch (error) {
+        secureLogger.error('ADMIN_PROFILE_PROVISION_FAILED', {
+          userId: user.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     }
 
     // 2FA admin: enabled in production by default, configurable via AUTH_REQUIRE_2FA
@@ -270,7 +282,13 @@ export class AuthService {
     // Envoi d'email (meilleure-effort)
     try {
       await sendPasswordResetEmail(user.email, rawToken);
-    } catch (_) {}
+    } catch (error) {
+      secureLogger.warn('EMAIL_SEND_FAILED', {
+        type: 'password_reset',
+        email: user.email,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return generic;
   }
 
@@ -306,6 +324,30 @@ export class AuthService {
       }),
     ]);
 
+    secureLogger.info('PASSWORD_RESET_SUCCESS', { userId: match.userId, via: 'token' });
+    return { message: 'Password updated' };
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw { code: 'UNAUTHORIZED', message: 'Unauthorized' };
+
+    const match = await bcrypt.compare(currentPassword, user.password);
+    if (!match) {
+      secureLogger.warn('PASSWORD_CHANGE_INVALID_CURRENT', { userId });
+      throw { code: 'UNAUTHORIZED', message: 'Invalid current password' };
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: userId }, data: { password: hashed } }),
+      prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    secureLogger.info('PASSWORD_CHANGE_SUCCESS', { userId });
     return { message: 'Password updated' };
   }
 
@@ -357,7 +399,13 @@ export class AuthService {
     const res = await this.createEmailVerification(user.id);
     try {
       await sendVerificationEmail(user.email, res.token);
-    } catch (_) {}
+    } catch (error) {
+      secureLogger.warn('EMAIL_SEND_FAILED', {
+        type: 'verification_resend',
+        email: user.email,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     if (process.env.NODE_ENV === 'test') {
       return { ...generic, verificationToken: res.token };
     }

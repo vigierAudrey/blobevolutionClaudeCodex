@@ -285,7 +285,7 @@ export class PushNotificationManager {
             Notifications bloquées
           </h3>
           <p class="text-sm text-gray-600 mt-2">
-            Pour recevoir les notifications Blobinfini, active-les dans les paramètres de ton navigateur.
+            Pour recevoir les notifications BlobConnect, active-les dans les paramètres de ton navigateur.
           </p>
         </div>
         <div class="text-xs text-gray-500 space-y-1">
@@ -329,7 +329,7 @@ export class PushNotificationManager {
           'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`
         },
         body: JSON.stringify({
-          title: '🧪 Test Blobinfini',
+          title: '🧪 Test BlobConnect',
           body: 'Si tu vois ça, les notifications fonctionnent ! 🎉',
           type: 'general'
         })

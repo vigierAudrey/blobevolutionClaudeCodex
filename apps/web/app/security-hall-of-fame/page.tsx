@@ -2,8 +2,8 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Hall of Fame - Blobinfini Security',
-  description: 'Nos contributeurs sécurité - Chercheurs qui ont aidé à sécuriser Blobinfini',
+  title: 'Hall of Fame - BlobConnect Security',
+  description: 'Nos contributeurs sécurité - Chercheurs qui ont aidé à sécuriser BlobConnect',
 };
 
 // Type pour un contributeur
@@ -143,7 +143,7 @@ export default function SecurityHallOfFamePage() {
             Nos héros de la cybersécurité
           </p>
           <p className="text-gray-700 max-w-2xl mx-auto">
-            Ces chercheurs en sécurité ont contribué à rendre Blobinfini plus sûr.
+            Ces chercheurs en sécurité ont contribué à rendre BlobConnect plus sûr.
             Nous les remercions chaleureusement pour leur travail et leur divulgation responsable.
           </p>
 
@@ -187,7 +187,7 @@ export default function SecurityHallOfFamePage() {
                 Soyez le premier contributeur !
               </h2>
               <p className="text-gray-700 mb-6 max-w-md mx-auto">
-                Notre programme de bug bounty vient de démarrer. Aidez-nous à sécuriser Blobinfini
+                Notre programme de bug bounty vient de démarrer. Aidez-nous à sécuriser BlobConnect
                 et devenez le premier membre de notre Hall of Fame !
               </p>
               <div className="flex flex-col sm:flex-row justify-center gap-4">
@@ -226,7 +226,7 @@ export default function SecurityHallOfFamePage() {
           <ol className="space-y-3">
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm font-bold mr-3">1</span>
-              <span>Trouvez une vulnérabilité de sécurité sur Blobinfini (dans le scope autorisé)</span>
+              <span>Trouvez une vulnérabilité de sécurité sur BlobConnect (dans le scope autorisé)</span>
             </li>
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>

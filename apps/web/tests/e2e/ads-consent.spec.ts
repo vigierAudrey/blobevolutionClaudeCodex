@@ -90,7 +90,7 @@ test.describe('Consent-driven ads', () => {
     await bootstrapConsent(context, 'none');
     await page.goto('/matching');
 
-    await expect(page.getByText(/Blobinfini House Ads/i)).toBeVisible();
+    await expect(page.getByText(/BlobConnect House Ads/i)).toBeVisible();
     await expect(page.locator('ins.adsbygoogle')).toHaveCount(0);
 
     const scriptLoaded = await page.evaluate(() => !!document.querySelector('script[data-blobinfini="adsense"]'));

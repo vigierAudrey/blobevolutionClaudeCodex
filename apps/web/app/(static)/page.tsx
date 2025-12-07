@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'Blobinfini — Communauté Surf & Kite',
+  title: 'BlobConnect — Communauté Surf & Kite',
   description:
     'Rejoins la communauté surf & kite : trouve des partenaires, réserve un cours et organise tes sessions facilement.',
 };

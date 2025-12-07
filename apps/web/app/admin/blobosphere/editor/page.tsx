@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import matter from 'gray-matter';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../../../../lib/apiClient';
@@ -38,7 +38,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
   return data as T;
 }
 
-export default function BlobosphereEditorPage() {
+function BlobosphereEditorContent() {
   const router = useRouter();
   const params = useSearchParams();
   const [loading, setLoading] = useState(true);
@@ -359,5 +359,13 @@ export default function BlobosphereEditorPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function BlobosphereEditorPage() {
+  return (
+    <Suspense fallback={<div className="max-w-6xl mx-auto p-6">Chargement de l'éditeur...</div>}>
+      <BlobosphereEditorContent />
+    </Suspense>
   );
 }

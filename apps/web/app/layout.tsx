@@ -1,13 +1,14 @@
 import type { Metadata } from 'next';
-import dynamic from 'next/dynamic';
+import dynamicImport from 'next/dynamic';
 import Script from 'next/script';
 import './globals.css';
 import ClientProvider from '@/components/ui/ClientProvider';
 import { ThemeScript } from '@/components/theme/ThemeScript';
 
 // Force dynamic rendering for all pages (no static generation)
+export const dynamic = 'force-dynamic';
 export const dynamicParams = true;
-const CookieConsent = dynamic(
+const CookieConsent = dynamicImport(
   () => import('../components/cookies/CookieConsent').then((mod) => mod.CookieConsent),
   { ssr: false },
 );
@@ -16,7 +17,7 @@ const CookieConsent = dynamic(
 // Static pages in (static)/ use ISR with revalidate=300 and avoid using contexts
 
 export const metadata: Metadata = {
-  title: 'Blobinfini — Auth',
+  title: 'BlobConnect — Auth',
   description: 'Inscription, connexion et gestion du compte',
   icons: {
     icon: '/favicon.ico',

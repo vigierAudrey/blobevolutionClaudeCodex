@@ -293,6 +293,34 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
 
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Met à jour le mot de passe d'un utilisateur authentifié
+      operationId: authChangePassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Mot de passe mis à jour
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/2fa/send:
     post:
       tags: [Auth]
@@ -2815,6 +2843,14 @@ components:
         token:
           type: string
         password:
+          type: string
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
           type: string
     TwoFactorSendRequest:
       type: object

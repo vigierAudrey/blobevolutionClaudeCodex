@@ -6,18 +6,21 @@ describe('Profile E2E', () => {
   const app = createApp();
   let accessToken = '';
   let session: TestSession;
+  const testEmail = `profile-test-${Date.now()}@test.com`;
 
   const seedProfileUser = async () => {
-    await prisma.refreshToken.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.passwordResetToken.deleteMany();
-    await prisma.emailVerificationToken.deleteMany();
-    await prisma.riderProfile.deleteMany();
-    await prisma.user.deleteMany();
+    // Nettoyage ciblé: seulement les données de ce test
+    const existingUser = await prisma.user.findUnique({ where: { email: testEmail } });
+    if (existingUser) {
+      await prisma.refreshToken.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.session.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.riderProfile.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.user.delete({ where: { id: existingUser.id } });
+    }
 
     const auth = await getAccessToken({
       app,
-      email: 'p@test.com',
+      email: testEmail,
       role: Role.RIDER,
     });
     accessToken = auth.accessToken;
@@ -29,6 +32,13 @@ describe('Profile E2E', () => {
   });
 
   afterAll(async () => {
+    const existingUser = await prisma.user.findUnique({ where: { email: testEmail } });
+    if (existingUser) {
+      await prisma.refreshToken.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.session.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.riderProfile.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.user.delete({ where: { id: existingUser.id } });
+    }
     await prisma.$disconnect();
   });
 

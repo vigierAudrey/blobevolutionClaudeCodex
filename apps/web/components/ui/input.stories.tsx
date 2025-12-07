@@ -11,7 +11,7 @@ const meta: Meta<typeof Input> = {
   parameters: {
     docs: {
       description: {
-        component: 'Champ de saisie standard utilisé dans les formulaires Blobinfini (auth, matching, réservation…).',
+        component: 'Champ de saisie standard utilisé dans les formulaires BlobConnect (auth, matching, réservation…).',
       },
     },
   },

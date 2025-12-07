@@ -1,13 +1,16 @@
 "use client";
 
 export const dynamic = 'force-dynamic';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { BackBar } from '@/components/BackBar';
+import { apiClient } from '@/lib/apiClient';
+import { PasswordRequirementsList } from '@/components/PasswordRequirementsList';
+import { getPasswordRequirementStatuses } from '../../../../api/src/utils/password-validator';
 
 function ResetPasswordInner() {
   const search = useSearchParams();
@@ -16,6 +19,7 @@ function ResetPasswordInner() {
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const passwordStatuses = useMemo(() => getPasswordRequirementStatuses(password), [password]);
 
   useEffect(() => {
     const t = search.get('token');
@@ -27,11 +31,7 @@ function ResetPasswordInner() {
     setStatus('loading');
     setMessage('');
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
-      });
+      await apiClient.resetPassword({ token, password });
       setStatus('done');
       setMessage('Mot de passe mis à jour. Tu peux te connecter.');
     } catch (err: unknown) {
@@ -59,6 +59,7 @@ function ResetPasswordInner() {
               <Label htmlFor="password">Nouveau mot de passe</Label>
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
+            <PasswordRequirementsList statuses={passwordStatuses} />
             <Button type="submit" disabled={!token || !password || status === 'loading'} className="w-full">
               {status === 'loading' ? 'Mise à jour…' : 'Mettre à jour'}
             </Button>

@@ -23,6 +23,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
 import type { Level } from '@/types/matching';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../components/cookies/CookieConsent';
+import { ChangePasswordCard } from './ChangePasswordCard';
 
 type SexOption = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
 type LevelOption = '' | Level;
@@ -608,6 +609,8 @@ export default function ProfilePage() {
 
           </CardContent>
         </Card>
+
+        <ChangePasswordCard />
 
         {/* Privacy and Data Section */}
         <Card>
