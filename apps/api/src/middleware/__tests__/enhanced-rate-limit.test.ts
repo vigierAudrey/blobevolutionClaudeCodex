@@ -6,6 +6,9 @@ import { Express } from 'express';
 // Mock environment variables for testing
 const originalEnv = process.env;
 
+const loadRateLimitModule = () =>
+  jest.requireActual<typeof import('../enhanced-rate-limit')>('../enhanced-rate-limit');
+
 beforeEach(() => {
   jest.resetModules();
   process.env = {
@@ -48,13 +51,13 @@ describe('Enhanced Rate Limiting', () => {
 
       // Should fail due to CSRF, not rate limiting
       expect(response.status).toBe(403);
-      expect(response.body.error).toBe('CSRF_NO_TOKEN');
+      expect(response.body.error).toBe('CSRF_NO_SECRET');
     });
   });
 
   describe('Rate limiting configuration', () => {
-    it('should provide correct rate limit profiles', async () => {
-      const { RATE_LIMIT_PROFILES } = await import('../enhanced-rate-limit');
+    it('should provide correct rate limit profiles', () => {
+      const { RATE_LIMIT_PROFILES } = loadRateLimitModule();
 
       expect(RATE_LIMIT_PROFILES.AUTH.max).toBe(5);
       expect(RATE_LIMIT_PROFILES.AUTH.windowMs).toBe(15 * 60 * 1000);
@@ -75,8 +78,8 @@ describe('Enhanced Rate Limiting', () => {
       expect(RATE_LIMIT_PROFILES.GLOBAL.windowMs).toBe(15 * 60 * 1000);
     });
 
-    it('should have appropriate error messages for each profile', async () => {
-      const { RATE_LIMIT_PROFILES } = await import('../enhanced-rate-limit');
+    it('should have appropriate error messages for each profile', () => {
+      const { RATE_LIMIT_PROFILES } = loadRateLimitModule();
 
       expect(RATE_LIMIT_PROFILES.AUTH.message.error).toBe('AUTH_RATE_LIMIT_EXCEEDED');
       expect(RATE_LIMIT_PROFILES.REGISTRATION.message.error).toBe('REGISTRATION_RATE_LIMIT_EXCEEDED');
@@ -111,8 +114,8 @@ describe('Enhanced Rate Limiting', () => {
   });
 
   describe('Rate limiter factory functions', () => {
-    it('should create rate limiters with correct configurations', async () => {
-      const { rateLimiters } = await import('../enhanced-rate-limit');
+    it('should create rate limiters with correct configurations', () => {
+      const { rateLimiters } = loadRateLimitModule();
 
       // Test that all rate limiters exist as middleware functions
       expect(typeof rateLimiters.auth).toBe('function');
@@ -160,7 +163,7 @@ describe('Enhanced Rate Limiting', () => {
 
   describe('Custom rate limiter creation', () => {
     it('should allow custom options override', async () => {
-      const { createRateLimiter } = await import('../enhanced-rate-limit');
+      const { createRateLimiter } = loadRateLimitModule();
 
       // Create a custom rate limiter with overridden options
       const customLimiter = createRateLimiter('API_STANDARD', {
@@ -174,7 +177,7 @@ describe('Enhanced Rate Limiting', () => {
 
   describe('Key generation', () => {
     it('should generate different keys for authenticated vs unauthenticated users', async () => {
-      const { createRateLimiter } = await import('../enhanced-rate-limit');
+      const { createRateLimiter } = loadRateLimitModule();
 
       // Create a rate limiter
       const limiter = createRateLimiter('API_STANDARD');
@@ -206,7 +209,7 @@ describe('Enhanced Rate Limiting', () => {
     it('should skip rate limiting for trusted IPs when configured', async () => {
       process.env.TRUSTED_IPS = '127.0.0.1,192.168.1.1';
 
-      const { createRateLimiter } = await import('../enhanced-rate-limit');
+      const { createRateLimiter } = loadRateLimitModule();
       const limiter = createRateLimiter('API_STANDARD');
 
       expect(typeof limiter).toBe('function');
@@ -218,7 +221,7 @@ describe('Enhanced Rate Limiting', () => {
 
   describe('Error handling and monitoring', () => {
     it('should provide structured error responses', async () => {
-      const { RATE_LIMIT_PROFILES } = await import('../enhanced-rate-limit');
+      const { RATE_LIMIT_PROFILES } = loadRateLimitModule();
 
       // Verify error message structure
       const authProfile = RATE_LIMIT_PROFILES.AUTH;
@@ -234,7 +237,7 @@ describe('Enhanced Rate Limiting', () => {
 
   describe('Cleanup functionality', () => {
     it('should provide cleanup function for graceful shutdown', async () => {
-      const { closeRateLimitStore } = await import('../enhanced-rate-limit');
+      const { closeRateLimitStore } = loadRateLimitModule();
 
       // Should not throw when called without Redis connection
       await expect(closeRateLimitStore()).resolves.toBeUndefined();

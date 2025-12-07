@@ -1,9 +1,44 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth } from '../auth/auth.guard';
-import { prisma } from '@blobinfini/database';
 
 export const conversationsRouter = Router();
+
+const conversationMemberSelect = {
+  conversation: {
+    select: {
+      id: true,
+      type: true,
+      updatedAt: true,
+      match: {
+        select: { userOneId: true, userTwoId: true },
+      },
+      messages: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { content: true, createdAt: true },
+      },
+      members: { select: { userId: true } },
+    },
+  },
+  lastReadAt: true,
+  trashedAt: true,
+  favoritedAt: true,
+  blockedAt: true,
+} as const;
+
+type ConversationMemberWithRelations = Prisma.ConversationMemberGetPayload<{
+  select: typeof conversationMemberSelect;
+}>;
+type ConversationParticipant = ConversationMemberWithRelations['conversation']['members'][number];
+type BasicUserSummary = Prisma.UserGetPayload<{ select: { id: true; role: true } }>;
+type ProProfileSummary = Prisma.ProProfileGetPayload<{
+  select: { userId: true; businessName: true; photoUrl: true };
+}>;
+type RiderProfileSummary = Prisma.RiderProfileGetPayload<{
+  select: { userId: true; displayName: true; photoUrl: true };
+}>;
 
 // List conversations with last message + unread count (excludes trashed by default)
 conversationsRouter.get('/', requireAuth, async (req, res) => {
@@ -13,89 +48,125 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
     const includeTrashed = String(req.query.includeTrashed || 'false').toLowerCase() === 'true';
     const convType = req.query.type as string | undefined; // 'RIDER_TO_RIDER' | 'RIDER_TO_PRO'
 
-    const convs = await prisma.conversationMember.findMany({
+    const convs: ConversationMemberWithRelations[] = await prisma.conversationMember.findMany({
       where: { userId, ...(includeTrashed ? {} : { trashedAt: null }) },
-      select: {
-        conversation: {
-          select: {
-            id: true,
-            type: true,
-            updatedAt: true,
-            match: {
-              select: { userOneId: true, userTwoId: true },
-            },
-            messages: {
-              orderBy: { createdAt: 'desc' },
-              take: 1,
-              select: { content: true, createdAt: true },
-            },
-            members: { select: { userId: true } },
-          },
-        },
-        lastReadAt: true,
-        trashedAt: true,
-        favoritedAt: true,
-        blockedAt: true,
-      },
+      select: conversationMemberSelect,
       orderBy: { conversation: { updatedAt: 'desc' } },
     });
 
     // Filter by conversation type if specified
-    const filteredConvs = convType ? convs.filter(cm => cm.conversation.type === convType) : convs;
+    const filteredConvs: ConversationMemberWithRelations[] = convType
+      ? convs.filter((cm: ConversationMemberWithRelations) => cm.conversation.type === convType)
+      : convs;
 
-    // Decorate with other user's displayName and unread count
-    const results = [] as any[];
-    for (const cm of filteredConvs) {
+    // === QUERY BATCHING: Load all data in 4 queries instead of N×4 ===
+
+    // Step 1: Extract all other user IDs
+    const otherUserIds = filteredConvs
+      .map((cm: ConversationMemberWithRelations) =>
+        cm.conversation.members.find((m: ConversationParticipant) => m.userId !== userId)?.userId
+      )
+      .filter((id): id is string => !!id);
+
+    // Step 2: Batch load all users (1 query)
+    const users: BasicUserSummary[] = otherUserIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: otherUserIds } },
+          select: { id: true, role: true }
+        })
+      : [];
+
+    // Step 3: Separate PRO and RIDER IDs
+    const proIds = users.filter((u: BasicUserSummary) => u.role === 'PRO').map((u: BasicUserSummary) => u.id);
+    const riderIds = users.filter((u: BasicUserSummary) => u.role !== 'PRO').map((u: BasicUserSummary) => u.id);
+
+    // Step 4: Batch load PRO profiles (1 query)
+    const proProfiles: ProProfileSummary[] = proIds.length > 0
+      ? await prisma.proProfile.findMany({
+          where: { userId: { in: proIds } },
+          select: { userId: true, businessName: true, photoUrl: true }
+        })
+      : [];
+
+    // Step 5: Batch load RIDER profiles (1 query)
+    const riderProfiles: RiderProfileSummary[] = riderIds.length > 0
+      ? await prisma.riderProfile.findMany({
+          where: { userId: { in: riderIds } },
+          select: { userId: true, displayName: true, photoUrl: true }
+        })
+      : [];
+
+    // Step 6: Batch load unread counts with a single query (1 query)
+    const conversationIds = filteredConvs.map((cm: ConversationMemberWithRelations) => cm.conversation.id);
+    const unreadCountsRaw = conversationIds.length > 0
+      ? await prisma.$queryRaw<Array<{ conversationId: string; count: bigint }>>`
+          SELECT
+            m."conversationId",
+            COUNT(*) as count
+          FROM "Message" m
+          INNER JOIN "ConversationMember" cm ON cm."conversationId" = m."conversationId"
+          WHERE
+            m."conversationId" IN (${Prisma.join(conversationIds)})
+            AND m."senderId" != ${userId}
+            AND cm."userId" = ${userId}
+            AND (cm."lastReadAt" IS NULL OR m."createdAt" > cm."lastReadAt")
+          GROUP BY m."conversationId"
+        `
+      : [];
+
+    // Step 7: Create lookup maps for O(1) access
+    const userMap = new Map<string, BasicUserSummary>(users.map((u: BasicUserSummary) => [u.id, u]));
+    const proMap = new Map<string, ProProfileSummary>(
+      proProfiles.map((p: ProProfileSummary) => [p.userId, p])
+    );
+    const riderMap = new Map<string, RiderProfileSummary>(
+      riderProfiles.map((r: RiderProfileSummary) => [r.userId, r])
+    );
+    const unreadMap = new Map<string, number>(
+      unreadCountsRaw.map((u: { conversationId: string; count: bigint }) => [u.conversationId, Number(u.count)])
+    );
+
+    // Step 8: Build results without additional DB queries
+    const results = filteredConvs.map((cm: ConversationMemberWithRelations) => {
       const conv = cm.conversation;
-      const otherId = conv.members.find((m) => m.userId !== userId)?.userId;
+      const otherId = conv.members.find((m: ConversationParticipant) => m.userId !== userId)?.userId;
 
-      // Get the appropriate profile based on conversation type
       let otherDisplayName = 'Profil';
       let otherRole = 'RIDER';
+      let otherPhotoUrl: string | null = null;
 
       if (otherId) {
-        const otherUser = await prisma.user.findUnique({
-          where: { id: otherId },
-          select: { role: true }
-        });
-        otherRole = otherUser?.role || 'RIDER';
+        const user = userMap.get(otherId);
+        otherRole = user?.role || 'RIDER';
 
         if (otherRole === 'PRO') {
-          const proProfile = await prisma.proProfile.findUnique({
-            where: { userId: otherId },
-            select: { businessName: true }
-          });
+          const proProfile = proMap.get(otherId);
           otherDisplayName = proProfile?.businessName || 'Professionnel';
+          otherPhotoUrl = proProfile?.photoUrl || null;
         } else {
-          const riderProfile = await prisma.riderProfile.findUnique({
-            where: { userId: otherId },
-            select: { displayName: true }
-          });
+          const riderProfile = riderMap.get(otherId);
           otherDisplayName = riderProfile?.displayName || 'Rider';
+          otherPhotoUrl = riderProfile?.photoUrl || null;
         }
       }
 
-      const unread = await prisma.message.count({
-        where: {
-          conversationId: conv.id,
-          senderId: { not: userId },
-          createdAt: cm.lastReadAt ? { gt: cm.lastReadAt } : undefined,
-        },
-      });
+      const unread = unreadMap.get(conv.id) || 0;
 
-      results.push({
+      return {
         id: conv.id,
         type: conv.type,
         otherDisplayName,
         otherRole,
+        otherPhotoUrl,
         lastMessage: conv.messages[0]?.content ?? '',
         lastAt: conv.messages[0]?.createdAt ?? conv.updatedAt,
         unread,
         trashed: !!cm.trashedAt,
         favorite: !!cm.favoritedAt,
         blocked: !!cm.blockedAt,
-      });
-    }
+      };
+    });
+
     return res.json({ items: results });
   } catch (e) {
     console.error('Conversations list error:', e);
@@ -152,7 +223,9 @@ conversationsRouter.post('/:id/unmatch', requireAuth, async (req, res) => {
     const id = req.params.id;
     const conv = await prisma.conversation.findUnique({ where: { id }, include: { match: true, members: true } });
     if (!conv) return res.status(404).json({ error: 'Not found' });
-    if (!conv.members.some((m) => m.userId === userId)) return res.status(403).json({ error: 'Forbidden' });
+    if (!conv.members.some((m: { userId: string }) => m.userId === userId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     if (conv.matchId) await prisma.match.update({ where: { id: conv.matchId }, data: { status: 'UNMATCHED' } });
     return res.json({ ok: true });
   } catch { return res.status(500).json({ error: 'Internal error' }); }
@@ -236,7 +309,7 @@ conversationsRouter.post('/open', requireAuth, async (req, res) => {
       select: { conversationId: true },
       take: 2000,
     });
-    const convIds = myMemberships.map((m) => m.conversationId);
+    const convIds = myMemberships.map((m: { conversationId: string }) => m.conversationId);
     if (convIds.length > 0) {
       const exists = await prisma.conversationMember.findFirst({
         where: { conversationId: { in: convIds }, userId: body.targetUserId },

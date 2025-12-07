@@ -20,6 +20,7 @@ class CSRFManager {
         headers: {
           'Content-Type': 'application/json',
         },
+        cache: 'no-store', // Désactive le cache HTTP
       });
 
       if (!response.ok) {
@@ -83,6 +84,7 @@ export async function apiRequest(
     ...options,
     credentials: 'include', // Always include cookies
     headers,
+    cache: 'no-store', // Désactive le cache HTTP pour éviter les conflits entre profils
   };
 
   try {

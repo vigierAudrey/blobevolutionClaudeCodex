@@ -7,15 +7,26 @@ jest.mock('leaflet', () => {
   Object.assign(FakeIconDefault.prototype, { _getIconUrl: jest.fn() });
   (FakeIconDefault as any).mergeOptions = jest.fn();
 
+  class FakeMarker {
+    getLatLng() {
+      return { lat: 0, lng: 0 };
+    }
+  }
+
+  const divIcon = jest.fn((options: unknown) => ({ options }));
+
+  const exports = {
+    Icon: {
+      Default: FakeIconDefault,
+    },
+    Marker: FakeMarker,
+    divIcon,
+  };
+
   return {
     __esModule: true,
-    default: {
-      Icon: {
-        Default: FakeIconDefault,
-      },
-      divIcon: jest.fn((options: unknown) => ({ options })),
-    },
-    divIcon: jest.fn((options: unknown) => ({ options })),
+    default: exports,
+    ...exports,
   };
 });
 
@@ -133,11 +144,11 @@ describe('LocationPickerMap', () => {
     expect(instance).toBeDefined();
 
     act(() => {
-      instance?.eventHandlers?.dragend?.({
-        target: {
-          getLatLng: () => ({ lat: 44.1234567, lng: -1.6543219 }),
-        },
-      } as any);
+      const leafletModule: any = jest.requireMock('leaflet');
+      const MarkerClass = leafletModule.default?.Marker || leafletModule.Marker;
+      const target = new MarkerClass();
+      target.getLatLng = () => ({ lat: 44.1234567, lng: -1.6543219 });
+      instance?.eventHandlers?.dragend?.({ target } as any);
     });
 
     expect(onChange).toHaveBeenCalledWith({ lat: 44.123457, lng: -1.654322 });

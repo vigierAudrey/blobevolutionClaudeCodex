@@ -1,14 +1,35 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { requireAuth } from '../auth/auth.guard';
 import { validate } from '../../middleware/validate';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
+import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
 import { lookup as mimeLookup, extension as mimeExtension } from 'mime-types';
 import crypto from 'crypto';
 import { cacheService, CacheKeys } from '../../services/cache.service';
+import { gdprExportService } from '../../services/gdpr-export.service';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 export const profileRouter = Router();
+
+// GDPR Export rate limiter: max 3 exports per hour per user
+const exportRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  message: 'Trop de demandes d\'export. Veuillez réessayer dans une heure.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Rate limit per authenticated user
+    const userId = (req as any).user?.id;
+    if (userId) {
+      return `user:${userId}`;
+    }
+    const ip = req.ip || req.socket?.remoteAddress;
+    return ip ? ipKeyGenerator(ip) : 'anonymous';
+  },
+});
 
 const sexEnum = z.enum(['FEMALE', 'MALE', 'OTHER', 'UNSPECIFIED']);
 
@@ -18,12 +39,17 @@ const upsertSchema = z.object({
   sex: sexEnum.optional(),
   maxDistanceKm: z.number().int().min(1).max(500).optional(),
   emailNotif: z.boolean().optional(),
-  photoUrl: z.string().url().optional(),
+  photoUrl: z.string().url().nullable().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   // Lesson intent (visible on BloboMap Pro)
   wantsLesson: z.boolean().optional(),
-  lessonSport: z.enum(['surf','kitesurf']).optional(),
+  lessonSport: z.enum(['surf','kitesurf']).nullable().optional().or(z.literal('').transform(() => null)),
+  lessonLevel: z.enum(['beginner','intermediate','advanced']).nullable().optional().or(z.literal('').transform(() => null)),
+  lessonDate: z.string().nullish().transform(val => (val && val !== '') ? new Date(val) : null),
+  lessonPlace: z.string().max(200).nullable().optional().or(z.literal('').transform(() => null)),
+  lessonStudentCount: z.number().int().min(1).max(6).nullable().optional(),
+  blobosphereContributor: z.boolean().optional(),
 });
 
 const adminUpsertSchema = z.object({
@@ -82,6 +108,9 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+    // Log incoming request
+    console.log('📥 PUT /profile/me - Raw body:', JSON.stringify(req.body, null, 2));
+
     // Récupérer le rôle de l'utilisateur
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -103,8 +132,9 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
       return res.json(ap);
     } else {
       // Comportement existant pour les riders
-      const body = upsertSchema.parse(req.body);
-      console.log('Updating profile for user:', userId, 'with data:', body);
+      // Body is already validated and parsed by the validate middleware
+      const body = req.body;
+      console.log('✅ Using validated body:', JSON.stringify(body, null, 2));
       const rp = await prisma.riderProfile.upsert({
         where: { userId },
         create: { userId, ...body },
@@ -210,5 +240,195 @@ profileRouter.post('/photo/upload-url', requireAuth, validate(z.object({ content
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// GDPR Data Export endpoint (Article 20 - Right to data portability)
+profileRouter.get('/export', requireAuth, exportRateLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Extract IP for audit logging
+    const ips = (req as any).ips as string[] | undefined;
+    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+
+    // Generate export data
+    const exportData = await gdprExportService.exportUserData(userId, ip);
+
+    // Set appropriate headers for JSON download
+    const filename = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    // Send the data
+    return res.json(exportData);
+  } catch (err: any) {
+    // eslint-disable-next-line no-console
+    console.error('GDPR export error', err);
+    return res.status(500).json({ error: 'Erreur lors de l\'export de vos données' });
+  }
+});
+
+// GDPR Account Deletion - Request deletion with 30-day grace period
+profileRouter.post('/delete-account', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Check if account is already marked for deletion
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true, email: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.deletedAt) {
+      return res.status(400).json({
+        error: 'Account already scheduled for deletion',
+        deletedAt: user.deletedAt,
+        deletionDate: new Date(user.deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
+      });
+    }
+
+    // Mark account for deletion
+    const now = new Date();
+    const deletionDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { deletedAt: now },
+    });
+
+    // Log the deletion request for audit
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'ACCOUNT_DELETION_REQUESTED',
+        resource: 'User',
+        metadata: {
+          requestedAt: now.toISOString(),
+          scheduledDeletionDate: deletionDate.toISOString(),
+          email: user.email,
+        },
+        ip: (req as any).ip || 'unknown',
+      },
+    });
+
+    await sendAccountDeletionEmail(user.email, deletionDate, 'RIDER');
+
+    return res.json({
+      message: 'Demande de suppression enregistrée',
+      deletedAt: now,
+      deletionDate,
+      daysRemaining: 30,
+    });
+  } catch (err: any) {
+    console.error('Account deletion error', err);
+    return res.status(500).json({ error: 'Erreur lors de la demande de suppression' });
+  }
+});
+
+// GDPR Account Deletion - Cancel deletion request
+profileRouter.post('/cancel-deletion', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true, email: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.deletedAt) {
+      return res.status(400).json({ error: 'No deletion request to cancel' });
+    }
+
+    // Check if still within grace period (30 days)
+    const now = new Date();
+    const daysSinceDeletion = Math.floor((now.getTime() - user.deletedAt.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysSinceDeletion >= 30) {
+      return res.status(400).json({
+        error: 'Grace period expired - account cannot be recovered',
+      });
+    }
+
+    // Cancel deletion
+    await prisma.user.update({
+      where: { id: userId },
+      data: { deletedAt: null },
+    });
+
+    // Log the cancellation
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'ACCOUNT_DELETION_CANCELLED',
+        resource: 'User',
+        metadata: {
+          cancelledAt: now.toISOString(),
+          originalDeletionRequest: user.deletedAt.toISOString(),
+          daysBeforeCancellation: daysSinceDeletion,
+        },
+        ip: (req as any).ip || 'unknown',
+      },
+    });
+
+    await sendAccountDeletionCancelledEmail(user.email, 'RIDER');
+
+    return res.json({
+      message: 'Suppression annulée - votre compte est réactivé',
+      cancelledAt: now,
+    });
+  } catch (err: any) {
+    console.error('Cancel deletion error', err);
+    return res.status(500).json({ error: 'Erreur lors de l\'annulation' });
+  }
+});
+
+// GDPR Account Deletion - Check deletion status
+profileRouter.get('/deletion-status', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.deletedAt) {
+      return res.json({ scheduled: false });
+    }
+
+    const now = new Date();
+    const deletionDate = new Date(user.deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const daysRemaining = Math.max(0, Math.ceil((deletionDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
+    return res.json({
+      scheduled: true,
+      deletedAt: user.deletedAt,
+      deletionDate,
+      daysRemaining,
+      canCancel: daysRemaining > 0,
+    });
+  } catch (err: any) {
+    console.error('Deletion status error', err);
+    return res.status(500).json({ error: 'Erreur lors de la récupération du statut' });
   }
 });

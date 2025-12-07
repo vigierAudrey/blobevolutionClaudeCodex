@@ -15,9 +15,22 @@ export async function runSeed(client?: PrismaClient) {
   const prisma = client ?? new PrismaClient();
 
   // Cleanup all existing dev data
-  const devEmails = Array.from({length: 20}, (_, i) => `dev+rider${i+1}@test.com`)
-    .concat(Array.from({length: 5}, (_, i) => `dev+pro${i+1}@test.com`))
+  const devEmails = Array.from({length: 32}, (_, i) => `dev+rider${i+1}@test.com`)
+    .concat(Array.from({length: 9}, (_, i) => `dev+pro${i+1}@test.com`))
     .concat(['dev+admin@test.com']);
+
+  const SUPER_ADMIN_PERMISSIONS = [
+    'users.view',
+    'users.suspend',
+    'users.delete',
+    'pros.verify',
+    'pros.manage',
+    'reports.view',
+    'reports.moderate',
+    'analytics.view',
+    'permissions.manage',
+    'system.configure'
+  ];
 
   await prisma.message.deleteMany({
     where: {
@@ -83,6 +96,10 @@ export async function runSeed(client?: PrismaClient) {
     { name: 'Biarritz', lat: 43.4832, lng: -1.5586 },
     { name: 'Hossegor', lat: 43.6613, lng: -1.3976 },
     { name: 'Lacanau', lat: 44.9771, lng: -1.1942 },
+    { name: 'Hourtin', lat: 45.2041, lng: -1.1476 },
+    { name: 'Montalivet', lat: 45.4385, lng: -1.1393 },
+    { name: 'Biscarrosse', lat: 44.4214, lng: -1.2648 },
+    { name: 'Capbreton', lat: 43.642, lng: -1.427 },
     { name: 'La Rochelle', lat: 46.1603, lng: -1.1511 },
     { name: 'Marseille', lat: 43.2965, lng: 5.3698 },
     { name: 'Nice', lat: 43.7102, lng: 7.2620 },
@@ -150,6 +167,9 @@ export async function runSeed(client?: PrismaClient) {
   const riders = [];
   for (let i = 0; i < 20; i++) {
     const location = locations[i % locations.length];
+    const wantsLessonFlag = Math.random() > 0.6;
+    const preferredLessonSport = Math.random() > 0.5 ? Sport.surf : Sport.kitesurf;
+    const lessonStudents = wantsLessonFlag ? (Math.random() > 0.6 ? 2 : 1) : null;
     const rider = await prisma.user.create({
       data: {
         email: `dev+rider${i+1}@test.com`,
@@ -166,8 +186,9 @@ export async function runSeed(client?: PrismaClient) {
             sex: sexes[i % sexes.length],
             emailNotif: Math.random() > 0.3,
             maxDistanceKm: [15, 25, 30, 50, 75][i % 5],
-            wantsLesson: Math.random() > 0.6,
-            lessonSport: Math.random() > 0.5 ? Sport.surf : Sport.kitesurf,
+            wantsLesson: wantsLessonFlag,
+            lessonSport: preferredLessonSport,
+            lessonStudentCount: lessonStudents,
             lat: location.lat + (Math.random() - 0.5) * 0.1, // Petit décalage aléatoire
             lng: location.lng + (Math.random() - 0.5) * 0.1,
           },
@@ -221,6 +242,287 @@ export async function runSeed(client?: PrismaClient) {
 
     const sessionEntries = Array.from({ length: 3 }).map(() => {
       const createdAt = randomDateWithin(60);
+      return {
+        userId: rider.id,
+        createdAt,
+        expiresAt: addHours(createdAt, 6)
+      };
+    });
+    await prisma.session.createMany({ data: sessionEntries });
+
+    riders.push(rider);
+  }
+
+  type SouthWestRiderSeed = {
+    emailSuffix: number;
+    displayName: string;
+    bio: string;
+    sex: Sex;
+    emailNotif: boolean;
+    maxDistanceKm: number;
+    wantsLesson: boolean;
+    lessonSport?: Sport;
+    location: { lat: number; lng: number };
+    disciplines: Array<{ sport: Sport; level: Level }>;
+    preferredSearch: { sport: Sport; level: Level; distanceKm: number };
+    lessonStudentCount?: number;
+  };
+
+  const southWestRiderSeeds: SouthWestRiderSeed[] = [
+    {
+      emailSuffix: 21,
+      displayName: 'Maelys Lacanau',
+      bio: 'Rider locale de Lacanau, toujours au lever du soleil pour peaufiner les take-off.',
+      sex: Sex.FEMALE,
+      emailNotif: true,
+      maxDistanceKm: 30,
+      wantsLesson: false,
+      lessonSport: Sport.surf,
+      location: { lat: 44.981, lng: -1.207 },
+      disciplines: [
+        { sport: Sport.surf, level: Level.advanced },
+        { sport: Sport.kitesurf, level: Level.intermediate }
+      ],
+      preferredSearch: { sport: Sport.surf, level: Level.advanced, distanceKm: 30 }
+    },
+    {
+      emailSuffix: 22,
+      displayName: 'Theo Côte dArgent',
+      bio: 'Glisseur polyvalent, sessions kite en downwind entre Lacanau et Hourtin.',
+      sex: Sex.MALE,
+      emailNotif: true,
+      maxDistanceKm: 40,
+      wantsLesson: true,
+      lessonSport: Sport.kitesurf,
+      lessonStudentCount: 2,
+      location: { lat: 45.209, lng: -1.132 },
+      disciplines: [
+        { sport: Sport.kitesurf, level: Level.advanced },
+        { sport: Sport.surf, level: Level.intermediate }
+      ],
+      preferredSearch: { sport: Sport.kitesurf, level: Level.advanced, distanceKm: 35 }
+    },
+    {
+      emailSuffix: 23,
+      displayName: 'Lena Hourtin',
+      bio: 'Toujours motivée pour initier les nouveaux riders sur le lac dHourtin.',
+      sex: Sex.FEMALE,
+      emailNotif: false,
+      maxDistanceKm: 25,
+      wantsLesson: true,
+      lessonSport: Sport.surf,
+      lessonStudentCount: 1,
+      location: { lat: 45.1905, lng: -1.1483 },
+      disciplines: [
+        { sport: Sport.surf, level: Level.beginner },
+        { sport: Sport.kitesurf, level: Level.beginner }
+      ],
+      preferredSearch: { sport: Sport.kitesurf, level: Level.beginner, distanceKm: 25 }
+    },
+    {
+      emailSuffix: 24,
+      displayName: 'Noah Hourtin',
+      bio: 'Kiter freestyle, je cherche des partenaires pour progresser en handle pass.',
+      sex: Sex.MALE,
+      emailNotif: true,
+      maxDistanceKm: 30,
+      wantsLesson: false,
+      lessonSport: Sport.kitesurf,
+      location: { lat: 45.1957, lng: -1.1671 },
+      disciplines: [
+        { sport: Sport.kitesurf, level: Level.advanced }
+      ],
+      preferredSearch: { sport: Sport.kitesurf, level: Level.advanced, distanceKm: 30 }
+    },
+    {
+      emailSuffix: 25,
+      displayName: 'Iris Montalivet',
+      bio: 'Waves lover, jorganise des sorties surf sunset sur Montalivet.',
+      sex: Sex.FEMALE,
+      emailNotif: true,
+      maxDistanceKm: 20,
+      wantsLesson: false,
+      lessonSport: Sport.surf,
+      location: { lat: 45.4423, lng: -1.1534 },
+      disciplines: [
+        { sport: Sport.surf, level: Level.intermediate }
+      ],
+      preferredSearch: { sport: Sport.surf, level: Level.intermediate, distanceKm: 20 }
+    },
+    {
+      emailSuffix: 26,
+      displayName: 'Yann Medoc',
+      bio: 'Guide local, je partage les bancs de sable secrets de Montalivet.',
+      sex: Sex.MALE,
+      emailNotif: true,
+      maxDistanceKm: 35,
+      wantsLesson: false,
+      lessonSport: Sport.surf,
+      location: { lat: 45.4211, lng: -1.1431 },
+      disciplines: [
+        { sport: Sport.surf, level: Level.advanced }
+      ],
+      preferredSearch: { sport: Sport.surf, level: Level.advanced, distanceKm: 30 }
+    },
+    {
+      emailSuffix: 27,
+      displayName: 'Ariane Biscarrosse',
+      bio: 'Rideuse multisport, toujours partante pour alterner surf et foil sur Biscarrosse.',
+      sex: Sex.FEMALE,
+      emailNotif: true,
+      maxDistanceKm: 40,
+      wantsLesson: true,
+      lessonSport: Sport.kitesurf,
+      lessonStudentCount: 3,
+      location: { lat: 44.4203, lng: -1.2589 },
+      disciplines: [
+        { sport: Sport.surf, level: Level.advanced },
+        { sport: Sport.kitesurf, level: Level.intermediate }
+      ],
+      preferredSearch: { sport: Sport.kitesurf, level: Level.intermediate, distanceKm: 40 }
+    },
+    {
+      emailSuffix: 28,
+      displayName: 'Mathis Bisca',
+      bio: 'Debutant en surf, je cherche des binômes pour progresser en douceur.',
+      sex: Sex.MALE,
+      emailNotif: false,
+      maxDistanceKm: 25,
+      wantsLesson: true,
+      lessonSport: Sport.surf,
+      lessonStudentCount: 2,
+      location: { lat: 44.4051, lng: -1.2825 },
+      disciplines: [
+        { sport: Sport.surf, level: Level.beginner }
+      ],
+      preferredSearch: { sport: Sport.surf, level: Level.beginner, distanceKm: 20 }
+    },
+    {
+      emailSuffix: 29,
+      displayName: 'Cleo Capbreton',
+      bio: 'Mordu de barrels, je surveille la Graviere et Capbreton chaque swell.',
+      sex: Sex.OTHER,
+      emailNotif: true,
+      maxDistanceKm: 20,
+      wantsLesson: false,
+      lessonSport: Sport.surf,
+      location: { lat: 43.6428, lng: -1.4405 },
+      disciplines: [
+        { sport: Sport.surf, level: Level.advanced }
+      ],
+      preferredSearch: { sport: Sport.surf, level: Level.advanced, distanceKm: 20 }
+    },
+    {
+      emailSuffix: 30,
+      displayName: 'Loris Capbreton',
+      bio: 'Kitesurfer strapless, toujours pret pour un roadtrip jusqua Hossegor.',
+      sex: Sex.MALE,
+      emailNotif: true,
+      maxDistanceKm: 45,
+      wantsLesson: false,
+      lessonSport: Sport.kitesurf,
+      location: { lat: 43.6381, lng: -1.4252 },
+      disciplines: [
+        { sport: Sport.kitesurf, level: Level.intermediate }
+      ],
+      preferredSearch: { sport: Sport.kitesurf, level: Level.intermediate, distanceKm: 35 }
+    },
+    {
+      emailSuffix: 31,
+      displayName: 'Soline Hossegor',
+      bio: 'Coach benevole, jaide les rideuses a trouver confiance sur les beachbreaks.',
+      sex: Sex.FEMALE,
+      emailNotif: true,
+      maxDistanceKm: 30,
+      wantsLesson: true,
+      lessonSport: Sport.surf,
+      lessonStudentCount: 2,
+      location: { lat: 43.6662, lng: -1.3921 },
+      disciplines: [
+        { sport: Sport.surf, level: Level.advanced },
+        { sport: Sport.kitesurf, level: Level.beginner }
+      ],
+      preferredSearch: { sport: Sport.surf, level: Level.intermediate, distanceKm: 25 }
+    },
+    {
+      emailSuffix: 32,
+      displayName: 'Enzo Hossegor',
+      bio: 'Competiteur junior en surf, je cherche des sparrings pour push mes airs.',
+      sex: Sex.MALE,
+      emailNotif: false,
+      maxDistanceKm: 25,
+      wantsLesson: false,
+      lessonSport: Sport.surf,
+      location: { lat: 43.6599, lng: -1.3967 },
+      disciplines: [
+        { sport: Sport.surf, level: Level.advanced }
+      ],
+      preferredSearch: { sport: Sport.surf, level: Level.advanced, distanceKm: 25 }
+    }
+  ];
+
+  console.log('Adding dedicated south-west riders...');
+  for (const seed of southWestRiderSeeds) {
+    const rider = await prisma.user.create({
+      data: {
+        email: `dev+rider${seed.emailSuffix}@test.com`,
+        password: hashed,
+        role: Role.RIDER,
+        emailVerified: true,
+        consentedAt: new Date(),
+        consentVersion: 'v1.0.0',
+        consentIp: '127.0.0.1',
+        riderProfile: {
+          create: {
+            displayName: seed.displayName,
+            bio: seed.bio,
+            sex: seed.sex,
+            emailNotif: seed.emailNotif,
+            maxDistanceKm: seed.maxDistanceKm,
+            wantsLesson: seed.wantsLesson,
+            lessonSport: seed.lessonSport ?? seed.disciplines[0].sport,
+            lessonStudentCount: seed.wantsLesson ? seed.lessonStudentCount ?? 2 : null,
+            lat: seed.location.lat,
+            lng: seed.location.lng,
+          },
+        },
+      },
+      include: { riderProfile: true },
+    });
+
+    await prisma.riderDiscipline.createMany({
+      data: seed.disciplines.map((discipline) => ({
+        profileId: rider.riderProfile!.id,
+        sport: discipline.sport,
+        level: discipline.level,
+      })),
+      skipDuplicates: true,
+    });
+
+    await prisma.lastSearch.upsert({
+      where: { userId: rider.id },
+      update: {
+        sport: seed.preferredSearch.sport,
+        level: seed.preferredSearch.level,
+        distanceKm: seed.preferredSearch.distanceKm,
+        lat: seed.location.lat,
+        lng: seed.location.lng,
+        updatedAt: randomDateWithin(20)
+      },
+      create: {
+        userId: rider.id,
+        sport: seed.preferredSearch.sport,
+        level: seed.preferredSearch.level,
+        distanceKm: seed.preferredSearch.distanceKm,
+        lat: seed.location.lat,
+        lng: seed.location.lng,
+        date: randomDateWithin(10),
+        createdAt: randomDateWithin(45)
+      }
+    });
+
+    const sessionEntries = Array.from({ length: 2 }).map(() => {
+      const createdAt = randomDateWithin(45);
       return {
         userId: rider.id,
         createdAt,
@@ -303,6 +605,151 @@ export async function runSeed(client?: PrismaClient) {
     pros.push(pro);
   }
 
+  const southWestProSeeds = [
+    {
+      emailSuffix: 6,
+      businessName: 'Lacanau Surf Clinics',
+      bio: 'Coaching intensif sur les beachbreaks de Lacanau. Feedback video systematique.',
+      pricePerHour: 70,
+      verified: true,
+      location: { lat: 44.9805, lng: -1.2003 },
+      offers: [
+        {
+          sport: Sport.surf,
+          level: Level.beginner,
+          title: 'Surf debutant Lacanau',
+          description: 'Découverte encadrée sur les bancs les plus doux, materiel et video inclus.',
+          hourlyRate: 70
+        },
+        {
+          sport: Sport.surf,
+          level: Level.advanced,
+          title: 'Surf coaching performance',
+          description: 'Analyse video et travail sur manoeuvres critiques pour riders confirms.',
+          hourlyRate: 85
+        }
+      ]
+    },
+    {
+      emailSuffix: 7,
+      businessName: 'Hourtin Kite Progress',
+      bio: 'Structure specialisee foil et freeride sur lac dHourtin, moniteurs IKO.',
+      pricePerHour: 65,
+      verified: true,
+      location: { lat: 45.1892, lng: -1.1471 },
+      offers: [
+        {
+          sport: Sport.kitesurf,
+          level: Level.beginner,
+          title: 'Init kite lac Hourtin',
+          description: 'Maitre nageur secouriste a bord, radio coaching et bateau securite.',
+          hourlyRate: 65
+        },
+        {
+          sport: Sport.kitesurf,
+          level: Level.intermediate,
+          title: 'Kite foil progression',
+          description: 'Sessions bateau pour travailler waterstart et transitions strapless.',
+          hourlyRate: 80
+        }
+      ]
+    },
+    {
+      emailSuffix: 8,
+      businessName: 'Bisca Surf & Ride',
+      bio: 'Equipe locale, surf & kite pour tous niveaux avec sensibilisation a locéan.',
+      pricePerHour: 60,
+      verified: false,
+      location: { lat: 44.4209, lng: -1.2599 },
+      offers: [
+        {
+          sport: Sport.surf,
+          level: Level.intermediate,
+          title: 'Surf progression Bisca',
+          description: 'Travail sur lecture de vague et gestion du lineup, petit groupe de 4 max.',
+          hourlyRate: 60
+        },
+        {
+          sport: Sport.kitesurf,
+          level: Level.beginner,
+          title: 'Discover kite plage Nord',
+          description: 'Atelier securite, fenetre de vol puis mise a leau progressive.',
+          hourlyRate: 65
+        }
+      ]
+    },
+    {
+      emailSuffix: 9,
+      businessName: 'Hossegor Peak Coaching',
+      bio: 'Collectif de coachs FFS, specialistes haut niveau surf & strapless.',
+      pricePerHour: 85,
+      verified: true,
+      location: { lat: 43.6645, lng: -1.3908 },
+      offers: [
+        {
+          sport: Sport.surf,
+          level: Level.advanced,
+          title: 'Surf high performance Hossegor',
+          description: 'Video analyse, entrainement specifique air et tubes, spots Hossegor/Capbreton.',
+          hourlyRate: 95
+        },
+        {
+          sport: Sport.kitesurf,
+          level: Level.intermediate,
+          title: 'Strapless wave coaching',
+          description: 'Session mobile selon conditions, travail carving et re-entry strapless.',
+          hourlyRate: 90
+        }
+      ]
+    }
+  ];
+
+  console.log('Adding dedicated south-west pros...');
+  for (const seed of southWestProSeeds) {
+    const pro = await prisma.user.create({
+      data: {
+        email: `dev+pro${seed.emailSuffix}@test.com`,
+        password: hashed,
+        role: Role.PRO,
+        emailVerified: true,
+        consentedAt: new Date(),
+        consentVersion: 'v1.0.0',
+        consentIp: '127.0.0.1',
+      },
+    });
+
+    const proProfile = await prisma.proProfile.create({
+      data: {
+        userId: pro.id,
+        businessName: seed.businessName,
+        bio: seed.bio,
+        pricePerHour: seed.pricePerHour,
+        emailNotif: true,
+        verified: seed.verified,
+        lat: seed.location.lat,
+        lng: seed.location.lng,
+      },
+    });
+
+    for (const offer of seed.offers) {
+      await prisma.proOffer.create({
+        data: {
+          proProfileId: proProfile.id,
+          sport: offer.sport,
+          level: offer.level,
+          title: offer.title,
+          description: offer.description,
+          hourlyRate: offer.hourlyRate,
+          isActive: true,
+          lat: seed.location.lat,
+          lng: seed.location.lng,
+        },
+      });
+    }
+
+    pros.push(pro);
+  }
+
   // Create admin user
   console.log('Creating admin user...');
   await prisma.user.create({
@@ -317,6 +764,7 @@ export async function runSeed(client?: PrismaClient) {
       adminProfile: {
         create: {
           displayName: 'Admin Dev',
+          permissions: SUPER_ADMIN_PERMISSIONS,
         },
       },
     },
@@ -367,6 +815,18 @@ export async function runSeed(client?: PrismaClient) {
       },
     ],
     skipDuplicates: true,
+  });
+
+  await prisma.conversationMember.update({
+    where: {
+      conversationId_userId: {
+        conversationId: conv1.id,
+        userId: pros[0].id,
+      },
+    },
+    data: {
+      blockedAt: new Date(),
+    },
   });
 
   // Conversation rider-rider

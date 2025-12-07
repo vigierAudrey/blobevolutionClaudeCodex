@@ -1,0 +1,58 @@
+import type { UserRole } from './user';
+
+export type ConversationType = 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' | 'PRO_TO_PRO';
+
+export interface ConversationParticipant {
+  displayName: string;
+  role: UserRole;
+  photoUrl?: string | null;
+}
+
+export interface ThreadSummary {
+  id: string;
+  type: ConversationType;
+  otherDisplayName: string;
+  otherRole: UserRole;
+  otherPhotoUrl?: string | null;
+  lastMessage: string;
+  lastAt: string;
+  unread: number;
+  trashed?: boolean;
+  favorite?: boolean;
+  blocked?: boolean;
+}
+
+export interface ThreadListResponse {
+  items: ThreadSummary[];
+}
+
+export interface ThreadListQuery {
+  includeTrashed?: boolean;
+  type?: Extract<ConversationType, 'RIDER_TO_RIDER' | 'RIDER_TO_PRO'>;
+}
+
+export type MessageKind = 'TEXT' | 'PROPOSAL';
+
+export interface MessageMeta {
+  date?: string;
+  place?: string;
+  note?: string;
+  [key: string]: unknown;
+}
+
+export interface Message {
+  id: string;
+  senderId: string;
+  type: MessageKind;
+  content: string;
+  meta?: MessageMeta | null;
+  createdAt: string;
+}
+
+export interface MessageListResponse {
+  items: Message[];
+}
+
+export type SendMessagePayload =
+  | { type: 'TEXT'; content: string }
+  | { type: 'PROPOSAL'; content: string; meta: MessageMeta };

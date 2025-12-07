@@ -1,6 +1,6 @@
 "use client";
 import dynamicImport from 'next/dynamic';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/input';
@@ -9,6 +9,7 @@ import { apiClient } from '../../../lib/apiClient';
 import { useRouter } from 'next/navigation';
 
 import { MapSkeleton } from '../../../components/ui/skeleton';
+import type { LessonRequest, LessonRequestResponse } from '@/types/pro';
 
 // Force SSR due to Leaflet map (dynamic import with ssr:false)
 export const dynamic = 'force-dynamic';
@@ -19,18 +20,97 @@ const MapComponent = dynamicImport(() => import('../../../components/MapComponen
   loading: () => <MapSkeleton />
 });
 
+// Fonction pour détecter le navigateur de l'utilisateur
+type BrowserType = 'chrome' | 'firefox' | 'safari' | 'edge' | 'other';
+
+const detectBrowser = (): BrowserType => {
+  if (typeof window === 'undefined') return 'other';
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+
+  if (userAgent.includes('edg/')) return 'edge';
+  if (userAgent.includes('chrome') && !userAgent.includes('edg/')) return 'chrome';
+  if (userAgent.includes('firefox')) return 'firefox';
+  if (userAgent.includes('safari') && !userAgent.includes('chrome')) return 'safari';
+
+  return 'other';
+};
+
+// Instructions selon le navigateur
+const getBrowserInstructions = (browser: BrowserType): { title: string; steps: string[] } => {
+  switch (browser) {
+    case 'chrome':
+      return {
+        title: 'Chrome',
+        steps: [
+          'Cliquez sur l’icône 🔒 ou ⓘ à gauche de l’adresse URL',
+          'Trouvez &quot;Position&quot; ou &quot;Localisation&quot;',
+          'Changez de &quot;Bloquer&quot; à &quot;Autoriser&quot;',
+          'Rechargez la page avec F5'
+        ]
+      };
+    case 'edge':
+      return {
+        title: 'Edge',
+        steps: [
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
+          'Trouvez &quot;Autorisations pour ce site&quot;',
+          'Changez &quot;Emplacement&quot; à &quot;Autoriser&quot;',
+          'Rechargez la page avec F5'
+        ]
+      };
+    case 'firefox':
+      return {
+        title: 'Firefox',
+        steps: [
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
+          'Cliquez sur &quot;Permissions&quot; puis &quot;Position&quot;',
+          'Décochez &quot;Bloquer&quot; ou sélectionnez &quot;Autoriser&quot;',
+          'Rechargez la page avec F5'
+        ]
+      };
+    case 'safari':
+      return {
+        title: 'Safari',
+        steps: [
+          'Ouvrez Safari > Réglages > Sites web',
+          'Dans la section &quot;Localisation&quot;, trouvez ce site',
+          'Changez à &quot;Autoriser&quot;',
+          'Rechargez la page'
+        ]
+      };
+    default:
+      return {
+        title: 'Votre navigateur',
+        steps: [
+          'Recherchez l’icône de sécurité près de l’adresse URL',
+          'Trouvez les paramètres de localisation/position',
+          'Autorisez l’accès à votre position',
+          'Rechargez la page'
+        ]
+      };
+  }
+};
+
 export default function ProMapPage() {
   const router = useRouter();
-  const [radiusKm, setRadiusKm] = useState(25);
-  const [sport, setSport] = useState<'surf'|'kitesurf'>('surf');
-  const [items, setItems] = useState<Array<any>>([]);
+  const [radiusKm, setRadiusKm] = useState<number | null>(null);
+  const [sport, setSport] = useState<'surf' | 'kitesurf'>('surf');
+  const [items, setItems] = useState<LessonRequest[]>([]);
   const [center, setCenter] = useState<[number, number] | null>(null);
   const [hasGeolocPermission, setHasGeolocPermission] = useState(false);
   const [geolocEnabled, setGeolocEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
-  const debounceRef = useRef<NodeJS.Timeout>();
+  const [browserType, setBrowserType] = useState<BrowserType>('other');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const radiusPersistRef = useRef<ReturnType<typeof setTimeout>>();
+  const lastSavedRadiusRef = useRef<number | null>(null);
+  const [radiusSaving, setRadiusSaving] = useState(false);
 
   useEffect(() => {
+    // Détecter le navigateur au montage du composant
+    setBrowserType(detectBrowser());
+
     // Load pro location via /pro/me
     const t = apiClient.getTokens();
     if (!t?.accessToken) return;
@@ -42,12 +122,25 @@ export default function ProMapPage() {
           setGeolocEnabled(true);
           setHasGeolocPermission(true);
         }
+        if (ok) {
+          const storedRadius = typeof body?.radiusKm === 'number' ? body.radiusKm : 25;
+          const clamped = Math.max(1, Math.min(200, storedRadius));
+          setRadiusKm(clamped);
+          lastSavedRadiusRef.current = clamped;
+        } else {
+          setRadiusKm(25);
+          lastSavedRadiusRef.current = 25;
+        }
+      })
+      .catch(() => {
+        setRadiusKm(25);
+        lastSavedRadiusRef.current = 25;
       });
   }, []);
 
   const enableGeolocation = () => {
     if (!navigator.geolocation) {
-      alert('La géolocalisation n\'est pas supportée par ce navigateur.');
+      alert('La géolocalisation n’est pas supportée par ce navigateur.');
       return;
     }
 
@@ -73,13 +166,13 @@ export default function ProMapPage() {
             });
           }
         } catch (error) {
-          console.error('Erreur lors de la sauvegarde de la position:', error);
+          console.error('Erreur lors de la sauvegarde de la position :', error);
         }
       },
       (error) => {
-        console.error('Erreur géolocalisation:', error);
-        alert('Impossible de récupérer votre position. Vérifiez les autorisations de géolocalisation.');
+        console.error('Erreur géolocalisation :', error);
         setHasGeolocPermission(false);
+        setGeolocEnabled(false);
       },
       {
         enableHighAccuracy: true,
@@ -90,7 +183,7 @@ export default function ProMapPage() {
   };
 
   const load = useCallback(async () => {
-    if (!geolocEnabled) return;
+    if (!geolocEnabled || radiusKm === null) return;
 
     setLoading(true);
     try {
@@ -99,10 +192,12 @@ export default function ProMapPage() {
 
       const r = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/near/lessons?radiusKm=${radiusKm}&sport=${sport}`,
-        { headers: { Authorization: `Bearer ${t.accessToken}` }}
+        { headers: { Authorization: `Bearer ${t.accessToken}` } },
       );
-      const data = await r.json();
-      if (r.ok) setItems(data.items || []);
+      const data = (await r.json()) as LessonRequestResponse;
+      if (r.ok) {
+        setItems(data.items ?? []);
+      }
     } catch (error) {
       console.error('Error loading lesson requests:', error);
     } finally {
@@ -119,13 +214,56 @@ export default function ProMapPage() {
   }, [load]);
 
   useEffect(() => {
-    debouncedLoad();
+    if (radiusKm !== null) {
+      debouncedLoad();
+    }
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
     };
-  }, [debouncedLoad]);
+  }, [debouncedLoad, radiusKm]);
+
+  useEffect(() => {
+    if (radiusKm === null) return;
+    if (lastSavedRadiusRef.current === null) {
+      lastSavedRadiusRef.current = radiusKm;
+      return;
+    }
+    if (lastSavedRadiusRef.current === radiusKm) return;
+
+    const persist = async () => {
+      try {
+        const t = apiClient.getTokens();
+        if (!t?.accessToken) return;
+        setRadiusSaving(true);
+        await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${t.accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ radiusKm })
+        });
+        lastSavedRadiusRef.current = radiusKm;
+      } catch (error) {
+        console.error('Erreur lors de la sauvegarde du rayon :', error);
+      } finally {
+        setRadiusSaving(false);
+      }
+    };
+
+    if (radiusPersistRef.current) {
+      clearTimeout(radiusPersistRef.current);
+    }
+    radiusPersistRef.current = setTimeout(persist, 500);
+
+    return () => {
+      if (radiusPersistRef.current) {
+        clearTimeout(radiusPersistRef.current);
+      }
+    };
+  }, [radiusKm]);
 
 
   return (
@@ -154,9 +292,32 @@ export default function ProMapPage() {
                     </Button>
                   </div>
                   {hasGeolocPermission === false && (
-                    <p className="text-xs text-amber-700 mt-2">
-                      ⚠️ Autorisations refusées. Vérifiez les paramètres de votre navigateur.
-                    </p>
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                      <h4 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
+                        <span>⚠️</span>
+                        <span>Autorisations refusées - Comment débloquer</span>
+                      </h4>
+                      <p className="text-sm text-red-800 mb-3">
+                        Votre navigateur bloque l’accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
+                      </p>
+                      <ol className="text-sm text-red-800 space-y-1 ml-4">
+                        {getBrowserInstructions(browserType).steps.map((step, idx) => (
+                          <li key={idx} className="list-decimal">
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                      <p className="text-xs text-red-700 mt-3 italic">
+                        💡 Astuce : Cette protection est normale, elle protège votre vie privée. Nous ne sauvegarderons votre position que si vous cochez &quot;Enregistrer comme position par défaut&quot;.
+                      </p>
+                      <Button
+                        onClick={enableGeolocation}
+                        className="mt-3 bg-red-600 hover:bg-red-700 text-white"
+                        size="sm"
+                      >
+                        🔄 Réessayer après avoir autorisé
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -188,25 +349,37 @@ export default function ProMapPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">Rayon :</label>
-              <Input
-                type="number"
-                min={1}
-                max={200}
-                value={radiusKm}
-                onChange={(e) => setRadiusKm(Number(e.target.value || 25))}
-                className="w-20 text-center"
-                disabled={!geolocEnabled}
-                style={{ minHeight: '44px' }}
-              />
-              <span className="text-sm text-muted-foreground">km</span>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Rayon :</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={radiusKm ?? ''}
+                  onChange={(e) => {
+                    const nextValue = Number(e.target.value);
+                    if (!Number.isFinite(nextValue)) {
+                      setRadiusKm(25);
+                      return;
+                    }
+                    setRadiusKm(Math.max(1, Math.min(200, nextValue)));
+                  }}
+                  className="w-20 text-center"
+                  disabled={radiusKm === null}
+                  style={{ minHeight: '44px' }}
+                />
+                <span className="text-sm text-muted-foreground">km</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Le rayon sélectionné s’applique pour le surf et le kite.
+              </p>
             </div>
 
             <Button
               variant="outline"
               onClick={load}
-              disabled={!geolocEnabled || loading}
+              disabled={!geolocEnabled || loading || radiusKm === null}
               className="touch-manipulation"
               style={{ minHeight: '44px' }}
             >
@@ -217,25 +390,30 @@ export default function ProMapPage() {
           {geolocEnabled && center ? (
             <div className="space-y-2">
               <div className="text-sm text-green-600 mb-2">
-                ✅ Géolocalisation active - {items.length} demande(s) trouvée(s) dans un rayon de {radiusKm}km
+                ✅ Géolocalisation active – {items.length} demande(s) trouvée(s) dans un rayon de {radiusKm ?? 25} km {radiusSaving ? '(sauvegarde…)' : ''}
               </div>
               <MapComponent
                 center={center}
-                items={items.map((item: any) => ({ ...item, type: 'rider' as const }))}
+                items={items.map((item) => ({
+                  ...item,
+                  displayName: item.displayName ?? undefined,
+                  distanceKm: item.distanceKm ?? undefined,
+                  type: 'rider' as const
+                }))}
                 legend={[
                   { label: 'Votre position', color: '#0ea5e9' },
                   { label: 'Demandes de riders', color: '#16a34a' },
                 ]}
                 centerMarker={{
                   label: 'Vous êtes ici',
-                  description: `Rayon de ${radiusKm} km`,
+                  description: `Rayon de ${radiusKm ?? 25} km`,
                 }}
                 onContactClick={async (userId: string) => {
                   try {
                     const r = await apiClient.openConversation(userId);
                     router.push(`/messages/${r.id}`);
                   } catch (error) {
-                    console.error('Erreur lors de l\'ouverture de la conversation:', error);
+                    console.error('Erreur lors de l’ouverture de la conversation :', error);
                   }
                 }}
               />
@@ -243,7 +421,7 @@ export default function ProMapPage() {
           ) : !geolocEnabled && (
             <div className="text-center py-8 text-muted-foreground">
               <p className="text-sm">⚠️ La BloboMap ne peut pas fonctionner sans géolocalisation</p>
-              <p className="text-xs mt-1">Cliquez sur "Activer ma géolocalisation" ci-dessus</p>
+              <p className="text-xs mt-1">Cliquez sur &quot;Activer ma géolocalisation&quot; ci-dessus</p>
             </div>
           )}
         </CardContent>

@@ -1,29 +1,39 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { AdBanner, AdBannerFeed, AdBannerSidebar, AdBannerArticle } from '../AdBanner';
+import { useConsent } from '../../../hooks/useConsent';
+import { loadAdSense } from '../../../lib/ads/loadAdSense';
 
-// Mock localStorage
-const localStorageMock = {
-  getItem: jest.fn(),
-  setItem: jest.fn(),
-  removeItem: jest.fn(),
-  clear: jest.fn(),
-};
-global.localStorage = localStorageMock as any;
-Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock,
-  configurable: true,
-});
+jest.mock('../../../hooks/useConsent', () => ({
+  useConsent: jest.fn(),
+}));
 
-// Mock window.adsbygoogle
-global.window.adsbygoogle = [];
+jest.mock('../../../lib/ads/loadAdSense', () => ({
+  loadAdSense: jest.fn().mockResolvedValue(undefined),
+}));
 
-// Mock environment variables
 const originalEnv = process.env;
+const mockUseConsent = useConsent as jest.MockedFunction<typeof useConsent>;
+const mockLoadAdSense = loadAdSense as jest.MockedFunction<typeof loadAdSense>;
+
+const baseConsent = (overrides: Partial<ReturnType<typeof useConsent>> = {}) => ({
+  consentMode: 'none' as const,
+  consentSignals: {
+    ad_storage: 'denied' as const,
+    ad_user_data: 'denied' as const,
+    ad_personalization: 'denied' as const,
+  },
+  consentReady: true,
+  consentSource: 'local' as const,
+  userHash: 'hash',
+  cmpVersion: 'cmp-v',
+  updateConsent: jest.fn(),
+  houseAdsEnabled: true,
+  ...overrides,
+});
 
 describe('AdBanner', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    localStorageMock.getItem.mockReturnValue(null);
     process.env = {
       ...originalEnv,
       NEXT_PUBLIC_ADSENSE_ENABLED: 'true',
@@ -35,114 +45,138 @@ describe('AdBanner', () => {
     process.env = originalEnv;
   });
 
-  it('does not render when AdSense is disabled', () => {
+  it('renders configuration house ad when AdSense is disabled', () => {
     process.env.NEXT_PUBLIC_ADSENSE_ENABLED = 'false';
-    const { container } = render(<AdBanner slot="test-slot" />);
-    expect(container.firstChild).toBeNull();
-  });
+    mockUseConsent.mockReturnValue(baseConsent());
 
-  it('does not render when client ID is missing', () => {
-    delete process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID;
-    const { container } = render(<AdBanner slot="test-slot" />);
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('does not render when no consent is given', () => {
-    const { container } = render(<AdBanner slot="test-slot" />);
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('renders basic ad when essential consent is given', async () => {
-    localStorageMock.getItem.mockReturnValue('essential');
     render(<AdBanner slot="test-slot" />);
 
-    await waitFor(() => {
-      expect(localStorageMock.getItem).toHaveBeenCalledWith('cookie-consent');
-    });
-
-    await screen.findByText(/Espace partenaire surf\/kite/);
-
-    expect(screen.getByText(/Publicité non personnalisée/)).toBeInTheDocument();
+    expect(screen.getByText(/Espace partenaire/i)).toBeInTheDocument();
+    expect(mockLoadAdSense).not.toHaveBeenCalled();
   });
 
-  it('renders AdSense ad when personalized consent is given', async () => {
-    localStorageMock.getItem.mockReturnValue('personalized');
+  it('renders loading house ad when consent not ready', () => {
+    mockUseConsent.mockReturnValue(baseConsent({ consentReady: false }));
+
+    render(<AdBanner slot="test-slot" />);
+
+    expect(screen.getByText(/Préférences en cours/i)).toBeInTheDocument();
+  });
+
+  it('renders house ad when consent mode is none', () => {
+    mockUseConsent.mockReturnValue(baseConsent({ consentMode: 'none' }));
+
+    render(<AdBanner slot="test-slot" />);
+
+    expect(screen.getByText(/BlobConnect House Ads/i)).toBeInTheDocument();
+    expect(mockLoadAdSense).not.toHaveBeenCalled();
+  });
+
+  it('renders AdSense tag with NPA when consent mode is npa', async () => {
+    mockUseConsent.mockReturnValue(
+      baseConsent({
+        consentMode: 'npa',
+        consentSignals: {
+          ad_storage: 'granted',
+          ad_user_data: 'denied',
+          ad_personalization: 'denied',
+        },
+        houseAdsEnabled: false,
+      }),
+    );
+
     const { container } = render(<AdBanner slot="test-slot" />);
 
     await waitFor(() => {
-      const adsenseElement = container.querySelector('.adsbygoogle');
-      expect(adsenseElement).toBeInTheDocument();
+      expect(container.querySelector('.adsbygoogle')).toBeInTheDocument();
     });
 
-    const adsenseElement = container.querySelector('.adsbygoogle');
-    expect(adsenseElement).toHaveAttribute('data-ad-client', 'ca-pub-123456789');
-    expect(adsenseElement).toHaveAttribute('data-ad-slot', 'test-slot');
-    expect(adsenseElement).toHaveAttribute('data-npa', '0'); // Personalized ads
+    const ins = container.querySelector('.adsbygoogle');
+    expect(ins).toHaveAttribute('data-npa', '1');
+    expect(mockLoadAdSense).toHaveBeenCalled();
   });
 
-  it('sets correct npa attribute for essential consent', async () => {
-    localStorageMock.getItem.mockReturnValue('essential');
-    render(<AdBanner slot="test-slot" />);
+  it('renders AdSense tag with personalized mode', async () => {
+    mockUseConsent.mockReturnValue(
+      baseConsent({
+        consentMode: 'personalized',
+        consentSignals: {
+          ad_storage: 'granted',
+          ad_user_data: 'granted',
+          ad_personalization: 'granted',
+        },
+        houseAdsEnabled: false,
+      }),
+    );
 
-    // Should render basic ad, not AdSense
+    const { container } = render(<AdBanner slot="test-slot" />);
+
     await waitFor(() => {
-      expect(screen.getByText(/Espace partenaire surf\/kite/)).toBeInTheDocument();
+      expect(container.querySelector('.adsbygoogle')).toBeInTheDocument();
     });
+
+    const ins = container.querySelector('.adsbygoogle');
+    expect(ins).toHaveAttribute('data-npa', '0');
   });
 });
 
 describe('Pre-configured Ad Components', () => {
   beforeEach(() => {
-    localStorageMock.getItem.mockReturnValue('personalized');
     process.env = {
       ...originalEnv,
       NEXT_PUBLIC_ADSENSE_ENABLED: 'true',
       NEXT_PUBLIC_ADSENSE_CLIENT_ID: 'ca-pub-123456789',
     };
+    mockUseConsent.mockReturnValue(
+      baseConsent({
+        consentMode: 'personalized',
+        consentSignals: {
+          ad_storage: 'granted',
+          ad_user_data: 'granted',
+          ad_personalization: 'granted',
+        },
+        houseAdsEnabled: false,
+      }),
+    );
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   it('renders AdBannerFeed with correct format and classes', async () => {
     const { container } = render(<AdBannerFeed slot="feed-slot" />);
 
     await waitFor(() => {
-      const adsenseElement = container.querySelector('.adsbygoogle');
-      expect(adsenseElement).toBeInTheDocument();
+      expect(container.querySelector('.adsbygoogle')).toBeInTheDocument();
     });
 
-    const adsenseElement = container.querySelector('.adsbygoogle');
-    expect(adsenseElement).toHaveAttribute('data-ad-format', 'rectangle');
-
-    const wrapper = container.querySelector('.my-6.text-center');
-    expect(wrapper).toBeInTheDocument();
+    const ins = container.querySelector('.adsbygoogle');
+    expect(ins).toHaveAttribute('data-ad-format', 'rectangle');
+    expect(container.querySelector('.my-6.text-center')).toBeInTheDocument();
   });
 
   it('renders AdBannerSidebar with correct format and classes', async () => {
     const { container } = render(<AdBannerSidebar slot="sidebar-slot" />);
 
     await waitFor(() => {
-      const adsenseElement = container.querySelector('.adsbygoogle');
-      expect(adsenseElement).toBeInTheDocument();
+      expect(container.querySelector('.adsbygoogle')).toBeInTheDocument();
     });
 
-    const adsenseElement = container.querySelector('.adsbygoogle');
-    expect(adsenseElement).toHaveAttribute('data-ad-format', 'vertical');
-
-    const wrapper = container.querySelector('.hidden.lg\\:block');
-    expect(wrapper).toBeInTheDocument();
+    const ins = container.querySelector('.adsbygoogle');
+    expect(ins).toHaveAttribute('data-ad-format', 'vertical');
+    expect(container.querySelector('.hidden.lg\\:block')).toBeInTheDocument();
   });
 
   it('renders AdBannerArticle with correct format and classes', async () => {
     const { container } = render(<AdBannerArticle slot="article-slot" />);
 
     await waitFor(() => {
-      const adsenseElement = container.querySelector('.adsbygoogle');
-      expect(adsenseElement).toBeInTheDocument();
+      expect(container.querySelector('.adsbygoogle')).toBeInTheDocument();
     });
 
-    const adsenseElement = container.querySelector('.adsbygoogle');
-    expect(adsenseElement).toHaveAttribute('data-ad-format', 'auto');
-
-    const wrapper = container.querySelector('.my-8.mx-auto');
-    expect(wrapper).toBeInTheDocument();
+    const ins = container.querySelector('.adsbygoogle');
+    expect(ins).toHaveAttribute('data-ad-format', 'auto');
+    expect(container.querySelector('.my-8.mx-auto')).toBeInTheDocument();
   });
 });

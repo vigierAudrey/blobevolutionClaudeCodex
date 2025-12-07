@@ -55,5 +55,6 @@
   "javascript.referencesCodeLens.showOnAllFunctions": true,
   "containers.commands.composeDown": {
     "removeOrphans": true
-  }
+  },
+  "typescript.tsdk": "node_modules/typescript/lib"
 }

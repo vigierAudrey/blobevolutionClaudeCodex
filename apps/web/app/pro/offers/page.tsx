@@ -10,21 +10,10 @@ import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { apiClient } from '../../../lib/apiClient';
-
-type Sport = 'surf' | 'kitesurf';
-type Level = 'beginner' | 'intermediate' | 'advanced';
-
-type ProOffer = {
-  id?: string;
-  sport: Sport;
-  level: Level;
-  title: string;
-  description: string;
-  hourlyRate: number;
-  isActive: boolean;
-  lat?: number;
-  lng?: number;
-};
+import type { Sport, Level } from '@/types/matching';
+import type { EditableOffer } from '@/types/offers';
+import type { DashboardUser } from '@/types/user';
+import type { ProProfileData } from '@/types/pro';
 
 const sportLabels: Record<Sport, string> = {
   surf: 'Surf',
@@ -37,17 +26,62 @@ const levelLabels: Record<Level, string> = {
   advanced: 'Confirmé'
 };
 
+type ApiProOffer = Omit<EditableOffer, 'hourlyRate'> & {
+  hourlyRate: number | string;
+  proProfileId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+const isApiProOffer = (value: unknown): value is ApiProOffer => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const data = value as Partial<ApiProOffer>;
+  const hasBaseFields =
+    typeof data.sport === 'string' &&
+    typeof data.level === 'string' &&
+    typeof data.title === 'string' &&
+    typeof data.description === 'string' &&
+    typeof data.isActive === 'boolean';
+
+  if (!hasBaseFields) {
+    return false;
+  }
+
+  return typeof data.hourlyRate === 'number' || typeof data.hourlyRate === 'string';
+};
+
+const extractProOffer = (payload: unknown): ApiProOffer | null => {
+  if (isApiProOffer(payload)) {
+    return payload;
+  }
+
+  if (payload && typeof payload === 'object') {
+    const withOffer = payload as { offer?: unknown; offers?: unknown };
+    if (isApiProOffer(withOffer.offer)) {
+      return withOffer.offer;
+    }
+    if (Array.isArray(withOffer.offers)) {
+      const found = withOffer.offers.find(isApiProOffer);
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  return null;
+};
+
 export default function ProOffersPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [proProfile, setProProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Form state
-  const [offer, setOffer] = useState<ProOffer>({
+  const [offer, setOffer] = useState<EditableOffer>({
     sport: 'surf',
     level: 'beginner',
     title: '',
@@ -72,15 +106,12 @@ export default function ProOffersPage() {
           return;
         }
 
-        const currentUser = await apiClient.me();
+        const currentUser = (await apiClient.me()) as DashboardUser;
         if (currentUser.role !== 'PRO') {
           router.replace('/dashboard');
           return;
         }
 
-        setUser(currentUser);
-
-        // Charger le profil pro pour récupérer lat/lng
         const response = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`,
           {
@@ -89,38 +120,42 @@ export default function ProOffersPage() {
         );
 
         if (response.ok) {
-          const profile = await response.json();
-          setProProfile(profile);
-
-          if (profile.lat && profile.lng) {
-            setOffer(prev => ({ ...prev, lat: profile.lat, lng: profile.lng }));
+          const profile = (await response.json()) as ProProfileData;
+          const { lat, lng } = profile;
+          if (typeof lat === 'number' && typeof lng === 'number') {
+            setOffer((prev: EditableOffer) => ({ ...prev, lat, lng }));
           }
         }
 
-        // Charger l'offre existante si elle existe
         try {
-          const response = await apiClient.getProOffer();
-          if (response.offer) {
-            setOffer(prev => ({
+          const proOfferPayload: unknown = await apiClient.getProOffer();
+          const existingOffer = extractProOffer(proOfferPayload);
+
+          if (existingOffer) {
+            const normalizedRate =
+              typeof existingOffer.hourlyRate === 'string'
+                ? Number(existingOffer.hourlyRate)
+                : existingOffer.hourlyRate;
+
+            setOffer((prev: EditableOffer) => ({
               ...prev,
-              ...response.offer,
-              hourlyRate: Number(response.offer.hourlyRate) // Convertir Decimal en number
+              ...existingOffer,
+              hourlyRate: Number.isFinite(normalizedRate) ? normalizedRate : prev.hourlyRate,
             }));
           }
-        } catch (error) {
-          // Pas d'offre existante, c'est normal pour une première création
-          console.log('Aucune offre existante trouvée');
+        } catch (fetchError) {
+          console.log('Aucune offre existante trouvée', fetchError);
         }
-
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Erreur lors du chargement:', err);
-        setError(err?.message || 'Erreur lors du chargement');
+        const message = err instanceof Error ? err.message : 'Erreur lors du chargement';
+        setError(message);
       } finally {
         setLoading(false);
       }
     };
 
-    loadData();
+    void loadData();
   }, [router]);
 
   const validateForm = (): boolean => {
@@ -171,8 +206,9 @@ export default function ProOffersPage() {
 
       setSuccess('Offre sauvegardée avec succès !');
 
-    } catch (err: any) {
-      setError(err?.message || 'Erreur lors de la sauvegarde');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erreur lors de la sauvegarde';
+      setError(message);
     } finally {
       setSaving(false);
     }
@@ -189,8 +225,8 @@ export default function ProOffersPage() {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
 
-        setOffer(prev => ({ ...prev, lat, lng }));
-        setFieldErrors(prev => ({ ...prev, geolocation: undefined }));
+        setOffer((prev: EditableOffer) => ({ ...prev, lat, lng }));
+        setFieldErrors((prev) => ({ ...prev, geolocation: undefined }));
 
         // Sauvegarder aussi dans le profil pro
         try {
@@ -205,11 +241,11 @@ export default function ProOffersPage() {
               body: JSON.stringify({ lat, lng })
             });
           }
-        } catch (error) {
+        } catch (error: unknown) {
           console.error('Erreur lors de la sauvegarde de la position:', error);
         }
       },
-      (error) => {
+      (error: GeolocationPositionError) => {
         console.error('Erreur géolocalisation:', error);
         alert('Impossible de récupérer votre position. Vérifiez les autorisations de géolocalisation.');
       },
@@ -241,7 +277,7 @@ export default function ProOffersPage() {
               📍 Géolocalisation requise
             </CardTitle>
             <CardDescription>
-              Pour créer une offre, vous devez d'abord activer votre géolocalisation.
+              Pour créer une offre, vous devez d&apos;abord activer votre géolocalisation.
               Cela permettra aux riders de trouver vos cours près de chez eux.
             </CardDescription>
           </CardHeader>
@@ -262,7 +298,7 @@ export default function ProOffersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Détails de l'offre</CardTitle>
+          <CardTitle>Détails de l&apos;offre</CardTitle>
           <CardDescription>
             Remplissez les informations de votre cours (une seule offre par professionnel pour le MVP).
           </CardDescription>
@@ -276,7 +312,9 @@ export default function ProOffersPage() {
                 id="sport"
                 className="h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={offer.sport}
-                onChange={(e) => setOffer(prev => ({ ...prev, sport: e.target.value as Sport }))}
+                onChange={(e) =>
+                  setOffer((prev: EditableOffer) => ({ ...prev, sport: e.target.value as Sport }))
+                }
               >
                 {Object.entries(sportLabels).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
@@ -290,7 +328,9 @@ export default function ProOffersPage() {
                 id="level"
                 className="h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={offer.level}
-                onChange={(e) => setOffer(prev => ({ ...prev, level: e.target.value as Level }))}
+                onChange={(e) =>
+                  setOffer((prev: EditableOffer) => ({ ...prev, level: e.target.value as Level }))
+                }
               >
                 {Object.entries(levelLabels).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
@@ -301,12 +341,12 @@ export default function ProOffersPage() {
 
           {/* Titre */}
           <div className="space-y-2">
-            <Label htmlFor="title">Titre de l'offre</Label>
+            <Label htmlFor="title">Titre de l&apos;offre</Label>
             <Input
               id="title"
               placeholder="Ex: Cours de surf pour débutants à Biarritz"
               value={offer.title}
-              onChange={(e) => setOffer(prev => ({ ...prev, title: e.target.value }))}
+              onChange={(e) => setOffer((prev: EditableOffer) => ({ ...prev, title: e.target.value }))}
               className={fieldErrors.title ? 'border-red-500' : ''}
             />
             {fieldErrors.title && (
@@ -320,10 +360,12 @@ export default function ProOffersPage() {
             <textarea
               id="description"
               rows={4}
-              placeholder="Décrivez votre méthode d'enseignement, le matériel fourni, les spots de cours..."
+              placeholder="Décrivez votre méthode d&apos;enseignement, le matériel fourni, les spots de cours..."
               className="w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
               value={offer.description}
-              onChange={(e) => setOffer(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e) =>
+                setOffer((prev: EditableOffer) => ({ ...prev, description: e.target.value }))
+              }
             />
             {fieldErrors.description && (
               <p className="text-sm text-red-600">{fieldErrors.description}</p>
@@ -343,7 +385,9 @@ export default function ProOffersPage() {
               max="200"
               step="5"
               value={offer.hourlyRate}
-              onChange={(e) => setOffer(prev => ({ ...prev, hourlyRate: Number(e.target.value) }))}
+              onChange={(e) =>
+                setOffer((prev: EditableOffer) => ({ ...prev, hourlyRate: Number(e.target.value) }))
+              }
               className={fieldErrors.hourlyRate ? 'border-red-500' : ''}
             />
             {fieldErrors.hourlyRate && (
@@ -357,7 +401,7 @@ export default function ProOffersPage() {
               id="isActive"
               type="checkbox"
               checked={offer.isActive}
-              onChange={(e) => setOffer(prev => ({ ...prev, isActive: e.target.checked }))}
+              onChange={(e) => setOffer((prev: EditableOffer) => ({ ...prev, isActive: e.target.checked }))}
             />
             <Label htmlFor="isActive" className="text-sm">
               Offre active (visible par les riders)
@@ -382,7 +426,7 @@ export default function ProOffersPage() {
               disabled={saving || (!offer.lat || !offer.lng)}
               className="flex-1"
             >
-              {saving ? 'Sauvegarde...' : 'Sauvegarder l\'offre'}
+              {saving ? 'Sauvegarde...' : 'Sauvegarder l&apos;offre'}
             </Button>
             <Button variant="outline" onClick={() => router.push('/pro/dashboard')}>
               Annuler

@@ -61,6 +61,17 @@ bookingRouter.patch('/availability/:id', ensureRole('PRO'), async (req, res) => 
   }
 });
 
+bookingRouter.delete('/availability/:id', ensureRole('PRO'), async (req, res) => {
+  try {
+    const current = (req as any).user as { id: string };
+    const result = await bookingService.deleteAvailability(current.id, req.params.id);
+    return res.json(result);
+  } catch (error: any) {
+    const status = error?.status ?? 500;
+    return res.status(status).json({ error: error?.message || 'Internal error' });
+  }
+});
+
 bookingRouter.get('/availability/search', async (req, res) => {
   try {
     const query = searchAvailabilitySchema.parse({

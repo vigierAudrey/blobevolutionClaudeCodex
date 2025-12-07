@@ -19,7 +19,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    env_file:
+      - .env
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    ports:
+      - "6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -61,12 +65,61 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini
       REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379/0
+      SMTP_HOST: mailpit
+      S3_ENDPOINT: http://minio:9000
+      S3_PRESIGN_ENDPOINT: http://localhost:9000
+      S3_PUBLIC_URL_BASE: http://localhost:9000/blobinfini-dev
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3010,http://localhost:3011}
     ports:
       - "4000:4000"
     volumes:
       - .:/workspace
     working_dir: /workspace
     command: npm run dev:api
+
+  e2e-server:
+    build:
+      context: .
+      dockerfile: docker/e2e.Dockerfile
+    command: npm run test:e2e
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: ${DATABASE_URL_TEST:-postgresql://postgres:postgres@postgres:5432/blobinfini}
+      E2E_WEB_PORT: 3020
+      E2E_API_PORT: 4020
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3020:3020"
+      - "4020:4020"
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+
+  api-cron:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.cron
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini
+      NODE_ENV: production
+      SMTP_HOST: mailpit
+      S3_ENDPOINT: http://minio:9000
+      S3_PRESIGN_ENDPOINT: http://localhost:9000
+      S3_PUBLIC_URL_BASE: http://localhost:9000/blobinfini-dev
+    volumes:
+      - ./apps/api/logs:/app/apps/api/logs
+    networks:
+      - default
 
 volumes:
   pgdata:

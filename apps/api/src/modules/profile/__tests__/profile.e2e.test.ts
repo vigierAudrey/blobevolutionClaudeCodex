@@ -1,31 +1,44 @@
 import { createApp } from '../../../index';
-import { prisma } from '@blobinfini/database';
-import { Role } from '@prisma/client';
+import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
 
 describe('Profile E2E', () => {
   const app = createApp();
   let accessToken = '';
   let session: TestSession;
+  const testEmail = `profile-test-${Date.now()}@test.com`;
 
-  beforeAll(async () => {
-    await prisma.refreshToken.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.passwordResetToken.deleteMany();
-    await prisma.emailVerificationToken.deleteMany();
-    await prisma.riderProfile.deleteMany();
-    await prisma.user.deleteMany();
+  const seedProfileUser = async () => {
+    // Nettoyage ciblé: seulement les données de ce test
+    const existingUser = await prisma.user.findUnique({ where: { email: testEmail } });
+    if (existingUser) {
+      await prisma.refreshToken.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.session.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.riderProfile.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.user.delete({ where: { id: existingUser.id } });
+    }
 
     const auth = await getAccessToken({
       app,
-      email: 'p@test.com',
+      email: testEmail,
       role: Role.RIDER,
     });
     accessToken = auth.accessToken;
     session = auth.session;
+  };
+
+  beforeEach(async () => {
+    await seedProfileUser();
   });
 
   afterAll(async () => {
+    const existingUser = await prisma.user.findUnique({ where: { email: testEmail } });
+    if (existingUser) {
+      await prisma.refreshToken.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.session.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.riderProfile.deleteMany({ where: { userId: existingUser.id } });
+      await prisma.user.delete({ where: { id: existingUser.id } });
+    }
     await prisma.$disconnect();
   });
 

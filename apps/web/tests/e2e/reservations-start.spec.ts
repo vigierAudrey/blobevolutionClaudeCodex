@@ -1,4 +1,57 @@
-import { test, expect, request as playwrightRequest, type Browser, type APIRequestContext } from '@playwright/test';
+import {
+  test,
+  expect,
+  request as playwrightRequest,
+  type Browser,
+  type BrowserContext,
+  type APIRequestContext,
+} from '@playwright/test';
+
+const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
+const DEFAULT_PASSWORD = process.env.E2E_DEFAULT_PASSWORD ?? 'Passw0rd!';
+
+function testIp(tag: string) {
+  const base = Math.abs(
+    Array.from(`${tag}-${Date.now()}-${Math.random()}`)
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  );
+  const a = (base >> 12) & 255;
+  const b = (base >> 8) & 255;
+  const c = (base >> 4) & 255;
+  const d = base & 255;
+  return `10.${a}.${b}.${c ^ d || 99}`;
+}
+
+async function primeCsrfSession(context: BrowserContext, tag: string) {
+  const response = await context.request.get(`${API_BASE_URL}/csrf-token`, {
+    headers: { 'X-Forwarded-For': testIp(`csrf-${tag}`) },
+  });
+
+  if (!response.ok()) {
+    const body = await response.text();
+    throw new Error(`Unable to bootstrap CSRF session (${response.status()}): ${body}`);
+  }
+
+  const setCookieHeader = response.headers()['set-cookie'] ?? '';
+  const match = /connect\.sid=([^;]+)/.exec(setCookieHeader);
+  if (match) {
+    await context.addCookies([
+      {
+        name: 'connect.sid',
+        value: match[1],
+        url: API_BASE_URL,
+        httpOnly: true,
+        secure: false,
+        sameSite: 'Lax',
+      },
+    ]);
+
+    if (process.env.DEBUG_E2E_CSRF === '1') {
+      const cookies = await context.cookies(API_BASE_URL);
+      console.log(`[csrf-debug] cookies for ${tag}:`, cookies);
+    }
+  }
+}
 
 test.describe('Reservations start flow', () => {
   test('rider can progress through the main steps', async ({ page }) => {
@@ -88,14 +141,42 @@ test.describe('Reservations map on mobile', () => {
   });
 });
 
+async function loginViaApi(email: string, password: string, tag: string) {
+  const apiContext = await playwrightRequest.newContext({
+    baseURL: API_BASE_URL,
+    extraHTTPHeaders: { 'X-Forwarded-For': testIp(`api-login-${tag}`) },
+  });
+
+  const csrfResponse = await apiContext.get('/csrf-token');
+  const csrfJson = (await csrfResponse.json()) as { csrfToken: string };
+
+  const loginResponse = await apiContext.post('/auth/login', {
+    headers: { 'X-CSRF-Token': csrfJson.csrfToken },
+    data: { email, password },
+  });
+
+  if (!loginResponse.ok()) {
+    throw new Error(`API login failed for ${email}: ${loginResponse.status()} ${await loginResponse.text()}`);
+  }
+
+  const tokens = (await loginResponse.json()) as { accessToken: string; refreshToken: string };
+  await apiContext.dispose();
+  return tokens;
+}
+
 async function runBookingFlow(
   browser: Browser,
   action: 'ACCEPT' | 'REJECT',
   options: { proEmail?: string; riderEmail?: string } = {}
 ) {
-    const apiBaseUrl = process.env.PLAYWRIGHT_API_URL ?? 'http://127.0.0.1:4000';
-    const proApi = await playwrightRequest.newContext({ baseURL: apiBaseUrl });
-    const riderApi = await playwrightRequest.newContext({ baseURL: apiBaseUrl });
+    const proApi = await playwrightRequest.newContext({
+      baseURL: API_BASE_URL,
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp(`pro-api-${action}`) },
+    });
+    const riderApi = await playwrightRequest.newContext({
+      baseURL: API_BASE_URL,
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp(`rider-api-${action}`) },
+    });
 
     const fetchCsrfToken = async (ctx: APIRequestContext) => {
       const res = await ctx.get('/csrf-token');
@@ -109,36 +190,26 @@ async function runBookingFlow(
     const proEmail = options.proEmail ?? process.env.E2E_PRO_EMAIL ?? 'dev+pro1@test.com';
     const riderEmail = options.riderEmail ?? process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
 
-    const proLoginCsrf = await fetchCsrfToken(proApi);
-    const proLogin = await proApi.post('/auth/login', {
-      headers: { 'X-CSRF-Token': proLoginCsrf },
-      data: { email: proEmail, password: 'Passw0rd!' },
-    });
-    if (!proLogin.ok()) {
-      throw new Error(`Pro login failed (${proLogin.status}): ${await proLogin.text()}`);
-    }
-    const proLoginJson = await proLogin.json();
-    const proToken = proLoginJson.accessToken as string;
-
-    const riderLoginCsrf = await fetchCsrfToken(riderApi);
-    const riderLogin = await riderApi.post('/auth/login', {
-      headers: { 'X-CSRF-Token': riderLoginCsrf },
-      data: { email: riderEmail, password: 'Passw0rd!' },
-    });
-    if (!riderLogin.ok()) {
-      throw new Error(`Rider login failed (${riderLogin.status}): ${await riderLogin.text()}`);
-    }
-    const riderLoginJson = await riderLogin.json();
-    const riderToken = riderLoginJson.accessToken as string;
+    const proTokens = await loginViaApi(proEmail, DEFAULT_PASSWORD, `pro-ui-${action}`);
+    const riderTokens = await loginViaApi(riderEmail, DEFAULT_PASSWORD, `rider-ui-${action}`);
+    const proToken = proTokens.accessToken;
+    const riderToken = riderTokens.accessToken;
 
     const now = Date.now();
-    const startAt = new Date(now + 60 * 60 * 1000);
-    const endAt = new Date(now + 90 * 60 * 1000);
+    const baseOffsetMinutes = 365 * 24 * 60; // plan 1 year ahead to avoid existing data
+    const randomOffsetMinutes =
+      Math.floor((now / 1000) % 10000) + (action === 'ACCEPT' ? 0 : 300); // ensure uniqueness per run
+    const startAt = new Date(now + (baseOffsetMinutes + randomOffsetMinutes) * 60 * 1000);
+    const endAt = new Date(startAt.getTime() + 90 * 60 * 1000);
     const spotName = `Playwright Spot ${action} ${now}`;
 
     const availabilityCsrf = await fetchCsrfToken(proApi);
     const availabilityResponse = await proApi.post('/booking/availability', {
-      headers: { Authorization: `Bearer ${proToken}`, 'X-CSRF-Token': availabilityCsrf },
+      headers: {
+        Authorization: `Bearer ${proToken}`,
+        'X-CSRF-Token': availabilityCsrf,
+        'Content-Type': 'application/json',
+      },
       data: {
         sport: 'surf',
         levels: ['beginner', 'intermediate'],
@@ -150,18 +221,47 @@ async function runBookingFlow(
         spotLng: -1.558,
       },
     });
-    expect(availabilityResponse.ok()).toBeTruthy();
+    if (!availabilityResponse.ok()) {
+      throw new Error(
+        `Availability creation failed (${availabilityResponse.status()}): ${await availabilityResponse.text()}`
+      );
+    }
     const availabilityJson = await availabilityResponse.json();
     const availabilityId = availabilityJson.id as string;
+    if (process.env.DEBUG_E2E_CSRF === '1') {
+      const searchDebug = await riderApi.get(
+        `/booking/availability/search?sport=surf&level=beginner&lat=43.493&lng=-1.558&radiusKm=25`,
+        { headers: { Authorization: `Bearer ${riderToken}` } }
+      );
+      console.log(
+        `[csrf-debug] search status: ${searchDebug.status()} body: ${await searchDebug.text()}`
+      );
+    }
 
     const riderContext = await browser.newContext();
+    await primeCsrfSession(riderContext, `rider-${action}`);
+    await riderContext.addInitScript(
+      ({ accessToken, refreshToken }) => {
+        window.localStorage.setItem('accessToken', accessToken);
+        window.localStorage.setItem('refreshToken', refreshToken);
+      },
+      riderTokens
+    );
     const riderPage = await riderContext.newPage();
-
-    await riderPage.goto('/login');
-    await riderPage.getByLabel('Email').fill(riderEmail);
-    await riderPage.getByLabel('Mot de passe').fill('Passw0rd!');
-    await riderPage.getByRole('button', { name: 'Se connecter' }).click();
-    await riderPage.waitForTimeout(500); // redirection onboarding vs dashboard
+    riderPage.on('response', async (res) => {
+      if (res.url().includes('/booking/availability/search') && process.env.DEBUG_E2E_CSRF === '1') {
+        console.log(`[csrf-debug] ui search status ${res.status()} url ${res.url()}`);
+      }
+    });
+    if (process.env.DEBUG_E2E_CSRF === '1') {
+      await riderPage.route('**/booking/requests', async (route) => {
+        console.log('[csrf-debug] booking request headers', route.request().headers());
+        await route.continue();
+      });
+    }
+    riderPage.on('console', (msg) => {
+      console.log(`[rider-console] ${msg.type()}: ${msg.text()}`);
+    });
     await riderPage.goto('/reservations/start');
 
     await riderPage.getByRole('button', { name: /Surf/ }).click();
@@ -169,7 +269,10 @@ async function runBookingFlow(
     await riderPage.getByRole('button', { name: /Continuer/ }).click();
     await riderPage.getByRole('button', { name: 'Voir les pros disponibles' }).click();
 
-    await riderPage.waitForResponse((res) => res.url().includes('/booking/availability/search'));
+    await riderPage.waitForResponse((res) => {
+      const url = res.url();
+      return url.includes('/booking/availability/search') && res.request().method() === 'GET';
+    });
     const slotHeading = riderPage.getByRole('heading', { name: spotName }).first();
     await expect(slotHeading).toBeVisible();
     const slotCard = slotHeading.locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
@@ -191,12 +294,15 @@ async function runBookingFlow(
     expect(createdRequest!.status).toBe('PENDING');
 
     const proContext = await browser.newContext();
+    await primeCsrfSession(proContext, `pro-${action}`);
+    await proContext.addInitScript(
+      ({ accessToken, refreshToken }) => {
+        window.localStorage.setItem('accessToken', accessToken);
+        window.localStorage.setItem('refreshToken', refreshToken);
+      },
+      proTokens
+    );
     const proPage = await proContext.newPage();
-    await proPage.goto('/login');
-    await proPage.getByLabel('Email').fill(proEmail);
-    await proPage.getByLabel('Mot de passe').fill('Passw0rd!');
-    await proPage.getByRole('button', { name: 'Se connecter' }).click();
-    await proPage.waitForTimeout(500);
     await proPage.goto('/pro/planning');
 
     const pendingRequestCard = proPage.locator('div', {

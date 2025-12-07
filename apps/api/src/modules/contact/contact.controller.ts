@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../auth/auth.guard';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 
 export const contactRouter = Router();
 
@@ -151,7 +151,9 @@ contactRouter.post('/respond', requireAuth, async (req, res) => {
     }
 
     // Vérifier que l'utilisateur fait partie de la conversation
-    const isMember = contactRequest.conversation.members.some(member => member.userId === userId);
+    const isMember = contactRequest.conversation.members.some(
+      (member: Prisma.ConversationMember) => member.userId === userId
+    );
     if (!isMember) {
       return res.status(403).json({ error: 'User not part of this conversation' });
     }
@@ -181,19 +183,28 @@ contactRouter.post('/respond', requireAuth, async (req, res) => {
     });
 
     const riderIds = contactRequest.conversation.members
-      .filter(member => member.userId !== contactRequest.proUserId)
-      .map(member => member.userId);
+      .filter((member: Prisma.ConversationMember) => member.userId !== contactRequest.proUserId)
+      .map((member: Prisma.ConversationMember) => member.userId);
 
-    const allRidersResponded = riderIds.every(riderId =>
-      allResponses.some(resp => resp.riderUserId === riderId)
+    const allRidersResponded = riderIds.every((riderId: string) =>
+      allResponses.some(
+        (resp: Prisma.ContactRequestResponseGetPayload<{ include: { rider: true } }>) =>
+          resp.riderUserId === riderId
+      )
     );
 
     let finalStatus = 'PENDING';
     let shouldAddProToConversation = false;
 
     if (allRidersResponded) {
-      const allAccepted = allResponses.every(resp => resp.response === 'ACCEPT');
-      const anyRejected = allResponses.some(resp => resp.response === 'REJECT');
+      const allAccepted = allResponses.every(
+        (resp: Prisma.ContactRequestResponseGetPayload<{ include: { rider: true } }>) =>
+          resp.response === 'ACCEPT'
+      );
+      const anyRejected = allResponses.some(
+        (resp: Prisma.ContactRequestResponseGetPayload<{ include: { rider: true } }>) =>
+          resp.response === 'REJECT'
+      );
 
       if (allAccepted) {
         finalStatus = 'ACCEPTED';
@@ -204,7 +215,7 @@ contactRouter.post('/respond', requireAuth, async (req, res) => {
     }
 
     // Mettre à jour le statut de la demande
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.contactRequest.update({
         where: { id: contactRequestId },
         data: { status: finalStatus as any }

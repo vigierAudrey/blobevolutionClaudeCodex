@@ -2,7 +2,7 @@
 
 // Force SSR for admin auth and dynamic data
 export const dynamic = 'force-dynamic';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
@@ -44,6 +44,11 @@ const getRoleBadge = (role: string) => {
   }
 };
 
+type AdminReportsResponse = {
+  reports: ProfileReport[];
+  pagination?: { totalPages: number };
+};
+
 export default function AdminReports() {
   const router = useRouter();
   const [reports, setReports] = useState<ProfileReport[]>([]);
@@ -52,6 +57,7 @@ export default function AdminReports() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -76,23 +82,24 @@ export default function AdminReports() {
     checkAuth();
   }, [router]);
 
-  const loadReports = async () => {
+  const loadReports = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiClient.getAdminReports({ page, limit: 20 });
+      const response = await apiClient.getAdminReports({ page, limit: 20 }) as AdminReportsResponse;
       setReports(response.reports || []);
       setTotalPages(response.pagination?.totalPages || 1);
-    } catch (err: any) {
-      setError(err.message || 'Erreur de chargement');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur de chargement');
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
 
   useEffect(() => {
-    loadReports();
-  }, [page]);
+    void loadReports();
+  }, [loadReports]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR', {
@@ -109,7 +116,7 @@ export default function AdminReports() {
     const now = new Date();
     const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
 
-    if (diffInHours < 1) return 'Moins d\'1h';
+    if (diffInHours < 1) return 'Moins d&rsquo;1h';
     if (diffInHours < 24) return `${diffInHours}h`;
 
     const diffInDays = Math.floor(diffInHours / 24);
@@ -121,12 +128,21 @@ export default function AdminReports() {
   const handleAction = async (reportId: string, action: 'approve' | 'dismiss' | 'ban') => {
     const actionKey = `${action}-${reportId}`;
     setActionLoading(prev => ({ ...prev, [actionKey]: true }));
+    setActionMessage(null);
 
     try {
       await apiClient.moderateReport(reportId, action);
-      setReports(prev => prev.filter(report => report.id !== reportId));
-    } catch (err: any) {
-      setError(err?.message || "Impossible d'exécuter l'action");
+      await loadReports();
+      setActionMessage(
+        action === 'approve'
+          ? 'Signalement approuvé ✅'
+          : action === 'dismiss'
+            ? 'Signalement rejeté'
+            : 'Utilisateur banni'
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Impossible d\u2019exécuter l\u2019action');
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }
@@ -143,7 +159,7 @@ export default function AdminReports() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4">
           <Link href="/admin/dashboard">
             <Button variant="outline" size="sm">
@@ -158,6 +174,11 @@ export default function AdminReports() {
             </p>
           </div>
         </div>
+        <Button variant="secondary" asChild>
+          <Link href="/admin/reports/history">
+            Voir l’historique
+          </Link>
+        </Button>
       </div>
 
       {/* Statistiques rapides */}
@@ -199,11 +220,16 @@ export default function AdminReports() {
         </Card>
       </div>
 
-      {/* Erreurs */}
-      {error && (
+      {/* Statuts */}
+      {(error || actionMessage) && (
         <Card>
-          <CardContent className="pt-6">
-            <p className="text-red-600">{error}</p>
+          <CardContent className="pt-6 space-y-2">
+            {error && <p className="text-red-600">{error}</p>}
+            {actionMessage && (
+              <p className="text-sm text-green-600">
+                {actionMessage}
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

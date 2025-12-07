@@ -1,13 +1,35 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { TextEncoder, TextDecoder } from 'util';
+import { webcrypto } from 'crypto';
 import { apiClient } from '../../../../lib/apiClient';
+import { optimizedApiClient } from '../../../../lib/optimizedApiClient';
 import Page from '../page';
+
+if (!globalThis.TextEncoder) {
+  globalThis.TextEncoder = TextEncoder;
+}
+
+if (!globalThis.TextDecoder) {
+  globalThis.TextDecoder = TextDecoder as typeof globalThis.TextDecoder;
+}
+
+if (!globalThis.crypto || !globalThis.crypto.subtle) {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: webcrypto as Crypto,
+    configurable: true,
+  });
+}
 
 // Mock modules
 jest.mock('next/navigation');
 jest.mock('../../../../lib/apiClient');
+const mockUseMatching = jest.fn();
+jest.mock('../../../../hooks/useMatching', () => ({
+  useMatching: (options: unknown) => mockUseMatching(options),
+}));
 jest.mock('../../../../lib/optimizedApiClient', () => {
   const { apiClient } = require('../../../../lib/apiClient');
   return {
@@ -36,7 +58,7 @@ jest.mock('../../../../components/ui/toast', () => {
 });
 jest.mock('framer-motion', () => {
   const mockReact = require('react');
-  const MockMotion = mockReact.forwardRef(({ children, style, onDrag, onDragEnd, drag, whileTap, transition, className, ...rest }, ref) => {
+  const MockMotion = mockReact.forwardRef(({ children, style, onDrag, onDragEnd, drag, whileTap: _unusedWhileTap, transition: _unusedTransition, className, ...rest }, ref) => {
     const handleMouseDown = (e) => {
       if (onDrag) onDrag(e, { offset: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } });
     };
@@ -134,6 +156,12 @@ describe('Matching Cards Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
+    mockUseMatching.mockReturnValue({
+      connected: true,
+      newMatchesCount: 0,
+      latestMatch: null,
+      clearLatestMatch: jest.fn(),
+    });
 
     // Setup router mock
     mockUseRouter.mockReturnValue({
@@ -184,6 +212,7 @@ describe('Matching Cards Component', () => {
     });
     mockApiClient.listConversations.mockResolvedValue({ items: [] });
     mockApiClient.matchDecisions.mockResolvedValue({ createdConversations: [] });
+    (mockApiClient as any).getConsent = jest.fn().mockResolvedValue({ consent: null });
   });
 
   describe('Authentication and Authorization', () => {
@@ -235,7 +264,7 @@ describe('Matching Cards Component', () => {
       });
 
       expect(screen.getByText('Femme • surf • intermediate')).toBeInTheDocument();
-      expect(screen.getByText('5 km')).toBeInTheDocument();
+      expect(screen.getByText((content) => content.includes('5 km'))).toBeInTheDocument();
     });
 
     it('should display lesson badge for profiles wanting lessons', async () => {
@@ -514,8 +543,8 @@ describe('Matching Cards Component', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("C'est un match !")).toBeInTheDocument();
-        expect(screen.getByText((content, element) => {
+        expect(screen.getByText('C’est un match !')).toBeInTheDocument();
+        expect(screen.getByText((content, _element) => {
           return content.includes('Tu vas pouvoir surfer');
         })).toBeInTheDocument();
         expect(screen.getByText('Match User')).toBeInTheDocument();
@@ -561,6 +590,78 @@ describe('Matching Cards Component', () => {
       });
 
       expect(mockPush).toHaveBeenCalledWith('/messages/conv-123');
+    });
+  });
+
+  describe('Realtime Updates', () => {
+    it('passes token and criteria to the WebSocket hook', async () => {
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(mockUseMatching).toHaveBeenCalled();
+      });
+
+      const hookArgs = mockUseMatching.mock.calls[mockUseMatching.mock.calls.length - 1]?.[0] as any;
+      expect(hookArgs.token).toBe('fake-token');
+      expect(hookArgs.currentCriteria).toEqual({
+        sport: 'surf',
+        level: 'intermediate',
+      });
+    });
+
+    it('opens the match modal when a realtime match arrives', async () => {
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
+      });
+
+      const hookArgs = mockUseMatching.mock.calls[mockUseMatching.mock.calls.length - 1]?.[0] as any;
+      await act(async () => {
+        hookArgs.onNewMatch?.({
+          matchId: 'match-ws',
+          conversationId: 'conv-live',
+          otherUser: {
+            id: 'user-2',
+            displayName: 'Live Rider',
+          },
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('C’est un match !')).toBeInTheDocument();
+        expect(screen.getByText('Live Rider')).toBeInTheDocument();
+      });
+    });
+
+    it('refetches cards when a realtime card notification arrives', async () => {
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
+      });
+
+      const searchMatchingMock = optimizedApiClient.searchMatching as jest.Mock;
+      const initialCalls = searchMatchingMock.mock.calls.length;
+      const hookArgs = mockUseMatching.mock.calls[mockUseMatching.mock.calls.length - 1]?.[0] as any;
+
+      await act(async () => {
+        hookArgs.onNewCard?.({
+          sport: 'surf',
+          level: 'intermediate',
+          profileId: 'profile-live',
+        });
+      });
+
+      await waitFor(() => {
+        expect(searchMatchingMock).toHaveBeenCalledTimes(initialCalls + 1);
+      });
     });
   });
 

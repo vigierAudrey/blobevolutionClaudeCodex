@@ -1,48 +1,42 @@
 "use client";
-import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, Briefcase, Shield, ShieldOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { apiClient } from '../../lib/apiClient';
+import type { ThreadSummary, ThreadListQuery, ThreadListResponse } from '@/types/messages';
 
 // Force SSR for real-time messaging
 export const dynamic = 'force-dynamic';
 
-type ConversationItem = {
-  id: string;
-  type: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO';
-  otherDisplayName: string;
-  otherRole: 'RIDER' | 'PRO';
-  lastMessage: string;
-  lastAt: string;
-  unread: number;
-  trashed?: boolean;
-  favorite?: boolean;
-  blocked?: boolean;
-};
-
 export default function MessagesPage() {
-  const [items, setItems] = useState<ConversationItem[]>([]);
+  const [items, setItems] = useState<ThreadSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL'|'FAVORITES'|'UNREAD'|'TRASH'|'RIDERS'|'PROS'>('ALL');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
-      const opts: { includeTrashed?: boolean; type?: 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' } = {
-        includeTrashed: filter === 'TRASH'
-      };
+      const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH' };
 
       // Filter by conversation type if needed
       if (filter === 'RIDERS') opts.type = 'RIDER_TO_RIDER';
       if (filter === 'PROS') opts.type = 'RIDER_TO_PRO';
 
-      const data = await apiClient.listConversations(opts);
-      setItems(data.items || []);
-    } catch (e: any) { setError(e?.message || 'Erreur'); }
-  };
+      const data = await apiClient.listConversations(opts) as ThreadListResponse;
+      setItems(data.items ?? []);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur');
+    }
+  }, [filter]);
 
-  useEffect(() => { load(); const t=setInterval(load, 15000); return ()=>clearInterval(t); }, [filter]);
+  useEffect(() => {
+    void load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, [filter, load]);
 
   const counts = useMemo(() => {
     const all = items.filter(it => !it.trashed).length;
@@ -109,11 +103,35 @@ export default function MessagesPage() {
           <div className="divide-y">
             {shown.map((it) => (
               <div key={it.id} className="flex items-center justify-between py-3 rounded-md px-2 hover:bg-accent">
-                <Link href={`/messages/${it.id}`} className="flex-1">
-                  <div>
-                    <div className={(it.unread>0 ? 'font-semibold' : 'font-medium') + " flex items-center gap-2"}>
-                      {it.otherRole === 'PRO' && <Briefcase size={12} className="text-green-600" />}
-                      {it.otherRole === 'RIDER' && <Users size={12} className="text-blue-600" />}
+                <Link href={`/messages/${it.id}`} className="flex-1 flex items-start gap-3">
+                  {/* Photo de profil miniature */}
+                  <div className="relative flex-shrink-0">
+                    {it.otherPhotoUrl ? (
+                      <Image
+                        src={it.otherPhotoUrl}
+                        alt={it.otherDisplayName}
+                        width={40}
+                        height={40}
+                        className="w-10 h-10 rounded-full object-cover border-2 border-gray-200"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-semibold text-sm">
+                        {it.otherDisplayName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    {/* Icône rôle en badge */}
+                    <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
+                      {it.otherRole === 'PRO' ? (
+                        <Briefcase size={14} className="text-green-600" />
+                      ) : (
+                        <Users size={14} className="text-blue-600" />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className={(it.unread>0 ? 'font-semibold' : 'font-medium') + " flex items-center gap-2 flex-wrap"}>
                       {it.otherDisplayName}
                       {it.favorite && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px]"><Star size={10}/> Favori</span>}
                       {it.blocked && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[10px]"><Shield size={10}/> Bloqué</span>}

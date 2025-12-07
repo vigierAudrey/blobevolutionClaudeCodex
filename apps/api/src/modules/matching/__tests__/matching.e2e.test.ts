@@ -1,6 +1,5 @@
 import { createApp } from '../../../index';
-import { prisma } from '@blobinfini/database';
-import { Role } from '@prisma/client';
+import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
 
 describe('Matching search E2E', () => {
@@ -8,7 +7,7 @@ describe('Matching search E2E', () => {
   let accessToken = '';
   let session: TestSession;
 
-  beforeAll(async () => {
+  const seedMatchingUser = async () => {
     await prisma.refreshToken.deleteMany();
     await prisma.session.deleteMany();
     await prisma.passwordResetToken.deleteMany();
@@ -30,6 +29,10 @@ describe('Matching search E2E', () => {
       create: { userId: user.id, maxDistanceKm: 35, emailNotif: true },
       update: { maxDistanceKm: 35, emailNotif: true },
     });
+  };
+
+  beforeEach(async () => {
+    await seedMatchingUser();
   });
 
   afterAll(async () => {
@@ -49,9 +52,9 @@ describe('Matching search E2E', () => {
       level: 'beginner',
       date: '2025-09-04',
       maxDistanceKm: 35,
-      partnerPref: 'WOMEN',
       emailNotif: true,
     });
+    expect(res.body.criteria.partnerPref).toBeUndefined();
     expect(Array.isArray(res.body.results)).toBe(true);
   });
 
@@ -62,6 +65,6 @@ describe('Matching search E2E', () => {
       .send({ sport: 'kitesurf', level: 'advanced', date: '2025-09-05', partner: 'MEN' })
       .expect(200);
 
-    expect(res.body.criteria.partnerPref).toBe('MEN');
+    expect(res.body.criteria.partnerPref).toBeUndefined();
   });
 });

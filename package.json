@@ -6,11 +6,21 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev:api",
-    "dev:api": "npm run build --workspace @blobinfini/database && npm run dev --workspace @blobinfini/api",
-    "dev:web": "npm run dev --workspace @blobinfini/web",
-    "dev:all": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev": "npm run dev:start",
+    "dev:start": "npm run dev:all",
+    "dev:kill-ports": "(npx kill-port 4000 || true) && (npx kill-port 3002 || true) && (npx kill-port 3010 || true) && (npx kill-port 3011 || true) && (npx kill-port 3020 || true)",
+    "dev:api:start": "npm run build --workspace @blobinfini/database && npm run dev --workspace @blobinfini/api",
+    "dev:web:start": "npm run dev --workspace @blobinfini/web",
+    "dev:api": "npx kill-port 4000 || true && npm run dev:api:start",
+    "dev:web": "npx kill-port 3002 || true && npm run dev:web:start",
+    "dev:all": "npm run dev:kill-ports && npm-run-all -p dev:api:start dev:web:start",
+    "dev:web:port": "node scripts/dev-web-port.mjs",
+    "dev:web:nokill": "cd apps/web && cross-env-shell \"NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000} PORT=${PORT:-3010} npx next dev -p ${PORT:-3010}\"",
+    "dev:infra": "docker compose up -d postgres redis minio mailpit",
+    "dev:api:docker": "docker compose up api",
+    "dev:all:docker": "npm run dev:infra && concurrently -n web,api -c magenta,blue \"npm:dev:web\" \"npm:dev:api:docker\"",
     "build": "npm run build --workspace @blobinfini/api && npm run build --workspace @blobinfini/database",
+    "build:api": "npm run build --workspace @blobinfini/api",
     "build:web": "npm run db:generate && npm run build --workspace @blobinfini/web",
     "type-check": "npm run type-check --workspace @blobinfini/api && npm run type-check --workspace @blobinfini/web",
     "type-check:legacy": "tsc -p tsconfig.base.json && tsc -p apps/api/tsconfig.json",
@@ -26,9 +36,10 @@
     "db:reseed": "npm run reseed --workspace @blobinfini/database",
     "purge:consent-ip": "tsx apps/api/src/jobs/purgeConsent.ts",
     "test": "npm run test --workspace @blobinfini/api",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/run-e2e.mjs",
     "postinstall": "patch-package",
     "prepare": "(cd packages/database && npx prisma generate) && (npm run build --workspace @blobinfini/database || true)",
+    "lint": "npm run lint --workspace @blobinfini/web",
     "openapi:lint": "redocly lint docs/openapi/openapi.yaml",
     "storybook": "npm run storybook --workspace @blobinfini/web",
     "storybook:build": "npm run build-storybook --workspace @blobinfini/web",
@@ -41,22 +52,30 @@
     "@redocly/cli": "^2.2.2",
     "@storybook/nextjs": "^8.6.14",
     "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
+    "get-port": "^7.1.0",
     "http-server": "^14.1.1",
+    "npm-run-all": "^4.1.5",
     "patch-package": "^8.0.1",
     "pg": "^8.16.3",
     "storybook": "^8.6.14",
-    "wait-on": "^9.0.1"
+    "wait-on": "^9.0.1",
+    "wait-port": "^1.1.0"
   },
   "dependencies": {
+    "@mdx-js/mdx": "^3.1.1",
+    "@mdx-js/react": "^3.1.1",
     "framer-motion": "^12.23.18",
-    "react-leaflet": "^4.2.1"
+    "prismjs": "^1.30.0",
+    "react-leaflet": "^4.2.1",
+    "rehype-prism-plus": "^2.0.1"
   },
   "overrides": {
-    "glob": "^10.0.0",
+    "glob": "^10.3.6",
     "inflight": "npm:noop-package@1.0.0",
     "rimraf": "^6.0.1",
     "@mapbox/node-pre-gyp": "^2.0.0",
-    "@humanwhocodes/config-array": "^0.14.0",
+    "@humanwhocodes/config-array": "^0.13.0",
     "@humanwhocodes/object-schema": "^2.0.3",
     "eslint": "8.57.1",
     "abab": "npm:noop-package@1.0.0",
@@ -69,6 +88,10 @@
     "@typescript-eslint/eslint-plugin": "7.18.0",
     "@typescript-eslint/parser": "7.18.0",
     "@typescript-eslint/utils": "7.18.0",
-    "@typescript-eslint/type-utils": "7.18.0"
+    "@typescript-eslint/type-utils": "7.18.0",
+    "js-yaml": "^4.1.1",
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^4.1.1"
+    }
   }
 }

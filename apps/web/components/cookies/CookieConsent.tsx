@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Settings, Cookie, Target, Shield } from 'lucide-react';
+import { useConsent } from '../../hooks/useConsent';
+import type { ConsentMode } from '../../lib/apiClient';
 
 type ConsentLevel = 'none' | 'essential' | 'personalized';
 
@@ -12,52 +14,70 @@ interface CookieConsentProps {
   onConsentChange?: (level: ConsentLevel) => void;
 }
 
+export const COOKIE_CONSENT_REOPEN_EVENT = 'blobinfini:cookie-consent:reopen';
+
+const mapModeToLegacy = (mode: ConsentMode): ConsentLevel => {
+  if (mode === 'personalized') return 'personalized';
+  if (mode === 'npa') return 'essential';
+  return 'none';
+};
+
 export function CookieConsent({ onConsentChange }: CookieConsentProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [currentConsent, setCurrentConsent] = useState<ConsentLevel>('none');
+  const { consentMode, consentReady, updateConsent } = useConsent();
+  const adsenseEnabled = process.env.NEXT_PUBLIC_ADSENSE_ENABLED === 'true';
 
   useEffect(() => {
-    // Guard SSR: only run in browser
-    if (typeof window === 'undefined') return;
-
-    // Vérifier le consentement existant
-    const savedConsent = localStorage.getItem('cookie-consent') as ConsentLevel | null;
-    if (savedConsent) {
-      setCurrentConsent(savedConsent);
-      onConsentChange?.(savedConsent);
-    } else {
-      // Afficher la bannière seulement si AdSense est activé
-      const adsenseEnabled = process.env.NEXT_PUBLIC_ADSENSE_ENABLED === 'true';
-      if (adsenseEnabled) {
-        // Délai pour éviter le spam dès l'arrivée
-        setTimeout(() => setIsVisible(true), 2000);
+    if (!adsenseEnabled) {
+      if (consentReady) {
+        setIsVisible(consentMode === 'none');
       }
+      return;
     }
-  }, [onConsentChange]);
 
-  const handleConsent = (level: ConsentLevel) => {
-    setCurrentConsent(level);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cookie-consent', level);
+    if (!consentReady) {
+      if (consentMode === 'none') {
+        const timer = setTimeout(() => setIsVisible(true), 1200);
+        return () => clearTimeout(timer);
+      }
+      return;
     }
-    setIsVisible(false);
-    onConsentChange?.(level);
-  };
 
-  const resetConsent = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('cookie-consent');
-    }
-    setCurrentConsent('none');
+    setIsVisible(consentMode === 'none');
+  }, [adsenseEnabled, consentMode, consentReady]);
+
+  const handleSelection = useCallback(
+    async (mode: ConsentMode) => {
+      await updateConsent(mode);
+      setIsVisible(false);
+      onConsentChange?.(mapModeToLegacy(mode));
+    },
+    [onConsentChange, updateConsent],
+  );
+
+  const reopenBanner = () => {
+    setShowDetails(false);
     setIsVisible(true);
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleExternalReopen = () => {
+      setShowDetails(false);
+      setIsVisible(true);
+    };
+
+    window.addEventListener(COOKIE_CONSENT_REOPEN_EVENT, handleExternalReopen);
+    return () => {
+      window.removeEventListener(COOKIE_CONSENT_REOPEN_EVENT, handleExternalReopen);
+    };
+  }, []);
+
   if (!isVisible) {
-    // Petit indicateur discret pour changer les préférences
-    return currentConsent !== 'none' ? (
+    return adsenseEnabled && consentReady ? (
       <button
-        onClick={resetConsent}
+        onClick={reopenBanner}
         className="fixed bottom-4 right-4 z-40 p-2 bg-gray-100 hover:bg-gray-200 rounded-full shadow-md transition-colors"
         title="Gérer les cookies"
       >
@@ -77,7 +97,7 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Pour t'aider à découvrir les meilleures marques et équipements, nous aimerions personnaliser les publicités.
+            Pour t&apos;aider à découvrir les meilleures marques et équipements, nous aimerions personnaliser les publicités.
           </p>
 
           {/* Options de consentement */}
@@ -87,7 +107,6 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
                 <div className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-green-500" />
                   <span className="font-medium">Publicités basiques</span>
-                  <Badge variant="secondary">Gratuit</Badge>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mb-3">
@@ -96,7 +115,7 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleConsent('essential')}
+                onClick={() => handleSelection('npa')}
                 className="w-full"
               >
                 Continuer avec les pubs basiques
@@ -113,14 +132,34 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
               </div>
               <p className="text-xs text-muted-foreground mb-3">
                 ✨ Équipements adaptés à ton niveau et tes spots favoris
-                <br />💰 Soutient le développement de l'app (revenus publicitaires)
+                <br />💰 Soutient le développement de l&apos;app (revenus publicitaires)
               </p>
               <Button
-                onClick={() => handleConsent('personalized')}
+                onClick={() => handleSelection('personalized')}
                 className="w-full"
                 size="sm"
               >
-                J'accepte les pubs personnalisées
+                J&apos;accepte les pubs personnalisées
+              </Button>
+            </div>
+
+            <div className="p-3 border rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-amber-500" />
+                  <span className="font-medium">Publicités limitées</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                Annonces basiques fournies par Google sans aucun stockage de cookies publicitaires.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleSelection('npa')}
+                className="w-full"
+              >
+                Utiliser les pubs limitées
               </Button>
             </div>
           </div>
@@ -138,7 +177,7 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
             {showDetails && (
               <div className="mt-3 p-3 bg-gray-50 rounded text-xs space-y-2">
                 <div>
-                  <strong>Cookies essentiels :</strong> Fonctionnement de l'app, sécurité, préférences
+                  <strong>Cookies essentiels :</strong> Fonctionnement de l&apos;app, sécurité, préférences
                 </div>
                 <div>
                   <strong>Cookies publicitaires :</strong> AdSense, ciblage par intérêts, mesure performance
@@ -156,10 +195,16 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
           <p className="text-xs text-muted-foreground">
             Tu peux modifier tes préférences à tout moment.
             <button
-              onClick={resetConsent}
+              onClick={() => handleSelection('none')}
               className="underline hover:no-underline ml-1"
             >
-              En savoir plus
+              Refuser toutes les publicités (House Ads)
+            </button>
+            <button
+              onClick={() => setShowDetails((prev) => !prev)}
+              className="ml-3 underline hover:no-underline"
+            >
+              {showDetails ? 'Fermer les détails' : 'En savoir plus'}
             </button>
           </p>
         </CardContent>
@@ -170,27 +215,23 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
 
 // Hook pour utiliser le niveau de consentement
 export function useCookieConsent() {
-  const [consentLevel, setConsentLevel] = useState<ConsentLevel>('none');
+  const { consentMode, updateConsent: setConsentMode, consentReady } = useConsent();
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const savedConsent = localStorage.getItem('cookie-consent') as ConsentLevel | null;
-    if (savedConsent) {
-      setConsentLevel(savedConsent);
-    }
-  }, []);
+  const updateConsent = useCallback(
+    (level: ConsentLevel) => {
+      const mode: ConsentMode = level === 'personalized' ? 'personalized' : level === 'essential' ? 'npa' : 'none';
+      setConsentMode(mode);
+    },
+    [setConsentMode],
+  );
 
-  const updateConsent = (level: ConsentLevel) => {
-    setConsentLevel(level);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cookie-consent', level);
-    }
-  };
+  const consentLevel = mapModeToLegacy(consentMode);
 
   return {
     consentLevel,
     updateConsent,
-    hasPersonalizedConsent: consentLevel === 'personalized',
-    hasEssentialConsent: consentLevel === 'essential' || consentLevel === 'personalized'
+    hasPersonalizedConsent: consentMode === 'personalized',
+    hasEssentialConsent: consentMode === 'personalized' || consentMode === 'npa',
+    consentReady,
   };
 }

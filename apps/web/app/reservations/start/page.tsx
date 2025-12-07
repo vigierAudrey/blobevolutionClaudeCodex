@@ -16,6 +16,19 @@ import { apiClient, type BookingAvailabilityResult } from '../../../lib/apiClien
 
 const AvailabilityMap = dynamicImport(() => import('../../../components/MapComponent'), { ssr: false });
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+  return fallback;
+};
+
 const sports: Array<{ id: 'surf' | 'kitesurf'; label: string }> = [
   { id: 'surf', label: 'Surf' },
   { id: 'kitesurf', label: 'Kitesurf' },
@@ -44,6 +57,7 @@ export default function ReservationStartPage() {
   const [requestSuccess, setRequestSuccess] = useState<{ spotName: string | null; startAt: string } | null>(null);
 
   const steps = useMemo(() => ['Préférences', 'Zone', 'Résultats'], []);
+  const safeResults = useMemo(() => (Array.isArray(results) ? results : []), [results]);
 
   const canGoNextFromStep1 = selectedSport !== null && selectedLevel !== null;
 
@@ -69,9 +83,9 @@ export default function ReservationStartPage() {
         if (!cancelled) {
           setResults(response.results);
         }
-      } catch (err: any) {
+      } catch (err) {
         if (!cancelled) {
-          setError(err?.message || 'Erreur lors du chargement des disponibilités');
+          setError(getErrorMessage(err, 'Erreur lors du chargement des disponibilités'));
           setResults([]);
         }
       } finally {
@@ -88,7 +102,7 @@ export default function ReservationStartPage() {
   }, [step, selectedSport, selectedLevel, distanceKm, location]);
 
   const mapItems = useMemo(() => {
-    return results
+    return safeResults
       .filter((slot) => slot.spotLat != null && slot.spotLng != null)
       .map((slot) => {
         const isFull = slot.bookedCount >= slot.capacity;
@@ -104,16 +118,16 @@ export default function ReservationStartPage() {
           disabledReason: isFull ? 'Ce créneau est complet.' : undefined,
         };
       });
-  }, [results]);
+  }, [safeResults]);
 
   const handleMapContactClick = useCallback(
     (slotId: string) => {
-      const slot = results.find((item) => item.id === slotId);
+      const slot = safeResults.find((item) => item.id === slotId);
       if (slot && slot.bookedCount < slot.capacity) {
         setRequestingSlot(slot);
       }
     },
-    [results]
+    [safeResults]
   );
 
   const handleRequestSubmitted = useCallback((slot: BookingAvailabilityResult) => {
@@ -368,13 +382,13 @@ export default function ReservationStartPage() {
               <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
                 {error}
               </div>
-            ) : results.length === 0 ? (
+            ) : safeResults.length === 0 ? (
               <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
                 Aucune offre trouvée dans ce rayon. Essaie d’augmenter la distance ou de modifier ton niveau.
               </div>
             ) : (
               <div className="space-y-4">
-                {results.map((slot) => (
+                {safeResults.map((slot) => (
                   <Card key={slot.id}>
                     <CardHeader className="flex flex-col gap-1">
                       <div className="flex items-center justify-between">
@@ -482,8 +496,8 @@ function RequestBookingModal({ slot, onClose, onSubmitted }: RequestBookingModal
         message: message.trim() ? message.trim() : undefined,
       });
       onSubmitted(slot);
-    } catch (err: any) {
-      setError(err?.message || 'Impossible d’envoyer la demande');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible d’envoyer la demande'));
     } finally {
       setSaving(false);
     }

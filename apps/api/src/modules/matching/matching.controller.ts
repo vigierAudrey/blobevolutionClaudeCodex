@@ -1,22 +1,19 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../auth/auth.guard';
-import { prisma } from '@blobinfini/database';
-import { Prisma } from '@prisma/client';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { cacheService, CacheKeys } from '../../services/cache.service';
+import { notifyNewMatch, notifyMatchDecision, notifyNewMatchingCard } from '../../lib/socket';
 
 export const matchingRouter = Router();
 
 const sportEnum = z.enum(['surf', 'kitesurf']);
 const levelEnum = z.enum(['beginner', 'intermediate', 'advanced']);
 
-const partnerEnum = z.enum(['ALL', 'WOMEN', 'MEN']);
-
 const searchSchema = z.object({
   sport: sportEnum,
   level: levelEnum,
   date: z.string().regex(/^(\d{4}-\d{2}-\d{2}|anytime)$/), // YYYY-MM-DD or "anytime"
-  partner: partnerEnum.optional(),
   distanceKm: z.number().int().min(1).max(500).optional(),
   location: z
     .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })
@@ -31,14 +28,45 @@ const searchSchema = z.object({
   excludeIds: z.array(z.string()).optional(),
 });
 
+type GeospatialMatchRow = {
+  id: string;
+  displayName: string | null;
+  sex: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED' | null;
+  photoUrl: string | null;
+  bio: string | null;
+  sport: string;
+  level: string;
+  wantsLesson: boolean;
+  lessonSport: string | null;
+  dist_m: number | null;
+};
+
+type MatchingResponseItem = {
+  id: string;
+  displayName: string;
+  gender: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED' | null;
+  photoUrl: string | null;
+  bio: string | null;
+  sport: string;
+  level: string;
+  wantsLesson: boolean;
+  lessonSport: string | null;
+  distanceKm: number | null;
+};
+
+type TargetProfileSummary = Prisma.RiderProfileGetPayload<{
+  select: { id: true; userId: true; displayName: true };
+}>;
+type ReciprocalDecisionSummary = Prisma.MatchDecisionGetPayload<{
+  select: { actorUserId: true; decision: true };
+}>;
+
 matchingRouter.post('/search', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { sport, level, date, partner, distanceKm, location, cursor, limit, page, pageSize, sortBy } = searchSchema.parse(req.body);
-
-    const partnerPref = partner ?? 'WOMEN';
+    const { sport, level, date, distanceKm, location, cursor, limit, page, pageSize, sortBy } = searchSchema.parse(req.body);
 
     // Ensure we have a profile to read preferences from
     let profile = await prisma.riderProfile.findUnique({ where: { userId } });
@@ -60,7 +88,6 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
       maxDistanceKm: distanceKm ?? last?.distanceKm ?? profile.maxDistanceKm,
       emailNotif: profile.emailNotif,
       location: effectiveLocation,
-      partnerPref,
     } as const;
 
     // Persist last search (for defaults next time)
@@ -113,9 +140,30 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
     if (cachedResults && cacheService.isAvailable()) {
       console.log('🚀 Cache hit for matching results');
 
+      const myProfileId = profile?.id ?? null;
+      const excludeIdsSet = new Set<string>(
+        Array.isArray(req.body.excludeIds) ? (req.body.excludeIds as string[]) : []
+      );
+      if (myProfileId) {
+        excludeIdsSet.add(myProfileId);
+      }
+
+      const candidateIds = cachedResults.map((result) => result.id);
+      let actedSet = new Set<string>();
+      if (candidateIds.length > 0) {
+        const actedDecisions: Array<{ targetProfileId: string }> = await prisma.matchDecision.findMany({
+          where: { actorUserId: userId, targetProfileId: { in: candidateIds } },
+          select: { targetProfileId: true }
+        });
+        actedSet = new Set(actedDecisions.map((decision) => decision.targetProfileId));
+      }
+
       // Apply exclusions to cached results
-      const excludeIds = req.body.excludeIds || [];
-      const filtered = cachedResults.filter(result => !excludeIds.includes(result.id));
+      const filtered = cachedResults.filter((result) => {
+        if (excludeIdsSet.has(result.id)) return false;
+        if (actedSet.has(result.id)) return false;
+        return true;
+      });
 
       if (useCursorPagination) {
         // Cursor-based pagination on cached results
@@ -149,13 +197,11 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
     }
 
     // If we have a location, use PostGIS for distance + optional radius filtering
-    let results: Array<{ id: string; displayName: string | null; gender: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED'; sport: string; level: string; distanceKm: number | null }> = [];
+    let results: MatchingResponseItem[] = [];
     let total = 0;
     let hasMore = false;
     let nextCursor: string | null = null;
     if (criteria.location) {
-      const genderCond = Prisma.empty;
-
       const radiusCond = criteria.maxDistanceKm
         ? Prisma.sql`
             AND ST_DWithin(
@@ -165,19 +211,6 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
             )
           `
         : Prisma.empty;
-
-      // Cursor-based or offset pagination
-      let paginationCond = Prisma.empty;
-      let limitClause = Prisma.sql`LIMIT ${effectiveLimit + 1}`; // +1 to check if more results exist
-
-      if (useCursorPagination && cursor) {
-        // Cursor-based: get results after the cursor ID
-        paginationCond = Prisma.sql`AND rp."id" > ${cursor}`;
-      } else if (!useCursorPagination && page) {
-        // Legacy offset pagination
-        const offset = (page - 1) * effectiveLimit;
-        limitClause = Prisma.sql`LIMIT ${effectiveLimit} OFFSET ${offset}`;
-      }
 
       const orderBy = sortBy === 'distance'
         ? Prisma.sql`ORDER BY dist_m ASC, rp."id" ASC` // Add ID for stable cursor ordering
@@ -203,7 +236,6 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
             FROM "RiderProfile" rp
             JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
             WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
-            ${genderCond}
             ${radiusCond}
             ${excludeCond}
             ${notAlreadyActedCond}
@@ -212,98 +244,81 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
         total = (countRows?.[0]?.count ?? 0) as number;
       }
 
-      // Fetch paginated rows with computed distance
-      const rows = await prisma.$queryRaw<Array<{ id: string; displayName: string | null; sex: any; sport: string; level: string; wantsLesson: boolean; lessonSport: string | null; dist_m: number | null }>>(
+      // ✅ OPTIMIZATION: Single query with LIMIT 200, then filter/paginate in JS
+      const rows = await prisma.$queryRaw<GeospatialMatchRow[]>(
         Prisma.sql`
-          SELECT rp."id", rp."displayName", rp."sex", rd."sport", rd."level", rp."wantsLesson", rp."lessonSport",
-                 CASE
-                   WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_Distance(
-                     ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
-                     ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
-                   )
-                   ELSE NULL
-                 END AS dist_m
+          SELECT
+            rp."id",
+            rp."displayName",
+            rp."sex",
+            rp."photoUrl",
+            rp."bio",
+            rd."sport",
+            rd."level",
+            rp."wantsLesson",
+            rp."lessonSport",
+            CASE
+              WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_Distance(
+                ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
+                ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
+              )
+              ELSE NULL
+            END AS dist_m
           FROM "RiderProfile" rp
           JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
           WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
-          ${genderCond}
           ${radiusCond}
           ${excludeCond}
           ${notAlreadyActedCond}
-          ${paginationCond}
           ${orderBy}
-          ${limitClause}
+          LIMIT 200
         `
       );
 
-      // Process results and determine pagination metadata
-      const processedRows = rows
-        .filter((r) => r.dist_m == null || isFinite(r.dist_m));
+      // Process and filter results
+      const allResults: MatchingResponseItem[] = rows
+        .filter((r: GeospatialMatchRow) => r.dist_m == null || isFinite(r.dist_m))
+        .map((r: GeospatialMatchRow) => ({
+          id: r.id,
+          displayName: r.displayName ?? 'Profil',
+          gender: r.sex,
+          photoUrl: r.photoUrl,
+          bio: r.bio,
+          sport: r.sport,
+          level: r.level,
+          wantsLesson: !!r.wantsLesson,
+          lessonSport: r.lessonSport,
+          distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
+        }));
 
-      let actualResults = processedRows;
+      // Apply client-side exclusions
+      const excludeSet = new Set<string>(req.body.excludeIds || []);
+      const filteredResults = allResults.filter((r: MatchingResponseItem) => !excludeSet.has(r.id));
+
+      // Apply pagination in JavaScript
+      let actualResults = filteredResults;
 
       if (useCursorPagination) {
-        // For cursor pagination, check if we have more results (we fetched limit + 1)
-        hasMore = processedRows.length > effectiveLimit;
-        if (hasMore) {
-          actualResults = processedRows.slice(0, effectiveLimit);
-          nextCursor = actualResults[actualResults.length - 1]?.id || null;
-        }
+        // Cursor-based pagination
+        const startIndex = cursor ? filteredResults.findIndex((r: MatchingResponseItem) => r.id === cursor) + 1 : 0;
+        const endIndex = Math.min(startIndex + effectiveLimit, filteredResults.length);
+        actualResults = filteredResults.slice(startIndex, endIndex);
+        hasMore = endIndex < filteredResults.length;
+        nextCursor = hasMore && actualResults.length > 0 ? actualResults[actualResults.length - 1].id : null;
       } else {
-        // Legacy pagination
-        hasMore = ((page || 1) - 1) * effectiveLimit + processedRows.length < total;
+        // Legacy offset pagination
+        const offset = ((page || 1) - 1) * effectiveLimit;
+        actualResults = filteredResults.slice(offset, offset + effectiveLimit);
+        hasMore = offset + effectiveLimit < filteredResults.length;
+        total = filteredResults.length;
       }
 
-      results = actualResults.map((r) => ({
-        id: r.id,
-        displayName: r.displayName ?? 'Profil',
-        gender: r.sex,
-        sport: r.sport,
-        level: r.level,
-        wantsLesson: !!r.wantsLesson,
-        lessonSport: r.lessonSport,
-        distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
-      }));
+      results = actualResults;
 
-      // Cache the results for future requests (exclude user-specific filters)
-      if (results.length > 0 && cacheService.isAvailable()) {
-        // Get full results for caching (without pagination/exclusions)
-        const fullResults = await prisma.$queryRaw<Array<{ id: string; displayName: string | null; sex: any; sport: string; level: string; wantsLesson: boolean; lessonSport: string | null; dist_m: number | null }>>(
-          Prisma.sql`
-            SELECT rp."id", rp."displayName", rp."sex", rd."sport", rd."level", rp."wantsLesson", rp."lessonSport",
-                   CASE
-                     WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_Distance(
-                       ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
-                       ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
-                     )
-                     ELSE NULL
-                   END AS dist_m
-            FROM "RiderProfile" rp
-            JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
-            WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
-            ${genderCond}
-            ${radiusCond}
-            ${notAlreadyActedCond}
-            ${orderBy}
-            LIMIT 200
-          `
-        );
-
-        const cacheData = fullResults
-          .filter((r) => r.dist_m == null || isFinite(r.dist_m))
-          .map((r) => ({
-            id: r.id,
-            displayName: r.displayName ?? 'Profil',
-            gender: r.sex,
-            sport: r.sport,
-            level: r.level,
-            wantsLesson: !!r.wantsLesson,
-            lessonSport: r.lessonSport,
-            distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
-          }));
-
-        await cacheService.setMatchingResults(cacheKey, cacheData, 300); // 5 minutes cache
-        console.log(`💾 Cached ${cacheData.length} matching results`);
+      // Cache all results for future requests (reuse allResults, no second query needed)
+      if (allResults.length > 0 && cacheService.isAvailable()) {
+        await cacheService.setMatchingResults(cacheKey, allResults, 300); // 5 minutes cache
+        console.log(`💾 Cached ${allResults.length} matching results`);
       }
     }
 
@@ -349,7 +364,7 @@ matchingRouter.post('/decision', requireAuth, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const { targetProfileId, decision } = decisionSchema.parse(req.body);
     const createdConversations: Array<{ conversationId: string; otherDisplayName: string | null }> = [];
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.matchDecision.upsert({
         where: { actorUserId_targetProfileId: { actorUserId: userId, targetProfileId } as any },
         update: { decision },
@@ -383,6 +398,42 @@ matchingRouter.post('/decision', requireAuth, async (req, res) => {
                 });
               }
               createdConversations.push({ conversationId: conv.id, otherDisplayName: targetProfile.displayName ?? 'Profil' });
+
+              // ✨ Notifier les deux utilisateurs du nouveau match (WebSocket)
+              // Get my profile info for the notification
+              const myFullProfile = await tx.riderProfile.findUnique({
+                where: { userId },
+                select: { displayName: true, photoUrl: true }
+              });
+
+              // Notifier l'autre utilisateur
+              notifyNewMatch(targetProfile.userId, {
+                matchId: match.id,
+                conversationId: conv.id,
+                otherUser: {
+                  id: userId,
+                  displayName: myFullProfile?.displayName || 'Un rider',
+                  photoUrl: myFullProfile?.photoUrl
+                }
+              });
+
+              // Notifier moi-même
+              notifyNewMatch(userId, {
+                matchId: match.id,
+                conversationId: conv.id,
+                otherUser: {
+                  id: targetProfile.userId,
+                  displayName: targetProfile.displayName || 'Un rider',
+                  photoUrl: null // On pourrait fetch photoUrl ici si nécessaire
+                }
+              });
+            } else {
+              // ✨ Notifier l'autre utilisateur de ma décision (sans match mutuel)
+              notifyMatchDecision(targetProfile.userId, {
+                actorUserId: userId,
+                decision: 'ACCEPT',
+                mutualMatch: false
+              });
             }
           }
         }
@@ -405,9 +456,9 @@ matchingRouter.post('/decisions', requireAuth, async (req, res) => {
     if (items.length === 0) return res.json({ ok: true, count: 0 });
     // Optimized batch decisions - Fix N+1 queries
     const createdConversations: Array<{ conversationId: string; otherDisplayName: string | null }> = [];
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // 1. Batch upsert all decisions first
-      const decisions = items.map(it => ({
+      const decisions = items.map((it) => ({
         where: { actorUserId_targetProfileId: { actorUserId: userId, targetProfileId: it.targetProfileId } as any },
         update: { decision: it.decision },
         create: { actorUserId: userId, targetProfileId: it.targetProfileId, decision: it.decision },
@@ -419,11 +470,11 @@ matchingRouter.post('/decisions', requireAuth, async (req, res) => {
       }
 
       // 2. Pre-fetch all target profiles in one query
-      const acceptedItems = items.filter(it => it.decision === 'ACCEPT');
+      const acceptedItems = items.filter((it) => it.decision === 'ACCEPT');
       if (acceptedItems.length === 0) return;
 
-      const targetProfileIds = acceptedItems.map(it => it.targetProfileId);
-      const targetProfiles = await tx.riderProfile.findMany({
+      const targetProfileIds = acceptedItems.map((it) => it.targetProfileId);
+      const targetProfiles: TargetProfileSummary[] = await tx.riderProfile.findMany({
         where: { id: { in: targetProfileIds } },
         select: { id: true, userId: true, displayName: true }
       });
@@ -436,7 +487,9 @@ matchingRouter.post('/decisions', requireAuth, async (req, res) => {
       if (!myProfile?.id) return;
 
       // 4. Pre-fetch all reciprocal decisions in one query
-      const targetUserIds = targetProfiles.map(p => p.userId).filter(Boolean);
+      const targetUserIds = targetProfiles
+        .map((p: TargetProfileSummary) => p.userId)
+        .filter((id): id is string => Boolean(id));
       const reciprocalDecisions = await tx.matchDecision.findMany({
         where: {
           actorUserId: { in: targetUserIds },
@@ -446,8 +499,12 @@ matchingRouter.post('/decisions', requireAuth, async (req, res) => {
       });
 
       // 5. Create maps for efficient lookup
-      const profileMap = new Map(targetProfiles.map(p => [p.id, p]));
-      const reciprocalMap = new Map(reciprocalDecisions.map(r => [r.actorUserId, r.decision]));
+      const profileMap = new Map<string, TargetProfileSummary>(
+        targetProfiles.map((p: TargetProfileSummary) => [p.id, p])
+      );
+      const reciprocalMap = new Map<string, ReciprocalDecisionSummary['decision']>(
+        reciprocalDecisions.map((r: ReciprocalDecisionSummary) => [r.actorUserId, r.decision])
+      );
 
       // 6. Process matches efficiently
       for (const it of acceptedItems) {

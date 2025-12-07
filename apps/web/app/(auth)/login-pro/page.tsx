@@ -19,6 +19,8 @@ export default function ProLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
+  const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : null);
+
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -29,8 +31,8 @@ export default function ProLoginPage() {
       await apiClient.send2FA(email);
       setStep('code');
       setInfo('Code de sécurité envoyé par email. Vérifie ta boîte mail.');
-    } catch (err: any) {
-      const msg = err?.message || 'Une erreur est survenue';
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err) || 'Une erreur est survenue';
       if (msg.toLowerCase().includes('utilisateur non trouvé')) {
         setError('Aucun compte professionnel trouvé avec cette adresse email.');
       } else if (msg.toLowerCase().includes('2fa disponible uniquement pour les pros')) {
@@ -50,7 +52,7 @@ export default function ProLoginPage() {
     setLoading(true);
 
     try {
-      const res = await apiClient.verify2FA(email, code);
+      const res = await apiClient.verifyPro2FA(email, code);
       apiClient.saveTokens(res.accessToken, res.refreshToken);
 
       // Récupérer le rôle de l'utilisateur pour rediriger correctement
@@ -64,8 +66,8 @@ export default function ProLoginPage() {
       } catch {
         router.push('/dashboard');
       }
-    } catch (err: any) {
-      const msg = err?.message || 'Une erreur est survenue';
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err) || 'Une erreur est survenue';
       if (msg.toLowerCase().includes('code incorrect') || msg.toLowerCase().includes('code expiré')) {
         setError('Code incorrect ou expiré. Réessaye ou demande un nouveau code.');
       } else {
@@ -84,8 +86,8 @@ export default function ProLoginPage() {
     try {
       await apiClient.send2FA(email);
       setInfo('Nouveau code envoyé par email.');
-    } catch (err: any) {
-      setError(err?.message || 'Impossible de renvoyer le code');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Impossible de renvoyer le code');
     } finally {
       setLoading(false);
     }
@@ -192,7 +194,7 @@ export default function ProLoginPage() {
                   onClick={() => setStep('email')}
                   className="w-full"
                 >
-                  ← Changer d'email
+                  ← Changer d&rsquo;email
                 </Button>
               </div>
             </form>

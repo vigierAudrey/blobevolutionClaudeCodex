@@ -24,7 +24,7 @@ export default function AdminSecurityPage() {
     try {
       const data = await apiClient.getSecurityHealth();
       setHealth(data);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to fetch security health:', error);
     } finally {
       setLoading(false);
@@ -121,7 +121,7 @@ export default function AdminSecurityPage() {
       <Card>
         <CardHeader>
           <CardTitle>CORS Origins Autorisées</CardTitle>
-          <CardDescription>Domaines autorisés à appeler l'API</CardDescription>
+          <CardDescription>Domaines autorisés à appeler l&rsquo;API</CardDescription>
         </CardHeader>
         <CardContent>
           {health?.corsWhitelist.length === 0 ? (

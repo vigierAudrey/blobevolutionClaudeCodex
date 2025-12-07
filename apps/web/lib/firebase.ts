@@ -131,7 +131,7 @@ type ForegroundNotification = {
 
 function showForegroundNotification(notification: ForegroundNotification) {
   if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(notification.title || 'Blobinfini', {
+    new Notification(notification.title || 'BlobConnect', {
       body: notification.body,
       icon: notification.icon || '/icons/icon-192x192.png',
       badge: '/icons/icon-72x72.png',
@@ -146,7 +146,7 @@ function showForegroundNotification(notification: ForegroundNotification) {
  */
 export async function saveFCMToken(token: string, userId?: string): Promise<boolean> {
   try {
-    const response = await fetch('/api/push/subscribe', {
+    const response = await fetch('/api/push/register', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

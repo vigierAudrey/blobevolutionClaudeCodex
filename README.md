@@ -1,32 +1,39 @@
-# 🏄 Blobinfini – Monorepo IA
+# 🏄 BlobConnect – Monorepo IA
 
 ## 📋 Mission pour l'IA
 
-Ce monorepo contient la version vivante de Blobinfini, marketplace de mise en relation pour les sports de glisse (surf/kitesurf).
+Ce monorepo contient la version vivante de BlobConnect, marketplace de mise en relation pour les sports de glisse (surf/kitesurf).
 
 **Votre mission** : Contribuer directement ici. Ignorez l'ancien projet `/blobevolution` (archivé). Pour un rappel historique uniquement, consultez `ai/context/migration_from_blobevolution.md`.
 
 **Référence IA** : Ce README, `AGENTS.md` et `claude.md` sont les guides officiels pour nos IA (Codex, ChatGPT-5, Claude Code) et l’équipe humaine.
 
-**Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de Blobinfini via du contenu partageable (SEO + réseaux sociaux).
+**Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de BlobConnect via du contenu partageable (SEO + réseaux sociaux).
 
 ## 🎯 Vision Produit
 
-Blobinfini connecte les passionnés de sports de glisse en proposant :
+BlobConnect connecte les passionnés de sports de glisse en proposant :
 
 - **Matching intelligent** entre riders basé sur géolocalisation, niveau et disponibilités
 - **Réservation de cours** avec moniteurs professionnels certifiés
 - **Paiements en ligne** (désactivés temporairement le temps de repenser l’intégration Stripe)
 - **Messagerie intégrée** avec filtrage anti-contournement
-- **Gamification** : Points "Flocons d'avoine", badges, mascotte Blob personnalisable
+- **(Reporté)** Gamification communautaire (systèmes de points/badges) – hors scope MVP
 - **Carte interactive** (BloboMap) montrant groupes et spots en temps réel
-- **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de Blobinfini
+- **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de BlobConnect
 
 ### Utilisateurs cibles
 
 - **Riders** : Surfeurs/kitesurfeurs 25-45 ans cherchant partenaires ou cours
 - **Professionnels** : Moniteurs indépendants et écoles cherchant visibilité
 - **Objectif inclusion** : Interface accessible, effort particulier pour attirer les femmes dans ces sports
+
+### ♿ Accessibilité
+
+- **Panneau accessibilité** : un module persistant (`apps/web/components/accessibility`) permet d’activer contraste élevé, police agrandie, police Atkinson Hyperlegible et réduction des animations (stockage local + respect `prefers-reduced-motion`).
+- **Navigation clavier** : lien “Aller au contenu principal”, `main#main-content` focusable et annonceur de changement de route `RouteAnnouncer` pour lecteurs d’écran.
+- **Contrastes dynamiques** : les thèmes reposent sur les variables CSS Tailwind ; activer le mode contraste élevé force des valeurs RGAA (texte clair, bordures renforcées, focus visibles).
+- **Mode clair/sombre** : un bouton persistant en bas à droite permet de basculer à tout moment entre clair et sombre (préférence mémorisée dans le navigateur et initialisée selon `prefers-color-scheme`).
 
 ## 🏗️ Architecture Cible
 
@@ -169,7 +176,7 @@ L'authentification est un **module dans l'API principale** pour simplifier le d�
 - ✅ **Sessions multi-devices** (implémenté)
 - ✅ **Logout avec invalidation tokens** (implémenté)
 - ✅ **RGPD: consentement, export, suppression** (implémenté)
-- ⏳ **2FA obligatoire pour pros** (specs définies, implémentation prévue)
+- ✅ **2FA obligatoire pour pros** (implémenté - activation via email + code 2FA)
 - ⏳ **Social login** (Google, Facebook) (Phase 2)
 
 ### Schéma Base de Données
@@ -200,6 +207,7 @@ model User {
 
 - ✅ **Chiffrement AES-256** données personnelles
 - ✅ **Consentement explicite** géolocalisation
+- ✅ **Minimisation** : aucune donnée de paiement collectée (parcours sans transaction intégrée)
 - ✅ **Droit à l'oubli** (soft delete + purge automatique 3 phases)
 - ✅ **Export données utilisateur** (GDPR CLI intégré)
 - ✅ **Logs anonymisés** après 30 jours
@@ -213,7 +221,7 @@ model User {
 - ✅ **CSRF tokens** obligatoires sur toutes mutations
 - ✅ **Headers sécurité** (CSP, HSTS, XSS Protection)
 - ✅ **JWT + refresh tokens** sécurisés (rotation automatique)
-- ⏳ **2FA obligatoire pour pros** (prochaine phase)
+- ✅ **2FA obligatoire pour pros** (déployé)
 
 ### Décision: Refresh tokens (MVP)
 
@@ -228,6 +236,16 @@ model User {
 - ✅ QR codes uniques par session
 - ✅ Détection comportements suspects
 - ✅ Rappel avantages plateforme
+
+### Rate limiting & `/auth/me`
+
+- **Comportement actuel** : toutes les routes `POST /auth/*` (login, refresh, etc.) restent protégées par le profil strict `AUTH` (5 requêtes / 15 min). Les routes `GET /auth/*` — notamment `GET /auth/me` appelé après connexion — sont volontairement routées vers le profil `API_STANDARD` (100 requêtes / 15 min) pour éviter les 429 en développement où les re-rendus se multiplient.
+- **Checklist passage en prod** :
+  1. **Mesurer le trafic réel** (`/auth/me` est instrumenté via les logs rate-limit). Si les clients officiels restent en dessous de ~300 requêtes / 15 min par IP, la configuration actuelle suffit.
+  2. **Besoin de durcir ?** Créer un profil dédié `AUTH_READ` dans `apps/api/src/middleware/enhanced-rate-limit.ts` (ex: 300 req / 15 min) et router les `GET /auth/*` dessus. Les POST `/auth/*` ne doivent jamais quitter le profil `AUTH`.
+  3. **Industrialisation** : exposer les seuils via variables d’environnement (`AUTH_MAX`, `AUTH_READ_MAX`, etc.) pour permettre un ajustement sans redeploiement.
+  4. **Côté front** : garder une déduplication/caching (`optimizedApiClient.me()`, SWR…) afin d’éviter les rafales client. Lors d’une intégration tierce, imposer une limite max de 1 appel `/auth/me` par cycle de rendu.
+  5. **Observabilité** : en production, monitorer les occurrences de `AUTH_RATE_LIMIT_EXCEEDED` et déclencher une alerte si elles réapparaissent une fois les seuils calibrés.
 
 ## 📊 Fonctionnalités par Phase
 
@@ -250,7 +268,6 @@ model User {
 - 🔥 **Tests unitaires** : couverture 80%+ pour stabilité production
 - 📈 **Blobosphère enrichie** : CMS complet + SEO + partage social
 - 📊 **Analytics avancées** : tableau de bord business + métriques
-- 🔧 **2FA obligatoire** pour pros (sécurité renforcée)
 - 🎯 **Social login** (Google, Facebook) pour conversion
 - 🤖 **Matching ML** multi-critères intelligent
 - 🏆 **Système réputation** (notes/avis post-session)
@@ -260,21 +277,117 @@ model User {
 - [ ] **Migration auth vers service dédié**
 - [ ] Multi-sports (windsurf, paddle)
 - [ ] API publique REST/GraphQL
-- [ ] Chatbot IA (Blobot)
+- [ ] Chatbot IA (Blobot – R&D, non activé dans le MVP)
 - [ ] Camps/stages réservables
 - [ ] Marketplace équipement
 - [ ] Internationalisation
+
+## 🤖 Configuration MCP (Model Context Protocol)
+
+### Serveurs MCP Disponibles
+
+Le projet **blobevolutionClaudeCodex** est configuré pour utiliser plusieurs serveurs MCP qui enrichissent les capacités des IA :
+
+#### Pour Claude Code (CLI)
+Configuration : `~/.config/claude-code/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "vercel": {
+      "command": "npx",
+      "args": ["-y", "vercel-mcp"],
+      "env": {
+        "VERCEL_API_KEY": "votre-clé-api-vercel"
+      }
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    }
+  }
+}
+```
+
+**Capacités** :
+- **Vercel MCP** : Gestion des déploiements, projets, domaines, logs Vercel
+- **Chrome DevTools MCP** : Automatisation navigateur, debugging, screenshots, analyse de performance
+
+#### Pour Claude Desktop (Application)
+Configuration : `~/.config/claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "sentry": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sentry"],
+      "env": {
+        "SENTRY_AUTH_TOKEN": "votre-token-sentry",
+        "SENTRY_ORG": "votre-organisation"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@executeautomation/playwright-mcp-server"]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@context7/mcp-server"],
+      "env": {
+        "CONTEXT7_API_KEY": "votre-clé-context7"
+      }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "votre-token-github"
+      }
+    }
+  }
+}
+```
+
+**Capacités** :
+- **Sentry** : Surveillance erreurs production, analyse stack traces, création de rapports de bugs
+- **Playwright** : Tests E2E automatisés, génération de scripts de test
+- **Chrome DevTools (Puppeteer)** : Navigation web, inspection DOM, capture de performance
+- **Context7** : Recherche de documentation technique, exemples de code
+- **GitHub** : Gestion issues/PRs, recherche de code, analyse historique
+
+### Configuration des Tokens
+
+Pour activer les serveurs MCP :
+
+1. **Sentry** : https://sentry.io/settings/account/api/auth-tokens/
+2. **Context7** : https://context7.com (compte + clé API)
+3. **GitHub** : https://github.com/settings/tokens (scopes: `repo`, `read:org`, `workflow`)
+4. **Vercel** : https://vercel.com/account/tokens
+
+### Documentation Complète
+
+Voir `docs/mcp-setup.md` pour :
+- Installation détaillée
+- Obtention des tokens
+- Utilisation par les IA
+- Dépannage
 
 ## 🚀 Instructions pour l'IA
 
 ### Lignes directrices
 
 - Travaillez exclusivement dans `blobevolutionClaudeCodex`.
-- Respectez l’architecture modulaire (auth, matching, bookings, payments, messaging).
+- Respectez l'architecture modulaire (auth, matching, bookings, payments, messaging).
 - Intégrez le module `blobosphere` (contenus éditoriaux) pour renforcer la visibilité externe.
+- Utilisez les serveurs MCP disponibles (Sentry, GitHub, Playwright, Chrome DevTools, Context7, Vercel) pour enrichir vos capacités d'analyse et de déploiement.
 - Sécurité systématique : Zod sur tous les inputs, Prisma uniquement, rate limiting, CSRF, headers de sécurité.
 - Auth : JWT 15 min + refresh 30 j, 2FA obligatoire pour les pros, sessions invalidables.
-- RGPD : consentement explicite, anonymisation, droit à l’oubli, export des données.
+- RGPD : consentement explicite, anonymisation, droit à l'oubli, export des données.
 - Performance : PostGIS, Redis, index composites, pagination cursor-based.
 - Qualité : TypeScript strict, tests unitaires/E2E, couverture ≥ 80 %.
 - CI/CD : utilisez les scripts fournis (`npm run build`, `npm test`, etc.) et surveillez la GitHub Action `CI`.
@@ -424,6 +537,14 @@ act -j build-and-test
 
 Les étapes de déploiement Vercel sont automatiquement ignorées dans les runs locaux.
 
+### 2025-11-09 — Politique de nettoyage Jest (2025)
+
+1. **Résumé** – Toutes les suites e2e critiques (`auth`, `conversations`, `matching`, `profile`, `admin`, `contact`, `anti-overbooking`, `booking`) reconstruisent leurs fixtures dans un `beforeEach()`. Chaque scénario repart ainsi d’un environnement neuf, sans dépendre des créations effectuées par un test précédent.
+2. **Description technique** – `apps/api/jest.setup.db.ts` vide désormais l’ensemble des tables entre les suites Jest sans aucune exception dans `skipCleanupPatterns`. Cette politique rend la CI plus prévisible et prépare la migration Prisma 7.
+
+> 🧠 Coach pédago : chaque train (suite e2e) passe désormais par son atelier de remise à zéro avant le départ, pendant que la grande équipe de nettoyage repasse entre chaque passage.  
+> 🧭 Prochaine balade naturelle : surveiller l’arrivée de nouvelles suites e2e et documenter immédiatement tout besoin spécifique pour conserver cette isolation totale.
+
 ### 📦 Architecture de Déploiement
 
 ```
@@ -458,7 +579,11 @@ Les étapes de déploiement Vercel sont automatiquement ignorées dans les runs 
 
 ### 🚀 Workflow de Développement
 
-1. **Développement local** : `npm run dev:all` (API + Frontend)
+1. **Développement local** :
+   - Chemin A (API hors Docker): `npm run dev:all`
+   - Chemin B recommandé (API dans Docker): `npm run dev:all:docker`
+     - Démarre l'infra Docker (Postgres, Redis, MinIO, Mailpit) et l'API dans Docker
+     - Lance le frontend Next.js en local sur `http://localhost:3002`
 2. **Créer une branche** : `git checkout -b feat/nouvelle-fonctionnalite`
 3. **Commit et push** : `git push origin feat/nouvelle-fonctionnalite`
 4. **Vercel crée automatiquement** une URL de prévisualisation
@@ -575,7 +700,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ## 🌐 Blobosphère – Hub éditorial
 
 ### Objectif produit
-- Amplifier la visibilité de Blobinfini via un espace éditorial riche (articles, interviews, reportages photo).
+- Amplifier la visibilité de BlobConnect via un espace éditorial riche (articles, interviews, reportages photo).
 - Créer un tunnel d’entrée SEO/social : chaque contenu dispose d’URL publiques optimisées et de métadonnées partageables.
 - Offrir aux riders/pros un lien direct depuis leurs univers respectifs pour explorer l’actualité de la communauté.
 
@@ -586,6 +711,8 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 
 ### Gestion éditoriale (Admin)
 - Les comptes `ADMIN` accèdent à `/admin/blobosphere` (guardé) pour rédiger, prévisualiser et publier.
+- Configurez le compte admin principal via `PRIMARY_ADMIN_EMAILS` (par défaut `dev+admin@test.com`). Les emails listés y possèdent automatiquement **toutes** les permissions admin pour débloquer les sections `/admin/*`.
+- Nouveauté diffusions : depuis `/admin/conversations/broadcast`, un admin peut envoyer un message dans la messagerie interne de tous les riders, de tous les pros ou d'une liste d'emails précise (conversation `ADMIN_TO_USER`). Les actions sont historisées et peuvent être désactivées via `/admin/conversations/unblock-all` en cas d'incident.
 - Workflow statut : `draft` → `review` → `published` → `archived`.
 - Possibilité d’épingler un contenu sur la page d’accueil Blobosphère et dans les univers Riders/Pros.
 - Outils de modération : signalements utilisateurs, bannière “contenu signalé”, archivage rapide.
@@ -626,26 +753,51 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ## 👥 Rôles, Profils et BloboMap
 
 - Riders et Pros disposent d’un CTA "Explorer la Blobosphère" pour accéder au hub éditorial (route `/blobosphere`).
-- Riders (particuliers):
-  - Profil `RiderProfile` avec `wantsLesson` (bool) et `lessonSport` (surf|kitesurf).
-  - Matching: bouton "Faire appel à un pro" et interrupteur "Je veux un cours".
-  - Affichage badge "🎓 Cours" sur cartes/résultats si `wantsLesson=true`.
 
-- Pros (professionnels):
-  - Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).
-  - Prix conservé en base mais non exposé en UI publique pour l’instant.
-  - BloboMap (OSM/Leaflet) côté pro: `/pro/map` avec filtres “Surf / Kitesurf” et rayon (km).
-  - Un clic sur un marqueur ouvre/crée une conversation (“Contacter”).
+### Riders (Particuliers)
 
-- API liées:
-  - `PUT /profile/me`: accepte `wantsLesson`, `lessonSport` (rider).
-  - `GET /pro/near/lessons?sport=surf|kitesurf&radiusKm=25`: demandes de cours visibles par tous les pros du périmètre (variante B), Riders ayant au moins un match actif, tri par distance.
-  - `POST /conversations/open`: crée/retourne une conversation directe entre 2 users.
+**Profil & données**
 
-- Web:
-  - `/matching` → interrupteur “Je veux un cours” + badge 🎓 en liste.
-  - `/pro/profile` → lieu de travail (lat/lng), logo; pas de champ prix en UI publique.
-  - `/pro/map` → Leaflet + OpenStreetMap, filtres sport/rayon, bouton “Contacter”.
+- Profil `RiderProfile` avec `wantsLesson` (bool) et `lessonSport` (surf|kitesurf).
+- Matching : bouton "Faire appel à un pro" et interrupteur "Je veux un cours".
+- Affichage badge "🎓 Cours" sur cartes/résultats si `wantsLesson=true`.
+- Données conservées : préférences sport, niveau, zone géographique, demandes de session, consentements RGPD.
+
+**Parcours MVP**
+
+1. Inscription + vérification email (support rider ou pro).
+2. Configuration du profil et consentement géolocalisation.
+3. Exploration de `/matching`, envoi d’une demande de session et échanges avec le pro.
+4. Validation finale hors plateforme (paiement non géré dans BlobConnect pour le MVP).
+
+### Pros (Professionnels)
+
+**Profil & données**
+
+- Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).
+- Informations tarifaires conservées uniquement en base (non exposées) pour préparer le futur retour du paiement.
+- Créneaux publiés, demandes reçues et journal d’audit pro.
+- Pièces justificatives partagées hors plateforme : les utilisateurs doivent vérifier directement les documents fournis par le professionnel.
+- Auth renforcée avec 2FA obligatoire sur connexion.
+
+**Parcours MVP**
+
+1. Inscription via parcours pro + activation email.
+2. Activation du 2FA (code reçu par email) à la première connexion.
+3. Paramétrage du profil public et des créneaux sur `/pro/profile` et `/pro/map`.
+4. Réception des demandes, réponse (acceptation/refus) et suivi depuis le planning pro.
+
+### API liées
+
+- `PUT /profile/me`: accepte `wantsLesson`, `lessonSport` (rider).
+- `GET /pro/near/lessons?sport=surf|kitesurf&radiusKm=25`: demandes de cours visibles par tous les pros du périmètre (variante B), Riders ayant au moins un match actif, tri par distance.
+- `POST /conversations/open`: crée/retourne une conversation directe entre 2 users.
+
+### Web
+
+- `/matching` → interrupteur “Je veux un cours” + badge 🎓 en liste.
+- `/pro/profile` → lieu de travail (lat/lng), logo; pas de champ prix en UI publique.
+- `/pro/map` → Leaflet + OpenStreetMap, filtres sport/rayon, bouton “Contacter”. Le rayon unique est partagé pour le surf **et** le kite et est sauvegardé côté pro.
 
 ## 🧪 Données de démo (seed)
 
@@ -664,8 +816,17 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
   npm run db:reseed
 
   # 2. Lancer les serveurs applicatifs (dans deux terminaux séparés)
-  npm run dev:api
-  npm run dev:web
+# Démarrage dev (Chemin B – API dans Docker)
+npm run dev:all:docker
+
+# Démarrages ciblés
+npm run dev:infra       # Postgres/Redis/MinIO/Mailpit (Docker)
+npm run dev:api:docker  # API dans Docker
+npm run dev:web         # Frontend en local (http://localhost:3002)
+
+Notes:
+- Pour accéder à Swagger: `http://localhost:4000/api/docs` (API dans Docker)
+- Assurez-vous d'avoir `REDIS_PASSWORD` dans votre `.env` pour l'infra Docker
   ```
 
   - API dispo sur `http://localhost:4000`
@@ -801,12 +962,9 @@ router.post(
 - Archivage auto après 30 jours inactivité
 - Modération IA contenus inappropriés
 
-### Gamification
+### Gamification (retirée)
 
-- Points "Flocons d'avoine" par action
-- Badges débloquables (Top Rider, Pro Elite)
-- Mascotte Blob personnalisable (accessoires)
-- Événements communautaires (élection Blob)
+> Les mécaniques de points, badges, concours ou mascottes personnalisées sont désactivées pour le MVP afin de concentrer l'équipe sur le matching, la réservation et la Blobosphère.
 
 ## 📚 Documentation Technique
 
@@ -815,6 +973,8 @@ router.post(
 - [Database Schema](./docs/database.md)
 - [Security Guidelines](./docs/security.md)
 - [RGPD Compliance](./docs/rgpd.md)
+- [Publicités & Consentement](./README_ADS.md)
+- [Tests E2E & CI](./README_TESTS.md)
 
 ## 🤝 Contribution IA
 
@@ -842,4 +1002,118 @@ router.post(
 
 ---
 
-_Blobinfini - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
+_BlobConnect - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
+
+## ✍️ Blobosphère – MDX + Git + Décap CMS
+
+L’édition de la Blobosphère repose désormais uniquement sur des fichiers **MDX** versionnés. Décap CMS et l’éditeur interne écrivent directement dans `apps/web/content/blobosphere`. Aucune donnée n’est chargée depuis `data.ts` (supprimé).
+
+### ✅ To-do immédiat
+- [ ] **TODO**: remplacer `repo: "<OWNER>/<REPO>"` dans `apps/web/public/admin/config.yml` par le dépôt GitHub cible avant de lancer Décap.
+
+### Structure des fichiers
+- Racine contenu: `apps/web/content/blobosphere/`
+  - Sous-dossiers par catégorie: `surf/`, `kitesurf/`, `communaute/`, `impact`
+  - Fichiers `.mdx` avec frontmatter standard :
+
+```yaml
+---
+title: "Titre"
+slug: "titre-en-kebab"
+category: "surf" | "kitesurf" | "communaute" | "impact"
+excerpt: "Aperçu court"
+tags: ["tag1","tag2"]
+status: "draft" | "published"
+publishedAt: "2025-01-08"
+updatedAt: "2025-01-08"
+coverImage: "/uploads/cover.jpg"
+readingTime: 7
+---
+```
+
+- Création/écriture locale : `apps/web/lib/blobosphere/saveMdx.ts` (utilisé par les routes `/api/blobosphere/posts`).
+- Lecture côté Next : `apps/web/lib/blobosphere/loadBlobospherePreviews.ts` (utilisé par `/blobosphere`, filtre automatiquement les drafts).
+
+### Export automatique des articles
+- Routes Next.js dédiées (dev uniquement) :
+  - `POST /api/blobosphere/posts` → crée `apps/web/content/blobosphere/<category>/<slug>.mdx`
+  - `PUT /api/blobosphere/posts/:category/:slug` → met à jour le fichier MDX existant
+  - `GET /api/blobosphere/posts` et `/posts/:category/:slug` → listent/chargent les fichiers pour l’éditeur interne
+- Les routes ci-dessus appellent `saveMdx.ts` et calculent automatiquement `readingTime`, `publishedAt`, etc.
+- L’éditeur interne (`/admin/blobosphere/editor`) consomme ces routes, pas besoin d’API externe pour tester en local.
+
+### Lancer Décap CMS (GitHub backend)
+1. **Config `config.yml`**  
+   ```yaml
+   backend:
+     name: github
+     repo: "<OWNER>/<REPO>"    # TODO à renseigner
+     branch: "main"
+     base_url: "http://localhost:3002"
+     auth_endpoint: "api/decap/auth"
+   media_folder: "apps/web/public/uploads"
+   public_folder: "/uploads"
+   load_config_file: false
+   collections: # … voir fichier pour le détail des champs
+   ```
+2. **Proxy Décap**  
+   Le fichier `apps/web/app/api/decap/auth/route.ts` relaye `/api/decap/auth` vers `https://api.netlify.com/api/v1/auth/github`. Il évite les `ERR_CONNECTION_REFUSED` en local.
+3. **GitHub OAuth App**  
+   - GitHub > Settings > Developer settings > OAuth Apps > New OAuth App  
+   - Homepage URL : `http://localhost:3002`  
+   - Authorization callback URL : `http://localhost:3002/api/decap/auth/callback`  
+   - Récupère `Client ID` / `Client Secret` pour la configuration Décap (popup d’auth).
+4. **Démarrage**  
+   - `npm run dev --workspace @blobinfini/web` (écoute sur `3002`)  
+   - Navigue vers `/admin/blobosphere` pour charger l’iframe Décap isolée.  
+   - Le bouton “Ouvrir dans un nouvel onglet” pointe vers `/admin/index.html` si l’iframe est bloquée.
+
+### Exporter un article `.mdx`
+1. Via l’éditeur interne : `/admin/blobosphere/editor`
+   - Remplis le formulaire (slug + catégorie + contenu).  
+   - Clique “Enregistrer” → `POST /api/blobosphere/posts` → fichier écrit dans `apps/web/content/blobosphere/<cat>/<slug>.mdx`.
+2. Via Décap CMS : `/admin/index.html`
+   - Auth GitHub, sélectionne “Blobosphère”, crée ou édite un article.  
+   - Les commits GitHub contiennent directement les fichiers `.mdx`.
+3. Via API :  
+   ```bash
+   curl -X POST http://localhost:3002/api/blobosphere/posts \
+     -H "Content-Type: application/json" \
+     -d '{"title":"Test","slug":"test","category":"surf","status":"draft","body":"Contenu"}'
+   ```
+
+### Éditeur interne `/admin/blobosphere/editor`
+1. **Créer**  
+   - Accède à `/admin/blobosphere/editor`.  
+   - Renseigne `title`, `slug`, `category`, `status` (draft/published), `excerpt`, `tags` et le contenu MDX.  
+   - Sauvegarde → appel `POST /api/blobosphere/posts` (validation simple) → `saveMdx.ts` écrit `apps/web/content/blobosphere/<categorie>/<slug>.mdx`.
+2. **Modifier**  
+   - Sélectionne un article existant dans la liste.  
+   - Mets à jour les champs. Un changement de slug ou de catégorie renomme automatiquement le fichier (`PUT /api/blobosphere/posts/<cat>/<slug>`).  
+   - Après sauvegarde, l’éditeur recharge le fichier réel pour garder l’aperçu synchronisé.
+3. **Publier**  
+   - Passe `status` à `published`, puis clique sur “Prévisualiser l’article final” pour recharger `loadBlobospherePreviews()` via `/api/blobosphere/previews`.  
+   - Si l’article est publié, un lien ouvre directement `/blobosphere?topic=<cat>#<slug>`.
+4. **Supprimer**  
+   - Passe en mode édition (sélectionne l’article).  
+   - Clique sur “Supprimer l’article” puis confirme : la route `DELETE /api/blobosphere/posts/<cat>/<slug>` supprime physiquement le fichier `.mdx`.  
+   - Le formulaire est remis à zéro et l’article disparaît de la liste. (Décap CMS continue à gérer la suppression via GitHub pour les commits distants.)
+5. **Où se trouvent les fichiers ?**  
+   - Tous les articles sont physiquement stockés dans `apps/web/content/blobosphere/<category>/<slug>.mdx`.  
+   - Les dossiers sont créés à la volée si besoin.
+6. **Vérifier dans `/blobosphere`**  
+   - `npm run dev --workspace @blobinfini/web`  
+   - Ouvre `http://localhost:3002/blobosphere` et filtre par catégorie : seuls les MDX `status: published` apparaissent (chargés par `loadBlobospherePreviews()`).
+
+### Vérifier la lecture côté `/blobosphere`
+1. `npm run dev --workspace @blobinfini/web`
+2. Ajoute/modifie un fichier dans `apps/web/content/blobosphere`
+3. Ouvre `http://localhost:3002/blobosphere` → les articles publiés doivent apparaître.  
+   - `loadBlobospherePreviews()` filtre automatiquement `status: draft` et calcule `readingTime`.
+
+### Checklist debug (403 / 404 / proxy)
+- Next.js doit tourner sur **`http://localhost:3002`** (sinon adapter `base_url` dans `config.yml`).
+- `repo` doit être remplacé par le vrai dépôt GitHub (sinon Décap renvoie 404 GitHub).
+- Vérifie l’URL de callback de l’OAuth App (`/api/decap/auth/callback` exactement).
+- Si Décap affiche des 401/403, vider les tokens locaux : onglet Application > Local Storage > supprimer `accessToken`/`refreshToken`.
+- L’éditeur interne n’utilise plus `apiClient` sur `/admin/blobosphere`, évitant les requêtes parasites sur `/api/v1`.

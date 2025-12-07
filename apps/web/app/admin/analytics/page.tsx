@@ -2,7 +2,7 @@
 
 // Force SSR for admin auth and dynamic data
 export const dynamic = 'force-dynamic';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
@@ -74,7 +74,7 @@ export default function AdminAnalytics() {
     checkAuth();
   }, [router]);
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -104,16 +104,17 @@ export default function AdminAnalytics() {
           { page: '/dashboard', impressions: 400, revenue: 2.1 }
         ] : []
       });
-    } catch (err: any) {
-      setError(err.message || 'Erreur de chargement des analytics');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur de chargement des analytics');
     } finally {
       setLoading(false);
     }
-  };
+  }, [period]);
 
   useEffect(() => {
-    loadAnalytics();
-  }, [period]);
+    void loadAnalytics();
+  }, [loadAnalytics]);
 
   const formatPercent = (value: number) => `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
   const formatNumber = (value: number) => value.toLocaleString('fr-FR');
@@ -185,7 +186,7 @@ export default function AdminAnalytics() {
           <div>
             <h1 className="text-3xl font-bold">Analytics Détaillées</h1>
             <p className="text-muted-foreground">
-              Métriques d'engagement et de matching
+              Métriques d&rsquo;engagement et de matching
             </p>
           </div>
         </div>
@@ -221,7 +222,7 @@ export default function AdminAnalytics() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                Vue d'ensemble - Engagement
+                Vue d&rsquo;ensemble - Engagement
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -263,7 +264,7 @@ export default function AdminAnalytics() {
                 <TrendingUp className="h-5 w-5" />
                 Taux de rétention
               </CardTitle>
-              <CardDescription>Pourcentage d'utilisateurs qui reviennent</CardDescription>
+              <CardDescription>Pourcentage d&rsquo;utilisateurs qui reviennent</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
@@ -300,7 +301,7 @@ export default function AdminAnalytics() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Heart className="h-5 w-5" />
-                Vue d'ensemble - Matching
+                Vue d&rsquo;ensemble - Matching
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -330,7 +331,7 @@ export default function AdminAnalytics() {
                   <div className="text-2xl font-bold text-green-600">
                     {formatPercent(matchingData.overview.acceptRate)}
                   </div>
-                  <div className="text-sm text-muted-foreground">Taux d'acceptation</div>
+                  <div className="text-sm text-muted-foreground">Taux d&rsquo;acceptation</div>
                 </div>
 
                 <div className="text-center">
@@ -468,7 +469,7 @@ export default function AdminAnalytics() {
                   )}
                   <p className="text-xs text-muted-foreground mt-2">
                     {ttfmData.ridersWithoutMatch > 0
-                      ? `${formatNumber(ttfmData.ridersWithoutMatch)} nouveaux riders n'ont pas encore matché sur la période.`
+                      ? `${formatNumber(ttfmData.ridersWithoutMatch)} nouveaux riders n&rsquo;ont pas encore matché sur la période.`
                       : 'Tous les nouveaux riders de la période ont un premier match.'}
                   </p>
                 </CardContent>
@@ -799,7 +800,7 @@ export default function AdminAnalytics() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5" />
-                Vue d'ensemble comportementale
+                Vue d&rsquo;ensemble comportementale
               </CardTitle>
               <CardDescription>
                 Indicateurs clés sur la période sélectionnée ({currentPeriodLabel})

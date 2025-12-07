@@ -3,19 +3,51 @@ import { BackBar } from '../../components/BackBar';
 
 export default function PromosPage() {
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto space-y-4">
       <BackBar fallbackHref="/dashboard" />
       <Card>
         <CardHeader>
           <CardTitle>Offres promotionnelles</CardTitle>
-          <CardDescription>Retrouve ici des promos temporaires sur les sessions et équipements.</CardDescription>
+          <CardDescription>Espace dédié aux promotions et partenariats</CardDescription>
         </CardHeader>
-        <CardContent>
-          <ul className="list-disc pl-5 text-sm">
-            <li>-10% sur ta prochaine session (code: BLOB10)</li>
-            <li>Parraine un ami: 5€ offerts chacun</li>
-            <li>Pack découverte Kite: -15% jusqu’à dimanche</li>
-          </ul>
+        <CardContent className="space-y-4">
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🚀</span>
+              <div className="flex-1">
+                <h3 className="font-semibold text-blue-900 mb-2">Bientôt disponible</h3>
+                <p className="text-sm text-blue-800 mb-3">
+                  Cette section accueillera des offres promotionnelles exclusives pour la communauté BlobConnect.
+                </p>
+                <p className="text-sm text-blue-800">
+                  Au fur et à mesure du développement de la plateforme, nous proposerons des partenariats
+                  avec des écoles de surf, des loueurs d&apos;équipement et d&apos;autres acteurs de la glisse.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-gray-50 border border-gray-200 rounded-md">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🤝</span>
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-900 mb-2">Vous êtes partenaire ?</h3>
+                <p className="text-sm text-gray-700 mb-3">
+                  Si vous êtes une école de surf, un loueur d&apos;équipement, ou un acteur de la glisse
+                  intéressé par un partenariat, cet espace pourra accueillir vos offres promotionnelles.
+                </p>
+                <p className="text-xs text-gray-600 italic">
+                  Les détails du programme de partenariat seront communiqués prochainement.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center pt-2">
+            <p className="text-xs text-muted-foreground">
+              Cette page sera mise à jour au fur et à mesure de l&apos;évolution du projet
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

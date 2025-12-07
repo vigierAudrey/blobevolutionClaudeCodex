@@ -1,21 +1,89 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
-import { apiClient } from '../../../lib/apiClient';
-import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react';
+import { apiClient, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary, type SystemAlert } from '../../../lib/apiClient';
+import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity, BookOpen, PenSquare } from 'lucide-react';
 import Link from 'next/link';
 
 // Force SSR for admin auth and dynamic stats
 export const dynamic = 'force-dynamic';
 
+type AdminUser = {
+  email: string;
+  role: 'ADMIN' | 'PRO' | 'RIDER';
+  [key: string]: unknown;
+};
+
+type AdminStats = {
+  totalUsers: number;
+  totalRiders: number;
+  totalPros: number;
+  totalAdmins: number;
+  totalConversations: number;
+  activeUsers: number;
+  reportedProfiles: number;
+};
+
+const DEFAULT_ADMIN_STATS: AdminStats = {
+  totalUsers: 0,
+  totalRiders: 0,
+  totalPros: 0,
+  totalAdmins: 0,
+  totalConversations: 0,
+  activeUsers: 0,
+  reportedProfiles: 0
+};
+
 export default function AdminDashboard() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [stats, setStats] = useState<any>(null);
+  const [user, setUser] = useState<AdminUser | null>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [blockedConversations, setBlockedConversations] = useState<AdminBlockedConversation[]>([]);
+  const [securityEvents, setSecurityEvents] = useState<AdminSecurityEvent[]>([]);
+  const [securitySummary, setSecuritySummary] = useState<AdminSecuritySummary | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [systemAlerts, setSystemAlerts] = useState<SystemAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
+
+  const loadInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    setInsightsError(null);
+    try {
+      const [blockedRes, eventsRes, summaryRes] = await Promise.all([
+        apiClient.getBlockedConversations(5),
+        apiClient.getSecurityEvents(5),
+        apiClient.getSecurityLogsSummary(7)
+      ]);
+      setBlockedConversations(blockedRes.blocked || []);
+      setSecurityEvents(eventsRes.events || []);
+      setSecuritySummary(summaryRes ?? null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Impossible de charger les insights sécurité';
+      setInsightsError(message);
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, []);
+
+  const loadAlerts = useCallback(async () => {
+    setAlertsLoading(true);
+    setAlertsError(null);
+    try {
+      const response = await apiClient.getSystemAlerts({ status: 'OPEN', limit: 3 });
+      setSystemAlerts(response.items ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Impossible de charger les alertes';
+      setAlertsError(message);
+    } finally {
+      setAlertsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -40,21 +108,16 @@ export default function AdminDashboard() {
           setStats(adminStats);
         } catch (statsError) {
           console.error('Failed to load admin stats:', statsError);
-          // Utiliser des valeurs par défaut si les stats échouent
-          setStats({
-            totalUsers: 0,
-            totalRiders: 0,
-            totalPros: 0,
-            totalAdmins: 0,
-            totalConversations: 0,
-            activeUsers: 0,
-            reportedProfiles: 0
-          });
+          setStats({ ...DEFAULT_ADMIN_STATS });
         }
 
-      } catch (err: any) {
+        void loadInsights();
+        void loadAlerts();
+
+      } catch (err: unknown) {
         console.error('Auth check failed:', err);
-        setError(err?.message || 'Erreur de chargement');
+        const message = err instanceof Error ? err.message : null;
+        setError(message || 'Erreur de chargement');
         router.replace('/login');
       } finally {
         setLoading(false);
@@ -62,22 +125,31 @@ export default function AdminDashboard() {
     };
 
     checkAuth();
-  }, [router]);
+  }, [router, loadInsights, loadAlerts]);
 
   const handleLogout = async () => {
     try {
       await apiClient.logoutAll();
       apiClient.clearTokens();
+      // Clear admin gating cookie
+      if (typeof document !== 'undefined') {
+        document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
+      }
       router.push('/');
     } catch (error) {
       console.error('Logout error:', error);
       apiClient.clearTokens();
+      if (typeof document !== 'undefined') {
+        document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
+      }
       router.push('/');
     }
   };
 
   if (loading) return <p>Chargement…</p>;
   if (error) return <p className="text-red-600">{error}</p>;
+
+  const safeStats = stats ?? DEFAULT_ADMIN_STATS;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -102,9 +174,9 @@ export default function AdminDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalUsers || 0}</div>
+            <div className="text-2xl font-bold">{safeStats.totalUsers}</div>
             <p className="text-xs text-muted-foreground">
-              {stats?.totalRiders || 0} riders, {stats?.totalPros || 0} pros, {stats?.totalAdmins || 0} admins
+              {safeStats.totalRiders} riders, {safeStats.totalPros} pros, {safeStats.totalAdmins} admins
             </p>
           </CardContent>
         </Card>
@@ -115,7 +187,7 @@ export default function AdminDashboard() {
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalConversations || 0}</div>
+            <div className="text-2xl font-bold">{safeStats.totalConversations}</div>
             <p className="text-xs text-muted-foreground">
               Messages échangés
             </p>
@@ -128,7 +200,7 @@ export default function AdminDashboard() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.activeUsers || 0}</div>
+            <div className="text-2xl font-bold">{safeStats.activeUsers}</div>
             <p className="text-xs text-muted-foreground">
               Derniers 30 jours
             </p>
@@ -145,7 +217,7 @@ export default function AdminDashboard() {
               Analytics
             </CardTitle>
             <CardDescription>
-              Visualiser l'engagement et les performances de matching
+              Visualiser l&rsquo;engagement et les performances de matching
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -153,6 +225,33 @@ export default function AdminDashboard() {
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/analytics">
                   Analytics détaillées
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen size={20} />
+              Hub éditorial (Blobosphère)
+            </CardTitle>
+            <CardDescription>
+              Rédiger en MDX, prévisualiser et publier via Git/Decap
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/blobosphere/editor">
+                  <PenSquare className="mr-2 h-4 w-4" />
+                  Ouvrir l’éditeur interne
+                </Link>
+              </Button>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/blobosphere">
+                  Décap CMS (iframe)
                 </Link>
               </Button>
             </div>
@@ -205,20 +304,32 @@ export default function AdminDashboard() {
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/reports">
                   Signalements en attente
-                  {stats?.reportedProfiles > 0 && (
+                  {safeStats.reportedProfiles > 0 && (
                     <span className="ml-auto bg-red-500 text-white rounded-full px-2 py-1 text-xs">
-                      {stats.reportedProfiles}
+                      {safeStats.reportedProfiles}
                     </span>
                   )}
                 </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start" disabled>
-                Conversations bloquées
-                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/conversations/blocked">
+                  Conversations bloquées
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start" disabled>
-                Historique modération
-                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/conversations/history">
+                  Historique blocages
+                </Link>
+              </Button>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/conversations/broadcast">
+                  Diffusion admin
+                </Link>
+              </Button>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/reports/history">
+                  Historique modération
+                </Link>
               </Button>
             </div>
           </CardContent>
@@ -251,13 +362,15 @@ export default function AdminDashboard() {
                   Audit des actions
                 </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start" disabled>
-                Tentatives de connexion suspectes
-                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/security/login-attempts">
+                  Tentatives de connexion suspectes
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start" disabled>
-                Logs de sécurité
-                <span className="ml-auto text-xs text-muted-foreground">Bientôt</span>
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link href="/admin/security/logs">
+                  Logs de sécurité
+                </Link>
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/permissions">
@@ -284,12 +397,99 @@ export default function AdminDashboard() {
                 Paramètres généraux
               </Button>
               <Button variant="outline" className="w-full justify-start">
-                Gestion des crédits
+                Monétisation & publicités
               </Button>
               <Button variant="outline" className="w-full justify-start">
                 Maintenance système
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Insights Sécurité & Modération */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Lock className="h-4 w-4" />
+              Conversations bloquées
+            </CardTitle>
+            <CardDescription>Derniers blocages côté messagerie</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {insightsLoading && <p>Chargement...</p>}
+            {insightsError && !insightsLoading && (
+              <p className="text-sm text-red-600">{insightsError}</p>
+            )}
+            {!insightsLoading && !blockedConversations.length && !insightsError && (
+              <p className="text-sm text-muted-foreground">Aucun blocage récent.</p>
+            )}
+            {!insightsLoading && blockedConversations.length > 0 && (
+              <ul className="space-y-3">
+                {blockedConversations.map(item => (
+                  <li key={`${item.conversationId}-${item.user.id}`} className="border rounded-md p-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="font-medium">{item.user.email}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {item.blockedAt ? new Date(item.blockedAt).toLocaleString('fr-FR') : '—'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Conversation {item.conversation?.type || 'N/A'} – {item.conversation?.members?.length ?? 0} membre(s)
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Événements sécurité
+            </CardTitle>
+            <CardDescription>Actions sensibles sur les 48 dernières heures</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {insightsLoading && <p>Chargement...</p>}
+            {!insightsLoading && securityEvents.length === 0 && !insightsError && (
+              <p className="text-sm text-muted-foreground">Aucun événement récent.</p>
+            )}
+            {!insightsLoading && securityEvents.length > 0 && (
+              <ul className="space-y-2 text-sm">
+                {securityEvents.map(event => (
+                  <li key={event.id} className="border rounded-md p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs">{event.action}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(event.createdAt).toLocaleString('fr-FR')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {event.user?.email || 'Compte inconnu'} – {event.resource}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {securitySummary && (
+              <div className="text-xs text-muted-foreground">
+                <p className="font-medium text-sm mb-1 flex items-center gap-2">
+                  <Activity className="h-3 w-3" /> Tendances depuis le {new Date(securitySummary.since).toLocaleDateString('fr-FR')}
+                </p>
+                <ul className="space-y-1">
+                  {securitySummary.items.slice(0, 4).map(item => (
+                    <li key={item.action} className="flex justify-between">
+                      <span className="font-mono">{item.action}</span>
+                      <span>{item.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -302,10 +502,24 @@ export default function AdminDashboard() {
             Alertes système
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="text-sm text-muted-foreground">
-            Aucune alerte pour le moment. La plateforme fonctionne normalement.
-          </div>
+        <CardContent className="space-y-3">
+          {alertsLoading && <p className="text-sm text-muted-foreground">Chargement...</p>}
+          {alertsError && <p className="text-sm text-red-600">{alertsError}</p>}
+          {!alertsLoading && !alertsError && systemAlerts.length === 0 && (
+            <p className="text-sm text-muted-foreground">Aucune alerte pour le moment.</p>
+          )}
+          {systemAlerts.map((alert) => (
+            <div key={alert.id} className="border rounded-md p-3 text-sm space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{alert.type}</span>
+                <span className="text-xs text-muted-foreground">{alert.severity}</span>
+              </div>
+              <p className="text-xs text-muted-foreground line-clamp-2">{alert.message}</p>
+            </div>
+          ))}
+          <Button variant="outline" className="w-full justify-start" asChild>
+            <Link href="/admin/alerts">Voir toutes les alertes</Link>
+          </Button>
         </CardContent>
       </Card>
     </div>

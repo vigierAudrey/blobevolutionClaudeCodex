@@ -1,4 +1,4 @@
-import { prisma, User } from '@blobinfini/database';
+import { clientPrisma as prisma, User } from '@blobinfini/database';
 import { withRetry } from './retry';
 
 /**

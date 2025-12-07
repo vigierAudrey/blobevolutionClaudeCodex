@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../auth/auth.guard';
 import { pushNotificationService } from '../../services/push-notification.service';
+import { secureLogger } from '../../utils/secure-logger';
 
 const router = Router();
 
@@ -16,6 +17,10 @@ const subscribeSchema = z.object({
   userId: z.string().optional(),
   userAgent: z.string().optional(),
   timestamp: z.number().optional()
+});
+
+const unsubscribeSchema = z.object({
+  token: z.string().optional()
 });
 
 const testNotificationSchema = z.object({
@@ -34,11 +39,7 @@ const sendNotificationSchema = z.object({
   data: z.record(z.any()).optional()
 });
 
-/**
- * POST /api/push/subscribe
- * Subscribe to push notifications
- */
-router.post('/subscribe', requireAuth, async (req: Request, res: Response) => {
+const handleSubscribe = async (req: Request, res: Response) => {
   try {
     const validation = subscribeSchema.safeParse(req.body);
 
@@ -56,7 +57,7 @@ router.post('/subscribe', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    console.log(`📱 Subscribing user ${userId} to push notifications`);
+    secureLogger.info('PUSH_ROUTE_SUBSCRIBE', { userId });
 
     const success = await pushNotificationService.saveToken(userId, token, userAgent);
 
@@ -77,26 +78,37 @@ router.post('/subscribe', requireAuth, async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('❌ Error in push subscribe:', error);
+    secureLogger.error('PUSH_ROUTE_SUBSCRIBE_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+};
 
 /**
- * POST /api/push/unsubscribe
- * Unsubscribe from push notifications
+ * POST /api/push/subscribe
+ * Subscribe to push notifications
  */
-router.post('/unsubscribe', requireAuth, async (req: Request, res: Response) => {
+router.post('/subscribe', requireAuth, handleSubscribe);
+router.post('/register', requireAuth, handleSubscribe);
+
+const handleUnsubscribe = async (req: Request, res: Response) => {
   try {
+    const validation = unsubscribeSchema.safeParse(req.body ?? {});
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid request data',
+        details: validation.error.errors
+      });
+    }
+
     const userId = (req as any).user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    console.log(`🚫 Unsubscribing user ${userId} from push notifications`);
+    secureLogger.info('PUSH_ROUTE_UNSUBSCRIBE', { userId });
 
-    const success = await pushNotificationService.removeToken(userId);
+    const success = await pushNotificationService.removeToken(userId, validation.data.token);
 
     if (success) {
       res.status(200).json({
@@ -109,10 +121,13 @@ router.post('/unsubscribe', requireAuth, async (req: Request, res: Response) => 
       });
     }
   } catch (error) {
-    console.error('❌ Error in push unsubscribe:', error);
+    secureLogger.error('PUSH_ROUTE_UNSUBSCRIBE_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+};
+
+router.post('/unsubscribe', requireAuth, handleUnsubscribe);
+router.post('/unregister', requireAuth, handleUnsubscribe);
 
 /**
  * POST /api/push/test
@@ -135,7 +150,7 @@ router.post('/test', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    console.log(`🧪 Sending test notification to user ${userId}`);
+    secureLogger.info('PUSH_ROUTE_TEST_NOTIFICATION', { userId });
 
     const success = await pushNotificationService.sendToUser(userId, {
       ...validation.data,
@@ -153,7 +168,7 @@ router.post('/test', requireAuth, async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('❌ Error sending test notification:', error);
+    secureLogger.error('PUSH_ROUTE_TEST_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -180,7 +195,7 @@ router.post('/send', requireAuth, async (req: Request, res: Response) => {
 
     const { userId, title, body, type, url, data } = validation.data;
 
-    console.log(`📬 Admin sending notification to user ${userId}`);
+    secureLogger.info('PUSH_ROUTE_SEND', { userId });
 
     const success = await pushNotificationService.sendToUser(userId, {
       title,
@@ -202,7 +217,7 @@ router.post('/send', requireAuth, async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('❌ Error sending notification:', error);
+    secureLogger.error('PUSH_ROUTE_SEND_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -219,17 +234,16 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    // TODO: Check if user has active push tokens in database
-    // const hasActiveTokens = await checkUserPushTokens(userId);
+    const hasActiveTokens = await pushNotificationService.hasActiveTokens(userId);
 
     res.status(200).json({
       userId,
-      hasActiveTokens: false, // TODO: implement actual check
+      hasActiveTokens,
       isConfigured: process.env.FIREBASE_PROJECT_ID ? true : false,
       timestamp: Date.now()
     });
   } catch (error) {
-    console.error('❌ Error getting push status:', error);
+    secureLogger.error('PUSH_ROUTE_STATUS_FAILED', { error: (error as Error)?.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -249,7 +263,7 @@ export async function notifyBookingAccepted(
   try {
     await pushNotificationService.sendBookingAccepted(userId, bookingData);
   } catch (error) {
-    console.error('❌ Error sending booking accepted notification:', error);
+    secureLogger.error('PUSH_NOTIFY_BOOKING_ACCEPTED_FAILED', { userId, error: (error as Error)?.message });
   }
 }
 
@@ -267,7 +281,7 @@ export async function notifyBookingRejected(
   try {
     await pushNotificationService.sendBookingRejected(userId, bookingData);
   } catch (error) {
-    console.error('❌ Error sending booking rejected notification:', error);
+    secureLogger.error('PUSH_NOTIFY_BOOKING_REJECTED_FAILED', { userId, error: (error as Error)?.message });
   }
 }
 
@@ -285,7 +299,7 @@ export async function notifyNewMessage(
   try {
     await pushNotificationService.sendNewMessage(userId, messageData);
   } catch (error) {
-    console.error('❌ Error sending new message notification:', error);
+    secureLogger.error('PUSH_NOTIFY_NEW_MESSAGE_FAILED', { userId, error: (error as Error)?.message });
   }
 }
 
@@ -304,7 +318,7 @@ export async function notifyCourseReminder(
   try {
     await pushNotificationService.sendCourseReminder(userId, reminderData);
   } catch (error) {
-    console.error('❌ Error sending course reminder notification:', error);
+    secureLogger.error('PUSH_NOTIFY_COURSE_REMINDER_FAILED', { userId, error: (error as Error)?.message });
   }
 }
 

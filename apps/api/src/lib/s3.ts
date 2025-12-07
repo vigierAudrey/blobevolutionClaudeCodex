@@ -4,6 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 function getEnv() {
   return {
     endpoint: process.env.S3_ENDPOINT,
+    presignEndpoint: process.env.S3_PRESIGN_ENDPOINT,
     region: process.env.S3_REGION || 'us-east-1',
     accessKeyId: process.env.S3_ACCESS_KEY_ID,
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
@@ -12,12 +13,12 @@ function getEnv() {
   } as const;
 }
 
-function getS3() {
+function getS3(customEndpoint?: string) {
   const { endpoint, region, accessKeyId, secretAccessKey } = getEnv();
   return new S3Client({
     region,
     forcePathStyle: true,
-    endpoint,
+    endpoint: customEndpoint ?? endpoint,
     credentials: accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined,
   });
 }
@@ -37,14 +38,15 @@ export async function ensureBucket() {
 }
 
 export async function presignPutObject(key: string, contentType: string, expiresSeconds = 900) {
-  const { bucket, endpoint, accessKeyId, secretAccessKey } = getEnv();
-  if (!bucket || !accessKeyId || !secretAccessKey || !endpoint) {
+  const { bucket, endpoint, presignEndpoint, accessKeyId, secretAccessKey } = getEnv();
+  const targetEndpoint = presignEndpoint || endpoint;
+  if (!bucket || !accessKeyId || !secretAccessKey || !targetEndpoint) {
     if (process.env.NODE_ENV === 'test') {
       return `http://test.local/${encodeURIComponent(key)}?X-Amz-Signature=dummy`;
     }
     throw new Error('S3 configuration missing');
   }
-  const s3 = getS3();
+  const s3 = getS3(targetEndpoint);
   const cmd = new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: contentType });
   const url = await getSignedUrl(s3, cmd, { expiresIn: expiresSeconds });
   return url;

@@ -1,5 +1,4 @@
-import { prisma } from '@blobinfini/database';
-import { Role } from '@prisma/client';
+import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import { createApp } from '../../../index';
 import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
 
@@ -12,26 +11,23 @@ describe('Booking module E2E', () => {
   let riderSession: TestSession;
   let riderToken2 = '';
   let riderSession2: TestSession;
-  let availabilityId = '';
-  let requestId = '';
-  let requestId2 = '';
 
-  beforeAll(async () => {
+  const seedActors = async () => {
     await prisma.booking.deleteMany();
     await prisma.bookingRequest.deleteMany();
     await prisma.proAvailability.deleteMany();
     await prisma.user.deleteMany({
       where: {
         email: {
-          in: ['pro-booking@test.com', 'rider-booking@test.com', 'rider-booking-2@test.com'],
-        },
-      },
+          in: ['pro-booking@test.com', 'rider-booking@test.com', 'rider-booking-2@test.com']
+        }
+      }
     });
 
     const proAuth = await getAccessToken({
       app,
       email: 'pro-booking@test.com',
-      role: Role.PRO,
+      role: Role.PRO
     });
     proToken = proAuth.accessToken;
     proSession = proAuth.session;
@@ -39,7 +35,7 @@ describe('Booking module E2E', () => {
     const riderAuth = await getAccessToken({
       app,
       email: 'rider-booking@test.com',
-      role: Role.RIDER,
+      role: Role.RIDER
     });
     riderToken = riderAuth.accessToken;
     riderSession = riderAuth.session;
@@ -47,27 +43,21 @@ describe('Booking module E2E', () => {
     const riderAuth2 = await getAccessToken({
       app,
       email: 'rider-booking-2@test.com',
-      role: Role.RIDER,
+      role: Role.RIDER
     });
     riderToken2 = riderAuth2.accessToken;
     riderSession2 = riderAuth2.session;
+  };
+
+  beforeEach(async () => {
+    await seedActors();
   });
 
   afterAll(async () => {
-    await prisma.booking.deleteMany();
-    await prisma.bookingRequest.deleteMany();
-    await prisma.proAvailability.deleteMany();
-    await prisma.user.deleteMany({
-      where: {
-        email: {
-          in: ['pro-booking@test.com', 'rider-booking@test.com', 'rider-booking-2@test.com'],
-        },
-      },
-    });
     await prisma.$disconnect();
   });
 
-  it('allows a pro to create an availability', async () => {
+  const createAvailability = async (overrides: Record<string, any> = {}) => {
     const payload = {
       sport: 'surf',
       levels: ['beginner', 'intermediate'],
@@ -77,6 +67,7 @@ describe('Booking module E2E', () => {
       spotName: 'Plage Centrale',
       spotLat: 43.493,
       spotLng: -1.558,
+      ...overrides
     };
 
     const res = await proSession
@@ -85,11 +76,25 @@ describe('Booking module E2E', () => {
       .send(payload)
       .expect(201);
 
-    expect(res.body).toHaveProperty('id');
-    availabilityId = res.body.id;
+    return res.body;
+  };
+
+  const createBookingRequest = async (availabilityId: string, opts?: { riderToken?: string; riderSession?: TestSession; message?: string }) => {
+    const res = await (opts?.riderSession ?? riderSession)
+      .post('/booking/requests')
+      .set('Authorization', `Bearer ${opts?.riderToken ?? riderToken}`)
+      .send({ availabilityId, message: opts?.message ?? 'Partant pour un cours ?' })
+      .expect(201);
+    return res.body;
+  };
+
+  it('allows a pro to create an availability', async () => {
+    const availability = await createAvailability();
+    expect(availability).toHaveProperty('id');
   });
 
   it('returns availabilities for the pro', async () => {
+    await createAvailability();
     const res = await proSession
       .get('/booking/availability/me')
       .set('Authorization', `Bearer ${proToken}`)
@@ -100,44 +105,45 @@ describe('Booking module E2E', () => {
   });
 
   it('allows a rider to send a booking request', async () => {
-    const res = await riderSession
-      .post('/booking/requests')
-      .set('Authorization', `Bearer ${riderToken}`)
-      .send({ availabilityId, message: 'Partant pour un cours ?' })
-      .expect(201);
-
-    expect(res.body).toHaveProperty('id');
-    requestId = res.body.id;
+    const availability = await createAvailability();
+    const request = await createBookingRequest(availability.id);
+    expect(request).toHaveProperty('id');
   });
 
   it('lists the rider booking request', async () => {
+    const availability = await createAvailability();
+    const request = await createBookingRequest(availability.id);
+
     const res = await riderSession
       .get('/booking/requests/me')
       .set('Authorization', `Bearer ${riderToken}`)
       .expect(200);
 
-    const myRequest = res.body.requests.find((r: any) => r.id === requestId);
+    const myRequest = res.body.requests.find((r: any) => r.id === request.id);
     expect(myRequest).toBeTruthy();
     expect(myRequest).toMatchObject({
       status: 'PENDING',
       message: 'Partant pour un cours ?',
-      availability: expect.objectContaining({ id: availabilityId }),
+      availability: expect.objectContaining({ id: availability.id }),
     });
   });
 
   it('shows the booking request in the pro inbox', async () => {
+    const availability = await createAvailability();
+    const request = await createBookingRequest(availability.id);
+
     const res = await proSession
       .get('/booking/requests/inbox')
       .set('Authorization', `Bearer ${proToken}`)
       .expect(200);
 
     expect(Array.isArray(res.body.requests)).toBe(true);
-    const inboxItem = res.body.requests.find((r: any) => r.id === requestId);
+    const inboxItem = res.body.requests.find((r: any) => r.id === request.id);
     expect(inboxItem).toBeTruthy();
     expect(inboxItem).toMatchObject({
       status: 'PENDING',
       availability: expect.objectContaining({
-        id: availabilityId,
+        id: availability.id,
         spotName: 'Plage Centrale',
       }),
       rider: expect.objectContaining({
@@ -147,8 +153,11 @@ describe('Booking module E2E', () => {
   });
 
   it('allows the pro to accept the request', async () => {
+    const availability = await createAvailability();
+    const request = await createBookingRequest(availability.id);
+
     const res = await proSession
-      .post(`/booking/requests/${requestId}/decision`)
+      .post(`/booking/requests/${request.id}/decision`)
       .set('Authorization', `Bearer ${proToken}`)
       .send({ decision: 'ACCEPT' })
       .expect(200);
@@ -157,16 +166,22 @@ describe('Booking module E2E', () => {
   });
 
   it('prevents overbooking when accepting another request on a full slot', async () => {
-    const secondRequest = await riderSession2
-      .post('/booking/requests')
-      .set('Authorization', `Bearer ${riderToken2}`)
-      .send({ availabilityId, message: 'Je peux venir aussi !' })
-      .expect(201);
+    const availability = await createAvailability();
+    const confirmedRequest = await createBookingRequest(availability.id);
+    await proSession
+      .post(`/booking/requests/${confirmedRequest.id}/decision`)
+      .set('Authorization', `Bearer ${proToken}`)
+      .send({ decision: 'ACCEPT' })
+      .expect(200);
 
-    requestId2 = secondRequest.body.id;
+    const secondRequest = await createBookingRequest(availability.id, {
+      riderSession: riderSession2,
+      riderToken: riderToken2,
+      message: 'Je peux venir aussi !'
+    });
 
     const res = await proSession
-      .post(`/booking/requests/${requestId2}/decision`)
+      .post(`/booking/requests/${secondRequest.id}/decision`)
       .set('Authorization', `Bearer ${proToken}`)
       .send({ decision: 'ACCEPT' })
       .expect(409);
@@ -177,8 +192,21 @@ describe('Booking module E2E', () => {
   });
 
   it('allows the pro to reject the second request', async () => {
+    const availability = await createAvailability({ capacity: 2 });
+    const requestOne = await createBookingRequest(availability.id);
+    const requestTwo = await createBookingRequest(availability.id, {
+      riderSession: riderSession2,
+      riderToken: riderToken2,
+      message: 'Deuxième demande'
+    });
+    await proSession
+      .post(`/booking/requests/${requestOne.id}/decision`)
+      .set('Authorization', `Bearer ${proToken}`)
+      .send({ decision: 'ACCEPT' })
+      .expect(200);
+
     const res = await proSession
-      .post(`/booking/requests/${requestId2}/decision`)
+      .post(`/booking/requests/${requestTwo.id}/decision`)
       .set('Authorization', `Bearer ${proToken}`)
       .send({ decision: 'REJECT' })
       .expect(200);
@@ -187,8 +215,11 @@ describe('Booking module E2E', () => {
   });
 
   it('allows the rider to cancel a request', async () => {
+    const availability = await createAvailability();
+    const request = await createBookingRequest(availability.id);
+
     const res = await riderSession
-      .post(`/booking/requests/${requestId}/cancel`)
+      .post(`/booking/requests/${request.id}/cancel`)
       .set('Authorization', `Bearer ${riderToken}`)
       .send({ reason: 'Finalement indisponible' })
       .expect(404);

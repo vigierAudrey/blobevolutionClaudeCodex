@@ -1,5 +1,4 @@
-import { Prisma, BookingRequestStatus } from '@prisma/client';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma, BookingRequestStatus } from '@blobinfini/database';
 import { bookingRepository } from './booking.repository';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { notifyBookingAccepted, notifyBookingRejected } from '../push/push.controller';
@@ -13,7 +12,16 @@ export class BookingService {
     // Validate time overlap with existing availabilities
     await this.validateTimeOverlap(proUserId, data.startAt, data.endAt);
 
-    return bookingRepository.createAvailability({ ...data, proUserId });
+    const availability = await bookingRepository.createAvailability({ ...data, proUserId });
+
+    // Invalidate availability caches near this location to keep search results fresh
+    try {
+      await cacheService.invalidateAvailabilities(data.spotLat ?? undefined, data.spotLng ?? undefined);
+    } catch (error) {
+      console.warn('⚠️  Failed to invalidate availability cache after creation', error);
+    }
+
+    return availability;
   }
 
   private validateGeoPoint(lat?: number, lng?: number): void {
@@ -61,7 +69,7 @@ export class BookingService {
 
     if (overlappingAvailabilities.length > 0) {
       const conflictTimes = overlappingAvailabilities
-        .map(a => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .map((a: Prisma.ProAvailability) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
         .join(', ');
       throw Object.assign(
         new Error(`Time overlap detected with existing availability: ${conflictTimes}`),
@@ -110,7 +118,7 @@ export class BookingService {
 
     if (overlappingAvailabilities.length > 0) {
       const conflictTimes = overlappingAvailabilities
-        .map(a => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .map((a: Prisma.ProAvailability) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
         .join(', ');
       throw Object.assign(
         new Error(`Time overlap detected with existing availability: ${conflictTimes}`),
@@ -144,7 +152,62 @@ export class BookingService {
       );
     }
 
-    return bookingRepository.updateAvailability(availabilityId, data);
+    const updated = await bookingRepository.updateAvailability(availabilityId, data);
+
+    try {
+      await cacheService.invalidateAvailabilities(updated.spotLat ?? undefined, updated.spotLng ?? undefined);
+    } catch (error) {
+      console.warn('⚠️  Failed to invalidate availability cache after update', error);
+    }
+
+    return updated;
+  }
+
+  async deleteAvailability(proUserId: string, availabilityId: string) {
+    const availability = await bookingRepository.findAvailabilityById(availabilityId);
+    if (!availability || availability.proUserId !== proUserId) {
+      throw Object.assign(new Error('Availability not found'), { status: 404 });
+    }
+
+    // Check if there are any bookings or pending requests
+    const bookingCount = await prisma.booking.count({
+      where: { availabilityId },
+    });
+
+    const pendingRequestCount = await prisma.bookingRequest.count({
+      where: {
+        availabilityId,
+        status: BookingRequestStatus.PENDING,
+      },
+    });
+
+    if (bookingCount > 0) {
+      throw Object.assign(
+        new Error('Cannot delete availability with existing bookings'),
+        { status: 409 }
+      );
+    }
+
+    if (pendingRequestCount > 0) {
+      throw Object.assign(
+        new Error('Cannot delete availability with pending requests'),
+        { status: 409 }
+      );
+    }
+
+    // Delete the availability
+    await prisma.proAvailability.delete({
+      where: { id: availabilityId },
+    });
+
+    // Invalidate cache
+    try {
+      await cacheService.invalidateAvailabilities(availability.spotLat ?? undefined, availability.spotLng ?? undefined);
+    } catch (error) {
+      console.warn('⚠️  Failed to invalidate availability cache after deletion', error);
+    }
+
+    return { success: true, message: 'Availability deleted' };
   }
 
   async searchAvailabilities(filters: any) {
@@ -170,32 +233,12 @@ export class BookingService {
         // Cursor-based pagination on cached results
         const startIndex = cursor ? cachedAvailabilities.findIndex(a => a.id === cursor) + 1 : 0;
         const endIndex = Math.min(startIndex + effectiveLimit, cachedAvailabilities.length);
-        const paginatedResults = cachedAvailabilities.slice(startIndex, endIndex);
-        const nextCursor = endIndex < cachedAvailabilities.length ? cachedAvailabilities[endIndex - 1].id : null;
-
-        return {
-          items: paginatedResults,
-          hasMore: endIndex < cachedAvailabilities.length,
-          nextCursor,
-          cached: true
-        };
-      } else {
-        // Legacy pagination on cached results
-        const offset = (page - 1) * effectiveLimit;
-        const paginatedResults = cachedAvailabilities.slice(offset, offset + effectiveLimit);
-
-        return {
-          items: paginatedResults,
-          pagination: {
-            page,
-            pageSize: effectiveLimit,
-            total: cachedAvailabilities.length,
-            hasMore: offset + effectiveLimit < cachedAvailabilities.length
-          },
-          nextCursor: paginatedResults.length > 0 ? paginatedResults[paginatedResults.length - 1].id : null,
-          cached: true
-        };
+        return cachedAvailabilities.slice(startIndex, endIndex);
       }
+
+      // Legacy pagination on cached results
+      const offset = (page - 1) * effectiveLimit;
+      return cachedAvailabilities.slice(offset, offset + effectiveLimit);
     }
 
     const rows = await bookingRepository.searchAvailabilities({
@@ -341,7 +384,7 @@ export class BookingService {
   async decideRequest(proUserId: string, requestId: string, action: 'accept' | 'reject') {
     // Execute the database transaction with retry logic for serialization failures
     const result = await withTransactionRetry(async () => {
-      return await prisma.$transaction(async (tx) => {
+      return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const request = await tx.bookingRequest.findUnique({
         where: { id: requestId },
         include: {
@@ -457,7 +500,7 @@ export class BookingService {
 
   async addManualBooking(proUserId: string, data: any) {
     return await withTransactionRetry(async () => {
-      return await prisma.$transaction(async (tx) => {
+      return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const availability = await tx.proAvailability.findUnique({
           where: { id: data.availabilityId }
         });

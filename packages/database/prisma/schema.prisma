@@ -23,7 +23,6 @@ model User {
   consentIp               String?
   adminProfile            AdminProfile?
   conversationMembers     ConversationMember[]
-  creditTransactions      CreditTransaction[]
   emailVerificationTokens EmailVerificationToken[]
   lastSearch              LastSearch?
   matchesA                Match[]                  @relation("UserOne")
@@ -36,13 +35,15 @@ model User {
   refreshTokens           RefreshToken[]
   riderProfile            RiderProfile?
   sessions                Session[]
-  wallet                  UserWallet?
   contactRequests         ContactRequest[]         @relation("ProContactRequests")
   contactResponses        ContactRequestResponse[] @relation("RiderContactResponses")
   proAvailabilities       ProAvailability[]        @relation("ProAvailabilityOnUser")
   bookingRequests         BookingRequest[]         @relation("BookingRequestOnUser")
   bookings                Booking[]                @relation("BookingOnUser")
   auditLogs              AuditLog[]
+  pushTokens             PushToken[]
+  loginAttempts          LoginAttempt[]
+  createdAlerts          SystemAlert[]            @relation("UserSystemAlerts")
 }
 
 model Session {
@@ -92,6 +93,23 @@ model EmailVerificationToken {
   @@index([tokenHash])
 }
 
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  ip        String?
+  userAgent String?
+  success   Boolean
+  reason    String?
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([ip])
+  @@index([createdAt])
+  @@index([success])
+}
+
 model LastSearch {
   userId     String       @id
   sport      String
@@ -121,6 +139,11 @@ model RiderProfile {
   lng               Float?
   wantsLesson       Boolean           @default(false)
   lessonSport       String?
+  lessonLevel       String?
+  lessonDate        DateTime?
+  lessonPlace       String?
+  lessonStudentCount Int?            @default(1)
+  blobosphereContributor Boolean     @default(false)
   incomingDecisions MatchDecision[]   @relation("ProfileAsTarget")
   reports           ProfileReport[]   @relation("ProfileAsReported")
   disciplines       RiderDiscipline[]
@@ -139,6 +162,7 @@ model ProProfile {
   photoUrl     String?
   lat          Float?
   lng          Float?
+  radiusKm     Int        @default(25)
   verified     Boolean    @default(false)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -148,11 +172,23 @@ model ProProfile {
   @@index([userId])
 }
 
+model PushToken {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model AdminProfile {
   id          String    @id @default(uuid())
   userId      String    @unique
   displayName String?
   permissions String[]  @default([])
+  allowedIPs  String[]  @default([])  // IPs autorisées pour ce compte admin
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -356,34 +392,6 @@ model ProOffer {
   @@index([proProfileId])
 }
 
-model UserWallet {
-  id        String   @id @default(uuid())
-  userId    String   @unique
-  balance   Decimal  @default(0) @db.Decimal(10, 2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model CreditTransaction {
-  id            String                @id @default(uuid())
-  userId        String
-  type          CreditTransactionType
-  amount        Decimal               @db.Decimal(10, 2)
-  balanceBefore Decimal               @db.Decimal(10, 2)
-  balanceAfter  Decimal               @db.Decimal(10, 2)
-  description   String?
-  metadata      Json?
-  createdAt     DateTime              @default(now())
-  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([createdAt])
-  @@index([type])
-}
-
 model ContactRequest {
   id             String              @id @default(uuid())
   proUserId      String
@@ -439,6 +447,44 @@ model AuditLog {
   @@index([userId])
 }
 
+model SystemAlert {
+  id             String        @id @default(uuid())
+  type           String
+  message        String
+  severity       AlertSeverity @default(INFO)
+  status         AlertStatus   @default(OPEN)
+  link           String?
+  dedupeKey      String?
+  metadata       Json?
+  createdById    String?
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  createdBy User? @relation("UserSystemAlerts", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@index([dedupeKey])
+}
+
+model LegalConsentArchive {
+  id             Int       @id @default(autoincrement())
+  originalUserId String
+  consentedAt    DateTime?
+  consentVersion String?
+  consentIpHash  String?
+  deletedAt      DateTime
+  archivedAt     DateTime  @default(now())
+
+  @@unique([originalUserId, deletedAt])
+  @@index([originalUserId])
+  @@index([consentedAt])
+  @@index([archivedAt])
+}
+
 enum Role {
   RIDER
   PRO
@@ -467,6 +513,19 @@ enum ConversationType {
   RIDER_TO_RIDER
   RIDER_TO_PRO
   PRO_TO_PRO
+  ADMIN_TO_USER
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
 }
 
 enum DecisionKind {
@@ -485,15 +544,6 @@ enum Level {
   advanced
 }
 
-enum CreditTransactionType {
-  WELCOME_BONUS
-  ADMIN_GRANT
-  LESSON_BOOKING
-  LESSON_REFUND
-  PROMO_BONUS
-  REFERRAL_BONUS
-}
-
 enum ContactRequestStatus {
   PENDING
   ACCEPTED
@@ -503,4 +553,30 @@ enum ContactRequestStatus {
 enum ContactResponse {
   ACCEPT
   REJECT
+}
+
+enum ConsentLevel {
+  personalized
+  npa
+  limited
+  none
+}
+
+enum ConsentSignal {
+  granted
+  denied
+}
+
+model UserConsent {
+  id                 String         @id @default(uuid())
+  userHash           String         @unique
+  consentLevel       ConsentLevel
+  ad_storage         ConsentSignal
+  ad_user_data       ConsentSignal
+  ad_personalization ConsentSignal
+  cmpVersion         String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([updatedAt])
 }

@@ -5,6 +5,7 @@ node_modules/
 dist/
 build/
 .next/
+*.tsbuildinfo
 playwright-report/
 test-results/
 apps/web/storybook-static/

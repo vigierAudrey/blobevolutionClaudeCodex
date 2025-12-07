@@ -1,17 +1,24 @@
-export function resolveRedisUrl(): string | null {
+export function resolveRedisUrl(): string {
   const explicitUrl = process.env.REDIS_URL?.trim();
   if (explicitUrl) {
-    return explicitUrl;
+    return ensureDatabasePath(explicitUrl);
   }
 
-  const password = process.env.REDIS_PASSWORD?.trim();
-  if (password) {
-    return `redis://default:${password}@127.0.0.1:6379/0`;
+  if (process.env.DOCKER === 'true') {
+    return 'redis://redis:6379';
   }
 
-  if (process.env.NODE_ENV !== 'production') {
-    return 'redis://127.0.0.1:6379/0';
-  }
+  return 'redis://localhost:6379';
+}
 
-  return null;
+function ensureDatabasePath(urlString: string): string {
+  try {
+    const url = new URL(urlString);
+    if (!url.pathname || url.pathname === '/') {
+      url.pathname = '/0';
+    }
+    return url.toString();
+  } catch {
+    return urlString;
+  }
 }

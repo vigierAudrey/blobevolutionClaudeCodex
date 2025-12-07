@@ -9,12 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
 import { Badge } from '../../../components/ui/badge';
-import { User, Map, CreditCard, Percent, Info, LogOut, BookOpen, MessageSquare, Network } from 'lucide-react';
+import { User, Map, Percent, Info, LogOut, BookOpen, MessageSquare, Gift } from 'lucide-react';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
+import type { DashboardUser } from '@/types/user';
+
+const DEFAULT_PLANNING_STATS = { availabilityCount: 0, pendingCount: 0 };
 
 export default function ProDashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<DashboardUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [planningStats, setPlanningStats] = useState<{ availabilityCount: number; pendingCount: number } | null>(null);
 
@@ -29,9 +32,9 @@ export default function ProDashboardPage() {
       setPlanningStats({ availabilityCount: availabilities.availabilities.length, pendingCount });
 
       perf.end();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Pro dashboard initialization failed:', error);
-      setPlanningStats({ availabilityCount: 0, pendingCount: 0 });
+      setPlanningStats({ ...DEFAULT_PLANNING_STATS });
     }
   }, []);
 
@@ -61,7 +64,9 @@ export default function ProDashboardPage() {
   const logout = async () => {
     try {
       await optimizedApiClient.logoutAll();
-    } catch (_) {}
+    } catch {
+      // ignore
+    }
     optimizedApiClient.clearTokens();
     router.replace('/login');
   };
@@ -80,6 +85,15 @@ export default function ProDashboardPage() {
   }
   if (!user) return null;
 
+  const safePlanningStats = planningStats ?? DEFAULT_PLANNING_STATS;
+  const availabilityLabel = planningStats
+    ? `${safePlanningStats.availabilityCount} créneau${safePlanningStats.availabilityCount > 1 ? 'x' : ''}`
+    : '-- créneaux';
+  const pendingLabel = planningStats
+    ? `${safePlanningStats.pendingCount} demande${safePlanningStats.pendingCount > 1 ? 's' : ''} en attente`
+    : '-- demandes';
+  const hasPendingRequests = safePlanningStats.pendingCount > 0;
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center justify-between">
@@ -97,7 +111,7 @@ export default function ProDashboardPage() {
 
       {!user?.emailVerified && (
         <div className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Ton email n'est pas encore vérifié. Pense à confirmer ton adresse pour sécuriser ton compte.
+          Ton email n’est pas encore vérifié. Pense à confirmer ton adresse pour sécuriser ton compte.
           <div className="mt-2">
             <Link className="underline" href="/account">Voir mon compte</Link>
           </div>
@@ -133,7 +147,7 @@ export default function ProDashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><MessageSquare size={18}/> Messages</CardTitle>
-            <CardDescription>Communiquer avec vos élèves et collègues</CardDescription>
+            <CardDescription>Communiquer avec tes riders</CardDescription>
           </CardHeader>
           <CardContent>
             <Link href="/pro/messages" className="inline-block w-full">
@@ -144,24 +158,24 @@ export default function ProDashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Network size={18}/> Réseau Pro</CardTitle>
-            <CardDescription>Découvrir et contacter d'autres professionnels</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Percent size={18}/> Mes Propositions de Sessions</CardTitle>
+            <CardDescription>Créer et gérer vos offres de cours pour attirer des élèves</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/pro/network" className="inline-block w-full">
-              <Button className="w-full" variant="secondary">Explorer le réseau</Button>
+            <Link href="/pro/offers" className="inline-block w-full">
+              <Button className="w-full">Gérer mes sessions</Button>
             </Link>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Percent size={18}/> Mon Offre de Cours</CardTitle>
-            <CardDescription>Créer votre offre pour attirer des élèves</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Gift size={18}/> Offres Promotionnelles</CardTitle>
+            <CardDescription>Découvrir les opportunités de partenariats et promotions</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/pro/offers" className="inline-block w-full">
-              <Button className="w-full">Gérer mon offre</Button>
+            <Link href="/pro/promos" className="inline-block w-full">
+              <Button className="w-full" variant="secondary">Voir les promos</Button>
             </Link>
           </CardContent>
         </Card>
@@ -174,14 +188,10 @@ export default function ProDashboardPage() {
           <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-2 text-xs font-medium">
               <Badge variant="outline">
-                {planningStats
-                  ? `${planningStats.availabilityCount} créneau${planningStats.availabilityCount > 1 ? 'x' : ''}`
-                  : '-- créneaux'}
+                {availabilityLabel}
               </Badge>
-              <Badge variant={planningStats && planningStats.pendingCount > 0 ? 'secondary' : 'outline'}>
-                {planningStats
-                  ? `${planningStats.pendingCount} demande${planningStats.pendingCount > 1 ? 's' : ''} en attente`
-                  : '-- demandes'}
+              <Badge variant={hasPendingRequests ? 'secondary' : 'outline'}>
+                {pendingLabel}
               </Badge>
             </div>
             <Link href="/pro/planning" className="inline-block w-full">
@@ -190,21 +200,11 @@ export default function ProDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><CreditCard size={18}/> Paiements</CardTitle>
-            <CardDescription>Gérer tes revenus et paiements</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full" variant="outline" disabled>En préparation</Button>
-          </CardContent>
-        </Card>
-
         <Card className="sm:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Info size={18}/> À propos & RGPD</CardTitle>
             <CardDescription>
-              Comprendre l'utilisation des données, la sécurité et le fonctionnement du site.
+              Comprendre l&apos;utilisation des données, la sécurité et le fonctionnement du site.
             </CardDescription>
           </CardHeader>
           <CardContent>

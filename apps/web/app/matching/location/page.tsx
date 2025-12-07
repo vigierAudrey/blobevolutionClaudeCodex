@@ -6,13 +6,81 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Input } from '../../../components/ui/input';
 import { apiClient } from '../../../lib/apiClient';
 import { Button } from '../../../components/ui/button';
+import type { DashboardUser } from '@/types/user';
+import type { Level, Partner, Sport } from '@/types/matching';
 
 // Force SSR due to useSearchParams and localStorage usage
 export const dynamic = 'force-dynamic';
 
-type Sport = 'surf' | 'kitesurf';
-type Level = 'beginner' | 'intermediate' | 'advanced';
-type Partner = 'ALL' | 'WOMEN' | 'MEN';
+// Fonction pour détecter le navigateur de l'utilisateur
+const detectBrowser = (): 'chrome' | 'firefox' | 'safari' | 'edge' | 'other' => {
+  if (typeof window === 'undefined') return 'other';
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+
+  if (userAgent.includes('edg/')) return 'edge';
+  if (userAgent.includes('chrome') && !userAgent.includes('edg/')) return 'chrome';
+  if (userAgent.includes('firefox')) return 'firefox';
+  if (userAgent.includes('safari') && !userAgent.includes('chrome')) return 'safari';
+
+  return 'other';
+};
+
+// Instructions selon le navigateur
+const getBrowserInstructions = (browser: string): { title: string; steps: string[] } => {
+  switch (browser) {
+    case 'chrome':
+      return {
+        title: 'Chrome',
+        steps: [
+          'Cliquez sur l’icône 🔒 ou ⓘ à gauche de l’adresse URL',
+          'Trouvez "Position" ou "Localisation"',
+          'Changez de "Bloquer" à "Autoriser"',
+          'Rechargez la page avec F5'
+        ]
+      };
+    case 'edge':
+      return {
+        title: 'Edge',
+        steps: [
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
+          'Trouvez "Autorisations pour ce site"',
+          'Changez "Emplacement" à "Autoriser"',
+          'Rechargez la page avec F5'
+        ]
+      };
+    case 'firefox':
+      return {
+        title: 'Firefox',
+        steps: [
+          'Cliquez sur l’icône 🔒 à gauche de l’adresse URL',
+          'Cliquez sur "Permissions" puis "Position"',
+          'Décochez "Bloquer" ou sélectionnez "Autoriser"',
+          'Rechargez la page avec F5'
+        ]
+      };
+    case 'safari':
+      return {
+        title: 'Safari',
+        steps: [
+          'Ouvrez Safari > Réglages > Sites web',
+          'Dans la section "Localisation", trouvez ce site',
+          'Changez à "Autoriser"',
+          'Rechargez la page'
+        ]
+      };
+    default:
+      return {
+        title: 'Votre navigateur',
+        steps: [
+          'Recherchez l’icône de sécurité près de l’adresse URL',
+          'Trouvez les paramètres de localisation/position',
+          'Autorisez l\'accès à votre position',
+          'Rechargez la page'
+        ]
+      };
+  }
+};
 
 const SPORT_KEY = 'matching.sport';
 const LEVEL_KEY = 'matching.level';
@@ -31,7 +99,8 @@ function LocationInner() {
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [saveDefault, setSaveDefault] = useState<boolean>(false);
-  const [user, setUser] = useState<any>(null);
+  const [browserType, setBrowserType] = useState<string>('other');
+  const [geolocError, setGeolocError] = useState<boolean>(false);
 
   // Vérifier le rôle utilisateur
   useEffect(() => {
@@ -43,8 +112,7 @@ function LocationInner() {
           return;
         }
 
-        const currentUser = await apiClient.me();
-        setUser(currentUser);
+        const currentUser = await apiClient.me() as DashboardUser;
 
         if (currentUser.role === 'PRO') {
           router.replace('/pro/dashboard');
@@ -57,6 +125,9 @@ function LocationInner() {
   }, [router]);
 
   useEffect(() => {
+    // Détecter le navigateur au montage du composant
+    setBrowserType(detectBrowser());
+
     const qsSport = (sp.get('sport') as Sport | null) || (localStorage.getItem(SPORT_KEY) as Sport | null);
     const qsLevel = (sp.get('level') as Level | null) || (localStorage.getItem(LEVEL_KEY) as Level | null);
     const qsPartner = (sp.get('partner') as Partner | null) || (localStorage.getItem(PARTNER_KEY) as Partner | null);
@@ -100,10 +171,20 @@ function LocationInner() {
   }, [sport, level, partner, distanceKm]);
 
   const getLocation = () => {
-    if (!navigator.geolocation) return alert('La géolocalisation n’est pas supportée par ce navigateur.');
+    if (!navigator.geolocation) {
+      setGeolocError(true);
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
-      (pos) => { setLat(pos.coords.latitude); setLng(pos.coords.longitude); },
-      () => { alert('Impossible de récupérer la position.'); },
+      (pos) => {
+        setLat(pos.coords.latitude);
+        setLng(pos.coords.longitude);
+        setGeolocError(false);
+      },
+      (error) => {
+        console.error('Erreur géolocalisation:', error);
+        setGeolocError(true);
+      },
       { enableHighAccuracy: true, timeout: 8000 }
     );
   };
@@ -117,11 +198,42 @@ function LocationInner() {
           <CardDescription>Active ta localisation (optionnel) et choisis une distance.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Button variant="outline" onClick={getLocation}>Activer ma position</Button>
-            <div className="text-xs text-muted-foreground">
-              {lat != null && lng != null ? `Position: ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Button variant="outline" onClick={getLocation}>Activer ma position</Button>
+              <div className="text-xs text-muted-foreground">
+                {lat != null && lng != null ? `Position : ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
+              </div>
             </div>
+            {geolocError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                <h4 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>Impossible d’accéder à votre position</span>
+                </h4>
+                <p className="text-sm text-red-800 mb-3">
+                  Votre navigateur bloque l’accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
+                </p>
+                <ol className="text-sm text-red-800 space-y-1 ml-4">
+                  {getBrowserInstructions(browserType).steps.map((step, idx) => (
+                    <li key={idx} className="list-decimal">
+                      {step}
+                    </li>
+                  ))}
+                </ol>
+                <p className="text-xs text-red-700 mt-3 italic">
+                  💡 La géolocalisation est optionnelle pour le matching mais permet d’améliorer les résultats.
+                </p>
+                <Button
+                  onClick={getLocation}
+                  variant="outline"
+                  className="mt-3"
+                  size="sm"
+                >
+                  🔄 Réessayer après avoir autorisé
+                </Button>
+              </div>
+            )}
           </div>
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" checked={saveDefault} onChange={(e)=>setSaveDefault(e.target.checked)} />

@@ -1,5 +1,31 @@
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import crypto from 'crypto';
+
+export interface GDPRTechnicalStats {
+  sessionsDeleted: number;
+  tokensDeleted: number;
+  oldLogsDeleted: number;
+  loginAttemptsDeleted: number;
+}
+
+export interface GDPRUserAnonymizationStats {
+  phase1Anonymized: number;
+  phase2Anonymized: number;
+  phase3Purged: number;
+}
+
+export interface GDPRRelationalStats {
+  conversationsDeleted: number;
+  matchesDeleted: number;
+  oldSearchesDeleted: number;
+}
+
+export interface GDPRPurgeResult {
+  technicalData: GDPRTechnicalStats;
+  userAnonymization: GDPRUserAnonymizationStats;
+  relationalData: GDPRRelationalStats;
+  summary: string;
+}
 
 /**
  * Service de purge RGPD avec protection juridique
@@ -23,12 +49,10 @@ export class GDPRPurgeService {
    * ÉTAPE 1: Purge immédiate des données techniques expirées
    * À exécuter toutes les heures
    */
-  async purgeExpiredTechnicalData(): Promise<{
-    sessionsDeleted: number;
-    tokensDeleted: number;
-    oldLogsDeleted: number;
-  }> {
+  async purgeExpiredTechnicalData(): Promise<GDPRTechnicalStats> {
     const now = new Date();
+    const logRetentionDays = Number(process.env.AUDIT_LOG_RETENTION_DAYS || '365');
+    const logThreshold = new Date(now.getTime() - logRetentionDays * 24 * 60 * 60 * 1000);
 
     // Supprimer les sessions expirées
     const sessionsResult = await prisma.session.deleteMany({
@@ -52,13 +76,48 @@ export class GDPRPurgeService {
 
     const tokensDeleted = passwordTokensResult.count + emailTokensResult.count + refreshTokensResult.count;
 
-    console.log(`✅ GDPR: Purged ${sessionsResult.count} sessions, ${tokensDeleted} expired tokens`);
+    const oldLogsResult = await prisma.auditLog.deleteMany({
+      where: {
+        createdAt: { lt: logThreshold }
+      }
+    });
+
+    // Purger les LoginAttempts anciens (RGPD Article 5.1.e)
+    const loginAttemptsDeleted = await this.purgeOldLoginAttempts();
+
+    console.log(`✅ GDPR: Purged ${sessionsResult.count} sessions, ${tokensDeleted} expired tokens, ${loginAttemptsDeleted} login attempts`);
 
     return {
       sessionsDeleted: sessionsResult.count,
       tokensDeleted,
-      oldLogsDeleted: 0 // TODO: implémenter si des logs existent
+      oldLogsDeleted: oldLogsResult.count,
+      loginAttemptsDeleted
     };
+  }
+
+  /**
+   * Purge des LoginAttempts après durée de rétention
+   * Conforme RGPD Article 5.1.e (limitation de conservation)
+   * @returns Nombre d'entrées supprimées
+   */
+  async purgeOldLoginAttempts(): Promise<number> {
+    const retentionDays = Number(process.env.LOGIN_ATTEMPT_RETENTION_DAYS || '30');
+    const threshold = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+    const result = await prisma.loginAttempt.deleteMany({
+      where: {
+        createdAt: { lt: threshold }
+      }
+    });
+
+    console.log(`✅ GDPR: Purged ${result.count} login attempts older than ${retentionDays} days`);
+
+    // Alerte si nombre anormal (possible attaque)
+    if (result.count > 100000) {
+      console.error(`⚠️  ALERT: Abnormal number of login attempts purged: ${result.count}`);
+    }
+
+    return result.count;
   }
 
   /**
@@ -69,11 +128,7 @@ export class GDPRPurgeService {
    * PHASE 2 (2 ans): Anonymiser email
    * PHASE 3 (10 ans): Conserver uniquement preuve consentement
    */
-  async anonymizeDeletedUsers(): Promise<{
-    phase1Anonymized: number;
-    phase2Anonymized: number;
-    phase3Purged: number;
-  }> {
+  async anonymizeDeletedUsers(): Promise<GDPRUserAnonymizationStats> {
     const now = new Date();
 
     // PHASE 1: Anonymiser profils détaillés après 7 jours
@@ -154,25 +209,30 @@ export class GDPRPurgeService {
 
     let phase3Count = 0;
     for (const user of phase3Users) {
-      // Créer un enregistrement de preuve légale avant suppression
-      await prisma.$executeRaw`
-        INSERT INTO legal_consent_archive (
-          original_user_id,
-          consented_at,
-          consent_version,
-          consent_ip_hash,
-          deleted_at,
-          archived_at
-        ) VALUES (
-          ${user.id},
-          ${user.consentedAt},
-          ${user.consentVersion},
-          ${user.consentIp ? this.anonymizeData(user.consentIp, user.id) : null},
-          ${user.deletedAt},
-          NOW()
-        )
-        ON DUPLICATE KEY UPDATE archived_at = NOW()
-      `;
+      if (!user.deletedAt) continue;
+
+      await prisma.legalConsentArchive.upsert({
+        where: {
+          originalUserId_deletedAt: {
+            originalUserId: user.id,
+            deletedAt: user.deletedAt
+          }
+        },
+        create: {
+          originalUserId: user.id,
+          consentedAt: user.consentedAt ?? null,
+          consentVersion: user.consentVersion ?? null,
+          consentIpHash: user.consentIp ? this.anonymizeData(user.consentIp, user.id) : null,
+          deletedAt: user.deletedAt,
+          archivedAt: new Date()
+        },
+        update: {
+          consentedAt: user.consentedAt ?? null,
+          consentVersion: user.consentVersion ?? null,
+          consentIpHash: user.consentIp ? this.anonymizeData(user.consentIp, user.id) : null,
+          archivedAt: new Date()
+        }
+      });
 
       // Supprimer définitivement l'utilisateur et ses données
       await prisma.user.delete({
@@ -195,11 +255,7 @@ export class GDPRPurgeService {
    * ÉTAPE 3: Nettoyage des conversations et données relationnelles
    * À exécuter quotidiennement
    */
-  async purgeRelationalData(): Promise<{
-    conversationsDeleted: number;
-    matchesDeleted: number;
-    oldSearchesDeleted: number;
-  }> {
+  async purgeRelationalData(): Promise<GDPRRelationalStats> {
     const now = new Date();
 
     // Supprimer les conversations trasher depuis > 30 jours
@@ -249,12 +305,7 @@ export class GDPRPurgeService {
   /**
    * Purge complète - À exécuter quotidiennement via CRON
    */
-  async performFullPurge(): Promise<{
-    technicalData: any;
-    userAnonymization: any;
-    relationalData: any;
-    summary: string;
-  }> {
+  async performFullPurge(): Promise<GDPRPurgeResult> {
     console.log('🧹 Starting GDPR purge...');
 
     const technicalData = await this.purgeExpiredTechnicalData();

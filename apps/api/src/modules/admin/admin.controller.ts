@@ -1,11 +1,74 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '@blobinfini/database';
-import { Prisma } from '@prisma/client';
-import type { DecisionKind } from '@prisma/client';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
+import type { DecisionKind } from '@blobinfini/database';
 import { requireAuth, requireAdmin } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
+import { systemAlertService } from '../../services/system-alert.service';
 import { audit } from '../../middleware/audit';
+import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
+import { requirePermissions } from './admin.guard';
+import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
+
+type ConversationMemberWithUser = Prisma.ConversationMemberGetPayload<{
+  include: {
+    user: {
+      select: {
+        id: true;
+        email: true;
+        role: string;
+      };
+    };
+  };
+}>;
+
+type LoginAttemptWithUser = Prisma.LoginAttemptGetPayload<{
+  include: {
+    user: {
+      select: {
+        id: true;
+        email: true;
+        role: true;
+      };
+    };
+  };
+}>;
+
+async function ensureAdminConversation(adminId: string, targetUserId: string) {
+  const existing = await prisma.conversation.findFirst({
+    where: {
+      type: 'ADMIN_TO_USER',
+      members: {
+        some: { userId: adminId }
+      },
+      AND: {
+        members: {
+          some: { userId: targetUserId }
+        }
+      }
+    },
+    select: { id: true }
+  });
+
+  if (existing) {
+    return existing.id;
+  }
+
+  const conversation = await prisma.conversation.create({
+    data: {
+      type: 'ADMIN_TO_USER',
+      members: {
+        create: [
+          { userId: adminId },
+          { userId: targetUserId }
+        ]
+      }
+    },
+    select: { id: true }
+  });
+
+  return conversation.id;
+}
 
 export const adminRouter = Router();
 
@@ -14,11 +77,11 @@ adminRouter.use(requireAuth);
 adminRouter.use(requireAdmin);
 
 // Statistiques principales
-adminRouter.get('/stats', async (req, res) => {
+adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:stats:view', () => 'admin:stats'), async (req, res) => {
   try {
     // Compter les utilisateurs par rôle
     const totalUsers = await prisma.user.count();
-    const usersByRole = await prisma.user.groupBy({
+    const usersByRole: Prisma.UserGroupByOutputType[] = await prisma.user.groupBy({
       by: ['role'],
       _count: { role: true }
     });
@@ -48,9 +111,9 @@ adminRouter.get('/stats', async (req, res) => {
     // Formater les statistiques
     const stats = {
       totalUsers,
-      totalRiders: usersByRole.find(g => g.role === 'RIDER')?._count.role || 0,
-      totalPros: usersByRole.find(g => g.role === 'PRO')?._count.role || 0,
-      totalAdmins: usersByRole.find(g => g.role === 'ADMIN')?._count.role || 0,
+      totalRiders: usersByRole.find((group: Prisma.UserGroupByOutputType) => group.role === 'RIDER')?._count.role || 0,
+      totalPros: usersByRole.find((group: Prisma.UserGroupByOutputType) => group.role === 'PRO')?._count.role || 0,
+      totalAdmins: usersByRole.find((group: Prisma.UserGroupByOutputType) => group.role === 'ADMIN')?._count.role || 0,
       totalConversations,
       activeUsers,
       reportedProfiles
@@ -64,7 +127,11 @@ adminRouter.get('/stats', async (req, res) => {
 });
 
 // Lister tous les utilisateurs avec pagination
-adminRouter.get('/users', async (req, res) => {
+adminRouter.get(
+  '/users',
+  requirePermissions('users.view'),
+  audit('admin:users:list', (req) => `admin:users:page:${req.query.page ?? 1}`),
+  async (req, res) => {
   try {
     const page = parseInt(req.query.page as string || '1');
     const limit = parseInt(req.query.limit as string || '20');
@@ -128,7 +195,11 @@ adminRouter.get('/users', async (req, res) => {
 });
 
 // Suspendre/réactiver un utilisateur
-adminRouter.patch('/users/:id/suspend', audit('admin:user:suspend', (req) => `user:${req.params.id}`), async (req, res) => {
+adminRouter.patch(
+  '/users/:id/suspend',
+  requirePermissions('users.suspend'),
+  audit('admin:user:suspend', (req) => `user:${req.params.id}`),
+  async (req, res) => {
   try {
     const userId = req.params.id;
     const { suspended } = z.object({
@@ -171,7 +242,11 @@ adminRouter.patch('/users/:id/suspend', audit('admin:user:suspend', (req) => `us
   }
 });
 
-adminRouter.get('/users/:id', async (req, res) => {
+adminRouter.get(
+  '/users/:id',
+  requirePermissions('users.view'),
+  audit('admin:users:get', (req) => `user:${req.params.id}`),
+  async (req, res) => {
   try {
     const userId = req.params.id;
 
@@ -280,7 +355,11 @@ adminRouter.get('/users/:id', async (req, res) => {
 });
 
 // Vérifier un professionnel
-adminRouter.patch('/pros/:id/verify', audit('admin:pro:verify', (req) => `pro:${req.params.id}`), async (req, res) => {
+adminRouter.patch(
+  '/pros/:id/verify',
+  requirePermissions('pros.verify'),
+  audit('admin:pro:verify', (req) => `pro:${req.params.id}`),
+  async (req, res) => {
   try {
     const userId = req.params.id;
     const { verified } = z.object({
@@ -308,7 +387,11 @@ adminRouter.patch('/pros/:id/verify', audit('admin:pro:verify', (req) => `pro:${
 });
 
 // Lister les signalements
-adminRouter.get('/reports', async (req, res) => {
+adminRouter.get(
+  '/reports',
+  requirePermissions('reports.view'),
+  audit('admin:reports:list', () => 'admin:reports'),
+  async (req, res) => {
   try {
     const page = parseInt(req.query.page as string || '1');
     const limit = parseInt(req.query.limit as string || '20');
@@ -361,39 +444,6 @@ adminRouter.get('/reports', async (req, res) => {
   }
 });
 
-// Définition des permissions disponibles
-export const AVAILABLE_PERMISSIONS = [
-  'users.view',
-  'users.suspend',
-  'users.delete',
-  'pros.verify',
-  'pros.manage',
-  'reports.view',
-  'reports.moderate',
-  'analytics.view',
-  'permissions.manage',
-  'system.configure'
-] as const;
-
-export type Permission = typeof AVAILABLE_PERMISSIONS[number];
-
-// Rôles prédéfinis avec leurs permissions
-export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
-  SUPER_ADMIN: AVAILABLE_PERMISSIONS as any,
-  MODERATOR: [
-    'users.view',
-    'users.suspend',
-    'pros.verify',
-    'reports.view',
-    'reports.moderate',
-    'analytics.view'
-  ],
-  ANALYTICS: [
-    'users.view',
-    'analytics.view'
-  ]
-};
-
 const auditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -405,7 +455,11 @@ const auditQuerySchema = z.object({
 });
 
 // Lister les permissions disponibles
-adminRouter.get('/permissions', async (req, res) => {
+adminRouter.get(
+  '/permissions',
+  requirePermissions('permissions.manage'),
+  audit('admin:permissions:list', () => 'admin:permissions'),
+  async (req, res) => {
   try {
     return res.json({
       available: AVAILABLE_PERMISSIONS,
@@ -418,7 +472,11 @@ adminRouter.get('/permissions', async (req, res) => {
 });
 
 // Lister les administrateurs avec leurs permissions
-adminRouter.get('/admins', async (req, res) => {
+adminRouter.get(
+  '/admins',
+  requirePermissions('permissions.manage'),
+  audit('admin:admins:list', () => 'admin:admins'),
+  async (req, res) => {
   try {
     const admins = await prisma.user.findMany({
       where: {
@@ -434,7 +492,8 @@ adminRouter.get('/admins', async (req, res) => {
           select: {
             displayName: true,
             permissions: true,
-            lastLoginAt: true
+            lastLoginAt: true,
+            allowedIPs: true
           }
         }
       },
@@ -451,7 +510,11 @@ adminRouter.get('/admins', async (req, res) => {
 });
 
 // Mettre à jour les permissions d'un admin
-adminRouter.patch('/admins/:id/permissions', audit('admin:permissions:update', (req) => `admin:${req.params.id}`), async (req, res) => {
+adminRouter.patch(
+  '/admins/:id/permissions',
+  requirePermissions('permissions.manage'),
+  audit('admin:permissions:update', (req) => `admin:${req.params.id}`),
+  async (req, res) => {
   try {
     const adminId = req.params.id;
     const { permissions } = z.object({
@@ -511,7 +574,11 @@ adminRouter.patch('/admins/:id/permissions', audit('admin:permissions:update', (
 });
 
 // Appliquer un rôle prédéfini à un admin
-adminRouter.patch('/admins/:id/role', async (req, res) => {
+adminRouter.patch(
+  '/admins/:id/role',
+  requirePermissions('permissions.manage'),
+  audit('admin:role:apply', (req) => `admin:${req.params.id}`),
+  async (req, res) => {
   try {
     const adminId = req.params.id;
     const { role } = z.object({
@@ -566,7 +633,73 @@ adminRouter.patch('/admins/:id/role', async (req, res) => {
   }
 });
 
-adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
+// ✅ NOUVEAU : Gérer les IPs autorisées pour un admin
+adminRouter.patch(
+  '/admins/:id/allowed-ips',
+  requirePermissions('permissions.manage'),
+  audit('admin:allowed-ips:update', (req) => `admin:${req.params.id}`),
+  async (req, res) => {
+  try {
+    const adminId = req.params.id;
+    const { allowedIPs } = z.object({
+      allowedIPs: z.array(z.string().ip())
+    }).parse(req.body);
+
+    // Vérifier que l'admin cible existe
+    const targetAdmin = await prisma.user.findUnique({
+      where: { id: adminId, role: 'ADMIN' },
+      select: { id: true }
+    });
+
+    if (!targetAdmin) {
+      return res.status(404).json({ error: 'Admin not found' });
+    }
+
+    // Ne pas permettre de modifier ses propres IPs (risque de se bloquer)
+    const currentUser = (req as any).user as { id: string };
+    if (targetAdmin.id === currentUser.id) {
+      return res.status(403).json({
+        error: 'Cannot modify your own IP whitelist',
+        message: 'Pour des raisons de sécurité, vous ne pouvez pas modifier votre propre liste d\'IPs autorisées'
+      });
+    }
+
+    // Mettre à jour les IPs autorisées
+    const adminProfile = await prisma.adminProfile.upsert({
+      where: { userId: adminId },
+      create: {
+        userId: adminId,
+        allowedIPs: allowedIPs
+      },
+      update: {
+        allowedIPs: allowedIPs
+      },
+      select: {
+        id: true,
+        allowedIPs: true,
+        user: {
+          select: {
+            email: true
+          }
+        }
+      }
+    });
+
+    return res.json(adminProfile);
+  } catch (error) {
+    console.error('Admin allowed IPs update error:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+adminRouter.get(
+  '/analytics/matching/ttfm',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:ttfm', () => 'admin:analytics:ttfm'),
+  async (req, res) => {
   try {
     const periodParam = typeof req.query.period === 'string' ? req.query.period : '30d';
     const period: AnalyticsPeriod = ['7d', '30d', '90d', '1y'].includes(periodParam)
@@ -627,7 +760,9 @@ adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
     );
 
     const sampleSize = firstMatchesRaw.length;
-    const daysValues = firstMatchesRaw.map(row => {
+    type FirstMatchRow = (typeof firstMatchesRaw)[number];
+
+    const daysValues = firstMatchesRaw.map((row: FirstMatchRow) => {
       const value = Number(row.days_to_match ?? 0);
       return value < 0 ? 0 : value;
     });
@@ -710,7 +845,7 @@ adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
       return normalized.toISOString();
     };
 
-    firstMatchesRaw.forEach(entry => {
+    firstMatchesRaw.forEach((entry: FirstMatchRow) => {
       const value = entry.days_to_match ?? 0;
       const days = value < 0 ? 0 : value;
       const key = normalizeDate(entry.first_conversation_at, groupBy);
@@ -720,9 +855,11 @@ adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
       timelineMap.set(key, bucket);
     });
 
+    type TimelineEntry = [string, { totalDays: number; count: number }];
+
     const timeline = Array.from(timelineMap.entries())
-      .sort(([a], [b]) => (a > b ? 1 : -1))
-      .map(([periodIso, data]) => ({
+      .sort(([a]: TimelineEntry, [b]: TimelineEntry) => (a > b ? 1 : -1))
+      .map(([periodIso, data]: TimelineEntry) => ({
         period: periodIso,
         averageDays: data.count > 0 ? data.totalDays / data.count : 0,
         count: data.count
@@ -750,7 +887,11 @@ adminRouter.get('/analytics/matching/ttfm', async (req, res) => {
 // Analytics détaillées - Engagement
 type AnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
 
-adminRouter.get('/analytics/engagement', async (req, res) => {
+adminRouter.get(
+  '/analytics/engagement',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:engagement', () => 'admin:analytics:engagement'),
+  async (req, res) => {
   try {
     const periodParam = typeof req.query.period === 'string' ? req.query.period : '30d';
     const period: AnalyticsPeriod = ['7d', '30d', '90d', '1y'].includes(periodParam)
@@ -805,7 +946,9 @@ adminRouter.get('/analytics/engagement', async (req, res) => {
       `
     );
 
-    const registrations = registrationsRaw.map(item => ({
+    type RegistrationRow = (typeof registrationsRaw)[number];
+
+    const registrations = registrationsRaw.map((item: RegistrationRow) => ({
       period: item.period instanceof Date ? item.period.toISOString() : String(item.period),
       total: Number(item.count),
       riders: Number(item.riders),
@@ -830,7 +973,9 @@ adminRouter.get('/analytics/engagement', async (req, res) => {
       `
     );
 
-    const activeUsers = activeUsersRaw.map(item => ({
+    type ActiveUsersRow = (typeof activeUsersRaw)[number];
+
+    const activeUsers = activeUsersRaw.map((item: ActiveUsersRow) => ({
       period: item.period instanceof Date ? item.period.toISOString() : String(item.period),
       count: Number(item.active_users)
     }));
@@ -902,7 +1047,11 @@ adminRouter.get('/analytics/engagement', async (req, res) => {
 });
 
 // Analytics détaillées - Matching
-adminRouter.get('/analytics/matching', async (req, res) => {
+adminRouter.get(
+  '/analytics/matching',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:matching', () => 'admin:analytics:matching'),
+  async (req, res) => {
   try {
     const periodParam = typeof req.query.period === 'string' ? req.query.period : '30d';
     const period: AnalyticsPeriod = ['7d', '30d', '90d', '1y'].includes(periodParam)
@@ -933,7 +1082,7 @@ adminRouter.get('/analytics/matching', async (req, res) => {
     }
 
     // Statistiques des décisions de matching
-    const matchingStats = await prisma.matchDecision.groupBy({
+    const matchingStats: Prisma.MatchDecisionGroupByOutputType[] = await prisma.matchDecision.groupBy({
       by: ['decision'],
       where: {
         createdAt: {
@@ -945,9 +1094,16 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const totalDecisions = matchingStats.reduce((sum, stat) => sum + stat._count.decision, 0);
-    const acceptedCount = matchingStats.find(s => s.decision === 'ACCEPT')?._count.decision || 0;
-    const refusedCount = matchingStats.find(s => s.decision === 'REFUSE')?._count.decision || 0;
+    const totalDecisions = matchingStats.reduce(
+      (sum: number, stat: Prisma.MatchDecisionGroupByOutputType) => sum + stat._count.decision,
+      0
+    );
+    const acceptedCount = matchingStats.find(
+      (stat: Prisma.MatchDecisionGroupByOutputType) => stat.decision === 'ACCEPT'
+    )?._count.decision || 0;
+    const refusedCount = matchingStats.find(
+      (stat: Prisma.MatchDecisionGroupByOutputType) => stat.decision === 'REFUSE'
+    )?._count.decision || 0;
     const acceptRate = totalDecisions > 0 ? (acceptedCount / totalDecisions) * 100 : 0;
     const refuseRate = totalDecisions > 0 ? (refusedCount / totalDecisions) * 100 : 0;
 
@@ -977,7 +1133,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       `
     );
 
-    const conversationTimeline = conversationTimelineRaw.map(item => ({
+    type ConversationTimelineRow = (typeof conversationTimelineRaw)[number];
+
+    const conversationTimeline = conversationTimelineRaw.map((item: ConversationTimelineRow) => ({
       period: item.period instanceof Date ? item.period.toISOString() : String(item.period),
       conversations: Number(item.conversations)
     }));
@@ -1014,9 +1172,11 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       decisionsTimelineMap.set(key, entry);
     }
 
+    type DecisionTimelineEntry = [string, { accepted: number; refused: number; total: number }];
+
     const decisionTimeline = Array.from(decisionsTimelineMap.entries())
-      .sort(([a], [b]) => (a > b ? 1 : -1))
-      .map(([periodIso, values]) => ({ period: periodIso, ...values }));
+      .sort(([a]: DecisionTimelineEntry, [b]: DecisionTimelineEntry) => (a > b ? 1 : -1))
+      .map(([periodIso, values]: DecisionTimelineEntry) => ({ period: periodIso, ...values }));
 
     // Préférences de sport (via RiderDiscipline)
     const sportPreferencesRaw = await prisma.riderDiscipline.groupBy({
@@ -1031,7 +1191,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const sportPreferences = sportPreferencesRaw.map(item => ({
+    type SportPreference = (typeof sportPreferencesRaw)[number];
+
+    const sportPreferences = sportPreferencesRaw.map((item: SportPreference) => ({
       sport: item.sport,
       count: Number(item._count.sport)
     }));
@@ -1049,7 +1211,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const levelPreferences = levelPreferencesRaw.map(item => ({
+    type LevelPreference = (typeof levelPreferencesRaw)[number];
+
+    const levelPreferences = levelPreferencesRaw.map((item: LevelPreference) => ({
       level: item.level,
       count: Number(item._count.level)
     }));
@@ -1067,9 +1231,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const searchesBySport = searchesBySportRaw.map(item => ({
+    const searchesBySport = searchesBySportRaw.map((item: Prisma.LastSearchGroupByOutputType) => ({
       sport: item.sport,
-      count: Number(item._count.sport)
+      count: Number(item._count?.sport ?? 0)
     }));
 
     // Recherches avec géolocalisation
@@ -1114,7 +1278,9 @@ adminRouter.get('/analytics/matching', async (req, res) => {
       }
     });
 
-    const matchesOverTime = matchesOverTimeRaw.map(item => ({
+    type MatchesOverTimeItem = (typeof matchesOverTimeRaw)[number];
+
+    const matchesOverTime = matchesOverTimeRaw.map((item: MatchesOverTimeItem) => ({
       period: item.createdAt instanceof Date ? item.createdAt.toISOString() : String(item.createdAt),
       count: Number(item._count.id)
     }));
@@ -1150,7 +1316,132 @@ const reportActionSchema = z.object({
   action: z.enum(['approve', 'dismiss', 'ban'])
 });
 
-adminRouter.post('/reports/:id/action', async (req, res) => {
+const createSystemAlertSchema = z.object({
+  type: z.string().min(3),
+  message: z.string().min(5),
+  severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).default('INFO'),
+  link: z.string().url().optional(),
+  dedupeKey: z.string().optional()
+});
+
+const conversationBroadcastSchema = z.object({
+  message: z.string().min(5).max(2000),
+  target: z.enum(['ALL', 'RIDERS', 'PROS', 'CUSTOM']).default('ALL'),
+  emails: z.array(z.string().email()).optional()
+});
+
+adminRouter.post(
+  '/conversations/broadcast',
+  requirePermissions('reports.moderate'),
+  audit('admin:conversations:broadcast', () => 'admin:conversations:broadcast'),
+  async (req, res) => {
+    try {
+      const adminId = (req as any).user?.id as string | undefined;
+      if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const { message, target, emails } = conversationBroadcastSchema.parse(req.body ?? {});
+      let recipients: Array<{ id: string; email: string }> = [];
+      const baseWhere: Prisma.UserWhereInput = {
+        deletedAt: null
+      };
+
+      if (target === 'RIDERS') {
+        baseWhere.role = 'RIDER';
+      } else if (target === 'PROS') {
+        baseWhere.role = 'PRO';
+      } else if (target === 'ALL') {
+        baseWhere.role = { in: ['RIDER', 'PRO'] };
+      }
+
+      if (target === 'CUSTOM') {
+        const normalizedEmails = (emails ?? [])
+          .map((email) => email.trim().toLowerCase())
+          .filter(Boolean);
+        if (normalizedEmails.length === 0) {
+          return res.status(400).json({ error: 'Emails required for CUSTOM target' });
+        }
+        recipients = await prisma.user.findMany({
+          where: {
+            ...baseWhere,
+            email: { in: normalizedEmails }
+          },
+          select: { id: true, email: true }
+        });
+      } else {
+        recipients = await prisma.user.findMany({
+          where: baseWhere,
+          select: { id: true, email: true }
+        });
+      }
+
+      if (recipients.length === 0) {
+        return res.status(404).json({ error: 'No recipients found' });
+      }
+
+      const missingEmails: string[] = [];
+      if (target === 'CUSTOM' && emails) {
+        const foundEmails = new Set(recipients.map((user) => user.email.toLowerCase()));
+        emails.forEach((email) => {
+          if (!foundEmails.has(email.toLowerCase())) {
+            missingEmails.push(email);
+          }
+        });
+      }
+
+      let sentCount = 0;
+      for (const recipient of recipients) {
+        const conversationId = await ensureAdminConversation(adminId, recipient.id);
+        await prisma.message.create({
+          data: {
+            conversationId,
+            senderId: adminId,
+            type: 'TEXT',
+            content: message
+          }
+        });
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: { updatedAt: new Date() }
+        });
+        sentCount++;
+      }
+
+      res.locals.auditMetadata = {
+        target,
+        sentCount,
+        missingEmails
+      };
+
+      if (missingEmails.length > 0) {
+        await systemAlertService.ensureAlert({
+          type: 'messaging:broadcast-missing',
+          message: `Emails introuvables lors d'une diffusion admin (${missingEmails.length})`,
+          severity: 'WARNING',
+          metadata: { missingEmails }
+        });
+      }
+
+      return res.json({
+        success: true,
+        target,
+        sentCount,
+        missingEmails
+      });
+    } catch (error) {
+      console.error('Admin conversation broadcast error:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.post(
+  '/reports/:id/action',
+  requirePermissions('reports.moderate'),
+  audit('admin:report:action', (req) => `report:${req.params.id}`),
+  async (req, res) => {
   try {
     const reportId = req.params.id;
     const { action } = reportActionSchema.parse(req.body);
@@ -1188,7 +1479,13 @@ adminRouter.post('/reports/:id/action', async (req, res) => {
       return res.status(403).json({ error: 'Cannot ban administrators' });
     }
 
-    await prisma.$transaction(async (tx) => {
+    res.locals.auditMetadata = {
+      moderationAction: action,
+      reportId,
+      targetUserId: targetUser?.id ?? null
+    };
+
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       if (action === 'ban' && targetUser) {
         await tx.user.update({
           where: { id: targetUser.id },
@@ -1217,7 +1514,562 @@ adminRouter.post('/reports/:id/action', async (req, res) => {
   }
 });
 
-adminRouter.get('/analytics/behavior', async (req, res) => {
+adminRouter.get(
+  '/alerts',
+  requirePermissions('system.configure'),
+  audit('admin:alerts:list', () => 'admin:alerts:list'),
+  async (req, res) => {
+    try {
+      const status = req.query.status as 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | undefined;
+      const severity = req.query.severity as 'INFO' | 'WARNING' | 'CRITICAL' | undefined;
+      const page = parseInt(req.query.page as string || '1');
+      const limit = parseInt(req.query.limit as string || '20');
+
+      const result = await systemAlertService.list({ status, severity, page, limit });
+      return res.json(result);
+    } catch (error) {
+      console.error('Admin alerts list error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.post(
+  '/alerts',
+  requirePermissions('system.configure'),
+  audit('admin:alerts:create', () => 'admin:alerts:create'),
+  async (req, res) => {
+    try {
+      const adminId = (req as any).user?.id as string | undefined;
+      const payload = createSystemAlertSchema.parse(req.body ?? {});
+      const alert = await systemAlertService.createAlert({
+        ...payload,
+        createdById: adminId ?? null,
+        dedupeKey: payload.dedupeKey ?? undefined
+      });
+
+      return res.status(201).json(alert);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      console.error('Admin alert create error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.post(
+  '/alerts/:id/ack',
+  requirePermissions('system.configure'),
+  audit('admin:alerts:ack', (req) => `admin:alert:${req.params.id}`),
+  async (req, res) => {
+    try {
+      const alert = await systemAlertService.acknowledge(req.params.id);
+      return res.json(alert);
+    } catch (error) {
+      console.error('Admin alert ack error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.post(
+  '/alerts/:id/resolve',
+  requirePermissions('system.configure'),
+  audit('admin:alerts:resolve', (req) => `admin:alert:${req.params.id}`),
+  async (req, res) => {
+    try {
+      const alert = await systemAlertService.resolve(req.params.id);
+      return res.json(alert);
+    } catch (error) {
+      console.error('Admin alert resolve error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.get(
+  '/conversations/blocked',
+  requirePermissions('reports.view'),
+  audit('admin:conversations:blocked', () => 'admin:conversations:blocked'),
+  async (req, res) => {
+    try {
+      const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 100);
+      type BlockedMember = Prisma.ConversationMemberGetPayload<{
+        include: {
+          user: { select: { id: true; email: true; role: true } };
+          conversation: {
+            select: {
+              id: true;
+              type: true;
+              createdAt: true;
+              members: {
+                select: {
+                  user: { select: { id: true; email: true; role: true } };
+                  blockedAt: true;
+                };
+              };
+            };
+          };
+        };
+      }>;
+
+      const blockedMembers: BlockedMember[] = await prisma.conversationMember.findMany({
+        where: { blockedAt: { not: null } },
+        orderBy: { blockedAt: 'desc' },
+        take: limit,
+        include: {
+          user: {
+            select: { id: true, email: true, role: true }
+          },
+          conversation: {
+            select: {
+              id: true,
+              type: true,
+              createdAt: true,
+              members: {
+                select: {
+                  user: {
+                    select: { id: true, email: true, role: true }
+                  },
+                  blockedAt: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      type ConvMember = NonNullable<BlockedMember['conversation']>['members'][number];
+
+      const items = blockedMembers.map((member: BlockedMember) => ({
+        conversationId: member.conversationId,
+        blockedAt: member.blockedAt,
+        user: member.user,
+        conversation: {
+          id: member.conversation?.id,
+          type: member.conversation?.type,
+          createdAt: member.conversation?.createdAt,
+          members: member.conversation?.members.map((cm: ConvMember) => ({
+            user: cm.user,
+            blockedAt: cm.blockedAt
+          }))
+        }
+      }));
+
+      return res.json({
+        blocked: items,
+        pagination: {
+          limit,
+          count: items.length
+        }
+      });
+    } catch (error) {
+      console.error('Admin blocked conversations list error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+const adminConversationBlockSchema = z.object({
+  userId: z.string().uuid().optional(),
+  action: z.enum(['block', 'unblock']).default('block')
+});
+
+adminRouter.post(
+  '/conversations/:conversationId/block',
+  requirePermissions('reports.moderate'),
+  audit('admin:conversations:block', (req) => `admin:conversation:${req.params.conversationId}`),
+  async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+      const { action, userId } = adminConversationBlockSchema.parse(req.body ?? {});
+
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: {
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  role: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!conversation) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+
+      const targetMembers: ConversationMemberWithUser[] = userId
+        ? conversation.members.filter((member: ConversationMemberWithUser) => member.userId === userId)
+        : conversation.members;
+
+      if (targetMembers.length === 0) {
+        return res.status(404).json({ error: 'Member not found in conversation' });
+      }
+
+      await prisma.conversationMember.updateMany({
+        where: {
+          conversationId,
+          userId: { in: targetMembers.map((member: ConversationMemberWithUser) => member.userId) }
+        },
+        data: {
+          blockedAt: action === 'unblock' ? null : new Date()
+        }
+      });
+
+      const refreshedMembers: ConversationMemberWithUser[] = await prisma.conversationMember.findMany({
+        where: {
+          conversationId,
+          userId: { in: targetMembers.map((member: ConversationMemberWithUser) => member.userId) }
+        },
+        include: {
+          user: { select: { id: true, email: true, role: true } }
+        }
+      });
+
+      if (!res.locals.auditMetadata) {
+        res.locals.auditMetadata = {};
+      }
+      res.locals.auditMetadata = {
+        ...(res.locals.auditMetadata || {}),
+        conversationId,
+        action,
+        targetUserIds: targetMembers.map((member: ConversationMemberWithUser) => member.userId)
+      };
+
+      return res.json({
+        conversationId,
+        action,
+        updatedMembers: refreshedMembers.map((member: ConversationMemberWithUser) => ({
+          userId: member.userId,
+          email: member.user?.email ?? null,
+          role: member.user?.role ?? null,
+          blockedAt: member.blockedAt
+        }))
+      });
+    } catch (error) {
+      console.error('Admin conversation block error:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.post(
+  '/conversations/unblock-all',
+  requirePermissions('reports.moderate'),
+  audit('admin:conversations:unblock-all', () => 'admin:conversations:bulk-unblock'),
+  async (_req, res) => {
+    try {
+      const result = await prisma.conversationMember.updateMany({
+        where: { blockedAt: { not: null } },
+        data: { blockedAt: null }
+      });
+
+      res.locals.auditMetadata = {
+        affectedCount: result.count
+      };
+
+      return res.json({
+        success: true,
+        count: result.count
+      });
+    } catch (error) {
+      console.error('Admin unblock all conversations error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.get(
+  '/conversations/blocked/history',
+  requirePermissions('reports.view'),
+  audit('admin:conversations:block-history', () => 'admin:conversations:block-history'),
+  async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string || '1');
+      const limit = Math.min(parseInt(req.query.limit as string || '25', 10), 100);
+      const skip = (page - 1) * limit;
+
+      const where = { action: 'admin:conversations:block' } as const;
+
+      const [items, total] = await Promise.all([
+        prisma.auditLog.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: {
+            user: {
+              select: { id: true, email: true, role: true }
+            }
+          }
+        }),
+        prisma.auditLog.count({ where })
+      ]);
+
+      return res.json({
+        items,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      });
+    } catch (error) {
+      console.error('Admin conversation block history error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+const securityActionPrefixes = ['security:', 'admin:gdpr:', 'admin:allowed-ips', 'admin:user:', 'admin:report:'];
+const securityActionsExact = ['admin:permissions:update', 'admin:role:apply'];
+
+adminRouter.get(
+  '/security/events',
+  requirePermissions('system.configure'),
+  audit('admin:security:events', () => 'admin:security:events'),
+  async (req, res) => {
+    try {
+      const limit = Math.min(parseInt((req.query.limit as string) || '100', 10), 200);
+      const events = await prisma.auditLog.findMany({
+        where: {
+          OR: [
+            ...securityActionPrefixes.map(prefix => ({ action: { startsWith: prefix } })),
+            { action: { in: securityActionsExact } }
+          ]
+        },
+        include: {
+          user: {
+            select: { id: true, email: true, role: true }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit
+      });
+
+      return res.json({ events });
+    } catch (error) {
+      console.error('Admin security events error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.get(
+  '/security/logs/summary',
+  requirePermissions('system.configure'),
+  audit('admin:security:logs:summary', () => 'admin:security:logs:summary'),
+  async (req, res) => {
+    try {
+      const days = Math.min(parseInt((req.query.days as string) || '7', 10), 90);
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const grouped: Prisma.AuditLogGroupByOutputType[] = await prisma.auditLog.groupBy({
+        by: ['action'],
+        where: {
+          createdAt: { gte: since },
+          OR: [
+            ...securityActionPrefixes.map(prefix => ({ action: { startsWith: prefix } })),
+            { action: { in: securityActionsExact } }
+          ]
+        },
+        _count: { action: true },
+        orderBy: {
+          _count: {
+            action: 'desc'
+          }
+        },
+        take: 25
+      });
+
+      return res.json({
+        since,
+        items: grouped.map((item) => ({
+          action: item.action,
+          count: item._count.action
+        }))
+      });
+    } catch (error) {
+      console.error('Admin security logs summary error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+/**
+ * Pseudonymise une adresse IP pour conformité RGPD Article 5.1.c
+ * IPv4: Masque les 2 derniers octets (192.168.xxx.xxx)
+ * IPv6: Masque les 64 derniers bits
+ */
+function pseudonymizeIP(ip: string | null): string {
+  if (!ip) return 'N/A';
+
+  // IPv4: masquer les 2 derniers octets
+  if (ip.includes('.')) {
+    const parts = ip.split('.');
+    if (parts.length === 4) {
+      return `${parts[0]}.${parts[1]}.xxx.xxx`;
+    }
+  }
+
+  // IPv6: masquer les 64 derniers bits
+  if (ip.includes(':')) {
+    const parts = ip.split(':');
+    if (parts.length >= 4) {
+      return `${parts.slice(0, 4).join(':')}:xxxx:xxxx:xxxx:xxxx`;
+    }
+  }
+
+  return 'xxx.xxx.xxx.xxx'; // Fallback
+}
+
+// Rate limiting pour endpoints admin sécurité
+const adminSecurityRateLimit = createRateLimiter('ADMIN');
+
+// Schema de validation pour l'endpoint /security/login-attempts
+const loginAttemptsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  onlyFailed: z.enum(['true', 'false']).optional().transform(val => val === 'true'),
+  suspiciousOnly: z.enum(['true', 'false']).optional().transform(val => val === 'true')
+});
+
+adminRouter.get(
+  '/security/login-attempts',
+  adminSecurityRateLimit,
+  requirePermissions('system.configure'),
+  audit('admin:security:login-attempts', () => 'admin:security:login-attempts'),
+  async (req, res) => {
+    try {
+      // Validation Zod des paramètres
+      const parsed = loginAttemptsQuerySchema.safeParse(req.query);
+
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: 'Invalid query parameters',
+          details: parsed.error.format()
+        });
+      }
+
+      const { limit, onlyFailed, suspiciousOnly } = parsed.data;
+
+      const where: any = {};
+      if (onlyFailed) {
+        where.success = false;
+      }
+
+      // Suspicious criteria: multiple failed attempts from same IP or email
+      let attempts: LoginAttemptWithUser[];
+      if (suspiciousOnly) {
+        // Get IPs and emails with multiple failed attempts in the last 24 hours
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        const failedAttempts: Prisma.LoginAttempt[] = await prisma.loginAttempt.findMany({
+          where: {
+            success: false,
+            createdAt: { gte: oneDayAgo }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        // Group by IP and email to find suspicious patterns
+        const ipCounts = new Map<string, number>();
+        const emailCounts = new Map<string, number>();
+
+        for (const attempt of failedAttempts) {
+          if (attempt.ip) {
+            ipCounts.set(attempt.ip, (ipCounts.get(attempt.ip) || 0) + 1);
+          }
+          emailCounts.set(attempt.email, (emailCounts.get(attempt.email) || 0) + 1);
+        }
+
+        // Filter suspicious IPs (3+ failed attempts) and emails (5+ failed attempts)
+        const suspiciousIPs = Array.from(ipCounts.entries())
+          .filter(([, count]) => count >= 3)
+          .map(([ip]) => ip);
+        const suspiciousEmails = Array.from(emailCounts.entries())
+          .filter(([, count]) => count >= 5)
+          .map(([email]) => email);
+
+        if (suspiciousIPs.length > 0 || suspiciousEmails.length > 0) {
+          await systemAlertService.ensureAlert({
+            type: 'security:suspicious-login',
+            message: 'Tentatives de connexion suspectes détectées',
+            severity: 'WARNING',
+            metadata: { suspiciousIPs, suspiciousEmails }
+          });
+        }
+
+        attempts = await prisma.loginAttempt.findMany({
+          where: {
+            OR: [
+              { ip: { in: suspiciousIPs } },
+              { email: { in: suspiciousEmails } }
+            ]
+          },
+          include: {
+            user: {
+              select: { id: true, email: true, role: true }
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit
+        });
+      } else {
+        attempts = await prisma.loginAttempt.findMany({
+          where,
+          include: {
+            user: {
+              select: { id: true, email: true, role: true }
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit
+        });
+      }
+
+      // Calculate stats
+      const total = await prisma.loginAttempt.count({ where });
+      const failed = await prisma.loginAttempt.count({ where: { success: false } });
+      const successRate = total > 0 ? ((total - failed) / total) * 100 : 0;
+
+      // Pseudonymiser les IPs avant de retourner (conformité RGPD Article 5.1.c)
+      const pseudonymizedAttempts = attempts.map((attempt: LoginAttemptWithUser) => ({
+        ...attempt,
+        ip: pseudonymizeIP(attempt.ip)
+      }));
+
+      return res.json({
+        attempts: pseudonymizedAttempts,
+        stats: {
+          total,
+          failed,
+          successRate: successRate.toFixed(2)
+        }
+      });
+    } catch (error) {
+      console.error('Admin login attempts error:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+adminRouter.get(
+  '/analytics/behavior',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:behavior', () => 'admin:analytics:behavior'),
+  async (req, res) => {
   try {
     const periodParam = typeof req.query.period === 'string' ? req.query.period : '30d';
     const period: AnalyticsPeriod = ['7d', '30d', '90d', '1y'].includes(periodParam)
@@ -1406,12 +2258,15 @@ adminRouter.get('/analytics/behavior', async (req, res) => {
     const maxSessionDuration = sessionSummary?.max_duration_seconds ? Number(sessionSummary.max_duration_seconds) : 0;
 
     const uniqueSessionUsers = sessionsPerUser.length;
-    const totalSessionsComputed = sessionsPerUser.reduce((sum, entry) => sum + entry._count._all, 0);
+    const totalSessionsComputed = sessionsPerUser.reduce(
+      (sum: number, entry: Prisma.SessionGroupByOutputType) => sum + (entry._count?._all ?? 0),
+      0
+    );
     const avgSessionsPerUser = uniqueSessionUsers > 0 ? totalSessionsComputed / uniqueSessionUsers : 0;
 
     const sessionDistributionMap = new Map<number, number>();
     for (const entry of sessionsPerUser) {
-      const count = entry._count._all;
+      const count = entry._count?._all ?? 0;
       sessionDistributionMap.set(count, (sessionDistributionMap.get(count) ?? 0) + 1);
     }
 
@@ -1420,7 +2275,10 @@ adminRouter.get('/analytics/behavior', async (req, res) => {
       .slice(0, 10)
       .map(([sessions, users]) => ({ sessions, users }));
 
-    const totalMessages = messageByConversation.reduce((sum, item) => sum + item._count._all, 0);
+    const totalMessages = messageByConversation.reduce(
+      (sum: number, item: Prisma.MessageGroupByOutputType) => sum + (item._count?._all ?? 0),
+      0
+    );
     const activeConversations = messageByConversation.length;
     const avgMessagesPerConversation = activeConversations > 0 ? totalMessages / activeConversations : 0;
 
@@ -1498,9 +2356,9 @@ adminRouter.get('/analytics/behavior', async (req, res) => {
       },
       support: {
         totalReports: reportsTotal,
-        reportsByReason: reportsByReason.map(item => ({
+        reportsByReason: reportsByReason.map((item: Prisma.ProfileReportGroupByOutputType) => ({
           reason: item.reason ?? 'Autre',
-          count: item._count._all
+          count: item._count?._all ?? 0
         }))
       }
     };
@@ -1515,7 +2373,11 @@ adminRouter.get('/analytics/behavior', async (req, res) => {
 // ===== ENDPOINTS RGPD =====
 
 // Rapport de conformité RGPD
-adminRouter.get('/gdpr/compliance-report', requireAuth, requireAdmin, async (req, res) => {
+adminRouter.get(
+  '/gdpr/compliance-report',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:report', () => 'admin:gdpr:report'),
+  async (req, res) => {
   try {
     const report = await gdprPurgeService.getGDPRComplianceReport();
 
@@ -1562,13 +2424,19 @@ adminRouter.get('/gdpr/compliance-report', requireAuth, requireAdmin, async (req
 });
 
 // Exécution manuelle de la purge RGPD
-adminRouter.post('/gdpr/run-purge', requireAuth, requireAdmin, async (req, res) => {
+adminRouter.post(
+  '/gdpr/run-purge',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:run-purge', () => 'gdpr:purge'),
+  async (req, res) => {
   try {
+    const startedAt = Date.now();
     const result = await gdprPurgeService.performFullPurge();
 
     return res.json({
       success: true,
       timestamp: new Date().toISOString(),
+      durationMs: Date.now() - startedAt,
       result,
       message: 'Purge RGPD exécutée avec succès'
     });
@@ -1583,26 +2451,21 @@ adminRouter.post('/gdpr/run-purge', requireAuth, requireAdmin, async (req, res) 
 });
 
 // Recherche dans l'archive légale (pour litiges)
-adminRouter.get('/gdpr/legal-archive/:userId', requireAuth, requireAdmin, async (req, res) => {
+adminRouter.get(
+  '/gdpr/legal-archive/:userId',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:legal-archive', (req) => `gdpr:archive:${req.params.userId}`),
+  async (req, res) => {
   try {
     const { userId } = req.params;
 
     // Rechercher dans l'archive légale
-    const legalRecord = await prisma.$queryRaw`
-      SELECT
-        original_user_id,
-        consented_at,
-        consent_version,
-        consent_ip_hash,
-        deleted_at,
-        archived_at
-      FROM legal_consent_archive
-      WHERE original_user_id = ${userId}
-      ORDER BY archived_at DESC
-      LIMIT 1
-    `;
+    const legalRecord = await prisma.legalConsentArchive.findFirst({
+      where: { originalUserId: userId },
+      orderBy: { archivedAt: 'desc' }
+    });
 
-    if (!Array.isArray(legalRecord) || legalRecord.length === 0) {
+    if (!legalRecord) {
       return res.status(404).json({
         error: 'Aucune archive légale trouvée pour cet utilisateur',
         userId
@@ -1612,7 +2475,7 @@ adminRouter.get('/gdpr/legal-archive/:userId', requireAuth, requireAdmin, async 
     return res.json({
       found: true,
       userId,
-      legalEvidence: legalRecord[0],
+      legalEvidence: legalRecord,
       purpose: 'Archive légale pour protection en cas de litige',
       note: 'Ces données sont conservées conformément aux obligations légales de preuve'
     });
@@ -1623,7 +2486,11 @@ adminRouter.get('/gdpr/legal-archive/:userId', requireAuth, requireAdmin, async 
 });
 
 // Audit logs
-adminRouter.get('/audit', async (req, res) => {
+adminRouter.get(
+  '/audit',
+  requirePermissions('system.configure'),
+  audit('admin:audit:list', () => 'admin:audit'),
+  async (req, res) => {
   try {
     const { page, limit, action, userId, resource, startDate, endDate } = auditQuerySchema.parse(req.query);
 
@@ -1675,3 +2542,236 @@ adminRouter.get('/audit', async (req, res) => {
   }
 });
 
+// GDPR Exports Monitoring Dashboard
+adminRouter.get(
+  '/gdpr/exports',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:exports', () => 'admin:gdpr:exports'),
+  async (req, res) => {
+  try {
+    const {
+      page = '1',
+      limit = '50',
+      userId,
+      startDate,
+      endDate,
+    } = req.query;
+
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build filters
+    const filters: any = {
+      action: 'GDPR_EXPORT_REQUESTED',
+    };
+
+    if (userId && typeof userId === 'string') {
+      filters.userId = userId;
+    }
+
+    if (startDate || endDate) {
+      filters.createdAt = {};
+      if (startDate && typeof startDate === 'string') {
+        filters.createdAt.gte = new Date(startDate);
+      }
+      if (endDate && typeof endDate === 'string') {
+        filters.createdAt.lte = new Date(endDate);
+      }
+    }
+
+    // Get total count
+    const total = await prisma.auditLog.count({ where: filters });
+
+    // Get exports with user info
+    const exports = await prisma.auditLog.findMany({
+      where: filters,
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limitNum,
+    });
+
+    // Parse metadata to extract export details
+    const formattedExports = exports.map(
+      (log: Prisma.AuditLogGetPayload<{ include: { user: { select: { id: true; email: true; role: true } } } }>) => {
+        const metadata = log.metadata as any;
+        return {
+          id: log.id,
+          userId: log.userId,
+          userEmail: log.user?.email || 'Unknown',
+          userRole: log.user?.role || 'Unknown',
+          ip: log.ip || metadata?.ip || 'Unknown',
+          exportDate: log.createdAt,
+          dataSize: metadata?.dataSize || 0,
+          dataSizeMB: metadata?.dataSizeMB || ((metadata?.dataSize || 0) / 1024 / 1024).toFixed(2),
+          itemCounts: metadata?.itemCounts || {},
+        };
+      }
+    );
+
+    // Get summary statistics
+    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const last7days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const last30days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const [exports24h, exports7d, exports30d] = await Promise.all([
+      prisma.auditLog.count({
+        where: {
+          action: 'GDPR_EXPORT_REQUESTED',
+          createdAt: { gte: last24h },
+        },
+      }),
+      prisma.auditLog.count({
+        where: {
+          action: 'GDPR_EXPORT_REQUESTED',
+          createdAt: { gte: last7days },
+        },
+      }),
+      prisma.auditLog.count({
+        where: {
+          action: 'GDPR_EXPORT_REQUESTED',
+          createdAt: { gte: last30days },
+        },
+      }),
+    ]);
+
+    // Get exports by role
+    const exportsByRole = await prisma.auditLog.findMany({
+      where: {
+        action: 'GDPR_EXPORT_REQUESTED',
+        createdAt: { gte: last30days },
+      },
+      include: {
+        user: {
+          select: { role: true },
+        },
+      },
+    });
+
+    const roleStats = exportsByRole.reduce(
+      (
+        acc: Record<string, number>,
+        log: Prisma.AuditLogGetPayload<{ include: { user: { select: { role: true } } } }>
+      ) => {
+        const role = log.user?.role || 'Unknown';
+        acc[role] = (acc[role] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
+
+    // Get top exporters (users with most exports)
+    const topExporters = await prisma.auditLog.groupBy({
+      by: ['userId'],
+      where: {
+        action: 'GDPR_EXPORT_REQUESTED',
+        createdAt: { gte: last30days },
+        userId: { not: null },
+      },
+      _count: { userId: true },
+      orderBy: { _count: { userId: 'desc' } },
+      take: 10,
+    });
+
+    const topExportersWithEmails = await Promise.all(
+      topExporters.map(async (item: Prisma.AuditLogGroupByOutputType) => {
+        const user = await prisma.user.findUnique({
+          where: { id: item.userId! },
+          select: { email: true, role: true },
+        });
+        return {
+          userId: item.userId,
+          email: user?.email || 'Unknown',
+          role: user?.role || 'Unknown',
+          exportCount: item._count?.userId ?? 0,
+        };
+      })
+    );
+
+    return res.json({
+      exports: formattedExports,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+      summary: {
+        total,
+        last24h: exports24h,
+        last7days: exports7d,
+        last30days: exports30d,
+        byRole: roleStats,
+        topExporters: topExportersWithEmails,
+      },
+    });
+  } catch (error) {
+    console.error('GDPR exports monitoring error:', error);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Get detailed export info for a specific user
+adminRouter.get(
+  '/gdpr/exports/:userId',
+  requirePermissions('system.configure'),
+  audit('admin:gdpr:exports:user', (req) => `admin:gdpr:exports:${req.params.userId}`),
+  async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Get user info
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get all exports for this user
+    const exports = await prisma.auditLog.findMany({
+      where: {
+        userId,
+        action: 'GDPR_EXPORT_REQUESTED',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const formattedExports = exports.map((log: Prisma.AuditLog) => {
+      const metadata = log.metadata as any;
+      return {
+        id: log.id,
+        ip: log.ip || metadata?.ip || 'Unknown',
+        exportDate: log.createdAt,
+        dataSize: metadata?.dataSize || 0,
+        dataSizeMB: metadata?.dataSizeMB || ((metadata?.dataSize || 0) / 1024 / 1024).toFixed(2),
+        itemCounts: metadata?.itemCounts || {},
+      };
+    });
+
+    return res.json({
+      user,
+      exports: formattedExports,
+      totalExports: exports.length,
+    });
+  } catch (error) {
+    console.error('GDPR user exports error:', error);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});

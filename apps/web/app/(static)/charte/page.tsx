@@ -2,7 +2,7 @@
 export const revalidate = 300;
 
 export const metadata = {
-  title: 'Charte et avertissement – Blobinfini',
+  title: 'Charte et avertissement – BlobConnect',
 };
 
 export default function ChartePage() {
@@ -15,7 +15,7 @@ export default function ChartePage() {
 
       <section className="mt-6 space-y-4">
         <p>
-          Blobinfini est une plateforme de mise en relation pour partager des activités et de bons moments.
+          BlobConnect est une plateforme de mise en relation pour partager des activités et de bons moments.
           Nous ne sommes ni un organisateur d’activités, ni une agence, ni un assureur.
           Les décisions que tu prends, les rencontres que tu effectues et les activités que tu pratiques
           relèvent de ta seule responsabilité.
@@ -24,7 +24,7 @@ export default function ChartePage() {
           En utilisant la plateforme, tu reconnais et acceptes que:
         </p>
         <ul className="list-disc pl-6 space-y-2">
-          <li>Blobinfini ne fournit aucune assurance ni couverture pour les activités réalisées entre utilisateurs.</li>
+          <li>BlobConnect ne fournit aucune assurance ni couverture pour les activités réalisées entre utilisateurs.</li>
           <li>Les utilisateurs organisent et participent aux activités à leurs risques et périls.</li>
           <li>Tu es responsable d’évaluer les conditions (météo, niveau technique, équipement, lieu) et d’y renoncer si nécessaire.</li>
           <li>Tu restes vigilant face à tout comportement inapproprié, frauduleux ou malveillant.</li>
@@ -49,4 +49,3 @@ export default function ChartePage() {
     </div>
   );
 }
-

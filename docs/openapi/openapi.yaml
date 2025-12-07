@@ -293,6 +293,34 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
 
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Met à jour le mot de passe d'un utilisateur authentifié
+      operationId: authChangePassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Mot de passe mis à jour
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/2fa/send:
     post:
       tags: [Auth]
@@ -485,6 +513,27 @@ paths:
       tags: [Pros]
       summary: Met à jour le profil pro du compte connecté
       operationId: proUpdateMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProProfileUpdateRequest'
+      responses:
+        '200':
+          description: Profil pro mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProProfile'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags: [Pros]
+      summary: Met à jour partiellement le profil pro (rayon, infos)
+      operationId: proPatchMe
       requestBody:
         required: true
         content:
@@ -1481,11 +1530,65 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /push/register:
+    post:
+      tags: [Push]
+      summary: Alias de /push/subscribe (inscription push)
+      operationId: pushRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushSubscribeRequest'
+      responses:
+        '200':
+          description: Token enregistré
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /push/unsubscribe:
     post:
       tags: [Push]
       summary: Supprime les tokens push de l'utilisateur
       operationId: pushUnsubscribe
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Désinscription effectuée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /push/unregister:
+    post:
+      tags: [Push]
+      summary: Alias de /push/unsubscribe (désinscription push)
+      operationId: pushUnregister
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
       responses:
         '200':
           description: Désinscription effectuée
@@ -1885,6 +1988,43 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/admins/{adminId}/allowed-ips:
+    patch:
+      tags: [Admin]
+      summary: Définit la liste d'IPs autorisées pour un compte admin
+      operationId: adminUpdateAllowedIps
+      parameters:
+        - in: path
+          name: adminId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowedIPs:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Liste mise à jour
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /admin/analytics/matching/ttfm:
     get:
       tags: [Admin]
@@ -1976,13 +2116,208 @@ paths:
       summary: Lance le job de purge RGPD
       operationId: adminGdprRunPurge
       responses:
-        '202':
-          description: Purge déclenchée
+        '200':
+          description: Purge exécutée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GdprPurgeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/blocked:
+    get:
+      tags: [Admin]
+      summary: Liste des conversations bloquées récemment
+      operationId: adminConversationsBlocked
+      responses:
+        '200':
+          description: Liste des conversations
           content:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
+                properties:
+                  blocked:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminBlockedConversation'
+                  pagination:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/{conversationId}/block:
+    post:
+      tags: [Admin]
+      summary: Force le blocage ou déblocage d'une conversation
+      operationId: adminConversationBlock
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConversationBlockRequest'
+      responses:
+        '200':
+          description: État des membres mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConversationBlockResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/broadcast:
+    post:
+      tags: [Admin]
+      summary: Diffuse un message admin vers les messageries utilisateurs
+      operationId: adminConversationsBroadcast
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConversationBroadcastRequest'
+      responses:
+        '200':
+          description: Diffusion effectuée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConversationBroadcastResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/unblock-all:
+    post:
+      tags: [Admin]
+      summary: Débloque toutes les conversations actuellement verrouillées
+      operationId: adminConversationsUnblockAll
+      responses:
+        '200':
+          description: Résultat du déblocage en masse
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConversationUnblockAllResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/conversations/blocked/history:
+    get:
+      tags: [Admin]
+      summary: Historique des blocages/déblocages de conversation
+      operationId: adminConversationsBlockedHistory
+      responses:
+        '200':
+          description: Liste paginée d'actions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLogEntry'
+                  pagination:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/alerts:
+    get:
+      tags: [Admin]
+      summary: Liste les alertes système
+      operationId: adminSystemAlerts
+      responses:
+        '200':
+          description: Liste d'alertes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemAlertListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      summary: Crée une alerte système
+      operationId: adminAlertCreate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSystemAlertCreateRequest'
+      responses:
+        '200':
+          description: Alerte créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemAlert'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/alerts/{alertId}/ack:
+    post:
+      tags: [Admin]
+      summary: Marque une alerte comme reconnue
+      operationId: adminAlertAcknowledge
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Alerte mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemAlert'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/alerts/{alertId}/resolve:
+    post:
+      tags: [Admin]
+      summary: Résout une alerte
+      operationId: adminAlertResolve
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Alerte résolue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemAlert'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2013,6 +2348,244 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /admin/conversations/blocked:
+    get:
+      tags: [Admin]
+      summary: Liste les conversations récemment bloquées
+      operationId: adminBlockedConversations
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Conversations bloquées
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/security/events:
+    get:
+      tags: [Admin]
+      summary: Journal des événements de sécurité
+      operationId: adminSecurityEvents
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Liste d'événements
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/security/logs/summary:
+    get:
+      tags: [Admin]
+      summary: Synthèse des actions de sécurité sur une période
+      operationId: adminSecurityLogsSummary
+      parameters:
+        - in: query
+          name: days
+          schema:
+            type: integer
+            default: 7
+      responses:
+        '200':
+          description: Agrégats par action
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/blobosphere/posts:
+    get:
+      tags: [Admin]
+      summary: Liste les articles MDX (métadonnées)
+      operationId: adminBlobosphereList
+      responses:
+        '200':
+          description: Liste des fichiers MDX présents dans le repo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        category:
+                          type: string
+                          enum: [surf, kitesurf, communaute, impact]
+                        file:
+                          type: string
+                        slug:
+                          type: string
+                        title:
+                          type: string
+                        status:
+                          type: string
+                        publishedAt:
+                          type: string
+                          nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      summary: Crée un article MDX
+      operationId: adminBlobosphereCreate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlobospherePost'
+      responses:
+        '201':
+          description: Article créé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  path:
+                    type: string
+                  pr:
+                    type: object
+                    nullable: true
+                    properties:
+                      prUrl:
+                        type: string
+                      prNumber:
+                        type: integer
+                      branchName:
+                        type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/blobosphere/posts/{category}/{slug}:
+    get:
+      tags: [Admin]
+      summary: Récupère un article MDX brut
+      operationId: adminBlobosphereGet
+      parameters:
+        - in: path
+          name: category
+          required: true
+          schema:
+            type: string
+            enum: [surf, kitesurf, communaute, impact]
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Fichier MDX brut
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  raw:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Admin]
+      summary: Met à jour un article MDX
+      operationId: adminBlobosphereUpdate
+      parameters:
+        - in: path
+          name: category
+          required: true
+          schema:
+            type: string
+            enum: [surf, kitesurf, communaute, impact]
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BlobospherePost'
+                - type: object
+                  properties:
+                    newSlug:
+                      type: string
+                    newCategory:
+                      type: string
+                      enum: [surf, kitesurf, communaute, impact]
+      responses:
+        '200':
+          description: Article mis à jour
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  path:
+                    type: string
+                  pr:
+                    type: object
+                    nullable: true
+                    properties:
+                      prUrl:
+                        type: string
+                      prNumber:
+                        type: integer
+                      branchName:
+                        type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
 components:
   securitySchemes:
@@ -2020,6 +2593,92 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  schemas:
+    BlobospherePost:
+      type: object
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+        category:
+          type: string
+          enum: [surf, kitesurf, communaute, impact]
+        tags:
+          type: array
+          items:
+            type: string
+        excerpt:
+          type: string
+        status:
+          type: string
+          enum: [draft, published]
+        publishedAt:
+          type: string
+        updatedAt:
+          type: string
+          nullable: true
+        coverImage:
+          type: string
+          nullable: true
+        readingTime:
+          type: integer
+          nullable: true
+        language:
+          type: string
+          enum: [fr]
+        body:
+          type: string
+    GdprPurgeTechnicalStats:
+      type: object
+      properties:
+        sessionsDeleted:
+          type: integer
+        tokensDeleted:
+          type: integer
+        oldLogsDeleted:
+          type: integer
+    GdprPurgeUserStats:
+      type: object
+      properties:
+        phase1Anonymized:
+          type: integer
+        phase2Anonymized:
+          type: integer
+        phase3Purged:
+          type: integer
+    GdprPurgeRelationalStats:
+      type: object
+      properties:
+        conversationsDeleted:
+          type: integer
+        matchesDeleted:
+          type: integer
+        oldSearchesDeleted:
+          type: integer
+    GdprPurgeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+        message:
+          type: string
+        result:
+          type: object
+          properties:
+            summary:
+              type: string
+            technicalData:
+              $ref: '#/components/schemas/GdprPurgeTechnicalStats'
+            userAnonymization:
+              $ref: '#/components/schemas/GdprPurgeUserStats'
+            relationalData:
+              $ref: '#/components/schemas/GdprPurgeRelationalStats'
   responses:
     Unauthorized:
       description: Authentification requise
@@ -2101,7 +2760,8 @@ components:
           minLength: 8
         role:
           type: string
-          enum: [RIDER, PRO, ADMIN]
+          description: Rôle public sélectionné lors de l'inscription (les comptes ADMIN sont gérés en interne)
+          enum: [RIDER, PRO]
           default: RIDER
         consentAccepted:
           type: boolean
@@ -2184,6 +2844,14 @@ components:
           type: string
         password:
           type: string
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
     TwoFactorSendRequest:
       type: object
       required: [email]
@@ -2250,6 +2918,23 @@ components:
         lessonSport:
           type: string
           enum: [surf, kitesurf]
+        lessonLevel:
+          type: string
+          enum: [beginner, intermediate, advanced]
+          nullable: true
+        lessonDate:
+          type: string
+          format: date-time
+          nullable: true
+        lessonPlace:
+          type: string
+          nullable: true
+        lessonStudentCount:
+          type: integer
+          minimum: 1
+          nullable: true
+        blobosphereContributor:
+          type: boolean
         lat:
           type: number
         lng:
@@ -2278,6 +2963,7 @@ components:
         photoUrl:
           type: string
           format: uri
+          nullable: true
         lat:
           type: number
         lng:
@@ -2287,6 +2973,23 @@ components:
         lessonSport:
           type: string
           enum: [surf, kitesurf]
+        lessonLevel:
+          type: string
+          enum: [beginner, intermediate, advanced]
+          nullable: true
+        lessonDate:
+          type: string
+          format: date-time
+          nullable: true
+        lessonPlace:
+          type: string
+          nullable: true
+        lessonStudentCount:
+          type: integer
+          minimum: 1
+          nullable: true
+        blobosphereContributor:
+          type: boolean
     Discipline:
       type: object
       required: [sport, level]
@@ -2330,6 +3033,10 @@ components:
           type: number
         lng:
           type: number
+        radiusKm:
+          type: integer
+          minimum: 1
+          maximum: 200
         createdAt:
           type: string
           format: date-time
@@ -2353,6 +3060,10 @@ components:
           type: number
         lng:
           type: number
+        radiusKm:
+          type: integer
+          minimum: 1
+          maximum: 200
     LessonLead:
       type: object
       properties:
@@ -2370,6 +3081,25 @@ components:
           type: number
         distanceKm:
           type: number
+        lessonSport:
+          type: string
+          enum: [surf, kitesurf]
+          nullable: true
+        lessonLevel:
+          type: string
+          enum: [beginner, intermediate, advanced]
+          nullable: true
+        lessonDate:
+          type: string
+          format: date-time
+          nullable: true
+        lessonPlace:
+          type: string
+          nullable: true
+        lessonStudentCount:
+          type: integer
+          minimum: 1
+          nullable: true
     ProOffer:
       type: object
       properties:
@@ -2710,6 +3440,8 @@ components:
       properties:
         token:
           type: string
+        userId:
+          type: string
         userAgent:
           type: string
         timestamp:
@@ -2758,3 +3490,196 @@ components:
           type: boolean
         message:
           type: string
+    AdminBlockedConversation:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        blockedAt:
+          type: string
+          format: date-time
+          nullable: true
+        user:
+          type: object
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+        conversation:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            type: { type: string }
+            createdAt:
+              type: string
+              format: date-time
+            members:
+              type: array
+              items:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      email: { type: string, format: email }
+                      role: { type: string }
+                  blockedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+    AdminConversationBlockRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [block, unblock]
+          default: block
+    AdminConversationBlockResponse:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        action:
+          type: string
+          enum: [block, unblock]
+        updatedMembers:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+              email:
+                type: string
+                nullable: true
+              role:
+                type: string
+                nullable: true
+              blockedAt:
+                type: string
+                format: date-time
+                nullable: true
+    AdminConversationUnblockAllResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        count:
+          type: integer
+    AdminConversationBroadcastRequest:
+      type: object
+      properties:
+        message:
+          type: string
+        target:
+          type: string
+          enum: [ALL, RIDERS, PROS, CUSTOM]
+          default: ALL
+        emails:
+          type: array
+          items:
+            type: string
+            format: email
+    AdminConversationBroadcastResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        target:
+          type: string
+        sentCount:
+          type: integer
+        missingEmails:
+          type: array
+          items:
+            type: string
+    SystemAlert:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [INFO, WARNING, CRITICAL]
+        status:
+          type: string
+          enum: [OPEN, ACKNOWLEDGED, RESOLVED]
+        link:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+    SystemAlertListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemAlert'
+        pagination:
+          type: object
+          additionalProperties: true
+    AdminSystemAlertCreateRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [INFO, WARNING, CRITICAL]
+        link:
+          type: string
+        dedupeKey:
+          type: string
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        resource:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        ip:
+          type: string
+          nullable: true
+        user:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true

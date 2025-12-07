@@ -1,0 +1,135 @@
+backend:
+  name: github
+  repo: "VigierAudrey/blobevolutionClaudeCodex"
+  branch: "main"
+  base_url: "http://localhost:3002"
+  auth_endpoint: "api/decap/auth"
+
+media_folder: "apps/web/public/uploads"
+public_folder: "/uploads"
+
+# Configuration locale pour prévisualiser sans commit
+local_backend: true
+
+collections:
+  - name: "blobosphere"
+    label: "Blobosphère"
+    label_singular: "Article"
+    description: "Articles de la Blobosphère organisés par catégorie"
+    folder: "apps/web/content/blobosphere"
+    create: true
+    extension: "mdx"
+    format: "frontmatter"
+    slug: "{{slug}}"
+    # Organisation automatique par catégorie
+    path: "{{category}}/{{slug}}"
+    nested:
+      depth: 2
+      summary: "{{title}} ({{category}})"
+    # Tri des articles par date de publication décroissante
+    sortable_fields: ["publishedAt", "title", "category"]
+    # Afficher les brouillons en premier
+    view_filters:
+      - label: "Brouillons"
+        field: status
+        pattern: "draft"
+      - label: "Publiés"
+        field: status
+        pattern: "published"
+      - label: "Surf"
+        field: category
+        pattern: "surf"
+      - label: "Kitesurf"
+        field: category
+        pattern: "kitesurf"
+      - label: "Communauté"
+        field: category
+        pattern: "communaute"
+      - label: "Impact"
+        field: category
+        pattern: "impact"
+    fields:
+      - label: "Titre"
+        name: "title"
+        widget: "string"
+        hint: "Titre principal de l'article (max 100 caractères)"
+        pattern: [".{1,100}", "Le titre doit faire entre 1 et 100 caractères"]
+      - label: "Slug"
+        name: "slug"
+        widget: "string"
+        hint: "URL-friendly (lettres minuscules, chiffres et tirets uniquement)"
+        pattern: ["^[a-z0-9-]+$", "Uniquement lettres minuscules, chiffres et tirets"]
+      - label: "Catégorie"
+        name: "category"
+        widget: "select"
+        hint: "Choisir la catégorie thématique"
+        options:
+          - { label: "Surf", value: "surf" }
+          - { label: "Kitesurf", value: "kitesurf" }
+          - { label: "Communauté", value: "communaute" }
+          - { label: "Impact", value: "impact" }
+      - label: "Extrait"
+        name: "excerpt"
+        widget: "text"
+        hint: "Résumé court pour les listes et SEO (max 200 caractères)"
+        pattern: [".{10,200}", "L'extrait doit faire entre 10 et 200 caractères"]
+      - label: "Tags"
+        name: "tags"
+        widget: "list"
+        hint: "Mots-clés pour la recherche et le filtrage"
+        default: []
+        allow_add: true
+        field: { label: "Tag", name: "tag", widget: "string" }
+      - label: "Statut"
+        name: "status"
+        widget: "select"
+        hint: "Seuls les articles publiés apparaissent sur le site"
+        options:
+          - { label: "Brouillon", value: "draft" }
+          - { label: "Publié", value: "published" }
+        default: "draft"
+      - label: "Date de publication"
+        name: "publishedAt"
+        widget: "datetime"
+        hint: "Date et heure de première publication"
+        date_format: "YYYY-MM-DD"
+        time_format: false
+        format: "YYYY-MM-DD"
+      - label: "Date de mise à jour"
+        name: "updatedAt"
+        widget: "datetime"
+        hint: "Date de dernière modification (auto si vide)"
+        date_format: "YYYY-MM-DD"
+        time_format: false
+        format: "YYYY-MM-DD"
+        required: false
+      - label: "Image de couverture"
+        name: "coverImage"
+        widget: "image"
+        hint: "Image principale (16:9 recommandé, max 2MB)"
+        required: false
+        media_library:
+          config:
+            max_file_size: 2048000
+      - label: "Temps de lecture (minutes)"
+        name: "readingTime"
+        widget: "number"
+        hint: "Temps de lecture estimé en minutes"
+        value_type: "int"
+        min: 1
+        max: 60
+        required: false
+      - label: "Langue"
+        name: "language"
+        widget: "select"
+        hint: "Langue du contenu"
+        options:
+          - { label: "Français", value: "fr" }
+          - { label: "English", value: "en" }
+        default: "fr"
+      - label: "Contenu"
+        name: "body"
+        widget: "markdown"
+        hint: "Contenu principal de l'article en Markdown/MDX"
+        modes: ["rich_text", "raw"]
+        buttons: ["bold", "italic", "code", "link", "heading-one", "heading-two", "heading-three", "quote", "bulleted-list", "numbered-list"]

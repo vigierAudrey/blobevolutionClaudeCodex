@@ -1,20 +1,35 @@
 "use client";
-import { useEffect, useMemo, useState } from 'react';
+import nextDynamic from 'next/dynamic';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../../lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
 import Link from 'next/link';
-import { User, Map, Percent, Info, LogOut, MessageSquare, Briefcase } from 'lucide-react';
-import { AdBannerSidebar } from '../../components/ads/AdBanner';
+import { User, Map, Info, LogOut, MessageSquare, GraduationCap, Search, RadioTower, Tag, BookOpen } from 'lucide-react';
+
+const AdBannerSidebar = nextDynamic(
+  () => import('../../components/ads/AdBanner').then((mod) => mod.AdBannerSidebar),
+  {
+    ssr: false,
+    loading: () => <div className="hidden lg:block h-48 rounded-md bg-slate-200/60" aria-hidden="true" />,
+  },
+);
 
 // Force SSR due to auth context and dynamic user data
 export const dynamic = 'force-dynamic';
 
+type DashboardUser = {
+  id: string;
+  email: string;
+  role: 'RIDER' | 'PRO' | 'ADMIN';
+  emailVerified: boolean;
+  [key: string]: unknown;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<DashboardUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
   const [unreadTotal, setUnreadTotal] = useState<number>(0);
@@ -28,7 +43,7 @@ export default function DashboardPage() {
     apiClient
       .me()
       .then((u) => {
-        setUser(u);
+        setUser(u as DashboardUser);
         // First-login banner heuristic: show once per user until dismissed
         const key = `visited-dashboard-${u?.id}`;
         const visited = typeof window !== 'undefined' ? localStorage.getItem(key) : '1';
@@ -53,7 +68,11 @@ export default function DashboardPage() {
         const hasPhoto = !!p?.photoUrl;
         const hasDiscipline = Array.isArray(d) && d.length > 0;
         const incomplete = !hasName || !hasPhoto || !hasDiscipline;
-        if (incomplete) router.replace('/onboarding');
+        if (incomplete) {
+          router.replace('/onboarding');
+        } else {
+          setShowProfilePrompt(false);
+        }
       } catch (_) {
         // ignore
       }
@@ -68,7 +87,8 @@ export default function DashboardPage() {
       try {
         const data = await apiClient.listConversations();
         if (!active) return;
-        const total = (data.items || []).reduce((acc: number, it: any) => acc + (Number(it.unread) || 0), 0);
+        const response = data as { items?: Array<{ unread?: number }> };
+        const total = (response.items ?? []).reduce((acc, it) => acc + Number(it.unread ?? 0), 0);
         setUnreadTotal(total);
       } catch {}
     };
@@ -124,7 +144,7 @@ export default function DashboardPage() {
 
       {!user?.emailVerified && (
         <div className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Ton email n'est pas encore vérifié. Pense à confirmer ton adresse pour sécuriser ton compte.
+          Ton email n&rsquo;est pas encore vérifié. Pense à confirmer ton adresse pour sécuriser ton compte.
           <div className="mt-2">
             <Link className="underline" href="/account">Voir mon compte</Link>
           </div>
@@ -134,12 +154,12 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><MessageSquare size={18}/> Messagerie {unreadTotal>0 && (<span className="ml-2 inline-flex items-center rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5">{unreadTotal}</span>)}</CardTitle>
-            <CardDescription>Retrouve tes conversations</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Map size={18}/> Matching</CardTitle>
+            <CardDescription>Trouve des partenaires proches</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/messages" className="inline-block w-full">
-              <Button className="w-full" variant="outline">Ouvrir la messagerie</Button>
+            <Link href="/matching" className="inline-block w-full">
+              <Button className="w-full" variant="secondary">Accéder au matching</Button>
             </Link>
           </CardContent>
         </Card>
@@ -157,45 +177,80 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Map size={18}/> Matching</CardTitle>
-            <CardDescription>Trouve des partenaires proches</CardDescription>
+            <CardTitle className="flex items-center gap-2"><MessageSquare size={18}/> Messagerie {unreadTotal>0 && (<span className="ml-2 inline-flex items-center rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5">{unreadTotal}</span>)}</CardTitle>
+            <CardDescription>Retrouve tes conversations</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/matching" className="inline-block w-full">
-              <Button className="w-full" variant="secondary">Accéder au matching</Button>
+            <Link href="/messages" className="inline-block w-full">
+              <Button className="w-full" variant="outline">Ouvrir la messagerie</Button>
             </Link>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Briefcase size={18}/> Offres Pro</CardTitle>
-            <CardDescription>Trouve des cours avec des professionnels près de toi</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <GraduationCap size={18}/> Cours & Bons Plans
+              <Tag size={14} className="text-muted-foreground" />
+            </CardTitle>
+            <CardDescription>
+              Trouve un moniteur, signale que tu cherches un cours ou profite de promos
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Link href="/offers" className="inline-block w-full">
-              <Button className="w-full" variant="outline">Voir les offres</Button>
+          <CardContent className="space-y-2">
+            <Link href="/offers" className="block">
+              <Button className="w-full" variant="outline">
+                <Search size={16} className="mr-2" />
+                Chercher un pro près de moi
+              </Button>
+            </Link>
+            <div className="space-y-1">
+              <Link href="/lesson-request" className="block">
+                <Button className="w-full" variant="secondary">
+                  <RadioTower size={16} className="mr-2" />
+                  Me rendre visible aux pros
+                </Button>
+              </Link>
+              <p className="text-xs text-muted-foreground px-1">
+                💡 Les pros voient ta demande sur la BloboMap et peuvent te proposer un cours
+              </p>
+            </div>
+            <Link href="/promos" className="block">
+              <Button className="w-full" variant="outline">
+                <Tag size={16} className="mr-2" />
+                Voir les bons plans
+              </Button>
             </Link>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Percent size={18}/> Offres</CardTitle>
-            <CardDescription>Promotions et avantages</CardDescription>
+            <CardTitle className="flex items-center gap-2"><BookOpen size={18}/> Blobosphère</CardTitle>
+            <CardDescription>Accède aux récits, tutos et actus partagés par la communauté</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Link href="/promos" className="inline-block w-full">
-              <Button className="w-full" variant="outline">Voir les offres</Button>
+          <CardContent className="space-y-2">
+            <Link href="/blobosphere" className="block">
+              <Button className="w-full" variant="outline">
+                Explorer la Blobosphère
+              </Button>
             </Link>
+            <Link href="/blobosphere#faq-title" className="block">
+              <Button className="w-full" variant="secondary">
+                Proposer un sujet
+              </Button>
+            </Link>
+            <p className="text-xs text-muted-foreground px-1">
+              💬 Active l’option « Je veux contribuer à la Blobosphère » dans ton profil avant d’envoyer ton idée.
+            </p>
           </CardContent>
         </Card>
 
-        <Card className="sm:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Info size={18}/> À propos & RGPD</CardTitle>
             <CardDescription>
-              Comprendre l'utilisation des données, la sécurité et le fonctionnement du site.
+              Comprendre l’utilisation des données, la sécurité et le fonctionnement du site.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -7,8 +7,9 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
+import { Textarea } from '../../../components/ui/textarea';
 import { apiClient } from '../../../lib/apiClient';
-import { ArrowLeft, Shield, Settings, CheckCircle, XCircle, Crown, Users } from 'lucide-react';
+import { ArrowLeft, Shield, Settings, Crown, Users } from 'lucide-react';
 import Link from 'next/link';
 
 interface Admin {
@@ -20,6 +21,7 @@ interface Admin {
     displayName: string;
     permissions: string[];
     lastLoginAt: string | null;
+    allowedIPs: string[];
   };
 }
 
@@ -27,6 +29,27 @@ interface PermissionData {
   available: string[];
   roles: Record<string, string[]>;
 }
+
+type AdminsResponse = {
+  admins?: Admin[] | null;
+};
+
+const isAdminsResponse = (value: unknown): value is AdminsResponse => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as { admins?: unknown };
+  return candidate.admins === undefined || Array.isArray(candidate.admins);
+};
+
+const isPermissionData = (value: unknown): value is PermissionData => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Partial<PermissionData>;
+  const roles = candidate.roles;
+  return Array.isArray(candidate.available) && typeof roles === 'object' && roles !== null;
+};
 
 const PERMISSION_LABELS: Record<string, string> = {
   'users.view': 'Voir les utilisateurs',
@@ -62,6 +85,7 @@ export default function AdminPermissions() {
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
   const [selectedAdmin, setSelectedAdmin] = useState<Admin | null>(null);
   const [editingPermissions, setEditingPermissions] = useState<string[]>([]);
+  const [allowedIpDraft, setAllowedIpDraft] = useState('');
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -90,15 +114,21 @@ export default function AdminPermissions() {
     setLoading(true);
     setError(null);
     try {
-      const [adminsResponse, permissionsResponse] = await Promise.all([
+      const [adminsResponseRaw, permissionsResponseRaw] = await Promise.all([
         apiClient.getAdmins(),
         apiClient.getPermissions()
       ]);
 
-      setAdmins(adminsResponse.admins || []);
-      setPermissions(permissionsResponse);
-    } catch (err: any) {
-      setError(err.message || 'Erreur de chargement');
+      const resolvedAdmins = isAdminsResponse(adminsResponseRaw) ? adminsResponseRaw.admins ?? [] : [];
+      const resolvedPermissions = isPermissionData(permissionsResponseRaw)
+        ? permissionsResponseRaw
+        : { available: [], roles: {} };
+
+      setAdmins(resolvedAdmins);
+      setPermissions(resolvedPermissions);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur de chargement');
     } finally {
       setLoading(false);
     }
@@ -134,8 +164,9 @@ export default function AdminPermissions() {
       await apiClient.setAdminRole(admin.id, role);
       await loadData(); // Reload data
       setSelectedAdmin(null);
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la mise à jour du rôle');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors de la mise à jour du rôle');
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }
@@ -150,8 +181,9 @@ export default function AdminPermissions() {
       await loadData(); // Reload data
       setSelectedAdmin(null);
       setEditingPermissions([]);
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la mise à jour des permissions');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors de la mise à jour des permissions');
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }
@@ -160,6 +192,7 @@ export default function AdminPermissions() {
   const startEditPermissions = (admin: Admin) => {
     setSelectedAdmin(admin);
     setEditingPermissions(admin.adminProfile?.permissions || []);
+    setAllowedIpDraft((admin.adminProfile?.allowedIPs || []).join('\n'));
   };
 
   const togglePermission = (permission: string) => {
@@ -168,6 +201,27 @@ export default function AdminPermissions() {
         ? prev.filter(p => p !== permission)
         : [...prev, permission]
     );
+  };
+
+  const handleUpdateAllowedIPs = async (admin: Admin) => {
+    const actionKey = `allowed-ips-${admin.id}`;
+    setActionLoading(prev => ({ ...prev, [actionKey]: true }));
+    const parsed = allowedIpDraft
+      .split(/[\n,]/)
+      .map(value => value.trim())
+      .filter(Boolean);
+
+    try {
+      await apiClient.setAdminAllowedIPs(admin.id, parsed);
+      await loadData();
+      setSelectedAdmin(null);
+      setAllowedIpDraft('');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors de la mise à jour des IPs autorisées');
+    } finally {
+      setActionLoading(prev => ({ ...prev, [actionKey]: false }));
+    }
   };
 
   if (loading) {
@@ -317,6 +371,62 @@ export default function AdminPermissions() {
                           </div>
                         </div>
 
+                        {/* IPs autorisées */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium">IPs autorisées</p>
+                              <p className="text-xs text-muted-foreground">
+                                Limiter l&rsquo;accès à la console admin
+                              </p>
+                            </div>
+                            {admin.adminProfile?.allowedIPs?.length ? (
+                              <Badge variant="default" className="text-xs">
+                                {admin.adminProfile.allowedIPs.length} IP{admin.adminProfile.allowedIPs.length > 1 ? 's' : ''}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                Aucune restriction
+                              </Badge>
+                            )}
+                          </div>
+
+                          {admin.adminProfile?.allowedIPs?.length ? (
+                            <ul className="text-xs font-mono bg-muted rounded-md p-3 space-y-1">
+                              {admin.adminProfile.allowedIPs.map(ip => (
+                                <li key={ip}>{ip}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Tous les réseaux autorisés (non recommandé en production)
+                            </p>
+                          )}
+
+                          {isEditing && (
+                            <div className="space-y-2">
+                              <Textarea
+                                value={allowedIpDraft}
+                                onChange={(event) => setAllowedIpDraft(event.target.value)}
+                                placeholder="192.168.0.1&#10;10.0.0.0/24"
+                                className="text-sm font-mono"
+                                rows={4}
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Une IP ou plage CIDR par ligne.
+                              </p>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleUpdateAllowedIPs(admin)}
+                                disabled={actionLoading[`allowed-ips-${admin.id}`]}
+                              >
+                                {actionLoading[`allowed-ips-${admin.id}`] ? '...' : 'Mettre à jour les IPs'}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+
                         {/* Edition des permissions */}
                         {isEditing && (
                           <div className="border rounded-lg p-4 bg-gray-50">
@@ -347,6 +457,7 @@ export default function AdminPermissions() {
                                 onClick={() => {
                                   setSelectedAdmin(null);
                                   setEditingPermissions([]);
+                                  setAllowedIpDraft('');
                                 }}
                               >
                                 Annuler

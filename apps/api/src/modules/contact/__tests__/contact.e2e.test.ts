@@ -1,6 +1,6 @@
 import request, { SuperAgentTest } from 'supertest';
 import jwt from 'jsonwebtoken';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { createApp } from '../../../index';
 import { cleanupTestUsers, createTestUser } from '../../../test-utils';
 
@@ -14,14 +14,17 @@ const emails = {
   riderTwo: 'contact-rider2@test.com'
 };
 
-let proId = '';
-let riderOneId = '';
-let riderTwoId = '';
-let proToken = '';
-let riderOneToken = '';
-let riderTwoToken = '';
-let conversationId = '';
-let contactRequestId = '';
+type ContactFixture = {
+  proId: string;
+  riderOneId: string;
+  riderTwoId: string;
+  proToken: string;
+  riderOneToken: string;
+  riderTwoToken: string;
+  conversationId: string;
+};
+
+let fixture: ContactFixture;
 
 function ensureSecrets() {
   process.env.JWT_SECRET ||= 'test-jwt-secret';
@@ -42,7 +45,7 @@ async function cleanupFixtureData() {
 }
 
 describe('Contact Controller', () => {
-  beforeAll(async () => {
+  const seedContactFixture = async (): Promise<ContactFixture> => {
     ensureSecrets();
     await cleanupFixtureData();
 
@@ -52,7 +55,6 @@ describe('Contact Controller', () => {
       role: 'PRO',
       emailVerified: true
     });
-    proId = pro.id;
     await prisma.proProfile.create({
       data: {
         userId: pro.id,
@@ -66,7 +68,6 @@ describe('Contact Controller', () => {
       role: 'RIDER',
       emailVerified: true
     });
-    riderOneId = riderOne.id;
     await prisma.riderProfile.create({
       data: {
         userId: riderOne.id,
@@ -81,7 +82,6 @@ describe('Contact Controller', () => {
       role: 'RIDER',
       emailVerified: true
     });
-    riderTwoId = riderTwo.id;
     await prisma.riderProfile.create({
       data: {
         userId: riderTwo.id,
@@ -103,18 +103,27 @@ describe('Contact Controller', () => {
         type: 'RIDER_TO_RIDER'
       }
     });
-    conversationId = conversation.id;
 
     await prisma.conversationMember.createMany({
       data: [
-        { conversationId, userId: riderOne.id },
-        { conversationId, userId: riderTwo.id }
+        { conversationId: conversation.id, userId: riderOne.id },
+        { conversationId: conversation.id, userId: riderTwo.id }
       ]
     });
 
-    proToken = signToken(pro.id, 'PRO');
-    riderOneToken = signToken(riderOne.id, 'RIDER');
-    riderTwoToken = signToken(riderTwo.id, 'RIDER');
+    return {
+      proId: pro.id,
+      riderOneId: riderOne.id,
+      riderTwoId: riderTwo.id,
+      proToken: signToken(pro.id, 'PRO'),
+      riderOneToken: signToken(riderOne.id, 'RIDER'),
+      riderTwoToken: signToken(riderTwo.id, 'RIDER'),
+      conversationId: conversation.id
+    };
+  };
+
+  beforeEach(async () => {
+    fixture = await seedContactFixture();
   });
 
   afterAll(async () => {
@@ -127,21 +136,21 @@ describe('Contact Controller', () => {
 
     const res = await agent
       .post('/contact/request')
-      .set('Authorization', `Bearer ${proToken}`)
+      .set('Authorization', `Bearer ${fixture.proToken}`)
       .set('X-CSRF-Token', csrf)
-      .send({ conversationId, message: 'On se rencontre ?' })
+      .send({ conversationId: fixture.conversationId, message: 'On se rencontre ?' })
       .expect(200);
 
     expect(res.body.success).toBe(true);
     expect(res.body.contactRequest).toBeDefined();
-    contactRequestId = res.body.contactRequest.id;
+    const contactRequestId = res.body.contactRequest.id;
 
     const stored = await prisma.contactRequest.findUnique({ where: { id: contactRequestId } });
     expect(stored?.status).toBe('PENDING');
 
     const riderPending = await request(app)
       .get('/contact/pending')
-      .set('Authorization', `Bearer ${riderOneToken}`)
+      .set('Authorization', `Bearer ${fixture.riderOneToken}`)
       .expect(200);
     const pendingEntry = riderPending.body.requests.find((req: any) => req.id === contactRequestId);
     expect(pendingEntry).toBeTruthy();
@@ -153,21 +162,29 @@ describe('Contact Controller', () => {
 
     await agent
       .post('/contact/request')
-      .set('Authorization', `Bearer ${riderOneToken}`)
+      .set('Authorization', `Bearer ${fixture.riderOneToken}`)
       .set('X-CSRF-Token', csrf)
-      .send({ conversationId, message: 'Je tente ma chance' })
+      .send({ conversationId: fixture.conversationId, message: 'Je tente ma chance' })
       .expect(403);
   });
 
   it('collects rider responses and finalizes the request when all accept', async () => {
-    expect(contactRequestId).toBeTruthy();
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+    const creation = await agent
+      .post('/contact/request')
+      .set('Authorization', `Bearer ${fixture.proToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({ conversationId: fixture.conversationId, message: 'On se rencontre ?' })
+      .expect(200);
+    const contactRequestId = creation.body.contactRequest.id as string;
 
     const riderAgent = request.agent(app);
     const riderCsrf = await getCsrf(riderAgent);
 
     const firstResponse = await riderAgent
       .post('/contact/respond')
-      .set('Authorization', `Bearer ${riderOneToken}`)
+      .set('Authorization', `Bearer ${fixture.riderOneToken}`)
       .set('X-CSRF-Token', riderCsrf)
       .send({ contactRequestId, response: 'ACCEPT' })
       .expect(200);
@@ -181,7 +198,7 @@ describe('Contact Controller', () => {
 
     const secondResponse = await riderTwoAgent
       .post('/contact/respond')
-      .set('Authorization', `Bearer ${riderTwoToken}`)
+      .set('Authorization', `Bearer ${fixture.riderTwoToken}`)
       .set('X-CSRF-Token', riderTwoCsrf)
       .send({ contactRequestId, response: 'ACCEPT' })
       .expect(200);
@@ -192,13 +209,13 @@ describe('Contact Controller', () => {
     expect(finalStatus?.status).toBe('ACCEPTED');
 
     const proMembership = await prisma.conversationMember.findFirst({
-      where: { conversationId, userId: proId }
+      where: { conversationId: fixture.conversationId, userId: fixture.proId }
     });
     expect(proMembership).toBeTruthy();
 
     const proView = await request(app)
       .get('/contact/requests')
-      .set('Authorization', `Bearer ${proToken}`)
+      .set('Authorization', `Bearer ${fixture.proToken}`)
       .expect(200);
     const recorded = proView.body.requests.find((req: any) => req.id === contactRequestId);
     expect(recorded?.status).toBe('ACCEPTED');

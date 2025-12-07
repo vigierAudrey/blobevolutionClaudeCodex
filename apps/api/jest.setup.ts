@@ -1,6 +1,21 @@
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma } from '@blobinfini/database';
 import { closeRateLimitStore } from './src/middleware/enhanced-rate-limit';
 import { cacheService } from './src/services/cache.service';
+
+const SUPPRESSED_PUSH_WARNING = 'PUSH_SERVICE_DISABLED';
+const originalConsoleWarn = console.warn;
+
+console.warn = (...args: Parameters<typeof console.warn>) => {
+  const [firstArg] = args;
+  if (typeof firstArg === 'string' && firstArg.includes(SUPPRESSED_PUSH_WARNING)) {
+    return;
+  }
+  originalConsoleWarn(...args);
+};
+
+afterAll(() => {
+  console.warn = originalConsoleWarn;
+});
 
 // Global cleanup after all tests
 afterAll(async () => {

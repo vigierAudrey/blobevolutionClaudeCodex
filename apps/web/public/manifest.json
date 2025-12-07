@@ -1,6 +1,6 @@
 {
-  "name": "Blobinfini - Cours de Surf & Kitesurf",
-  "short_name": "Blobinfini",
+  "name": "BlobConnect - Cours de Surf & Kitesurf",
+  "short_name": "BlobConnect",
   "description": "Trouve et réserve tes cours de surf et kitesurf avec les meilleurs instructeurs",
   "start_url": "/",
   "display": "standalone",

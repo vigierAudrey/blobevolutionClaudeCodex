@@ -1,6 +1,5 @@
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, BookingRequestStatus, Prisma } from '@blobinfini/database';
 import { bookingService } from '../booking.service';
-import { BookingRequestStatus } from '@prisma/client';
 
 describe('Système anti-overbooking et gestion des capacités', () => {
   let proUserId: string;
@@ -9,8 +8,7 @@ describe('Système anti-overbooking et gestion des capacités', () => {
   let riderUserId3: string;
   let availabilityId: string;
 
-  beforeAll(async () => {
-    // Nettoyer les données
+  const seedUsers = async () => {
     await prisma.booking.deleteMany();
     await prisma.bookingRequest.deleteMany();
     await prisma.proAvailability.deleteMany();
@@ -18,26 +16,29 @@ describe('Système anti-overbooking et gestion des capacités', () => {
     await prisma.proProfile.deleteMany();
     await prisma.user.deleteMany();
 
-    // Créer des utilisateurs de test
     const proUser = await prisma.user.create({
-      data: { email: 'pro-overbooking@test.com', password: 'testpass', role: 'PRO', emailVerified: true },
+      data: { email: 'pro-overbooking@test.com', password: 'testpass', role: 'PRO', emailVerified: true }
     });
     proUserId = proUser.id;
 
     const rider1 = await prisma.user.create({
-      data: { email: 'rider1-overbooking@test.com', password: 'testpass', emailVerified: true },
+      data: { email: 'rider1-overbooking@test.com', password: 'testpass', emailVerified: true }
     });
     riderUserId1 = rider1.id;
 
     const rider2 = await prisma.user.create({
-      data: { email: 'rider2-overbooking@test.com', password: 'testpass', emailVerified: true },
+      data: { email: 'rider2-overbooking@test.com', password: 'testpass', emailVerified: true }
     });
     riderUserId2 = rider2.id;
 
     const rider3 = await prisma.user.create({
-      data: { email: 'rider3-overbooking@test.com', password: 'testpass', emailVerified: true },
+      data: { email: 'rider3-overbooking@test.com', password: 'testpass', emailVerified: true }
     });
     riderUserId3 = rider3.id;
+  };
+
+  beforeEach(async () => {
+    await seedUsers();
   });
 
   afterAll(async () => {
@@ -398,7 +399,7 @@ describe('Système anti-overbooking et gestion des capacités', () => {
 
       // Créer plusieurs utilisateurs et demandes
       const riders = await Promise.all(
-        Array.from({ length: 15 }, async (_, i) => {
+        Array.from({ length: 15 }, async (_: unknown, i: number) => {
           return prisma.user.create({
             data: {
               email: `stress-rider-${i}@test.com`,
@@ -411,7 +412,7 @@ describe('Système anti-overbooking et gestion des capacités', () => {
 
       // Créer toutes les demandes
       const requests = await Promise.all(
-        riders.map(rider =>
+        riders.map((rider: Prisma.User) =>
           bookingService.createRequest(rider.id, {
             availabilityId: availability.id,
             message: `Demande du rider ${rider.email}`,
@@ -424,7 +425,7 @@ describe('Système anti-overbooking et gestion des capacités', () => {
 
       // Accepter toutes les demandes en parallèle
       const results = await Promise.allSettled(
-        requests.map(request =>
+        requests.map((request: Prisma.BookingRequest) =>
           bookingService.decideRequest(proUserId, request.id, 'accept')
         )
       );
@@ -432,8 +433,12 @@ describe('Système anti-overbooking et gestion des capacités', () => {
       const executionTime = Date.now() - startTime;
 
       // Vérifier que le nombre d'acceptations ne dépasse pas la capacité
-      const successes = results.filter(r => r.status === 'fulfilled');
-      const failures = results.filter(r => r.status === 'rejected');
+      const successes = results.filter(
+        (r: PromiseSettledResult<unknown>) => r.status === 'fulfilled'
+      );
+      const failures = results.filter(
+        (r: PromiseSettledResult<unknown>) => r.status === 'rejected'
+      );
 
       expect(successes.length).toBeLessThanOrEqual(10);
       expect(successes.length).toBeGreaterThan(0);
@@ -468,7 +473,7 @@ describe('Système anti-overbooking et gestion des capacités', () => {
 
       // Créer 20 demandes simultanées pour 3 places
       const riders = await Promise.all(
-        Array.from({ length: 20 }, async (_, i) => {
+        Array.from({ length: 20 }, async (_: unknown, i: number) => {
           return prisma.user.create({
             data: {
               email: `load-rider-${i}@test.com`,
@@ -480,7 +485,7 @@ describe('Système anti-overbooking et gestion des capacités', () => {
       );
 
       const requests = await Promise.all(
-        riders.map(rider =>
+        riders.map((rider: Prisma.User) =>
           bookingService.createRequest(rider.id, {
             availabilityId: availability.id,
             message: `Demande load test`,
@@ -490,14 +495,18 @@ describe('Système anti-overbooking et gestion des capacités', () => {
 
       // Accepter toutes les demandes en parallèle
       const results = await Promise.allSettled(
-        requests.map(request =>
+        requests.map((request: Prisma.BookingRequest) =>
           bookingService.decideRequest(proUserId, request.id, 'accept')
         )
       );
 
       // Au maximum 3 doivent réussir (capacité)
-      const successes = results.filter(r => r.status === 'fulfilled');
-      const failures = results.filter(r => r.status === 'rejected');
+      const successes = results.filter(
+        (r: PromiseSettledResult<unknown>) => r.status === 'fulfilled'
+      );
+      const failures = results.filter(
+        (r: PromiseSettledResult<unknown>) => r.status === 'rejected'
+      );
 
       expect(successes.length).toBeLessThanOrEqual(3);
       expect(successes.length).toBeGreaterThan(0);
@@ -515,7 +524,7 @@ describe('Système anti-overbooking et gestion des capacités', () => {
       expect(bookings.length).toBe(finalAvailability!.bookedCount);
 
       // Vérifier qu'il n'y a pas de doublons
-      const uniqueRiders = new Set(bookings.map(b => b.riderUserId));
+      const uniqueRiders = new Set(bookings.map((b: Prisma.Booking) => b.riderUserId));
       expect(uniqueRiders.size).toBe(bookings.length);
     });
   });

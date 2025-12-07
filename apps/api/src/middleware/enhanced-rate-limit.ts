@@ -1,8 +1,9 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { Request, Response, NextFunction } from 'express';
 import { resolveRedisUrl } from '../lib/redisConfig';
+import { createHash } from 'crypto';
 
 type RedisClientType = ReturnType<typeof createClient>;
 
@@ -13,24 +14,32 @@ let redisClient: RedisClientType | null = null;
 async function initializeRedis(): Promise<RedisClientType | null> {
   const redisUrl = resolveRedisUrl();
 
-  if (redisUrl) {
-    try {
-      const client = createClient({
-        url: redisUrl,
-      });
+  console.log('🔗 Connecting to Redis at:', redisUrl);
 
-      await client.connect();
-      await client.ping();
-      console.log('✅ Redis connected for rate limiting');
-      return client;
-    } catch (error) {
-      console.error('❌ Redis connection failed, falling back to memory store:', error);
-      return null;
-    }
+  try {
+    const client = createClient({
+      url: redisUrl,
+      password: process.env.REDIS_PASSWORD?.trim() || undefined,
+      socket: {
+        connectTimeout: 4000,
+        reconnectStrategy: (retries) => Math.min(retries * 200, 2000),
+      },
+      commandsQueueMaxLength: 100, // P2-4: Limiter la queue de commandes
+      disableOfflineQueue: true, // P2-4: Éviter accumulation en mode offline
+    });
+
+    client.on('error', (error) => {
+      console.error('❌ Redis error:', error.message);
+    });
+
+    await client.connect();
+    await client.ping();
+    console.log('✅ Redis connected for rate limiting');
+    return client;
+  } catch (error) {
+    console.error('❌ Redis connection failed, falling back to memory store:', error);
+    return null;
   }
-
-  console.warn('⚠️ Redis rate limiting disabled - no Redis URL available');
-  return null;
 }
 
 // Initialize Redis on module load (not in test mode)
@@ -133,6 +142,19 @@ export const RATE_LIMIT_PROFILES = {
     }
   },
 
+  // Email verification resend - prevent spam (P2-5)
+  EMAIL_VERIFICATION: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 3, // 3 resend attempts per hour per email
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'EMAIL_VERIFICATION_RATE_LIMIT_EXCEEDED',
+      message: 'Too many verification email requests. Please check your inbox or try again later.',
+      retryAfter: '1 hour'
+    }
+  },
+
   // Global API protection - catch-all
   GLOBAL: {
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -164,9 +186,23 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
 
     // Skip function for certain conditions
     skip: (req: Request): boolean => {
-      // Skip rate limiting in test environment
-      if (process.env.NODE_ENV === 'test') {
+      const enableInTests = String(process.env.ENABLE_RATE_LIMIT_IN_TESTS || '')
+        .toLowerCase() === 'true';
+
+      // Skip rate limiting in test environment unless explicitly enabled
+      if (process.env.NODE_ENV === 'test' && !enableInTests) {
         return true;
+      }
+
+      // ✅ CORRIGÉ : Skip rate limiting in development for localhost
+      if (process.env.NODE_ENV === 'development') {
+        const isLocalhost = req.ip === '::1' ||
+                           req.ip === '127.0.0.1' ||
+                           req.ip === '::ffff:127.0.0.1' ||
+                           req.hostname === 'localhost';
+        if (isLocalhost) {
+          return true;
+        }
       }
 
       // Skip for health checks
@@ -206,6 +242,21 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
     }
   };
 
+  if (!customOptions?.keyGenerator && profile === 'EMAIL_VERIFICATION') {
+    options.keyGenerator = (req: Request) => {
+      const fromBody = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+      const fromQuery = typeof req.query?.email === 'string' ? String(req.query.email).trim().toLowerCase() : '';
+      const identifierSource = fromBody || fromQuery;
+
+      if (identifierSource) {
+        return `email:${createHash('sha256').update(identifierSource).digest('hex')}`;
+      }
+
+      const ip = req.ip || req.socket?.remoteAddress;
+      return ip ? ipKeyGenerator(ip) : 'anonymous';
+    };
+  }
+
   return rateLimit(options);
 }
 
@@ -229,8 +280,15 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
   // Determine appropriate rate limiter based on path and method
   let limiter;
 
+  if (path === '/auth/resend-verification') {
+    // Route has its own limiter configured to guard by email
+    return next();
+  }
+
   if (path.startsWith('/auth/')) {
-    if (path.includes('/register')) {
+    if (method === 'GET') {
+      limiter = rateLimiters.apiStandard;
+    } else if (path.includes('/register')) {
       limiter = rateLimiters.registration;
     } else {
       limiter = rateLimiters.auth;

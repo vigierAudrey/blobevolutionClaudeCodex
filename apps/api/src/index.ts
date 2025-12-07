@@ -1,8 +1,11 @@
-import dotenv from 'dotenv';
+import './config/loadEnv';
 import { resolve } from 'path';
 import fs from 'fs';
-// Load env from repo root by default so workspaces share one .env
-dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env') });
+import { randomBytes } from 'crypto';
+import { createServer } from 'http';
+
+// Initialize Sentry BEFORE any other imports (must be after dotenv)
+import './instrument';
 
 // Standard logging for monitoring (Clever Cloud logs)
 import express from 'express';
@@ -12,19 +15,55 @@ import swaggerUi from 'swagger-ui-express';
 import YAML from 'js-yaml';
 import helmet from 'helmet';
 import type { Request, Response, NextFunction } from 'express';
+import { secureLogger } from './utils/secure-logger';
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+const RAW_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
 
+const DEV_FALLBACK_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173'
+]);
+
+const allowedOriginsSet = (() => {
+  if (RAW_ALLOWED_ORIGINS.length > 0) {
+    return new Set(RAW_ALLOWED_ORIGINS);
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    return DEV_FALLBACK_ORIGINS;
+  }
+  return new Set<string>();
+})();
+
+if (process.env.NODE_ENV === 'production' && allowedOriginsSet.size === 0) {
+  throw new Error('ALLOWED_ORIGINS must be set in production to a comma-separated list of origins');
+}
+
+const MIN_SECRET_LENGTH = 64;
 const REQUIRED_SECRETS = ['SESSION_SECRET', 'JWT_SECRET', 'JWT_REFRESH_SECRET'] as const;
 
 function ensureProductionSecrets() {
   if (process.env.NODE_ENV !== 'production') {
+    const weak = REQUIRED_SECRETS.filter((key) => {
+      const value = process.env[key];
+      return !value || value.length < MIN_SECRET_LENGTH;
+    });
+
+    if (weak.length > 0) {
+      secureLogger.warn('WEAK_SECRETS_DETECTED', { secrets: weak });
+    }
     return;
   }
 
   const missing = REQUIRED_SECRETS.filter((key) => {
     const value = process.env[key];
-    return !value || value.length < 32;
+    return !value || value.length < MIN_SECRET_LENGTH;
   });
 
   if (missing.length > 0) {
@@ -34,29 +73,76 @@ function ensureProductionSecrets() {
 
 ensureProductionSecrets();
 
-const cspConnectSrc = ["'self'"];
-if (allowedOrigins.length > 0) {
-  cspConnectSrc.push(...allowedOrigins);
+const cspConnectSrc = new Set(["'self'"]);
+if (allowedOriginsSet.size > 0) {
+  allowedOriginsSet.forEach(origin => cspConnectSrc.add(origin));
 } else {
-  cspConnectSrc.push('http://localhost:3000');
+  DEV_FALLBACK_ORIGINS.forEach(origin => cspConnectSrc.add(origin));
 }
 
-const helmetMiddleware = helmet({
+const generateNonce = () => randomBytes(16).toString('base64');
+
+const resolveCspReportOnly = () => {
+  if (typeof process.env.CSP_REPORT_ONLY === 'string') {
+    return process.env.CSP_REPORT_ONLY.toLowerCase() === 'true';
+  }
+  return process.env.NODE_ENV !== 'production';
+};
+
+const applyNoncesToHtml = (html: string, scriptNonce?: string, styleNonce?: string) => {
+  let result = html;
+  if (typeof scriptNonce === 'string' && scriptNonce.length > 0) {
+    result = result.replace(/<script\b(?![^>]*\bnonce=)/g, `<script nonce="${scriptNonce}"`);
+  }
+  if (typeof styleNonce === 'string' && styleNonce.length > 0) {
+    result = result.replace(/<style\b(?![^>]*\bnonce=)/g, `<style nonce="${styleNonce}"`);
+  }
+  return result;
+};
+
+const createHelmetMiddleware = () => helmet({
   contentSecurityPolicy: {
+    reportOnly: resolveCspReportOnly(),
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      connectSrc: cspConnectSrc,
+      scriptSrc: [
+        "'self'",
+        (_req, res) => {
+          const expressRes = res as Response;
+          const nonce = expressRes.locals?.cspNonceScript;
+          if (typeof nonce === 'string' && nonce.length > 0) {
+            return `'nonce-${nonce}'`;
+          }
+          const fallback = generateNonce();
+          expressRes.locals.cspNonceScript = fallback;
+          return `'nonce-${fallback}'`;
+        }
+      ],
+      styleSrc: [
+        "'self'",
+        (_req, res) => {
+          const expressRes = res as Response;
+          const nonce = expressRes.locals?.cspNonceStyle;
+          if (typeof nonce === 'string' && nonce.length > 0) {
+            return `'nonce-${nonce}'`;
+          }
+          const fallback = generateNonce();
+          expressRes.locals.cspNonceStyle = fallback;
+          return `'nonce-${fallback}'`;
+        }
+      ],
+      connectSrc: Array.from(cspConnectSrc),
       imgSrc: ["'self'", 'data:', 'https:'],
       fontSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
+      frameSrc: ["'none'"],
+      baseUri: ["'self'"],
       formAction: ["'self'"],
-      upgradeInsecureRequests: []
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
     }
   },
-  referrerPolicy: { policy: 'no-referrer' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }, // P2-3: Compatible avec OAuth
   frameguard: { action: 'deny' },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
@@ -68,17 +154,24 @@ const helmetMiddleware = helmet({
 
 const corsMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
+  res.setHeader('Vary', 'Origin');
+
   if (origin) {
-    const isAllowed = allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production'
-      ? true
-      : allowedOrigins.includes(origin);
-    if (!isAllowed) {
+    if (!allowedOriginsSet.has(origin)) {
+      secureLogger.warn('CORS_ORIGIN_BLOCKED', { origin });
       return res.status(403).json({ error: 'Origin not allowed' });
     }
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
+
+  const requestedHeaders = req.headers['access-control-request-headers'];
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-XSRF-Token');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    typeof requestedHeaders === 'string' && requestedHeaders.length > 0
+      ? requestedHeaders
+      : 'Content-Type, Authorization, X-CSRF-Token, X-XSRF-Token'
+  );
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
@@ -96,10 +189,13 @@ import { reportsRouter } from './modules/reports/reports.controller';
 import { conversationsRouter } from './modules/chat/conversations.controller';
 import { proRouter } from './modules/pro/pro.controller';
 import { adminRouter } from './modules/admin/admin.controller';
+import { securityRouter } from './modules/security/security.controller';
+import { blobosphereAdminRouter } from './modules/blobosphere/blobosphere.controller';
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
 import { requireAuth, requireAdmin } from './modules/auth/auth.guard';
+import { consentRouter } from './modules/consent/consent.controller';
 
 
 const OPENAPI_SPEC_PATH = resolve(process.cwd(), 'docs/openapi/openapi.yaml');
@@ -149,8 +245,16 @@ export function createApp() {
   }
 
   // Session configuration for CSRF
+  const sessionSecret = process.env.SESSION_SECRET || (() => {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('SESSION_SECRET must be set in production');
+    }
+    console.warn('⚠️  WARNING: Using development SESSION_SECRET - DO NOT USE IN PRODUCTION');
+    return 'blobinfini-dev-secret-change-in-production';
+  })();
+
   app.use(session({
-    secret: process.env.SESSION_SECRET || 'blobinfini-dev-secret-change-in-production',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -162,7 +266,12 @@ export function createApp() {
   }));
 
   app.use(corsMiddleware);
-  app.use(helmetMiddleware);
+  app.use((_req, res, next) => {
+    res.locals.cspNonceScript = generateNonce();
+    res.locals.cspNonceStyle = generateNonce();
+    next();
+  });
+  app.use(createHelmetMiddleware());
 
   // Global rate limiting (before specific routes)
   app.use(smartRateLimit);
@@ -179,7 +288,7 @@ export function createApp() {
   async function purgeOnce() {
     try {
       const threshold = new Date(Date.now() - purgeDays * 24 * 60 * 60 * 1000);
-      const { prisma } = await import('@blobinfini/database');
+      const { clientPrisma: prisma } = await import('@blobinfini/database');
       await prisma.user.updateMany({
         where: { consentIp: { not: null }, consentedAt: { lt: threshold } },
         data: { consentIp: null },
@@ -192,7 +301,7 @@ export function createApp() {
   // Enhanced GDPR purge system
   async function performGDPRPurge() {
     try {
-      const { gdprPurgeService } = await import('./services/gdpr-purge.service');
+      const { gdprPurgeService } = await import('./services/gdpr-purge.service.js');
       await gdprPurgeService.performFullPurge();
     } catch (e) {
       console.error('GDPR purge failed', e);
@@ -227,7 +336,7 @@ export function createApp() {
   async function purgeTrashedConversations() {
     try {
       const cutoff = new Date(Date.now() - convTrashDays * 24 * 60 * 60 * 1000);
-      const { prisma } = await import('@blobinfini/database');
+      const { clientPrisma: prisma } = await import('@blobinfini/database');
       // Remove memberships older than cutoff
       await prisma.conversationMember.deleteMany({ where: { trashedAt: { not: null, lt: cutoff } } });
       // Remove orphan conversations (no members)
@@ -245,12 +354,18 @@ export function createApp() {
   // CSRF token endpoint (GET requests are not protected)
   app.get('/csrf-token', getCSRFToken);
 
-  app.get('/security/health', requireAuth, requireAdmin, (_req, res) => {
+  app.get('/security/health', requireAuth, requireAdmin, (req, res) => {
+    // P2-6: Logger qui accède à cet endpoint sensible
+    secureLogger.security('SECURITY_HEALTH_CHECK_ACCESSED', {
+      adminId: (req as any).user?.id,
+      ip: req.ip
+    });
+
     const issues: string[] = [];
     const isProd = process.env.NODE_ENV === 'production';
 
     if (isProd) {
-      if (allowedOrigins.length === 0) {
+      if (allowedOriginsSet.size === 0) {
         issues.push('ALLOWED_ORIGINS is empty');
       }
       const proxies = process.env.TRUSTED_PROXY_IPS?.split(',').map(v => v.trim()).filter(Boolean) || [];
@@ -259,13 +374,17 @@ export function createApp() {
       }
     }
 
+    // P2-6: Mode verbose pour détails (seulement si SECURITY_HEALTH_VERBOSE=true)
+    const verbose = process.env.SECURITY_HEALTH_VERBOSE === 'true';
+
     const result = {
       status: issues.length ? 'VULNERABLE' : 'SECURE',
       helmet: true,
       csrf: true,
       rateLimit: true,
-      corsWhitelist: allowedOrigins,
-      issues
+      corsWhitelist: verbose ? Array.from(allowedOriginsSet) : allowedOriginsSet.size, // P2-6: Ne pas exposer les origins en mode normal
+      issuesCount: issues.length,
+      issues: verbose ? issues : undefined // P2-6: Détails uniquement en mode verbose
     };
 
     res.status(issues.length ? 503 : 200).json(result);
@@ -286,22 +405,35 @@ export function createApp() {
 
   const swaggerDocument = loadOpenApiDocument();
   if (swaggerDocument) {
+    const swaggerOptions = {
+      explorer: true,
+      customSiteTitle: 'BlobConnect API – Swagger UI',
+      swaggerOptions: {
+        deepLinking: true
+      }
+    };
     app.use(
       '/api/docs',
       swaggerUi.serve,
-      swaggerUi.setup(swaggerDocument, {
-        explorer: true,
-        customSiteTitle: 'Blobinfini API – Swagger UI',
-      })
+      (_req: Request, res: Response) => {
+        const scriptNonce = res.locals.cspNonceScript as string | undefined;
+        const styleNonce = res.locals.cspNonceStyle as string | undefined;
+        const html = swaggerUi.generateHTML(swaggerDocument, swaggerOptions);
+        res.send(applyNoncesToHtml(html, scriptNonce, styleNonce));
+      }
     );
   }
 
   // Apply CSRF protection to all routes
   app.use(csrfProtection);
 
-  // Simple request logging for debugging
+  // Simple request logging for debugging (P2-9: Use secureLogger to prevent logging sensitive query params)
   app.use((req, _res, next) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+    secureLogger.info('HTTP_REQUEST', {
+      method: req.method,
+      path: req.path, // Path only (no query params)
+      // Query params are automatically redacted by secureLogger if they contain sensitive keys
+    });
     next();
   });
 
@@ -311,7 +443,12 @@ export function createApp() {
   app.use('/reports', reportsRouter);
   app.use('/conversations', conversationsRouter);
   app.use('/pro', proRouter);
+  app.use('/consent', consentRouter);
   app.use('/admin', adminRouter);
+  app.use('/admin/blobosphere', blobosphereAdminRouter);
+  app.use('/security', securityRouter);
+  // Back-compat alias for tests and clients using '/api/security/*'
+  app.use('/api/security', securityRouter);
   app.use('/contact', contactRouter);
   app.use('/booking', bookingRouter);
   app.use('/push', pushRouter);
@@ -330,9 +467,19 @@ const app = createApp();
 
 if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT ? Number(process.env.PORT) : 4000;
-  app.listen(port, () => {
+
+  // Create HTTP server for both Express and Socket.io
+  const httpServer = createServer(app);
+
+  // Initialize Socket.io
+  const { initializeSocket } = require('./lib/socket');
+  initializeSocket(httpServer);
+
+  httpServer.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`API listening on http://localhost:${port}`);
+    console.info(`[API] Server ready on http://localhost:${port} (env=${process.env.NODE_ENV ?? 'development'})`);
+    // eslint-disable-next-line no-console
+    console.info(`[WebSocket] Socket.io ready on ws://localhost:${port}`);
   });
 }
 

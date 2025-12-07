@@ -1,11 +1,33 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth } from '../auth/auth.guard';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import crypto from 'crypto';
+import { gdprExportService } from '../../services/gdpr-export.service';
+import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { requireProRole } from './pro.guard';
 
 export const proRouter = Router();
+
+// GDPR Export rate limiter: max 3 exports per hour per user
+const exportRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  message: 'Trop de demandes d\'export. Veuillez réessayer dans une heure.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Rate limit per authenticated user
+    const userId = (req as any).user?.id;
+    if (userId) {
+      return `user:${userId}`;
+    }
+    const ip = req.ip || req.socket?.remoteAddress;
+    return ip ? ipKeyGenerator(ip) : 'anonymous';
+  },
+});
 
 const upsertSchema = z.object({
   businessName: z.string().min(1).max(120).optional().or(z.literal('').transform(() => undefined)),
@@ -14,6 +36,7 @@ const upsertSchema = z.object({
   photoUrl: z.string().url().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
+  radiusKm: z.number().int().min(1).max(200).optional(),
 });
 
 const offerSchema = z.object({
@@ -24,6 +47,41 @@ const offerSchema = z.object({
   hourlyRate: z.number().min(10).max(200),
   isActive: z.boolean().optional().default(true),
 });
+
+type LessonCandidateRow = {
+  id: string;
+  userId: string;
+  displayName: string | null;
+  bio: string | null;
+  lat: number;
+  lng: number;
+  lessonSport: string | null;
+  lessonLevel: string | null;
+  lessonDate: Date | null;
+  lessonPlace: string | null;
+  lessonStudentCount: number | null;
+  distanceKm: number;
+  activeMatchCount: number;
+};
+
+type OfferSearchRow = {
+  offerId: string;
+  sport: string;
+  level: string;
+  title: string;
+  description: string | null;
+  hourlyRate: number;
+  lat: number;
+  lng: number;
+  createdAt: Date;
+  distanceKm: number;
+  proProfileId: string;
+  proUserId: string;
+  businessName: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  verified: boolean;
+};
 
 proRouter.get('/me', requireAuth, async (req, res) => {
   try {
@@ -37,16 +95,52 @@ proRouter.get('/me', requireAuth, async (req, res) => {
   }
 });
 
+const persistProProfile = async (userId: string, body: z.infer<typeof upsertSchema>) => {
+  const radiusSegment = (value: number | undefined) => (value !== undefined ? { radiusKm: value } : {});
+
+  return prisma.proProfile.upsert({
+    where: { userId },
+    create: {
+      userId,
+      businessName: body.businessName,
+      bio: body.bio,
+      emailNotif: body.emailNotif ?? false,
+      photoUrl: body.photoUrl,
+      lat: body.lat,
+      lng: body.lng,
+      ...radiusSegment(body.radiusKm),
+    },
+    update: {
+      businessName: body.businessName,
+      bio: body.bio,
+      emailNotif: body.emailNotif,
+      photoUrl: body.photoUrl,
+      lat: body.lat,
+      lng: body.lng,
+      ...radiusSegment(body.radiusKm),
+    },
+  });
+};
+
 proRouter.put('/me', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const body = upsertSchema.parse(req.body);
-    const pp = await prisma.proProfile.upsert({
-      where: { userId },
-      create: { userId, businessName: body.businessName, bio: body.bio, emailNotif: body.emailNotif ?? false, photoUrl: body.photoUrl, lat: body.lat, lng: body.lng },
-      update: { businessName: body.businessName, bio: body.bio, emailNotif: body.emailNotif, photoUrl: body.photoUrl, lat: body.lat, lng: body.lng },
-    });
+    const pp = await persistProProfile(userId, body);
+    return res.json(pp);
+  } catch (err: any) {
+    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+proRouter.patch('/me', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const body = upsertSchema.parse(req.body || {});
+    const pp = await persistProProfile(userId, body);
     return res.json(pp);
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
@@ -79,51 +173,57 @@ proRouter.post('/photo/upload-url', requireAuth, async (req, res) => {
 });
 
 // List riders wanting lessons (variant B: visible to all pros in radius)
-proRouter.get('/near/lessons', requireAuth, async (req, res) => {
+proRouter.get('/near/lessons', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const radiusKm = Math.max(1, Math.min(200, Number(req.query.radiusKm) || 25));
+    const rawRadius = req.query.radiusKm ? Number(req.query.radiusKm) : undefined;
+    const me = await prisma.proProfile.findUnique({ where: { userId }, select: { lat: true, lng: true, radiusKm: true } });
+    if (!me?.lat || !me?.lng) return res.status(400).json({ error: 'Missing pro location' });
+    const radiusFallback = me.radiusKm ?? 25;
+    const safeRadius = typeof rawRadius === 'number' && !Number.isNaN(rawRadius) ? rawRadius : radiusFallback;
+    const radiusKm = Math.max(1, Math.min(200, safeRadius));
     const sport = String(req.query.sport || 'surf');
     if (sport !== 'surf' && sport !== 'kitesurf') return res.status(400).json({ error: 'Invalid sport' });
-
-    const me = await prisma.proProfile.findUnique({ where: { userId }, select: { lat: true, lng: true } });
-    if (!me?.lat || !me?.lng) return res.status(400).json({ error: 'Missing pro location' });
     const plat = me.lat, plng = me.lng;
 
+    console.log(`🗺️  Searching for ${sport} lessons within ${radiusKm}km of (${plat}, ${plng})`);
+
     // Optimized query using PostGIS and SQL filtering instead of JavaScript
-    const candidates = await prisma.$queryRaw<Array<{
-      id: string;
-      userId: string;
-      displayName: string | null;
-      bio: string | null;
-      lat: number;
-      lng: number;
-      lessonSport: string | null;
-      distance_km: number;
-      activeMatchCount: number;
-    }>>`
-      SELECT
-        rp."id",
-        rp."userId",
-        rp."displayName",
-        rp."bio",
-        rp."lat",
-        rp."lng",
-        rp."lessonSport",
-        ST_Distance(
+    const candidates = await prisma.$queryRaw<LessonCandidateRow[]>(Prisma.sql`
+      WITH active_matches AS (
+        SELECT "userOneId" AS "userId"
+        FROM "Match"
+        WHERE "status" = 'ACTIVE'
+        UNION ALL
+        SELECT "userTwoId" AS "userId"
+        FROM "Match"
+        WHERE "status" = 'ACTIVE'
+      ),
+      match_counts AS (
+        SELECT "userId", COUNT(*) AS total
+        FROM active_matches
+        GROUP BY "userId"
+      )
+          SELECT
+            rp."id",
+            rp."userId",
+            rp."displayName",
+            rp."bio",
+            rp."lat",
+            rp."lng",
+            rp."lessonSport",
+            rp."lessonLevel",
+            rp."lessonDate",
+            rp."lessonPlace",
+            rp."lessonStudentCount",
+            ST_Distance(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
           ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
-        ) / 1000.0 AS distance_km,
-        (
-          COALESCE(
-            (SELECT COUNT(*) FROM "Match" m1 WHERE m1."userOneId" = rp."userId" AND m1."status" = 'ACTIVE'), 0
-          ) +
-          COALESCE(
-            (SELECT COUNT(*) FROM "Match" m2 WHERE m2."userTwoId" = rp."userId" AND m2."status" = 'ACTIVE'), 0
-          )
-        ) AS "activeMatchCount"
+        ) / 1000.0 AS "distanceKm",
+        COALESCE(mc.total, 0) AS "activeMatchCount"
       FROM "RiderProfile" rp
+      LEFT JOIN match_counts mc ON mc."userId" = rp."userId"
       WHERE rp."wantsLesson" = true
         AND rp."lat" IS NOT NULL
         AND rp."lng" IS NOT NULL
@@ -131,24 +231,32 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
         AND ST_DWithin(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
           ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography,
-          50000  -- 50km radius
+          ${radiusKm * 1000}
         )
-      HAVING "activeMatchCount" > 0
-      ORDER BY distance_km ASC
-      LIMIT 500  -- Reduced from 2000 to 500
-    `;
+      ORDER BY "distanceKm" ASC
+      LIMIT 500
+    `);
+
+    console.log(`✅ Found ${candidates.length} riders wanting ${sport} lessons`);
 
     // No more JavaScript filtering needed - everything is done in SQL!
-    const items = candidates.map((c) => ({
+    const items = candidates.map((c: LessonCandidateRow) => ({
       id: c.id,
       userId: c.userId,
       displayName: c.displayName,
       bio: c.bio,
       lat: c.lat,
       lng: c.lng,
-      distanceKm: Math.round(c.distance_km * 10) / 10  // Already calculated in SQL
+      lessonSport: c.lessonSport,
+      lessonLevel: c.lessonLevel,
+      lessonDate: c.lessonDate,
+      lessonPlace: c.lessonPlace,
+      lessonStudentCount: c.lessonStudentCount,
+      distanceKm: Math.round(c.distanceKm * 10) / 10  // Already calculé en SQL
     }))
       .slice(0, 500);
+
+    console.log(`📤 Returning ${items.length} lesson requests to pro`);
 
     return res.json({ items });
   } catch (err) {
@@ -159,14 +267,10 @@ proRouter.get('/near/lessons', requireAuth, async (req, res) => {
 // ========== PRO OFFERS ENDPOINTS ==========
 
 // Get my offer
-proRouter.get('/offers/me', requireAuth, async (req, res) => {
+proRouter.get('/offers/me', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    // Vérifier que l'utilisateur est bien un PRO
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
 
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
@@ -184,14 +288,10 @@ proRouter.get('/offers/me', requireAuth, async (req, res) => {
 });
 
 // Create or update my offer
-proRouter.post('/offers', requireAuth, async (req, res) => {
+proRouter.post('/offers', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    // Vérifier que l'utilisateur est bien un PRO
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
 
     // Valider les données
     const body = offerSchema.parse(req.body);
@@ -250,14 +350,10 @@ proRouter.post('/offers', requireAuth, async (req, res) => {
 });
 
 // Delete my offer
-proRouter.delete('/offers/me', requireAuth, async (req, res) => {
+proRouter.delete('/offers/me', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    // Vérifier que l'utilisateur est bien un PRO
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
 
     // Récupérer le profil pro
     const proProfile = await prisma.proProfile.findUnique({ where: { userId } });
@@ -280,14 +376,10 @@ proRouter.delete('/offers/me', requireAuth, async (req, res) => {
 });
 
 // Toggle offer active status
-proRouter.patch('/offers/me/toggle', requireAuth, async (req, res) => {
+proRouter.patch('/offers/me/toggle', requireAuth, requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    // Vérifier que l'utilisateur est bien un PRO
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (user?.role !== 'PRO') return res.status(403).json({ error: 'Forbidden: PRO role required' });
 
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
@@ -348,75 +440,67 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
     }
 
     // Construire les filtres
-    const where: any = {
-      isActive: true,
-    };
+    const selectedSport = sport && ['surf', 'kitesurf'].includes(sport) ? sport : undefined;
+    const selectedLevel = level && ['beginner', 'intermediate', 'advanced'].includes(level) ? level : undefined;
 
-    if (sport && ['surf', 'kitesurf'].includes(sport)) {
-      where.sport = sport;
-    }
+    const offerRows: OfferSearchRow[] = await prisma.$queryRaw<OfferSearchRow[]>(Prisma.sql`
+      SELECT
+        o."id" AS "offerId",
+        o."sport",
+        o."level",
+        o."title",
+        o."description",
+        o."hourlyRate"::float AS "hourlyRate",
+        o."lat",
+        o."lng",
+        o."createdAt",
+        pp."id" AS "proProfileId",
+        u."id" AS "proUserId",
+        pp."businessName",
+        pp."bio",
+        pp."photoUrl",
+        pp."verified",
+        ST_Distance(
+          ST_SetSRID(ST_MakePoint(${searchLng!}, ${searchLat!}), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(o."lng", o."lat"), 4326)::geography
+        ) / 1000.0 AS "distanceKm"
+      FROM "ProOffer" o
+      JOIN "ProProfile" pp ON pp."id" = o."proProfileId"
+      JOIN "User" u ON u."id" = pp."userId"
+      WHERE o."isActive" = true
+        AND o."lat" IS NOT NULL
+        AND o."lng" IS NOT NULL
+        ${selectedSport ? Prisma.sql`AND o."sport" = CAST(${selectedSport} AS "Sport")` : Prisma.sql``}
+        ${selectedLevel ? Prisma.sql`AND o."level" = CAST(${selectedLevel} AS "Level")` : Prisma.sql``}
+        AND ST_DWithin(
+          ST_SetSRID(ST_MakePoint(${searchLng!}, ${searchLat!}), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(o."lng", o."lat"), 4326)::geography,
+          ${radiusKm * 1000}
+        )
+      ORDER BY "distanceKm" ASC
+      LIMIT 50
+    `);
 
-    if (level && ['beginner', 'intermediate', 'advanced'].includes(level)) {
-      where.level = level;
-    }
-
-    // Récupérer toutes les offres actives avec les filtres
-    const offers = await prisma.proOffer.findMany({
-      where,
-      include: {
-        proProfile: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true
-              }
-            }
-          }
-        }
-      },
-      take: 1000 // Limite pour éviter les gros datasets
-    });
-
-    // Fonction de calcul de distance (Haversine)
-    function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
-      const toRad = (d: number) => (d * Math.PI) / 180;
-      const R = 6371; // km
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    }
-
-    // Calculer les distances et filtrer par rayon
-    const offersWithDistance = offers
-      .map(offer => {
-        const distance = haversine(searchLat!, searchLng!, offer.lat, offer.lng);
-        return {
-          id: offer.id,
-          sport: offer.sport,
-          level: offer.level,
-          title: offer.title,
-          description: offer.description,
-          hourlyRate: Number(offer.hourlyRate), // Convertir Decimal en number
-          lat: offer.lat,
-          lng: offer.lng,
-          createdAt: offer.createdAt,
-          distanceKm: Math.round(distance * 10) / 10,
-          pro: {
-            id: offer.proProfile.id,
-            userId: offer.proProfile.user.id,
-            businessName: offer.proProfile.businessName,
-            bio: offer.proProfile.bio,
-            photoUrl: offer.proProfile.photoUrl,
-            verified: offer.proProfile.verified,
-          }
-        };
-      })
-      .filter(offer => offer.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, 50); // Limiter le résultat final
+    const offersWithDistance = offerRows.map((row: OfferSearchRow) => ({
+      id: row.offerId,
+      sport: row.sport,
+      level: row.level,
+      title: row.title,
+      description: row.description,
+      hourlyRate: Math.round(row.hourlyRate * 100) / 100,
+      lat: row.lat,
+      lng: row.lng,
+      createdAt: row.createdAt,
+      distanceKm: Math.round(row.distanceKm * 10) / 10,
+      pro: {
+        id: row.proProfileId,
+        userId: row.proUserId,
+        businessName: row.businessName,
+        bio: row.bio,
+        photoUrl: row.photoUrl,
+        verified: row.verified,
+      }
+    }));
 
     return res.json({
       offers: offersWithDistance,
@@ -425,13 +509,208 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
         lat: searchLat,
         lng: searchLng,
         radiusKm,
-        sport,
-        level
+        sport: selectedSport,
+        level: selectedLevel
       }
     });
 
   } catch (err) {
     console.error('Error searching offers:', err);
     return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// GDPR Data Export endpoint (Article 20 - Right to data portability)
+proRouter.get('/export', requireAuth, exportRateLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Extract IP for audit logging
+    const ips = (req as any).ips as string[] | undefined;
+    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+
+    // Generate export data
+    const exportData = await gdprExportService.exportUserData(userId, ip);
+
+    // Set appropriate headers for JSON download
+    const filename = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    // Send the data
+    return res.json(exportData);
+  } catch (err: any) {
+    // eslint-disable-next-line no-console
+    console.error('GDPR export error', err);
+    return res.status(500).json({ error: 'Erreur lors de l\'export de vos données' });
+  }
+});
+
+// Account deletion with 30-day grace period (CNIL best practice)
+proRouter.post('/delete-account', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true, email: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.deletedAt) {
+      return res.status(400).json({
+        error: 'Account already scheduled for deletion',
+        deletedAt: user.deletedAt,
+        deletionDate: new Date(user.deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
+      });
+    }
+
+    // Mark account for deletion
+    const now = new Date();
+    const deletionDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { deletedAt: now },
+    });
+
+    // Log the deletion request for audit
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'ACCOUNT_DELETION_REQUESTED',
+        resource: 'User',
+        metadata: {
+          requestedAt: now.toISOString(),
+          scheduledDeletionDate: deletionDate.toISOString(),
+          email: user.email,
+          userRole: 'PRO',
+        },
+        ip: (req as any).ip || 'unknown',
+      },
+    });
+
+    await sendAccountDeletionEmail(user.email, deletionDate, 'PRO');
+
+    return res.json({
+      message: 'Demande de suppression enregistrée',
+      deletedAt: now,
+      deletionDate,
+      daysRemaining: 30,
+    });
+  } catch (err: any) {
+    console.error('Account deletion error', err);
+    return res.status(500).json({ error: 'Erreur lors de la demande de suppression' });
+  }
+});
+
+// Cancel account deletion (within 30-day grace period)
+proRouter.post('/cancel-deletion', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true, email: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.deletedAt) {
+      return res.status(400).json({
+        error: 'No deletion scheduled for this account',
+      });
+    }
+
+    // Check if still within grace period (30 days)
+    const now = new Date();
+    const daysSinceDeletion = Math.floor((now.getTime() - user.deletedAt.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysSinceDeletion >= 30) {
+      return res.status(400).json({
+        error: 'Grace period expired - account cannot be recovered',
+      });
+    }
+
+    // Cancel deletion
+    await prisma.user.update({
+      where: { id: userId },
+      data: { deletedAt: null },
+    });
+
+    // Log the cancellation for audit
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'ACCOUNT_DELETION_CANCELLED',
+        resource: 'User',
+        metadata: {
+          cancelledAt: now.toISOString(),
+          originalDeletionDate: user.deletedAt.toISOString(),
+          daysSinceDeletion,
+          email: user.email,
+          userRole: 'PRO',
+        },
+        ip: (req as any).ip || 'unknown',
+      },
+    });
+
+    await sendAccountDeletionCancelledEmail(user.email, 'PRO');
+
+    return res.json({
+      message: 'Suppression de compte annulée',
+      cancelledAt: now,
+    });
+  } catch (err: any) {
+    console.error('Cancel deletion error', err);
+    return res.status(500).json({ error: 'Erreur lors de l\'annulation' });
+  }
+});
+
+// Get deletion status
+proRouter.get('/deletion-status', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.deletedAt) {
+      return res.json({
+        isScheduled: false,
+      });
+    }
+
+    const now = new Date();
+    const deletionDate = new Date(user.deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const daysRemaining = Math.max(0, Math.ceil((deletionDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
+    return res.json({
+      isScheduled: true,
+      deletedAt: user.deletedAt,
+      deletionDate,
+      daysRemaining,
+    });
+  } catch (err: any) {
+    console.error('Deletion status error', err);
+    return res.status(500).json({ error: 'Erreur lors de la vérification du statut' });
   }
 });
