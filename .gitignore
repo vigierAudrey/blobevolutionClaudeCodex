@@ -13,3 +13,4 @@ apps/web/storybook-static/
 # Vercel
 .vercel
 apps/web/.vercel
+apps/api/apps/
