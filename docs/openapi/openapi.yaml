@@ -34,7 +34,6 @@ tags:
     description: Disponibilités, demandes et réservations de cours
   - name: Conversations
     description: Messagerie temps réel et gestion de conversations
-    description: Portefeuille de crédits et bonus
   - name: Contact
     description: Demandes de contact rider ⇄ pro
   - name: Push

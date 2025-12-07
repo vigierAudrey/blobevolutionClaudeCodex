@@ -90,17 +90,123 @@ jobs:
       #   if: ${{ env.ACT }}
       #   run: npm run build --workspace @blobinfini/web
 
-      # Type-check each workspace with its own tsconfig to preserve path aliases
-      # Web: Next.js App Router requires @/* alias resolved via apps/web/tsconfig.json
-      # API: CommonJS API requires its own type-check config
-      # Note: Excludes test files to avoid mock-related type errors (covered by jest+eslint)
-      - name: Type check (web + api)
-        run: |
-          npm run type-check -w @blobinfini/web
-          npm run type-check -w @blobinfini/api
-
       - name: Run tests (API)
         run: npm test
+
+  type-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check (api + web)
+        run: npm run type-check
+
+  web-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run web tests
+        run: npm run test --workspace @blobinfini/web
+
+  contracts:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint OpenAPI specs
+        run: npm run openapi:lint
+
+  e2e-tests:
+    runs-on: ubuntu-22.04
+    if: github.event_name != 'pull_request' || github.base_ref == 'main'
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini_shadow
+      SESSION_SECRET: ci-session-secret
+      JWT_SECRET: ci-jwt-secret
+      JWT_REFRESH_SECRET: ci-jwt-refresh-secret
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
+      WEB_BASE_URL: http://127.0.0.1:3002
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare PostGIS (create DBs + extensions)
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          export PGPASSWORD=postgres
+          until pg_isready -h postgres -U postgres; do sleep 2; done
+          psql "postgresql://postgres:postgres@postgres:5432/postgres" -c "CREATE DATABASE blobinfini;"
+          psql "postgresql://postgres:postgres@postgres:5432/postgres" -c "CREATE DATABASE blobinfini_shadow;"
+          psql "postgresql://postgres:postgres@postgres:5432/blobinfini" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql "postgresql://postgres:postgres@postgres:5432/blobinfini_shadow" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Run DB migrations
+        run: npm run db:migrate:deploy
+
+      - name: Seed database
+        run: npm run db:reseed
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright E2E tests
+        run: npm run test:e2e
 
   verify-import-alias:
     runs-on: ubuntu-22.04
