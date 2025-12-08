@@ -56,6 +56,7 @@ interface ExportedData {
   exportDate: string;
   userId: string;
   user: {
+    id: string;
     email: string;
     role: string;
     emailVerified: boolean;
@@ -185,8 +186,6 @@ type BookingRequestSummary = Prisma.BookingRequestGetPayload<{
 type BookingSummary = Prisma.BookingGetPayload<{
   select: { availabilityId: true; status: true; createdAt: true };
 }>;
-type ProOfferSummary = Prisma.ProOffer;
-type ProAvailabilitySummary = Prisma.ProAvailability;
 type ContactRequestSummary = Prisma.ContactRequestGetPayload<{
   select: { conversationId: true; message: true; status: true; createdAt: true };
 }>;
@@ -251,6 +250,7 @@ export class GdprExportService {
         exportDate: new Date().toISOString(),
         userId: user.id,
         user: {
+          id: user.id,
           email: user.email,
           role: user.role,
           emailVerified: user.emailVerified,
@@ -409,7 +409,7 @@ export class GdprExportService {
       });
 
       if (offers.length > 0) {
-        exportData.proOffers = offers.map((offer: ProOfferSummary) => ({
+        exportData.proOffers = offers.map((offer) => ({
           sport: offer.sport,
           level: offer.level,
           title: offer.title,
@@ -429,7 +429,7 @@ export class GdprExportService {
     });
 
     if (availabilities.length > 0) {
-      exportData.proAvailabilities = availabilities.map((avail: ProAvailabilitySummary) => ({
+      exportData.proAvailabilities = availabilities.map((avail) => ({
         sport: avail.sport,
         levels: avail.levels,
         startAt: avail.startAt.toISOString(),

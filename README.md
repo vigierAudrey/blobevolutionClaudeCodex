@@ -243,9 +243,52 @@ model User {
 - **Checklist passage en prod** :
   1. **Mesurer le trafic réel** (`/auth/me` est instrumenté via les logs rate-limit). Si les clients officiels restent en dessous de ~300 requêtes / 15 min par IP, la configuration actuelle suffit.
   2. **Besoin de durcir ?** Créer un profil dédié `AUTH_READ` dans `apps/api/src/middleware/enhanced-rate-limit.ts` (ex: 300 req / 15 min) et router les `GET /auth/*` dessus. Les POST `/auth/*` ne doivent jamais quitter le profil `AUTH`.
-  3. **Industrialisation** : exposer les seuils via variables d’environnement (`AUTH_MAX`, `AUTH_READ_MAX`, etc.) pour permettre un ajustement sans redeploiement.
-  4. **Côté front** : garder une déduplication/caching (`optimizedApiClient.me()`, SWR…) afin d’éviter les rafales client. Lors d’une intégration tierce, imposer une limite max de 1 appel `/auth/me` par cycle de rendu.
+  3. **Industrialisation** : exposer les seuils via variables d'environnement (`AUTH_MAX`, `AUTH_READ_MAX`, etc.) pour permettre un ajustement sans redeploiement.
+  4. **Côté front** : garder une déduplication/caching (`optimizedApiClient.me()`, SWR…) afin d'éviter les rafales client. Lors d'une intégration tierce, imposer une limite max de 1 appel `/auth/me` par cycle de rendu.
   5. **Observabilité** : en production, monitorer les occurrences de `AUTH_RATE_LIMIT_EXCEEDED` et déclencher une alerte si elles réapparaissent une fois les seuils calibrés.
+
+### ✅ Système d'Alertes de Sécurité (Déployé)
+
+Un système complet de détection et notification des violations de sécurité a été implémenté pour protéger la plateforme contre les tentatives d'accès cross-role et détecter les comptes potentiellement compromis.
+
+**Fonctionnalités clés :**
+
+- ✅ **Détection automatique** de toutes les tentatives d'accès cross-role (PRO→RIDER, RIDER→PRO, ADMIN→PRO, ADMIN→RIDER)
+- ✅ **Notifications email instantanées** aux administrateurs avec contexte complet (user, endpoint, IP, timestamp)
+- ✅ **Enregistrement en base** de toutes les violations dans la table `SystemAlert` pour audit
+- ✅ **Détection de comptes compromis** : même les comptes ADMIN déclenchent des alertes critiques s'ils tentent d'accéder aux endpoints PRO/RIDER
+- ✅ **Tests E2E complets** : 10/10 tests de sécurité passent (security-alerts.e2e.test.ts)
+
+**Configuration requise :**
+
+```bash
+# Variables d'environnement obligatoires
+ADMIN_EMAIL=admin@blobinfini.com  # Email(s) recevant les alertes (séparés par virgules)
+
+# Configuration SMTP (déjà configurée pour Mailpit en dev)
+SMTP_HOST=localhost
+SMTP_PORT=1025
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+```
+
+**Violations détectées :**
+
+1. **PRO → RIDER** : Un compte PRO tente d'accéder aux endpoints RIDER (`/profile/me`, `/profile/photo/upload-url`, etc.)
+2. **RIDER → PRO** : Un compte RIDER tente d'accéder aux endpoints PRO (`/pro/me`, `/pro/offers`, etc.)
+3. **ADMIN → PRO** : Un compte ADMIN tente d'accéder aux endpoints PRO (indication de compte compromis)
+4. **ADMIN → RIDER** : Un compte ADMIN tente d'accéder aux endpoints RIDER (indication de compte compromis)
+
+**Endpoints admin pour consulter les alertes :**
+
+```typescript
+GET /admin/alerts             // Liste toutes les alertes de sécurité
+GET /admin/alerts/:id         // Détails d'une alerte spécifique
+PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
+```
+
+**Documentation complète :** Voir [SECURITY_ALERT_SYSTEM.md](./SECURITY_ALERT_SYSTEM.md) pour l'architecture détaillée, les workflows de réponse aux incidents, et les procédures de maintenance.
 
 ## 📊 Fonctionnalités par Phase
 
@@ -510,9 +553,11 @@ Vous pouvez consulter tous les déploiements sur : `https://vercel.com/dashboard
 
 ### ⚠️ CI/CD et Vercel
 
-**Important** : Les builds frontend sont désormais gérés par **Vercel**, pas par GitHub Actions.
+#  ⚠️ CI/CD et Vercel
 
-- ✅ **GitHub Actions** : Lint, type-check, tests unitaires et E2E (frontend + backend)
+# **Important** : Les builds frontend sont désormais gérés par **Vercel**, pas par GitHub Actions.
+
+- ✅ **GitHub Actions** : Lint, type-check, tests unitaires, tests API E2E et job Playwright (`e2e-tests`) qui rejoue les scénarios web critiques (`npm run test:e2e`). Le job provisionne Postgres (service `postgres`), applique `db:generate`, `db:migrate:deploy`, `db:reseed`, installe les navigateurs Playwright (`npx playwright install --with-deps`) puis lance les tests. Il s’exécute sur chaque push et sur les pull requests ciblant `main`.
 - ✅ **Vercel** : Build et déploiement du frontend Next.js uniquement
 - ✅ **Clever Cloud** : Déploiement du backend NestJS (via Docker)
 
@@ -531,11 +576,12 @@ brew install act  # macOS
 # ou
 curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash  # Linux
 
-# Exécuter les workflows localement
+# Exécuter les workflows localement (le job e2e-tests requiert Docker disponible pour le service Postgres)
 act -j build-and-test
+act -j e2e-tests
 ```
 
-Les étapes de déploiement Vercel sont automatiquement ignorées dans les runs locaux.
+⚠️ Le job `e2e-tests` attend un service Postgres nommé `postgres` (comme en CI); assurez-vous qu’`act` soit configuré avec Docker disponible. Les étapes de déploiement Vercel sont automatiquement ignorées dans les runs locaux.
 
 ### 2025-11-09 — Politique de nettoyage Jest (2025)
 
