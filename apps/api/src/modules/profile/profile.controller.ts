@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { gdprExportService } from '../../services/gdpr-export.service';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { securityAlertService } from '../../services/security-alert.service';
 
 export const profileRouter = Router();
 
@@ -61,22 +62,47 @@ profileRouter.get('/me', requireAuth, async (req, res) => {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Récupérer le rôle de l'utilisateur
+    // Récupérer le rôle et l'email de l'utilisateur
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true }
+      select: { role: true, email: true }
     });
 
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     // Gérer selon le rôle
+    // Block PRO users from accessing RIDER profiles
+    if (user.role === 'PRO') {
+      // Extract IP and User-Agent for security audit
+      const ips = (req as any).ips as string[] | undefined;
+      const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+      const userAgent = req.get('user-agent');
+
+      // Report security violation to admin
+      await securityAlertService.reportProToRiderViolation(
+        userId,
+        'GET /profile/me',
+        user.email,
+        ip,
+        userAgent
+      );
+
+      console.warn(`🚨 Security: PRO user ${userId} attempted to access RIDER profile endpoint`);
+      return res.status(403).json({
+        error: 'Accès refusé : Les comptes PRO ne peuvent pas accéder aux profils RIDER. Utilisez /pro/me à la place.',
+        message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
+      });
+    }
+
     if (user.role === 'ADMIN') {
       let ap = await prisma.adminProfile.findUnique({ where: { userId } });
       if (!ap) {
         ap = await prisma.adminProfile.create({ data: { userId } });
       }
       return res.json(ap);
-    } else {
+    }
+
+    if (user.role === 'RIDER') {
       // Check cache first for rider profile
       const cachedProfile = await cacheService.getProfile(userId);
       if (cachedProfile && cacheService.isAvailable()) {
@@ -98,6 +124,13 @@ profileRouter.get('/me', requireAuth, async (req, res) => {
 
       return res.json(rp);
     }
+
+    // Invalid role
+    console.warn(`🚨 Security: User ${userId} with invalid role attempted to access profile endpoint`);
+    return res.status(403).json({
+      error: 'Accès refusé : Rôle invalide pour cet endpoint.',
+      message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
+    });
   } catch (err) {
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -111,15 +144,38 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
     // Log incoming request
     console.log('📥 PUT /profile/me - Raw body:', JSON.stringify(req.body, null, 2));
 
-    // Récupérer le rôle de l'utilisateur
+    // Récupérer le rôle et l'email de l'utilisateur
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true }
+      select: { role: true, email: true }
     });
 
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     // Gérer selon le rôle
+    // Block PRO users from modifying RIDER profiles
+    if (user.role === 'PRO') {
+      // Extract IP and User-Agent for security audit
+      const ips = (req as any).ips as string[] | undefined;
+      const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+      const userAgent = req.get('user-agent');
+
+      // Report security violation to admin
+      await securityAlertService.reportProToRiderViolation(
+        userId,
+        'PUT /profile/me',
+        user.email,
+        ip,
+        userAgent
+      );
+
+      console.warn(`🚨 Security: PRO user ${userId} attempted to modify RIDER profile`);
+      return res.status(403).json({
+        error: 'Accès refusé : Les comptes PRO ne peuvent pas modifier les profils RIDER. Utilisez /pro/me à la place.',
+        message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
+      });
+    }
+
     if (user.role === 'ADMIN') {
       const body = adminUpsertSchema.parse(req.body); // already validated but keeping existing parse for transformations
       console.log('Updating admin profile for user:', userId, 'with data:', body);
@@ -130,7 +186,9 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
       });
       console.log('Admin profile updated:', ap);
       return res.json(ap);
-    } else {
+    }
+
+    if (user.role === 'RIDER') {
       // Comportement existant pour les riders
       // Body is already validated and parsed by the validate middleware
       const body = req.body;
@@ -154,6 +212,13 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
       console.log('Profile updated:', rp);
       return res.json(rp);
     }
+
+    // Invalid role
+    console.warn(`🚨 Security: User ${userId} with invalid role attempted to modify profile`);
+    return res.status(403).json({
+      error: 'Accès refusé : Rôle invalide pour cet endpoint.',
+      message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
+    });
   } catch (err: any) {
     // eslint-disable-next-line no-console
     console.error('profile update error', err);
@@ -211,6 +276,71 @@ profileRouter.post('/photo/upload-url', requireAuth, validate(z.object({ content
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Block PRO users from uploading to RIDER photo bucket
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, email: true }
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Extract IP and User-Agent for security audit
+    const ips = (req as any).ips as string[] | undefined;
+    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+    const userAgent = req.get('user-agent');
+
+    if (user.role === 'PRO') {
+      // Report security violation to admin
+      await securityAlertService.reportProToRiderViolation(
+        userId,
+        'POST /profile/photo/upload-url',
+        user.email,
+        ip,
+        userAgent
+      );
+
+      console.warn(`🚨 Security: PRO user ${userId} attempted to upload photo to RIDER bucket`);
+      return res.status(403).json({
+        error: 'Accès refusé : Les comptes PRO ne peuvent pas uploader de photos RIDER. Utilisez /pro/photo/upload-url à la place.',
+        message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
+      });
+    }
+
+    if (user.role === 'ADMIN') {
+      // ⚠️ CRITICAL: Even ADMIN should trigger alert (potential compromised account)
+      await securityAlertService.reportAdminToRiderViolation(
+        userId,
+        'POST /profile/photo/upload-url',
+        user.email,
+        ip,
+        userAgent
+      );
+
+      console.warn(`🚨 Security: ADMIN user ${userId} attempted to upload photo to RIDER bucket - Potential compromised account!`);
+      return res.status(403).json({
+        error: 'Accès refusé : Les comptes ADMIN ne peuvent pas uploader de photos RIDER directement.',
+        message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
+      });
+    }
+
+    if (user.role !== 'RIDER') {
+      // Report security violation to admin
+      await securityAlertService.reportInvalidRoleViolation(
+        userId,
+        user.role || 'UNKNOWN',
+        'POST /profile/photo/upload-url',
+        user.email,
+        ip,
+        userAgent
+      );
+
+      console.warn(`🚨 Security: User ${userId} with invalid role '${user.role}' attempted to upload photo`);
+      return res.status(403).json({
+        error: 'Accès refusé : Rôle invalide pour cet endpoint.',
+        message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
+      });
+    }
 
     const schema = z.object({ contentType: z.string().min(1) });
     const { contentType } = schema.parse(req.body);
