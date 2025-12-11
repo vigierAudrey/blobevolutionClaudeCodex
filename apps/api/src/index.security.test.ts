@@ -48,12 +48,15 @@ describe('/security/health endpoint', () => {
         .expect(200);
 
       expect(response.body).toHaveProperty('status');
+      expect(response.body).toHaveProperty('authRequireVerified');
       expect(Array.isArray(response.body.issues)).toBe(true);
       expect(response.body).toMatchObject({
         helmet: true,
         csrf: true,
         rateLimit: true,
       });
+      expect(response.body).toHaveProperty('checks');
+      expect(response.body.checks).toHaveProperty('authRequireVerified');
     } finally {
       if (previousVerbose === undefined) {
         delete process.env.SECURITY_HEALTH_VERBOSE;

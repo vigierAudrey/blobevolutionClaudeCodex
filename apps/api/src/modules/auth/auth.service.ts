@@ -122,8 +122,9 @@ export class AuthService {
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) throw { code: 'UNAUTHORIZED' };
 
-    // Optionnel: bloquer la connexion si l'email n'est pas vérifié
-    const requireVerified = String(process.env.AUTH_REQUIRE_VERIFIED || 'false').toLowerCase() === 'true';
+    // Optionnel: bloquer la connexion si l'email n'est pas vérifié (obligatoire par défaut en production)
+    const defaultRequireVerified = process.env.NODE_ENV === 'production' ? 'true' : 'false';
+    const requireVerified = String(process.env.AUTH_REQUIRE_VERIFIED ?? defaultRequireVerified).toLowerCase() === 'true';
     if (requireVerified && !user.emailVerified) {
       throw { code: 'EMAIL_NOT_VERIFIED' };
     }

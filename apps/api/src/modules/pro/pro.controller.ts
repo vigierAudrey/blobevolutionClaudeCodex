@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
-import { requireAuth } from '../auth/auth.guard';
+import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import crypto from 'crypto';
 import { gdprExportService } from '../../services/gdpr-export.service';
@@ -10,6 +10,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { requireProRole } from './pro.guard';
 
 export const proRouter = Router();
+proRouter.use(requireAuth, requireVerifiedEmail);
 
 // GDPR Export rate limiter: max 3 exports per hour per user
 const exportRateLimiter = rateLimit({
@@ -83,7 +84,7 @@ type OfferSearchRow = {
   verified: boolean;
 };
 
-proRouter.get('/me', requireAuth, async (req, res) => {
+proRouter.get('/me', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -122,7 +123,7 @@ const persistProProfile = async (userId: string, body: z.infer<typeof upsertSche
   });
 };
 
-proRouter.put('/me', requireAuth, async (req, res) => {
+proRouter.put('/me', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -135,7 +136,7 @@ proRouter.put('/me', requireAuth, async (req, res) => {
   }
 });
 
-proRouter.patch('/me', requireAuth, async (req, res) => {
+proRouter.patch('/me', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -149,7 +150,7 @@ proRouter.patch('/me', requireAuth, async (req, res) => {
 });
 
 // Presigned upload URL for pro photo/logo
-proRouter.post('/photo/upload-url', requireAuth, async (req, res) => {
+proRouter.post('/photo/upload-url', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -173,7 +174,7 @@ proRouter.post('/photo/upload-url', requireAuth, async (req, res) => {
 });
 
 // List riders wanting lessons (variant B: visible to all pros in radius)
-proRouter.get('/near/lessons', requireAuth, requireProRole, async (req, res) => {
+proRouter.get('/near/lessons', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -267,7 +268,7 @@ proRouter.get('/near/lessons', requireAuth, requireProRole, async (req, res) => 
 // ========== PRO OFFERS ENDPOINTS ==========
 
 // Get my offer
-proRouter.get('/offers/me', requireAuth, requireProRole, async (req, res) => {
+proRouter.get('/offers/me', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -288,7 +289,7 @@ proRouter.get('/offers/me', requireAuth, requireProRole, async (req, res) => {
 });
 
 // Create or update my offer
-proRouter.post('/offers', requireAuth, requireProRole, async (req, res) => {
+proRouter.post('/offers', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -350,7 +351,7 @@ proRouter.post('/offers', requireAuth, requireProRole, async (req, res) => {
 });
 
 // Delete my offer
-proRouter.delete('/offers/me', requireAuth, requireProRole, async (req, res) => {
+proRouter.delete('/offers/me', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -376,7 +377,7 @@ proRouter.delete('/offers/me', requireAuth, requireProRole, async (req, res) => 
 });
 
 // Toggle offer active status
-proRouter.patch('/offers/me/toggle', requireAuth, requireProRole, async (req, res) => {
+proRouter.patch('/offers/me/toggle', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -405,7 +406,7 @@ proRouter.patch('/offers/me/toggle', requireAuth, requireProRole, async (req, re
 // ========== OFFERS SEARCH FOR RIDERS ==========
 
 // Search offers near rider location
-proRouter.get('/offers/search', requireAuth, async (req, res) => {
+proRouter.get('/offers/search', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -521,7 +522,7 @@ proRouter.get('/offers/search', requireAuth, async (req, res) => {
 });
 
 // GDPR Data Export endpoint (Article 20 - Right to data portability)
-proRouter.get('/export', requireAuth, exportRateLimiter, async (req, res) => {
+proRouter.get('/export', exportRateLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -551,7 +552,7 @@ proRouter.get('/export', requireAuth, exportRateLimiter, async (req, res) => {
 });
 
 // Account deletion with 30-day grace period (CNIL best practice)
-proRouter.post('/delete-account', requireAuth, async (req, res) => {
+proRouter.post('/delete-account', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -613,7 +614,7 @@ proRouter.post('/delete-account', requireAuth, async (req, res) => {
 });
 
 // Cancel account deletion (within 30-day grace period)
-proRouter.post('/cancel-deletion', requireAuth, async (req, res) => {
+proRouter.post('/cancel-deletion', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -679,7 +680,7 @@ proRouter.post('/cancel-deletion', requireAuth, async (req, res) => {
 });
 
 // Get deletion status
-proRouter.get('/deletion-status', requireAuth, async (req, res) => {
+proRouter.get('/deletion-status', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });

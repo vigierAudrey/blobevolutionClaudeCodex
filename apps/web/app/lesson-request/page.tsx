@@ -10,6 +10,8 @@ import { BackBar } from '../../components/BackBar';
 import { apiClient } from '../../lib/apiClient';
 import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
+import { Badge } from '../../components/ui/badge';
+import { Sparkles, GraduationCap, Users, CalendarDays, MapPin } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -130,7 +132,7 @@ export default function LessonRequestPage() {
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto space-y-4">
+      <div className="max-w-4xl mx-auto space-y-6">
         <BackBar fallbackHref="/dashboard" />
         <div className="flex items-center justify-center py-12">
           <Spinner />
@@ -140,27 +142,43 @@ export default function LessonRequestPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
+    <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/dashboard" />
 
-      <div className="text-center space-y-1">
-        <h1 className="text-2xl sm:text-3xl font-semibold">Demander un cours</h1>
-        <p className="text-sm text-muted-foreground">
-          Active ta demande pour être visible aux professionnels sur la BloboMap
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-amber-500 via-orange-500 to-pink-500 p-8 text-white shadow-xl">
+        <div className="absolute inset-0 opacity-35 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" aria-hidden />
+        <div className="relative z-10 space-y-3">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+            <Sparkles className="w-3.5 h-3.5" />
+            Cours privés
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Publie ta demande de cours</h1>
+          <p className="text-white/85 text-base max-w-2xl">
+            Rends-toi visible sur la BloboMap Pro pour que les moniteurs disponibles puissent te contacter directement.
+          </p>
+        </div>
+      </section>
+
+      <div className="rounded-3xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 space-y-2">
+        <p>
+          ℹ️ Si tu as matché avec d’autres riders, publie <strong>une seule demande commune</strong> pour éviter les doublons.
+        </p>
+        <p className="text-xs opacity-80">
+          Partage le lien <span className="font-semibold break-all">http://localhost:3002/lesson-request</span> au sein de ton groupe.
         </p>
       </div>
-      <div className="p-3 bg-amber-50 border border-amber-200 text-sm text-amber-900 rounded-md">
-        ℹ️ Si tu as matché avec d’autres riders, publie une seule demande commune ici
-        (<span className="font-semibold">http://localhost:3002/lesson-request</span>) afin d’éviter les doublons.
-        Indique le nombre total de personnes qui souhaitent participer au cours.
-      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Card>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <Card className="border-2 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Demande de cours</CardTitle>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="bg-white text-slate-700">
+                Étape unique
+              </Badge>
+              <CardTitle className="text-xl">Paramètres de la demande</CardTitle>
+            </div>
             <CardDescription>
-              Les professionnels verront ta demande et pourront te contacter directement
+              Les professionnels verront cette fiche et pourront te contacter directement sur la messagerie.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -173,7 +191,7 @@ export default function LessonRequestPage() {
                 className="w-5 h-5"
               />
               <label htmlFor="wantsLesson" className="flex items-center gap-2 text-sm font-medium">
-                <span>🎓</span>
+                <GraduationCap className="w-4 h-4 text-blue-600" />
                 Je cherche un cours avec un professionnel
               </label>
             </div>
@@ -193,10 +211,10 @@ export default function LessonRequestPage() {
                         key={s}
                         type="button"
                         onClick={() => setLessonSport(s)}
-                        className={`rounded-md border px-4 py-3 text-sm font-medium transition ${
+                        className={`rounded-2xl border-2 px-4 py-4 text-sm font-medium transition ${
                           lessonSport === s
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-input hover:bg-accent'
+                            ? 'border-blue-500 bg-blue-50/80 ring-2 ring-blue-200'
+                            : 'border-input hover:border-blue-200'
                         }`}
                       >
                         {s === 'surf' ? '🏄' : '🪁'} {sportLabels[s]}
@@ -297,15 +315,16 @@ export default function LessonRequestPage() {
           </CardContent>
         </Card>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-col sm:flex-row justify-end gap-2">
           <Button
             type="button"
             variant="outline"
             onClick={() => router.push('/dashboard')}
+            className="w-full sm:w-auto"
           >
             Annuler
           </Button>
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving} className="w-full sm:w-auto">
             {saving ? (
               <span className="inline-flex items-center gap-2">
                 <Spinner /> Enregistrement...

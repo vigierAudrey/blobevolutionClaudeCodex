@@ -2,11 +2,12 @@
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, Briefcase, Shield, ShieldOff } from 'lucide-react';
+import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, Briefcase, Shield, ShieldOff, MessageSquare, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { apiClient } from '../../lib/apiClient';
 import type { ThreadSummary, ThreadListQuery, ThreadListResponse } from '@/types/messages';
+import { Button } from '../../components/ui/button';
 
 // Force SSR for real-time messaging
 export const dynamic = 'force-dynamic';
@@ -63,127 +64,333 @@ export default function MessagesPage() {
   useEffect(()=>{ setLimit(PAGE); }, [filter]);
   const shown = useMemo(()=>visible.slice(0, limit), [visible, limit]);
 
-  return (
-    <div className="max-w-2xl mx-auto space-y-4">
-      <BackBar fallbackHref="/dashboard" />
-      <Card>
-        <CardHeader>
-          <CardTitle>Mes conversations</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="mb-4 space-y-3">
-            <div className="flex items-center gap-2 text-xs">
-              <button onClick={()=>setFilter('ALL')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='ALL'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
-                <Inbox size={14}/> Tous {counts.all>0?`(${counts.all})`:''}
-              </button>
-              <button onClick={()=>setFilter('FAVORITES')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='FAVORITES'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
-                <Heart size={14}/> Favoris {counts.fav>0?`(${counts.fav})`:''}
-              </button>
-              <button onClick={()=>setFilter('UNREAD')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='UNREAD'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
-                <Mail size={14}/> Non lus {counts.unread>0?`(${counts.unread})`:''}
-              </button>
-              <button onClick={()=>setFilter('TRASH')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='TRASH'?'border-primary text-primary':'border-input text-muted-foreground'}`}>
-                <Trash size={14}/> Corbeille {counts.trash>0?`(${counts.trash})`:''}
-              </button>
-            </div>
+  const totalUnread = useMemo(() =>
+    items.filter(it => !it.trashed).reduce((acc, it) => acc + it.unread, 0),
+    [items]
+  );
 
-            {/* Séparation par type de conversation */}
-            <div className="flex items-center gap-2 text-xs border-t pt-3">
-              <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Par type :</span>
-              <button onClick={()=>setFilter('RIDERS')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='RIDERS'?'border-blue-500 text-blue-600 bg-blue-50':'border-input text-muted-foreground'}`}>
-                <Users size={14}/> Autres Riders {counts.riders>0?`(${counts.riders})`:''}
-              </button>
-              <button onClick={()=>setFilter('PROS')} className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${filter==='PROS'?'border-green-500 text-green-600 bg-green-50':'border-input text-muted-foreground'}`}>
-                <Briefcase size={14}/> Professionnels {counts.pros>0?`(${counts.pros})`:''}
-              </button>
+  return (
+    <div className="max-w-4xl mx-auto space-y-6 pb-8">
+      <BackBar fallbackHref="/dashboard" />
+
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-500 via-pink-500 to-rose-400 p-8 text-white shadow-xl">
+        <div className="absolute top-0 right-0 -mt-8 -mr-8 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+        <div className="absolute bottom-0 left-0 -mb-6 -ml-6 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-3 rounded-xl bg-white/20">
+              <MessageSquare className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+                Messagerie
+              </h1>
+              {totalUnread > 0 && (
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-sm font-medium">
+                    <Sparkles className="w-3 h-3" />
+                    {totalUnread} nouveau{totalUnread > 1 ? 'x' : ''} message{totalUnread > 1 ? 's' : ''}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
-          {visible.length === 0 && <p className="text-sm text-muted-foreground">Aucune conversation.</p>}
-          <div className="divide-y">
-            {shown.map((it) => (
-              <div key={it.id} className="flex items-center justify-between py-3 rounded-md px-2 hover:bg-accent">
-                <Link href={`/messages/${it.id}`} className="flex-1 flex items-start gap-3">
-                  {/* Photo de profil miniature */}
-                  <div className="relative flex-shrink-0">
-                    {it.otherPhotoUrl ? (
-                      <Image
-                        src={it.otherPhotoUrl}
-                        alt={it.otherDisplayName}
-                        width={40}
-                        height={40}
-                        className="w-10 h-10 rounded-full object-cover border-2 border-gray-200"
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-semibold text-sm">
-                        {it.otherDisplayName.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    {/* Icône rôle en badge */}
-                    <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
-                      {it.otherRole === 'PRO' ? (
-                        <Briefcase size={14} className="text-green-600" />
-                      ) : (
-                        <Users size={14} className="text-blue-600" />
-                      )}
-                    </div>
-                  </div>
+          <p className="text-white/90 text-sm sm:text-base">
+            Organise tes conversations, réponds à tes matchs et gère tes messages pro
+          </p>
+        </div>
+      </div>
 
-                  <div className="flex-1 min-w-0">
-                    <div className={(it.unread>0 ? 'font-semibold' : 'font-medium') + " flex items-center gap-2 flex-wrap"}>
-                      {it.otherDisplayName}
-                      {it.favorite && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px]"><Star size={10}/> Favori</span>}
-                      {it.blocked && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[10px]"><Shield size={10}/> Bloqué</span>}
-                      {it.otherRole === 'PRO' && <span className="inline-flex items-center rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px]">PRO</span>}
-                    </div>
-                    <div className={(it.unread>0 ? 'text-foreground' : 'text-muted-foreground') + " text-xs line-clamp-1"}>{it.lastMessage}</div>
-                  </div>
-                </Link>
-                <div className="flex items-center gap-2">
-                  {filter!=='TRASH' && (
-                    <button title={it.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'} onClick={async (e)=>{ e.preventDefault(); await apiClient.favoriteConversation(it.id, !it.favorite); await load(); }}>
-                      {it.favorite ? <Star className="text-amber-500" size={16}/> : <StarOff size={16}/>}
-                    </button>
-                  )}
-                  {filter!=='TRASH' && (
-                    <button
-                      title={it.blocked ? 'Débloquer ce contact' : 'Bloquer ce contact'}
-                      onClick={async (e)=>{
-                        e.preventDefault();
-                        if (it.blocked) {
-                          await apiClient.unblockConversation(it.id);
-                        } else {
-                          if (confirm('Êtes-vous sûr de vouloir bloquer ce contact ? Il ne pourra plus vous envoyer de messages.')) {
-                            await apiClient.blockConversation(it.id);
-                          }
-                        }
-                        await load();
-                      }}
-                      className={it.blocked ? 'text-red-600' : 'text-gray-500 hover:text-red-600'}
-                    >
-                      {it.blocked ? <ShieldOff size={16}/> : <Shield size={16}/>}
-                    </button>
-                  )}
-                  {filter!=='TRASH' ? (
-                    <button title="Mettre à la corbeille" onClick={async (e)=>{ e.preventDefault(); await apiClient.trashConversation(it.id); await load(); }}>
-                      <Trash2 size={16} />
-                    </button>
-                  ) : (
-                    <button title="Restaurer" onClick={async (e)=>{ e.preventDefault(); await apiClient.untrashConversation(it.id); await load(); }}>
-                      Restaurer
-                    </button>
-                  )}
-                  {it.unread > 0 && <span className="inline-block rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5">{it.unread}</span>}
-                </div>
-              </div>
-            ))}
+      {error && (
+        <div className="rounded-xl border-2 border-red-300 bg-red-50 px-5 py-4 text-red-900">
+          <p className="font-medium">{error}</p>
+        </div>
+      )}
+
+      {/* Filtres */}
+      <Card className="border-2">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Inbox className="w-5 h-5 text-muted-foreground" />
+            <CardTitle>Filtres</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Filtres principaux */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={()=>setFilter('ALL')}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                filter==='ALL'
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md'
+                  : 'border-2 border-input text-muted-foreground hover:border-blue-300 hover:bg-blue-50'
+              }`}
+            >
+              <Inbox size={16}/>
+              Tous
+              {counts.all > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='ALL' ? 'bg-white/20' : 'bg-blue-100 text-blue-700'}`}>{counts.all}</span>}
+            </button>
+
+            <button
+              onClick={()=>setFilter('UNREAD')}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                filter==='UNREAD'
+                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md'
+                  : 'border-2 border-input text-muted-foreground hover:border-purple-300 hover:bg-purple-50'
+              }`}
+            >
+              <Mail size={16}/>
+              Non lus
+              {counts.unread > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='UNREAD' ? 'bg-white/20' : 'bg-purple-100 text-purple-700'}`}>{counts.unread}</span>}
+            </button>
+
+            <button
+              onClick={()=>setFilter('FAVORITES')}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                filter==='FAVORITES'
+                  ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md'
+                  : 'border-2 border-input text-muted-foreground hover:border-amber-300 hover:bg-amber-50'
+              }`}
+            >
+              <Heart size={16}/>
+              Favoris
+              {counts.fav > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='FAVORITES' ? 'bg-white/20' : 'bg-amber-100 text-amber-700'}`}>{counts.fav}</span>}
+            </button>
+
+            <button
+              onClick={()=>setFilter('TRASH')}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                filter==='TRASH'
+                  ? 'bg-gradient-to-r from-slate-600 to-slate-700 text-white shadow-md'
+                  : 'border-2 border-input text-muted-foreground hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <Trash size={16}/>
+              Corbeille
+              {counts.trash > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='TRASH' ? 'bg-white/20' : 'bg-slate-100 text-slate-700'}`}>{counts.trash}</span>}
+            </button>
+          </div>
+
+          {/* Séparation par type */}
+          <div className="pt-3 border-t space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Par type de contact</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={()=>setFilter('RIDERS')}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                  filter==='RIDERS'
+                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-md'
+                    : 'border-2 border-input text-muted-foreground hover:border-blue-300 hover:bg-blue-50'
+                }`}
+              >
+                <Users size={16}/>
+                Riders
+                {counts.riders > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='RIDERS' ? 'bg-white/20' : 'bg-blue-100 text-blue-700'}`}>{counts.riders}</span>}
+              </button>
+
+              <button
+                onClick={()=>setFilter('PROS')}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                  filter==='PROS'
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md'
+                    : 'border-2 border-input text-muted-foreground hover:border-emerald-300 hover:bg-emerald-50'
+                }`}
+              >
+                <Briefcase size={16}/>
+                Pros
+                {counts.pros > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='PROS' ? 'bg-white/20' : 'bg-emerald-100 text-emerald-700'}`}>{counts.pros}</span>}
+              </button>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Liste des conversations */}
+      <Card className="border-2">
+        <CardContent className="p-0">
+          {visible.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+              <div className="rounded-full bg-gradient-to-br from-slate-100 to-slate-200 p-6 mb-4">
+                <MessageSquare className="w-8 h-8 text-slate-400" />
+              </div>
+              <p className="text-sm font-medium text-foreground mb-1">Aucune conversation</p>
+              <p className="text-xs text-muted-foreground">
+                {filter === 'TRASH' ? 'La corbeille est vide' : 'Commence à matcher pour démarrer des conversations'}
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {shown.map((it) => (
+                <div
+                  key={it.id}
+                  className={`group flex items-center justify-between p-4 transition-all hover:bg-gradient-to-r hover:from-slate-50 hover:to-transparent ${
+                    it.unread > 0 ? 'bg-blue-50/30' : ''
+                  }`}
+                >
+                  <Link href={`/messages/${it.id}`} className="flex-1 flex items-start gap-4">
+                    {/* Photo de profil */}
+                    <div className="relative flex-shrink-0">
+                      {it.otherPhotoUrl ? (
+                        <div className="relative">
+                          <Image
+                            src={it.otherPhotoUrl}
+                            alt={it.otherDisplayName}
+                            width={56}
+                            height={56}
+                            className={`w-14 h-14 rounded-full object-cover border-3 ${
+                              it.otherRole === 'PRO'
+                                ? 'border-emerald-300'
+                                : 'border-blue-300'
+                            }`}
+                            unoptimized
+                          />
+                          {it.unread > 0 && (
+                            <div className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white text-xs font-bold ring-2 ring-white animate-pulse">
+                              {it.unread}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${
+                          it.otherRole === 'PRO'
+                            ? 'from-emerald-400 to-teal-500'
+                            : 'from-blue-400 to-indigo-500'
+                        } flex items-center justify-center text-white font-bold text-lg shadow-lg`}>
+                          {it.otherDisplayName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+
+                      {/* Badge rôle */}
+                      <div className={`absolute -bottom-1 -right-1 rounded-full p-1 shadow-md ${
+                        it.otherRole === 'PRO'
+                          ? 'bg-gradient-to-br from-emerald-500 to-teal-500'
+                          : 'bg-gradient-to-br from-blue-500 to-indigo-500'
+                      }`}>
+                        {it.otherRole === 'PRO' ? (
+                          <Briefcase size={12} className="text-white" />
+                        ) : (
+                          <Users size={12} className="text-white" />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className={`text-base ${it.unread > 0 ? 'font-bold' : 'font-semibold'}`}>
+                          {it.otherDisplayName}
+                        </span>
+                        {it.favorite && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 text-amber-700 px-2 py-0.5 text-xs font-medium">
+                            <Star size={10} className="fill-current"/> Favori
+                          </span>
+                        )}
+                        {it.blocked && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-red-100 to-rose-100 text-red-700 px-2 py-0.5 text-xs font-medium">
+                            <Shield size={10}/> Bloqué
+                          </span>
+                        )}
+                        {it.otherRole === 'PRO' && (
+                          <span className="inline-flex items-center rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 px-2 py-0.5 text-xs font-medium">
+                            PRO
+                          </span>
+                        )}
+                      </div>
+                      <p className={`text-sm line-clamp-2 ${
+                        it.unread > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'
+                      }`}>
+                        {it.lastMessage}
+                      </p>
+                    </div>
+                  </Link>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 ml-4">
+                    {filter !== 'TRASH' && (
+                      <>
+                        <button
+                          title={it.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                          onClick={async (e)=>{
+                            e.preventDefault();
+                            await apiClient.favoriteConversation(it.id, !it.favorite);
+                            await load();
+                          }}
+                          className="p-2 rounded-lg hover:bg-amber-100 transition-colors"
+                        >
+                          {it.favorite ? (
+                            <Star className="text-amber-500 fill-current" size={18}/>
+                          ) : (
+                            <StarOff className="text-slate-400 hover:text-amber-500" size={18}/>
+                          )}
+                        </button>
+
+                        <button
+                          title={it.blocked ? 'Débloquer ce contact' : 'Bloquer ce contact'}
+                          onClick={async (e)=>{
+                            e.preventDefault();
+                            if (it.blocked) {
+                              await apiClient.unblockConversation(it.id);
+                            } else {
+                              if (confirm('Êtes-vous sûr de vouloir bloquer ce contact ? Il ne pourra plus vous envoyer de messages.')) {
+                                await apiClient.blockConversation(it.id);
+                              }
+                            }
+                            await load();
+                          }}
+                          className={`p-2 rounded-lg transition-colors ${
+                            it.blocked
+                              ? 'text-red-600 hover:bg-red-100'
+                              : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                          }`}
+                        >
+                          {it.blocked ? <ShieldOff size={18}/> : <Shield size={18}/>}
+                        </button>
+
+                        <button
+                          title="Mettre à la corbeille"
+                          onClick={async (e)=>{
+                            e.preventDefault();
+                            await apiClient.trashConversation(it.id);
+                            await load();
+                          }}
+                          className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </>
+                    )}
+
+                    {filter === 'TRASH' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={async (e)=>{
+                          e.preventDefault();
+                          await apiClient.untrashConversation(it.id);
+                          await load();
+                        }}
+                      >
+                        Restaurer
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Load more */}
       {shown.length < visible.length && (
         <div className="flex justify-center">
-          <button className="text-sm underline" onClick={()=>setLimit((n)=>n+PAGE)}>Charger plus</button>
+          <Button
+            variant="outline"
+            onClick={()=>setLimit((n)=>n+PAGE)}
+            className="border-2"
+          >
+            Charger plus ({visible.length - shown.length} restant{visible.length - shown.length > 1 ? 's' : ''})
+          </Button>
         </div>
       )}
     </div>

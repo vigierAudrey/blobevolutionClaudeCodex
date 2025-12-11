@@ -11,6 +11,8 @@ import { Button } from '../../components/ui/button';
 import { apiClient } from '../../lib/apiClient';
 import type { DashboardUser } from '@/types/user';
 import type { Level, Sport } from '@/types/matching';
+import { Badge } from '../../components/ui/badge';
+import { Waves, Wind, Sparkles, Map } from 'lucide-react';
 
 const AdBannerFeed = dynamicImport(
   () => import('../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
@@ -123,7 +125,6 @@ export default function MatchingPage() {
       if (chosenSport === 'surf') return !!surfLevel;
       return !!kiteLevel;
     })();
-    console.log('canContinue:', result, { chosenSport, surfLevel, kiteLevel });
     return result;
   }, [chosenSport, surfLevel, kiteLevel]);
 
@@ -135,32 +136,118 @@ export default function MatchingPage() {
   }, [chosenSport, surfLevel, kiteLevel]);
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
+    <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/dashboard" />
-      <div>
-        <h1 className="text-2xl font-semibold">Matching</h1>
-        <p className="text-sm text-muted-foreground">Choisis le sport et le niveau pour ce matching.</p>
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Sport et niveau</CardTitle>
-          <CardDescription>Sélectionne directement le sport et niveau que tu veux pour ce matching.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => selectSport('surf')} aria-pressed={chosenSport === 'surf'} className={'rounded-md border px-4 py-6 text-center text-sm transition ' + (chosenSport === 'surf' ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>Surf</button>
-            <button onClick={() => selectSport('kitesurf')} aria-pressed={chosenSport === 'kitesurf'} className={'rounded-md border px-4 py-6 text-center text-sm transition ' + (chosenSport === 'kitesurf' ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>Kitesurf</button>
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-500 via-cyan-500 to-teal-400 p-8 text-white shadow-xl">
+        <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" aria-hidden />
+        <div className="relative z-10 flex flex-col gap-4">
+          <div className="flex items-center gap-2 text-sm uppercase tracking-wide text-white/80">
+            <Sparkles className="w-4 h-4" />
+            Matching Riders
           </div>
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="space-y-3">
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Paramètre ta session parfaite</h1>
+              <p className="text-white/90 text-base">
+                Choisis ton sport, ton niveau et laisse l’algorithme proposer les riders les plus compatibles autour de toi.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-white/15 px-4 py-3 text-sm space-y-1">
+              <p className="font-semibold flex items-center gap-2">
+                <Waves className="w-4 h-4" /> 3 étapes rapides
+              </p>
+              <p className="text-white/80">Sport & niveau → zone → swipe ou liste.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <Card className="border-2">
+        <CardHeader className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+              Étape 1
+            </Badge>
+            <CardTitle className="text-xl">Sport & niveau</CardTitle>
+          </div>
+          <CardDescription>
+            Fais ton choix pour cette session. Tu peux réutiliser tes préférences plus tard.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <button
+              onClick={() => selectSport('surf')}
+              aria-pressed={chosenSport === 'surf'}
+              className={`rounded-2xl border-2 px-5 py-6 text-left transition-all shadow-sm hover:shadow-md ${
+                chosenSport === 'surf'
+                  ? 'border-blue-500 bg-blue-50/80 ring-2 ring-blue-200'
+                  : 'border-border hover:border-blue-200'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-blue-500/10 p-3">
+                  <Waves className="text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-semibold">Surf</p>
+                  <p className="text-sm text-muted-foreground">
+                    Sessions douces, shortboard ou longboard : trouve un binôme à ton rythme.
+                  </p>
+                </div>
+              </div>
+            </button>
+            <button
+              onClick={() => selectSport('kitesurf')}
+              aria-pressed={chosenSport === 'kitesurf'}
+              className={`rounded-2xl border-2 px-5 py-6 text-left transition-all shadow-sm hover:shadow-md ${
+                chosenSport === 'kitesurf'
+                  ? 'border-purple-500 bg-purple-50/80 ring-2 ring-purple-200'
+                  : 'border-border hover:border-purple-200'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-purple-500/10 p-3">
+                  <Wind className="text-purple-600" />
+                </div>
+                <div>
+                  <p className="font-semibold">Kitesurf</p>
+                  <p className="text-sm text-muted-foreground">
+                    Sessions ventées et downwinds. Active ce mode pour ton aile préférée.
+                  </p>
+                </div>
+              </div>
+            </button>
+          </div>
+
           {chosenSport && (
-            <div>
-              <div className="text-sm mb-1">Niveau {chosenSport === 'surf' ? 'Surf' : 'Kitesurf'}</div>
-              <div className="grid grid-cols-3 gap-2">
-                {(['beginner','intermediate','advanced'] as Level[]).map(l => {
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="rounded-full">
+                  Niveau {chosenSport === 'surf' ? 'Surf' : 'Kitesurf'}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  Ajuste ton niveau pour des matchs plus précis
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {(['beginner','intermediate','advanced'] as Level[]).map((l) => {
                   const isSelected = chosenSport === 'surf' ? surfLevel === l : kiteLevel === l;
                   const onClick = chosenSport === 'surf' ? () => setSurfLevel(l) : () => setKiteLevel(l);
                   return (
-                    <button key={l} onClick={onClick} aria-pressed={isSelected} className={'rounded-md border px-2 py-2 text-xs transition ' + (isSelected ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')}>{levelLabels[l]}</button>
+                    <button
+                      key={l}
+                      onClick={onClick}
+                      aria-pressed={isSelected}
+                      className={`rounded-xl border-2 px-4 py-3 text-sm font-medium transition-all ${
+                        isSelected
+                          ? 'border-teal-500 bg-teal-50/80 ring-2 ring-teal-200'
+                          : 'border-border hover:border-teal-200'
+                      }`}
+                    >
+                      {levelLabels[l]}
+                    </button>
                   );
                 })}
               </div>
@@ -169,37 +256,67 @@ export default function MatchingPage() {
         </CardContent>
       </Card>
 
-      {/* Publicité entre les cartes */}
-      <AdBannerFeed
-        slot="matching-selection"
-        className="max-w-md mx-auto"
-      />
+      <AdBannerFeed slot="matching-selection" className="max-w-xl mx-auto" />
 
-      <Card>
+      <Card className="border-2">
         <CardHeader>
-          <CardTitle className="text-base">Ton choix pour ce matching</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Map className="w-5 h-5 text-muted-foreground" />
+            Ton plan du jour
+          </CardTitle>
           <CardDescription className="text-sm">{breadcrumb}</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => { setSurfLevel(''); setKiteLevel(''); setChosenSport(null); try { localStorage.removeItem(SPORT_KEY); localStorage.removeItem(LEVEL_KEY); } catch {} }}>Changer de sport</Button>
-            <Button disabled={!canContinue} onClick={() => {
-              console.log('Continuer clicked:', { canContinue, chosenSport, surfLevel, kiteLevel });
-              if (chosenSport === 'surf') {
-                console.log('Navigating to surf page...');
-                try { localStorage.setItem(SPORT_KEY, 'surf'); localStorage.setItem(LEVEL_KEY, (surfLevel || 'beginner') as string); } catch {}
-                router.push(`/matching/date?sport=surf&level=${surfLevel || 'beginner'}`);
-              } else if (chosenSport === 'kitesurf') {
-                console.log('Navigating to kitesurf page...');
-                try { localStorage.setItem(SPORT_KEY, 'kitesurf'); localStorage.setItem(LEVEL_KEY, (kiteLevel || 'beginner') as string); } catch {}
-                router.push(`/matching/date?sport=kitesurf&level=${kiteLevel || 'beginner'}`);
-              } else {
-                console.log('No sport selected');
-              }
-            }}>Continuer</Button>
+        <CardContent className="space-y-4">
+          <div className="rounded-2xl bg-muted/60 p-4 text-sm text-muted-foreground">
+            Une fois validé, tu passeras à la zone géo puis au calendrier pour verrouiller la session.
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSurfLevel('');
+                setKiteLevel('');
+                setChosenSport(null);
+                try { localStorage.removeItem(SPORT_KEY); localStorage.removeItem(LEVEL_KEY); } catch {}
+              }}
+              className="flex-1 sm:flex-none"
+            >
+              Réinitialiser
+            </Button>
+            <Button
+              className="flex-1 sm:flex-none"
+              disabled={!canContinue}
+              onClick={() => {
+                if (chosenSport === 'surf') {
+                  try { localStorage.setItem(SPORT_KEY, 'surf'); localStorage.setItem(LEVEL_KEY, (surfLevel || 'beginner') as string); } catch {}
+                  router.push(`/matching/date?sport=surf&level=${surfLevel || 'beginner'}`);
+                } else if (chosenSport === 'kitesurf') {
+                  try { localStorage.setItem(SPORT_KEY, 'kitesurf'); localStorage.setItem(LEVEL_KEY, (kiteLevel || 'beginner') as string); } catch {}
+                  router.push(`/matching/date?sport=kitesurf&level=${kiteLevel || 'beginner'}`);
+                }
+              }}
+            >
+              Continuer vers la zone
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        {[
+          { label: 'Localisation', description: 'Active ta position et choisis ton rayon.', color: 'from-blue-500/10 to-blue-500/5' },
+          { label: 'Calendrier', description: 'Sélectionne la date idéale + option cours.', color: 'from-purple-500/10 to-purple-500/5' },
+          { label: 'Swipe ou liste', description: 'Deck immersif ou liste détaillée.', color: 'from-emerald-500/10 to-emerald-500/5' },
+        ].map((card) => (
+          <div
+            key={card.label}
+            className={`rounded-2xl border px-4 py-5 bg-gradient-to-br ${card.color} shadow-sm`}
+          >
+            <p className="text-sm font-semibold">{card.label}</p>
+            <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
+          </div>
+        ))}
+      </section>
     </div>
   );
 }

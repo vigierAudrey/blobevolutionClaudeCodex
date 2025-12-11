@@ -44,7 +44,7 @@ async function loadAdminProfile(req: AdminGuardRequest) {
   const email = dbUser?.email ?? null;
   const isPrimary = email ? primaryAdminEmails.has(email.toLowerCase()) : false;
 
-  let permissions = dbUser?.adminProfile?.permissions ?? [];
+  let permissions: Permission[] = (dbUser?.adminProfile?.permissions ?? []) as Permission[];
 
   if (isPrimary) {
     permissions = [...ROLE_PERMISSIONS.SUPER_ADMIN];

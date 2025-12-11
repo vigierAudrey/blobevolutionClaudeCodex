@@ -5,11 +5,12 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth/auth.guard';
+import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { pushNotificationService } from '../../services/push-notification.service';
 import { secureLogger } from '../../utils/secure-logger';
 
 const router = Router();
+router.use(requireAuth, requireVerifiedEmail);
 
 // Validation schemas
 const subscribeSchema = z.object({
@@ -87,8 +88,8 @@ const handleSubscribe = async (req: Request, res: Response) => {
  * POST /api/push/subscribe
  * Subscribe to push notifications
  */
-router.post('/subscribe', requireAuth, handleSubscribe);
-router.post('/register', requireAuth, handleSubscribe);
+router.post('/subscribe', handleSubscribe);
+router.post('/register', handleSubscribe);
 
 const handleUnsubscribe = async (req: Request, res: Response) => {
   try {
@@ -126,14 +127,14 @@ const handleUnsubscribe = async (req: Request, res: Response) => {
   }
 };
 
-router.post('/unsubscribe', requireAuth, handleUnsubscribe);
-router.post('/unregister', requireAuth, handleUnsubscribe);
+router.post('/unsubscribe', handleUnsubscribe);
+router.post('/unregister', handleUnsubscribe);
 
 /**
  * POST /api/push/test
  * Send a test notification to the current user
  */
-router.post('/test', requireAuth, async (req: Request, res: Response) => {
+router.post('/test', async (req: Request, res: Response) => {
   try {
     const validation = testNotificationSchema.safeParse(req.body);
 
@@ -177,7 +178,7 @@ router.post('/test', requireAuth, async (req: Request, res: Response) => {
  * POST /api/push/send
  * Send notification to a specific user (admin only)
  */
-router.post('/send', requireAuth, async (req: Request, res: Response) => {
+router.post('/send', async (req: Request, res: Response) => {
   try {
     // Check if user is admin
     if ((req as any).user?.role !== 'ADMIN') {
@@ -226,7 +227,7 @@ router.post('/send', requireAuth, async (req: Request, res: Response) => {
  * GET /api/push/status
  * Get push notification status for current user
  */
-router.get('/status', requireAuth, async (req: Request, res: Response) => {
+router.get('/status', async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
 

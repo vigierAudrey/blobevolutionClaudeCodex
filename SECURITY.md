@@ -8,6 +8,7 @@
 - CORS stricte basé sur la liste blanche `ALLOWED_ORIGINS`.
 - Rate limiting adaptatif (`smartRateLimit`) et compression contrôlée.
 - Services sensibles (matching, profile, auth) valident leurs payloads via Zod et middleware `validate()`.
+- Auth riders/pro/admin : `AUTH_REQUIRE_VERIFIED` est forcé à `true` en production et toutes les routes booking/matching/chat/profile/pro/push/contact/reports + modules admin/security/blobosphère exigent `requireVerifiedEmail`.
 - Notifications push sans log de jetons sensibles, cache Redis protégé par retry.
 - RBAC admin : toutes les routes `/admin/*` exigent les permissions définies dans `adminProfile.permissions` (middleware `requirePermissions`).
 - 2FA admin : les codes sont stockés exclusivement dans Redis (aucun fallback en production) – `REDIS_URL` doit être disponible avant démarrage.
@@ -27,6 +28,7 @@
    - Renseigner `ALLOWED_ORIGINS` avec **tous** les domaines front autorisés (ex. `https://app.blobinfini.com,https://admin.blobinfini.com`).
    - Ajouter `TRUSTED_PROXY_IPS` avec les IP/CIDR Clever Cloud ou du reverse-proxy (ex. `163.172.0.0/16,51.15.0.0/16`).
    - Vérifier que `NODE_ENV=production`, `JWT_SECRET`≥64 chars et `DATABASE_URL` contient `sslmode=require|verify-full`.
+   - Confirmer que le champ `checks.authRequireVerified` vaut `true` (sinon l’API remonte l’issue `AUTH_REQUIRE_VERIFIED`).
    - Redémarrer l'API puis appeler `/security/health` : chaque variable manquante apparaitra dans `issues[]`.
 
 2. **Tester manuellement**
@@ -38,6 +40,7 @@
      curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" https://api.blobinfini.com/security/health | jq
      ```
    - Attendu : `status: "SECURE"` et `issues: []`. Tout autre statut doit être corrigé avant déploiement.
+   - Réaliser un parcours login rider/pro réel : tant que l'email n'est pas vérifié, `/auth/login` doit répondre 403 et les routes booking/matching/push/refusent l'accès (`Email not verified`). Après validation, le login et les routes métiers doivent réussir.
 
 3. **Brancher une alerte automatisée**
    - Planifier un cron Clever Cloud ou GitHub Actions avec les variables suivantes :
@@ -72,6 +75,7 @@
 - [ ] Générer les secrets (`SESSION_SECRET`, `JWT_SECRET`, `JWT_REFRESH_SECRET`) via `./scripts/generate-secrets.sh`.
 - [ ] Renseigner `TRUSTED_PROXY_IPS` (IP/CIDR des reverse-proxy Clever Cloud).
 - [ ] Vérifier `NODE_ENV=production`, `GDPR_PURGE_*`, `S3_*`, `REDIS_URL`, `DATABASE_URL`.
+- [ ] Activer `AUTH_REQUIRE_VERIFIED=true` (bloque les riders & pros tant que l’email n’est pas confirmé) et s’assurer que les comptes staff/admin sont aussi vérifiés.
 - [ ] Lancer `npm run build --workspace @blobinfini/api` et `npm test --workspace @blobinfini/api`.
 - [ ] Tester `/security/health` (cf. section ci-dessus) et `/health`.
 - [ ] Contrôler les headers HTTP (CSP/HSTS/referrer) via `curl -I`.

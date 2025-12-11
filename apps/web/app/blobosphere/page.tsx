@@ -184,53 +184,6 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
       <div className="lg:hidden">
         <AdBannerFeed slot={mobileFeedSlot} className="my-4" />
       </div>
-
-      <section aria-labelledby="contrib-title" className="space-y-6">
-        <div>
-          <p className="text-sm font-semibold text-sky-700">Participer</p>
-          <h2 id="contrib-title" className="text-3xl font-semibold tracking-tight text-gray-900">
-            Comment proposer un article ?
-          </h2>
-          <p className="text-base text-muted-foreground">
-            Toute contribution passe par le profil BlobConnect. Nous étudions chaque sujet avant publication pour
-            garantir le respect du RGPD et de la charte éditoriale.
-          </p>
-        </div>
-        <Card className="bg-white">
-          <CardContent className="space-y-4 pt-6">
-            <ol className="space-y-3 text-sm text-muted-foreground list-decimal pl-5">
-              <li>
-                <span className="font-medium text-foreground">Inscris-toi ou connecte-toi.</span> Les contributions sont
-                réservées aux membres authentifiés.
-              </li>
-              <li>
-                <span className="font-medium text-foreground">Ouvre ton profil &gt; Confidentialité.</span> Active la case
-                « Je veux contribuer à la Blobosphère » pour signaler ton intention.
-              </li>
-              <li>
-                <span className="font-medium text-foreground">Retourne sur ton tableau de bord.</span> Le bouton « Proposer
-                un sujet » apparaît alors et ta proposition est transmise à l’équipe éditoriale pour relecture.
-              </li>
-            </ol>
-            <p className="text-xs text-muted-foreground">
-              💡 Tant que l’option n’est pas activée dans ton profil, les formulaires de contribution restent cachés.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button asChild>
-                <Link href="/register">Créer un compte</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/profile">Accéder à mon profil</Link>
-              </Button>
-            </div>
-            <div className="flex">
-              <Button asChild variant="ghost">
-                <Link href="/">← Retour à l’accueil</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
       </div>
 
       {/* Right sidebar ad on desktop */}

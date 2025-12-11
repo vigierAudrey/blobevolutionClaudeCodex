@@ -347,6 +347,13 @@ Configuration : `~/.config/claude-code/mcp.json`
     "chrome-devtools": {
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "votre-token-github"
+      }
     }
   }
 }
@@ -355,6 +362,7 @@ Configuration : `~/.config/claude-code/mcp.json`
 **Capacités** :
 - **Vercel MCP** : Gestion des déploiements, projets, domaines, logs Vercel
 - **Chrome DevTools MCP** : Automatisation navigateur, debugging, screenshots, analyse de performance
+- **GitHub MCP** : Consultation, recherche et création d’issues/PR directement depuis Claude Code
 
 #### Pour Claude Desktop (Application)
 Configuration : `~/.config/claude/claude_desktop_config.json`
@@ -876,7 +884,7 @@ Notes:
   ```
 
   - API dispo sur `http://localhost:4000`
-  - Front web sur `http://localhost:3002`
+- Front web sur `http://localhost:3002`
   - Mailpit (inbox mails dev) : `http://localhost:8025`
   - Console fichier MinIO (stockage images) : `http://localhost:9001` (`minioadmin` / `minioadmin`)
 
@@ -891,10 +899,17 @@ Activer l’envoi d’emails (dev avec Mailpit)
 
 - Démarrer Mailpit: inclus dans `docker-compose.yml` → `docker compose up -d mailpit` (UI: http://localhost:8025)
 - `.env` déjà prêt pour Mailpit: `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_SECURE=false`.
-- Définir `WEB_BASE_URL` (ex: http://localhost:3001) pour générer les liens.
+- Définir `WEB_BASE_URL` (ex: http://localhost:3002) pour générer les liens.
 - `apps/api` dépend de `nodemailer`; exécutez `npm install` à la racine si besoin.
 
 Sans SMTP actif, l’API continue de fonctionner et ignore l’envoi (log d’info seulement).
+
+### Polling messagerie & compteur de messages non lus
+
+- Le dashboard Rider interroge périodiquement `/conversations` pour calculer le nombre total de messages non lus.
+- En développement et par défaut en production, l’intervalle est de **60 secondes** et ne s’exécute que lorsque l’onglet est actif (`document.visibilityState === 'visible'`).
+- Vous pouvez ajuster cet intervalle via la variable `NEXT_PUBLIC_UNREAD_POLL_MS` (en millisecondes) côté front web (ex: `NEXT_PUBLIC_UNREAD_POLL_MS=300000` pour 5 minutes).
+- À plus long terme, la roadmap prévoit de basculer ce compteur vers un flux temps réel (Socket.io) pour éviter tout polling régulier en production à forte charge.
 
 ## 📝 Patterns de Code à Suivre
 
@@ -1021,6 +1036,8 @@ router.post(
 - [RGPD Compliance](./docs/rgpd.md)
 - [Publicités & Consentement](./README_ADS.md)
 - [Tests E2E & CI](./README_TESTS.md)
+- [Migration Prisma 6](./docs/migration-prisma6.md)
+- [Troubleshooting Prisma](./docs/troubleshooting-prisma.md) ⚠️ **Problèmes courants et solutions**
 
 ## 🤝 Contribution IA
 

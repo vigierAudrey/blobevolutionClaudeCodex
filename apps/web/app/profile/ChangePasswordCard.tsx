@@ -17,6 +17,7 @@ export function ChangePasswordCard() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
   const passwordStatuses = useMemo(() => getPasswordRequirementStatuses(newPassword), [newPassword]);
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -52,62 +53,76 @@ export function ChangePasswordCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">🔐 Sécurité du compte</CardTitle>
-        <CardDescription>Modifie ton mot de passe actuel. Tous les appareils seront déconnectés après mise à jour.</CardDescription>
+      <CardHeader
+        className="flex cursor-pointer flex-row items-center justify-between"
+        onClick={() => setIsOpen((prev) => !prev)}
+        role="button"
+        aria-expanded={isOpen}
+      >
+        <div className="space-y-1.5">
+          <CardTitle className="text-base">🔐 Sécurité du compte</CardTitle>
+          <CardDescription>
+            Modifie ton mot de passe actuel. Tous les appareils seront déconnectés après mise à jour.
+          </CardDescription>
+        </div>
+        <span className="ml-4 text-sm text-muted-foreground">
+          {isOpen ? 'Masquer' : 'Modifier'}
+        </span>
       </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="current-password">Mot de passe actuel</Label>
-            <Input
-              id="current-password"
-              type="password"
-              autoComplete="current-password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="new-password">Nouveau mot de passe</Label>
-            <Input
-              id="new-password"
-              type="password"
-              autoComplete="new-password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              required
-            />
-          </div>
-          <PasswordRequirementsList statuses={passwordStatuses} />
-          <div className="space-y-2">
-            <Label htmlFor="confirm-password">Confirmer le mot de passe</Label>
-            <Input
-              id="confirm-password"
-              type="password"
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              required
-            />
-          </div>
+      {isOpen && (
+        <CardContent>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Mot de passe actuel</Label>
+              <Input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">Nouveau mot de passe</Label>
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                required
+              />
+            </div>
+            <PasswordRequirementsList statuses={passwordStatuses} />
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirmer le mot de passe</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                required
+              />
+            </div>
 
-          {message && (
-            <p className={`text-sm ${status === 'error' ? 'text-red-600' : 'text-green-600'}`} role="alert">
-              {message}
-            </p>
-          )}
+            {message && (
+              <p className={`text-sm ${status === 'error' ? 'text-red-600' : 'text-green-600'}`} role="alert">
+                {message}
+              </p>
+            )}
 
-          <Button
-            type="submit"
-            className="w-full sm:w-auto"
-            disabled={isSubmitting || !currentPassword || !newPassword || !confirmPassword}
-          >
-            {isSubmitting ? 'Mise à jour…' : 'Mettre à jour le mot de passe'}
-          </Button>
-        </form>
-      </CardContent>
+            <Button
+              type="submit"
+              className="w-full sm:w-auto"
+              disabled={isSubmitting || !currentPassword || !newPassword || !confirmPassword}
+            >
+              {isSubmitting ? 'Mise à jour…' : 'Mettre à jour le mot de passe'}
+            </Button>
+          </form>
+        </CardContent>
+      )}
     </Card>
   );
 }

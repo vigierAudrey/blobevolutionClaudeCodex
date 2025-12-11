@@ -143,7 +143,6 @@ model RiderProfile {
   lessonDate        DateTime?
   lessonPlace       String?
   lessonStudentCount Int?            @default(1)
-  blobosphereContributor Boolean     @default(false)
   incomingDecisions MatchDecision[]   @relation("ProfileAsTarget")
   reports           ProfileReport[]   @relation("ProfileAsReported")
   disciplines       RiderDiscipline[]

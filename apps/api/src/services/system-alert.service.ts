@@ -1,4 +1,4 @@
-import { clientPrisma as prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 
 type Severity = 'INFO' | 'WARNING' | 'CRITICAL';
 type Status = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
@@ -59,6 +59,13 @@ class SystemAlertService {
   }
 
   async createAlert(input: CreateAlertInput) {
+    const metadataValue: Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue | undefined =
+      input.metadata === undefined
+        ? undefined
+        : input.metadata === null
+          ? Prisma.JsonNull
+          : (input.metadata as Prisma.InputJsonValue);
+
     const alert = await prisma.systemAlert.create({
       data: {
         type: input.type,
@@ -66,7 +73,7 @@ class SystemAlertService {
         severity: input.severity ?? 'INFO',
         status: 'OPEN',
         link: input.link ?? null,
-        metadata: input.metadata ?? null,
+        metadata: metadataValue,
         dedupeKey: input.dedupeKey ?? null,
         createdById: input.createdById ?? null
       }
@@ -88,6 +95,13 @@ class SystemAlertService {
       return existing;
     }
 
+    const metadataValue: Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue | undefined =
+      input.metadata === undefined
+        ? undefined
+        : input.metadata === null
+          ? Prisma.JsonNull
+          : (input.metadata as Prisma.InputJsonValue);
+
     return prisma.systemAlert.create({
       data: {
         type: input.type,
@@ -95,7 +109,7 @@ class SystemAlertService {
         severity: input.severity ?? 'INFO',
         status: 'OPEN',
         link: input.link ?? null,
-        metadata: input.metadata ?? null,
+        metadata: metadataValue,
         dedupeKey,
         createdById: input.createdById ?? null
       }

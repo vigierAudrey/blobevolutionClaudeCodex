@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Adlery Pro';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/AdleryPro.woff') format('woff');
+}
+
 /* Skeleton animations */
 @keyframes shimmer {
   0% {
@@ -72,12 +80,63 @@
   }
   body {
     @apply bg-background text-foreground;
+    position: relative;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url('/hero-wallpaper.webp');
+    background-size: cover;
+    background-position: center;
+    filter: blur(40px);
+    opacity: 0.35;
+    transform: scale(1.05);
+    pointer-events: none;
+    z-index: -1;
   }
 }
 
 /* Simple responsive container */
 .container-responsive {
   @apply mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+/* Vidéo d'ambiance en haut de la home */
+.home-hero-video-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  border: 1px solid hsl(var(--border));
+  background-color: hsl(var(--background));
+  /* Assure que rien ne dépasse du conteneur */
+  max-height: 420px;
+}
+
+.home-hero-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 420px;
+  /* Couvre tout le conteneur sans déborder */
+  object-fit: cover;
+  /* Fondu blanc en haut (subtil) et en bas (plus épais) */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 15%,
+    black 60%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 15%,
+    black 60%,
+    transparent 100%
+  );
 }
 
 /* Accessibility helpers */
@@ -143,6 +202,117 @@ body.accessibility-high-contrast {
 body.accessibility-high-contrast a {
   text-decoration: underline;
   text-decoration-thickness: 2px;
+}
+
+/* High contrast mode: Force readable colors on gradients and hero sections */
+body.accessibility-high-contrast .bg-gradient-to-br,
+body.accessibility-high-contrast .bg-gradient-to-r,
+body.accessibility-high-contrast .bg-gradient-to-l {
+  background: hsl(var(--card)) !important;
+  border: 2px solid hsl(var(--border)) !important;
+}
+
+/* High contrast mode: Ensure text is always visible */
+body.accessibility-high-contrast .text-blue-50,
+body.accessibility-high-contrast .text-purple-50,
+body.accessibility-high-contrast .text-pink-50,
+body.accessibility-high-contrast .text-cyan-50,
+body.accessibility-high-contrast .text-teal-50,
+body.accessibility-high-contrast .text-rose-50,
+body.accessibility-high-contrast .text-amber-50,
+body.accessibility-high-contrast .text-emerald-50,
+body.accessibility-high-contrast .text-white\/90,
+body.accessibility-high-contrast .text-white {
+  color: hsl(var(--foreground)) !important;
+}
+
+/* High contrast mode: Make semi-transparent backgrounds opaque */
+body.accessibility-high-contrast .bg-white\/10,
+body.accessibility-high-contrast .bg-white\/20,
+body.accessibility-high-contrast .bg-white\/30 {
+  background-color: hsl(var(--secondary)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+/* High contrast mode: Ensure colored backgrounds have proper contrast */
+body.accessibility-high-contrast .bg-blue-50,
+body.accessibility-high-contrast .bg-purple-50,
+body.accessibility-high-contrast .bg-pink-50,
+body.accessibility-high-contrast .bg-cyan-50,
+body.accessibility-high-contrast .bg-teal-50,
+body.accessibility-high-contrast .bg-rose-50,
+body.accessibility-high-contrast .bg-amber-50,
+body.accessibility-high-contrast .bg-emerald-50,
+body.accessibility-high-contrast .bg-yellow-50,
+body.accessibility-high-contrast .bg-orange-50 {
+  background-color: hsl(var(--card)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+/* High contrast mode: Icon backgrounds */
+body.accessibility-high-contrast [class*="bg-gradient-to-br"] {
+  background: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+}
+
+/* High contrast mode: Borders on cards */
+body.accessibility-high-contrast .border-purple-300,
+body.accessibility-high-contrast .border-blue-300,
+body.accessibility-high-contrast .border-amber-300,
+body.accessibility-high-contrast .border-emerald-300,
+body.accessibility-high-contrast .border-red-300,
+body.accessibility-high-contrast .border-orange-300 {
+  border-color: hsl(var(--border)) !important;
+}
+
+/* High contrast mode: Alert/notification backgrounds */
+body.accessibility-high-contrast .bg-amber-50\/80,
+body.accessibility-high-contrast .bg-blue-50\/80,
+body.accessibility-high-contrast .bg-emerald-50\/80,
+body.accessibility-high-contrast .bg-emerald-50\/50 {
+  background-color: hsl(var(--card)) !important;
+}
+
+/* High contrast mode: Text colors in alerts */
+body.accessibility-high-contrast .text-amber-900,
+body.accessibility-high-contrast .text-amber-800,
+body.accessibility-high-contrast .text-blue-900,
+body.accessibility-high-contrast .text-blue-800,
+body.accessibility-high-contrast .text-emerald-900,
+body.accessibility-high-contrast .text-emerald-800,
+body.accessibility-high-contrast .text-red-700 {
+  color: hsl(var(--foreground)) !important;
+}
+
+/* High contrast mode: Accessibility panel itself */
+body.accessibility-high-contrast #accessibility-panel {
+  background-color: hsl(var(--card)) !important;
+  border: 3px solid hsl(var(--border)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+body.accessibility-high-contrast #accessibility-panel .text-muted-foreground {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+body.accessibility-high-contrast #accessibility-panel .text-primary {
+  color: hsl(var(--primary)) !important;
+}
+
+body.accessibility-high-contrast #accessibility-panel .border-border\/60,
+body.accessibility-high-contrast #accessibility-panel .border-border {
+  border-color: hsl(var(--border)) !important;
+}
+
+/* High contrast mode: Ensure checkbox is visible */
+body.accessibility-high-contrast input[type="checkbox"] {
+  border: 2px solid hsl(var(--foreground)) !important;
+  background-color: hsl(var(--background)) !important;
+}
+
+body.accessibility-high-contrast input[type="checkbox"]:checked {
+  background-color: hsl(var(--primary)) !important;
+  border-color: hsl(var(--primary)) !important;
 }
 
 body.accessibility-dyslexic-font {

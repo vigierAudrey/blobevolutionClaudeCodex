@@ -12,7 +12,12 @@ export function BackBar({ fallbackHref = '/dashboard', label = 'Retour' }: BackB
   const router = useRouter();
 
   const onBack = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
+    const canNavigateBack =
+      typeof window !== 'undefined' &&
+      typeof window.history.state?.idx === 'number' &&
+      window.history.state.idx > 0;
+
+    if (canNavigateBack) {
       router.back();
     } else {
       router.push(fallbackHref);

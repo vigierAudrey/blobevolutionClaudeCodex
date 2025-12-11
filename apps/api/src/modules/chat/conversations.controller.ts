@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
-import { requireAuth } from '../auth/auth.guard';
+import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 
 export const conversationsRouter = Router();
+conversationsRouter.use(requireAuth, requireVerifiedEmail);
 
 const conversationMemberSelect = {
   conversation: {
@@ -41,7 +42,7 @@ type RiderProfileSummary = Prisma.RiderProfileGetPayload<{
 }>;
 
 // List conversations with last message + unread count (excludes trashed by default)
-conversationsRouter.get('/', requireAuth, async (req, res) => {
+conversationsRouter.get('/', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -175,7 +176,7 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
 });
 
 // Fetch messages (paginated by createdAt)
-conversationsRouter.get('/:id/messages', requireAuth, async (req, res) => {
+conversationsRouter.get('/:id/messages', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     const id = req.params.id;
@@ -198,7 +199,7 @@ conversationsRouter.get('/:id/messages', requireAuth, async (req, res) => {
 });
 
 // Send message
-conversationsRouter.post('/:id/messages', requireAuth, async (req, res) => {
+conversationsRouter.post('/:id/messages', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     const id = req.params.id;
@@ -217,7 +218,7 @@ conversationsRouter.post('/:id/messages', requireAuth, async (req, res) => {
   }
 });
 
-conversationsRouter.post('/:id/unmatch', requireAuth, async (req, res) => {
+conversationsRouter.post('/:id/unmatch', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     const id = req.params.id;
@@ -231,7 +232,7 @@ conversationsRouter.post('/:id/unmatch', requireAuth, async (req, res) => {
   } catch { return res.status(500).json({ error: 'Internal error' }); }
 });
 
-conversationsRouter.post('/:id/block', requireAuth, async (req, res) => {
+conversationsRouter.post('/:id/block', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     const id = req.params.id;
@@ -243,7 +244,7 @@ conversationsRouter.post('/:id/block', requireAuth, async (req, res) => {
 });
 
 // Trash / untrash
-conversationsRouter.post('/:id/trash', requireAuth, async (req, res) => {
+conversationsRouter.post('/:id/trash', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -256,7 +257,7 @@ conversationsRouter.post('/:id/trash', requireAuth, async (req, res) => {
 });
 
 // Favorite toggle
-conversationsRouter.post('/:id/favorite', requireAuth, async (req, res) => {
+conversationsRouter.post('/:id/favorite', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -271,7 +272,7 @@ conversationsRouter.post('/:id/favorite', requireAuth, async (req, res) => {
 });
 
 // Ensure a direct conversation exists with target user and return its id
-conversationsRouter.post('/open', requireAuth, async (req, res) => {
+conversationsRouter.post('/open', async (req, res) => {
   try {
     const meId = (req as any).user?.id as string | undefined;
     if (!meId) return res.status(401).json({ error: 'Unauthorized' });
