@@ -42,43 +42,50 @@ async function cleanupFixtureData() {
   await prisma.user.deleteMany({ where: { email: { in: Object.values(emails) } } });
 }
 
+async function setupReporterAndTarget() {
+  const reporter = await prisma.user.create({
+    data: {
+      email: emails.reporter,
+      password: 'hash',
+      role: 'RIDER',
+      emailVerified: true
+    }
+  });
+  await prisma.riderProfile.create({
+    data: {
+      userId: reporter.id,
+      displayName: 'Reporter'
+    }
+  });
+
+  const target = await prisma.user.create({
+    data: {
+      email: emails.target,
+      password: 'hash',
+      role: 'RIDER',
+      emailVerified: true
+    }
+  });
+  const targetProfile = await prisma.riderProfile.create({
+    data: {
+      userId: target.id,
+      displayName: 'Target'
+    }
+  });
+
+  return { reporterId: reporter.id, targetProfileId: targetProfile.id };
+}
+
 describe('Reports Controller', () => {
-  beforeAll(async () => {
+  beforeAll(() => {
     ensureSecrets();
+  });
+
+  beforeEach(async () => {
     await cleanupFixtureData();
-
-    const reporter = await prisma.user.create({
-      data: {
-        email: emails.reporter,
-        password: 'hash',
-        role: 'RIDER',
-        emailVerified: true
-      }
-    });
-    await prisma.riderProfile.create({
-      data: {
-        userId: reporter.id,
-        displayName: 'Reporter'
-      }
-    });
-
-    const target = await prisma.user.create({
-      data: {
-        email: emails.target,
-        password: 'hash',
-        role: 'RIDER',
-        emailVerified: true
-      }
-    });
-    const targetProfile = await prisma.riderProfile.create({
-      data: {
-        userId: target.id,
-        displayName: 'Target'
-      }
-    });
-    targetProfileId = targetProfile.id;
-
-    reporterToken = signToken(reporter.id, 'RIDER');
+    const { reporterId, targetProfileId: createdTargetProfileId } = await setupReporterAndTarget();
+    reporterToken = signToken(reporterId, 'RIDER');
+    targetProfileId = createdTargetProfileId;
   });
 
   afterAll(async () => {
@@ -106,12 +113,12 @@ describe('Reports Controller', () => {
     const agent = request.agent(app);
     const csrf = await getCsrf(agent);
 
-    await agent
+    const res = await agent
       .post('/reports/profile')
       .set('Authorization', `Bearer ${reporterToken}`)
       .set('X-CSRF-Token', csrf)
-      .send({ targetProfileId: 'not-a-uuid' })
-      .expect(400);
+      .send({ targetProfileId: 'not-a-uuid' });
+    expect(res.status).toBe(400);
   });
 
   it('requires authentication', async () => {

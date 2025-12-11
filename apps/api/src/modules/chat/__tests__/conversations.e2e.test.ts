@@ -74,6 +74,12 @@ describe('Conversations E2E', () => {
       .expect(201);
     otherProId = await resolveUserId(otherProRes, 'pro2@test.com', Role.PRO);
 
+    // Les actions de conversation exigent un email vérifié
+    await prisma.user.updateMany({
+      where: { id: { in: [riderId, otherRiderId, proId, otherProId] } },
+      data: { emailVerified: true }
+    });
+
     const riderLogin = await post('/auth/login')
       .send({ email: 'rider@test.com', password: 'Passw0rd!' })
       .expect(200);
