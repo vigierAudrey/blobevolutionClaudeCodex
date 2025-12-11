@@ -1,11 +1,21 @@
 import { clientPrisma as prisma, Prisma, BookingRequestStatus } from '@blobinfini/database';
+import type { ProAvailability } from '@blobinfini/database';
 import { bookingRepository } from './booking.repository';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { notifyBookingAccepted, notifyBookingRejected } from '../push/push.controller';
 import { withTransactionRetry } from '../../utils/transaction-retry';
+import type { CreateAvailabilityInput } from './dto/createAvailability.dto';
+import type { SearchAvailabilityInput } from './dto/searchAvailability.dto';
+
+type SearchAvailabilityFilters = SearchAvailabilityInput & {
+  cursor?: string;
+  limit?: number;
+};
+
+type CachedAvailability = { id: string };
 
 export class BookingService {
-  async createAvailability(proUserId: string, data: any) {
+  async createAvailability(proUserId: string, data: CreateAvailabilityInput) {
     // Validate geographic coordinates
     this.validateGeoPoint(data.spotLat, data.spotLng);
 
@@ -65,11 +75,11 @@ export class BookingService {
           }
         ]
       }
-    });
+    }) as ProAvailability[];
 
     if (overlappingAvailabilities.length > 0) {
       const conflictTimes = overlappingAvailabilities
-        .map((a) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .map((availability: ProAvailability) => `${availability.startAt.toISOString()} - ${availability.endAt.toISOString()}`)
         .join(', ');
       throw Object.assign(
         new Error(`Time overlap detected with existing availability: ${conflictTimes}`),
@@ -114,11 +124,11 @@ export class BookingService {
           }
         ]
       }
-    });
+    }) as ProAvailability[];
 
     if (overlappingAvailabilities.length > 0) {
       const conflictTimes = overlappingAvailabilities
-        .map((a) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .map((availability: ProAvailability) => `${availability.startAt.toISOString()} - ${availability.endAt.toISOString()}`)
         .join(', ');
       throw Object.assign(
         new Error(`Time overlap detected with existing availability: ${conflictTimes}`),
@@ -127,11 +137,11 @@ export class BookingService {
     }
   }
 
-  async listAvailabilities(proUserId: string, query: any) {
+  async listAvailabilities(proUserId: string, query: Prisma.ProAvailabilityFindManyArgs) {
     return bookingRepository.listAvailabilities(proUserId, query);
   }
 
-  async updateAvailability(proUserId: string, availabilityId: string, data: any) {
+  async updateAvailability(proUserId: string, availabilityId: string, data: Partial<CreateAvailabilityInput>) {
     const availability = await bookingRepository.findAvailabilityById(availabilityId);
     if (!availability || availability.proUserId !== proUserId) {
       throw Object.assign(new Error('Availability not found'), { status: 404 });
@@ -210,7 +220,7 @@ export class BookingService {
     return { success: true, message: 'Availability deleted' };
   }
 
-  async searchAvailabilities(filters: any) {
+  async searchAvailabilities(filters: SearchAvailabilityFilters) {
     // Support both cursor-based and legacy pagination
     const cursor = filters.cursor;
     const limit = filters.limit ?? 20;
@@ -225,13 +235,13 @@ export class BookingService {
       ? `${CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25)}:cursor:${cursor || 'start'}`
       : CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25);
 
-    const cachedAvailabilities = await cacheService.getAvailabilities(cacheKey);
+    const cachedAvailabilities = await cacheService.getAvailabilities(cacheKey) as CachedAvailability[] | null;
     if (cachedAvailabilities && cacheService.isAvailable()) {
       console.log('🚀 Cache hit for availabilities');
 
       if (useCursorPagination) {
         // Cursor-based pagination on cached results
-        const startIndex = cursor ? cachedAvailabilities.findIndex(a => a.id === cursor) + 1 : 0;
+        const startIndex = cursor ? cachedAvailabilities.findIndex((availability: CachedAvailability) => availability.id === cursor) + 1 : 0;
         const endIndex = Math.min(startIndex + effectiveLimit, cachedAvailabilities.length);
         return cachedAvailabilities.slice(startIndex, endIndex);
       }
@@ -254,7 +264,7 @@ export class BookingService {
     });
 
     // Get booking data with a single optimized query instead of N+1
-    const availabilityIds = rows.map((row: any) => row.id);
+    const availabilityIds = rows.map((row: { id: string }) => row.id);
     const bookingsData = availabilityIds.length > 0
       ? await prisma.$queryRaw<Array<any>>`
           SELECT

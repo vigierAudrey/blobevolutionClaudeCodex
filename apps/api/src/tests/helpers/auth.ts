@@ -7,8 +7,10 @@ import { AVAILABLE_PERMISSIONS } from '../../modules/admin/permissions';
 export const TEST_PASSWORD = 'Passw0rd!';
 const CONSENT_VERSION = 'v1.0.0';
 
+type SupertestAgent = SuperAgentTest;
+
 export type TestSession = {
-  agent: SuperAgentTest;
+  agent: SupertestAgent;
   csrfToken: string;
   post: (path: string) => SupertestRequest;
   put: (path: string) => SupertestRequest;
@@ -18,7 +20,7 @@ export type TestSession = {
 };
 
 export async function createTestSession(app: any): Promise<TestSession> {
-  const agent = request.agent(app);
+  const agent = request.agent(app) as unknown as SuperAgentTest;
   const csrfRes = await agent.get('/csrf-token').expect(200);
   const csrfToken = csrfRes.body.csrfToken as string;
 

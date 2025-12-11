@@ -556,6 +556,10 @@ proRouter.post('/delete-account', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const confirm = req.body?.confirm === true;
+    if (!confirm) {
+      return res.status(400).json({ error: 'Confirmation required' });
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: userId },

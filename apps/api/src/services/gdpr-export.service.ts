@@ -1,4 +1,5 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
+import type { ProAvailability, ProOffer } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
 import * as crypto from 'crypto';
 
@@ -400,14 +401,14 @@ export class GdprExportService {
       };
 
       // Pro offers
-      const offers = await prisma.proOffer.findMany({
+      const offers: ProOffer[] = await prisma.proOffer.findMany({
         where: { proProfileId: proProfile.id },
         orderBy: { createdAt: 'desc' },
         take: EXPORT_LIMITS.PRO_OFFERS,
       });
 
       if (offers.length > 0) {
-        exportData.proOffers = offers.map((offer) => ({
+        exportData.proOffers = offers.map((offer: ProOffer) => ({
           sport: offer.sport,
           level: offer.level,
           title: offer.title,
@@ -420,14 +421,14 @@ export class GdprExportService {
     }
 
     // Pro availabilities
-    const availabilities = await prisma.proAvailability.findMany({
-      where: { proUserId: userId },
-      orderBy: { startAt: 'desc' },
-      take: EXPORT_LIMITS.PRO_AVAILABILITIES,
+      const availabilities: ProAvailability[] = await prisma.proAvailability.findMany({
+        where: { proUserId: userId },
+        orderBy: { startAt: 'desc' },
+        take: EXPORT_LIMITS.PRO_AVAILABILITIES,
     });
 
     if (availabilities.length > 0) {
-      exportData.proAvailabilities = availabilities.map((avail) => ({
+      exportData.proAvailabilities = availabilities.map((avail: ProAvailability) => ({
         sport: avail.sport,
         levels: avail.levels,
         startAt: avail.startAt.toISOString(),

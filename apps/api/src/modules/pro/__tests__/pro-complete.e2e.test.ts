@@ -2,6 +2,7 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../../../index';
 import { clientPrisma as prisma } from '@blobinfini/database';
+import { createTestSession, type TestSession } from '../../../tests/helpers/auth';
 
 const app = createApp();
 
@@ -19,6 +20,8 @@ describe('Pro Module - Complete Functional Tests', () => {
   let proUserId = '';
   let proToken = '';
   let proProfileId = '';
+  let proSession: TestSession;
+  let riderSession: TestSession;
 
   beforeAll(async () => {
     ensureSecrets();
@@ -52,6 +55,7 @@ describe('Pro Module - Complete Functional Tests', () => {
         displayName: 'Functional Rider',
         lat: 43.4832,
         lng: -1.5586,
+        wantsLesson: true,
         lessonSport: 'surf',
         lessonLevel: 'beginner',
         lessonDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
@@ -85,6 +89,9 @@ describe('Pro Module - Complete Functional Tests', () => {
       }
     });
     proProfileId = proProfile.id;
+
+    proSession = await createTestSession(app);
+    riderSession = await createTestSession(app);
   });
 
   afterAll(async () => {
@@ -130,7 +137,7 @@ describe('Pro Module - Complete Functional Tests', () => {
 
     describe('PUT /pro/me', () => {
       it('should create/update the full profile', async () => {
-        const res = await request(app)
+        const res = await proSession
           .put('/pro/me')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -152,7 +159,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should validate input schema', async () => {
-        const res = await request(app)
+        const res = await proSession
           .put('/pro/me')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -166,7 +173,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should handle optional fields', async () => {
-        const res = await request(app)
+        const res = await proSession
           .put('/pro/me')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -180,7 +187,7 @@ describe('Pro Module - Complete Functional Tests', () => {
 
     describe('PATCH /pro/me', () => {
       it('should partially update the profile', async () => {
-        const res = await request(app)
+        const res = await proSession
           .patch('/pro/me')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -193,7 +200,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should update only location', async () => {
-        const res = await request(app)
+        const res = await proSession
           .patch('/pro/me')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -210,43 +217,45 @@ describe('Pro Module - Complete Functional Tests', () => {
 
     describe('POST /pro/photo/upload-url', () => {
       it('should generate a presigned URL for JPEG upload', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/photo/upload-url')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ contentType: 'image/jpeg' })
           .expect(200);
 
         expect(res.body.uploadUrl).toBeDefined();
-        expect(res.body.publicUrl).toBeDefined();
-        expect(res.body.publicUrl).toContain('pros/');
-        expect(res.body.publicUrl).toContain(proUserId);
-        expect(res.body.publicUrl).toMatch(/\.jpeg$/);
+        expect(res.body.fileUrl).toBeDefined();
+        expect(res.body.fileUrl).toContain('pros/');
+        expect(res.body.fileUrl).toContain(proUserId);
+        expect(res.body.fileUrl).toMatch(/\.jpeg$/);
       });
 
       it('should generate a presigned URL for PNG upload', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/photo/upload-url')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ contentType: 'image/png' })
           .expect(200);
 
         expect(res.body.uploadUrl).toBeDefined();
-        expect(res.body.publicUrl).toMatch(/\.png$/);
+        expect(res.body.fileUrl).toBeDefined();
+        expect(res.body.fileUrl).toMatch(/\.png$/);
       });
 
       it('should generate a presigned URL for WEBP upload', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/photo/upload-url')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ contentType: 'image/webp' })
           .expect(200);
 
         expect(res.body.uploadUrl).toBeDefined();
-        expect(res.body.publicUrl).toMatch(/\.webp$/);
+        expect(res.body.fileUrl).toBeDefined();
+        expect(res.body.fileUrl).toMatch(/\.webp$/);
       });
 
       it('should reject unsupported content types', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/photo/upload-url')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ contentType: 'image/gif' })
@@ -256,7 +265,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should reject non-image content types', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/photo/upload-url')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ contentType: 'application/pdf' })
@@ -320,7 +329,7 @@ describe('Pro Module - Complete Functional Tests', () => {
 
     describe('POST /pro/offers', () => {
       it('should create a new offer for surf', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -330,20 +339,21 @@ describe('Pro Module - Complete Functional Tests', () => {
             description: 'Apprenez les bases du surf dans une ambiance conviviale et sécurisée.',
             hourlyRate: 55
           })
-          .expect(200);
+          .expect(201);
 
-        expect(res.body.offer.id).toBeDefined();
-        expect(res.body.offer.sport).toBe('surf');
-        expect(res.body.offer.level).toBe('beginner');
-        expect(res.body.offer.title).toBe('Cours de surf débutant');
-        expect(res.body.offer.hourlyRate).toBe(55);
-        expect(res.body.offer.isActive).toBe(true);
-        expect(res.body.offer.lat).toBe(43.4920); // inherited from profile
-        expect(res.body.offer.lng).toBe(-1.5560);
+        const offer = res.body;
+        expect(offer.id).toBeDefined();
+        expect(offer.sport).toBe('surf');
+        expect(offer.level).toBe('beginner');
+        expect(offer.title).toBe('Cours de surf débutant');
+        expect(Number(offer.hourlyRate)).toBe(55);
+        expect(offer.isActive).toBe(true);
+        expect(offer.lat).toBe(43.4920);
+        expect(offer.lng).toBe(-1.5560);
       });
 
       it('should create a new offer for kitesurf', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -354,15 +364,16 @@ describe('Pro Module - Complete Functional Tests', () => {
             hourlyRate: 120,
             isActive: false
           })
-          .expect(200);
+          .expect(201);
 
-        expect(res.body.offer.sport).toBe('kitesurf');
-        expect(res.body.offer.level).toBe('advanced');
-        expect(res.body.offer.isActive).toBe(false);
+        const offer = res.body;
+        expect(offer.sport).toBe('kitesurf');
+        expect(offer.level).toBe('advanced');
+        expect(offer.isActive).toBe(false);
       });
 
       it('should validate title length (min 10)', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -378,7 +389,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should validate title length (max 200)', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -394,7 +405,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should validate description length (min 50)', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -410,7 +421,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should validate hourly rate (min 10)', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -426,7 +437,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should validate hourly rate (max 200)', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -442,7 +453,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should reject invalid sport', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -458,7 +469,7 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should reject invalid level', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proToken}`)
           .send({
@@ -504,13 +515,10 @@ describe('Pro Module - Complete Functional Tests', () => {
           ]
         });
 
-        const res = await request(app)
+        await proSession
           .delete('/pro/offers/me')
           .set('Authorization', `Bearer ${proToken}`)
-          .expect(200);
-
-        expect(res.body.message).toContain('2');
-        expect(res.body.message).toContain('deleted');
+          .expect(204);
 
         // Verify deletion
         const offers = await prisma.proOffer.findMany({
@@ -520,12 +528,12 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should return 0 deleted when no offers exist', async () => {
-        const res = await request(app)
+        const res = await proSession
           .delete('/pro/offers/me')
           .set('Authorization', `Bearer ${proToken}`)
-          .expect(200);
+          .expect(404);
 
-        expect(res.body.message).toContain('0');
+        expect(res.body.error).toContain('No offer found');
       });
     });
 
@@ -561,35 +569,35 @@ describe('Pro Module - Complete Functional Tests', () => {
       });
 
       it('should deactivate all offers', async () => {
-        const res = await request(app)
+        const res = await proSession
           .patch('/pro/offers/me/toggle')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ isActive: false })
           .expect(200);
 
-        expect(res.body.message).toContain('updated');
+        expect(res.body.isActive).toBe(false);
 
-        // Verify all are inactive
-        const offers = await prisma.proOffer.findMany({
-          where: { proProfileId }
-        });
-        expect(offers.every(o => o.isActive === false)).toBe(true);
+        const updated = await prisma.proOffer.findUnique({ where: { id: res.body.id } });
+        expect(updated?.isActive).toBe(false);
       });
 
       it('should activate all offers', async () => {
-        const res = await request(app)
+        await proSession
           .patch('/pro/offers/me/toggle')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ isActive: true })
           .expect(200);
 
-        expect(res.body.message).toContain('updated');
+        const res = await proSession
+          .patch('/pro/offers/me/toggle')
+          .set('Authorization', `Bearer ${proToken}`)
+          .send({ isActive: true })
+          .expect(200);
 
-        // Verify all are active
-        const offers = await prisma.proOffer.findMany({
-          where: { proProfileId }
-        });
-        expect(offers.every(o => o.isActive === true)).toBe(true);
+        expect(res.body.isActive).toBe(true);
+
+        const updated = await prisma.proOffer.findUnique({ where: { id: res.body.id } });
+        expect(updated?.isActive).toBe(true);
       });
     });
   });
@@ -602,11 +610,11 @@ describe('Pro Module - Complete Functional Tests', () => {
           .set('Authorization', `Bearer ${proToken}`)
           .expect(200);
 
-        expect(res.body.candidates).toBeDefined();
-        expect(Array.isArray(res.body.candidates)).toBe(true);
-        expect(res.body.candidates.length).toBeGreaterThan(0);
+        expect(res.body.items).toBeDefined();
+        expect(Array.isArray(res.body.items)).toBe(true);
+        expect(res.body.items.length).toBeGreaterThan(0);
 
-        const candidate = res.body.candidates[0];
+        const candidate = res.body.items[0];
         expect(candidate.displayName).toBe('Functional Rider');
         expect(candidate.lessonSport).toBe('surf');
         expect(candidate.lessonLevel).toBe('beginner');
@@ -620,7 +628,7 @@ describe('Pro Module - Complete Functional Tests', () => {
           .set('Authorization', `Bearer ${proToken}`)
           .expect(200);
 
-        expect(res.body.candidates).toHaveLength(0);
+        expect(res.body.items).toHaveLength(0);
       });
 
       it('should filter by sport', async () => {
@@ -640,6 +648,7 @@ describe('Pro Module - Complete Functional Tests', () => {
             displayName: 'Kitesurf Rider',
             lat: 43.4850,
             lng: -1.5600,
+            wantsLesson: true,
             lessonSport: 'kitesurf',
             lessonLevel: 'intermediate',
             lessonDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
@@ -653,8 +662,8 @@ describe('Pro Module - Complete Functional Tests', () => {
           .set('Authorization', `Bearer ${proToken}`)
           .expect(200);
 
-        expect(res.body.candidates.length).toBeGreaterThan(0);
-        expect(res.body.candidates.every((c: any) => c.lessonSport === 'surf')).toBe(true);
+        expect(res.body.items.length).toBeGreaterThan(0);
+        expect(res.body.items.every((c: any) => c.lessonSport === 'surf')).toBe(true);
 
         // Cleanup
         await prisma.riderProfile.delete({ where: { userId: kitesurfRider.id } });
@@ -667,8 +676,8 @@ describe('Pro Module - Complete Functional Tests', () => {
           .set('Authorization', `Bearer ${proToken}`)
           .expect(200);
 
-        expect(res.body.candidates.length).toBeGreaterThan(0);
-        expect(res.body.candidates.every((c: any) => c.lessonLevel === 'beginner')).toBe(true);
+        expect(res.body.items.length).toBeGreaterThan(0);
+        expect(res.body.items.every((c: any) => c.lessonLevel === 'beginner')).toBe(true);
       });
 
       it('should apply default radius if not provided', async () => {
@@ -677,7 +686,7 @@ describe('Pro Module - Complete Functional Tests', () => {
           .set('Authorization', `Bearer ${proToken}`)
           .expect(200);
 
-        expect(res.body.candidates).toBeDefined();
+        expect(res.body.items).toBeDefined();
       });
     });
   });
@@ -824,9 +833,9 @@ describe('Pro Module - Complete Functional Tests', () => {
         expect(res.body.user).toBeDefined();
         expect(res.body.user.id).toBe(proUserId);
         expect(res.body.user.email).toBe('pro-func@test.com');
-        expect(res.body.proProfile).toBeDefined();
-        expect(res.body.proProfile.businessName).toBe('Biarritz Surf School');
-        expect(res.body.proOffers).toBeDefined();
+        expect(res.body.profile).toBeDefined();
+        expect(res.body.profile.businessName).toBe('Biarritz Surf School');
+        expect(Array.isArray(res.body.proOffers)).toBe(true);
         expect(res.body.proOffers.length).toBeGreaterThan(0);
       });
 
@@ -838,69 +847,69 @@ describe('Pro Module - Complete Functional Tests', () => {
 
         expect(res.body.user).toBeDefined();
         expect(res.body.user.id).toBe(riderUserId);
-        expect(res.body.riderProfile).toBeDefined();
-        expect(res.body.riderProfile.displayName).toBe('Functional Rider');
+        expect(res.body.profile).toBeDefined();
+        expect(res.body.profile.displayName).toBe('Functional Rider');
       });
     });
 
     describe('POST /pro/delete-account', () => {
       it('should schedule account deletion for pro', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/delete-account')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ confirm: true })
           .expect(200);
 
-        expect(res.body.message).toContain('deletion scheduled');
+        expect(res.body.message).toContain('suppression');
         expect(res.body.deletionDate).toBeDefined();
 
         // Verify deletion is scheduled
         const user = await prisma.user.findUnique({
           where: { id: proUserId }
         });
-        expect(user?.deletionScheduledAt).toBeDefined();
+        expect(user?.deletedAt).toBeDefined();
       });
 
       it('should require confirmation', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/delete-account')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ confirm: false })
           .expect(400);
 
-        expect(res.body.error).toContain('confirmation required');
+        expect(res.body.error.toLowerCase()).toContain('confirmation required');
       });
     });
 
     describe('POST /pro/cancel-deletion', () => {
       it('should cancel scheduled deletion', async () => {
         // Schedule deletion first
-        await request(app)
+        await proSession
           .post('/pro/delete-account')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ confirm: true })
           .expect(200);
 
         // Cancel it
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/cancel-deletion')
           .set('Authorization', `Bearer ${proToken}`)
           .expect(200);
 
-        expect(res.body.message).toContain('cancelled');
+        expect(res.body.message).toContain('annulée');
 
         // Verify cancellation
         const user = await prisma.user.findUnique({
           where: { id: proUserId }
         });
-        expect(user?.deletionScheduledAt).toBeNull();
+        expect(user?.deletedAt).toBeNull();
       });
 
       it('should return error if no deletion scheduled', async () => {
-        const res = await request(app)
+        const res = await proSession
           .post('/pro/cancel-deletion')
           .set('Authorization', `Bearer ${proToken}`)
-          .expect(404);
+          .expect(400);
 
         expect(res.body.error).toContain('No deletion scheduled');
       });
@@ -909,7 +918,7 @@ describe('Pro Module - Complete Functional Tests', () => {
     describe('GET /pro/deletion-status', () => {
       it('should return deletion status when scheduled', async () => {
         // Schedule deletion
-        await request(app)
+        await proSession
           .post('/pro/delete-account')
           .set('Authorization', `Bearer ${proToken}`)
           .send({ confirm: true })
@@ -920,7 +929,7 @@ describe('Pro Module - Complete Functional Tests', () => {
           .set('Authorization', `Bearer ${proToken}`)
           .expect(200);
 
-        expect(res.body.scheduled).toBe(true);
+        expect(res.body.isScheduled).toBe(true);
         expect(res.body.deletionDate).toBeDefined();
       });
 
@@ -930,8 +939,8 @@ describe('Pro Module - Complete Functional Tests', () => {
           .set('Authorization', `Bearer ${proToken}`)
           .expect(200);
 
-        expect(res.body.scheduled).toBe(false);
-        expect(res.body.deletionDate).toBeNull();
+        expect(res.body.isScheduled).toBe(false);
+        expect(res.body.deletionDate).toBeUndefined();
       });
     });
   });

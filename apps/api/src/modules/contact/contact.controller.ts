@@ -151,9 +151,11 @@ contactRouter.post('/respond', async (req, res) => {
       return res.status(400).json({ error: 'Contact request is no longer pending' });
     }
 
+    const conversationMembers = contactRequest.conversation.members as Array<{ userId: string }>;
+
     // Vérifier que l'utilisateur fait partie de la conversation
-    const isMember = contactRequest.conversation.members.some(
-      (member) => member.userId === userId
+    const isMember = conversationMembers.some(
+      (member: { userId: string }) => member.userId === userId
     );
     if (!isMember) {
       return res.status(403).json({ error: 'User not part of this conversation' });
@@ -183,9 +185,9 @@ contactRouter.post('/respond', async (req, res) => {
       include: { rider: true }
     });
 
-    const riderIds = contactRequest.conversation.members
-      .filter((member) => member.userId !== contactRequest.proUserId)
-      .map((member) => member.userId);
+    const riderIds = conversationMembers
+      .filter((member: { userId: string }) => member.userId !== contactRequest.proUserId)
+      .map((member: { userId: string }) => member.userId);
 
     const allRidersResponded = riderIds.every((riderId: string) =>
       allResponses.some(
