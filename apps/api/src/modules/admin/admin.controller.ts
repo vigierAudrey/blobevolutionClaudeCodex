@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
-import type { DecisionKind } from '@blobinfini/database';
+import type { AuditLog, DecisionKind, Role, Sport } from '@blobinfini/database';
 import { requireAuth, requireAdmin, requireVerifiedEmail } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
 import { systemAlertService } from '../../services/system-alert.service';
@@ -33,6 +33,13 @@ type LoginAttemptWithUser = Prisma.LoginAttemptGetPayload<{
     };
   };
 }>;
+
+type RoleCountGroup = { role: Role; _count: { role: number } };
+type DecisionCountGroup = { decision: DecisionKind; _count: { decision: number } };
+type SportSearchGroup = { sport: Sport | null; _count: { sport: number } };
+type CountGroup = { _count: { _all: number } };
+type AuditActionGroup = { action: string; _count: { action: number } };
+type ReportReasonGroup = { reason: string | null; _count: { _all: number } };
 
 async function ensureAdminConversation(adminId: string, targetUserId: string) {
   const existing = await prisma.conversation.findFirst({
@@ -84,7 +91,7 @@ adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:sta
     const usersByRole = await prisma.user.groupBy({
       by: ['role'],
       _count: { role: true }
-    });
+    }) as RoleCountGroup[];
 
     // Conversations totales
     const totalConversations = await prisma.conversation.count();
@@ -111,9 +118,9 @@ adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:sta
     // Formater les statistiques
     const stats = {
       totalUsers,
-      totalRiders: usersByRole.find(group => group.role === 'RIDER')?._count?.role ?? 0,
-      totalPros: usersByRole.find(group => group.role === 'PRO')?._count?.role ?? 0,
-      totalAdmins: usersByRole.find(group => group.role === 'ADMIN')?._count?.role ?? 0,
+      totalRiders: usersByRole.find((group: RoleCountGroup) => group.role === 'RIDER')?._count?.role ?? 0,
+      totalPros: usersByRole.find((group: RoleCountGroup) => group.role === 'PRO')?._count?.role ?? 0,
+      totalAdmins: usersByRole.find((group: RoleCountGroup) => group.role === 'ADMIN')?._count?.role ?? 0,
       totalConversations,
       activeUsers,
       reportedProfiles
@@ -1092,17 +1099,17 @@ adminRouter.get(
       _count: {
         decision: true
       }
-    });
+    }) as DecisionCountGroup[];
 
     const totalDecisions = matchingStats.reduce(
-      (sum, stat) => sum + (stat._count?.decision ?? 0),
+      (sum: number, stat: DecisionCountGroup) => sum + (stat._count?.decision ?? 0),
       0
     );
     const acceptedCount = matchingStats.find(
-      (stat) => stat.decision === 'ACCEPT'
+      (stat: DecisionCountGroup) => stat.decision === 'ACCEPT'
     )?._count?.decision ?? 0;
     const refusedCount = matchingStats.find(
-      (stat) => stat.decision === 'REFUSE'
+      (stat: DecisionCountGroup) => stat.decision === 'REFUSE'
     )?._count?.decision ?? 0;
     const acceptRate = totalDecisions > 0 ? (acceptedCount / totalDecisions) * 100 : 0;
     const refuseRate = totalDecisions > 0 ? (refusedCount / totalDecisions) * 100 : 0;
@@ -1174,7 +1181,8 @@ adminRouter.get(
 
     type DecisionTimelineEntry = [string, { accepted: number; refused: number; total: number }];
 
-    const decisionTimeline = Array.from(decisionsTimelineMap.entries())
+    const decisionTimelineEntries: DecisionTimelineEntry[] = Array.from(decisionsTimelineMap.entries());
+    const decisionTimeline = decisionTimelineEntries
       .sort(([a]: DecisionTimelineEntry, [b]: DecisionTimelineEntry) => (a > b ? 1 : -1))
       .map(([periodIso, values]: DecisionTimelineEntry) => ({ period: periodIso, ...values }));
 
@@ -1229,9 +1237,9 @@ adminRouter.get(
       _count: {
         sport: true
       }
-    });
+    }) as SportSearchGroup[];
 
-    const searchesBySport = searchesBySportRaw.map((item) => ({
+    const searchesBySport = searchesBySportRaw.map((item: SportSearchGroup) => ({
       sport: item.sport,
       count: Number(item._count?.sport ?? 0)
     }));
@@ -1892,11 +1900,11 @@ adminRouter.get(
           }
         },
         take: 25
-      });
+      }) as AuditActionGroup[];
 
       return res.json({
         since,
-        items: grouped.map((item) => ({
+        items: grouped.map((item: AuditActionGroup) => ({
           action: item.action,
           count: item._count?.action ?? 0
         }))
@@ -2248,7 +2256,7 @@ adminRouter.get(
         _count: {
           _all: true
         }
-      })
+      }) 
     ]);
 
     const sessionSummary = sessionSummaryRaw?.[0];
@@ -2257,32 +2265,38 @@ adminRouter.get(
     const medianSessionDuration = sessionSummary?.median_duration_seconds ? Number(sessionSummary.median_duration_seconds) : 0;
     const maxSessionDuration = sessionSummary?.max_duration_seconds ? Number(sessionSummary.max_duration_seconds) : 0;
 
-    const uniqueSessionUsers = sessionsPerUser.length;
-    const totalSessionsComputed = sessionsPerUser.reduce(
-      (sum, entry) => sum + (entry._count?._all ?? 0),
+    const sessionCountGroups = sessionsPerUser as CountGroup[];
+    const conversationMessageGroups = messageByConversation as CountGroup[];
+    const messageSenderGroups = messageSenders as CountGroup[];
+    const reportReasonGroups = reportsByReason as ReportReasonGroup[];
+
+    const uniqueSessionUsers = sessionCountGroups.length;
+    const totalSessionsComputed = sessionCountGroups.reduce(
+      (sum: number, entry: CountGroup) => sum + (entry._count?._all ?? 0),
       0
     );
     const avgSessionsPerUser = uniqueSessionUsers > 0 ? totalSessionsComputed / uniqueSessionUsers : 0;
 
     const sessionDistributionMap = new Map<number, number>();
-    for (const entry of sessionsPerUser) {
+    for (const entry of sessionCountGroups) {
       const count = entry._count?._all ?? 0;
       sessionDistributionMap.set(count, (sessionDistributionMap.get(count) ?? 0) + 1);
     }
 
-    const sessionDistribution = Array.from(sessionDistributionMap.entries())
-      .sort((a, b) => a[0] - b[0])
+    const sessionDistributionEntries: Array<[number, number]> = Array.from(sessionDistributionMap.entries());
+    const sessionDistribution = sessionDistributionEntries
+      .sort(([sessionsA], [sessionsB]) => sessionsA - sessionsB)
       .slice(0, 10)
       .map(([sessions, users]) => ({ sessions, users }));
 
-    const totalMessages = messageByConversation.reduce(
-      (sum, item) => sum + (item._count?._all ?? 0),
+    const totalMessages = conversationMessageGroups.reduce(
+      (sum: number, item: CountGroup) => sum + (item._count?._all ?? 0),
       0
     );
-    const activeConversations = messageByConversation.length;
+    const activeConversations = conversationMessageGroups.length;
     const avgMessagesPerConversation = activeConversations > 0 ? totalMessages / activeConversations : 0;
 
-    const uniqueMessageSenders = messageSenders.length;
+    const uniqueMessageSenders = messageSenderGroups.length;
     const avgMessagesPerSender = uniqueMessageSenders > 0 ? totalMessages / uniqueMessageSenders : 0;
 
     const uniqueRiderDecisionActors = riderDecisionActors.length;
@@ -2356,7 +2370,7 @@ adminRouter.get(
       },
       support: {
         totalReports: reportsTotal,
-        reportsByReason: reportsByReason.map((item) => ({
+        reportsByReason: reportReasonGroups.map((item) => ({
           reason: item.reason ?? 'Autre',
           count: item._count?._all ?? 0
         }))
@@ -2680,10 +2694,10 @@ adminRouter.get(
       _count: { userId: true },
       orderBy: { _count: { userId: 'desc' } },
       take: 10,
-    });
+    }) as Array<{ userId: string | null; _count: { userId: number } }>;
 
     const topExportersWithEmails = await Promise.all(
-      topExporters.map(async (item) => {
+      topExporters.map(async (item: { userId: string | null; _count: { userId: number } }) => {
         const user = await prisma.user.findUnique({
           where: { id: item.userId! },
           select: { email: true, role: true },
@@ -2745,7 +2759,7 @@ adminRouter.get(
     }
 
     // Get all exports for this user
-    const exports = await prisma.auditLog.findMany({
+    const exportLogs: AuditLog[] = await prisma.auditLog.findMany({
       where: {
         userId,
         action: 'GDPR_EXPORT_REQUESTED',
@@ -2753,7 +2767,7 @@ adminRouter.get(
       orderBy: { createdAt: 'desc' },
     });
 
-    const formattedExports = exports.map((log) => {
+    const formattedExports = exportLogs.map((log: AuditLog) => {
       const metadata = log.metadata as any;
       return {
         id: log.id,
@@ -2768,7 +2782,7 @@ adminRouter.get(
     return res.json({
       user,
       exports: formattedExports,
-      totalExports: exports.length,
+      totalExports: exportLogs.length,
     });
   } catch (error) {
     console.error('GDPR user exports error:', error);

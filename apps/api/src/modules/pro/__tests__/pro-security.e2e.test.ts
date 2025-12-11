@@ -2,6 +2,7 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../../../index';
 import { clientPrisma as prisma } from '@blobinfini/database';
+import { createTestSession, type TestSession } from '../../../tests/helpers/auth';
 
 const app = createApp();
 
@@ -22,6 +23,9 @@ describe('Pro Module - Security & Authorization', () => {
   let proUser2Token = '';
   let proProfile1Id = '';
   let proOffer1Id = '';
+  let riderSession: TestSession;
+  let pro1Session: TestSession;
+  let pro2Session: TestSession;
 
   beforeAll(async () => {
     ensureSecrets();
@@ -120,6 +124,10 @@ describe('Pro Module - Security & Authorization', () => {
         verified: false
       }
     });
+
+    riderSession = await createTestSession(app);
+    pro1Session = await createTestSession(app);
+    pro2Session = await createTestSession(app);
   });
 
   afterAll(async () => {
@@ -164,18 +172,14 @@ describe('Pro Module - Security & Authorization', () => {
           .get('/pro/me')
           .set('Authorization', `Bearer ${riderToken}`);
 
-        // EXPECTED: 403 Forbidden
-        // ACTUAL: 200 OK (creates a proProfile for the rider!)
-        // expect(res.status).toBe(403);
-
-        // Temporary assertion showing current behavior
-        expect(res.status).toBe(200); // SECURITY FLAW
+        expect(res.status).toBe(403);
+        expect(res.body.error).toContain('Accès refusé');
       });
     });
 
     describe('PUT /pro/me', () => {
       it('should allow a PRO to update their own profile', async () => {
-        const res = await request(app)
+        const res = await pro1Session
           .put('/pro/me')
           .set('Authorization', `Bearer ${proUser1Token}`)
           .send({
@@ -192,7 +196,7 @@ describe('Pro Module - Security & Authorization', () => {
 
       it('should REJECT a RIDER trying to update a pro profile (security issue)', async () => {
         // This test currently FAILS - demonstrates the security flaw
-        const res = await request(app)
+        const res = await riderSession
           .put('/pro/me')
           .set('Authorization', `Bearer ${riderToken}`)
           .send({
@@ -200,17 +204,13 @@ describe('Pro Module - Security & Authorization', () => {
             bio: 'I should not be able to do this'
           });
 
-        // EXPECTED: 403 Forbidden
-        // ACTUAL: 200 OK (creates/updates a proProfile for the rider!)
-        // expect(res.status).toBe(403);
-
-        // Temporary assertion showing current behavior
-        expect(res.status).toBe(200); // SECURITY FLAW
+        expect(res.status).toBe(403);
+        expect(res.body.error).toContain('Accès refusé');
       });
 
       it('should NOT allow PRO 2 to modify PRO 1 profile', async () => {
         // Pro profiles are accessed via userId from token, so this is safe
-        const res = await request(app)
+        const res = await pro2Session
           .put('/pro/me')
           .set('Authorization', `Bearer ${proUser2Token}`)
           .send({
@@ -232,7 +232,7 @@ describe('Pro Module - Security & Authorization', () => {
 
     describe('PATCH /pro/me', () => {
       it('should allow a PRO to partially update their profile', async () => {
-        const res = await request(app)
+        const res = await pro1Session
           .patch('/pro/me')
           .set('Authorization', `Bearer ${proUser1Token}`)
           .send({ bio: 'Partially updated bio' })
@@ -243,42 +243,36 @@ describe('Pro Module - Security & Authorization', () => {
       });
 
       it('should REJECT a RIDER trying to patch a pro profile (security issue)', async () => {
-        const res = await request(app)
+        const res = await riderSession
           .patch('/pro/me')
           .set('Authorization', `Bearer ${riderToken}`)
           .send({ bio: 'Hacker bio' });
 
-        // EXPECTED: 403 Forbidden
-        // expect(res.status).toBe(403);
-
-        // Temporary assertion showing current behavior
-        expect(res.status).toBe(200); // SECURITY FLAW
+        expect(res.status).toBe(403);
+        expect(res.body.error).toContain('Accès refusé');
       });
     });
 
     describe('POST /pro/photo/upload-url', () => {
       it('should allow a PRO to get a photo upload URL', async () => {
-        const res = await request(app)
+        const res = await pro1Session
           .post('/pro/photo/upload-url')
           .set('Authorization', `Bearer ${proUser1Token}`)
           .send({ contentType: 'image/jpeg' })
           .expect(200);
 
         expect(res.body.uploadUrl).toBeDefined();
-        expect(res.body.publicUrl).toBeDefined();
+        expect(res.body.fileUrl).toBeDefined();
       });
 
       it('should REJECT a RIDER trying to get a pro photo upload URL (security issue)', async () => {
-        const res = await request(app)
+        const res = await riderSession
           .post('/pro/photo/upload-url')
           .set('Authorization', `Bearer ${riderToken}`)
           .send({ contentType: 'image/jpeg' });
 
-        // EXPECTED: 403 Forbidden
-        // expect(res.status).toBe(403);
-
-        // Temporary assertion showing current behavior
-        expect(res.status).toBe(200); // SECURITY FLAW
+        expect(res.status).toBe(403);
+        expect(res.body.error).toContain('Accès refusé');
       });
     });
   });
@@ -301,7 +295,7 @@ describe('Pro Module - Security & Authorization', () => {
           .set('Authorization', `Bearer ${riderToken}`)
           .expect(403);
 
-        expect(res.body.error).toContain('PRO role required');
+        expect(res.body.error).toContain('Accès refusé');
       });
 
       it('should isolate offers between different pros', async () => {
@@ -317,7 +311,7 @@ describe('Pro Module - Security & Authorization', () => {
 
     describe('POST /pro/offers', () => {
       it('should allow a PRO to create an offer', async () => {
-        const res = await request(app)
+        const res = await pro2Session
           .post('/pro/offers')
           .set('Authorization', `Bearer ${proUser2Token}`)
           .send({
@@ -327,14 +321,14 @@ describe('Pro Module - Security & Authorization', () => {
             description: 'Découverte du kitesurf pour débutants avec un moniteur certifié',
             hourlyRate: 70
           })
-          .expect(200);
+          .expect(201);
 
-        expect(res.body.offer.title).toBe('Kitesurf initiation by Pro 2');
-        expect(res.body.offer.proProfileId).toBeDefined();
+        expect(res.body.title).toBe('Kitesurf initiation by Pro 2');
+        expect(res.body.proProfileId).toBeDefined();
       });
 
       it('should REJECT a RIDER trying to create an offer', async () => {
-        const res = await request(app)
+        const res = await riderSession
           .post('/pro/offers')
           .set('Authorization', `Bearer ${riderToken}`)
           .send({
@@ -346,18 +340,16 @@ describe('Pro Module - Security & Authorization', () => {
           })
           .expect(403);
 
-        expect(res.body.error).toContain('PRO role required');
+        expect(res.body.error).toContain('Accès refusé');
       });
     });
 
     describe('DELETE /pro/offers/me', () => {
       it('should allow a PRO to delete their own offers', async () => {
-        const res = await request(app)
+        await pro1Session
           .delete('/pro/offers/me')
           .set('Authorization', `Bearer ${proUser1Token}`)
-          .expect(200);
-
-        expect(res.body.message).toContain('deleted');
+          .expect(204);
 
         // Verify offers are deleted
         const offers = await prisma.proOffer.findMany({
@@ -367,23 +359,20 @@ describe('Pro Module - Security & Authorization', () => {
       });
 
       it('should REJECT a RIDER trying to delete pro offers', async () => {
-        const res = await request(app)
+        const res = await riderSession
           .delete('/pro/offers/me')
           .set('Authorization', `Bearer ${riderToken}`)
           .expect(403);
 
-        expect(res.body.error).toContain('PRO role required');
+        expect(res.body.error).toContain('Accès refusé');
       });
 
       it('should NOT allow a PRO to delete another PRO offers', async () => {
         // Pro 2 tries to delete offers (they have none)
-        const res = await request(app)
+        const res = await pro2Session
           .delete('/pro/offers/me')
           .set('Authorization', `Bearer ${proUser2Token}`)
-          .expect(200);
-
-        // Should succeed but delete 0 offers
-        expect(res.body.message).toContain('0');
+          .expect(404);
 
         // Verify Pro 1's offer is still there
         const offers = await prisma.proOffer.findMany({
@@ -395,13 +384,13 @@ describe('Pro Module - Security & Authorization', () => {
 
     describe('PATCH /pro/offers/me/toggle', () => {
       it('should allow a PRO to toggle their offers active status', async () => {
-        const res = await request(app)
+        const res = await pro1Session
           .patch('/pro/offers/me/toggle')
           .set('Authorization', `Bearer ${proUser1Token}`)
           .send({ isActive: false })
           .expect(200);
 
-        expect(res.body.message).toContain('updated');
+        expect(res.body.isActive).toBe(false);
 
         // Verify offer is deactivated
         const offer = await prisma.proOffer.findUnique({
@@ -411,13 +400,13 @@ describe('Pro Module - Security & Authorization', () => {
       });
 
       it('should REJECT a RIDER trying to toggle offers', async () => {
-        const res = await request(app)
+        const res = await riderSession
           .patch('/pro/offers/me/toggle')
           .set('Authorization', `Bearer ${riderToken}`)
           .send({ isActive: false })
           .expect(403);
 
-        expect(res.body.error).toContain('PRO role required');
+        expect(res.body.error).toContain('Accès refusé');
       });
     });
   });
@@ -440,8 +429,8 @@ describe('Pro Module - Security & Authorization', () => {
         .set('Authorization', `Bearer ${proUser1Token}`)
         .expect(200);
 
-      expect(res.body.candidates).toBeDefined();
-      expect(Array.isArray(res.body.candidates)).toBe(true);
+      expect(res.body.items).toBeDefined();
+      expect(Array.isArray(res.body.items)).toBe(true);
     });
 
     it('should REJECT a RIDER trying to search for lessons', async () => {
@@ -450,7 +439,7 @@ describe('Pro Module - Security & Authorization', () => {
         .set('Authorization', `Bearer ${riderToken}`)
         .expect(403);
 
-      expect(res.body.error).toContain('PRO role required');
+      expect(res.body.error).toContain('Accès refusé');
     });
   });
 
@@ -469,9 +458,9 @@ describe('Pro Module - Security & Authorization', () => {
       const res = await request(app)
         .get('/pro/offers/search?radiusKm=10&sport=surf&level=intermediate')
         .set('Authorization', `Bearer ${proUser2Token}`)
-        .expect(200);
+        .expect(400);
 
-      expect(res.body.offers).toBeDefined();
+      expect(res.body.error).toBeDefined();
     });
   });
 
@@ -499,23 +488,23 @@ describe('Pro Module - Security & Authorization', () => {
 
     describe('POST /pro/delete-account', () => {
       it('should allow a PRO to request account deletion', async () => {
-        const res = await request(app)
+        const res = await pro2Session
           .post('/pro/delete-account')
           .set('Authorization', `Bearer ${proUser2Token}`)
           .send({ confirm: true })
           .expect(200);
 
-        expect(res.body.message).toContain('deletion scheduled');
+        expect(res.body.message).toContain('suppression');
       });
 
       it('should allow a RIDER to request account deletion', async () => {
-        const res = await request(app)
+        const res = await riderSession
           .post('/pro/delete-account')
           .set('Authorization', `Bearer ${riderToken}`)
           .send({ confirm: true })
           .expect(200);
 
-        expect(res.body.message).toContain('deletion scheduled');
+        expect(res.body.message).toContain('suppression');
       });
     });
   });

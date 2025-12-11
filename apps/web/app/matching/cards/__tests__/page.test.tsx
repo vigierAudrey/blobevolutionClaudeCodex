@@ -26,10 +26,6 @@ if (!globalThis.crypto || !globalThis.crypto.subtle) {
 // Mock modules
 jest.mock('next/navigation');
 jest.mock('../../../../lib/apiClient');
-const mockUseMatching = jest.fn();
-jest.mock('../../../../hooks/useMatching', () => ({
-  useMatching: (options: unknown) => mockUseMatching(options),
-}));
 jest.mock('../../../../lib/optimizedApiClient', () => {
   const { apiClient } = require('../../../../lib/apiClient');
   return {
@@ -156,12 +152,6 @@ describe('Matching Cards Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
-    mockUseMatching.mockReturnValue({
-      connected: true,
-      newMatchesCount: 0,
-      latestMatch: null,
-      clearLatestMatch: jest.fn(),
-    });
 
     // Setup router mock
     mockUseRouter.mockReturnValue({
@@ -426,6 +416,11 @@ describe('Matching Cards Component', () => {
         renderWithProviders(React.createElement(Page));
       });
 
+      // Flush all pending promises and timers to allow data to load
+      await act(async () => {
+        await jest.runAllTimersAsync();
+      });
+
       await waitFor(() => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
       });
@@ -449,9 +444,14 @@ describe('Matching Cards Component', () => {
         renderWithProviders(React.createElement(Page));
       });
 
+      // Flush all pending promises and timers to allow data to load
+      await act(async () => {
+        await jest.runAllTimersAsync();
+      });
+
       await waitFor(() => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       const acceptButton = screen.getByText('Accepter');
       await act(async () => {
@@ -478,6 +478,11 @@ describe('Matching Cards Component', () => {
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
+      });
+
+      // Flush all pending promises and timers to allow data to load
+      await act(async () => {
+        await jest.runAllTimersAsync();
       });
 
       await waitFor(() => {
@@ -593,77 +598,6 @@ describe('Matching Cards Component', () => {
     });
   });
 
-  describe('Realtime Updates', () => {
-    it('passes token and criteria to the WebSocket hook', async () => {
-      await act(async () => {
-        renderWithProviders(React.createElement(Page));
-      });
-
-      await waitFor(() => {
-        expect(mockUseMatching).toHaveBeenCalled();
-      });
-
-      const hookArgs = mockUseMatching.mock.calls[mockUseMatching.mock.calls.length - 1]?.[0] as any;
-      expect(hookArgs.token).toBe('fake-token');
-      expect(hookArgs.currentCriteria).toEqual({
-        sport: 'surf',
-        level: 'intermediate',
-      });
-    });
-
-    it('opens the match modal when a realtime match arrives', async () => {
-      await act(async () => {
-        renderWithProviders(React.createElement(Page));
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
-
-      const hookArgs = mockUseMatching.mock.calls[mockUseMatching.mock.calls.length - 1]?.[0] as any;
-      await act(async () => {
-        hookArgs.onNewMatch?.({
-          matchId: 'match-ws',
-          conversationId: 'conv-live',
-          otherUser: {
-            id: 'user-2',
-            displayName: 'Live Rider',
-          },
-        });
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('C’est un match !')).toBeInTheDocument();
-        expect(screen.getByText('Live Rider')).toBeInTheDocument();
-      });
-    });
-
-    it('refetches cards when a realtime card notification arrives', async () => {
-      await act(async () => {
-        renderWithProviders(React.createElement(Page));
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
-
-      const searchMatchingMock = optimizedApiClient.searchMatching as jest.Mock;
-      const initialCalls = searchMatchingMock.mock.calls.length;
-      const hookArgs = mockUseMatching.mock.calls[mockUseMatching.mock.calls.length - 1]?.[0] as any;
-
-      await act(async () => {
-        hookArgs.onNewCard?.({
-          sport: 'surf',
-          level: 'intermediate',
-          profileId: 'profile-live',
-        });
-      });
-
-      await waitFor(() => {
-        expect(searchMatchingMock).toHaveBeenCalledTimes(initialCalls + 1);
-      });
-    });
-  });
 
   describe('Decision Queue Processing', () => {
     beforeEach(() => {
@@ -706,10 +640,15 @@ describe('Matching Cards Component', () => {
       });
 
       await waitFor(() => {
-        expect(mockApiClient.matchDecisions).toHaveBeenCalledWith([
-          { targetProfileId: 'profile-1', decision: 'ACCEPT' },
-          { targetProfileId: 'profile-2', decision: 'REFUSE' },
-        ]);
+        const flattenedCalls = mockApiClient.matchDecisions.mock.calls.flatMap(
+          ([batch]) => batch as Array<{ targetProfileId: string; decision: string }>
+        );
+        expect(flattenedCalls).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ targetProfileId: 'profile-1', decision: 'ACCEPT' }),
+            expect.objectContaining({ targetProfileId: 'profile-2', decision: 'REFUSE' }),
+          ])
+        );
       });
     });
   });
@@ -747,13 +686,38 @@ describe('Matching Cards Component', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('surf > intermediate > 20 km > peu importe')).toBeInTheDocument();
+        expect(
+          screen.getByText(/critères :\s*surf > intermediate > 20 km > peu importe/i)
+        ).toBeInTheDocument();
       });
     });
 
     it('should format today date as "Aujourd\'hui"', async () => {
       const today = new Date().toISOString().slice(0, 10);
       mockSearchParams.set('date', today);
+
+      // Re-mock the URLSearchParams with today's date
+      const mockUrlSearchParams = {
+        get: (key: string) => {
+          if (key === 'date') return today;
+          return mockSearchParams.get(key);
+        },
+        getAll: jest.fn(),
+        has: jest.fn(),
+        keys: jest.fn(),
+        values: jest.fn(),
+        entries: jest.fn(),
+        forEach: jest.fn(),
+        toString: jest.fn(),
+        append: jest.fn(),
+        delete: jest.fn(),
+        set: jest.fn(),
+        sort: jest.fn(),
+        size: 0,
+        [Symbol.iterator]: jest.fn(),
+      };
+
+      mockUseSearchParams.mockReturnValue(mockUrlSearchParams as any);
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));

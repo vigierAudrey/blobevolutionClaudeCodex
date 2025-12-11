@@ -23,11 +23,16 @@ describe('ChangePasswordCard', () => {
     jest.clearAllMocks();
   });
 
+  async function openCard(user: ReturnType<typeof userEvent['setup']>) {
+    await user.click(screen.getByRole('button', { name: /sécurité du compte/i }));
+  }
+
   it('envoie la requête quand les champs sont valides', async () => {
     mockedApiClient.changePassword.mockResolvedValueOnce({});
 
     render(<ChangePasswordCard />);
     const user = userEvent.setup();
+    await openCard(user);
 
     await user.type(screen.getByLabelText(/mot de passe actuel/i), 'OldPass123!');
     await user.type(screen.getByLabelText(/^nouveau mot de passe/i), 'NewPass123!');
@@ -44,6 +49,7 @@ describe('ChangePasswordCard', () => {
   it('bloque la soumission quand les mots de passe ne correspondent pas', async () => {
     render(<ChangePasswordCard />);
     const user = userEvent.setup();
+    await openCard(user);
 
     await user.type(screen.getByLabelText(/mot de passe actuel/i), 'OldPass123!');
     await user.type(screen.getByLabelText(/^nouveau mot de passe/i), 'NewPass123!');
@@ -59,6 +65,7 @@ describe('ChangePasswordCard', () => {
 
     render(<ChangePasswordCard />);
     const user = userEvent.setup();
+    await openCard(user);
 
     await user.type(screen.getByLabelText(/mot de passe actuel/i), 'OldPass123!');
     await user.type(screen.getByLabelText(/^nouveau mot de passe/i), 'NewPass123!');
@@ -69,4 +76,3 @@ describe('ChangePasswordCard', () => {
     expect(await screen.findByText(/invalid current password/i)).toBeInTheDocument();
   });
 });
-

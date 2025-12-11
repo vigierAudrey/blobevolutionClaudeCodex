@@ -5,7 +5,7 @@ describe('Static Home page', () => {
   it('affiche un hero clair pour la communauté Surf & Kite avec CTA principaux', () => {
     render(<Home />);
 
-    expect(screen.getByRole('heading', { name: /communauté surf & kite/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /ta communauté connectée/i })).toBeInTheDocument();
 
     const createAccount = screen.getByRole('link', { name: /Créer un compte/i });
     expect(createAccount).toBeInTheDocument();
@@ -14,14 +14,23 @@ describe('Static Home page', () => {
   it('met en avant deux circuits avec CTAs explicites', () => {
     render(<Home />);
 
-    // Circuits
-    expect(screen.getByRole('heading', { name: /Ride à deux/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Avec un pro/i })).toBeInTheDocument();
+    // Circuits - Use getAllByRole to handle multiple matches from carousel + circuits
+    const rideHeadings = screen.getAllByRole('heading', { name: /Ride à deux/i });
+    expect(rideHeadings.length).toBeGreaterThan(0);
+
+    const proHeadings = screen.getAllByRole('heading', { name: /Avec un pro/i });
+    expect(proHeadings.length).toBeGreaterThan(0);
 
     // CTAs circuits → redirigent vers inscription
-    expect(screen.getByRole('link', { name: /Commencer le matching/i })).toHaveAttribute('href', expect.stringContaining('/register'));
-    expect(screen.getByRole('link', { name: /Publier ma demande/i })).toHaveAttribute('href', expect.stringContaining('/register'));
-    expect(screen.getByRole('link', { name: /Voir les offres autour de moi/i })).toHaveAttribute('href', expect.stringContaining('/register'));
+    // Use getAllByRole since these CTAs may appear in carousel + circuits
+    const matchingLinks = screen.getAllByRole('link', { name: /Commencer le matching/i });
+    expect(matchingLinks.some(link => link.getAttribute('href')?.includes('/register'))).toBe(true);
+
+    const demandLinks = screen.getAllByRole('link', { name: /Publier ma demande/i });
+    expect(demandLinks.some(link => link.getAttribute('href')?.includes('/register'))).toBe(true);
+
+    const offerLinks = screen.getAllByRole('link', { name: /Voir les offres autour de moi/i });
+    expect(offerLinks.some(link => link.getAttribute('href')?.includes('/register'))).toBe(true);
   });
 
   it('affiche les Bons plans et la Blobosphère', () => {
