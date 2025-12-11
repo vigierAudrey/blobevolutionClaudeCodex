@@ -22,7 +22,7 @@
 | `JWT_REFRESH_SECRET` | ≥64 chars (refresh token). |
 | `DATABASE_URL` | Doit contenir `sslmode=require` ou `sslmode=verify-full`. |
 | `REDIS_URL` | URL Redis avec mot de passe fort (`rediss://` si fournisseur supporte TLS). |
-| `AUTH_REQUIRE_VERIFIED` | `true` en production pour forcer email vérifié. |
+| `AUTH_REQUIRE_VERIFIED` | `true` en production pour forcer email vérifié (riders & pros bloqués tant qu'ils n'ont pas validé). |
 
 ### Bloc opération (recommandé)
 | Variable | Objectif |
@@ -42,7 +42,7 @@
 ## 3. Checklist pré-déploiement
 1. Générer de nouveaux secrets (`./scripts/generate-secrets.sh`) et mettre à jour les variables correspondantes.
 2. Compléter `ALLOWED_ORIGINS`, `TRUSTED_PROXY_IPS`, `DATABASE_URL?...sslmode=require`.
-3. Mettre `AUTH_REQUIRE_VERIFIED=true` et `NODE_ENV=production`.
+3. Mettre `AUTH_REQUIRE_VERIFIED=true` et `NODE_ENV=production` (bloque riders & pros tant que l'email n'est pas confirmé).
 4. Vérifier `REDIS_URL` (mot de passe non trivial) + certificats si fournis.
 5. Préparer un token admin jetable (voir SECURITY.md §Surveillance) pour tester `/security/health`.
 6. Exporter toutes les variables dans un fichier `apps/api/.env.production` (jamais commité) puis sourcer avant build.
@@ -86,6 +86,7 @@ npm run start --workspace @blobinfini/web
 - [ ] Rate limiting : 6 POST `/auth/login` rapides → `429` (profil `AUTH`).
 - [ ] CSRF : POST `/profile/update` sans header `X-CSRF-Token` → `403`.
 - [ ] JWT invalide : `curl -H "Authorization: Bearer xxx" https://api.../profile/me` → `401`.
+- [ ] Login rider/pro non vérifié → `403` (`AUTH_REQUIRE_VERIFIED` + middleware `requireVerifiedEmail` sur toutes les routes rider/pro/admin). Après validation email, les routes booking/matching/push/contact/pro/admin doivent répondre `200`.
 
 ### Fonctionnel
 - [ ] Flux login/register complet depuis le front autorisé (vérifier cookies CSRF).

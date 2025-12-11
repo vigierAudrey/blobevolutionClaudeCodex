@@ -8,6 +8,8 @@ import { apiClient } from '../../../lib/apiClient';
 import { Button } from '../../../components/ui/button';
 import type { DashboardUser } from '@/types/user';
 import type { Level, Partner, Sport } from '@/types/matching';
+import { Badge } from '../../../components/ui/badge';
+import { MapPin, Navigation, AlertTriangle } from 'lucide-react';
 
 // Force SSR due to useSearchParams and localStorage usage
 export const dynamic = 'force-dynamic';
@@ -190,67 +192,125 @@ function LocationInner() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
+    <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/matching" />
-      <Card>
+
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 via-cyan-600 to-teal-500 p-8 text-white shadow-xl">
+        <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.25),_transparent_60%)]" aria-hidden />
+        <div className="relative z-10 space-y-3">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+            <Navigation className="w-3.5 h-3.5" />
+            Étape 2 · Zone de recherche
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Active ta zone de surf</h1>
+          <p className="text-white/85 text-base">
+            La géolocalisation reste facultative mais booste les propositions. Tu peux enregistrer un spot favori ou utiliser ton GPS.
+          </p>
+        </div>
+      </section>
+
+      <Card className="border-2">
         <CardHeader>
-          <CardTitle>3) Localisation & Distance</CardTitle>
-          <CardDescription>Active ta localisation (optionnel) et choisis une distance.</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <Badge variant="secondary" className="bg-sky-100 text-sky-700">
+              Zone
+            </Badge>
+            Localisation & distance
+          </CardTitle>
+          <CardDescription>Affinez votre rayon pour trouver des riders proches.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5">
+          <div className="rounded-2xl border bg-muted/60 px-4 py-3 text-sm text-muted-foreground flex flex-col gap-1">
+            <span className="font-semibold text-foreground">Sélection courante</span>
+            <span>{breadcrumb}</span>
+          </div>
+
           <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Button variant="outline" onClick={getLocation}>Activer ma position</Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" onClick={getLocation} className="inline-flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                Activer ma position
+              </Button>
               <div className="text-xs text-muted-foreground">
-                {lat != null && lng != null ? `Position : ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
+                {lat != null && lng != null ? `Position : ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
               </div>
             </div>
             {geolocError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                <h4 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
-                  <span>⚠️</span>
-                  <span>Impossible d’accéder à votre position</span>
-                </h4>
-                <p className="text-sm text-red-800 mb-3">
-                  Votre navigateur bloque l’accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
+              <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 space-y-3 text-sm text-red-800">
+                <p className="font-semibold flex items-center gap-2 text-red-900">
+                  <AlertTriangle className="w-4 h-4" />
+                  Autorise la localisation sur {getBrowserInstructions(browserType).title}
                 </p>
-                <ol className="text-sm text-red-800 space-y-1 ml-4">
+                <ol className="list-decimal space-y-1 pl-4">
                   {getBrowserInstructions(browserType).steps.map((step, idx) => (
-                    <li key={idx} className="list-decimal">
-                      {step}
-                    </li>
+                    <li key={idx}>{step}</li>
                   ))}
                 </ol>
-                <p className="text-xs text-red-700 mt-3 italic">
-                  💡 La géolocalisation est optionnelle pour le matching mais permet d’améliorer les résultats.
-                </p>
-                <Button
-                  onClick={getLocation}
-                  variant="outline"
-                  className="mt-3"
-                  size="sm"
-                >
-                  🔄 Réessayer après avoir autorisé
+                <p className="text-xs text-red-700">La géolocalisation est optionnelle mais améliore les résultats.</p>
+                <Button onClick={getLocation} variant="outline" size="sm">
+                  Réessayer
                 </Button>
               </div>
             )}
           </div>
+
           <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" checked={saveDefault} onChange={(e)=>setSaveDefault(e.target.checked)} />
-            <span>Enregistrer cette position comme position par défaut de mon profil</span>
+            <input
+              type="checkbox"
+              checked={saveDefault}
+              onChange={(e) => setSaveDefault(e.target.checked)}
+              className="mt-1"
+            />
+            <span>Enregistrer cette position comme spot par défaut sur mon profil</span>
           </label>
-          <div className="space-y-2">
-            <label htmlFor="distance">Distance maximale (km)</label>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span>Distance maximale</span>
+              <span className="font-semibold text-foreground">{distanceKm} km</span>
+            </div>
+            <input
+              id="distance"
+              type="range"
+              min={5}
+              max={200}
+              step={5}
+              value={distanceKm}
+              onChange={(e) => setDistanceKm(Number(e.target.value))}
+              className="w-full accent-sky-600"
+            />
             <div className="flex items-center gap-3">
-              <input id="distance" type="range" min={5} max={200} step={5} value={distanceKm} onChange={(e)=>setDistanceKm(Number(e.target.value))} className="w-full"/>
-              <Input type="number" min={1} max={500} value={distanceKm} onChange={(e)=>setDistanceKm(Number(e.target.value))} className="w-20"/>
+              <Input
+                type="number"
+                min={1}
+                max={500}
+                value={distanceKm}
+                onChange={(e) => setDistanceKm(Number(e.target.value))}
+                className="w-28"
+              />
+              <p className="text-xs text-muted-foreground">
+                Astuce : augmente légèrement le rayon si tu cherches un binôme rare.
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={()=>{ setLat(null); setLng(null); localStorage.removeItem(LAT_KEY); localStorage.removeItem(LNG_KEY); }}>Effacer position</Button>
-            <Button onClick={saveAndNext}>Continuer</Button>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setLat(null);
+                setLng(null);
+                localStorage.removeItem(LAT_KEY);
+                localStorage.removeItem(LNG_KEY);
+              }}
+            >
+              Effacer la position
+            </Button>
+            <div className="flex-1" />
+            <Button onClick={saveAndNext} className="flex-1 sm:flex-none">
+              Continuer vers la date
+            </Button>
           </div>
-          <div className="text-sm text-muted-foreground">Sélection actuelle: {breadcrumb}</div>
         </CardContent>
       </Card>
     </div>

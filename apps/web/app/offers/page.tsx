@@ -11,9 +11,11 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { apiClient } from '../../lib/apiClient';
-import { MapPin, Euro, Star, ChevronRight } from 'lucide-react';
+import { MapPin, Euro, Star, ChevronRight, Sparkles, Filter as FilterIcon } from 'lucide-react';
 import type { Sport, Level } from '@/types/matching';
 import type { OfferCard, OfferFilters, OfferSearchResponse } from '@/types/offers';
+import { Badge } from '../../components/ui/badge';
+import { Spinner } from '../../components/ui/spinner';
 
 type OfferSortKey = 'distance' | 'price' | 'sport' | 'recent';
 
@@ -184,21 +186,37 @@ export default function OffersPage() {
     }
   };
 
-  if (loading) return <p>Chargement…</p>;
+  if (loading) {
+    return (
+      <div className="max-w-5xl mx-auto space-y-6">
+        <BackBar fallbackHref="/dashboard" />
+        <div className="flex items-center justify-center py-16">
+          <Spinner />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
+    <div className="max-w-5xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/dashboard" />
 
-      <div>
-        <h1 className="text-2xl font-semibold">Offres de Cours</h1>
-        <p className="text-sm text-muted-foreground">
-          Découvre les cours proposés par des professionnels près de chez toi.
-        </p>
-      </div>
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-cyan-500 to-emerald-500 p-8 text-white shadow-xl">
+        <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.4),_transparent_55%)]" aria-hidden />
+        <div className="relative z-10 space-y-3">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+            <Sparkles className="w-3.5 h-3.5" />
+            Pros autour de toi
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Trouve un moniteur en quelques clics</h1>
+          <p className="text-white/85 text-base max-w-3xl">
+            Géolocalise-toi, filtre par sport et laisse les offres te guider vers le bon pro. Ouvre ensuite la conversation directement.
+          </p>
+        </div>
+      </section>
 
       {geoStatus === 'loading' && (
-        <Card className="animate-pulse">
+        <Card className="animate-pulse border-2">
           <CardHeader>
             <div className="h-5 w-32 rounded-md bg-muted" />
             <div className="h-4 w-56 rounded-md bg-muted/80" />
@@ -211,7 +229,7 @@ export default function OffersPage() {
       )}
 
       {geoStatus === 'missing' && (
-        <Card>
+        <Card className="border-2 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               📍 Géolocalisation requise
@@ -236,9 +254,17 @@ export default function OffersPage() {
       {geoStatus === 'ready' && (
         <>
           {/* Filtres et tri */}
-          <Card>
+          <Card className="border-2">
             <CardHeader>
-              <CardTitle>Filtres et tri</CardTitle>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="bg-white text-slate-700">
+                  Filtres
+                </Badge>
+                <CardTitle className="flex items-center gap-2">
+                  <FilterIcon className="w-4 h-4 text-muted-foreground" />
+                  Filtres et tri
+                </CardTitle>
+              </div>
               <CardDescription>
                 Filtrez et triez les offres pour trouver ce qui vous convient le mieux.
               </CardDescription>
@@ -249,7 +275,7 @@ export default function OffersPage() {
                   <Label htmlFor="sport">Sport</Label>
                   <select
                     id="sport"
-                    className="h-10 w-full rounded-md border px-3 py-2 text-sm"
+                    className="h-10 w-full rounded-xl border px-3 py-2 text-sm"
                     value={filters.sport}
                     onChange={(e) =>
                       setFilters((prev: OfferFilters) => ({ ...prev, sport: e.target.value as Sport | '' }))
@@ -266,7 +292,7 @@ export default function OffersPage() {
                   <Label htmlFor="level">Niveau</Label>
                   <select
                     id="level"
-                    className="h-10 w-full rounded-md border px-3 py-2 text-sm"
+                    className="h-10 w-full rounded-xl border px-3 py-2 text-sm"
                     value={filters.level}
                     onChange={(e) =>
                       setFilters((prev: OfferFilters) => ({ ...prev, level: e.target.value as Level | '' }))
@@ -298,7 +324,7 @@ export default function OffersPage() {
                   <Label htmlFor="sort">Trier par</Label>
                   <select
                     id="sort"
-                    className="h-10 w-full rounded-md border px-3 py-2 text-sm"
+                    className="h-10 w-full rounded-xl border px-3 py-2 text-sm"
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as 'distance' | 'price' | 'sport' | 'recent')}
                   >
@@ -310,7 +336,7 @@ export default function OffersPage() {
                 </div>
               </div>
 
-              <div className="mt-4 flex gap-2">
+              <div className="mt-4 flex flex-col sm:flex-row gap-2">
                 <Button
                   onClick={handleRadiusChange}
                   disabled={searching}
@@ -342,14 +368,13 @@ export default function OffersPage() {
           )}
 
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <h2 className="text-lg font-semibold">
                 {filteredOffers.length} offre(s) affichée(s)
                 {allOffers.length !== filteredOffers.length && ` sur ${allOffers.length} trouvée(s)`}
-                {userLocation && ` dans un rayon de ${filters.radiusKm}km`}
+                {userLocation && ` · ${filters.radiusKm} km`}
               </h2>
 
-              {/* Indicateur de tri actuel */}
               <div className="text-sm text-muted-foreground">
                 Triées par {
                   sortBy === 'distance' ? 'distance' :

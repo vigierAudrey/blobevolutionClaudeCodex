@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../auth/auth.guard';
+import { requireAuth, requireAdmin, requireVerifiedEmail } from '../auth/auth.guard';
 
 export const securityRouter = Router();
 
 // Toutes les routes security nécessitent une authentification admin
-securityRouter.use(requireAuth);
+securityRouter.use(requireAuth, requireVerifiedEmail);
 securityRouter.use(requireAdmin);
 
 /**
@@ -46,6 +46,10 @@ securityRouter.get('/health', async (req, res) => {
     // Vérifier Rate Limiting
     const hasRateLimit = true; // smartRateLimit est activé dans index.ts
 
+    const authRequireVerified = String(
+      process.env.AUTH_REQUIRE_VERIFIED ?? (isProduction ? 'true' : 'false')
+    ).toLowerCase() === 'true';
+
     // Déterminer les problèmes
     const issues: string[] = [];
 
@@ -61,6 +65,10 @@ securityRouter.get('/health', async (req, res) => {
       issues.push('Protection CSRF désactivée');
     }
 
+    if (isProduction && !authRequireVerified) {
+      issues.push('AUTH_REQUIRE_VERIFIED doit être positionné à true en production pour bloquer les comptes non vérifiés');
+    }
+
     // Statut global
     const status = issues.length === 0 ? 'SECURE' : 'VULNERABLE';
 
@@ -70,13 +78,15 @@ securityRouter.get('/health', async (req, res) => {
       csrf: hasCsrf,
       rateLimit: hasRateLimit,
       corsWhitelist: corsWhitelist.length > 0 ? corsWhitelist : ['http://localhost:3000', 'http://localhost:3001'],
+      authRequireVerified,
       issues,
       checks: {
         productionSecrets: isProduction ? weakSecrets.length === 0 : true,
         corsConfigured: isProduction ? hasCorsConfigured : true,
         helmetEnabled: hasHelmet,
         csrfEnabled: hasCsrf,
-        rateLimitEnabled: hasRateLimit
+        rateLimitEnabled: hasRateLimit,
+        authRequireVerified: authRequireVerified || !isProduction
       },
       environment: process.env.NODE_ENV || 'development',
       timestamp: new Date().toISOString()

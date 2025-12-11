@@ -1,4 +1,24 @@
 import '@testing-library/jest-dom';
+import { TextEncoder, TextDecoder } from 'util';
+import { webcrypto } from 'crypto';
+
+if (!global.TextEncoder) {
+  global.TextEncoder = TextEncoder;
+}
+if (!global.TextDecoder) {
+  global.TextDecoder = TextDecoder;
+}
+const cryptoImpl = webcrypto;
+Object.defineProperty(global, 'crypto', {
+  value: cryptoImpl,
+  configurable: true,
+});
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'crypto', {
+    value: cryptoImpl,
+    configurable: true,
+  });
+}
 
 // Mock Next.js router
 const createRouter = () => ({

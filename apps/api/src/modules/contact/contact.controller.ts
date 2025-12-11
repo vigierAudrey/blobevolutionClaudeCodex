@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth/auth.guard';
+import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 
 export const contactRouter = Router();
+contactRouter.use(requireAuth, requireVerifiedEmail);
 
 // Schema pour créer une demande de contact
 const createContactRequestSchema = z.object({
@@ -18,7 +19,7 @@ const respondToContactRequestSchema = z.object({
 });
 
 // POST /contact/request - Le Pro envoie une demande de contact
-contactRouter.post('/request', requireAuth, async (req, res) => {
+contactRouter.post('/request', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -119,7 +120,7 @@ contactRouter.post('/request', requireAuth, async (req, res) => {
 });
 
 // POST /contact/respond - Les riders répondent à la demande
-contactRouter.post('/respond', requireAuth, async (req, res) => {
+contactRouter.post('/respond', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -152,7 +153,7 @@ contactRouter.post('/respond', requireAuth, async (req, res) => {
 
     // Vérifier que l'utilisateur fait partie de la conversation
     const isMember = contactRequest.conversation.members.some(
-      (member: Prisma.ConversationMember) => member.userId === userId
+      (member) => member.userId === userId
     );
     if (!isMember) {
       return res.status(403).json({ error: 'User not part of this conversation' });
@@ -183,8 +184,8 @@ contactRouter.post('/respond', requireAuth, async (req, res) => {
     });
 
     const riderIds = contactRequest.conversation.members
-      .filter((member: Prisma.ConversationMember) => member.userId !== contactRequest.proUserId)
-      .map((member: Prisma.ConversationMember) => member.userId);
+      .filter((member) => member.userId !== contactRequest.proUserId)
+      .map((member) => member.userId);
 
     const allRidersResponded = riderIds.every((riderId: string) =>
       allResponses.some(
@@ -251,7 +252,7 @@ contactRouter.post('/respond', requireAuth, async (req, res) => {
 });
 
 // GET /contact/requests - Obtenir les demandes de contact pour un Pro
-contactRouter.get('/requests', requireAuth, async (req, res) => {
+contactRouter.get('/requests', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -290,7 +291,7 @@ contactRouter.get('/requests', requireAuth, async (req, res) => {
 });
 
 // GET /contact/pending - Obtenir les demandes en attente pour un rider
-contactRouter.get('/pending', requireAuth, async (req, res) => {
+contactRouter.get('/pending', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });

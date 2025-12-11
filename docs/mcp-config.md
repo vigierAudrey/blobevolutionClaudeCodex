@@ -31,6 +31,13 @@ Ce document détaille la configuration des serveurs MCP pour enrichir les capaci
     "chrome-devtools": {
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
+      }
     }
   }
 }
@@ -42,6 +49,7 @@ Ce document détaille la configuration des serveurs MCP pour enrichir les capaci
 |---------|-------|
 | **Vercel MCP** | Gestion déploiements frontend (logs, domaines, projets) |
 | **Chrome DevTools MCP** | Tests navigateur, debugging, screenshots, performance |
+| **GitHub MCP** | Accéder au repo, créer/modifier issues et PRs depuis Claude Code |
 
 ## Configuration Claude Desktop (App)
 
@@ -77,7 +85,7 @@ Ce document détaille la configuration des serveurs MCP pour enrichir les capaci
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "token"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
       }
     }
   }

@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth/auth.guard';
+import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { notifyNewMatch, notifyMatchDecision, notifyNewMatchingCard } from '../../lib/socket';
 
 export const matchingRouter = Router();
+matchingRouter.use(requireAuth, requireVerifiedEmail);
 
 const sportEnum = z.enum(['surf', 'kitesurf']);
 const levelEnum = z.enum(['beginner', 'intermediate', 'advanced']);
@@ -61,7 +62,7 @@ type ReciprocalDecisionSummary = Prisma.MatchDecisionGetPayload<{
   select: { actorUserId: true; decision: true };
 }>;
 
-matchingRouter.post('/search', requireAuth, async (req, res) => {
+matchingRouter.post('/search', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -358,7 +359,7 @@ matchingRouter.post('/search', requireAuth, async (req, res) => {
 
 // Record a decision (accept/refuse) for a target profile
 const decisionSchema = z.object({ targetProfileId: z.string().uuid(), decision: z.enum(['ACCEPT','REFUSE']) });
-matchingRouter.post('/decision', requireAuth, async (req, res) => {
+matchingRouter.post('/decision', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -447,7 +448,7 @@ matchingRouter.post('/decision', requireAuth, async (req, res) => {
 });
 
 // Batch decisions
-matchingRouter.post('/decisions', requireAuth, async (req, res) => {
+matchingRouter.post('/decisions', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });

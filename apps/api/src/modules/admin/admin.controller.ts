@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import type { DecisionKind } from '@blobinfini/database';
-import { requireAuth, requireAdmin } from '../auth/auth.guard';
+import { requireAuth, requireAdmin, requireVerifiedEmail } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
 import { systemAlertService } from '../../services/system-alert.service';
 import { audit } from '../../middleware/audit';
@@ -16,7 +16,7 @@ type ConversationMemberWithUser = Prisma.ConversationMemberGetPayload<{
       select: {
         id: true;
         email: true;
-        role: string;
+        role: true;
       };
     };
   };
@@ -72,8 +72,8 @@ async function ensureAdminConversation(adminId: string, targetUserId: string) {
 
 export const adminRouter = Router();
 
-// Toutes les routes admin nécessitent une authentification et le rôle admin
-adminRouter.use(requireAuth);
+// Toutes les routes admin nécessitent une authentification, un email vérifié et le rôle admin
+adminRouter.use(requireAuth, requireVerifiedEmail);
 adminRouter.use(requireAdmin);
 
 // Statistiques principales
@@ -81,7 +81,7 @@ adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:sta
   try {
     // Compter les utilisateurs par rôle
     const totalUsers = await prisma.user.count();
-    const usersByRole: Prisma.UserGroupByOutputType[] = await prisma.user.groupBy({
+    const usersByRole = await prisma.user.groupBy({
       by: ['role'],
       _count: { role: true }
     });
@@ -111,9 +111,9 @@ adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:sta
     // Formater les statistiques
     const stats = {
       totalUsers,
-      totalRiders: usersByRole.find((group: Prisma.UserGroupByOutputType) => group.role === 'RIDER')?._count.role || 0,
-      totalPros: usersByRole.find((group: Prisma.UserGroupByOutputType) => group.role === 'PRO')?._count.role || 0,
-      totalAdmins: usersByRole.find((group: Prisma.UserGroupByOutputType) => group.role === 'ADMIN')?._count.role || 0,
+      totalRiders: usersByRole.find(group => group.role === 'RIDER')?._count?.role ?? 0,
+      totalPros: usersByRole.find(group => group.role === 'PRO')?._count?.role ?? 0,
+      totalAdmins: usersByRole.find(group => group.role === 'ADMIN')?._count?.role ?? 0,
       totalConversations,
       activeUsers,
       reportedProfiles
@@ -1082,7 +1082,7 @@ adminRouter.get(
     }
 
     // Statistiques des décisions de matching
-    const matchingStats: Prisma.MatchDecisionGroupByOutputType[] = await prisma.matchDecision.groupBy({
+    const matchingStats = await prisma.matchDecision.groupBy({
       by: ['decision'],
       where: {
         createdAt: {
@@ -1095,15 +1095,15 @@ adminRouter.get(
     });
 
     const totalDecisions = matchingStats.reduce(
-      (sum: number, stat: Prisma.MatchDecisionGroupByOutputType) => sum + stat._count.decision,
+      (sum, stat) => sum + (stat._count?.decision ?? 0),
       0
     );
     const acceptedCount = matchingStats.find(
-      (stat: Prisma.MatchDecisionGroupByOutputType) => stat.decision === 'ACCEPT'
-    )?._count.decision || 0;
+      (stat) => stat.decision === 'ACCEPT'
+    )?._count?.decision ?? 0;
     const refusedCount = matchingStats.find(
-      (stat: Prisma.MatchDecisionGroupByOutputType) => stat.decision === 'REFUSE'
-    )?._count.decision || 0;
+      (stat) => stat.decision === 'REFUSE'
+    )?._count?.decision ?? 0;
     const acceptRate = totalDecisions > 0 ? (acceptedCount / totalDecisions) * 100 : 0;
     const refuseRate = totalDecisions > 0 ? (refusedCount / totalDecisions) * 100 : 0;
 
@@ -1231,7 +1231,7 @@ adminRouter.get(
       }
     });
 
-    const searchesBySport = searchesBySportRaw.map((item: Prisma.LastSearchGroupByOutputType) => ({
+    const searchesBySport = searchesBySportRaw.map((item) => ({
       sport: item.sport,
       count: Number(item._count?.sport ?? 0)
     }));
@@ -1876,7 +1876,7 @@ adminRouter.get(
     try {
       const days = Math.min(parseInt((req.query.days as string) || '7', 10), 90);
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      const grouped: Prisma.AuditLogGroupByOutputType[] = await prisma.auditLog.groupBy({
+      const grouped = await prisma.auditLog.groupBy({
         by: ['action'],
         where: {
           createdAt: { gte: since },
@@ -1898,7 +1898,7 @@ adminRouter.get(
         since,
         items: grouped.map((item) => ({
           action: item.action,
-          count: item._count.action
+          count: item._count?.action ?? 0
         }))
       });
     } catch (error) {
@@ -1975,7 +1975,7 @@ adminRouter.get(
         // Get IPs and emails with multiple failed attempts in the last 24 hours
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        const failedAttempts: Prisma.LoginAttempt[] = await prisma.loginAttempt.findMany({
+        const failedAttempts = await prisma.loginAttempt.findMany({
           where: {
             success: false,
             createdAt: { gte: oneDayAgo }
@@ -2259,7 +2259,7 @@ adminRouter.get(
 
     const uniqueSessionUsers = sessionsPerUser.length;
     const totalSessionsComputed = sessionsPerUser.reduce(
-      (sum: number, entry: Prisma.SessionGroupByOutputType) => sum + (entry._count?._all ?? 0),
+      (sum, entry) => sum + (entry._count?._all ?? 0),
       0
     );
     const avgSessionsPerUser = uniqueSessionUsers > 0 ? totalSessionsComputed / uniqueSessionUsers : 0;
@@ -2276,7 +2276,7 @@ adminRouter.get(
       .map(([sessions, users]) => ({ sessions, users }));
 
     const totalMessages = messageByConversation.reduce(
-      (sum: number, item: Prisma.MessageGroupByOutputType) => sum + (item._count?._all ?? 0),
+      (sum, item) => sum + (item._count?._all ?? 0),
       0
     );
     const activeConversations = messageByConversation.length;
@@ -2356,7 +2356,7 @@ adminRouter.get(
       },
       support: {
         totalReports: reportsTotal,
-        reportsByReason: reportsByReason.map((item: Prisma.ProfileReportGroupByOutputType) => ({
+        reportsByReason: reportsByReason.map((item) => ({
           reason: item.reason ?? 'Autre',
           count: item._count?._all ?? 0
         }))
@@ -2683,7 +2683,7 @@ adminRouter.get(
     });
 
     const topExportersWithEmails = await Promise.all(
-      topExporters.map(async (item: Prisma.AuditLogGroupByOutputType) => {
+      topExporters.map(async (item) => {
         const user = await prisma.user.findUnique({
           where: { id: item.userId! },
           select: { email: true, role: true },
@@ -2753,7 +2753,7 @@ adminRouter.get(
       orderBy: { createdAt: 'desc' },
     });
 
-    const formattedExports = exports.map((log: Prisma.AuditLog) => {
+    const formattedExports = exports.map((log) => {
       const metadata = log.metadata as any;
       return {
         id: log.id,

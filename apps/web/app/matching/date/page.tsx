@@ -8,9 +8,11 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { BackBar } from '../../../components/BackBar';
 import { Button } from '../../../components/ui/button';
+import { Badge } from '../../../components/ui/badge';
 import { apiClient } from '../../../lib/apiClient';
 import type { DashboardUser } from '@/types/user';
 import type { Level, Sport } from '@/types/matching';
+import { CalendarDays, Sparkles, Navigation, MapPin, AlertTriangle, GraduationCap } from 'lucide-react';
 
 // Fonction pour détecter le navigateur de l'utilisateur
 const detectBrowser = (): 'chrome' | 'firefox' | 'safari' | 'edge' | 'other' => {
@@ -228,19 +230,38 @@ function DateInner() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
+    <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/matching" />
 
-      <div>
-        <h1 className="text-2xl font-semibold">Choisis la date</h1>
-      </div>
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-8 text-white shadow-xl">
+        <div className="absolute inset-0 opacity-45 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" aria-hidden />
+        <div className="relative z-10 flex flex-col gap-4">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+            <Sparkles className="w-3.5 h-3.5" />
+            Étape 3 · Date & options
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Bloque ta prochaine session</h1>
+          <p className="text-white/85 text-base">
+            Choisis une date rapide ou laisse le matching en mode &ldquo;Peu importe&rdquo;. Option cours pro & géoloc juste en dessous.
+          </p>
+        </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">3) Date</CardTitle>
+      <Card className="border-2">
+        <CardHeader className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+              Étape 3
+            </Badge>
+            <CardTitle className="text-xl flex items-center gap-2">
+              <CalendarDays className="w-5 h-5 text-muted-foreground" />
+              Choix de date
+            </CardTitle>
+          </div>
+          <CardDescription>Précise ton créneau pour filtrer les riders disponibles.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
               { key: formatDateISO(today), label: `Aujourd'hui (${formatDateDisplay(today)})` },
               { key: formatDateISO(tomorrow), label: `Demain (${formatDateDisplay(tomorrow)})` },
@@ -250,25 +271,43 @@ function DateInner() {
                 key={d.key}
                 onClick={() => setDatePersist(d.key)}
                 aria-pressed={dateISO === d.key}
-                className={
-                  'rounded-md border px-4 py-4 text-sm text-left transition ' +
-                  (dateISO === d.key ? 'border-primary ring-2 ring-primary' : 'border-input hover:bg-accent')
-                }
+                className={`rounded-2xl border-2 px-4 py-5 text-left text-sm font-medium transition-all shadow-sm hover:shadow-md ${
+                  dateISO === d.key
+                    ? 'border-fuchsia-500 bg-fuchsia-50/80 ring-2 ring-fuchsia-200'
+                    : 'border-border hover:border-fuchsia-200'
+                }`}
               >
                 {d.label}
               </button>
             ))}
           </div>
+          <div className="rounded-2xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">
+            {dateISO
+              ? dateISO === 'anytime'
+                ? 'Mode flexible : nous te proposons les meilleurs matchs sans contrainte de date.'
+                : `Date sélectionnée : ${dateISO}`
+              : 'Sélectionne un créneau pour débloquer la suite.'}
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-2">
         <CardHeader>
-          <CardTitle className="text-base">5) Cours avec un professionnel</CardTitle>
-          <CardDescription>Coche si tu souhaites prendre un cours avec un pro pour cette session</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <Badge variant="secondary" className="bg-amber-100 text-amber-700">
+              Option
+            </Badge>
+            <span className="flex items-center gap-2">
+              <GraduationCap className="w-5 h-5 text-muted-foreground" />
+              Cours avec un pro
+            </span>
+          </CardTitle>
+          <CardDescription>
+            Active le badge pour signaler aux autres riders et aux pros que tu cherches un cours.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2">
+        <CardContent className="space-y-4">
+          <label className="flex items-center gap-3 text-sm font-medium">
             <input
               id="wantsLesson"
               type="checkbox"
@@ -287,115 +326,160 @@ function DateInner() {
                 }
                 window.history.replaceState(null, '', url.toString());
               }}
+              className="h-5 w-5"
             />
-            <label htmlFor="wantsLesson" className="flex items-center gap-1 text-sm">
-              <span>🎓</span>
-              Je veux un cours avec un professionnel
-            </label>
-          </div>
+            <span>Je veux un cours avec un professionnel sur cette session</span>
+          </label>
+
           {wantsLesson && (
-            <div className="mt-3 p-3 bg-blue-50 rounded-md">
-              <p className="text-xs text-blue-700 space-y-1">
-                <span className="block">
-                  Activer ce badge informe les autres riders que tu veux suivre un cours avec un pro. Si tu trouves un binôme avec la même envie, vous pourrez ensuite signaler votre demande à un professionnel.
-                </span>
-                <span className="block">
-                  Pour publier officiellement une demande visible sur la BloboMap, rendez-vous sur{' '}
-                  <Link href="/lesson-request" className="font-medium underline">
-                    http://localhost:3002/lesson-request
-                  </Link>
-                  . Désignez une seule personne dans votre binôme pour remplir le formulaire afin d’éviter les doublons.
-                </span>
-                <span className="block">Aucun cours n’est réservé automatiquement pour le moment.</span>
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-800 space-y-2">
+              <p>
+                Activer ce badge informe les riders et pros que tu cherches un cours. Coordinate-toi avec ton binôme pour éviter
+                les doublons.
               </p>
+              <p>
+                Pour publier une demande visible sur la BloboMap, remplis{' '}
+                <Link href="/lesson-request" className="font-semibold underline">
+                  le formulaire dédié
+                </Link>
+                . Un seul formulaire par groupe suffit.
+              </p>
+              <p className="italic text-blue-700/90">Aucun cours n’est réservé automatiquement pour le moment.</p>
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-2">
         <CardHeader>
-          <CardTitle className="text-base">4) Géolocalisation (optionnel)</CardTitle>
-          <CardDescription>Active la case pour utiliser ta position et un rayon</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <Badge variant="secondary" className="bg-sky-100 text-sky-700">
+              Étape 4
+            </Badge>
+            <span className="flex items-center gap-2">
+              <Navigation className="w-5 h-5 text-muted-foreground" />
+              Géolocalisation (optionnel)
+            </span>
+          </CardTitle>
+          <CardDescription>Affiche plus de riders proches grâce au rayon personnalisé.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" checked={useGeoloc} onChange={(e)=>toggleUseGeoloc(e.target.checked)} />
+        <CardContent className="space-y-4">
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={useGeoloc}
+              onChange={(e) => toggleUseGeoloc(e.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
             <span>Utiliser ma position pour calculer la distance</span>
           </label>
+
           {useGeoloc && (
             <>
               <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Button variant="outline" onClick={getLocation}>Activer ma position</Button>
-                  <div className="text-xs text-muted-foreground">
-                    {lat != null && lng != null ? `Position: ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
-                  </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button variant="outline" onClick={getLocation} className="inline-flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    Activer ma position
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {lat != null && lng != null ? `Position : ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
+                  </span>
                 </div>
                 {geolocError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                    <h4 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
-                      <span>⚠️</span>
-                      <span>Impossible d’accéder à votre position</span>
-                    </h4>
-                    <p className="text-sm text-red-800 mb-3">
-                      Votre navigateur bloque l’accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
+                  <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 space-y-2 text-sm text-red-800">
+                    <p className="font-semibold flex items-center gap-2 text-red-900">
+                      <AlertTriangle className="w-4 h-4" />
+                      Autorise la localisation sur {getBrowserInstructions(browserType).title}
                     </p>
-                    <ol className="text-sm text-red-800 space-y-1 ml-4">
+                    <ol className="list-decimal pl-4 space-y-1">
                       {getBrowserInstructions(browserType).steps.map((step, idx) => (
-                        <li key={idx} className="list-decimal">
-                          {step}
-                        </li>
+                        <li key={idx}>{step}</li>
                       ))}
                     </ol>
-                    <p className="text-xs text-red-700 mt-3 italic">
-                      💡 La géolocalisation est optionnelle pour le matching mais permet d’améliorer les résultats.
-                    </p>
-                    <Button
-                      onClick={getLocation}
-                      variant="outline"
-                      className="mt-3"
-                      size="sm"
-                    >
-                      🔄 Réessayer après avoir autorisé
+                    <p className="text-xs text-red-700">Optionnel mais recommandé pour affiner la distance.</p>
+                    <Button onClick={getLocation} variant="outline" size="sm">
+                      Réessayer
                     </Button>
                   </div>
                 )}
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="distance">Distance maximale (km)</label>
-                  <span className="text-sm font-medium text-primary">{distanceKm ?? 20} km</span>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <label htmlFor="distance">Distance maximale</label>
+                  <span className="font-semibold text-foreground">{distanceKm ?? 20} km</span>
                 </div>
+                <input
+                  id="distance"
+                  type="range"
+                  min={5}
+                  max={200}
+                  step={5}
+                  value={distanceKm ?? 20}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setDistanceKm(v);
+                    try { localStorage.setItem(DIST_KEY, String(v)); } catch {}
+                    if (useGeoloc) {
+                      const url = new URL(window.location.href);
+                      url.searchParams.set('distanceKm', String(v));
+                      window.history.replaceState(null, '', url.toString());
+                    }
+                  }}
+                  className="w-full accent-sky-600"
+                />
                 <div className="flex items-center gap-3">
-                  <input id="distance" type="range" min={5} max={200} step={5} value={distanceKm ?? 20} onChange={(e)=>{ const v=Number(e.target.value); setDistanceKm(v); try{ localStorage.setItem(DIST_KEY, String(v)); }catch{}; if(useGeoloc){ const url=new URL(window.location.href); url.searchParams.set('distanceKm', String(v)); window.history.replaceState(null,'',url.toString()); } }} className="w-full"/>
-                  <Button variant="outline" onClick={()=>{ const v=20; setDistanceKm(v); try{ localStorage.setItem(DIST_KEY, String(v)); }catch{}; if(useGeoloc){ const url=new URL(window.location.href); url.searchParams.set('distanceKm', String(v)); window.history.replaceState(null,'',url.toString()); } }}>Reset 20km</Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const v = 20;
+                      setDistanceKm(v);
+                      try { localStorage.setItem(DIST_KEY, String(v)); } catch {}
+                      if (useGeoloc) {
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('distanceKm', String(v));
+                        window.history.replaceState(null, '', url.toString());
+                      }
+                    }}
+                  >
+                    Reset 20 km
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Plus le rayon est large, plus tu as de chance de matcher rapidement.
+                  </p>
                 </div>
               </div>
             </>
           )}
-          <div className="flex items-center gap-2">
-            <Button
-              disabled={!dateISO || (useGeoloc && (lat == null || lng == null))}
-              onClick={() => {
-                const u = new URL(window.location.origin + '/matching/cards');
-                if (sport) u.searchParams.set('sport', sport);
-                if (level) u.searchParams.set('level', level);
-                if (dateISO) u.searchParams.set('date', dateISO);
-                if (wantsLesson) u.searchParams.set('wantsLesson', '1');
-                if (useGeoloc) {
-                  u.searchParams.set('useGeoloc', '1');
-                  if (distanceKm != null) u.searchParams.set('distanceKm', String(distanceKm));
-                  if (lat != null && lng != null) { u.searchParams.set('lat', String(lat)); u.searchParams.set('lng', String(lng)); }
-                }
-                router.push(u.toString());
-              }}
-            >
-              Voir les profils
-            </Button>
-          </div>
         </CardContent>
       </Card>
+
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => router.push('/matching')}>
+          Retour à la sélection
+        </Button>
+        <Button
+          className="flex-1 sm:flex-none"
+          disabled={!dateISO || (useGeoloc && (lat == null || lng == null))}
+          onClick={() => {
+            const u = new URL(window.location.origin + '/matching/cards');
+            if (sport) u.searchParams.set('sport', sport);
+            if (level) u.searchParams.set('level', level);
+            if (dateISO) u.searchParams.set('date', dateISO);
+            if (wantsLesson) u.searchParams.set('wantsLesson', '1');
+            if (useGeoloc) {
+              u.searchParams.set('useGeoloc', '1');
+              if (distanceKm != null) u.searchParams.set('distanceKm', String(distanceKm));
+              if (lat != null && lng != null) { u.searchParams.set('lat', String(lat)); u.searchParams.set('lng', String(lng)); }
+            }
+            router.push(u.toString());
+          }}
+        >
+          Voir les profils
+        </Button>
+      </div>
     </div>
   );
 }

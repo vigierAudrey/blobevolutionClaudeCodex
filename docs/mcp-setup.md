@@ -4,6 +4,30 @@ Ce document décrit la configuration des serveurs MCP pour le projet BlobEvoluti
 
 ## Serveurs MCP configurés
 
+### Claude Code (CLI) – GitHub
+**Fichier** : `~/.config/claude-code/mcp.json`
+
+Ajoutez le serveur GitHub juste après les entrées Vercel ou Chrome DevTools pour que Claude Code puisse accéder au repo :
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "votre-token-github"
+      }
+    }
+  }
+}
+```
+
+- Le **token GitHub** doit avoir les scopes `repo`, `read:org` et `workflow`.
+- Testez le serveur manuellement avec `npx -y @modelcontextprotocol/server-github` pour valider le token.
+- Redémarrez Claude Code après la mise à jour pour qu’il recharge la configuration MCP.
+- Conservez les autres serveurs (Vercel, Chrome DevTools…) dans le même fichier, ce bloc complète simplement la liste.
+
 ### 1. Sentry
 **Package**: `@modelcontextprotocol/server-sentry`
 

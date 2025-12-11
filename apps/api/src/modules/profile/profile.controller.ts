@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma } from '@blobinfini/database';
-import { requireAuth } from '../auth/auth.guard';
+import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { validate } from '../../middleware/validate';
 import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
@@ -13,6 +13,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { securityAlertService } from '../../services/security-alert.service';
 
 export const profileRouter = Router();
+profileRouter.use(requireAuth, requireVerifiedEmail);
 
 // GDPR Export rate limiter: max 3 exports per hour per user
 const exportRateLimiter = rateLimit({
@@ -50,14 +51,13 @@ const upsertSchema = z.object({
   lessonDate: z.string().nullish().transform(val => (val && val !== '') ? new Date(val) : null),
   lessonPlace: z.string().max(200).nullable().optional().or(z.literal('').transform(() => null)),
   lessonStudentCount: z.number().int().min(1).max(6).nullable().optional(),
-  blobosphereContributor: z.boolean().optional(),
 });
 
 const adminUpsertSchema = z.object({
   displayName: z.string().min(1).max(60).optional().or(z.literal('').transform(() => undefined)),
 });
 
-profileRouter.get('/me', requireAuth, async (req, res) => {
+profileRouter.get('/me', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -106,20 +106,28 @@ profileRouter.get('/me', requireAuth, async (req, res) => {
       // Check cache first for rider profile
       const cachedProfile = await cacheService.getProfile(userId);
       if (cachedProfile && cacheService.isAvailable()) {
-        console.log('🚀 Cache hit for rider profile');
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.log('🚀 Cache hit for rider profile');
+        }
         return res.json(cachedProfile);
       }
 
-      // Comportement existant pour les riders
-      let rp = await prisma.riderProfile.findUnique({ where: { userId } });
-      if (!rp) {
-        rp = await prisma.riderProfile.create({ data: { userId } });
-      }
+      // Comportement existant pour les riders, sécurisé contre les accès concurrents
+      // Utiliser upsert pour éviter l'erreur "Unique constraint failed on the fields: (`userId`)"
+      const rp = await prisma.riderProfile.upsert({
+        where: { userId },
+        create: { userId },
+        update: {},
+      });
 
       // Cache the profile for future requests
       if (cacheService.isAvailable()) {
         await cacheService.setProfile(userId, rp, 600); // 10 minutes cache
-        console.log('💾 Cached rider profile');
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.log('💾 Cached rider profile');
+        }
       }
 
       return res.json(rp);
@@ -136,13 +144,16 @@ profileRouter.get('/me', requireAuth, async (req, res) => {
   }
 });
 
-profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) => {
+profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Log incoming request
-    console.log('📥 PUT /profile/me - Raw body:', JSON.stringify(req.body, null, 2));
+    // Log incoming request (dev only)
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.log('📥 PUT /profile/me - Raw body:', JSON.stringify(req.body, null, 2));
+    }
 
     // Récupérer le rôle et l'email de l'utilisateur
     const user = await prisma.user.findUnique({
@@ -178,13 +189,19 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
 
     if (user.role === 'ADMIN') {
       const body = adminUpsertSchema.parse(req.body); // already validated but keeping existing parse for transformations
-      console.log('Updating admin profile for user:', userId, 'with data:', body);
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log('Updating admin profile for user:', userId, 'with data:', body);
+      }
       const ap = await prisma.adminProfile.upsert({
         where: { userId },
         create: { userId, ...body },
         update: { ...body },
       });
-      console.log('Admin profile updated:', ap);
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log('Admin profile updated:', ap);
+      }
       return res.json(ap);
     }
 
@@ -192,7 +209,10 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
       // Comportement existant pour les riders
       // Body is already validated and parsed by the validate middleware
       const body = req.body;
-      console.log('✅ Using validated body:', JSON.stringify(body, null, 2));
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log('✅ Using validated body:', JSON.stringify(body, null, 2));
+      }
       const rp = await prisma.riderProfile.upsert({
         where: { userId },
         create: { userId, ...body },
@@ -206,10 +226,16 @@ profileRouter.put('/me', requireAuth, validate(upsertSchema), async (req, res) =
         if (body.lat || body.lng) {
           await cacheService.invalidateMatching();
         }
-        console.log('🗑️ Invalidated profile cache after update');
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.log('🗑️ Invalidated profile cache after update');
+        }
       }
 
-      console.log('Profile updated:', rp);
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log('Profile updated:', rp);
+      }
       return res.json(rp);
     }
 
@@ -234,7 +260,7 @@ const sportEnum = ['surf', 'kitesurf'] as const;
 const levelEnum = ['beginner', 'intermediate', 'advanced'] as const;
 const disciplineSchema = z.object({ sport: z.enum(sportEnum), level: z.enum(levelEnum) });
 
-profileRouter.get('/disciplines', requireAuth, async (req, res) => {
+profileRouter.get('/disciplines', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -247,7 +273,7 @@ profileRouter.get('/disciplines', requireAuth, async (req, res) => {
   }
 });
 
-profileRouter.put('/disciplines', requireAuth, async (req, res) => {
+profileRouter.put('/disciplines', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -272,7 +298,7 @@ profileRouter.put('/disciplines', requireAuth, async (req, res) => {
 });
 
 // Generate a pre-signed URL for direct upload to S3/MinIO
-profileRouter.post('/photo/upload-url', requireAuth, validate(z.object({ contentType: z.string().min(1) })), async (req, res) => {
+profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.string().min(1) })), async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -374,7 +400,7 @@ profileRouter.post('/photo/upload-url', requireAuth, validate(z.object({ content
 });
 
 // GDPR Data Export endpoint (Article 20 - Right to data portability)
-profileRouter.get('/export', requireAuth, exportRateLimiter, async (req, res) => {
+profileRouter.get('/export', exportRateLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -404,7 +430,7 @@ profileRouter.get('/export', requireAuth, exportRateLimiter, async (req, res) =>
 });
 
 // GDPR Account Deletion - Request deletion with 30-day grace period
-profileRouter.post('/delete-account', requireAuth, async (req, res) => {
+profileRouter.post('/delete-account', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -466,7 +492,7 @@ profileRouter.post('/delete-account', requireAuth, async (req, res) => {
 });
 
 // GDPR Account Deletion - Cancel deletion request
-profileRouter.post('/cancel-deletion', requireAuth, async (req, res) => {
+profileRouter.post('/cancel-deletion', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -528,7 +554,7 @@ profileRouter.post('/cancel-deletion', requireAuth, async (req, res) => {
 });
 
 // GDPR Account Deletion - Check deletion status
-profileRouter.get('/deletion-status', requireAuth, async (req, res) => {
+profileRouter.get('/deletion-status', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });

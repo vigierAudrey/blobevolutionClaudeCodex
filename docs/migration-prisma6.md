@@ -73,3 +73,46 @@ git checkout -- package-lock.json apps/api/package.json apps/web/package.json pa
   – Ajouter au besoin des annotations (`satisfies`, alias `Awaited<…>`) ou ajuster la génération Prisma.
 3. Relancer `npm run type-check`, `npm test`, puis `npm audit --omit=dev` pour valider la migration.
 4. Mettre à jour la config Prisma (remplacer `package.json#prisma`).
+
+## ⚠️ Problème résolu : Erreur STUDIO_EMBED_BUILD
+
+**Date de résolution** : 2025-12-09
+
+### Symptôme
+Après la migration vers Prisma 6.19.0, Prisma Studio échouait au démarrage avec l'erreur :
+```
+Erreur du client Prisma : Impossible d'exécuter le script.
+Appel invalide de STUDIO_EMBED_BUILD
+Error: Aucun espace de travail par défaut trouvé
+```
+
+### Cause racine
+Le package `@prisma/config` n'était pas installé. Ce package est **requis** depuis Prisma 6.19.0 pour supporter le fichier `prisma.config.ts`.
+
+### Solution appliquée
+```bash
+npm install @prisma/config --workspace @blobinfini/database --save-dev
+npm install node-gyp node-gyp-build -D --workspace @blobinfini/database
+```
+
+Également corrigé la version de `bcrypt` : `^6.0.0` → `^5.1.1` (version stable).
+
+### Dépendances finales requises
+Dans `packages/database/package.json` :
+```json
+{
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "bcrypt": "^5.1.1"
+  },
+  "devDependencies": {
+    "@prisma/config": "^6.19.0",
+    "node-gyp": "^12.1.0",
+    "node-gyp-build": "^4.8.4",
+    "prisma": "^6.19.0"
+  }
+}
+```
+
+### Documentation complète
+Voir [`docs/troubleshooting-prisma.md`](./troubleshooting-prisma.md) pour plus de détails et d'autres problèmes courants.

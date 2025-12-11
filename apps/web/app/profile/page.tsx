@@ -18,7 +18,7 @@ import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { apiRequest } from '../../lib/csrf';
 import Link from 'next/link';
-import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, BookOpen, AlertTriangle } from 'lucide-react';
+import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, User, Waves, Bell, Lock, Settings, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
 import type { Level } from '@/types/matching';
@@ -40,7 +40,6 @@ type ProfileUpdatePayload = {
   sex: Gender;
   emailNotif: boolean;
   photoUrl?: string | null;
-  blobosphereContributor?: boolean;
 };
 
 const labelToGender = (label: SexOption): Gender => {
@@ -95,7 +94,7 @@ export default function ProfilePage() {
       },
       essential: {
         label: 'Publicités basiques',
-        description: 'Annonces générales sans profilage ; aucune donnée personnelle n’est utilisée pour la personnalisation.',
+        description: 'Annonces générales sans profilage ; aucune donnée personnelle n\'est utilisée pour la personnalisation.',
         Icon: Shield,
         badge: { text: 'Essentiel', className: `${baseBadge} bg-emerald-100 text-emerald-700` },
         cardClasses: 'border-emerald-200 bg-emerald-50/70',
@@ -136,7 +135,6 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
   const [emailNotif, setEmailNotif] = useState<boolean>(false);
-  const [blobosphereContributor, setBlobosphereContributor] = useState<boolean>(false);
 
   // Geolocation state for privacy section
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -174,7 +172,6 @@ export default function ProfilePage() {
         setBio(profile.bio ?? '');
         setSex(genderToLabel(profile.sex));
         setEmailNotif(Boolean(profile.emailNotif));
-        setBlobosphereContributor(Boolean(profile.blobosphereContributor));
         setPhotoUrl(profile.photoUrl ?? null);
         setPhotoPreviewUrl((previous) => {
           if (previous) URL.revokeObjectURL(previous);
@@ -392,7 +389,6 @@ export default function ProfilePage() {
       sex: labelToGender(sex),
       emailNotif,
       photoUrl: photoUrl || undefined,
-      blobosphereContributor,
     };
 
     try {
@@ -463,442 +459,577 @@ export default function ProfilePage() {
 
   return (
     <>
-      <div className="mx-auto max-w-5xl space-y-6">
-      <BackBar fallbackHref="/dashboard" />
-      <div className="text-center space-y-1">
-        <h1 className="text-2xl sm:text-3xl font-semibold">Modifier mon Profil 🏄‍♀️</h1>
-        <p className="text-sm text-muted-foreground">Personnalise ton profil et choisis tes préférences de session.</p>
-      </div>
+      <div className="mx-auto max-w-6xl space-y-6 pb-24">
+        <BackBar fallbackHref="/dashboard" />
 
-      <form onSubmit={onSubmit} className="space-y-6">
-        {/* Top grid: photo + sexe | nom + présentation */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">📸 Charger sa photo</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col items-center gap-4">
-                <div className="rounded-xl border-2 border-rose-300 p-1">
-                  <div className="relative h-48 w-36 sm:h-56 sm:w-44 overflow-hidden rounded-lg bg-muted">
-                    {displayedPhotoSrc ? (
-                      <Image
-                        src={displayedPhotoSrc}
-                        alt={photoAlt}
-                        fill
-                        className="object-cover"
-                        sizes="(min-width: 640px) 176px, 144px"
-                        unoptimized
-                      />
-                    ) : (
-                      <span className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">Aperçu</span>
-                    )}
-                  </div>
-                </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={onPickPhoto}
-                  className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-secondary-foreground hover:file:bg-secondary/80"
-                />
-                {(photoUrl || showPhotoWarning) && (
-                  <div className="w-full space-y-2">
-                    {photoUrl && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => setDeletePhotoModalOpen(true)}
-                      >
-                        <Trash2 className="mr-2 h-3.5 w-3.5" />
-                        Supprimer la photo
-                      </Button>
-                    )}
-                    {showPhotoWarning && (
-                      <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/80 px-3 py-2 text-sm text-amber-900">
-                        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                        <span>Sans photo, l’accès au matching reste bloqué. Ajoute une nouvelle photo pour débloquer la sélection.</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="w-full">
-                  <Label htmlFor="sex">Sexe</Label>
-                  <select
-                    id="sex"
-                    className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    value={sex}
-                    onChange={(event) => setSex(event.target.value as SexOption)}
-                  >
-                    <option>Femme</option>
-                    <option>Homme</option>
-                    <option>Autre</option>
-                    <option>Ne pas préciser</option>
-                  </select>
-                </div>
+        {/* Hero Header */}
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-500 via-pink-500 to-rose-400 p-8 text-white shadow-xl">
+          <div className="absolute top-0 right-0 -mt-8 -mr-8 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+          <div className="absolute bottom-0 left-0 -mb-6 -ml-6 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-3 rounded-xl bg-white/20">
+                <User className="w-6 h-6" />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">📌 Nom à afficher dans le Matching</CardTitle>
-              <CardDescription>Ce nom sera visible par tes partenaires potentiels lors des sessions.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Input placeholder="Exemple : Blobmama" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-              <div className="space-y-2">
-                <Label htmlFor="bio">Ta présentation</Label>
-                <Textarea
-                  id="bio"
-                  placeholder={
-                    'Exemple : Je surf depuis trois ans et je suis plutôt shortboard. Je suis une lève-tôt, je préfère les sessions matinales. Maman à mi-temps, une autre BlobMama ici pour aller surfer ?'
-                  }
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                />
-              </div>
-            </CardContent>
-          </Card>
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+                Mon Profil
+              </h1>
+            </div>
+            <p className="text-purple-50 text-sm sm:text-base">
+              Personnalise ton profil pour un matching optimal et des sessions mémorables !
+            </p>
+          </div>
         </div>
 
-        {/* Disciplines */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Mes disciplines</CardTitle>
-            <CardDescription>Sélectionne ton niveau pour chaque sport (tu peux choisir les deux)</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label>Surf</Label>
-                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={surfLevel} onChange={(event) => setSurfLevel(event.target.value as LevelOption)}>
-                  <option value="">— Aucun —</option>
-                  <option value="beginner">Débutant</option>
-                  <option value="intermediate">Intermédiaire</option>
-                  <option value="advanced">Confirmé</option>
-                </select>
-              </div>
-              <div>
-                <Label>Kitesurf</Label>
-                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={kiteLevel} onChange={(event) => setKiteLevel(event.target.value as LevelOption)}>
-                  <option value="">— Aucun —</option>
-                  <option value="beginner">Débutant</option>
-                  <option value="intermediate">Intermédiaire</option>
-                  <option value="advanced">Confirmé</option>
-                </select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Notifications */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Notifications</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-
+        <form onSubmit={onSubmit} className="space-y-6">
+          {/* Section Identité */}
+          <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <input id="emailNotif" type="checkbox" checked={emailNotif} onChange={(e) => setEmailNotif(e.target.checked)} />
-              <Label htmlFor="emailNotif" className="!m-0">
-                Recevoir des emails lorsqu’un partenaire cherche à me joindre
-              </Label>
+              <div className="h-1 w-1 rounded-full bg-purple-500" />
+              <h2 className="text-lg font-semibold text-foreground">Identité</h2>
             </div>
-
-          </CardContent>
-        </Card>
-
-        <ChangePasswordCard />
-
-        {/* Privacy and Data Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">🔒 Confidentialité et Données</CardTitle>
-            <CardDescription>Gérez vos données personnelles et préférences de confidentialité</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-
-            {/* Geolocation Management */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Géolocalisation</h3>
-              </div>
-              {userLocation ? (
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    📍 Position enregistrée : {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Utilisée pour le matching et la recherche d&apos;offres à proximité.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    onClick={handleDeleteLocation}
-                    disabled={deletingLocation}
-                  >
-                    <Trash2 className="h-3 w-3 mr-2" />
-                    {deletingLocation ? 'Suppression...' : 'Supprimer ma position'}
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    ℹ️ Aucune géolocalisation enregistrée. Vous pouvez l&apos;activer depuis les pages Matching ou Offres.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <hr className="border-t" />
-
-            {/* Cookie Preferences */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Cookie className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Préférences Cookies</h3>
-              </div>
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">Modifiez vos choix concernant les cookies et le suivi.</p>
-                {consentStateReady ? (
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
-                    <div className={`flex flex-1 items-start gap-3 rounded-2xl border p-4 ${consentSummary.cardClasses}`}>
-                      <consentSummary.Icon className={`h-5 w-5 ${consentSummary.iconClasses}`} />
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-semibold text-foreground">{consentSummary.label}</p>
-                          {consentSummary.badge && (
-                            <Badge className={consentSummary.badge.className}>{consentSummary.badge.text}</Badge>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Photo Card */}
+              <Card className="overflow-hidden border-2 hover:shadow-lg transition-all bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 text-white">
+                      <Camera size={20}/>
+                    </div>
+                    <CardTitle>Photo de Profil</CardTitle>
+                  </div>
+                  <CardDescription>Ta photo visible dans le matching</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="relative group">
+                      <div className="rounded-2xl border-4 border-purple-300 p-1.5 bg-white dark:bg-slate-900">
+                        <div className="relative h-56 w-44 overflow-hidden rounded-xl bg-muted">
+                          {displayedPhotoSrc ? (
+                            <Image
+                              src={displayedPhotoSrc}
+                              alt={photoAlt}
+                              fill
+                              className="object-cover"
+                              sizes="176px"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 gap-2">
+                              <Camera size={32} className="text-muted-foreground/40" />
+                              <span className="text-xs text-muted-foreground">Aucune photo</span>
+                            </div>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground">{consentSummary.description}</p>
                       </div>
                     </div>
-                    <div className="lg:w-48">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={onPickPhoto}
+                      className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-gradient-to-r file:from-purple-600 file:to-pink-600 file:px-4 file:py-2.5 file:text-white file:font-medium hover:file:from-purple-700 hover:file:to-pink-700 file:transition-all"
+                    />
+                    {(photoUrl || showPhotoWarning) && (
+                      <div className="w-full space-y-2">
+                        {photoUrl && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => setDeletePhotoModalOpen(true)}
+                          >
+                            <Trash2 className="mr-2 h-3.5 w-3.5" />
+                            Supprimer la photo
+                          </Button>
+                        )}
+                        {showPhotoWarning && (
+                          <div className="flex items-start gap-2 rounded-lg border-2 border-amber-300 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-900">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                            <span>Sans photo, le matching est bloqué. Ajoute une photo pour débloquer !</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Nom & Bio Card */}
+              <Card className="overflow-hidden border-2 hover:shadow-lg transition-all">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
+                      <Sparkles size={20}/>
+                    </div>
+                    <div>
+                      <CardTitle>Nom & Bio</CardTitle>
+                      <CardDescription>Comment tu apparais dans le matching</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="displayName" className="flex items-center gap-2">
+                      <span className="text-sm font-medium">Nom affiché</span>
+                      <Badge variant="secondary" className="text-xs">Requis</Badge>
+                    </Label>
+                    <Input
+                      id="displayName"
+                      placeholder="Exemple : Blobmama"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      className="text-base"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="sex">Sexe</Label>
+                    <select
+                      id="sex"
+                      className="h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      value={sex}
+                      onChange={(event) => setSex(event.target.value as SexOption)}
+                    >
+                      <option>Femme</option>
+                      <option>Homme</option>
+                      <option>Autre</option>
+                      <option>Ne pas préciser</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bio">Ta présentation</Label>
+                    <Textarea
+                      id="bio"
+                      placeholder="Exemple : Je surf depuis trois ans et je suis plutôt shortboard. Lève-tôt qui préfère les sessions matinales. Maman à mi-temps"
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                      rows={4}
+                      className="resize-none"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {bio.length}/1000 caractères
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* Section Mes Glisses */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-1 rounded-full bg-cyan-500" />
+              <h2 className="text-lg font-semibold text-foreground">Mes Glisses</h2>
+            </div>
+            <Card className="overflow-hidden border-2 hover:shadow-lg transition-shadow">
+              <CardHeader className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-950/30 dark:to-blue-950/30">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 text-white">
+                    <Waves size={20}/>
+                  </div>
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      Disciplines & Niveaux
+                      <Badge variant="secondary" className="text-xs">Au moins 1 requis</Badge>
+                    </CardTitle>
+                    <CardDescription>Sélectionne ton niveau pour trouver des partenaires adaptés</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2 text-base font-medium">
+                      Surf
+                    </Label>
+                    <select
+                      className="h-11 w-full rounded-lg border-2 border-input bg-background px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-all"
+                      value={surfLevel}
+                      onChange={(event) => setSurfLevel(event.target.value as LevelOption)}
+                    >
+                      <option value="">— Aucun —</option>
+                      <option value="beginner">Débutant</option>
+                      <option value="intermediate">Intermédiaire</option>
+                      <option value="advanced">Confirmé</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2 text-base font-medium">
+                      Kitesurf
+                    </Label>
+                    <select
+                      className="h-11 w-full rounded-lg border-2 border-input bg-background px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-all"
+                      value={kiteLevel}
+                      onChange={(event) => setKiteLevel(event.target.value as LevelOption)}
+                    >
+                      <option value="">— Aucun —</option>
+                      <option value="beginner">Débutant</option>
+                      <option value="intermediate">Intermédiaire</option>
+                      <option value="advanced">Confirmé</option>
+                    </select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Section Préférences */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-1 rounded-full bg-orange-500" />
+              <h2 className="text-lg font-semibold text-foreground">Préférences</h2>
+            </div>
+            <Card className="border-2 hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white">
+                    <Bell size={20}/>
+                  </div>
+                  <div>
+                    <CardTitle>Notifications</CardTitle>
+                    <CardDescription>Gère tes alertes et notifications</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-transparent hover:border-orange-200 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-all cursor-pointer">
+                  <input
+                    id="emailNotif"
+                    type="checkbox"
+                    checked={emailNotif}
+                    onChange={(e) => setEmailNotif(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">Notifications par email</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Reçois un email lorsqu'un partenaire cherche à te joindre ou qu'un nouveau match est disponible
+                    </p>
+                  </div>
+                </label>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Section Sécurité */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-1 rounded-full bg-red-500" />
+              <h2 className="text-lg font-semibold text-foreground">Sécurité</h2>
+            </div>
+            <ChangePasswordCard />
+          </div>
+
+          {/* Section Confidentialité & Données */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-1 rounded-full bg-slate-500" />
+              <h2 className="text-lg font-semibold text-foreground">Confidentialité & Données</h2>
+            </div>
+            <Card className="border-2">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-slate-600 to-slate-700 text-white">
+                    <Settings size={20}/>
+                  </div>
+                  <div>
+                    <CardTitle>Mes Données Personnelles</CardTitle>
+                    <CardDescription>Gestion RGPD et confidentialité</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+
+                {/* Geolocation */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Géolocalisation</h3>
+                  </div>
+                  {userLocation ? (
+                    <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
+                      <div className="flex items-start gap-2">
+                        <span className="text-emerald-600 text-lg">📍</span>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
+                            Position active
+                          </p>
+                          <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
+                            Lat: {userLocation.lat.toFixed(4)}, Lng: {userLocation.lng.toFixed(4)}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Utilisée pour le matching et la recherche d'offres à proximité
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={handleDeleteLocation}
+                        disabled={deletingLocation}
+                        className="w-full sm:w-auto"
+                      >
+                        <Trash2 className="h-3 w-3 mr-2" />
+                        {deletingLocation ? 'Suppression...' : 'Supprimer ma position'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:bg-slate-900/20 p-4">
+                      <p className="text-sm text-muted-foreground flex items-start gap-2">
+                        <span>ℹ️</span>
+                        <span>Aucune géolocalisation enregistrée. Active-la depuis Matching ou Offres pour trouver des partenaires près de toi.</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <hr className="border-t-2" />
+
+                {/* Cookie Preferences */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Cookie className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Préférences Cookies</h3>
+                  </div>
+                  {consentStateReady ? (
+                    <div className="space-y-3">
+                      <div className={`flex items-start gap-3 rounded-xl border-2 p-4 ${consentSummary.cardClasses}`}>
+                        <consentSummary.Icon className={`h-5 w-5 ${consentSummary.iconClasses} flex-shrink-0 mt-0.5`} />
+                        <div className="flex-1 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold text-foreground">{consentSummary.label}</p>
+                            {consentSummary.badge && (
+                              <Badge className={consentSummary.badge.className}>{consentSummary.badge.text}</Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">{consentSummary.description}</p>
+                        </div>
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"
                         type="button"
                         onClick={handleReopenCookieConsent}
-                        className="w-full h-full"
+                        className="w-full sm:w-auto"
                       >
                         Gérer mes cookies
                       </Button>
                     </div>
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
+                      Chargement des préférences…
+                    </div>
+                  )}
+                </div>
+
+                <hr className="border-t-2" />
+
+                {/* RGPD Rights */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Vos Droits RGPD</h3>
                   </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                    Chargement des préférences en cours…
+                  <p className="text-sm text-muted-foreground">
+                    Conformément au RGPD, vous disposez d'un droit d'accès, de rectification, de suppression et de portabilité de vos données.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <Link href="/about">
+                      <Button variant="outline" size="sm">
+                        <FileText className="h-3.5 w-3.5 mr-2" />
+                        Politique RGPD
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const tokens = apiClient.getTokens();
+                          if (!tokens?.accessToken) {
+                            toast('Session expirée, veuillez vous reconnecter', 'error');
+                            return;
+                          }
+
+                          toast('Génération de l\'export en cours...', 'info');
+
+                          const response = await apiRequest('/profile/export', {
+                            method: 'GET',
+                            headers: { Authorization: `Bearer ${tokens.accessToken}` },
+                          });
+
+                          if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.error || 'Erreur lors de l\'export');
+                          }
+
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
+                          document.body.appendChild(a);
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                          document.body.removeChild(a);
+
+                          toast('Export téléchargé avec succès', 'success');
+                        } catch (error) {
+                          const message = error instanceof Error ? error.message : 'Erreur lors de l\'export';
+                          toast(message, 'error');
+                        }
+                      }}
+                    >
+                      📥 Exporter mes données
+                    </Button>
+                    {deletionStatus?.isScheduled ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={handleCancelDeletion}
+                        disabled={loadingDeletion}
+                        className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                      >
+                        ⚠️ Annuler suppression ({deletionStatus.daysRemaining}j)
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={() => setShowDeletionModal(true)}
+                        className="border-red-300 text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-2" />
+                        Supprimer mon compte
+                      </Button>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
 
-            <hr className="border-t" />
-
-            {/* Blobosphère contribution */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Contribution Blobosphère</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Active cette option pour pouvoir proposer des sujets ou témoignages qui apparaîtront dans le module
-                Blobosphère. Le consentement est vérifié par l’équipe avant publication.
-              </p>
-              <label className="flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={blobosphereContributor}
-                  onChange={(e) => setBlobosphereContributor(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                <span>Je veux contribuer à la Blobosphère</span>
-              </label>
-            </div>
-
-            <hr className="border-t" />
-
-            {/* Legal Links & Data Rights */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Vos droits RGPD</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Conformément au RGPD, vous disposez d&apos;un droit d&apos;accès, de rectification, de suppression et de portabilité de vos données.
-              </p>
-              <div className="flex flex-wrap gap-2 items-center">
-                <Link href="/about" className="text-sm text-primary hover:underline">
-                  📄 Politique RGPD
-                </Link>
-                <span className="text-muted-foreground">•</span>
-                <button
-                  type="button"
-                  className="text-sm text-primary hover:underline"
-                  onClick={async () => {
-                    try {
-                      const tokens = apiClient.getTokens();
-                      if (!tokens?.accessToken) {
-                        toast('Session expirée, veuillez vous reconnecter', 'error');
-                        return;
-                      }
-
-                      toast('Génération de l\'export en cours...', 'info');
-
-                      const response = await apiRequest('/profile/export', {
-                        method: 'GET',
-                        headers: { Authorization: `Bearer ${tokens.accessToken}` },
-                      });
-
-                      if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        throw new Error(errorData.error || 'Erreur lors de l\'export');
-                      }
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-
-                      toast('Export téléchargé avec succès', 'success');
-                    } catch (error) {
-                      const message = error instanceof Error ? error.message : 'Erreur lors de l\'export';
-                      toast(message, 'error');
-                    }
-                  }}
-                >
-                  📥 Exporter mes données
-                </button>
-                <span className="text-muted-foreground">•</span>
-                {deletionStatus?.isScheduled ? (
-                  <button
-                    type="button"
-                    className="text-sm text-orange-600 hover:underline font-medium"
-                    onClick={handleCancelDeletion}
-                    disabled={loadingDeletion}
-                  >
-                    ⚠️ Annuler la suppression ({deletionStatus.daysRemaining} jours restants)
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="text-sm text-red-600 hover:underline"
-                    onClick={() => setShowDeletionModal(true)}
-                  >
-                    🗑️ Supprimer mon compte
-                  </button>
-                )}
-              </div>
-            </div>
-
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-            <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
-              {saving ? (
-                <span className="inline-flex items-center gap-2"><Spinner /> Enregistrement…</span>
-              ) : (
-                'Enregistrer'
-              )}
-            </Button>
+              </CardContent>
+            </Card>
           </div>
-          {showDashboardShortcut && (
-            <div className="rounded-lg border border-green-200 bg-green-50/70 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-semibold text-green-900">Profil à jour ✅</p>
-                <p className="text-sm text-green-800">Tu peux retourner sur le dashboard pour explorer les sessions et messages.</p>
-              </div>
+
+          {/* Bouton Sauvegarder */}
+          <div className="space-y-4 pt-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                💡 Pense à sauvegarder tes modifications avant de quitter
+              </p>
               <Button
-                type="button"
-                variant="outline"
-                className="w-full sm:w-auto"
-                onClick={() => router.push('/dashboard')}
+                type="submit"
+                className="w-full sm:w-auto bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-lg hover:shadow-xl transition-all text-base px-8 py-6"
+                disabled={saving}
               >
-                Retourner au dashboard
+                {saving ? (
+                  <span className="inline-flex items-center gap-2"><Spinner /> Enregistrement…</span>
+                ) : (
+                  <span className="inline-flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    Enregistrer mon profil
+                  </span>
+                )}
               </Button>
             </div>
-          )}
-        </div>
-      </form>
-
-      {/* Account Deletion Modal */}
-      {showDeletionModal && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowDeletionModal(false)}
-        >
-          <Card
-            className="max-w-lg w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <CardHeader>
-              <CardTitle className="text-xl text-red-600">⚠️ Suppression de compte</CardTitle>
-              <CardDescription>
-                Cette action entraînera la suppression définitive de votre compte dans 30 jours
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-2">
-                <h3 className="font-semibold text-sm">📅 Comment fonctionne la suppression ?</h3>
-                <ol className="text-sm space-y-1 list-decimal list-inside text-muted-foreground">
-                  <li>Votre compte sera <strong>immédiatement désactivé</strong></li>
-                  <li>Vos données seront <strong>conservées pendant 30 jours</strong></li>
-                  <li>Vous pourrez <strong>annuler</strong> la suppression durant cette période</li>
-                  <li>Après 30 jours, vos données seront <strong>définitivement supprimées</strong></li>
-                </ol>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-                <h3 className="font-semibold text-sm">💡 Avant de supprimer</h3>
-                <ul className="text-sm space-y-1 list-disc list-inside text-muted-foreground">
-                  <li>Vous pouvez <strong>exporter vos données</strong> (droit RGPD)</li>
-                  <li>Pensez à <strong>annuler vos réservations</strong> en cours</li>
-                  <li>Vos messages seront supprimés définitivement</li>
-                </ul>
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row gap-2 pt-4">
+            {showDashboardShortcut && (
+              <div className="rounded-xl border-2 border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between shadow-sm">
+                <div className="flex items-start gap-3">
+                  <Sparkles className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-emerald-900">Profil à jour ! ✅</p>
+                    <p className="text-sm text-emerald-800">Tu peux retourner sur le dashboard pour explorer les sessions et messages.</p>
+                  </div>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
-                  className="flex-1"
-                  onClick={() => setShowDeletionModal(false)}
-                  disabled={loadingDeletion}
+                  className="w-full sm:w-auto border-emerald-300 hover:bg-emerald-100"
+                  onClick={() => router.push('/dashboard')}
                 >
-                  Annuler
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  className="flex-1"
-                  onClick={handleRequestDeletion}
-                  disabled={loadingDeletion}
-                >
-                  {loadingDeletion ? (
-                    <span className="inline-flex items-center gap-2">
-                      <Spinner /> Traitement...
-                    </span>
-                  ) : (
-                    'Confirmer la suppression'
-                  )}
+                  Retour au dashboard →
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+            )}
+          </div>
+        </form>
+
+        {/* Account Deletion Modal */}
+        {showDeletionModal && (
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowDeletionModal(false)}
+          >
+            <Card
+              className="max-w-lg w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <CardHeader>
+                <CardTitle className="text-xl text-red-600 flex items-center gap-2">
+                  <AlertTriangle className="w-6 h-6" />
+                  Suppression de compte
+                </CardTitle>
+                <CardDescription>
+                  Cette action entraînera la suppression définitive de votre compte dans 30 jours
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4 space-y-2">
+                  <h3 className="font-semibold text-sm flex items-center gap-2">
+                    <span>📅</span> Comment fonctionne la suppression ?
+                  </h3>
+                  <ol className="text-sm space-y-1.5 list-decimal list-inside text-muted-foreground">
+                    <li>Votre compte sera <strong>immédiatement désactivé</strong></li>
+                    <li>Vos données seront <strong>conservées pendant 30 jours</strong></li>
+                    <li>Vous pourrez <strong>annuler</strong> la suppression durant cette période</li>
+                    <li>Après 30 jours, vos données seront <strong>définitivement supprimées</strong></li>
+                  </ol>
+                </div>
+
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 space-y-2">
+                  <h3 className="font-semibold text-sm flex items-center gap-2">
+                    <span>💡</span> Avant de supprimer
+                  </h3>
+                  <ul className="text-sm space-y-1.5 list-disc list-inside text-muted-foreground">
+                    <li>Vous pouvez <strong>exporter vos données</strong> (droit RGPD)</li>
+                    <li>Pensez à <strong>annuler vos réservations</strong> en cours</li>
+                    <li>Vos messages seront supprimés définitivement</li>
+                  </ul>
+                </div>
+
+                <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setShowDeletionModal(false)}
+                    disabled={loadingDeletion}
+                  >
+                    Annuler
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={handleRequestDeletion}
+                    disabled={loadingDeletion}
+                  >
+                    {loadingDeletion ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Spinner /> Traitement...
+                      </span>
+                    ) : (
+                      'Confirmer la suppression'
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
 
       <Dialog open={deletePhotoModalOpen} onOpenChange={setDeletePhotoModalOpen}>
@@ -906,8 +1037,7 @@ export default function ProfilePage() {
           <DialogHeader>
             <DialogTitle>Supprimer la photo de profil</DialogTitle>
             <DialogDescription>
-              Confirme la suppression de ta photo. Le matching restera inaccessible tant qu&rsquo;une nouvelle photo ne sera pas
-              ajoutée.
+              Confirme la suppression de ta photo. Le matching restera inaccessible tant qu'une nouvelle photo ne sera pas ajoutée.
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">

@@ -30,7 +30,6 @@ export interface UserProfile {
   lessonDate?: string | null;
   lessonPlace?: string | null;
   lessonStudentCount?: number | null;
-  blobosphereContributor?: boolean;
   lat?: number | null;
   lng?: number | null;
   photoUrl?: string | null;

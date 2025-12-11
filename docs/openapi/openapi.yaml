@@ -1,4 +1,4 @@
-openapi: 3.1.0
+openapi: 3.0.3
 info:
   title: Blobinfini API
   description: |
@@ -2348,29 +2348,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-  /admin/conversations/blocked:
-    get:
-      tags: [Admin]
-      summary: Liste les conversations récemment bloquées
-      operationId: adminBlockedConversations
-      parameters:
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            default: 50
-      responses:
-        '200':
-          description: Conversations bloquées
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
   /admin/security/events:
     get:
       tags: [Admin]
@@ -2593,6 +2570,49 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Authentification requise
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Accès interdit
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Erreur de validation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+    InternalError:
+      description: Erreur interne
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Limite de requêtes atteinte
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadRequest:
+      description: Requête invalide
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
   schemas:
     BlobospherePost:
       type: object
@@ -2679,44 +2699,6 @@ components:
               $ref: '#/components/schemas/GdprPurgeUserStats'
             relationalData:
               $ref: '#/components/schemas/GdprPurgeRelationalStats'
-  responses:
-    Unauthorized:
-      description: Authentification requise
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    Forbidden:
-      description: Accès interdit
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    NotFound:
-      description: Ressource introuvable
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    ValidationError:
-      description: Erreur de validation
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ValidationError'
-    InternalError:
-      description: Erreur interne
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    TooManyRequests:
-      description: Limite de requêtes atteinte
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-  schemas:
     ErrorResponse:
       type: object
       properties:
@@ -2735,7 +2717,22 @@ components:
           type: array
           items:
             type: object
-            additionalProperties: true
+            properties:
+              path:
+                type: array
+                items:
+                  type: string
+              message:
+                type: string
+        fields:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
     AuthTokens:
       type: object
       properties:
@@ -2765,7 +2762,7 @@ components:
           default: RIDER
         consentAccepted:
           type: boolean
-          const: true
+          enum: [true]
     RegisterResponse:
       type: object
       properties:
@@ -2797,7 +2794,7 @@ components:
           properties:
             requiresTwoFactor:
               type: boolean
-              const: true
+              enum: [true]
             twoFactorDelivery:
               type: string
               enum: [EMAIL]
@@ -2933,8 +2930,6 @@ components:
           type: integer
           minimum: 1
           nullable: true
-        blobosphereContributor:
-          type: boolean
         lat:
           type: number
         lng:
@@ -2988,8 +2983,6 @@ components:
           type: integer
           minimum: 1
           nullable: true
-        blobosphereContributor:
-          type: boolean
     Discipline:
       type: object
       required: [sport, level]

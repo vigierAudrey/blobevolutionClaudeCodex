@@ -69,7 +69,7 @@ export class BookingService {
 
     if (overlappingAvailabilities.length > 0) {
       const conflictTimes = overlappingAvailabilities
-        .map((a: Prisma.ProAvailability) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .map((a) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
         .join(', ');
       throw Object.assign(
         new Error(`Time overlap detected with existing availability: ${conflictTimes}`),
@@ -118,7 +118,7 @@ export class BookingService {
 
     if (overlappingAvailabilities.length > 0) {
       const conflictTimes = overlappingAvailabilities
-        .map((a: Prisma.ProAvailability) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
+        .map((a) => `${a.startAt.toISOString()} - ${a.endAt.toISOString()}`)
         .join(', ');
       throw Object.assign(
         new Error(`Time overlap detected with existing availability: ${conflictTimes}`),

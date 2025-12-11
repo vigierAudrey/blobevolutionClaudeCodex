@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth/auth.guard';
+import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { bookingService } from './booking.service';
 import { createAvailabilitySchema } from './dto/createAvailability.dto';
 import { createBookingRequestSchema } from './dto/createRequest.dto';
@@ -9,7 +9,7 @@ import { searchAvailabilitySchema } from './dto/searchAvailability.dto';
 
 export const bookingRouter = Router();
 
-bookingRouter.use(requireAuth);
+bookingRouter.use(requireAuth, requireVerifiedEmail);
 
 const ensureRole = (role: 'RIDER' | 'PRO') => (req: any, res: any, next: any) => {
   const current = (req as any).user as { id: string; role: string } | undefined;

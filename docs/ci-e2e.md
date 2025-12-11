@@ -12,6 +12,11 @@
   - Build du front Next.js (détecte aussi les erreurs de types côté Web).
   - Type-check global du repo.
   - Tests API E2E (Jest + Supertest) avec une vraie DB locale.
+  - Job `e2e-tests` (Playwright) qui :
+    - Provisionne Postgres (service `postgres` dans GitHub Actions) et applique `db:generate`, `db:migrate:deploy`, `db:reseed`.
+    - Installe les navigateurs via `npx playwright install --with-deps`.
+    - Lance `npm run test:e2e`, ce qui démarre automatiquement API (`npm run dev -w @blobinfini/api`) et Next (`npm run dev -w @blobinfini/web`) grâce à `playwright.config.ts`.
+    - Tourne sur tous les pushs et sur les pull requests ciblant `main` (pour limiter la durée des branches secondaires).
 - Fichiers clés: `.github/workflows/ci.yml`.
 - Où voir les résultats: onglet “Actions” de GitHub sur le dépôt.
 
@@ -67,10 +72,13 @@ describe('Feature E2E', () => {
 });
 ```
 
-## E2E Web (prochaines étapes)
-- Outil: Playwright.
-- Parcours minimal cible: `register` → message de vérif → `login` → redirection dashboard.
-- Intégration: un job CI supplémentaire lancera le serveur API + Web, puis les tests Playwright.
+## E2E Web (Playwright)
+- Outil: [Playwright](https://playwright.dev/) (config: `playwright.config.ts`).
+- Commande locale: `npm run test:e2e` (démarre API + Web via `webServer`, ports 4000/3002 par défaut).
+- Parcours couverts aujourd’hui:
+  - Scénarios UI (home page statique, formulaires matching, carte réservations…).
+  - Flots critiques côté réservation (demande rider → pro accepte/refuse) décrits dans `apps/web/tests/e2e`.
+- CI : le job `e2e-tests` de `.github/workflows/ci.yml` exécute exactement cette commande après avoir préparé Postgres + seeds. Il échoue si Playwright échoue, donc pas besoin d’étapes manuelles supplémentaires.
 
 ## Dépannage rapide
 - “Port 3000 occupé” → libérer: `sudo fuser -k 3000/tcp`.

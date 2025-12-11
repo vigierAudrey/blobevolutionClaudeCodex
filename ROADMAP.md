@@ -201,7 +201,7 @@
 - [ ] Configurer `TRUSTED_PROXY_IPS`. _(Actuel : variable absente ; à compléter avec les IP/CIDR du reverse proxy avant mise en prod.)_
 - [ ] `DATABASE_URL` avec `sslmode=require`. _(Actuel : chaînes locales sans `sslmode`; forcer `?sslmode=require` côté env prod.)_
 - [ ] `REDIS_URL` avec mot de passe fort. _(Actuel : `change-me-strong`; générer un secret robuste et mettre à jour l’URL.)_
-- [ ] `AUTH_REQUIRE_VERIFIED=true`. _(Actuel : flag à `false` dans `.env`; à activer pour obliger la vérification email.)_
+- [x] `AUTH_REQUIRE_VERIFIED=true`. _(Depuis cette mise à jour, la prod force la vérification email riders/pro + middleware `requireVerifiedEmail` sur les modules critiques.)_
 - [ ] `NODE_ENV=production`. _(Actuel : dév local en `development`; vérifier que le déploiement exporte `NODE_ENV=production`.)_
 
 **Tests Sécurité (1h)**
@@ -224,6 +224,7 @@
 - [ ] Alertes 429 excessifs.
 - [ ] Dashboard 401/403/429 par endpoint.
 - [ ] Revue hebdomadaire audit logs.
+- [ ] Optimiser le compteur de messages non lus : supprimer le polling `/conversations` en prod au profit d'un flux temps réel (Socket.io) avec events d'update d'unread.
 
 **Documentation (30 min)**
 - [ ] `SECURITY.md` mis à jour.

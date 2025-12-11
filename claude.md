@@ -670,6 +670,13 @@ Le projet utilise **Model Context Protocol (MCP)** pour enrichir les capacités 
     "chrome-devtools": {
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "votre-token-github"
+      }
     }
   }
 }
@@ -678,6 +685,7 @@ Le projet utilise **Model Context Protocol (MCP)** pour enrichir les capacités 
 **Utilisation** :
 - **Vercel MCP** : Gestion déploiements frontend (logs, domaines, projets)
 - **Chrome DevTools MCP** : Tests navigateur, debugging, screenshots, performance
+- **GitHub MCP** : Recherche/écriture d’issues, PRs et historique depuis Claude Code
 
 #### 2. Claude Desktop (App) - `~/.config/claude/claude_desktop_config.json`
 

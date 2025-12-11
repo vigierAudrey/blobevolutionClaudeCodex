@@ -194,7 +194,7 @@ import { blobosphereAdminRouter } from './modules/blobosphere/blobosphere.contro
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
-import { requireAuth, requireAdmin } from './modules/auth/auth.guard';
+import { requireAuth, requireAdmin, requireVerifiedEmail } from './modules/auth/auth.guard';
 import { consentRouter } from './modules/consent/consent.controller';
 
 
@@ -354,7 +354,7 @@ export function createApp() {
   // CSRF token endpoint (GET requests are not protected)
   app.get('/csrf-token', getCSRFToken);
 
-  app.get('/security/health', requireAuth, requireAdmin, (req, res) => {
+  app.get('/security/health', requireAuth, requireVerifiedEmail, requireAdmin, (req, res) => {
     // P2-6: Logger qui accède à cet endpoint sensible
     secureLogger.security('SECURITY_HEALTH_CHECK_ACCESSED', {
       adminId: (req as any).user?.id,
@@ -364,14 +364,23 @@ export function createApp() {
     const issues: string[] = [];
     const isProd = process.env.NODE_ENV === 'production';
 
+    const proxies = process.env.TRUSTED_PROXY_IPS?.split(',').map(v => v.trim()).filter(Boolean) || [];
+
     if (isProd) {
       if (allowedOriginsSet.size === 0) {
         issues.push('ALLOWED_ORIGINS is empty');
       }
-      const proxies = process.env.TRUSTED_PROXY_IPS?.split(',').map(v => v.trim()).filter(Boolean) || [];
       if (proxies.length === 0) {
         issues.push('TRUSTED_PROXY_IPS missing');
       }
+    }
+
+    const authRequireVerified = String(
+      process.env.AUTH_REQUIRE_VERIFIED ?? (isProd ? 'true' : 'false')
+    ).toLowerCase() === 'true';
+
+    if (isProd && !authRequireVerified) {
+      issues.push('AUTH_REQUIRE_VERIFIED is not true in production');
     }
 
     // P2-6: Mode verbose pour détails (seulement si SECURITY_HEALTH_VERBOSE=true)
@@ -383,8 +392,14 @@ export function createApp() {
       csrf: true,
       rateLimit: true,
       corsWhitelist: verbose ? Array.from(allowedOriginsSet) : allowedOriginsSet.size, // P2-6: Ne pas exposer les origins en mode normal
+      authRequireVerified,
       issuesCount: issues.length,
-      issues: verbose ? issues : undefined // P2-6: Détails uniquement en mode verbose
+      issues: verbose ? issues : undefined, // P2-6: Détails uniquement en mode verbose
+      checks: {
+        corsConfigured: allowedOriginsSet.size > 0,
+        trustedProxyConfigured: proxies.length > 0,
+        authRequireVerified: authRequireVerified || !isProd
+      }
     };
 
     res.status(issues.length ? 503 : 200).json(result);

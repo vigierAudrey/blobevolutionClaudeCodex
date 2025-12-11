@@ -5,7 +5,7 @@ import { exec as _exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { pushBlobosphereChange } from '../../services/github.service';
-import { requireAuth, requireAdmin } from '../auth/auth.guard';
+import { requireAuth, requireAdmin, requireVerifiedEmail } from '../auth/auth.guard';
 import { validate } from '../../middleware/validate';
 import { audit } from '../../middleware/audit';
 
@@ -59,6 +59,7 @@ function sanitizeSlug(slug: string) {
 }
 
 export const blobosphereAdminRouter = Router();
+blobosphereAdminRouter.use(requireAuth, requireVerifiedEmail, requireAdmin);
 
 async function maybeCommit(fileRelPath: string, message: string) {
   if (String(process.env.BLOBOSPHERE_AUTO_COMMIT || 'false').toLowerCase() !== 'true') return;
@@ -75,8 +76,6 @@ async function maybeCommit(fileRelPath: string, message: string) {
 // List posts (metadata only)
 blobosphereAdminRouter.get(
   '/posts',
-  requireAuth,
-  requireAdmin,
   audit('admin:blobosphere:posts:list', () => 'admin:blobosphere:posts'),
   async (_req, res) => {
     const categories = ['surf', 'kitesurf', 'communaute', 'impact'] as const;
@@ -123,8 +122,6 @@ blobosphereAdminRouter.get(
 // Get a single post (frontmatter + body)
 blobosphereAdminRouter.get(
   '/posts/:category/:slug',
-  requireAuth,
-  requireAdmin,
   audit('admin:blobosphere:posts:get', (req) => `blobosphere:${req.params.category}/${req.params.slug}`),
   async (req, res) => {
     const category = req.params.category as 'surf'|'kitesurf'|'communaute'|'impact';
@@ -142,8 +139,6 @@ blobosphereAdminRouter.get(
 // Create a new post
 blobosphereAdminRouter.post(
   '/posts',
-  requireAuth,
-  requireAdmin,
   validate(PostSchema),
   audit('admin:blobosphere:posts:create', (req) => `blobosphere:${(req.body as any).category}/${(req.body as any).slug}`),
   async (req, res) => {
@@ -189,8 +184,6 @@ const UpdateSchema = PostSchema.partial().extend({
 
 blobosphereAdminRouter.put(
   '/posts/:category/:slug',
-  requireAuth,
-  requireAdmin,
   validate(UpdateSchema),
   audit('admin:blobosphere:posts:update', (req) => `blobosphere:${req.params.category}/${req.params.slug}`),
   async (req, res) => {
