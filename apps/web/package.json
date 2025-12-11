@@ -40,7 +40,7 @@
     "@babel/preset-env": "^7.23.0",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.23.0",
-    "@storybook/addon-a11y": "^8.0.10",
+    "@storybook/addon-a11y": "^10.1.6",
     "@storybook/addon-essentials": "^8.0.10",
     "@storybook/addon-interactions": "^8.0.10",
     "@storybook/addon-links": "^8.0.10",
