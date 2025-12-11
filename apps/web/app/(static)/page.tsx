@@ -1,10 +1,12 @@
 import { HomeFeatureCarousel } from '@/components/home/HomeFeatureCarousel';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import type { Metadata } from 'next';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
+import { Users, GraduationCap, Tag, BookOpen, ArrowRight } from 'lucide-react';
 
 // ISR with 5min revalidation
 export const revalidate = 300;
@@ -111,15 +113,18 @@ export default function Home() {
 
       {/* CIRCUITS PRINCIPAUX */}
       <section aria-labelledby="choose-circuit" className="space-y-6">
-        <div className="space-y-2">
-          <h2 id="choose-circuit" className="text-3xl font-semibold tracking-tight text-foreground">
-            Choisis ton circuit
-          </h2>
-          <p className="text-base text-muted-foreground">Tu viens pour rider avec quelqu’un, ou pour trouver un pro ?</p>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="h-1 w-1 rounded-full bg-blue-500" />
+            <h2 id="choose-circuit" className="text-3xl font-semibold tracking-tight text-foreground">
+              Choisis ton circuit
+            </h2>
+          </div>
+          <p className="text-base text-muted-foreground">Tu viens pour rider avec quelqu'un, ou pour trouver un pro ?</p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-2">
           {/* Circuit 1: Ride à deux */}
-          <Card className="group h-full overflow-hidden transition hover:-translate-y-0.5 hover:shadow-xl animate-in fade-in-50 duration-500" style={{ animationDelay: '120ms' }}>
+          <Card className="group h-full overflow-hidden border-2 border-transparent hover:border-blue-300 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl animate-in fade-in-50" style={{ animationDelay: '120ms' }}>
             <div className="relative h-64 w-full overflow-hidden">
               <Image
                 src="/images/home/RideaDeux.png"
@@ -131,27 +136,50 @@ export default function Home() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
             </div>
-            <CardHeader className="space-y-3">
-              <CardTitle className="flex items-center gap-3 text-2xl">
-                <span aria-hidden className="transition group-hover:scale-110">🤝</span> Ride à deux
-              </CardTitle>
+            <CardHeader className="space-y-3 bg-gradient-to-br from-blue-50/80 to-transparent dark:from-blue-950/30 dark:to-transparent">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <Users size={24} />
+                  </div>
+                  <CardTitle className="text-2xl">Ride à deux</CardTitle>
+                </div>
+                <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-100">
+                  Matching
+                </Badge>
+              </div>
               <CardDescription>Pas besoin d'un pro ? Trouve ton binôme et organise la session.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-6">
               <ul className="text-sm text-muted-foreground space-y-2">
-                <li>1) Choisis sport (kite/surf) et ton niveau</li>
-                <li>2) Indique date + zone</li>
-                <li>3) Matching des profils compatibles</li>
-                <li>4) Ouvre la conversation et cale la session</li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-500 font-semibold">1.</span>
+                  <span>Choisis sport (kite/surf) et ton niveau</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-500 font-semibold">2.</span>
+                  <span>Indique date + zone</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-500 font-semibold">3.</span>
+                  <span>Matching des profils compatibles</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-500 font-semibold">4.</span>
+                  <span>Ouvre la conversation et cale la session</span>
+                </li>
               </ul>
-              <Button asChild size="lg" className="transition hover:-translate-y-0.5">
-                <Link href="/register?intent=matching">Commencer le matching</Link>
+              <Button asChild size="lg" className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-lg hover:shadow-xl transition-all group-hover:scale-105">
+                <Link href="/register?intent=matching" className="inline-flex items-center justify-center gap-2">
+                  Commencer le matching
+                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                </Link>
               </Button>
             </CardContent>
           </Card>
 
           {/* Circuit 2: Avec un pro */}
-          <Card className="group h-full overflow-hidden transition hover:-translate-y-0.5 hover:shadow-xl animate-in fade-in-50 duration-500" style={{ animationDelay: '220ms' }}>
+          <Card className="group h-full overflow-hidden border-2 border-transparent hover:border-emerald-300 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl animate-in fade-in-50" style={{ animationDelay: '220ms' }}>
             <div className="relative h-64 w-full overflow-hidden">
               <Image
                 src="/images/home/CoursAvecPro.png"
@@ -162,25 +190,50 @@ export default function Home() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
             </div>
-            <CardHeader className="space-y-3">
-              <CardTitle className="flex items-center gap-3 text-2xl">
-                <span aria-hidden className="transition group-hover:scale-110">🎓</span> Avec un pro
-              </CardTitle>
+            <CardHeader className="space-y-3 bg-gradient-to-br from-emerald-50/80 to-transparent dark:from-emerald-950/30 dark:to-transparent">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <GraduationCap size={24} />
+                  </div>
+                  <CardTitle className="text-2xl">Avec un pro</CardTitle>
+                </div>
+                <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100">
+                  Cours
+                </Badge>
+              </div>
               <CardDescription>Signale que tu veux un cours. Les pros proches te contactent.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-6">
               <ul className="text-sm text-muted-foreground space-y-2">
-                <li>1) Active « Je cherche un cours »</li>
-                <li>2) Choisis sport, niveau, date et zone</li>
-                <li>3) Reçois des propositions des pros autour de toi</li>
-                <li>4) Réserve ou discute avant de confirmer</li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-500 font-semibold">1.</span>
+                  <span>Active « Je cherche un cours »</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-500 font-semibold">2.</span>
+                  <span>Choisis sport, niveau, date et zone</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-500 font-semibold">3.</span>
+                  <span>Reçois des propositions des pros autour de toi</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-500 font-semibold">4.</span>
+                  <span>Réserve ou discute avant de confirmer</span>
+                </li>
               </ul>
-              <div className="flex flex-wrap gap-3">
-                <Button asChild size="lg" className="transition hover:-translate-y-0.5">
-                  <Link href="/register?intent=lesson-request">Publier ma demande</Link>
+              <div className="flex flex-col gap-3">
+                <Button asChild size="lg" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg hover:shadow-xl transition-all group-hover:scale-105">
+                  <Link href="/register?intent=lesson-request" className="inline-flex items-center justify-center gap-2">
+                    Publier ma demande
+                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                  </Link>
                 </Button>
-                <Button asChild variant="outline" size="lg" className="transition hover:-translate-y-0.5">
-                  <Link href="/register?intent=offers">Voir les offres autour de moi</Link>
+                <Button asChild variant="outline" size="lg" className="w-full border-2 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-all">
+                  <Link href="/register?intent=offers">
+                    Voir les offres autour de moi
+                  </Link>
                 </Button>
               </div>
             </CardContent>
@@ -197,48 +250,84 @@ export default function Home() {
 
       {/* BONS PLANS */}
       <section aria-labelledby="bons-plans" className="space-y-6">
-        <Link
-          href="/promos"
-          aria-label="Voir les bons plans"
-          className="group block rounded-2xl border p-5 transition hover:-translate-y-0.5 hover:bg-accent hover:shadow-lg"
-        >
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h2 id="bons-plans" className="text-3xl font-semibold tracking-tight text-foreground">
-                Bons plans riders
-              </h2>
-              <p className="text-base text-muted-foreground">Offres spéciales pour la communauté kite et surf.</p>
-            </div>
-            <span className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 group-hover:underline">
-              Voir les bons plans <span aria-hidden>→</span>
-            </span>
-          </div>
-          <span className="sr-only">Voir les bons plans</span>
+        <div className="flex items-center gap-2">
+          <div className="h-1 w-1 rounded-full bg-amber-500" />
+          <h2 id="bons-plans" className="text-2xl font-semibold tracking-tight text-foreground">
+            Bons plans riders
+          </h2>
+        </div>
+        <Link href="/promos" aria-label="Voir les bons plans" className="group block">
+          <Card className="overflow-hidden border-2 border-transparent hover:border-amber-300 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
+            <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <Tag size={24} />
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl">Bons plans riders</CardTitle>
+                    <CardDescription className="mt-1">Offres spéciales pour la communauté kite et surf</CardDescription>
+                  </div>
+                </div>
+                <Badge className="bg-amber-500 text-white hover:bg-amber-600 transition-colors">
+                  Promos
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground mb-4">
+                Profite d'offres exclusives : matériel, spots, hébergements et services pour riders à prix réduits.
+              </p>
+              <Button size="lg" className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 shadow-lg hover:shadow-xl transition-all group-hover:scale-105">
+                <span className="inline-flex items-center gap-2">
+                  Voir les bons plans
+                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                </span>
+              </Button>
+            </CardContent>
+          </Card>
         </Link>
-        {/* Grille supprimée pour simplifier la section */}
       </section>
 
-      {/* BLOBO- LIGHT TOUCH */}
-      <section aria-labelledby="blobosphere" className="space-y-4">
-        <Link
-          href="/blobosphere"
-          aria-label="Explorer"
-          className="group block rounded-2xl border p-5 transition hover:-translate-y-0.5 hover:bg-accent hover:shadow-lg"
-        >
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h2 id="blobosphere" className="text-3xl font-semibold tracking-tight text-foreground">
-                Blobosphère
-              </h2>
-              <p className="text-base text-muted-foreground">Conseils équipement, environnement, santé… et bientôt des interviews inspirantes.</p>
-            </div>
-            <span className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 group-hover:underline">
-              Explorer <span aria-hidden>→</span>
-            </span>
-          </div>
-          <span className="sr-only">Explorer</span>
+      {/* BLOBOSPHÈRE */}
+      <section aria-labelledby="blobosphere" className="space-y-6">
+        <div className="flex items-center gap-2">
+          <div className="h-1 w-1 rounded-full bg-indigo-500" />
+          <h2 id="blobosphere" className="text-2xl font-semibold tracking-tight text-foreground">
+            Blobosphère
+          </h2>
+        </div>
+        <Link href="/blobosphere" aria-label="Explorer la Blobosphère" className="group block">
+          <Card className="overflow-hidden border-2 border-transparent hover:border-indigo-300 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
+            <CardHeader className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-indigo-600 to-blue-600 text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <BookOpen size={24} />
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl">Blobosphère</CardTitle>
+                    <CardDescription className="mt-1">Guides & conseils riders</CardDescription>
+                  </div>
+                </div>
+                <Badge className="bg-indigo-500 text-white hover:bg-indigo-600 transition-colors">
+                  Guides
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground mb-4">
+                Équipement, environnement, santé : tout pour rider en conscience. Découvre nos articles et interviews inspirantes.
+              </p>
+              <Button size="lg" className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 shadow-lg hover:shadow-xl transition-all group-hover:scale-105">
+                <span className="inline-flex items-center gap-2">
+                  Explorer la Blobosphère
+                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                </span>
+              </Button>
+            </CardContent>
+          </Card>
         </Link>
-        {/* Cartes d’aperçu supprimées pour alléger. Un simple CTA suffit. */}
       </section>
       </div>
 

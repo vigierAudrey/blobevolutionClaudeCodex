@@ -463,7 +463,7 @@ export default function ProfilePage() {
         <BackBar fallbackHref="/dashboard" />
 
         {/* Hero Header */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-500 via-pink-500 to-rose-400 p-8 text-white shadow-xl">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-500 p-8 text-white shadow-xl">
           <div className="absolute top-0 right-0 -mt-8 -mr-8 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
           <div className="absolute bottom-0 left-0 -mb-6 -ml-6 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
           <div className="relative z-10">
@@ -475,7 +475,7 @@ export default function ProfilePage() {
                 Mon Profil
               </h1>
             </div>
-            <p className="text-purple-50 text-sm sm:text-base">
+            <p className="text-indigo-50 text-sm sm:text-base">
               Personnalise ton profil pour un matching optimal et des sessions mémorables !
             </p>
           </div>
@@ -485,15 +485,15 @@ export default function ProfilePage() {
           {/* Section Identité */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <div className="h-1 w-1 rounded-full bg-purple-500" />
+              <div className="h-1 w-1 rounded-full bg-indigo-500" />
               <h2 className="text-lg font-semibold text-foreground">Identité</h2>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Photo Card */}
-              <Card className="overflow-hidden border-2 hover:shadow-lg transition-all bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30">
+              <Card className="overflow-hidden border-2 hover:shadow-lg transition-all bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-950/30 dark:to-violet-950/30">
                 <CardHeader>
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 text-white">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 text-white">
                       <Camera size={20}/>
                     </div>
                     <CardTitle>Photo de Profil</CardTitle>
@@ -503,7 +503,7 @@ export default function ProfilePage() {
                 <CardContent className="space-y-4">
                   <div className="flex flex-col items-center gap-4">
                     <div className="relative group">
-                      <div className="rounded-2xl border-4 border-purple-300 p-1.5 bg-white dark:bg-slate-900">
+                      <div className="rounded-2xl border-4 border-indigo-300 p-1.5 bg-white dark:bg-slate-900">
                         <div className="relative h-56 w-44 overflow-hidden rounded-xl bg-muted">
                           {displayedPhotoSrc ? (
                             <Image
@@ -527,7 +527,7 @@ export default function ProfilePage() {
                       type="file"
                       accept="image/*"
                       onChange={onPickPhoto}
-                      className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-gradient-to-r file:from-purple-600 file:to-pink-600 file:px-4 file:py-2.5 file:text-white file:font-medium hover:file:from-purple-700 hover:file:to-pink-700 file:transition-all"
+                      className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-gradient-to-r file:from-indigo-600 file:to-violet-600 file:px-4 file:py-2.5 file:text-white file:font-medium hover:file:from-indigo-700 hover:file:to-violet-700 file:transition-all"
                     />
                     {(photoUrl || showPhotoWarning) && (
                       <div className="w-full space-y-2">
@@ -922,7 +922,7 @@ export default function ProfilePage() {
               </p>
               <Button
                 type="submit"
-                className="w-full sm:w-auto bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-lg hover:shadow-xl transition-all text-base px-8 py-6"
+                className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-lg hover:shadow-xl transition-all text-base px-8 py-6"
                 disabled={saving}
               >
                 {saving ? (
