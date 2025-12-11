@@ -9,7 +9,7 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import type { ZodIssue } from 'zod';
 import type { DashboardUser, UserRole } from '@/types/user';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, LogIn, UserPlus, AlertCircle, CheckCircle2, Mail } from 'lucide-react';
 import { getPasswordRequirementStatuses } from '../../api/src/utils/password-validator';
 import { PasswordRequirementsList } from './PasswordRequirementsList';
 
@@ -277,14 +277,21 @@ export function AuthForm({ mode }: AuthFormProps) {
   // ✅ NOUVEAU : Si 2FA est requis, afficher le formulaire 2FA
   if (requires2FA && twoFAUserId) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>🔐 Vérification en deux étapes</CardTitle>
-          <CardDescription>
-            Un code de vérification a été envoyé à votre adresse email
-          </CardDescription>
+      <Card className="border-2 border-transparent hover:border-emerald-300 transition-all">
+        <CardHeader className="bg-gradient-to-br from-emerald-50/80 to-transparent dark:from-emerald-950/30 dark:to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-600 to-teal-600 text-white">
+              <Mail size={20} />
+            </div>
+            <div>
+              <CardTitle>Vérification en deux étapes</CardTitle>
+              <CardDescription>
+                Un code de vérification a été envoyé à votre adresse email
+              </CardDescription>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <form onSubmit={submit2FA} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="2fa-code">Code de vérification (6 chiffres)</Label>
@@ -304,18 +311,29 @@ export function AuthForm({ mode }: AuthFormProps) {
             </div>
 
             {error && (
-              <p className="text-sm text-red-600" role="alert">
-                {error}
-              </p>
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30" role="alert">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-700 dark:text-red-400">
+                  {error}
+                </p>
+              </div>
             )}
 
             {info && (
-              <p className="text-sm text-green-600" role="alert">
-                {info}
-              </p>
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30" role="alert">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-green-700 dark:text-green-400">
+                  {info}
+                </p>
+              </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading || twoFACode.length !== 6}>
+            <Button
+              type="submit"
+              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg hover:shadow-xl transition-all"
+              disabled={loading || twoFACode.length !== 6}
+              size="lg"
+            >
               {loading ? 'Vérification...' : 'Vérifier le code'}
             </Button>
 
@@ -340,14 +358,21 @@ export function AuthForm({ mode }: AuthFormProps) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{mode === 'login' ? 'Connexion' : 'Inscription'}</CardTitle>
-        <CardDescription>
-          {mode === 'login' ? 'Accède à ton compte BlobConnect.' : 'Rejoins la communauté BlobConnect.'}
-        </CardDescription>
+    <Card className="border-2 border-transparent hover:border-blue-300 transition-all">
+      <CardHeader className={`bg-gradient-to-br ${mode === 'login' ? 'from-indigo-50/80' : 'from-blue-50/80'} to-transparent dark:${mode === 'login' ? 'from-indigo-950/30' : 'from-blue-950/30'} dark:to-transparent`}>
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-lg bg-gradient-to-br ${mode === 'login' ? 'from-indigo-600 to-blue-600' : 'from-blue-500 to-cyan-500'} text-white`}>
+            {mode === 'login' ? <LogIn size={20} /> : <UserPlus size={20} />}
+          </div>
+          <div>
+            <CardTitle>{mode === 'login' ? 'Connexion' : 'Inscription'}</CardTitle>
+            <CardDescription>
+              {mode === 'login' ? 'Accède à ton compte BlobConnect' : 'Rejoins la communauté BlobConnect'}
+            </CardDescription>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-6">
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
@@ -503,12 +528,25 @@ export function AuthForm({ mode }: AuthFormProps) {
             </div>
           )}
           {error && (
-            <p className="text-sm text-red-600" role="alert">
-              {error}
-            </p>
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30" role="alert">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700 dark:text-red-400">
+                {error}
+              </p>
+            </div>
           )}
-          {info && <p className="text-sm text-green-600">{info}</p>}
-          <Button type="submit" disabled={loading} className="w-full">
+          {info && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30">
+              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-green-700 dark:text-green-400">{info}</p>
+            </div>
+          )}
+          <Button
+            type="submit"
+            disabled={loading}
+            className={`w-full bg-gradient-to-r ${mode === 'login' ? 'from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700' : 'from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700'} shadow-lg hover:shadow-xl transition-all`}
+            size="lg"
+          >
             {loading ? 'En cours…' : mode === 'login' ? 'Se connecter' : 'Créer le compte'}
           </Button>
         </form>
