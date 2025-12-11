@@ -408,31 +408,56 @@ export default function DashboardPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-6 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Bouton 1 : Chercher un pro */}
               <Link href="/offers" className="group">
-                <Button className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-md group-hover:shadow-lg transition-all">
-                  <Search size={16} className="mr-2" />
-                  Chercher un pro
+                <Button
+                  size="lg"
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg group-hover:shadow-xl group-hover:scale-105 transition-all duration-200 text-base font-semibold"
+                >
+                  <Search size={18} className="mr-2" />
+                  🔍 Chercher un pro
                 </Button>
               </Link>
-              <Link href="/lesson-request" className="group">
-                <Button variant="secondary" className="w-full group-hover:bg-secondary/80 transition-colors">
-                  <RadioTower size={16} className="mr-2" />
-                  Demander un cours
-                </Button>
-              </Link>
+
+              {/* Bouton 2 : Demander un cours - AVEC TOOLTIP */}
+              <div className="relative group/tooltip">
+                <Link href="/lesson-request" className="block">
+                  <Button
+                    size="lg"
+                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-base font-semibold"
+                  >
+                    <RadioTower size={18} className="mr-2" />
+                    📡 Demander un cours
+                  </Button>
+                </Link>
+                {/* Tooltip custom */}
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-72 opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 pointer-events-none z-50">
+                  <div className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white px-4 py-3 rounded-2xl shadow-2xl border-2 border-white/20 animate-in fade-in slide-in-from-bottom-2">
+                    <p className="text-sm font-medium flex items-start gap-2 leading-relaxed">
+                      <span className="text-lg flex-shrink-0">💡</span>
+                      <span>Les pros voient ta demande sur leur BloboMap et peuvent te proposer un cours adapté à ton niveau</span>
+                    </p>
+                    {/* Flèche du tooltip */}
+                    <div className="absolute left-1/2 -translate-x-1/2 top-full -mt-px">
+                      <div className="w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-indigo-600"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bouton 3 : Voir les promos */}
               <Link href="/promos" className="group">
-                <Button variant="outline" className="w-full group-hover:bg-accent transition-colors">
-                  <Tag size={16} className="mr-2" />
-                  Voir les promos
+                <Button
+                  size="lg"
+                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-base font-semibold border-2 border-amber-400/50"
+                >
+                  <Tag size={18} className="mr-2" />
+                  🏷️ Voir les promos
                 </Button>
               </Link>
             </div>
-            <p className="text-xs text-muted-foreground px-1 flex items-start gap-2">
-              <span className="text-sm">💡</span>
-              <span>Les pros voient ta demande sur la BloboMap et peuvent te proposer un cours adapté à ton niveau</span>
-            </p>
           </CardContent>
         </Card>
       </div>
