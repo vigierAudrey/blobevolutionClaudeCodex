@@ -30,6 +30,36 @@ const exportRateLimiter = rateLimit({
   },
 });
 
+// Profile update rate limiter: max 10 updates per 15 minutes per user
+const profileUpdateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Maximum 10 updates par fenêtre
+  message: 'Trop de mises à jour de profil. Veuillez réessayer dans 15 minutes.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const userId = (req as any).user?.id;
+    if (userId) {
+      return `user:${userId}:profile_update`;
+    }
+    const ip = req.ip || req.socket?.remoteAddress;
+    return ip ? ipKeyGenerator(ip) : 'anonymous';
+  },
+  handler: (req, res) => {
+    const userId = (req as any).user?.id;
+    console.warn(`⚠️ Rate limit exceeded for profile update: user=${userId}, ip=${req.ip}`);
+
+    const resetTime = (req as any).rateLimit?.resetTime;
+    const retryAfter = resetTime ? Math.ceil((resetTime.getTime() - Date.now()) / 1000) : 900;
+
+    res.status(429).json({
+      error: 'RATE_LIMIT_EXCEEDED',
+      message: 'Trop de mises à jour de profil. Veuillez réessayer dans 15 minutes.',
+      retryAfter,
+    });
+  },
+});
+
 const upsertSchema = z.object({
   businessName: z.string().min(1).max(120).optional().or(z.literal('').transform(() => undefined)),
   bio: z.string().max(2000).optional().or(z.literal('').transform(() => undefined)),
@@ -123,7 +153,7 @@ const persistProProfile = async (userId: string, body: z.infer<typeof upsertSche
   });
 };
 
-proRouter.put('/me', requireProRole, async (req, res) => {
+proRouter.put('/me', requireProRole, profileUpdateLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -136,7 +166,7 @@ proRouter.put('/me', requireProRole, async (req, res) => {
   }
 });
 
-proRouter.patch('/me', requireProRole, async (req, res) => {
+proRouter.patch('/me', requireProRole, profileUpdateLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -304,43 +334,30 @@ proRouter.post('/offers', requireProRole, async (req, res) => {
       return res.status(400).json({ error: 'Geolocation required. Please update your pro profile with lat/lng first.' });
     }
 
-    // Chercher l'offre existante pour ce pro
-    const existingOffer = await prisma.proOffer.findFirst({
-      where: { proProfileId: proProfile.id }
+    const offer = await prisma.proOffer.upsert({
+      where: { proProfileId: proProfile.id },
+      update: {
+        sport: body.sport,
+        level: body.level,
+        title: body.title,
+        description: body.description,
+        hourlyRate: body.hourlyRate,
+        lat: proProfile.lat,
+        lng: proProfile.lng,
+        isActive: body.isActive,
+      },
+      create: {
+        proProfileId: proProfile.id,
+        sport: body.sport,
+        level: body.level,
+        title: body.title,
+        description: body.description,
+        hourlyRate: body.hourlyRate,
+        lat: proProfile.lat,
+        lng: proProfile.lng,
+        isActive: body.isActive,
+      },
     });
-
-    let offer;
-    if (existingOffer) {
-      // Mettre à jour l'offre existante
-      offer = await prisma.proOffer.update({
-        where: { id: existingOffer.id },
-        data: {
-          sport: body.sport,
-          level: body.level,
-          title: body.title,
-          description: body.description,
-          hourlyRate: body.hourlyRate,
-          lat: proProfile.lat,
-          lng: proProfile.lng,
-          isActive: body.isActive,
-        },
-      });
-    } else {
-      // Créer une nouvelle offre
-      offer = await prisma.proOffer.create({
-        data: {
-          proProfileId: proProfile.id,
-          sport: body.sport,
-          level: body.level,
-          title: body.title,
-          description: body.description,
-          hourlyRate: body.hourlyRate,
-          lat: proProfile.lat,
-          lng: proProfile.lng,
-          isActive: body.isActive,
-        },
-      });
-    }
 
     return res.status(201).json(offer);
   } catch (err: any) {
