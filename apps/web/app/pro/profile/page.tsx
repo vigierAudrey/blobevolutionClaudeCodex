@@ -2,7 +2,7 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -10,9 +10,13 @@ import { Label } from '../../../components/ui/label';
 import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { Button } from '../../../components/ui/button';
+import { Badge } from '../../../components/ui/badge';
+import { MapPin, Cookie, Trash2, Target, Shield, Ban } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { apiClient } from '../../../lib/apiClient';
 import { apiRequest } from '../../../lib/csrf';
 import { useToast } from '../../../components/ui/toast';
+import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../../components/cookies/CookieConsent';
 
 // Configuration de sécurité pour l'upload de fichiers
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
@@ -68,6 +72,8 @@ function sanitizeErrorMessage(error: unknown): string {
 export default function ProProfilePage() {
   const router = useRouter();
   const toast = useToast();
+  const { updateConsent: resetConsent, consentReady: consentStateReady, consentLevel } = useCookieConsent();
+
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [businessName, setBusinessName] = useState('');
@@ -77,10 +83,57 @@ export default function ProProfilePage() {
   const [file, setFile] = useState<File | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
+  // Geolocation state
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [enablingLocation, setEnablingLocation] = useState(false);
+  const [deletingLocation, setDeletingLocation] = useState(false);
+
   // Account deletion modal state
   const [showDeletionModal, setShowDeletionModal] = useState(false);
   const [deletionStatus, setDeletionStatus] = useState<DeletionStatus | null>(null);
   const [loadingDeletion, setLoadingDeletion] = useState(false);
+
+  // Cookie consent summary
+  const consentSummary = useMemo(() => {
+    type Summary = {
+      label: string;
+      description: string;
+      Icon: LucideIcon;
+      badge?: { text: string; className?: string };
+      cardClasses: string;
+      iconClasses: string;
+    };
+    const baseBadge = 'border-none text-xs font-semibold';
+
+    const summaries: Record<string, Summary> = {
+      personalized: {
+        label: 'Publicités personnalisées',
+        description: 'Équipements sélectionnés selon ton activité professionnelle. Aide à financer la plateforme.',
+        Icon: Target,
+        badge: { text: 'Recommandé', className: `${baseBadge} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400` },
+        cardClasses: 'border-blue-200 bg-blue-50/70 dark:border-blue-800/50 dark:bg-blue-950/20',
+        iconClasses: 'text-blue-600 dark:text-blue-400',
+      },
+      essential: {
+        label: 'Publicités basiques',
+        description: 'Annonces générales sans profilage ; aucune donnée personnelle utilisée.',
+        Icon: Shield,
+        badge: { text: 'Essentiel', className: `${baseBadge} bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400` },
+        cardClasses: 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-800/50 dark:bg-emerald-950/20',
+        iconClasses: 'text-emerald-600 dark:text-emerald-400',
+      },
+      none: {
+        label: 'Publicités limitées',
+        description: 'Seules les annonces internes (House Ads) sont affichées.',
+        Icon: Ban,
+        badge: { text: 'House ads', className: `${baseBadge} bg-slate-200 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300` },
+        cardClasses: 'border-slate-200 bg-slate-50 dark:border-slate-800/50 dark:bg-slate-900/20',
+        iconClasses: 'text-slate-500 dark:text-slate-400',
+      },
+    };
+
+    return summaries[consentLevel] ?? summaries.none;
+  }, [consentLevel]);
 
   // Hook pour vérifier l'authentification
   const ensureAuthenticated = useCallback(() => {
@@ -120,6 +173,13 @@ export default function ProProfilePage() {
         setBio(data.bio || '');
         setEmailNotif(!!data.emailNotif);
         setPhotoUrl(data.photoUrl || null);
+
+        // Load geolocation if available
+        if (data.lat != null && data.lng != null) {
+          setUserLocation({ lat: data.lat, lng: data.lng });
+        } else {
+          setUserLocation(null);
+        }
       } catch (e) {
         setErr(sanitizeErrorMessage(e));
       } finally {
@@ -246,6 +306,75 @@ export default function ProProfilePage() {
     void checkDeletionStatus();
   }, [checkDeletionStatus]);
 
+  // Handler pour supprimer la géolocalisation
+  const handleDeleteLocation = async () => {
+    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver depuis la BloboMap ou vos Offres pour apparaître dans les recherches à proximité.')) {
+      return;
+    }
+
+    setDeletingLocation(true);
+    try {
+      const t = ensureAuthenticated();
+
+      const response = await apiRequest('/pro/me', {
+        method: 'PUT',
+        body: JSON.stringify({ lat: undefined, lng: undefined }),
+        headers: { Authorization: `Bearer ${t.accessToken}` },
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data?.error || 'Erreur lors de la suppression');
+      }
+
+      setUserLocation(null);
+      toast('Géolocalisation supprimée', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de la suppression';
+      toast(message, 'error');
+    } finally {
+      setDeletingLocation(false);
+    }
+  };
+
+  // Handler pour rouvrir la modale de consentement cookies
+  const handleReopenCookieConsent = async () => {
+    // Confirmation utilisateur avant réinitialisation
+    if (!confirm('Réinitialiser vos préférences cookies ? Cette action ouvrira à nouveau la fenêtre de consentement.')) {
+      return;
+    }
+
+    if (!consentStateReady) {
+      toast('Préférences cookies en cours de chargement, réessaie dans un instant.', 'info');
+      return;
+    }
+
+    try {
+      await resetConsent('none');
+
+      // Utiliser SameSite=Strict pour meilleure sécurité
+      document.cookie = 'cookie_consent=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict';
+
+      if (typeof window !== 'undefined') {
+        try {
+          if ('localStorage' in window) {
+            window.localStorage.removeItem('blob_consent');
+            window.localStorage.removeItem('cookie-consent');
+          }
+          window.dispatchEvent(new Event(COOKIE_CONSENT_REOPEN_EVENT));
+        } catch (error) {
+          console.warn('Impossible de rouvrir immédiatement la fenêtre de consentement', error);
+          toast('Erreur lors de la réinitialisation. Rafraîchissez la page.', 'error');
+          // Reload seulement en dernier recours après 2 secondes
+          setTimeout(() => window.location.reload(), 2000);
+        }
+      }
+    } catch (error) {
+      console.error('Erreur handleReopenCookieConsent:', error);
+      toast('Erreur lors de la réinitialisation des préférences.', 'error');
+    }
+  };
+
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
@@ -301,19 +430,34 @@ export default function ProProfilePage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <BackBar fallbackHref="/dashboard" />
-      <h1 className="text-2xl font-semibold mb-4">Profil Professionnel</h1>
+    <div className="max-w-2xl mx-auto space-y-6 pb-8">
+      <BackBar fallbackHref="/pro/dashboard" />
+
+      {/* Header compact avec style océan */}
+      <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/20 dark:to-orange-900/20 p-4 border-2 border-amber-200/50 dark:border-amber-800/50">
+        <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <h1 className="text-xl font-bold text-foreground">Profil Professionnel 💼</h1>
+          <p className="text-sm text-muted-foreground">Gère tes informations visibles par les clients</p>
+        </div>
+      </div>
+
       {loading ? (
-        <p>Chargement…</p>
+        <div className="text-center py-8">
+          <p className="text-muted-foreground">Chargement…</p>
+        </div>
       ) : (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Mes infos pro</CardTitle>
+          <Card className="border-2 rounded-[1.75rem]">
+            <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30">
+              <CardTitle className="text-foreground">Mes infos pro</CardTitle>
               <CardDescription>Ces informations seront visibles par les clients.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
               <form onSubmit={onSave} className="space-y-4">
                 <div className="space-y-2">
                   <Label>Nom commercial</Label>
@@ -363,29 +507,123 @@ export default function ProProfilePage() {
                 </div>
                 {err && (
                   <div
-                    className="text-sm text-red-600 p-3 bg-red-50 rounded border border-red-200"
+                    className="rounded-2xl border-2 border-red-200 dark:border-red-800/50 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 p-4"
                     role="alert"
                     aria-live="assertive"
                   >
-                    {err}
+                    <p className="text-sm text-red-700 dark:text-red-300 font-medium">
+                      ❌ {err}
+                    </p>
                   </div>
                 )}
-                <Button type="submit" className="w-full sm:w-auto">Enregistrer</Button>
+                <Button type="submit" className="w-full sm:w-auto bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700">
+                  Enregistrer
+                </Button>
               </form>
             </CardContent>
           </Card>
 
           {/* RGPD & Privacy Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">🔒 Confidentialité & RGPD</CardTitle>
+          <Card className="border-2 rounded-[1.75rem]">
+            <CardHeader className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30">
+              <CardTitle className="text-base text-foreground">🔒 Confidentialité & RGPD</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Conformément au RGPD, vous pouvez exporter ou supprimer vos données personnelles à tout moment.
-                </p>
-                <div className="flex flex-wrap gap-2 items-center">
+            <CardContent className="pt-6">
+              <div className="space-y-6">
+                {/* Geolocation Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Géolocalisation</h3>
+                  </div>
+                  {userLocation ? (
+                    <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 dark:border-emerald-800/50 dark:bg-emerald-950/20 p-4 space-y-3">
+                      <div className="flex items-start gap-2">
+                        <span className="text-emerald-600 text-lg">📍</span>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
+                            Position active
+                          </p>
+                          <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
+                            Lat: {userLocation.lat.toFixed(2)}, Lng: {userLocation.lng.toFixed(2)}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-2 italic">
+                            Précision approximative (~1 km) pour préserver votre confidentialité
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Utilisée pour apparaître dans les recherches à proximité sur la BloboMap
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={handleDeleteLocation}
+                        disabled={deletingLocation}
+                        className="w-full sm:w-auto"
+                      >
+                        <Trash2 className="h-3 w-3 mr-2" />
+                        {deletingLocation ? 'Suppression...' : 'Supprimer ma position'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/20 p-4">
+                      <p className="text-sm text-muted-foreground flex items-start gap-2">
+                        <span>ℹ️</span>
+                        <span>Aucune géolocalisation enregistrée. Active-la depuis la BloboMap ou tes Offres pour apparaître dans les recherches à proximité.</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <hr className="border-t-2" />
+
+                {/* Cookie Preferences Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Cookie className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Préférences Cookies</h3>
+                  </div>
+                  {consentStateReady ? (
+                    <div className="space-y-3">
+                      <div className={`flex items-start gap-3 rounded-xl border-2 p-4 ${consentSummary.cardClasses}`}>
+                        <consentSummary.Icon className={`h-5 w-5 ${consentSummary.iconClasses} flex-shrink-0 mt-0.5`} />
+                        <div className="flex-1 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold text-foreground">{consentSummary.label}</p>
+                            {consentSummary.badge && (
+                              <Badge className={consentSummary.badge.className}>{consentSummary.badge.text}</Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">{consentSummary.description}</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={handleReopenCookieConsent}
+                        className="w-full sm:w-auto"
+                      >
+                        Gérer mes cookies
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
+                      Chargement des préférences…
+                    </div>
+                  )}
+                </div>
+
+                <hr className="border-t-2" />
+
+                {/* RGPD Export & Deletion */}
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Conformément au RGPD, vous pouvez exporter ou supprimer vos données personnelles à tout moment.
+                  </p>
+                  <div className="flex flex-wrap gap-2 items-center">
                   <button
                     type="button"
                     className="text-sm text-primary hover:underline"
@@ -448,6 +686,7 @@ export default function ProProfilePage() {
                     </button>
                   )}
                 </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -457,23 +696,23 @@ export default function ProProfilePage() {
       {/* Account Deletion Modal */}
       {showDeletionModal && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setShowDeletionModal(false)}
         >
           <Card
-            className="max-w-lg w-full"
+            className="max-w-lg w-full border-2 rounded-[1.75rem] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <CardHeader>
-              <CardTitle className="text-xl text-red-600">⚠️ Suppression de compte</CardTitle>
-              <CardDescription>
+            <CardHeader className="bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-950/30">
+              <CardTitle className="text-xl text-red-600 dark:text-red-400">⚠️ Suppression de compte</CardTitle>
+              <CardDescription className="text-red-700 dark:text-red-300">
                 Cette action entraînera la suppression définitive de votre compte dans 30 jours
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-2">
-                <h3 className="font-semibold text-sm">📅 Comment fonctionne la suppression ?</h3>
-                <ol className="text-sm space-y-1 list-decimal list-inside text-muted-foreground">
+            <CardContent className="space-y-4 pt-6">
+              <div className="rounded-2xl border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-4 space-y-2">
+                <h3 className="font-semibold text-sm text-amber-900 dark:text-amber-100">📅 Comment fonctionne la suppression ?</h3>
+                <ol className="text-sm space-y-1 list-decimal list-inside text-amber-800 dark:text-amber-200">
                   <li>Votre compte sera <strong>immédiatement désactivé</strong></li>
                   <li>Vos données seront <strong>conservées pendant 30 jours</strong></li>
                   <li>Vous pourrez <strong>annuler</strong> la suppression durant cette période</li>
@@ -481,16 +720,16 @@ export default function ProProfilePage() {
                 </ol>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-                <h3 className="font-semibold text-sm">💡 Avant de supprimer</h3>
-                <ul className="text-sm space-y-1 list-disc list-inside text-muted-foreground">
+              <div className="rounded-2xl border-2 border-blue-200 dark:border-blue-800/50 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 p-4 space-y-2">
+                <h3 className="font-semibold text-sm text-blue-900 dark:text-blue-100">💡 Avant de supprimer</h3>
+                <ul className="text-sm space-y-1 list-disc list-inside text-blue-800 dark:text-blue-200">
                   <li>Vous pouvez <strong>exporter vos données</strong> (droit RGPD)</li>
                   <li>Pensez à <strong>clôturer vos offres</strong> en cours</li>
                   <li>Vos messages seront supprimés définitivement</li>
                 </ul>
               </div>
 
-              <div className="flex flex-col-reverse sm:flex-row gap-2 pt-4">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <Button
                   type="button"
                   variant="outline"
@@ -503,7 +742,7 @@ export default function ProProfilePage() {
                 <Button
                   type="button"
                   variant="destructive"
-                  className="flex-1"
+                  className="flex-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700"
                   onClick={handleRequestDeletion}
                   disabled={loadingDeletion}
                 >
