@@ -8,6 +8,7 @@ import type {
   RiderBookingRequest,
 } from './types/booking';
 import type { ThreadListQuery, ThreadListResponse, MessageListResponse, SendMessagePayload } from '@/types/messages';
+import type { OfferSearchResponse } from '@/types/offers';
 
 export interface AuditLogEntry {
   id: string;
@@ -303,6 +304,35 @@ export interface AdminSecuritySummary {
   items: Array<{ action: string; count: number }>;
 }
 
+export interface AdminAvailabilityStatusItem {
+  id: string;
+  startAt: string;
+  endAt: string;
+  sport: 'surf' | 'kitesurf';
+  levels: string[];
+  capacity: number;
+  bookedCount: number;
+  status: 'OPEN' | 'CLOSED';
+  spotName: string | null;
+  pro: {
+    id: string;
+    email: string;
+    proProfile?: {
+      businessName: string | null;
+    } | null;
+  };
+}
+
+export interface AdminAvailabilityStatusResponse {
+  summary: {
+    total: number;
+    open: number;
+    closed: number;
+    bySport: Array<{ sport: string | null; status: 'OPEN' | 'CLOSED'; count: number }>;
+  };
+  items: AdminAvailabilityStatusItem[];
+}
+
 export interface LoginAttempt {
   id: string;
   email: string;
@@ -436,6 +466,7 @@ export interface BookingAvailabilityResult {
   endAt: string;
   capacity: number;
   bookedCount: number;
+  status: 'OPEN' | 'CLOSED';
   spotName: string | null;
   spotLat: number | null;
   spotLng: number | null;
@@ -689,11 +720,11 @@ export const apiClient = {
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
   updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
-  getDisciplines: () => request('/profile/disciplines', { method: 'GET' }, true) as Promise<Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced' }>>,
-  setDisciplines: (items: Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced' }>) =>
+  getDisciplines: () => request('/profile/disciplines', { method: 'GET' }, true) as Promise<Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced'|'anytime' }>>,
+  setDisciplines: (items: Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced'|'anytime' }>) =>
     request('/profile/disciplines', { method: 'PUT', body: JSON.stringify(items) }, true),
 
-  searchMatching: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced'; date: string; partner?: 'ALL' | 'WOMEN' | 'MEN'; distanceKm?: number; location?: { lat: number; lng: number }; page?: number; pageSize?: number; sortBy?: 'distance' | 'name'; excludeIds?: string[] }) =>
+  searchMatching: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced' | 'anytime'; date: string; partner?: 'ALL' | 'WOMEN' | 'MEN'; distanceKm?: number; location?: { lat: number; lng: number }; page?: number; pageSize?: number; sortBy?: 'distance' | 'name'; excludeIds?: string[] }) =>
     request('/matching/search', { method: 'POST', body: JSON.stringify(body) }, true),
 
   matchDecision: (body: { targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }) =>
@@ -704,6 +735,8 @@ export const apiClient = {
 
   openConversation: (targetUserId: string) =>
     request('/conversations/open', { method: 'POST', body: JSON.stringify({ targetUserId }) }, true) as Promise<{ id: string }>,
+  trackOfferClick: (offerId: string) =>
+    request(`/pro/offers/${offerId}/click`, { method: 'POST', body: JSON.stringify({}) }, true),
 
   reportProfile: (body: { targetProfileId: string; reason?: string }) =>
     request('/reports/profile', { method: 'POST', body: JSON.stringify(body) }, true),
@@ -728,6 +761,7 @@ export const apiClient = {
   unmatchConversation: (id: string) => request(`/conversations/${id}/unmatch`, { method: 'POST', body: JSON.stringify({}) }, true),
   trashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'trash' }) }, true),
   untrashConversation: (id: string) => request(`/conversations/${id}/trash`, { method: 'POST', body: JSON.stringify({ action: 'untrash' }) }, true),
+  emptyTrashConversations: () => request('/conversations/empty-trash', { method: 'POST', body: JSON.stringify({}) }, true) as Promise<{ ok: boolean; count: number }>,
   favoriteConversation: (id: string, value: boolean) => request(`/conversations/${id}/favorite`, { method: 'POST', body: JSON.stringify({ value }) }, true),
 
   getConsent: (hash: string) =>
@@ -747,20 +781,21 @@ export const apiClient = {
 
   // Pro Offers
   getProOffer: () => request('/pro/offers/me', { method: 'GET' }, true),
-  createOrUpdateProOffer: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced'; title: string; description: string; hourlyRate: number; isActive?: boolean }) =>
+  createOrUpdateProOffer: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced' | 'anytime'; title: string; description: string; hourlyRate: number; isActive?: boolean }) =>
     request('/pro/offers', { method: 'POST', body: JSON.stringify(body) }, true),
   deleteProOffer: () => request('/pro/offers/me', { method: 'DELETE' }, true),
   toggleProOffer: () => request('/pro/offers/me/toggle', { method: 'PATCH' }, true),
 
   searchOffers: (params: { lat?: number; lng?: number; radiusKm?: number; sport?: string; level?: string }) => {
     const query = new URLSearchParams();
-    if (params.lat) query.append('lat', params.lat.toString());
-    if (params.lng) query.append('lng', params.lng.toString());
-    if (params.radiusKm) query.append('radiusKm', params.radiusKm.toString());
+    if (typeof params.lat === 'number') query.append('lat', params.lat.toString());
+    if (typeof params.lng === 'number') query.append('lng', params.lng.toString());
+    if (typeof params.radiusKm === 'number') query.append('radiusKm', params.radiusKm.toString());
     if (params.sport) query.append('sport', params.sport);
     if (params.level) query.append('level', params.level);
 
-    return request(`/pro/offers/search?${query.toString()}`, { method: 'GET' }, true);
+    const qs = query.toString();
+    return request(`/pro/offers/search${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<OfferSearchResponse>;
   },
 
   // Admin
@@ -781,6 +816,13 @@ export const apiClient = {
     return request(`/admin/audit${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<AuditLogResponse>;
   },
   getAdminStats: () => request('/admin/stats', { method: 'GET' }, true),
+  getAdminAvailabilityStatus: (params?: { status?: 'OPEN' | 'CLOSED'; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.append('status', params.status);
+    if (params?.limit) query.append('limit', params.limit.toString());
+    const qs = query.toString();
+    return request(`/admin/booking/availability-status${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<AdminAvailabilityStatusResponse>;
+  },
   getAdminUsers: (params?: { page?: number; limit?: number; role?: string }) => {
     const query = new URLSearchParams();
     if (params?.page) query.append('page', params.page.toString());
@@ -912,6 +954,8 @@ export const apiClient = {
     request('/booking/availability', { method: 'POST', body: JSON.stringify(payload) }, true) as Promise<BookingAvailability>,
   updateBookingAvailability: (availabilityId: string, payload: Partial<CreateBookingAvailabilityPayload>) =>
     request(`/booking/availability/${availabilityId}`, { method: 'PATCH', body: JSON.stringify(payload) }, true) as Promise<BookingAvailability>,
+  adjustBookingAvailabilityBookedCount: (availabilityId: string, delta: number) =>
+    request(`/booking/availability/${availabilityId}/adjust-booked`, { method: 'PATCH', body: JSON.stringify({ delta }) }, true) as Promise<BookingAvailability>,
   deleteBookingAvailability: (availabilityId: string) =>
     request(`/booking/availability/${availabilityId}`, { method: 'DELETE' }, true) as Promise<{ success: boolean; message: string }>,
   createBookingRequest: (payload: { availabilityId: string; message?: string }) =>
@@ -946,6 +990,10 @@ export const apiClient = {
   },
   decideBookingRequest: (requestId: string, decision: 'ACCEPT' | 'REJECT') =>
     request(`/booking/requests/${requestId}/decision`, { method: 'POST', body: JSON.stringify({ decision }) }, true),
+  getProBookings: () =>
+    request('/booking/bookings/me', { method: 'GET' }, true) as Promise<{ bookings: any[] }>,
+  getRiderBookings: () =>
+    request('/booking/bookings/rider/me', { method: 'GET' }, true) as Promise<{ bookings: any[] }>,
   getMyBookingRequests: async () => {
     const response = (await request('/booking/requests/me', { method: 'GET' }, true)) as {
       requests: BookingRequestMeApiItem[];

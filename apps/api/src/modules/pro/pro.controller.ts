@@ -79,6 +79,10 @@ const offerSchema = z.object({
   isActive: z.boolean().optional().default(true),
 });
 
+const offerIdParamSchema = z.object({
+  offerId: z.string().uuid()
+});
+
 type LessonCandidateRow = {
   id: string;
   userId: string;
@@ -306,12 +310,34 @@ proRouter.get('/offers/me', requireProRole, async (req, res) => {
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
       where: { userId },
-      include: { offers: true }
+      include: {
+        offers: {
+          include: {
+            _count: { select: { clicks: true } },
+            clicks: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: { createdAt: true }
+            }
+          }
+        }
+      }
     });
 
     if (!proProfile) return res.status(404).json({ error: 'Pro profile not found' });
 
-    return res.json({ offers: proProfile.offers });
+    const offersWithStats = proProfile.offers.map((offer: any) => {
+      const { clicks, _count, ...rest } = offer;
+      return {
+        ...rest,
+        stats: {
+          uniqueClicks: _count?.clicks ?? 0,
+          lastClickAt: clicks?.[0]?.createdAt ?? null
+        }
+      };
+    });
+
+    return res.json({ offers: offersWithStats });
   } catch (err) {
     console.error('Error fetching pro offer:', err);
     return res.status(500).json({ error: 'Internal error' });
@@ -416,6 +442,41 @@ proRouter.patch('/offers/me/toggle', requireProRole, async (req, res) => {
     return res.json(updatedOffer);
   } catch (err) {
     console.error('Error toggling offer status:', err);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Register a rider click on an offer (unique per rider/offer)
+proRouter.post('/offers/:offerId/click', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { offerId } = offerIdParamSchema.parse(req.params);
+
+    const offer = await prisma.proOffer.findUnique({
+      where: { id: offerId },
+      select: {
+        id: true,
+        proProfile: { select: { userId: true } }
+      }
+    });
+
+    if (!offer) return res.status(404).json({ error: 'Offer not found' });
+
+    // Ne pas compter les clics du propriétaire pro
+    if (offer.proProfile.userId === userId) return res.status(204).send();
+
+    await prisma.proOfferClick.upsert({
+      where: { proOfferId_riderUserId: { proOfferId: offerId, riderUserId: userId } },
+      create: { proOfferId: offerId, riderUserId: userId },
+      update: {}
+    });
+
+    return res.status(204).send();
+  } catch (err: any) {
+    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    console.error('Error registering offer click:', err);
     return res.status(500).json({ error: 'Internal error' });
   }
 });

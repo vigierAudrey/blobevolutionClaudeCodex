@@ -5,7 +5,7 @@ info:
     Documentation officielle de l'API Blobinfini. Cette spécification décrit tous les endpoints exposés
     par l'API Express (matching, profils, réservation, messagerie, administration, etc.).
     Toute évolution de contrat (DTO, codes d'erreur) doit être reflétée ici.
-  version: 0.2.0
+  version: 0.2.1
   contact:
     name: Blobinfini Engineering
     email: dev@blobinfini.app
@@ -530,6 +530,22 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Trop de mises à jour (max 10 par 15 minutes)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: RATE_LIMIT_EXCEEDED
+                  message:
+                    type: string
+                    example: Trop de mises à jour de profil. Veuillez réessayer dans 15 minutes.
+                  retryAfter:
+                    type: integer
+                    description: Nombre de secondes avant de pouvoir réessayer
     patch:
       tags: [Pros]
       summary: Met à jour partiellement le profil pro (rayon, infos)
@@ -551,6 +567,22 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Trop de mises à jour (max 10 par 15 minutes)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: RATE_LIMIT_EXCEEDED
+                  message:
+                    type: string
+                    example: Trop de mises à jour de profil. Veuillez réessayer dans 15 minutes.
+                  retryAfter:
+                    type: integer
+                    description: Nombre de secondes avant de pouvoir réessayer
 
   /pro/photo/upload-url:
     post:
@@ -656,7 +688,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ProOfferInput'
       responses:
-        '200':
+        '201':
           description: Offre enregistrée
           content:
             application/json:
@@ -693,6 +725,27 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /pro/offers/{offerId}/click:
+    post:
+      tags: [Pros]
+      summary: Enregistre un clic unique de rider sur une offre
+      operationId: proOfferClick
+      parameters:
+        - in: path
+          name: offerId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Clic enregistré (ou déjà compté)
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Offre introuvable
   /pro/offers/search:
     get:
       tags: [Pros]
@@ -721,31 +774,22 @@ paths:
           name: radiusKm
           schema:
             type: number
-        - in: query
-          name: page
-          schema:
-            type: integer
-            minimum: 1
-        - in: query
-          name: pageSize
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
       responses:
         '200':
-          description: Résultats paginés
+          description: Offres autour du rider
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  results:
+                  offers:
                     type: array
                     items:
                       $ref: '#/components/schemas/ProOfferSummary'
-                  pagination:
-                    $ref: '#/components/schemas/Pagination'
+                  total:
+                    type: integer
+                  searchParams:
+                    $ref: '#/components/schemas/OfferSearchParams'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -908,6 +952,39 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /booking/availability/{availabilityId}/adjust-booked:
+    patch:
+      tags: [Booking]
+      summary: Ajuste manuellement le nombre d'inscrits sur une disponibilité (PRO)
+      operationId: bookingAdjustBookedCount
+      parameters:
+        - in: path
+          name: availabilityId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityBookedCountInput'
+      responses:
+        '200':
+          description: Disponibilité mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Availability'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Conflit (capacité dépassée ou bookings existants)
   /booking/availability/search:
     get:
       tags: [Booking]
@@ -1708,6 +1785,34 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/booking/availability-status:
+    get:
+      tags: [Admin]
+      summary: Vue admin des créneaux complets vs ouverts
+      operationId: adminAvailabilityStatus
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [OPEN, CLOSED]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Statuts des créneaux avec résumé et derniers items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAvailabilityStatusResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3120,6 +3225,8 @@ components:
         updatedAt:
           type: string
           format: date-time
+        stats:
+          $ref: '#/components/schemas/ProOfferStats'
     ProOfferInput:
       type: object
       required: [sport, level, title, description, hourlyRate]
@@ -3138,13 +3245,80 @@ components:
           type: number
         isActive:
           type: boolean
+    ProOfferStats:
+      type: object
+      properties:
+        uniqueClicks:
+          type: integer
+          description: Nombre de riders uniques ayant cliqué sur l'offre
+        lastClickAt:
+          type: string
+          format: date-time
+          nullable: true
     ProOfferSummary:
-      allOf:
-        - $ref: '#/components/schemas/ProOffer'
-        - type: object
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sport:
+          type: string
+          enum: [surf, kitesurf]
+        level:
+          type: string
+          enum: [beginner, intermediate, advanced]
+        title:
+          type: string
+        description:
+          type: string
+        hourlyRate:
+          type: number
+        lat:
+          type: number
+        lng:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+        distanceKm:
+          type: number
+        pro:
+          type: object
           properties:
-            distanceKm:
-              type: number
+            id:
+              type: string
+              format: uuid
+            userId:
+              type: string
+              format: uuid
+            businessName:
+              type: string
+              nullable: true
+            bio:
+              type: string
+              nullable: true
+            photoUrl:
+              type: string
+              nullable: true
+            verified:
+              type: boolean
+    OfferSearchParams:
+      type: object
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+        radiusKm:
+          type: number
+        sport:
+          type: string
+          enum: [surf, kitesurf]
+          nullable: true
+        level:
+          type: string
+          enum: [beginner, intermediate, advanced]
+          nullable: true
     Pagination:
       type: object
       properties:
@@ -3301,6 +3475,13 @@ components:
           type: string
         hourlyRate:
           type: number
+        capacity:
+          type: integer
+        bookedCount:
+          type: integer
+        status:
+          type: string
+          enum: [OPEN, CLOSED]
         createdAt:
           type: string
           format: date-time
@@ -3308,6 +3489,15 @@ components:
           type: string
           format: date-time
       additionalProperties: true
+    AvailabilityBookedCountInput:
+      type: object
+      properties:
+        delta:
+          type: integer
+          minimum: -10
+          maximum: 10
+      required:
+        - delta
     BookingRequestInput:
       type: object
       required:
@@ -3612,6 +3802,65 @@ components:
         metadata:
           type: object
           additionalProperties: true
+    AdminAvailabilityStatusItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        sport:
+          type: string
+        levels:
+          type: array
+          items:
+            type: string
+        capacity:
+          type: integer
+        bookedCount:
+          type: integer
+        status:
+          type: string
+          enum: [OPEN, CLOSED]
+        spotName:
+          type: string
+          nullable: true
+        pro:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string, format: email }
+            proProfile:
+              type: object
+              nullable: true
+              properties:
+                businessName: { type: string, nullable: true }
+    AdminAvailabilityStatusResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            total: { type: integer }
+            open: { type: integer }
+            closed: { type: integer }
+            bySport:
+              type: array
+              items:
+                type: object
+                properties:
+                  sport: { type: string, nullable: true }
+                  status: { type: string, enum: [OPEN, CLOSED] }
+                  count: { type: integer }
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAvailabilityStatusItem'
           nullable: true
         createdAt:
           type: string

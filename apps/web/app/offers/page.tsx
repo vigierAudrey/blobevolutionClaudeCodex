@@ -11,7 +11,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { apiClient } from '../../lib/apiClient';
-import { MapPin, Euro, Star, ChevronRight, Sparkles, Filter as FilterIcon } from 'lucide-react';
+import { MapPin, Euro, Star, ChevronRight, Sparkles, Filter as FilterIcon, Search, GraduationCap } from 'lucide-react';
 import type { Sport, Level } from '@/types/matching';
 import type { OfferCard, OfferFilters, OfferSearchResponse } from '@/types/offers';
 import { Badge } from '../../components/ui/badge';
@@ -27,7 +27,8 @@ const sportLabels: Record<Sport, string> = {
 const levelLabels: Record<Level, string> = {
   beginner: 'Débutant',
   intermediate: 'Intermédiaire',
-  advanced: 'Confirmé'
+  advanced: 'Confirmé',
+  anytime: 'Peu importe'
 };
 
 type GeoStatus = 'loading' | 'ready' | 'missing';
@@ -42,6 +43,9 @@ export default function OffersPage() {
   const [filters, setFilters] = useState<OfferFilters>({ sport: '', level: '', radiusKm: 50 });
   const [sortBy, setSortBy] = useState<OfferSortKey>('distance');
   const [allOffers, setAllOffers] = useState<OfferCard[]>([]);
+  const [appliedFilters, setAppliedFilters] = useState<OfferFilters | null>(null);
+  const [totalResults, setTotalResults] = useState(0);
+  const [myBookingsCount, setMyBookingsCount] = useState(0);
   const filtersRef = useRef(filters);
 
   useEffect(() => {
@@ -49,17 +53,9 @@ export default function OffersPage() {
   }, [filters]);
 
   const filteredOffers = useMemo(() => {
-    let filtered = [...allOffers];
+    const sorted = [...allOffers];
 
-    if (filters.sport) {
-      filtered = filtered.filter((offer) => offer.sport === filters.sport);
-    }
-
-    if (filters.level) {
-      filtered = filtered.filter((offer) => offer.level === filters.level);
-    }
-
-    filtered.sort((a, b) => {
+    sorted.sort((a, b) => {
       switch (sortBy) {
         case 'distance':
           return a.distanceKm - b.distanceKm;
@@ -74,23 +70,31 @@ export default function OffersPage() {
       }
     });
 
-    return filtered;
-  }, [allOffers, filters.level, filters.sport, sortBy]);
+    return sorted;
+  }, [allOffers, sortBy]);
 
   const searchOffers = useCallback(
-    async (lat: number, lng: number) => {
+    async (lat: number, lng: number, overrideFilters?: OfferFilters) => {
       setSearching(true);
       setError(null);
+
+      const baseFilters = overrideFilters ?? filtersRef.current;
+      const activeFilters: OfferFilters = baseFilters ? { ...baseFilters } : { sport: '', level: '', radiusKm: 50 };
 
       try {
         const response = (await apiClient.searchOffers({
           lat,
           lng,
-          radiusKm: filtersRef.current.radiusKm,
+          radiusKm: activeFilters.radiusKm,
+          sport: activeFilters.sport || undefined,
+          level: activeFilters.level || undefined,
         })) as OfferSearchResponse;
 
         const fetchedOffers = response.offers ?? [];
         setAllOffers(fetchedOffers);
+        setTotalResults(response.total ?? fetchedOffers.length);
+        setAppliedFilters(activeFilters);
+        filtersRef.current = activeFilters;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : null;
         setError(message || 'Erreur lors de la recherche');
@@ -137,6 +141,23 @@ export default function OffersPage() {
     void loadUserAndSearch();
   }, [router, searchOffers]);
 
+  // Charger le nombre de cours réservés
+  useEffect(() => {
+    const loadBookingsCount = async () => {
+      try {
+        const tokens = apiClient.getTokens();
+        if (tokens?.accessToken) {
+          const response = await apiClient.getRiderBookings();
+          setMyBookingsCount(response.bookings.length);
+        }
+      } catch (err) {
+        // Silently fail, not critical
+        console.warn('Failed to load bookings count:', err);
+      }
+    };
+    void loadBookingsCount();
+  }, []);
+
   const enableGeolocation = () => {
     if (!navigator.geolocation) {
       alert('La géolocalisation n’est pas supportée par ce navigateur.');
@@ -170,15 +191,37 @@ export default function OffersPage() {
     );
   };
 
-  const handleRadiusChange = async () => {
+  const handleApplyFilters = async () => {
     if (userLocation) {
       await searchOffers(userLocation.lat, userLocation.lng);
     }
   };
 
-  const contactPro = async (proUserId: string) => {
+  const handleResetFilters = async () => {
+    const defaultFilters: OfferFilters = { sport: '', level: '', radiusKm: 50 };
+    setFilters(defaultFilters);
+    filtersRef.current = defaultFilters;
+    setSortBy('distance');
+
+    if (userLocation) {
+      await searchOffers(userLocation.lat, userLocation.lng, defaultFilters);
+    } else {
+      setAppliedFilters(defaultFilters);
+      setAllOffers([]);
+      setTotalResults(0);
+    }
+  };
+
+  const contactPro = async (offer: OfferCard) => {
     try {
-      const conversation = await apiClient.openConversation(proUserId);
+      // Comptabiliser le clic avant d'ouvrir la conversation (optimisé via upsert côté API)
+      await apiClient.trackOfferClick(offer.id);
+    } catch (error) {
+      console.warn('Impossible d’enregistrer le clic sur l’offre', error);
+    }
+
+    try {
+      const conversation = await apiClient.openConversation(offer.pro.userId);
       router.push(`/messages/${conversation.id}`);
     } catch (error) {
       console.error('Erreur lors de l’ouverture de la conversation :', error);
@@ -201,19 +244,43 @@ export default function OffersPage() {
     <div className="max-w-5xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/dashboard" />
 
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-cyan-500 to-emerald-500 p-8 text-white shadow-xl">
-        <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.4),_transparent_55%)]" aria-hidden />
-        <div className="relative z-10 space-y-3">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-            <Sparkles className="w-3.5 h-3.5" />
-            Pros autour de toi
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Trouve un moniteur en quelques clics</h1>
-          <p className="text-white/85 text-base max-w-3xl">
-            Géolocalise-toi, filtre par sport et laisse les offres te guider vers le bon pro. Ouvre ensuite la conversation directement.
-          </p>
+      {/* Bouton Mes Cours Réservés */}
+      {myBookingsCount > 0 && (
+        <div className="rounded-2xl bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 p-4 border-2 border-purple-200/50 dark:border-purple-800/50">
+          <Button
+            onClick={() => router.push('/my-lessons')}
+            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white h-auto py-4"
+          >
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-3">
+                <GraduationCap className="w-5 h-5" />
+                <div className="text-left">
+                  <div className="font-semibold">Mes Cours Réservés</div>
+                  <div className="text-xs opacity-90">Tu as {myBookingsCount} {myBookingsCount > 1 ? 'cours confirmés' : 'cours confirmé'}</div>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </Button>
         </div>
-      </section>
+      )}
+
+      {/* Page Header */}
+      <div className="flex items-center gap-3 pb-2 border-b">
+        <div className="p-2 rounded-lg bg-cyan-100 dark:bg-cyan-900/30">
+          <Search className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-foreground">Trouve un moniteur</h1>
+            <Badge variant="secondary" className="bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300">
+              <Sparkles className="w-3 h-3 mr-1" />
+              Pros autour de toi
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">Géolocalise-toi, filtre et ouvre la conversation directement</p>
+        </div>
+      </div>
 
       {geoStatus === 'loading' && (
         <Card className="animate-pulse border-2">
@@ -338,20 +405,17 @@ export default function OffersPage() {
 
               <div className="mt-4 flex flex-col sm:flex-row gap-2">
                 <Button
-                  onClick={handleRadiusChange}
-                  disabled={searching}
-                  variant="outline"
+                  onClick={handleApplyFilters}
+                  disabled={searching || !userLocation}
                   className="flex-1 sm:flex-none"
                 >
-                  {searching ? 'Mise à jour...' : 'Mettre à jour le rayon'}
+                  {searching ? 'Recherche en cours…' : 'Appliquer mes filtres'}
                 </Button>
 
                 <Button
-                  onClick={() => {
-                    setFilters({ sport: '', level: '', radiusKm: 50 });
-                    setSortBy('distance');
-                  }}
+                  onClick={handleResetFilters}
                   variant="outline"
+                  disabled={searching}
                   className="flex-1 sm:flex-none"
                 >
                   Réinitialiser
@@ -369,11 +433,18 @@ export default function OffersPage() {
 
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <h2 className="text-lg font-semibold">
-                {filteredOffers.length} offre(s) affichée(s)
-                {allOffers.length !== filteredOffers.length && ` sur ${allOffers.length} trouvée(s)`}
-                {userLocation && ` · ${filters.radiusKm} km`}
-              </h2>
+              <div>
+                <h2 className="text-lg font-semibold">
+                  {filteredOffers.length} offre(s) affichée(s)
+                  {totalResults > 0 && totalResults !== filteredOffers.length && ` sur ${totalResults} trouvée(s)`}
+                  {appliedFilters && ` · ${appliedFilters.radiusKm} km`}
+                </h2>
+                {appliedFilters && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Filtres : {appliedFilters.sport ? sportLabels[appliedFilters.sport] : 'tous les sports'} · {appliedFilters.level ? levelLabels[appliedFilters.level] : 'tous les niveaux'}
+                  </p>
+                )}
+              </div>
 
               <div className="text-sm text-muted-foreground">
                 Triées par {
@@ -396,15 +467,15 @@ export default function OffersPage() {
               <Card>
                 <CardContent className="text-center py-8">
                   <p className="text-muted-foreground">
-                    {allOffers.length === 0
+                    {filteredOffers.length === 0
                       ? 'Aucune offre trouvée dans ce rayon.'
                       : 'Aucune offre ne correspond à ces filtres.'
                     }
                   </p>
                   <p className="text-sm text-muted-foreground mt-2">
-                    {allOffers.length === 0
-                      ? 'Essayez d\'augmenter le rayon de recherche.'
-                      : 'Modifiez les filtres ou cliquez sur "Réinitialiser".'
+                    {filteredOffers.length === 0
+                      ? 'Ajustez le rayon ou changez de sport/niveau, puis cliquez sur "Appliquer mes filtres".'
+                      : 'Modifiez les filtres puis validez avec "Appliquer mes filtres".'
                     }
                   </p>
                 </CardContent>
@@ -481,7 +552,7 @@ export default function OffersPage() {
 
                     <div className="flex flex-col gap-2 w-full sm:w-auto">
                       <Button
-                        onClick={() => contactPro(offer.pro.userId)}
+                        onClick={() => contactPro(offer)}
                         className="inline-flex items-center justify-center gap-1 w-full sm:w-auto"
                       >
                         Contacter

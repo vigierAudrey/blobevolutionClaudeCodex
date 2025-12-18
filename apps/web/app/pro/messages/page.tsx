@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, ArrowLeft, Briefcase, Shield, ShieldOff } from 'lucide-react';
+import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, ArrowLeft, Briefcase, Shield, ShieldOff, MessageSquare } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
@@ -90,10 +90,14 @@ export default function ProMessagesPage() {
   useEffect(() => { setLimit(PAGE); }, [filter]);
   const shown = useMemo(() => visible.slice(0, limit), [visible, limit]);
 
-  if (loading) return <p>Chargement…</p>;
+  if (loading) return (
+    <div className="max-w-2xl mx-auto space-y-4 pt-8">
+      <p className="text-center text-muted-foreground">Chargement…</p>
+    </div>
+  );
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
+    <div className="max-w-2xl mx-auto space-y-6 pb-8">
       {/* Header avec retour */}
       <div className="flex items-center gap-4">
         <Link href="/pro/dashboard">
@@ -102,22 +106,25 @@ export default function ProMessagesPage() {
             Dashboard
           </Button>
         </Link>
-        <div>
-          <h1 className="text-2xl font-semibold">Mes Conversations</h1>
-          <p className="text-sm text-muted-foreground">
-            Messages avec vos élèves potentiels
-          </p>
+        <div className="flex items-center gap-4 flex-1 rounded-2xl bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 p-4 border-2 border-purple-200/50 dark:border-purple-800/50">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md">
+            <MessageSquare className="w-5 h-5" />
+          </div>
+          <div className="flex-1">
+            <h1 className="text-xl font-bold text-foreground">Mes Conversations 💬</h1>
+            <p className="text-sm text-muted-foreground">Messages avec tes élèves potentiels</p>
+          </div>
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <Card className="border-2 rounded-[1.75rem]">
+        <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30">
+          <CardTitle className="flex items-center gap-2 text-foreground">
             <Users size={20} />
-            Mes Conversations
+            Conversations
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
 
           <div className="mb-4 space-y-3">

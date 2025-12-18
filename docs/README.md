@@ -97,6 +97,7 @@ Ces fichiers sont à la racine pour une visibilité maximale :
 
 | Document | Description |
 |----------|-------------|
+| **[matching-system.md](matching-system.md)** ⭐ | Système de matching complet (riders, critères, géoloc) |
 | **[mcp-config.md](mcp-config.md)** | Configuration MCP pour IA (GitHub, Sentry, Playwright) |
 | **[changelog.md](changelog.md)** | Historique détaillé des changements |
 | **[migration-prisma6.md](migration-prisma6.md)** | Guide migration Prisma 5 → 6 |
@@ -138,6 +139,7 @@ docs/
 │   └── storybook.md                   # Storybook UI
 │
 └── 🛠️ Technique
+    ├── matching-system.md             # ⭐ Système matching complet
     ├── mcp-config.md                  # Config MCP pour IA
     ├── changelog.md                   # Historique changements
     └── migration-prisma6.md           # Migration Prisma 6
@@ -243,4 +245,4 @@ Pour ajouter ou modifier un document :
 ---
 
 **Maintainers** : Équipe Blobinfini
-**Dernière mise à jour** : 07/11/2025
+**Dernière mise à jour** : 16/12/2025

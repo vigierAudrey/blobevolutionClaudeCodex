@@ -3,5 +3,6 @@ export type {
   OfferCard,
   OfferSearchResponse,
   OfferFilters,
-  EditableOffer
+  EditableOffer,
+  OfferStats
 } from '../../../types/offers';

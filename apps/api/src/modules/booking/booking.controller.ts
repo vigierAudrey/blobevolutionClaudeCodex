@@ -61,6 +61,24 @@ bookingRouter.patch('/availability/:id', ensureRole('PRO'), async (req, res) => 
   }
 });
 
+bookingRouter.patch('/availability/:id/adjust-booked', ensureRole('PRO'), async (req, res) => {
+  try {
+    const schema = z.object({
+      delta: z.number().int().min(-10).max(10),
+    });
+    const { delta } = schema.parse(req.body);
+    const current = (req as any).user as { id: string };
+    const availability = await bookingService.adjustBookedCount(current.id, req.params.id, delta);
+    return res.json(availability);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    const status = error?.status ?? 500;
+    return res.status(status).json({ error: error?.message || 'Internal error' });
+  }
+});
+
 bookingRouter.delete('/availability/:id', ensureRole('PRO'), async (req, res) => {
   try {
     const current = (req as any).user as { id: string };
@@ -168,6 +186,17 @@ bookingRouter.get('/bookings/me', ensureRole('PRO'), async (req, res) => {
   try {
     const current = (req as any).user as { id: string };
     const bookings = await bookingService.listProBookings(current.id);
+    return res.json({ bookings });
+  } catch (error: any) {
+    const status = error?.status ?? 500;
+    return res.status(status).json({ error: error?.message || 'Internal error' });
+  }
+});
+
+bookingRouter.get('/bookings/rider/me', ensureRole('RIDER'), async (req, res) => {
+  try {
+    const current = (req as any).user as { id: string };
+    const bookings = await bookingService.listRiderBookings(current.id);
     return res.json({ bookings });
   } catch (error: any) {
     const status = error?.status ?? 500;

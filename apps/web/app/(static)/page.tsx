@@ -41,7 +41,7 @@ export default function Home() {
       {/* Main column */}
       <div className="space-y-8">
       {/* Bandeau vidéo limité à la colonne centrale */}
-      <section aria-label="Vidéo d ambiance surf et kite">
+      <section aria-label="Vidéo d ambiance surf et kite" className="space-y-4">
         <div className="home-hero-video-wrapper">
           <video
             className="home-hero-video"
@@ -66,28 +66,27 @@ export default function Home() {
             />
           </div>
         </div>
-      </section>
-      {/* HERO condensé */}
-      <section className="relative rounded-3xl border bg-gradient-to-br from-sky-50 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 px-6 py-4 shadow-sm sm:px-10 sm:py-6">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full bg-sky-100 dark:bg-slate-800/40 blur-2xl md:h-56 md:w-56"
-        />
-        <div className="relative flex flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left">
-          <h1 className="font-display text-5xl font-bold tracking-tight text-foreground sm:text-6xl">
-            Ta communauté connectée
-          </h1>
-          <Image
-            src="/images/home/geolocSymbol.png"
-            alt="Repères géolocalisés"
-            width={906}
-            height={863}
-            className="w-20 sm:w-24 lg:w-28"
-            sizes="(min-width: 1024px) 8vw, 20vw"
+        {/* HERO condensé */}
+        <div className="relative rounded-3xl border bg-gradient-to-br from-sky-50 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 px-6 py-4 shadow-sm sm:px-10 sm:py-6 -mt-12 sm:-mt-16 lg:-mt-20">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full bg-sky-100 dark:bg-slate-800/40 blur-2xl md:h-56 md:w-56"
           />
+          <div className="relative flex flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left">
+            <h1 className="font-display text-5xl font-bold tracking-tight text-foreground sm:text-6xl">
+              Ta communauté connectée
+            </h1>
+            <Image
+              src="/images/home/geolocSymbol.png"
+              alt="Repères géolocalisés"
+              width={906}
+              height={863}
+              className="w-20 sm:w-24 lg:w-28"
+              sizes="(min-width: 1024px) 8vw, 20vw"
+            />
+          </div>
         </div>
       </section>
-
       {/* Section découverte avec CTA */}
       <section aria-label="Découvre la plateforme" className="space-y-10 pb-8">
         <div className="text-center space-y-2">

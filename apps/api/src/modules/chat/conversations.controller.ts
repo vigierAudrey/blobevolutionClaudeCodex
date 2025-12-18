@@ -271,6 +271,26 @@ conversationsRouter.post('/:id/favorite', async (req, res) => {
   } catch { return res.status(500).json({ error: 'Internal error' }); }
 });
 
+// Empty trash - permanently delete all trashed conversations
+conversationsRouter.post('/empty-trash', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const result = await prisma.conversationMember.deleteMany({
+      where: {
+        userId,
+        trashedAt: { not: null }
+      }
+    });
+
+    return res.json({ ok: true, count: result.count });
+  } catch (e) {
+    console.error('Empty trash error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
 // Ensure a direct conversation exists with target user and return its id
 conversationsRouter.post('/open', async (req, res) => {
   try {

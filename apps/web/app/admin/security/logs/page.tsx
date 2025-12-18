@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../../components/ui/card';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
-import { Badge } from '../../../../components/ui/badge';
+import { Badge, type BadgeProps } from '../../../../components/ui/badge';
 import { apiClient, type AdminSecurityEvent } from '../../../../lib/apiClient';
 import { Shield, RefreshCw, Download, Filter, ArrowLeft, Activity, AlertTriangle, Clock } from 'lucide-react';
 import Link from 'next/link';
@@ -39,7 +39,7 @@ const getActionCategory = (action: string): string => {
   return 'Autre';
 };
 
-const getSeverityColor = (action: string): string => {
+const getSeverityColor = (action: string): NonNullable<BadgeProps['variant']> => {
   if (action.includes('delete') || action.includes('purge') || action.includes('suspend')) {
     return 'destructive';
   }
@@ -276,7 +276,7 @@ export default function AdminSecurityLogsPage() {
                         <div className="flex items-start justify-between">
                           <div className="flex-1 space-y-2">
                             <div className="flex items-center gap-2">
-                              <Badge variant={getSeverityColor(log.action) as any}>
+                              <Badge variant={getSeverityColor(log.action)}>
                                 {log.action}
                               </Badge>
                               <span className="text-xs text-muted-foreground">

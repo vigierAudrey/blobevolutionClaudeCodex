@@ -1,11 +1,11 @@
 "use client";
 import dynamicImport from 'next/dynamic';
 import Image from 'next/image';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { BackBar } from '../../../components/BackBar';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
 import { ProfileCardSkeleton } from '../../../components/ui/skeleton';
@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { Sparkles, MessageSquare } from 'lucide-react';
 import { formatDateForDisplay } from './utils';
 import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, Sport, Level } from '@/types';
+import { clearMatchingStorage } from '../storage';
 
 const AdBannerFeed = dynamicImport(
   () => import('../../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
@@ -23,6 +24,18 @@ const AdBannerFeed = dynamicImport(
     loading: () => <div className="my-6 h-24 rounded-md bg-slate-200/60" aria-hidden="true" />,
   },
 );
+
+const levelLabels: Record<Level, string> = {
+  beginner: 'Débutant',
+  intermediate: 'Intermédiaire',
+  advanced: 'Confirmé',
+  anytime: 'Peu importe'
+};
+
+const sportLabels: Record<Sport, string> = {
+  surf: 'Surf',
+  kitesurf: 'Kitesurf'
+};
 
 type ConversationsResponse = {
   items?: Array<{ unread?: number | string }>;
@@ -35,6 +48,10 @@ type MatchDecisionResponse = {
 export function CardsClient() {
   const sp = useSearchParams();
   const router = useRouter();
+  const handleResetCriteria = useCallback(() => {
+    clearMatchingStorage();
+    router.push('/matching');
+  }, [router]);
 
   // Optimized user initialization with parallel requests and caching
   useEffect(() => {
@@ -115,13 +132,14 @@ export function CardsClient() {
     timeout: ReturnType<typeof setTimeout>;
   };
   const [lastAction, setLastAction] = useState<LastAction | null>(null);
-  const [newMatch, setNewMatch] = useState<null | { conversationId: string; otherDisplayName: string; sport: 'surf'|'kitesurf' }>(null);
+  const [newMatch, setNewMatch] = useState<null | { conversationId: string; otherDisplayName: string; sport: 'surf'|'kitesurf'; photoUrl?: string | null }>(null);
   const [unreadTotal, setUnreadTotal] = useState<number>(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const candidatesRef = useRef<MatchingCandidate[]>([]);
   const excludeIdsRef = useRef<string[]>([]);
   const nextCursorRef = useRef<string | null>(null);
   const decisionQueueRef = useRef<QueuedDecision[]>([]);
+  const acceptedProfilesRef = useRef<Map<string, { displayName: string; photoUrl?: string | null }>>(new Map());
 
   useEffect(() => {
     candidatesRef.current = candidates;
@@ -204,9 +222,52 @@ export function CardsClient() {
     return () => clearInterval(t);
   }, [loadUnread]);
 
+  const flushDecisions = useCallback(async (force = false) => {
+    if (!decisionQueueRef.current.length && !force) return;
+    const queue = force ? decisionQueueRef.current : decisionQueueRef.current.slice(0, 5);
+    if (!queue.length) return;
+    const body = queue.map((entry) => ({ targetProfileId: entry.targetProfileId, decision: entry.decision }));
+    try {
+      const response = await optimizedApiClient.matchDecisions(body) as MatchDecisionResponse;
+      if (response?.createdConversations?.length) {
+        const convo = response.createdConversations[0];
+        if (convo) {
+          // Récupérer la photo du profil accepté depuis la map
+          const acceptedIds = queue.filter(q => q.decision === 'ACCEPT').map(q => q.targetProfileId);
+          let photoUrl: string | null | undefined = null;
+          for (const id of acceptedIds) {
+            const profile = acceptedProfilesRef.current.get(id);
+            if (profile) {
+              photoUrl = profile.photoUrl;
+              break;
+            }
+          }
+          setNewMatch({
+            conversationId: convo.conversationId,
+            otherDisplayName: convo.otherDisplayName ?? 'Rider',
+            sport: activeSport,
+            photoUrl
+          });
+        }
+      }
+      mutateDecisionQueue((prev) => prev.filter((entry) => !queue.includes(entry)));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      toast(message || 'Erreur lors de la décision', 'error');
+    }
+  }, [activeSport, mutateDecisionQueue, toast]);
+
   const handleSwipe = useCallback((decision: 'ACCEPT' | 'REFUSE') => {
     const targetProfileId = current?.id;
     if (!targetProfileId) return;
+
+    // Stocker les infos du profil accepté pour la modale de match
+    if (decision === 'ACCEPT' && current) {
+      acceptedProfilesRef.current.set(targetProfileId, {
+        displayName: current.displayName ?? 'Rider',
+        photoUrl: current.photoUrl
+      });
+    }
 
     setAnimating(true);
     setAnimDir(decision === 'ACCEPT' ? 'right' : 'left');
@@ -225,7 +286,7 @@ export function CardsClient() {
     const newDecision = { targetProfileId, decision, ts: Date.now() };
     mutateDecisionQueue((queue) => queue.concat(newDecision));
     setLastAction({ id: targetProfileId, decision, profile: current!, wasEndOfBatch: candidates.length <= 1, prevCursor: cursor, timeout });
-  }, [current, candidates, cursor, mutateDecisionQueue]);
+  }, [current, candidates, cursor, mutateDecisionQueue, flushDecisions]);
 
   const act = (decision: 'ACCEPT' | 'REFUSE') => {
     handleSwipe(decision);
@@ -244,26 +305,6 @@ export function CardsClient() {
       x.set(0);
     }
   };
-
-  const flushDecisions = useCallback(async (force = false) => {
-    if (!decisionQueueRef.current.length && !force) return;
-    const queue = force ? decisionQueueRef.current : decisionQueueRef.current.slice(0, 5);
-    if (!queue.length) return;
-    const body = queue.map((entry) => ({ targetProfileId: entry.targetProfileId, decision: entry.decision }));
-    try {
-      const response = await optimizedApiClient.matchDecisions(body) as MatchDecisionResponse;
-      if (response?.createdConversations?.length) {
-        const convo = response.createdConversations[0];
-        if (convo) {
-          setNewMatch({ conversationId: convo.conversationId, otherDisplayName: convo.otherDisplayName ?? 'Rider', sport: activeSport });
-        }
-      }
-      mutateDecisionQueue((prev) => prev.filter((entry) => !queue.includes(entry)));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      toast(message || 'Erreur lors de la décision', 'error');
-    }
-  }, [activeSport, mutateDecisionQueue, toast]);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -314,12 +355,6 @@ export function CardsClient() {
     }
   };
 
-  const header = useMemo(() => {
-    const geoPart = useGeoloc ? (distanceKm ? `${distanceKm} km` : '—') : 'sans géolocalisation';
-    const datePart = date === 'anytime' ? 'peu importe' : date || '—';
-    return `${sport || '—'} > ${level || '—'} > ${geoPart} > ${datePart}`;
-  }, [sport, level, useGeoloc, distanceKm, date]);
-
   const isInitialLoading = loading && candidates.length === 0;
   const isPrefetching = loading && candidates.length > 0;
 
@@ -327,57 +362,44 @@ export function CardsClient() {
     <div className="max-w-5xl mx-auto space-y-6 pb-10 px-4 sm:px-6 lg:px-0">
       <BackBar fallbackHref="/matching/date" />
 
-      <div className="grid gap-6 items-start lg:grid-cols-[minmax(280px,0.95fr)_minmax(360px,1.25fr)]">
-        <section className="relative overflow-hidden rounded-[2.2rem] bg-gradient-to-br from-rose-500 via-fuchsia-500 to-purple-500 p-6 sm:p-8 text-white shadow-2xl">
-          <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" aria-hidden />
-          <div className="relative z-10 space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-              <Sparkles className="w-3.5 h-3.5" />
-              Deck Matching
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 p-4 border-2 border-purple-200/50 dark:border-purple-800/50">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md">
+              <Sparkles className="w-5 h-5" />
             </div>
-            <div className="space-y-2">
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Swipe, matche, discute</h1>
-              <p className="text-white/85 text-base max-w-2xl">
-                Chaque swipe rapproche d’un binôme compatible. Tu peux basculer vers la liste détaillée si tu préfères comparer les fiches une par une.
+            <div>
+              <h1 className="text-xl font-bold text-foreground">Deck Matching</h1>
+              <p className="text-sm text-muted-foreground">
+                {sport ? sportLabels[sport] : '—'} · {level ? levelLabels[level] : '—'} · {useGeoloc ? `${distanceKm ?? 20} km` : 'Sans géoloc'} · {date === 'anytime' ? 'Peu importe' : date || '—'}
               </p>
             </div>
-            <div className="flex flex-wrap gap-3 text-sm">
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1">
-                {sport || '—'} · {level || '—'}
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1">
-                {useGeoloc ? `${distanceKm ?? 20} km` : 'Sans géolocalisation'}
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1">
-                {date === 'anytime' ? 'Peu importe' : date || '—'}
-              </span>
-            </div>
           </div>
-        </section>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetCriteria}
+              className="border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-200"
+            >
+              Repartir à zéro
+            </Button>
+            <Button asChild size="sm" variant="secondary" className="bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 hover:bg-white/90 dark:hover:bg-slate-700">
+              <Link href="/messages" className="inline-flex items-center gap-2">
+                <MessageSquare className="w-4 h-4" />
+                {unreadTotal > 0 ? `${unreadTotal}` : ''}
+              </Link>
+            </Button>
+          </div>
+        </div>
 
-        <div className="w-full">
-          <Card className="border-2 shadow-xl rounded-[2rem]">
-            <CardHeader className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="bg-pink-100 text-pink-700">
-                      Étape finale
-                    </Badge>
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground">Swipe deck</span>
-                  </div>
-                  <CardTitle className="text-2xl">Profils proposés</CardTitle>
-                </div>
-                <Button asChild size="sm" variant="secondary" className="bg-white text-pink-600 hover:bg-white/90">
-                  <Link href="/messages" className="inline-flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4" />
-                    {unreadTotal > 0 ? `${unreadTotal} msg` : 'Messagerie'}
-                  </Link>
-                </Button>
-              </div>
-              <CardDescription>Critères : {header}</CardDescription>
-              <div className="rounded-2xl bg-muted/60 px-4 py-2 text-xs text-muted-foreground">
-                Swipe droite = match, gauche = passer. Boutons disponibles sous la carte.
+        <Card className="border-2 shadow-xl rounded-[2rem]">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl">Profils proposés</CardTitle>
+                <Badge variant="secondary" className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                  Swipe ← ou →
+                </Badge>
               </div>
             </CardHeader>
             <CardContent className="relative space-y-4">
@@ -392,10 +414,10 @@ export function CardsClient() {
               )}
               {!loading && !current && (
                 <div className="text-center space-y-5 py-8">
-                  <div className="space-y-3 rounded-3xl border bg-gradient-to-br from-purple-50 to-pink-50 px-6 py-8">
+                  <div className="space-y-3 rounded-3xl border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 px-6 py-8">
                     <div className="text-4xl">🏄‍♀️</div>
-                    <h3 className="font-semibold text-xl">Plus de profils disponibles</h3>
-                    <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                    <h3 className="font-semibold text-xl text-foreground">Plus de profils disponibles</h3>
+                    <p className="text-sm text-muted-foreground dark:text-slate-400 max-w-sm mx-auto">
                       Pas de match immédiat, mais la communauté grandit chaque jour. Relance une recherche avec un rayon plus large ou repasse un peu plus tard.
                     </p>
                   </div>
@@ -433,7 +455,7 @@ export function CardsClient() {
                       willChange: 'transform', // GPU acceleration hint
                     }}
                     className={
-                      'rounded-[1.75rem] border-2 p-5 sm:p-6 lg:p-7 bg-gradient-to-br from-white via-white to-purple-50/50 cursor-grab active:cursor-grabbing select-none relative overflow-hidden shadow-xl ' +
+                      'rounded-[1.75rem] border-2 p-5 sm:p-6 lg:p-7 bg-gradient-to-br from-white via-white to-purple-50/50 dark:from-slate-800 dark:via-slate-800 dark:to-slate-800 cursor-grab active:cursor-grabbing select-none relative overflow-hidden shadow-xl ' +
                       (animDir === 'left' ? '-translate-x-24 opacity-0' : animDir === 'right' ? 'translate-x-24 opacity-0' : '')
                     }
                     whileTap={{ scale: 0.98 }}
@@ -458,54 +480,55 @@ export function CardsClient() {
                       <div className="text-3xl text-red-600 font-bold">✗</div>
                     </motion.div>
 
-                    {/* Photo de profil */}
-                    <div className="flex flex-col sm:flex-row sm:items-start gap-5 mb-4 relative z-10">
+                    {/* Photo de profil - Affichage vertical centré */}
+                    <div className="flex flex-col items-center gap-4 mb-4 relative z-10">
                       {current.photoUrl ? (
                         <Image
                           src={current.photoUrl}
                           alt={current.displayName ?? 'Photo de profil'}
-                          width={160}
-                          height={160}
-                          className="w-28 h-28 sm:w-32 sm:h-32 lg:w-36 lg:h-36 rounded-[1.8rem] object-cover border-2 border-border shadow-lg flex-shrink-0"
+                          width={320}
+                          height={320}
+                          className="w-64 h-64 sm:w-72 sm:h-72 lg:w-80 lg:h-80 rounded-[2rem] object-cover border-4 border-border shadow-2xl"
                           unoptimized
+                          priority
                         />
                       ) : (
-                        <div className="w-28 h-28 sm:w-32 sm:h-32 lg:w-36 lg:h-36 rounded-[1.8rem] bg-muted flex items-center justify-center border-2 border-border flex-shrink-0 text-4xl shadow-inner">
+                        <div className="w-64 h-64 sm:w-72 sm:h-72 lg:w-80 lg:h-80 rounded-[2rem] bg-muted flex items-center justify-center border-4 border-border shadow-2xl text-6xl">
                           <span>👤</span>
                         </div>
                       )}
 
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        <div className="text-lg font-semibold flex items-center gap-2 flex-wrap">
+                      <div className="w-full text-center space-y-2">
+                        <div className="text-2xl font-bold text-foreground flex items-center justify-center gap-2 flex-wrap">
                           {current.displayName}
                           {current.wantsLesson && (
-                            <span title="Souhaite un cours" className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px]">
+                            <span title="Souhaite un cours" className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-3 py-1 text-xs font-medium">
                               🎓 Cours
                             </span>
                           )}
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          {current.gender === 'FEMALE' ? 'Femme' : current.gender === 'MALE' ? 'Homme' : 'Autre'} • {current.sport} • {current.level}
+                        <div className="text-base text-muted-foreground dark:text-slate-300 font-medium">
+                          {current.gender === 'FEMALE' ? 'Femme' : current.gender === 'MALE' ? 'Homme' : 'Autre'} • {current.sport ? sportLabels[current.sport as Sport] : current.sport} • {current.level ? levelLabels[current.level as Level] : current.level}
                         </div>
                       </div>
                     </div>
 
                     {/* Bio */}
                     {current.bio && (
-                      <div className="text-base text-muted-foreground italic bg-white/80 border border-muted/40 p-4 rounded-2xl mb-3 relative z-10">
+                      <div className="text-base text-muted-foreground dark:text-slate-300 italic bg-white/80 dark:bg-slate-700/50 border border-muted/40 dark:border-slate-600 p-4 rounded-2xl mb-4 relative z-10 text-center">
                         &laquo;&nbsp;{current.bio}&nbsp;&raquo;
                       </div>
                     )}
 
                     {/* Infos complémentaires */}
-                    <div className="space-y-2 relative z-10">
-                      <div className="text-sm text-muted-foreground flex items-center gap-2">
-                        <span className="text-lg">📍</span>
-                        <span>{current.distanceKm != null ? `À ${current.distanceKm} km` : 'Distance inconnue'}</span>
+                    <div className="flex items-center justify-center gap-6 mb-2 relative z-10">
+                      <div className="text-base text-muted-foreground dark:text-slate-300 flex items-center gap-2">
+                        <span className="text-xl">📍</span>
+                        <span className="font-medium">{current.distanceKm != null ? `${current.distanceKm} km` : 'Distance inconnue'}</span>
                       </div>
-                      <div className="text-sm text-muted-foreground flex items-center gap-1">
-                        <span>📅</span>
-                        <span>{formatDateForDisplay(date)}</span>
+                      <div className="text-base text-muted-foreground dark:text-slate-300 flex items-center gap-2">
+                        <span className="text-xl">📅</span>
+                        <span className="font-medium">{formatDateForDisplay(date)}</span>
                       </div>
                     </div>
                   </motion.div>
@@ -530,7 +553,7 @@ export function CardsClient() {
               </div>
             )}
             {isPrefetching && (
-              <div className="absolute right-3 bottom-3 flex items-center gap-2 text-xs text-muted-foreground bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full border shadow-sm">
+              <div className="absolute right-3 bottom-3 flex items-center gap-2 text-xs text-muted-foreground dark:text-slate-300 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm px-2 py-1 rounded-full border dark:border-slate-700 shadow-sm">
                 <div className="w-3 h-3 rounded-full bg-primary/20 animate-pulse" />
                 ⚡ Préchargement...
               </div>
@@ -538,30 +561,111 @@ export function CardsClient() {
           </CardContent>
         </Card>
         {newMatch && (
-          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-4" onClick={() => setNewMatch(null)}>
-            <div className="w-full max-w-sm rounded-lg bg-background border shadow-lg" onClick={(e)=>e.stopPropagation()}>
-              <div className="p-6 space-y-4 text-center">
-                <div className="text-2xl">🎉</div>
-                <div className="text-xl font-semibold">C&rsquo;est un match !</div>
-                <div className="text-base">
-                  {newMatch.sport === 'surf' ? 'Tu vas pouvoir surfer' : 'Tu vas pouvoir kiter'} avec <span className="font-semibold text-primary">{newMatch.otherDisplayName}</span>
-                </div>
-                <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-                  💬 Envoie un message cool pour commencer la conversation !
-                </div>
-                <div className="pt-2 flex flex-col gap-2">
-                  <Button className="w-full" onClick={() => { const cid = newMatch.conversationId; setNewMatch(null); router.push(`/messages/${cid}`); }}>
-                    Envoyer un message 🚀
-                  </Button>
-                  <Button variant="outline" className="w-full" onClick={() => setNewMatch(null)}>Plus tard</Button>
+          <div className="fixed inset-0 z-50 bg-black/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 animate-in fade-in duration-300" onClick={() => setNewMatch(null)}>
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              transition={{ type: "spring", duration: 0.5, bounce: 0.4 }}
+              className="w-full max-w-md"
+              onClick={(e)=>e.stopPropagation()}
+            >
+              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-cyan-500 via-blue-500 to-sky-600 p-1 shadow-2xl">
+                {/* Effet de brillance animé */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" style={{ backgroundSize: '200% 100%' }} />
+
+                {/* Contenu de la modale */}
+                <div className="relative rounded-[1.4rem] bg-white dark:bg-slate-900 p-6 sm:p-8">
+                  <div className="space-y-6 text-center">
+                    {/* Titre avec animation */}
+                    <motion.div
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: 0.1, type: "spring", bounce: 0.6 }}
+                    >
+                      <div className="text-5xl mb-3 animate-bounce">🎉</div>
+                      <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-cyan-600 via-blue-600 to-sky-600 bg-clip-text text-transparent mb-2">
+                        C&rsquo;est un match !
+                      </h2>
+                    </motion.div>
+
+                    {/* Photo de profil avec effet glow */}
+                    <motion.div
+                      initial={{ scale: 0, rotate: -180 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ delay: 0.2, type: "spring", bounce: 0.5 }}
+                      className="flex justify-center"
+                    >
+                      <div className="relative">
+                        {/* Halo animé - couleurs océan */}
+                        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 via-blue-500 to-sky-500 rounded-full blur-2xl opacity-40 animate-pulse" style={{ transform: 'scale(1.3)' }} />
+
+                        {newMatch.photoUrl ? (
+                          <Image
+                            src={newMatch.photoUrl}
+                            alt={newMatch.otherDisplayName}
+                            width={160}
+                            height={160}
+                            className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-2xl"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-7xl border-4 border-white dark:border-slate-800 shadow-2xl">
+                            👤
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+
+                    {/* Message avec animation décalée */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 }}
+                      className="space-y-3"
+                    >
+                      <p className="text-lg sm:text-xl text-foreground font-medium flex items-center justify-center gap-2">
+                        {newMatch.sport === 'surf' ? <span className="text-2xl">🏄</span> : <span className="text-2xl">🪁</span>}
+                        <span>Tu vas {newMatch.sport === 'surf' ? 'surfer' : 'kiter'} avec</span>
+                      </p>
+                      <p className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
+                        {newMatch.otherDisplayName}
+                      </p>
+                      <div className="text-sm text-muted-foreground dark:text-slate-400 bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 border-2 border-cyan-200 dark:border-cyan-800 p-4 rounded-2xl">
+                        💬 <span className="font-medium">Envoie un premier message pour briser la glace !</span>
+                      </div>
+                    </motion.div>
+
+                    {/* Boutons responsive */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.4 }}
+                      className="pt-2 flex flex-col sm:flex-row gap-3"
+                    >
+                      <Button
+                        size="lg"
+                        className="flex-1 bg-gradient-to-r from-cyan-600 via-blue-600 to-sky-600 hover:from-cyan-700 hover:via-blue-700 hover:to-sky-700 text-white font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+                        onClick={() => { const cid = newMatch.conversationId; setNewMatch(null); router.push(`/messages/${cid}`); }}
+                      >
+                        💬 Envoyer un message
+                      </Button>
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        className="sm:flex-none border-2 border-cyan-300 dark:border-cyan-700 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 font-medium"
+                        onClick={() => setNewMatch(null)}
+                      >
+                        Plus tard
+                      </Button>
+                    </motion.div>
+                  </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           </div>
         )}
       </div>
     </div>
-  </div>
   );
 }
 

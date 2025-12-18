@@ -23,14 +23,29 @@ export interface OfferCard {
   pro: OfferProSummary;
 }
 
+export interface OfferSearchParams {
+  lat: number;
+  lng: number;
+  radiusKm: number;
+  sport?: Sport;
+  level?: Level;
+}
+
 export interface OfferSearchResponse {
   offers: OfferCard[];
+  total: number;
+  searchParams: OfferSearchParams;
 }
 
 export interface OfferFilters {
   sport: Sport | '';
   level: Level | '';
   radiusKm: number;
+}
+
+export interface OfferStats {
+  uniqueClicks: number;
+  lastClickAt: string | null;
 }
 
 export interface EditableOffer {
@@ -43,4 +58,7 @@ export interface EditableOffer {
   isActive: boolean;
   lat?: number;
   lng?: number;
+  stats?: OfferStats;
+  createdAt?: string;
+  updatedAt?: string;
 }

@@ -267,52 +267,66 @@ export default function ProMapPage() {
 
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
-      <BackBar fallbackHref="/dashboard" />
-      <Card>
-        <CardHeader>
-          <CardTitle>BloboMap – Demandes de cours</CardTitle>
+    <div className="max-w-5xl mx-auto space-y-6 pb-8">
+      <BackBar fallbackHref="/pro/dashboard" />
+
+      {/* Header compact avec style océan */}
+      <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/20 dark:to-blue-900/20 p-4 border-2 border-cyan-200/50 dark:border-cyan-800/50">
+        <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 text-white shadow-md">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <h1 className="text-xl font-bold text-foreground">BloboMap – Demandes de cours 🗺️</h1>
+          <p className="text-sm text-muted-foreground">Trouve des riders autour de toi qui cherchent un coach</p>
+        </div>
+      </div>
+
+      <Card className="border-2 rounded-[1.75rem]">
+        <CardHeader className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-950/30 dark:to-blue-950/30">
+          <CardTitle className="text-foreground">Carte interactive des demandes</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           {!geolocEnabled && (
-            <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-md">
+            <div className="mb-4 rounded-2xl border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-4">
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0">
                   <span className="text-2xl">📍</span>
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-amber-900 mb-2">Géolocalisation requise</h3>
-                  <p className="text-sm text-amber-800 mb-3">
-                    Pour que la BloboMap fonctionne, vous devez activer votre géolocalisation.
-                    Cela permettra de voir les demandes de cours autour de vous et de calculer les distances.
+                  <h3 className="font-semibold text-amber-900 dark:text-amber-100 mb-2">Géolocalisation requise</h3>
+                  <p className="text-sm text-amber-800 dark:text-amber-200 mb-3">
+                    Pour que la BloboMap fonctionne, tu dois activer ta géolocalisation.
+                    Cela permettra de voir les demandes de cours autour de toi et de calculer les distances.
                   </p>
                   <div className="flex gap-2">
-                    <Button onClick={enableGeolocation} className="bg-amber-600 hover:bg-amber-700">
+                    <Button onClick={enableGeolocation} className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700">
                       🔄 Activer ma géolocalisation
                     </Button>
                   </div>
                   {hasGeolocPermission === false && (
-                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                      <h4 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
+                    <div className="mt-4 rounded-2xl border-2 border-red-200 dark:border-red-800/50 bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 p-4">
+                      <h4 className="font-semibold text-red-900 dark:text-red-100 mb-2 flex items-center gap-2">
                         <span>⚠️</span>
                         <span>Autorisations refusées - Comment débloquer</span>
                       </h4>
-                      <p className="text-sm text-red-800 mb-3">
-                        Votre navigateur bloque l’accès à votre position. Pour débloquer, suivez ces étapes pour {getBrowserInstructions(browserType).title} :
+                      <p className="text-sm text-red-800 dark:text-red-200 mb-3">
+                        Ton navigateur bloque l'accès à ta position. Pour débloquer, suis ces étapes pour {getBrowserInstructions(browserType).title} :
                       </p>
-                      <ol className="text-sm text-red-800 space-y-1 ml-4">
+                      <ol className="text-sm text-red-800 dark:text-red-200 space-y-1 ml-4">
                         {getBrowserInstructions(browserType).steps.map((step, idx) => (
                           <li key={idx} className="list-decimal">
                             {step}
                           </li>
                         ))}
                       </ol>
-                      <p className="text-xs text-red-700 mt-3 italic">
-                        💡 Astuce : Cette protection est normale, elle protège votre vie privée. Nous ne sauvegarderons votre position que si vous cochez &quot;Enregistrer comme position par défaut&quot;.
+                      <p className="text-xs text-red-700 dark:text-red-300 mt-3 italic">
+                        💡 Astuce : Cette protection est normale, elle protège ta vie privée. Nous ne sauvegarderons ta position que si tu coches &quot;Enregistrer comme position par défaut&quot;.
                       </p>
                       <Button
                         onClick={enableGeolocation}
-                        className="mt-3 bg-red-600 hover:bg-red-700 text-white"
+                        className="mt-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700"
                         size="sm"
                       >
                         🔄 Réessayer après avoir autorisé

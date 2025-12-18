@@ -12,6 +12,19 @@ import { Badge } from '../../../components/ui/badge';
 import type { DashboardUser } from '@/types/user';
 import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, Sport, Level } from '@/types';
 import { Sparkles, ListChecks } from 'lucide-react';
+import { clearMatchingStorage } from '../storage';
+
+const levelLabels: Record<Level, string> = {
+  beginner: 'Débutant',
+  intermediate: 'Intermédiaire',
+  advanced: 'Confirmé',
+  anytime: 'Peu importe'
+};
+
+const sportLabels: Record<Sport, string> = {
+  surf: 'Surf',
+  kitesurf: 'Kitesurf'
+};
 
 function ResultsInner() {
   const router = useRouter();
@@ -55,6 +68,10 @@ function ResultsInner() {
   const [page, setPage] = useState(1);
   const pageSize = 5;
   const [sortBy, setSortBy] = useState<'distance' | 'name'>('distance');
+  const resetCriteria = useCallback(() => {
+    clearMatchingStorage();
+    router.push('/matching');
+  }, [router]);
 
   const loadResults = useCallback(async () => {
     if (!sport || !level || !date) return;
@@ -115,7 +132,7 @@ function ResultsInner() {
             </CardTitle>
           </div>
           <CardDescription>
-            {sport || '—'} · {level || '—'} · {useGeoloc ? `${distanceKm ?? '—'} km` : 'sans géolocalisation'} · {date === 'anytime' ? 'peu importe' : date || '—'}
+            {sport ? sportLabels[sport] : '—'} · {level ? levelLabels[level] : '—'} · {useGeoloc ? `${distanceKm ?? '—'} km` : 'sans géolocalisation'} · {date === 'anytime' ? 'peu importe' : date || '—'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -159,7 +176,7 @@ function ResultsInner() {
                           )}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          {r.gender === 'FEMALE' ? 'Femme' : r.gender === 'MALE' ? 'Homme' : 'Autre'} • {r.sport} • {r.level}
+                          {r.gender === 'FEMALE' ? 'Femme' : r.gender === 'MALE' ? 'Homme' : 'Autre'} • {r.sport ? sportLabels[r.sport as Sport] : r.sport} • {r.level ? levelLabels[r.level as Level] : r.level}
                         </div>
                       </div>
                       <div className="text-sm text-muted-foreground">
@@ -180,7 +197,7 @@ function ResultsInner() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => router.push('/matching')}>
+                <Button variant="outline" className="flex-1" onClick={resetCriteria}>
                   Modifier ma sélection
                 </Button>
                 <Button className="flex-1" onClick={() => router.push('/matching/cards')}>

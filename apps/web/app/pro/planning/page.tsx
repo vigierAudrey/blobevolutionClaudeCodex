@@ -11,6 +11,7 @@ import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
 import { PlusCircle, CalendarDays, Users, Mail } from 'lucide-react';
 import { apiClient } from '../../../lib/apiClient';
+import { BackBar } from '../../../components/BackBar';
 import type {
   BookingAvailability,
   BookingRequestInboxItem,
@@ -26,18 +27,25 @@ interface RequestView extends BookingRequestInboxItem {}
 
 const STORAGE_KEY = 'pro-planning:last-slot';
 const STORAGE_VERSION = 1;
+const ADJUST_TIP_KEY = 'pro-planning:adjust-tip-count';
 
 export default function ProPlanningPage() {
   const router = useRouter();
   const [view, setView] = useState<'calendar' | 'list'>('list');
   const [availabilities, setAvailabilities] = useState<AvailabilityView[]>([]);
   const [requests, setRequests] = useState<RequestView[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [decisionLoadingId, setDecisionLoadingId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingAvailability, setEditingAvailability] = useState<AvailabilityView | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showBookingTip, setShowBookingTip] = useState(false);
+  const [adjusting, setAdjusting] = useState<Record<string, boolean>>({});
+  const [showAdjustTip, setShowAdjustTip] = useState(false);
+  const [adjustTipCount, setAdjustTipCount] = useState(0);
+  const adjustTipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = useCallback(async ({ silent } = { silent: false }) => {
     try {
@@ -45,12 +53,14 @@ export default function ProPlanningPage() {
         setLoading(true);
       }
       setError(null);
-      const [availabilityRes, requestsRes] = await Promise.all([
+      const [availabilityRes, requestsRes, bookingsRes] = await Promise.all([
         apiClient.getBookingAvailabilitiesForPro(),
         apiClient.getBookingRequestsInbox(),
+        apiClient.getProBookings(),
       ]);
       setAvailabilities(availabilityRes.availabilities);
       setRequests(requestsRes.requests);
+      setBookings(bookingsRes.bookings);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur de chargement du planning';
       setError(message);
@@ -62,6 +72,19 @@ export default function ProPlanningPage() {
   }, []);
 
   useEffect(() => {
+    // Restaurer le compteur d'aide sur l'ajustement manuel
+    try {
+      const stored = typeof window !== 'undefined' ? window.localStorage.getItem(ADJUST_TIP_KEY) : null;
+      if (stored) {
+        const parsed = parseInt(stored, 10);
+        if (!Number.isNaN(parsed)) {
+          setAdjustTipCount(parsed);
+        }
+      }
+    } catch (err) {
+      console.warn('localStorage error (adjust tip):', err);
+    }
+
     const t = apiClient.getTokens();
     if (!t?.accessToken) {
       router.replace('/login');
@@ -77,7 +100,26 @@ export default function ProPlanningPage() {
         void loadData();
       })
       .catch(() => router.replace('/login'));
+
+    // Vérifier si on doit afficher le message d'info (3 premières fois max)
+    try {
+      const viewCount = parseInt(localStorage.getItem('pro-booking-tip-count') || '0', 10);
+      if (viewCount < 3) {
+        setShowBookingTip(true);
+        localStorage.setItem('pro-booking-tip-count', String(viewCount + 1));
+      }
+    } catch (err) {
+      console.warn('localStorage error:', err);
+    }
   }, [loadData, router]);
+
+  useEffect(() => {
+    return () => {
+      if (adjustTipTimeoutRef.current) {
+        clearTimeout(adjustTipTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const onDecision = async (id: string, decision: 'ACCEPT' | 'REJECT') => {
     try {
@@ -95,6 +137,48 @@ export default function ProPlanningPage() {
   const handleAvailabilityCreated = useCallback(async () => {
     await loadData({ silent: true });
   }, [loadData]);
+
+  const triggerAdjustTip = useCallback(() => {
+    if (adjustTipCount >= 3) {
+      return;
+    }
+
+    const nextCount = adjustTipCount + 1;
+    setAdjustTipCount(nextCount);
+    setShowAdjustTip(true);
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(ADJUST_TIP_KEY, String(nextCount));
+      } catch (err) {
+        console.warn('localStorage error (adjust tip persist):', err);
+      }
+    }
+
+    if (adjustTipTimeoutRef.current) {
+      clearTimeout(adjustTipTimeoutRef.current);
+    }
+    adjustTipTimeoutRef.current = setTimeout(() => setShowAdjustTip(false), 6000);
+  }, [adjustTipCount]);
+
+  const handleAdjustBookedCount = async (availabilityId: string, delta: number) => {
+    triggerAdjustTip();
+    setAdjusting((prev) => ({ ...prev, [availabilityId]: true }));
+    try {
+      setError(null);
+      await apiClient.adjustBookingAvailabilityBookedCount(availabilityId, delta);
+      await loadData({ silent: true });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Impossible de mettre à jour le nombre d’inscrits';
+      setError(message);
+    } finally {
+      setAdjusting((prev) => {
+        const next = { ...prev };
+        delete next[availabilityId];
+        return next;
+      });
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce créneau ? Cette action est irréversible.')) {
@@ -127,53 +211,108 @@ export default function ProPlanningPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 py-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Planning pro</h1>
-          <p className="text-muted-foreground text-sm">
-            Gère tes créneaux, tes demandes ({pendingCount} en attente) et tes sessions confirmées.
-          </p>
+    <div className="max-w-5xl mx-auto space-y-6 pb-8">
+      <BackBar fallbackHref="/pro/dashboard" />
+
+      {/* Header compact avec style océan */}
+      <div className="rounded-2xl bg-gradient-to-r from-emerald-100 to-teal-100 dark:from-emerald-900/20 dark:to-teal-900/20 p-6 border-2 border-emerald-200/50 dark:border-emerald-800/50">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-md">
+              <CalendarDays className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Planning Pro 📅</h1>
+              <p className="text-sm text-muted-foreground">
+                Gère tes créneaux, tes demandes ({pendingCount} en attente) et tes sessions confirmées
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant={view === 'list' ? 'default' : 'outline'} onClick={() => setView('list')} className={view === 'list' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700' : ''}>
+              <CalendarDays className="h-4 w-4 mr-2" /> Vue liste
+            </Button>
+            <Button variant={view === 'calendar' ? 'default' : 'outline'} onClick={() => setView('calendar')} className={view === 'calendar' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700' : ''}>
+              <Users className="h-4 w-4 mr-2" /> Vue calendrier
+            </Button>
+            <Button onClick={() => setIsCreateOpen(true)} className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700">
+              <PlusCircle className="h-4 w-4 mr-2" /> Ajouter un créneau
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant={view === 'list' ? 'default' : 'outline'} onClick={() => setView('list')}>
-            <CalendarDays className="h-4 w-4 mr-2" /> Vue liste
-          </Button>
-          <Button variant={view === 'calendar' ? 'default' : 'outline'} onClick={() => setView('calendar')}>
-            <Users className="h-4 w-4 mr-2" /> Vue calendrier
-          </Button>
-          <Button onClick={() => setIsCreateOpen(true)}>
-            <PlusCircle className="h-4 w-4 mr-2" /> Ajouter un créneau
-          </Button>
+      </div>
+
+      {showAdjustTip && adjustTipCount <= 3 && (
+        <div className="rounded-2xl bg-amber-50/80 dark:bg-amber-900/30 border-2 border-amber-200 dark:border-amber-800 p-4 text-sm text-amber-900 dark:text-amber-100 flex items-start gap-3">
+          <span className="text-lg">ℹ️</span>
+          <div className="space-y-1">
+            <p className="font-semibold">Nouveau rappel : ajout d&apos;externes</p>
+            <p>
+              Si tu as des élèves qui ont réservé en dehors de l&apos;app, utilise les boutons +/- pour ajuster le nombre d&apos;inscrits manuellement. Le slot se ferme automatiquement quand la capacité est atteinte.
+            </p>
+            <p className="text-xs text-amber-800/80 dark:text-amber-200/80">
+              Message affiché {adjustTipCount}/3 fois pour t&apos;aider sur les premières utilisations.
+            </p>
+          </div>
         </div>
-      </header>
+      )}
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {error}
+        <div className="rounded-2xl border-2 border-red-200 dark:border-red-800/50 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 px-4 py-3">
+          <p className="text-sm text-red-700 dark:text-red-300 font-medium">❌ {error}</p>
         </div>
       )}
 
       {view === 'list' ? (
         <section className="space-y-4">
           {sortedAvailabilities.map((slot) => (
-            <Card key={slot.id}>
-              <CardHeader className="flex flex-row items-center justify-between">
+            <Card key={slot.id} className="border-2 rounded-[1.75rem] hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
                 <div>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex items-center gap-2 text-foreground">
                     {slot.spotName || 'Lieu à définir'}
-                    <Badge variant="secondary">{slot.sport}</Badge>
+                    <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">{slot.sport}</Badge>
                   </CardTitle>
                   <CardDescription>
                     {new Date(slot.startAt).toLocaleString('fr-FR')} → {new Date(slot.endAt).toLocaleTimeString('fr-FR')}
                   </CardDescription>
                 </div>
-                <Badge variant={slot.status === 'OPEN' ? 'outline' : 'destructive'}>{slot.status}</Badge>
+                <Badge variant={slot.status === 'OPEN' ? 'outline' : 'destructive'} className={slot.status === 'OPEN' ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : ''}>{slot.status}</Badge>
               </CardHeader>
               <CardContent className="flex flex-wrap items-center justify-between gap-4 text-sm">
                 <div className="space-y-1">
                   <p className="text-muted-foreground">Niveaux acceptés : {slot.levels.join(', ')}</p>
-                  <p>{slot.bookedCount}/{slot.capacity} riders positionnés</p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <p className="font-medium">
+                      {slot.bookedCount}/{slot.capacity} riders positionnés
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => handleAdjustBookedCount(slot.id, -1)}
+                        disabled={adjusting[slot.id] || slot.bookedCount <= 0}
+                        aria-label="Diminuer le nombre d'inscrits"
+                      >
+                        -
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => handleAdjustBookedCount(slot.id, 1)}
+                        disabled={adjusting[slot.id] || slot.bookedCount >= slot.capacity}
+                        aria-label="Augmenter le nombre d'inscrits"
+                      >
+                        +
+                      </Button>
+                      {adjusting[slot.id] && (
+                        <span className="text-xs text-muted-foreground">Mise à jour…</span>
+                      )}
+                    </div>
+                    {slot.bookedCount >= slot.capacity && (
+                      <Badge variant="destructive" className="uppercase tracking-wide">Complet</Badge>
+                    )}
+                  </div>
                   {slot.spotName && slot.spotLat && slot.spotLng && (
                     <p className="text-xs text-muted-foreground">
                       📍 <a
@@ -279,11 +418,87 @@ export default function ProPlanningPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Historique</CardTitle>
-            <CardDescription>Sessions confirmées et demandes passées (à venir).</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4" /> Sessions confirmées
+              <Badge variant="secondary">{bookings.length}</Badge>
+            </CardTitle>
+            <CardDescription>Tes riders inscrits sur tes créneaux</CardDescription>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            TODO: tableau des demandes passées + filtres.
+          <CardContent className="space-y-3 text-sm">
+            {bookings.length === 0 ? (
+              <p className="text-muted-foreground">Aucune réservation confirmée pour le moment.</p>
+            ) : (
+              <>
+                {showBookingTip && (
+                  <div className="rounded-2xl bg-blue-50/80 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 text-sm text-blue-800 dark:text-blue-200 flex items-start gap-2">
+                    <span className="text-lg">💬</span>
+                    <div>
+                      <strong>Important :</strong> Contacte tes riders via la messagerie pour finaliser les détails (lieu de rendez-vous exact, matériel nécessaire, conditions météo, etc.).
+                    </div>
+                    <button
+                      onClick={() => setShowBookingTip(false)}
+                      className="ml-auto text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-100 font-bold"
+                      aria-label="Fermer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                {bookings.map((booking) => (
+                <div key={booking.id} className="rounded-md border p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      {booking.rider?.riderProfile?.photoUrl ? (
+                        <img
+                          src={booking.rider.riderProfile.photoUrl}
+                          alt={booking.rider.riderProfile.displayName || 'Rider'}
+                          className="w-10 h-10 rounded-full object-cover border"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-lg">
+                          👤
+                        </div>
+                      )}
+                      <div>
+                        <span className="font-medium">
+                          {booking.rider?.riderProfile?.displayName || 'Rider'}
+                        </span>
+                        <p className="text-xs text-muted-foreground">
+                          {booking.rider?.riderProfile?.sex === 'FEMALE' ? 'Femme' : booking.rider?.riderProfile?.sex === 'MALE' ? 'Homme' : 'Autre'}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        // Trouver la conversation avec ce rider
+                        router.push(`/messages`);
+                      }}
+                    >
+                      Contacter
+                    </Button>
+                  </div>
+                  {booking.availability && (
+                    <div className="text-muted-foreground space-y-1">
+                      <p>
+                        <strong>{booking.availability.sport}</strong> — {booking.availability.spotName || 'Lieu à définir'}
+                      </p>
+                      <p className="text-xs">
+                        {new Date(booking.availability.startAt).toLocaleString('fr-FR')} → {new Date(booking.availability.endAt).toLocaleTimeString('fr-FR')}
+                      </p>
+                      <p className="text-xs">
+                        Niveaux : {booking.availability.levels.join(', ')}
+                      </p>
+                    </div>
+                  )}
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                    Confirmée
+                  </Badge>
+                </div>
+              ))}
+              </>
+            )}
           </CardContent>
         </Card>
       </section>

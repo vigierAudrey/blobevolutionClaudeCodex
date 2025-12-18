@@ -462,22 +462,14 @@ export default function ProfilePage() {
       <div className="mx-auto max-w-6xl space-y-6 pb-24">
         <BackBar fallbackHref="/dashboard" />
 
-        {/* Hero Header */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-500 p-8 text-white shadow-xl">
-          <div className="absolute top-0 right-0 -mt-8 -mr-8 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
-          <div className="absolute bottom-0 left-0 -mb-6 -ml-6 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-3 rounded-xl bg-white/20">
-                <User className="w-6 h-6" />
-              </div>
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
-                Mon Profil
-              </h1>
-            </div>
-            <p className="text-indigo-50 text-sm sm:text-base">
-              Personnalise ton profil pour un matching optimal et des sessions mémorables !
-            </p>
+        {/* Page Header */}
+        <div className="flex items-center gap-3 pb-2 border-b">
+          <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+            <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Mon Profil</h1>
+            <p className="text-sm text-muted-foreground">Personnalise ton profil pour un matching optimal</p>
           </div>
         </div>
 
