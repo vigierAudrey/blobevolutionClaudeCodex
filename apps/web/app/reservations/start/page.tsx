@@ -105,7 +105,7 @@ export default function ReservationStartPage() {
     return safeResults
       .filter((slot) => slot.spotLat != null && slot.spotLng != null)
       .map((slot) => {
-        const isFull = slot.bookedCount >= slot.capacity;
+        const isFull = slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity;
         return {
           id: slot.id,
           lat: slot.spotLat as number,
@@ -123,7 +123,7 @@ export default function ReservationStartPage() {
   const handleMapContactClick = useCallback(
     (slotId: string) => {
       const slot = safeResults.find((item) => item.id === slotId);
-      if (slot && slot.bookedCount < slot.capacity) {
+      if (slot && slot.status !== 'CLOSED' && slot.bookedCount < slot.capacity) {
         setRequestingSlot(slot);
       }
     },
@@ -395,6 +395,9 @@ export default function ReservationStartPage() {
                         <CardTitle className="flex items-center gap-2 text-base">
                           {slot.spotName || 'Spot à définir'}
                           <Badge variant="secondary">{slot.sport}</Badge>
+                          {(slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity) && (
+                            <Badge variant="destructive">Complet</Badge>
+                          )}
                         </CardTitle>
                         {slot.distanceKm != null && (
                           <span className="text-xs text-muted-foreground">{slot.distanceKm.toFixed(1)} km</span>
@@ -418,14 +421,14 @@ export default function ReservationStartPage() {
                         <RiderMiniaturesStrip riders={slot.riders} />
                       </div>
                       <div className="flex items-center justify-end gap-2">
-                        {slot.bookedCount >= slot.capacity && (
-                          <span className="text-xs text-muted-foreground">Créneau complet</span>
+                        {(slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity) && (
+                          <span className="text-xs text-red-700 dark:text-red-300 font-semibold">Créneau complet</span>
                         )}
                         <Button
                           size="sm"
                           onClick={() => setRequestingSlot(slot)}
-                          disabled={slot.bookedCount >= slot.capacity}
-                          title={slot.bookedCount >= slot.capacity ? 'Tous les riders sont déjà positionnés.' : undefined}
+                          disabled={slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity}
+                          title={slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity ? 'Tous les riders sont déjà positionnés.' : undefined}
                         >
                           Demander ce créneau
                         </Button>

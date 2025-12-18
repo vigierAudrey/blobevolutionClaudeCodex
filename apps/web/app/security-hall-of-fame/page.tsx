@@ -230,7 +230,7 @@ export default function SecurityHallOfFamePage() {
             </li>
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
-              <span>Signalez-la de manière responsable à <a href="mailto:security@blobinfini.fr" className="text-blue-300 hover:underline">security@blobinfini.fr</a></span>
+              <span>Signalez-la de manière responsable à <a href="mailto:METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com" className="text-blue-300 hover:underline">METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com</a></span>
             </li>
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>

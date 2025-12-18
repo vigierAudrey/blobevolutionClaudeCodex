@@ -466,6 +466,10 @@
 - [x] Automatiser déploiement (GitHub Actions build/test prêt).
 - [x] Cache service consent (`getConsent` en mémoire 5 min).
 
+  **✅ Correctif livré (2025-12-15)**
+
+  - [x] Verrouillage d'une seule offre par pro (contrainte `ProOffer_proProfileId`, upsert API + bouton d'application des filtres côté riders pour éviter les incohérences).
+
 ---
 
 ## 🛠 Developer Experience & Observabilité

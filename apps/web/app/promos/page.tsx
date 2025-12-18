@@ -1,26 +1,29 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { Badge } from '../../components/ui/badge';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Tag } from 'lucide-react';
 
 export default function PromosPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/dashboard" />
 
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-500 p-8 text-white shadow-xl">
-        <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" aria-hidden />
-        <div className="relative z-10 space-y-3">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-            <Sparkles className="w-3.5 h-3.5" />
-            Partenariats
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Offres promotionnelles</h1>
-          <p className="text-white/85 text-base">
-            Nous préparons des deals exclusifs avec écoles, loueurs et acteurs de la glisse. Revenez bientôt pour profiter des premiers packs.
-          </p>
+      {/* Page Header */}
+      <div className="flex items-center gap-3 pb-2 border-b">
+        <div className="p-2 rounded-lg bg-violet-100 dark:bg-violet-900/30">
+          <Tag className="w-5 h-5 text-violet-600 dark:text-violet-400" />
         </div>
-      </section>
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-foreground">Offres promotionnelles</h1>
+            <Badge variant="secondary" className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+              <Sparkles className="w-3 h-3 mr-1" />
+              Partenariats
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">Deals exclusifs avec écoles, loueurs et acteurs de la glisse</p>
+        </div>
+      </div>
 
       <Card className="border-2">
         <CardHeader>

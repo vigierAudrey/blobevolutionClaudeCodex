@@ -1,15 +1,15 @@
 "use client";
+import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Search, Sparkles, Tag, User } from 'lucide-react';
 import nextDynamic from 'next/dynamic';
 import Image from 'next/image';
-import loadingBlob from '../../public/images/loading/favicon-96x96.png';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { apiClient } from '../../lib/apiClient';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
-import { Button } from '../../components/ui/button';
-import { Badge } from '../../components/ui/badge';
 import Link from 'next/link';
-import { User, Map, Info, LogOut, MessageSquare, GraduationCap, Search, RadioTower, Tag, BookOpen, Sparkles } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { apiClient } from '../../lib/apiClient';
+import loadingBlob from '../../public/images/loading/favicon-96x96.png';
 
 const AdBannerSidebar = nextDynamic(
   () => import('../../components/ads/AdBanner').then((mod) => mod.AdBannerSidebar),
@@ -208,6 +208,7 @@ export default function DashboardPage() {
               className="w-16 h-16 rounded-full object-contain bg-white/95 p-1 drop-shadow-lg"
               priority
             />
+
           </div>
           <p className="text-muted-foreground">Chargement de ton espace...</p>
         </div>

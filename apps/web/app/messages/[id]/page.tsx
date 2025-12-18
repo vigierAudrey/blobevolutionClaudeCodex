@@ -12,7 +12,6 @@ import { apiClient } from '../../../lib/apiClient';
 import type {
   Message,
   MessageListResponse,
-  MessageMeta,
   SendMessagePayload,
   ThreadListResponse,
   ThreadSummary,
@@ -26,10 +25,6 @@ export default function ConversationPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
-  const [showProposal, setShowProposal] = useState(false);
-  const [pDate, setPDate] = useState('');
-  const [pPlace, setPPlace] = useState('');
-  const [pNote, setPNote] = useState('');
   const [conversationInfo, setConversationInfo] = useState<ThreadSummary | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -116,26 +111,6 @@ export default function ConversationPage() {
     }
   };
 
-  const sendProposal = async () => {
-    if (!pDate || !pPlace) return;
-    const meta: MessageMeta = { date: pDate, place: pPlace, note: pNote || undefined };
-    const payload: SendMessagePayload = {
-      type: 'PROPOSAL',
-      content: `Proposition de session ${pDate} @ ${pPlace}`,
-      meta,
-    };
-    try {
-      await apiClient.sendMessage(id, payload);
-      setShowProposal(false);
-      setPDate('');
-      setPPlace('');
-      setPNote('');
-      await loadMessages();
-    } catch (err) {
-      console.error('Failed to send proposal', err);
-    }
-  };
-
   const handleBlock = async () => {
     if (!conversationInfo) return;
 
@@ -186,10 +161,10 @@ export default function ConversationPage() {
                 <MoreVertical size={16} />
               </Button>
               {showMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white border rounded-md shadow-lg z-10 min-w-[180px]">
+                <div className="absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-border rounded-md shadow-lg z-10 min-w-[180px]">
                   <button
                     onClick={handleBlock}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2"
                   >
                     {conversationInfo?.blocked ? (
                       <>
@@ -214,10 +189,10 @@ export default function ConversationPage() {
           <div className="space-y-2 min-h-[300px]">
             {messages.map((m) => (
               <div key={m.id} className="text-sm">
-                <div className={"inline-block rounded-lg px-3 py-2 " + (m.type === 'PROPOSAL' ? 'bg-amber-50 border border-amber-200' : 'bg-accent') }>
-                  <div>{m.content}</div>
+                <div className={"inline-block rounded-lg px-3 py-2 " + (m.type === 'PROPOSAL' ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800' : 'bg-accent') }>
+                  <div className="text-foreground">{m.content}</div>
                   {m.type === 'PROPOSAL' && m.meta && (
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-muted-foreground dark:text-amber-300">
                       {m.meta?.date} • {m.meta?.place} {m.meta?.note ? `• ${m.meta.note}` : ''}
                     </div>
                   )}
@@ -228,31 +203,22 @@ export default function ConversationPage() {
           </div>
 
           {conversationInfo?.blocked ? (
-            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
-              <div className="flex items-center gap-2 text-red-700 text-sm">
+            <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+              <div className="flex items-center gap-2 text-red-700 dark:text-red-300 text-sm">
                 <Shield size={16} />
                 <span>Ce contact est bloqué. Vous ne pouvez plus envoyer de messages.</span>
               </div>
             </div>
           ) : (
-            <div className="mt-3 flex items-center gap-2">
-              <input className="flex-1 rounded-md border border-input px-3 py-2 text-sm" placeholder="Écrire un message" value={input} onChange={(e)=>setInput(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } }} />
-              <Button onClick={send}>Envoyer</Button>
-              <Button variant="secondary" onClick={()=>setShowProposal((v)=>!v)}>Proposer une session</Button>
-            </div>
-          )}
-          {showProposal && !conversationInfo?.blocked && (
-            <div className="mt-3 rounded-md border p-3 space-y-2">
-              <div className="text-sm font-medium">Proposition de session</div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input type="date" className="rounded-md border px-2 py-1 text-sm" value={pDate} onChange={(e)=>setPDate(e.target.value)} />
-                <input type="text" className="rounded-md border px-2 py-1 text-sm" placeholder="Lieu" value={pPlace} onChange={(e)=>setPPlace(e.target.value)} />
-                <input type="text" className="rounded-md border px-2 py-1 text-sm" placeholder="Note (facultatif)" value={pNote} onChange={(e)=>setPNote(e.target.value)} />
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={()=>setShowProposal(false)}>Annuler</Button>
-                <Button onClick={sendProposal}>Envoyer la proposition</Button>
-              </div>
+            <div className="mt-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <input
+                className="flex-1 rounded-md border border-input bg-background text-foreground px-3 py-2 text-sm placeholder:text-muted-foreground"
+                placeholder="Écrire un message"
+                value={input}
+                onChange={(e)=>setInput(e.target.value)}
+                onKeyDown={(e)=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } }}
+              />
+              <Button onClick={send} className="w-full sm:w-auto">Envoyer</Button>
             </div>
           )}
         </CardContent>

@@ -173,6 +173,77 @@ export class BookingService {
     return updated;
   }
 
+  async adjustBookedCount(proUserId: string, availabilityId: string, delta: number) {
+    const updatedAvailability = await withTransactionRetry(async () => {
+      return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const availabilityRow = await tx.$queryRaw<Array<{
+          proUserId: string;
+          bookedCount: number;
+          capacity: number;
+          status: 'OPEN' | 'CLOSED';
+          spotLat: number | null;
+          spotLng: number | null;
+        }>>`
+          SELECT "proUserId", "bookedCount", "capacity", "status", "spotLat", "spotLng"
+          FROM "ProAvailability"
+          WHERE "id" = ${availabilityId}
+          FOR UPDATE
+        `;
+
+        const availability = availabilityRow[0];
+
+        if (!availability || availability.proUserId !== proUserId) {
+          throw Object.assign(new Error('Availability not found'), { status: 404 });
+        }
+
+        const confirmedBookings = await tx.booking.count({
+          where: { availabilityId }
+        });
+
+        const nextBookedCount = availability.bookedCount + delta;
+
+        if (nextBookedCount < confirmedBookings) {
+          throw Object.assign(
+            new Error('Cannot set bookedCount below confirmed bookings'),
+            { status: 409 }
+          );
+        }
+
+        if (nextBookedCount < 0) {
+          throw Object.assign(new Error('Booked count cannot be negative'), { status: 400 });
+        }
+
+        if (nextBookedCount > availability.capacity) {
+          throw Object.assign(
+            new Error('Cannot exceed availability capacity'),
+            { status: 409 }
+          );
+        }
+
+        const nextStatus = nextBookedCount >= availability.capacity ? 'CLOSED' as const : 'OPEN' as const;
+
+        return tx.proAvailability.update({
+          where: { id: availabilityId },
+          data: {
+            bookedCount: nextBookedCount,
+            status: nextStatus
+          }
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    }, 7, 150);
+
+    try {
+      await cacheService.invalidateAvailabilities(
+        updatedAvailability.spotLat ?? undefined,
+        updatedAvailability.spotLng ?? undefined
+      );
+    } catch (error) {
+      console.warn('⚠️  Failed to invalidate availability cache after bookedCount adjustment', error);
+    }
+
+    return updatedAvailability;
+  }
+
   async deleteAvailability(proUserId: string, availabilityId: string) {
     const availability = await bookingRepository.findAvailabilityById(availabilityId);
     if (!availability || availability.proUserId !== proUserId) {
@@ -287,7 +358,7 @@ export class BookingService {
       const collection = ridersByAvailability.get(booking.availabilityId) ?? [];
       collection.push({
         id: booking.riderId,
-        displayName: booking.displayName ?? booking.riderEmail,
+        displayName: booking.displayName ?? 'Rider',
         avatarUrl: booking.photoUrl ?? null,
       });
       ridersByAvailability.set(booking.availabilityId, collection.slice(0, 6));
@@ -297,7 +368,6 @@ export class BookingService {
       id: row.id,
       pro: {
         userId: row.proUserId,
-        email: row.proEmail,
         businessName: row.businessName ?? null,
       },
       sport: row.sport,
@@ -306,6 +376,7 @@ export class BookingService {
       endAt: row.endAt,
       capacity: Number(row.capacity),
       bookedCount: Number(row.bookedCount),
+      status: row.status,
       spotName: row.spotName,
       spotLat: row.spotLat,
       spotLng: row.spotLng,
@@ -364,7 +435,6 @@ export class BookingService {
         rider: {
           select: {
             id: true,
-            email: true,
             riderProfile: {
               select: {
                 displayName: true,
@@ -462,6 +532,31 @@ export class BookingService {
             respondedAt: new Date(),
           },
         });
+
+        // 💬 Créer automatiquement une conversation entre le PRO et le Rider
+        let conversation = await tx.conversation.findFirst({
+          where: {
+            members: {
+              every: {
+                userId: { in: [proUserId, request.riderUserId] }
+              }
+            }
+          }
+        });
+
+        if (!conversation) {
+          conversation = await tx.conversation.create({ data: {} });
+          await tx.conversationMember.createMany({
+            data: [
+              { conversationId: conversation.id, userId: proUserId },
+              { conversationId: conversation.id, userId: request.riderUserId },
+            ],
+            skipDuplicates: true,
+          });
+        }
+
+        // Stocker l'ID de la conversation pour l'envoyer dans la notification
+        (request as any).conversationId = conversation.id;
       } else {
         await tx.bookingRequest.update({
           where: { id: requestId },
@@ -487,15 +582,15 @@ export class BookingService {
       if (action === 'accept') {
         console.log('📬 Sending booking accepted notification');
         await notifyBookingAccepted(requestData.riderUserId, {
-          proName: requestData.availability?.pro?.proProfile?.businessName || requestData.availability?.pro?.email || 'Instructeur',
+          proName: requestData.availability?.pro?.proProfile?.businessName || 'Instructeur',
           spotName: requestData.availability?.spotName || 'Spot à définir',
           dateTime: requestData.availability?.startAt?.toISOString() || new Date().toISOString(),
-          // TODO: Add conversationId when messaging system is ready
+          conversationId: (requestData as any).conversationId, // Conversation créée automatiquement
         });
       } else {
         console.log('📬 Sending booking rejected notification');
         await notifyBookingRejected(requestData.riderUserId, {
-          proName: requestData.availability?.pro?.proProfile?.businessName || requestData.availability?.pro?.email || 'Instructeur',
+          proName: requestData.availability?.pro?.proProfile?.businessName || 'Instructeur',
           spotName: requestData.availability?.spotName || 'Spot à définir',
           reason: 'Le créneau n\'est plus disponible'
         });
@@ -526,10 +621,12 @@ export class BookingService {
           },
         });
 
+        const nextBookedCount = availability.bookedCount + 1;
         await tx.proAvailability.update({
           where: { id: data.availabilityId },
           data: {
             bookedCount: { increment: 1 },
+            ...(nextBookedCount >= availability.capacity ? { status: 'CLOSED' as const } : {}),
           },
         });
 
@@ -542,6 +639,78 @@ export class BookingService {
     return bookingRepository.listBookings({
       where: {
         availability: { proUserId },
+      },
+      include: {
+        rider: {
+          select: {
+            id: true,
+            riderProfile: {
+              select: {
+                id: true,
+                displayName: true,
+                photoUrl: true,
+                sex: true,
+              },
+            },
+          },
+        },
+        availability: {
+          select: {
+            id: true,
+            sport: true,
+            levels: true,
+            startAt: true,
+            endAt: true,
+            spotName: true,
+            spotLat: true,
+            spotLng: true,
+            capacity: true,
+            bookedCount: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
+  async listRiderBookings(riderUserId: string) {
+    return bookingRepository.listBookings({
+      where: {
+        riderUserId,
+      },
+      include: {
+        availability: {
+          select: {
+            id: true,
+            sport: true,
+            levels: true,
+            startAt: true,
+            endAt: true,
+            spotName: true,
+            spotLat: true,
+            spotLng: true,
+            capacity: true,
+            bookedCount: true,
+            status: true,
+            pro: {
+              select: {
+                id: true,
+                proProfile: {
+                  select: {
+                    businessName: true,
+                    photoUrl: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
       },
     });
   }

@@ -372,7 +372,7 @@ model Message {
 
 model ProOffer {
   id           String     @id @default(uuid())
-  proProfileId String
+  proProfileId String     @unique
   sport        Sport
   level        Level
   title        String
@@ -384,11 +384,24 @@ model ProOffer {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   proProfile   ProProfile @relation(fields: [proProfileId], references: [id], onDelete: Cascade)
+  clicks       ProOfferClick[]
 
   @@index([sport, level])
   @@index([lat, lng])
   @@index([isActive])
-  @@index([proProfileId])
+}
+
+model ProOfferClick {
+  id          String   @id @default(uuid())
+  proOfferId  String
+  riderUserId String
+  createdAt   DateTime @default(now())
+
+  proOffer ProOffer @relation(fields: [proOfferId], references: [id], onDelete: Cascade)
+  rider    User     @relation(fields: [riderUserId], references: [id], onDelete: Cascade)
+
+  @@unique([proOfferId, riderUserId])
+  @@index([proOfferId])
 }
 
 model ContactRequest {

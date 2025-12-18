@@ -257,8 +257,9 @@ export function MdxPreview({ markdown, frontmatter, className }: MdxPreviewProps
     try {
       const nodes = renderMarkdown(markdown || '');
       return { error: null as string | null, content: nodes };
-    } catch (e: any) {
-      return { error: e?.message || 'Erreur de rendu', content: [] as React.ReactNode[] };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Erreur de rendu';
+      return { error: message, content: [] as React.ReactNode[] };
     }
   }, [markdown]);
 
@@ -302,4 +303,3 @@ export function MdxPreview({ markdown, frontmatter, className }: MdxPreviewProps
 }
 
 export default MdxPreview;
-

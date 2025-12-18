@@ -12,7 +12,7 @@ import { Badge } from '../../../components/ui/badge';
 import { apiClient } from '../../../lib/apiClient';
 import type { DashboardUser } from '@/types/user';
 import type { Level, Sport } from '@/types/matching';
-import { CalendarDays, Sparkles, Navigation, MapPin, AlertTriangle, GraduationCap } from 'lucide-react';
+import { CalendarDays, MapPin, AlertTriangle, GraduationCap } from 'lucide-react';
 
 // Fonction pour détecter le navigateur de l'utilisateur
 const detectBrowser = (): 'chrome' | 'firefox' | 'safari' | 'edge' | 'other' => {
@@ -111,7 +111,7 @@ function DateInner() {
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
-  const [useGeoloc, setUseGeoloc] = useState<boolean>(false);
+  const [useGeoloc] = useState<boolean>(true); // Géolocalisation obligatoire
   const [hasInitialized, setHasInitialized] = useState<boolean>(false);
   const [wantsLesson, setWantsLesson] = useState<boolean>(false);
   const [browserType, setBrowserType] = useState<string>('other');
@@ -150,7 +150,6 @@ function DateInner() {
     const qsDist = search.get('distanceKm') || localStorage.getItem(DIST_KEY);
     const qsLat = search.get('lat') || localStorage.getItem(LAT_KEY);
     const qsLng = search.get('lng') || localStorage.getItem(LNG_KEY);
-    const qsUseGeoloc = search.get('useGeoloc') || localStorage.getItem(USE_GEO_KEY);
     const qsLesson = search.get('wantsLesson') || localStorage.getItem(LESSON_KEY);
     setSport(qsSport || null);
     setLevel(qsLevel || null);
@@ -158,7 +157,6 @@ function DateInner() {
     setDistanceKm(qsDist ? Number(qsDist) : null);
     setLat(qsLat ? Number(qsLat) : null);
     setLng(qsLng ? Number(qsLng) : null);
-    setUseGeoloc(qsUseGeoloc === '1');
     setWantsLesson(qsLesson === '1');
     setHasInitialized(true);
   }, [search]);
@@ -182,27 +180,10 @@ function DateInner() {
     const url = new URL(window.location.href);
     if (sport) url.searchParams.set('sport', sport);
     if (level) url.searchParams.set('level', level);
-    if (useGeoloc) url.searchParams.set('useGeoloc', '1'); else url.searchParams.delete('useGeoloc');
-    if (useGeoloc && distanceKm != null) url.searchParams.set('distanceKm', String(distanceKm)); else url.searchParams.delete('distanceKm');
-    if (useGeoloc && lat != null && lng != null) { url.searchParams.set('lat', String(lat)); url.searchParams.set('lng', String(lng)); } else { url.searchParams.delete('lat'); url.searchParams.delete('lng'); }
+    url.searchParams.set('useGeoloc', '1');
+    if (distanceKm != null) url.searchParams.set('distanceKm', String(distanceKm));
+    if (lat != null && lng != null) { url.searchParams.set('lat', String(lat)); url.searchParams.set('lng', String(lng)); }
     url.searchParams.set('date', iso);
-    window.history.replaceState(null, '', url.toString());
-  };
-
-  const toggleUseGeoloc = (checked: boolean) => {
-    setUseGeoloc(checked);
-    try { localStorage.setItem(USE_GEO_KEY, checked ? '1' : '0'); } catch {}
-    const url = new URL(window.location.href);
-    if (checked) {
-      url.searchParams.set('useGeoloc', '1');
-      if (distanceKm != null) url.searchParams.set('distanceKm', String(distanceKm));
-      if (lat != null && lng != null) { url.searchParams.set('lat', String(lat)); url.searchParams.set('lng', String(lng)); }
-    } else {
-      url.searchParams.delete('useGeoloc');
-      url.searchParams.delete('distanceKm');
-      url.searchParams.delete('lat');
-      url.searchParams.delete('lng');
-    }
     window.history.replaceState(null, '', url.toString());
   };
 
@@ -233,32 +214,26 @@ function DateInner() {
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/matching" />
 
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-8 text-white shadow-xl">
-        <div className="absolute inset-0 opacity-45 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" aria-hidden />
-        <div className="relative z-10 flex flex-col gap-4">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-            <Sparkles className="w-3.5 h-3.5" />
-            Étape 3 · Date & options
+      {/* Header compact avec progression */}
+      <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 p-4 border-2 border-purple-200/50 dark:border-purple-800/50">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md">
+            <CalendarDays className="w-5 h-5" />
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Bloque ta prochaine session</h1>
-          <p className="text-white/85 text-base">
-            Choisis une date rapide ou laisse le matching en mode &ldquo;Peu importe&rdquo;. Option cours pro & géoloc juste en dessous.
-          </p>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Date & Options</h1>
+            <p className="text-sm text-muted-foreground">Étape 2 sur 3 : Choisis ta date</p>
+          </div>
         </div>
-      </section>
+        <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400">
+          Étape 2/3
+        </Badge>
+      </div>
 
       <Card className="border-2">
-        <CardHeader className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="bg-purple-100 text-purple-700">
-              Étape 3
-            </Badge>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <CalendarDays className="w-5 h-5 text-muted-foreground" />
-              Choix de date
-            </CardTitle>
-          </div>
-          <CardDescription>Précise ton créneau pour filtrer les riders disponibles.</CardDescription>
+        <CardHeader>
+          <CardTitle className="text-xl">Choix de la date</CardTitle>
+          <CardDescription>Sélectionne aujourd'hui, demain ou choisis mode flexible</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -294,16 +269,11 @@ function DateInner() {
       <Card className="border-2">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">
-            <Badge variant="secondary" className="bg-amber-100 text-amber-700">
-              Option
-            </Badge>
-            <span className="flex items-center gap-2">
-              <GraduationCap className="w-5 h-5 text-muted-foreground" />
-              Cours avec un pro
-            </span>
+            <GraduationCap className="w-5 h-5 text-amber-600" />
+            Cours avec un pro (optionnel)
           </CardTitle>
           <CardDescription>
-            Active le badge pour signaler aux autres riders et aux pros que tu cherches un cours.
+            Signale aux autres riders et aux pros que tu cherches un cours
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -353,106 +323,87 @@ function DateInner() {
       <Card className="border-2">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">
-            <Badge variant="secondary" className="bg-sky-100 text-sky-700">
-              Étape 4
-            </Badge>
-            <span className="flex items-center gap-2">
-              <Navigation className="w-5 h-5 text-muted-foreground" />
-              Géolocalisation (optionnel)
-            </span>
+            <MapPin className="w-5 h-5 text-sky-600" />
+            Géolocalisation
           </CardTitle>
-          <CardDescription>Affiche plus de riders proches grâce au rayon personnalisé.</CardDescription>
+          <CardDescription>Active ta position pour trouver des riders proches de toi (nécessaire pour le matching)</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <label className="flex items-start gap-3 text-sm">
+          <div className="rounded-2xl bg-blue-50/80 border border-blue-200 p-3 text-sm text-blue-800">
+            La géolocalisation est nécessaire pour utiliser le matching et trouver des riders près de chez toi.
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" onClick={getLocation} className="inline-flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                Activer ma position
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {lat != null && lng != null ? `Position : ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
+              </span>
+            </div>
+            {geolocError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 space-y-2 text-sm text-red-800">
+                <p className="font-semibold flex items-center gap-2 text-red-900">
+                  <AlertTriangle className="w-4 h-4" />
+                  Autorise la localisation sur {getBrowserInstructions(browserType).title}
+                </p>
+                <ol className="list-decimal pl-4 space-y-1">
+                  {getBrowserInstructions(browserType).steps.map((step, idx) => (
+                    <li key={idx}>{step}</li>
+                  ))}
+                </ol>
+                <p className="text-xs text-red-700">La géolocalisation est nécessaire pour le matching.</p>
+                <Button onClick={getLocation} variant="outline" size="sm">
+                  Réessayer
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <label htmlFor="distance">Distance maximale</label>
+              <span className="font-semibold text-foreground">{distanceKm ?? 20} km</span>
+            </div>
             <input
-              type="checkbox"
-              checked={useGeoloc}
-              onChange={(e) => toggleUseGeoloc(e.target.checked)}
-              className="mt-1 h-4 w-4"
+              id="distance"
+              type="range"
+              min={5}
+              max={200}
+              step={5}
+              value={distanceKm ?? 20}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setDistanceKm(v);
+                try { localStorage.setItem(DIST_KEY, String(v)); } catch {}
+                const url = new URL(window.location.href);
+                url.searchParams.set('distanceKm', String(v));
+                window.history.replaceState(null, '', url.toString());
+              }}
+              className="w-full accent-sky-600"
             />
-            <span>Utiliser ma position pour calculer la distance</span>
-          </label>
-
-          {useGeoloc && (
-            <>
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button variant="outline" onClick={getLocation} className="inline-flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Activer ma position
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    {lat != null && lng != null ? `Position : ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
-                  </span>
-                </div>
-                {geolocError && (
-                  <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 space-y-2 text-sm text-red-800">
-                    <p className="font-semibold flex items-center gap-2 text-red-900">
-                      <AlertTriangle className="w-4 h-4" />
-                      Autorise la localisation sur {getBrowserInstructions(browserType).title}
-                    </p>
-                    <ol className="list-decimal pl-4 space-y-1">
-                      {getBrowserInstructions(browserType).steps.map((step, idx) => (
-                        <li key={idx}>{step}</li>
-                      ))}
-                    </ol>
-                    <p className="text-xs text-red-700">Optionnel mais recommandé pour affiner la distance.</p>
-                    <Button onClick={getLocation} variant="outline" size="sm">
-                      Réessayer
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <label htmlFor="distance">Distance maximale</label>
-                  <span className="font-semibold text-foreground">{distanceKm ?? 20} km</span>
-                </div>
-                <input
-                  id="distance"
-                  type="range"
-                  min={5}
-                  max={200}
-                  step={5}
-                  value={distanceKm ?? 20}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setDistanceKm(v);
-                    try { localStorage.setItem(DIST_KEY, String(v)); } catch {}
-                    if (useGeoloc) {
-                      const url = new URL(window.location.href);
-                      url.searchParams.set('distanceKm', String(v));
-                      window.history.replaceState(null, '', url.toString());
-                    }
-                  }}
-                  className="w-full accent-sky-600"
-                />
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const v = 20;
-                      setDistanceKm(v);
-                      try { localStorage.setItem(DIST_KEY, String(v)); } catch {}
-                      if (useGeoloc) {
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('distanceKm', String(v));
-                        window.history.replaceState(null, '', url.toString());
-                      }
-                    }}
-                  >
-                    Reset 20 km
-                  </Button>
-                  <p className="text-xs text-muted-foreground">
-                    Plus le rayon est large, plus tu as de chance de matcher rapidement.
-                  </p>
-                </div>
-              </div>
-            </>
-          )}
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const v = 20;
+                  setDistanceKm(v);
+                  try { localStorage.setItem(DIST_KEY, String(v)); } catch {}
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('distanceKm', String(v));
+                  window.history.replaceState(null, '', url.toString());
+                }}
+              >
+                Reset 20 km
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Plus le rayon est large, plus tu as de chance de matcher rapidement.
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -462,18 +413,16 @@ function DateInner() {
         </Button>
         <Button
           className="flex-1 sm:flex-none"
-          disabled={!dateISO || (useGeoloc && (lat == null || lng == null))}
+          disabled={!dateISO || lat == null || lng == null}
           onClick={() => {
             const u = new URL(window.location.origin + '/matching/cards');
             if (sport) u.searchParams.set('sport', sport);
             if (level) u.searchParams.set('level', level);
             if (dateISO) u.searchParams.set('date', dateISO);
             if (wantsLesson) u.searchParams.set('wantsLesson', '1');
-            if (useGeoloc) {
-              u.searchParams.set('useGeoloc', '1');
-              if (distanceKm != null) u.searchParams.set('distanceKm', String(distanceKm));
-              if (lat != null && lng != null) { u.searchParams.set('lat', String(lat)); u.searchParams.set('lng', String(lng)); }
-            }
+            u.searchParams.set('useGeoloc', '1');
+            if (distanceKm != null) u.searchParams.set('distanceKm', String(distanceKm));
+            if (lat != null && lng != null) { u.searchParams.set('lat', String(lat)); u.searchParams.set('lng', String(lng)); }
             router.push(u.toString());
           }}
         >

@@ -10,8 +10,9 @@ import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { apiClient } from '../../../lib/apiClient';
+import { Eye, Calendar } from 'lucide-react';
 import type { Sport, Level } from '@/types/matching';
-import type { EditableOffer } from '@/types/offers';
+import type { EditableOffer, OfferStats } from '@/types/offers';
 import type { DashboardUser } from '@/types/user';
 import type { ProProfileData } from '@/types/pro';
 
@@ -23,12 +24,14 @@ const sportLabels: Record<Sport, string> = {
 const levelLabels: Record<Level, string> = {
   beginner: 'Débutant',
   intermediate: 'Intermédiaire',
-  advanced: 'Confirmé'
+  advanced: 'Confirmé',
+  anytime: 'Peu importe'
 };
 
 type ApiProOffer = Omit<EditableOffer, 'hourlyRate'> & {
   hourlyRate: number | string;
   proProfileId?: string;
+  stats?: OfferStats;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -257,53 +260,103 @@ export default function ProOffersPage() {
     );
   };
 
-  if (loading) return <p>Chargement…</p>;
+  if (loading) return (
+    <div className="max-w-2xl mx-auto space-y-4 pt-8">
+      <p className="text-center text-muted-foreground">Chargement…</p>
+    </div>
+  );
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
+    <div className="max-w-2xl mx-auto space-y-6 pb-8">
       <BackBar fallbackHref="/pro/dashboard" />
 
-      <div>
-        <h1 className="text-2xl font-semibold">Mon Offre de Cours</h1>
-        <p className="text-sm text-muted-foreground">
-          Créez votre offre de cours pour attirer des élèves près de chez vous.
-        </p>
+      {/* Header compact avec style océan */}
+      <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 border-2 border-blue-200/50 dark:border-blue-800/50">
+        <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-md">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <h1 className="text-xl font-bold text-foreground">Mon Offre de Cours 📚</h1>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+            {offer.createdAt && (
+              <div className="flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                <span>Publiée le {new Date(offer.createdAt).toLocaleDateString('fr-FR')}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              <Eye className="w-3 h-3" />
+              <span>{offer.stats?.uniqueClicks ?? 0} {(offer.stats?.uniqueClicks ?? 0) > 1 ? 'vues' : 'vue'}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
+      <Card className="border-2 rounded-[1.5rem]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            📊 Visibilité de l'offre
+          </CardTitle>
+          <CardDescription>
+            Nombre de riders ayant cliqué sur ton offre et dernier clic enregistré.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="rounded-xl border p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/20">
+            <p className="text-sm text-muted-foreground">Riders ayant cliqué</p>
+            <p className="text-3xl font-bold text-blue-700 dark:text-blue-300">
+              {offer.stats?.uniqueClicks ?? 0}
+            </p>
+          </div>
+          <div className="rounded-xl border p-4 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/20">
+            <p className="text-sm text-muted-foreground">Dernier clic</p>
+            <p className="text-base font-semibold text-foreground">
+              {offer.stats?.lastClickAt
+                ? new Date(offer.stats.lastClickAt).toLocaleString('fr-FR')
+                : 'Aucun clic pour le moment'}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {!offer.lat || !offer.lng ? (
-        <Card>
+        <Card className="border-2 border-amber-200 dark:border-amber-800/50 rounded-[1.75rem] bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-amber-900 dark:text-amber-100">
               📍 Géolocalisation requise
             </CardTitle>
-            <CardDescription>
-              Pour créer une offre, vous devez d&apos;abord activer votre géolocalisation.
-              Cela permettra aux riders de trouver vos cours près de chez eux.
+            <CardDescription className="text-amber-800 dark:text-amber-200/80">
+              Pour créer une offre, tu dois d&apos;abord activer ta géolocalisation.
+              Cela permettra aux riders de trouver tes cours près de chez eux.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={enableGeolocation} className="w-full">
+            <Button onClick={enableGeolocation} className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700">
               🔄 Activer ma géolocalisation
             </Button>
             {fieldErrors.geolocation && (
-              <p className="text-sm text-red-600 mt-2">{fieldErrors.geolocation}</p>
+              <p className="text-sm text-red-600 dark:text-red-400 mt-2">{fieldErrors.geolocation}</p>
             )}
           </CardContent>
         </Card>
       ) : (
-        <div className="text-sm text-green-600 mb-4">
-          ✅ Géolocalisation active ({offer.lat?.toFixed(4)}, {offer.lng?.toFixed(4)})
+        <div className="rounded-2xl border-2 border-emerald-200 dark:border-emerald-800/50 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 px-4 py-3">
+          <p className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">
+            ✅ Géolocalisation active ({offer.lat?.toFixed(4)}, {offer.lng?.toFixed(4)})
+          </p>
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Détails de l&apos;offre</CardTitle>
+      <Card className="border-2 rounded-[1.75rem]">
+        <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30">
+          <CardTitle className="text-foreground">Détails de l&apos;offre</CardTitle>
           <CardDescription>
-            Remplissez les informations de votre cours (une seule offre par professionnel pour le MVP).
+            Remplis les informations de ton cours (une seule offre par professionnel pour le MVP).
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 pt-6">
           {/* Sport et Niveau */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -409,26 +462,30 @@ export default function ProOffersPage() {
           </div>
 
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
-              {error}
+            <div className="rounded-2xl border-2 border-red-200 dark:border-red-800/50 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 p-4">
+              <p className="text-sm text-red-700 dark:text-red-300 font-medium">
+                ❌ {error}
+              </p>
             </div>
           )}
 
           {success && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded-md text-green-700 text-sm">
-              {success}
+            <div className="rounded-2xl border-2 border-emerald-200 dark:border-emerald-800/50 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 p-4">
+              <p className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">
+                ✅ {success}
+              </p>
             </div>
           )}
 
-          <div className="flex gap-2 pt-4">
+          <div className="flex flex-col sm:flex-row gap-3 pt-4">
             <Button
               onClick={handleSave}
               disabled={saving || (!offer.lat || !offer.lng)}
-              className="flex-1"
+              className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
             >
               {saving ? 'Sauvegarde...' : 'Sauvegarder l&apos;offre'}
             </Button>
-            <Button variant="outline" onClick={() => router.push('/pro/dashboard')}>
+            <Button variant="outline" onClick={() => router.push('/pro/dashboard')} className="sm:w-auto">
               Annuler
             </Button>
           </div>

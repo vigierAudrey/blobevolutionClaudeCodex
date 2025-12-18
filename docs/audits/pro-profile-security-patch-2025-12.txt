@@ -1,0 +1,116 @@
+# PATCH DE SÉCURITÉ - Profil PRO
+# Date: 14 décembre 2025
+# Vulnérabilités corrigées: P2-1, P2-2, P2-3
+
+## Changements à apporter dans /apps/web/app/pro/profile/page.tsx
+
+### 1. Ajouter après les imports (ligne ~20)
+
+```typescript
+// Helper pour validation défensive des coordonnées GPS
+const sanitizeCoordinate = (value: number, min: number, max: number): string => {
+  if (typeof value !== 'number' || isNaN(value) || value < min || value > max) {
+    return 'N/A';
+  }
+  return value.toFixed(4);
+};
+```
+
+### 2. Dans le composant ProProfilePage, ajouter (ligne ~100)
+
+```typescript
+const lastConsentReopenRef = useRef<number>(0);
+const CONSENT_REOPEN_COOLDOWN_MS = 2000; // 2 secondes entre deux appels
+```
+
+### 3. Remplacer handleReopenCookieConsent (ligne 340-363)
+
+```typescript
+const handleReopenCookieConsent = useCallback(async () => {
+  if (!consentStateReady) {
+    toast('Préférences cookies en cours de chargement, réessaie dans un instant.', 'info');
+    return;
+  }
+
+  // Rate limiting côté client
+  const now = Date.now();
+  if (now - lastConsentReopenRef.current < CONSENT_REOPEN_COOLDOWN_MS) {
+    toast('Merci de patienter quelques secondes avant de réessayer.', 'warning');
+    return;
+  }
+  lastConsentReopenRef.current = now;
+
+  await resetConsent('none');
+  document.cookie = 'cookie_consent=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+
+  if (typeof window !== 'undefined') {
+    try {
+      if ('localStorage' in window) {
+        window.localStorage.removeItem('blob_consent');
+        window.localStorage.removeItem('cookie-consent');
+      }
+      window.dispatchEvent(new Event(COOKIE_CONSENT_REOPEN_EVENT));
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Impossible de rouvrir la fenêtre de consentement', error);
+      }
+      window.location.reload();
+    }
+  }
+}, [consentStateReady, resetConsent, toast]);
+```
+
+### 4. Remplacer l'affichage des coordonnées (ligne ~535)
+
+```typescript
+// AVANT :
+// Lat: {userLocation.lat.toFixed(4)}, Lng: {userLocation.lng.toFixed(4)}
+
+// APRÈS :
+Lat: {sanitizeCoordinate(userLocation.lat, -90, 90)}, Lng: {sanitizeCoordinate(userLocation.lng, -180, 180)}
+```
+
+## Tests de validation
+
+### Test 1: Coordonnées invalides
+```typescript
+// apps/web/app/pro/profile/__tests__/security.test.tsx
+describe('Geolocation security', () => {
+  it('should sanitize invalid coordinates', () => {
+    const result = sanitizeCoordinate(NaN, -90, 90);
+    expect(result).toBe('N/A');
+  });
+
+  it('should sanitize out-of-range coordinates', () => {
+    expect(sanitizeCoordinate(9999, -90, 90)).toBe('N/A');
+    expect(sanitizeCoordinate(-9999, -180, 180)).toBe('N/A');
+  });
+
+  it('should display valid coordinates', () => {
+    expect(sanitizeCoordinate(48.8566, -90, 90)).toBe('48.8566');
+  });
+});
+```
+
+### Test 2: Rate limiting cookies
+```typescript
+describe('Cookie consent rate limiting', () => {
+  it('should throttle rapid clicks', async () => {
+    const { getByText } = render(<ProProfilePage />);
+    const button = getByText('Gérer mes cookies');
+    
+    fireEvent.click(button);
+    await waitFor(() => expect(resetConsent).toHaveBeenCalledTimes(1));
+    
+    // Clic immédiat bloqué
+    fireEvent.click(button);
+    expect(resetConsent).toHaveBeenCalledTimes(1);
+    
+    // Après 2 secondes, autorisé
+    await new Promise(resolve => setTimeout(resolve, 2100));
+    fireEvent.click(button);
+    await waitFor(() => expect(resetConsent).toHaveBeenCalledTimes(2));
+  });
+});
+```
+

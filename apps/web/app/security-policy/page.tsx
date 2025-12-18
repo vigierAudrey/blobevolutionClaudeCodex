@@ -131,7 +131,7 @@ export default function SecurityPolicyPage() {
                 "Créez vos propres comptes de test - Ne testez jamais sur des comptes réels",
                 "Respectez la confidentialité - Ne divulguez pas de données personnelles découvertes",
                 "Divulgation responsable - Accordez-nous 90 jours pour corriger avant publication",
-                "Communication sécurisée - Utilisez security@blobinfini.fr",
+                "Communication sécurisée - Utilisez METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com",
                 "Une vulnérabilité à la fois - Signalez chaque faille individuellement",
                 "Fournissez des détails - Steps to reproduce, impact, proof of concept"
               ].map((rule, index) => (
@@ -152,7 +152,7 @@ export default function SecurityPolicyPage() {
             </h2>
             <div className="space-y-4">
               {[
-                { step: 1, title: "Signalement", desc: "Envoyez un email à security@blobinfini.fr avec les détails", time: "" },
+                { step: 1, title: "Signalement", desc: "Envoyez un email à METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com avec les détails", time: "" },
                 { step: 2, title: "Accusé de réception", desc: "Nous confirmons la réception et assignons un ID de suivi", time: "< 48h" },
                 { step: 3, title: "Évaluation", desc: "Nous validons la vulnérabilité et évaluons la criticité", time: "< 7 jours" },
                 { step: 4, title: "Correction", desc: "High: 14j, Medium: 30j, Low: 90j", time: "Selon criticité" },
@@ -216,7 +216,7 @@ export default function SecurityPolicyPage() {
               <h3 className="font-semibold text-blue-900 mb-2">RGPD & Données Personnelles</h3>
               <p className="text-sm text-blue-800">
                 Ne pas exfiltrer, divulguer ou conserver de données personnelles. En cas de découverte
-                accidentelle, contactez immédiatement <code>security@blobinfini.fr</code>.
+                accidentelle, contactez immédiatement <code>METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com</code>.
               </p>
             </div>
           </section>
@@ -227,8 +227,8 @@ export default function SecurityPolicyPage() {
             <div className="space-y-3">
               <p>
                 <strong>Email de sécurité :</strong>{' '}
-                <a href="mailto:security@blobinfini.fr" className="text-blue-300 hover:underline">
-                  security@blobinfini.fr
+                <a href="mailto:METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com" className="text-blue-300 hover:underline">
+                  METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com
                 </a>
               </p>
               <p>

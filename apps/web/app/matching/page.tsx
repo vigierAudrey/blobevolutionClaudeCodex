@@ -12,7 +12,8 @@ import { apiClient } from '../../lib/apiClient';
 import type { DashboardUser } from '@/types/user';
 import type { Level, Sport } from '@/types/matching';
 import { Badge } from '../../components/ui/badge';
-import { Waves, Wind, Sparkles, Map } from 'lucide-react';
+import { Waves, Wind, Sparkles } from 'lucide-react';
+import { clearMatchingStorage } from './storage';
 
 const AdBannerFeed = dynamicImport(
   () => import('../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
@@ -22,7 +23,7 @@ const AdBannerFeed = dynamicImport(
   },
 );
 
-const levelLabels: Record<Level, string> = { beginner: 'Débutant', intermediate: 'Intermédiaire', advanced: 'Confirmé' };
+const levelLabels: Record<Level, string> = { beginner: 'Débutant', intermediate: 'Intermédiaire', advanced: 'Confirmé', anytime: 'Peu importe' };
 const SPORT_KEY = 'matching.sport';
 const LEVEL_KEY = 'matching.level';
 
@@ -139,40 +140,27 @@ export default function MatchingPage() {
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/dashboard" />
 
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-500 via-cyan-500 to-teal-400 p-8 text-white shadow-xl">
-        <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" aria-hidden />
-        <div className="relative z-10 flex flex-col gap-4">
-          <div className="flex items-center gap-2 text-sm uppercase tracking-wide text-white/80">
-            <Sparkles className="w-4 h-4" />
-            Matching Riders
+      {/* Header compact avec progression */}
+      <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-sky-100 to-cyan-100 dark:from-sky-900/20 dark:to-cyan-900/20 p-4 border-2 border-sky-200/50 dark:border-sky-800/50">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-500 text-white shadow-md">
+            <Sparkles className="w-5 h-5" />
           </div>
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-            <div className="space-y-3">
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Paramètre ta session parfaite</h1>
-              <p className="text-white/90 text-base">
-                Choisis ton sport, ton niveau et laisse l’algorithme proposer les riders les plus compatibles autour de toi.
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white/15 px-4 py-3 text-sm space-y-1">
-              <p className="font-semibold flex items-center gap-2">
-                <Waves className="w-4 h-4" /> 3 étapes rapides
-              </p>
-              <p className="text-white/80">Sport & niveau → zone → swipe ou liste.</p>
-            </div>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Matching Riders</h1>
+            <p className="text-sm text-muted-foreground">Étape 1 sur 3 : Sport & niveau</p>
           </div>
         </div>
-      </section>
+        <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400">
+          Étape 1/3
+        </Badge>
+      </div>
 
       <Card className="border-2">
-        <CardHeader className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="bg-blue-100 text-blue-700">
-              Étape 1
-            </Badge>
-            <CardTitle className="text-xl">Sport & niveau</CardTitle>
-          </div>
+        <CardHeader>
+          <CardTitle className="text-xl">Choisis ton sport & niveau</CardTitle>
           <CardDescription>
-            Fais ton choix pour cette session. Tu peux réutiliser tes préférences plus tard.
+            Sélectionne ton sport préféré et ton niveau pour cette session
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -231,8 +219,8 @@ export default function MatchingPage() {
                   Ajuste ton niveau pour des matchs plus précis
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {(['beginner','intermediate','advanced'] as Level[]).map((l) => {
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {(['beginner','intermediate','advanced','anytime'] as Level[]).map((l) => {
                   const isSelected = chosenSport === 'surf' ? surfLevel === l : kiteLevel === l;
                   const onClick = chosenSport === 'surf' ? () => setSurfLevel(l) : () => setKiteLevel(l);
                   return (
@@ -258,65 +246,48 @@ export default function MatchingPage() {
 
       <AdBannerFeed slot="matching-selection" className="max-w-xl mx-auto" />
 
+      {/* Actions de navigation */}
       <Card className="border-2">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Map className="w-5 h-5 text-muted-foreground" />
-            Ton plan du jour
-          </CardTitle>
-          <CardDescription className="text-sm">{breadcrumb}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-2xl bg-muted/60 p-4 text-sm text-muted-foreground">
-            Une fois validé, tu passeras à la zone géo puis au calendrier pour verrouiller la session.
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSurfLevel('');
-                setKiteLevel('');
-                setChosenSport(null);
-                try { localStorage.removeItem(SPORT_KEY); localStorage.removeItem(LEVEL_KEY); } catch {}
-              }}
-              className="flex-1 sm:flex-none"
-            >
-              Réinitialiser
-            </Button>
-            <Button
-              className="flex-1 sm:flex-none"
-              disabled={!canContinue}
-              onClick={() => {
-                if (chosenSport === 'surf') {
-                  try { localStorage.setItem(SPORT_KEY, 'surf'); localStorage.setItem(LEVEL_KEY, (surfLevel || 'beginner') as string); } catch {}
-                  router.push(`/matching/date?sport=surf&level=${surfLevel || 'beginner'}`);
-                } else if (chosenSport === 'kitesurf') {
-                  try { localStorage.setItem(SPORT_KEY, 'kitesurf'); localStorage.setItem(LEVEL_KEY, (kiteLevel || 'beginner') as string); } catch {}
-                  router.push(`/matching/date?sport=kitesurf&level=${kiteLevel || 'beginner'}`);
-                }
-              }}
-            >
-              Continuer vers la zone
-            </Button>
+        <CardContent className="pt-6">
+          <div className="flex flex-col gap-4">
+            <div className="rounded-xl bg-sky-50 dark:bg-sky-900/20 border-2 border-sky-200 dark:border-sky-800 p-3 text-sm">
+              <span className="font-medium text-foreground">Sélection actuelle : </span>
+              <span className="text-muted-foreground">{breadcrumb}</span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSurfLevel('');
+                  setKiteLevel('');
+                  setChosenSport(null);
+                  clearMatchingStorage();
+                }}
+                className="flex-1 sm:flex-none"
+              >
+                Réinitialiser
+              </Button>
+              <div className="flex-1" />
+              <Button
+                size="lg"
+                disabled={!canContinue}
+                onClick={() => {
+                  if (chosenSport === 'surf') {
+                    try { localStorage.setItem(SPORT_KEY, 'surf'); localStorage.setItem(LEVEL_KEY, (surfLevel || 'beginner') as string); } catch {}
+                    router.push(`/matching/date?sport=surf&level=${surfLevel || 'beginner'}`);
+                  } else if (chosenSport === 'kitesurf') {
+                    try { localStorage.setItem(SPORT_KEY, 'kitesurf'); localStorage.setItem(LEVEL_KEY, (kiteLevel || 'beginner') as string); } catch {}
+                    router.push(`/matching/date?sport=kitesurf&level=${kiteLevel || 'beginner'}`);
+                  }
+                }}
+                className="flex-1 sm:flex-auto"
+              >
+                Continuer vers la date →
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
-
-      <section className="grid gap-4 md:grid-cols-3">
-        {[
-          { label: 'Localisation', description: 'Active ta position et choisis ton rayon.', color: 'from-blue-500/10 to-blue-500/5' },
-          { label: 'Calendrier', description: 'Sélectionne la date idéale + option cours.', color: 'from-purple-500/10 to-purple-500/5' },
-          { label: 'Swipe ou liste', description: 'Deck immersif ou liste détaillée.', color: 'from-emerald-500/10 to-emerald-500/5' },
-        ].map((card) => (
-          <div
-            key={card.label}
-            className={`rounded-2xl border px-4 py-5 bg-gradient-to-br ${card.color} shadow-sm`}
-          >
-            <p className="text-sm font-semibold">{card.label}</p>
-            <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
-          </div>
-        ))}
-      </section>
     </div>
   );
 }

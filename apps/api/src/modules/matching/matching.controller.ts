@@ -9,7 +9,7 @@ export const matchingRouter = Router();
 matchingRouter.use(requireAuth, requireVerifiedEmail);
 
 const sportEnum = z.enum(['surf', 'kitesurf']);
-const levelEnum = z.enum(['beginner', 'intermediate', 'advanced']);
+const levelEnum = z.enum(['beginner', 'intermediate', 'advanced', 'anytime']);
 
 const searchSchema = z.object({
   sport: sportEnum,
@@ -132,10 +132,11 @@ matchingRouter.post('/search', async (req, res) => {
     const useCursorPagination = cursor !== undefined || !page;
     const effectiveLimit = limit || pageSize || 50;
 
-    // Check cache first for matching results (cursor-aware)
+    // Check cache first for matching results (cursor-aware and date-aware)
+    const baseCacheKey = `${CacheKeys.matching(sport, level, criteria.location.lat, criteria.location.lng, criteria.maxDistanceKm || 50)}:date:${date}`;
     const cacheKey = useCursorPagination
-      ? `${CacheKeys.matching(sport, level, criteria.location.lat, criteria.location.lng, criteria.maxDistanceKm || 50)}:cursor:${cursor || 'start'}`
-      : CacheKeys.matching(sport, level, criteria.location.lat, criteria.location.lng, criteria.maxDistanceKm || 50);
+      ? `${baseCacheKey}:cursor:${cursor || 'start'}`
+      : baseCacheKey;
 
     const cachedResults = await cacheService.getMatchingResults(cacheKey);
     if (cachedResults && cacheService.isAvailable()) {
@@ -229,17 +230,35 @@ matchingRouter.post('/search', async (req, res) => {
         )
       `;
 
+      // Level filtering logic:
+      // - If searcher chose "anytime": see all levels (no level filter)
+      // - If searcher chose a specific level: see only that level
+      const levelCond = level === 'anytime'
+        ? Prisma.empty
+        : Prisma.sql` AND rd."level" = ${level}`;
+
+      // Date filtering logic:
+      // - If searcher chose "anytime": see all profiles (no date filter)
+      // - If searcher chose a specific date: see only profiles who chose that exact same date (not "anytime")
+      const dateCond = date === 'anytime'
+        ? Prisma.empty
+        : Prisma.sql`
+            AND ls."date" = ${new Date(date + 'T00:00:00Z')}
+          `;
+
       // Count total matching rows (only for legacy pagination)
       if (!useCursorPagination) {
         const countRows = await prisma.$queryRaw<Array<{ count: number }>>(
           Prisma.sql`
             SELECT COUNT(*)::int AS count
             FROM "RiderProfile" rp
-            JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
+            JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport}${levelCond}
+            LEFT JOIN "LastSearch" ls ON ls."userId" = rp."userId"
             WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
             ${radiusCond}
             ${excludeCond}
             ${notAlreadyActedCond}
+            ${dateCond}
           `
         );
         total = (countRows?.[0]?.count ?? 0) as number;
@@ -266,11 +285,13 @@ matchingRouter.post('/search', async (req, res) => {
               ELSE NULL
             END AS dist_m
           FROM "RiderProfile" rp
-          JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport} AND rd."level" = ${level}
+          JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport}${levelCond}
+          LEFT JOIN "LastSearch" ls ON ls."userId" = rp."userId"
           WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
           ${radiusCond}
           ${excludeCond}
           ${notAlreadyActedCond}
+          ${dateCond}
           ${orderBy}
           LIMIT 200
         `

@@ -1,6 +1,6 @@
 export type Sport = 'surf' | 'kitesurf';
 
-export type Level = 'beginner' | 'intermediate' | 'advanced';
+export type Level = 'beginner' | 'intermediate' | 'advanced' | 'anytime';
 
 import type { Gender } from './user';
 

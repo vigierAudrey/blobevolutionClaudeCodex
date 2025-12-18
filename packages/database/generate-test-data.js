@@ -191,8 +191,24 @@ class TestDataGenerator {
       return;
     }
 
-    for (let i = 0; i < count; i++) {
-      const proProfile = proProfiles[Math.floor(Math.random() * proProfiles.length)];
+    const existingOffers = await prisma.proOffer.findMany({
+      where: { proProfileId: { in: proProfiles.map((p) => p.id) } },
+      select: { proProfileId: true },
+    });
+    const takenProfiles = new Set(existingOffers.map((offer) => offer.proProfileId));
+    const availableProfiles = proProfiles.filter((profile) => !takenProfiles.has(profile.id));
+
+    if (availableProfiles.length === 0) {
+      console.warn('⚠️  Tous les profils pros disposent déjà d\'une offre');
+      return;
+    }
+
+    // Mélange pour répartir les spots aléatoirement
+    availableProfiles.sort(() => Math.random() - 0.5);
+    const targetCount = Math.min(count, availableProfiles.length);
+
+    for (let i = 0; i < targetCount; i++) {
+      const proProfile = availableProfiles[i];
       const city = FRENCH_COASTAL_CITIES[Math.floor(Math.random() * FRENCH_COASTAL_CITIES.length)];
       const coordinates = this.getRandomCoordinate(city.lat, city.lng, 10);
 
@@ -213,8 +229,8 @@ class TestDataGenerator {
 
         this.generatedData.proOffers++;
 
-        if (i % 25 === 0) {
-          console.log(`  📊 ${i} offres créées...`);
+        if ((i + 1) % 25 === 0) {
+          console.log(`  📊 ${i + 1} offres créées...`);
         }
       } catch (error) {
         console.warn(`⚠️  Erreur création offre ${i}:`, error.message);

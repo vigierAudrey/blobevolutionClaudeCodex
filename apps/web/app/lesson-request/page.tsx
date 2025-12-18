@@ -145,19 +145,22 @@ export default function LessonRequestPage() {
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/dashboard" />
 
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-amber-500 via-orange-500 to-pink-500 p-8 text-white shadow-xl">
-        <div className="absolute inset-0 opacity-35 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" aria-hidden />
-        <div className="relative z-10 space-y-3">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-            <Sparkles className="w-3.5 h-3.5" />
-            Cours privés
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Publie ta demande de cours</h1>
-          <p className="text-white/85 text-base max-w-2xl">
-            Rends-toi visible sur la BloboMap Pro pour que les moniteurs disponibles puissent te contacter directement.
-          </p>
+      {/* Page Header */}
+      <div className="flex items-center gap-3 pb-2 border-b">
+        <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+          <GraduationCap className="w-5 h-5 text-orange-600 dark:text-orange-400" />
         </div>
-      </section>
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-foreground">Publie ta demande de cours</h1>
+            <Badge variant="secondary" className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+              <Sparkles className="w-3 h-3 mr-1" />
+              Cours privés
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">Les moniteurs de la BloboMap Pro peuvent te contacter directement</p>
+        </div>
+      </div>
 
       <div className="rounded-3xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 space-y-2">
         <p>

@@ -73,33 +73,23 @@ export default function MessagesPage() {
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
       <BackBar fallbackHref="/dashboard" />
 
-      {/* Hero Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-500 via-pink-500 to-rose-400 p-8 text-white shadow-xl">
-        <div className="absolute top-0 right-0 -mt-8 -mr-8 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute bottom-0 left-0 -mb-6 -ml-6 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-3 rounded-xl bg-white/20">
-              <MessageSquare className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
-                Messagerie
-              </h1>
-              {totalUnread > 0 && (
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-sm font-medium">
-                    <Sparkles className="w-3 h-3" />
-                    {totalUnread} nouveau{totalUnread > 1 ? 'x' : ''} message{totalUnread > 1 ? 's' : ''}
-                  </span>
-                </div>
-              )}
-            </div>
+      {/* Page Header */}
+      <div className="flex items-center justify-between pb-2 border-b">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+            <MessageSquare className="w-5 h-5 text-purple-600 dark:text-purple-400" />
           </div>
-          <p className="text-white/90 text-sm sm:text-base">
-            Organise tes conversations, réponds à tes matchs et gère tes messages pro
-          </p>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Messagerie</h1>
+            <p className="text-sm text-muted-foreground">Organise tes conversations et tes matchs</p>
+          </div>
         </div>
+        {totalUnread > 0 && (
+          <div className="flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 px-3 py-1.5 text-sm font-medium text-purple-700 dark:text-purple-300">
+            <Sparkles className="w-3 h-3" />
+            {totalUnread} nouveau{totalUnread > 1 ? 'x' : ''}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -208,6 +198,36 @@ export default function MessagesPage() {
 
       {/* Liste des conversations */}
       <Card className="border-2">
+        {filter === 'TRASH' && counts.trash > 0 && (
+          <CardHeader className="border-b">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trash className="w-5 h-5 text-slate-500" />
+                <CardTitle className="text-base">Corbeille ({counts.trash})</CardTitle>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={async ()=>{
+                  if (!confirm(`Êtes-vous sûr de vouloir vider la corbeille définitivement ? Cette action est irréversible et supprimera ${counts.trash} conversation${counts.trash > 1 ? 's' : ''}.`)) {
+                    return;
+                  }
+                  try {
+                    const result = await apiClient.emptyTrashConversations();
+                    await load();
+                    alert(`${result.count} conversation${result.count > 1 ? 's ont été supprimées' : ' a été supprimée'} définitivement.`);
+                  } catch (err) {
+                    alert('Erreur lors de la suppression des conversations');
+                  }
+                }}
+                className="gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Vider la corbeille
+              </Button>
+            </div>
+          </CardHeader>
+        )}
         <CardContent className="p-0">
           {visible.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">

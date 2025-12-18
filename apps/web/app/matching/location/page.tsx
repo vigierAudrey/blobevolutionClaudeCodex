@@ -9,7 +9,7 @@ import { Button } from '../../../components/ui/button';
 import type { DashboardUser } from '@/types/user';
 import type { Level, Partner, Sport } from '@/types/matching';
 import { Badge } from '../../../components/ui/badge';
-import { MapPin, Navigation, AlertTriangle } from 'lucide-react';
+import { MapPin, AlertTriangle } from 'lucide-react';
 
 // Force SSR due to useSearchParams and localStorage usage
 export const dynamic = 'force-dynamic';
@@ -195,29 +195,26 @@ function LocationInner() {
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <BackBar fallbackHref="/matching" />
 
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 via-cyan-600 to-teal-500 p-8 text-white shadow-xl">
-        <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.25),_transparent_60%)]" aria-hidden />
-        <div className="relative z-10 space-y-3">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-            <Navigation className="w-3.5 h-3.5" />
-            Étape 2 · Zone de recherche
+      {/* Header compact avec progression */}
+      <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-cyan-100 to-teal-100 dark:from-cyan-900/20 dark:to-teal-900/20 p-4 border-2 border-cyan-200/50 dark:border-cyan-800/50">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-500 text-white shadow-md">
+            <MapPin className="w-5 h-5" />
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Active ta zone de surf</h1>
-          <p className="text-white/85 text-base">
-            La géolocalisation reste facultative mais booste les propositions. Tu peux enregistrer un spot favori ou utiliser ton GPS.
-          </p>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Zone de recherche</h1>
+            <p className="text-sm text-muted-foreground">Localisation & rayon (optionnel)</p>
+          </div>
         </div>
-      </section>
+        <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400">
+          Optionnel
+        </Badge>
+      </div>
 
       <Card className="border-2">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Badge variant="secondary" className="bg-sky-100 text-sky-700">
-              Zone
-            </Badge>
-            Localisation & distance
-          </CardTitle>
-          <CardDescription>Affinez votre rayon pour trouver des riders proches.</CardDescription>
+          <CardTitle className="text-xl">Localisation & distance</CardTitle>
+          <CardDescription>Active ta position pour trouver des riders proches</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="rounded-2xl border bg-muted/60 px-4 py-3 text-sm text-muted-foreground flex flex-col gap-1">

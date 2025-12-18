@@ -552,6 +552,39 @@ export async function runSeed(client?: PrismaClient) {
     'Club historique de la côte. Cours tous niveaux, location matériel, coaching compétition.'
   ];
 
+  const baseOfferTemplates = [
+    {
+      sport: Sport.surf,
+      level: Level.beginner,
+      title: 'Surf débutant premium',
+      description: 'Découverte du surf avec moniteur dédié, matériel fourni et briefing sécurité complet.'
+    },
+    {
+      sport: Sport.surf,
+      level: Level.intermediate,
+      title: 'Stage surf progression',
+      description: 'Analyse vidéo + coaching personnalisé pour passer vos premières manœuvres.'
+    },
+    {
+      sport: Sport.kitesurf,
+      level: Level.beginner,
+      title: 'Initiation kitesurf safe',
+      description: 'Séance bateau + radio, apprentissage de la fenêtre de vent et waterstart.'
+    },
+    {
+      sport: Sport.kitesurf,
+      level: Level.intermediate,
+      title: 'Coaching kite strapless',
+      description: 'Travail des transitions et premiers sauts strapless, spots adaptés aux conditions.'
+    },
+    {
+      sport: Sport.surf,
+      level: Level.advanced,
+      title: 'Coaching surf performance',
+      description: 'Programme intensif haute performance : line-up, lecture, manœuvres critiques.'
+    },
+  ];
+
   const pros = [];
   for (let i = 0; i < 5; i++) {
     const location = locations[i + 2]; // Décaler pour varier les emplacements
@@ -581,26 +614,20 @@ export async function runSeed(client?: PrismaClient) {
       },
     });
 
-    // Create offers for each pro
-    const numOffers = i === 4 ? 1 : 2; // Le dernier pro n'a qu'une offre
-    for (let j = 0; j < numOffers; j++) {
-      const sport = j === 0 ? Sport.surf : Sport.kitesurf;
-      const level = levels[j]; // Varie le niveau selon l'offre
-
-      await prisma.proOffer.create({
-        data: {
-          proProfileId: proProfile.id,
-          sport,
-          level,
-          title: `Cours ${sport} niveau ${level === Level.beginner ? 'débutant' : level === Level.intermediate ? 'intermédiaire' : 'confirmé'}`,
-          description: `Apprenez le ${sport} avec nos moniteurs expérimentés. Matériel fourni, sécurité garantie. ${level === Level.beginner ? 'Première fois ? Parfait pour découvrir!' : level === Level.intermediate ? 'Perfectionnez votre technique.' : 'Repoussez vos limites!'}`,
-          hourlyRate: [45, 55, 60, 70, 80][i],
-          isActive: true,
-          lat: location.lat + (Math.random() - 0.5) * 0.02,
-          lng: location.lng + (Math.random() - 0.5) * 0.02,
-        },
-      });
-    }
+    const template = baseOfferTemplates[i % baseOfferTemplates.length];
+    await prisma.proOffer.create({
+      data: {
+        proProfileId: proProfile.id,
+        sport: template.sport,
+        level: template.level,
+        title: template.title,
+        description: template.description,
+        hourlyRate: [45, 55, 60, 70, 80][i],
+        isActive: true,
+        lat: location.lat + (Math.random() - 0.5) * 0.02,
+        lng: location.lng + (Math.random() - 0.5) * 0.02,
+      },
+    });
 
     pros.push(pro);
   }
@@ -613,22 +640,13 @@ export async function runSeed(client?: PrismaClient) {
       pricePerHour: 70,
       verified: true,
       location: { lat: 44.9805, lng: -1.2003 },
-      offers: [
-        {
-          sport: Sport.surf,
-          level: Level.beginner,
-          title: 'Surf debutant Lacanau',
-          description: 'Découverte encadrée sur les bancs les plus doux, materiel et video inclus.',
-          hourlyRate: 70
-        },
-        {
-          sport: Sport.surf,
-          level: Level.advanced,
-          title: 'Surf coaching performance',
-          description: 'Analyse video et travail sur manoeuvres critiques pour riders confirms.',
-          hourlyRate: 85
-        }
-      ]
+      featuredOffer: {
+        sport: Sport.surf,
+        level: Level.beginner,
+        title: 'Surf debutant Lacanau',
+        description: 'Découverte encadrée sur les bancs les plus doux, matériel et vidéo inclus.',
+        hourlyRate: 70
+      }
     },
     {
       emailSuffix: 7,
@@ -637,22 +655,13 @@ export async function runSeed(client?: PrismaClient) {
       pricePerHour: 65,
       verified: true,
       location: { lat: 45.1892, lng: -1.1471 },
-      offers: [
-        {
-          sport: Sport.kitesurf,
-          level: Level.beginner,
-          title: 'Init kite lac Hourtin',
-          description: 'Maitre nageur secouriste a bord, radio coaching et bateau securite.',
-          hourlyRate: 65
-        },
-        {
-          sport: Sport.kitesurf,
-          level: Level.intermediate,
-          title: 'Kite foil progression',
-          description: 'Sessions bateau pour travailler waterstart et transitions strapless.',
-          hourlyRate: 80
-        }
-      ]
+      featuredOffer: {
+        sport: Sport.kitesurf,
+        level: Level.beginner,
+        title: 'Init kite lac Hourtin',
+        description: 'Maître nageur secouriste à bord, radio coaching et bateau sécurité.',
+        hourlyRate: 65
+      }
     },
     {
       emailSuffix: 8,
@@ -661,22 +670,13 @@ export async function runSeed(client?: PrismaClient) {
       pricePerHour: 60,
       verified: false,
       location: { lat: 44.4209, lng: -1.2599 },
-      offers: [
-        {
-          sport: Sport.surf,
-          level: Level.intermediate,
-          title: 'Surf progression Bisca',
-          description: 'Travail sur lecture de vague et gestion du lineup, petit groupe de 4 max.',
-          hourlyRate: 60
-        },
-        {
-          sport: Sport.kitesurf,
-          level: Level.beginner,
-          title: 'Discover kite plage Nord',
-          description: 'Atelier securite, fenetre de vol puis mise a leau progressive.',
-          hourlyRate: 65
-        }
-      ]
+      featuredOffer: {
+        sport: Sport.surf,
+        level: Level.intermediate,
+        title: 'Surf progression Bisca',
+        description: 'Travail sur lecture de vague et gestion du lineup, groupe de 4 max.',
+        hourlyRate: 60
+      }
     },
     {
       emailSuffix: 9,
@@ -685,22 +685,13 @@ export async function runSeed(client?: PrismaClient) {
       pricePerHour: 85,
       verified: true,
       location: { lat: 43.6645, lng: -1.3908 },
-      offers: [
-        {
-          sport: Sport.surf,
-          level: Level.advanced,
-          title: 'Surf high performance Hossegor',
-          description: 'Video analyse, entrainement specifique air et tubes, spots Hossegor/Capbreton.',
-          hourlyRate: 95
-        },
-        {
-          sport: Sport.kitesurf,
-          level: Level.intermediate,
-          title: 'Strapless wave coaching',
-          description: 'Session mobile selon conditions, travail carving et re-entry strapless.',
-          hourlyRate: 90
-        }
-      ]
+      featuredOffer: {
+        sport: Sport.surf,
+        level: Level.advanced,
+        title: 'Surf high performance Hossegor',
+        description: 'Analyse vidéo, entraînement air/tubes, spots Hossegor/Capbreton.',
+        hourlyRate: 95
+      }
     }
   ];
 
@@ -731,21 +722,20 @@ export async function runSeed(client?: PrismaClient) {
       },
     });
 
-    for (const offer of seed.offers) {
-      await prisma.proOffer.create({
-        data: {
-          proProfileId: proProfile.id,
-          sport: offer.sport,
-          level: offer.level,
-          title: offer.title,
-          description: offer.description,
-          hourlyRate: offer.hourlyRate,
-          isActive: true,
-          lat: seed.location.lat,
-          lng: seed.location.lng,
-        },
-      });
-    }
+    const offer = seed.featuredOffer;
+    await prisma.proOffer.create({
+      data: {
+        proProfileId: proProfile.id,
+        sport: offer.sport,
+        level: offer.level,
+        title: offer.title,
+        description: offer.description,
+        hourlyRate: offer.hourlyRate,
+        isActive: true,
+        lat: seed.location.lat,
+        lng: seed.location.lng,
+      },
+    });
 
     pros.push(pro);
   }

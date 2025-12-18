@@ -2,6 +2,85 @@
 
 Historique détaillé des changements majeurs du projet.
 
+## Décembre 2025
+
+### Amélioration Matching : Niveau "Peu importe" & Géolocalisation Obligatoire (16 Déc 2025)
+
+**Fonctionnalités ajoutées** :
+
+#### 1. Niveau "Peu importe" pour le matching
+
+- ✅ Ajout d'une option "Peu importe" lors de la sélection du niveau (débutant/intermédiaire/confirmé)
+- ✅ Filtrage intelligent :
+  - Chercheur "peu importe" → voit tous les niveaux
+  - Chercheur niveau spécifique → voit uniquement ce niveau
+- ✅ Cohérence avec la logique de date existante
+
+**Implémentation technique** :
+
+```typescript
+// Type Level étendu
+export type Level = 'beginner' | 'intermediate' | 'advanced' | 'anytime';
+
+// Filtrage conditionnel backend (matching.controller.ts)
+const levelCond = level === 'anytime'
+  ? Prisma.empty
+  : Prisma.sql` AND rd."level" = ${level}`;
+```
+
+**Règles de matching** :
+
+| Chercheur | Sport | Niveau | Date | Voit les profils |
+|-----------|-------|--------|------|------------------|
+| User A | Surf | **Peu importe** | Aujourd'hui | Tous les niveaux de surf disponibles aujourd'hui |
+| User B | Surf | Intermediate | Peu importe | Uniquement surf/intermediate, toutes dates |
+| User C | Surf | **Peu importe** | **Peu importe** | Tous les niveaux de surf, toutes dates |
+
+#### 2. Géolocalisation obligatoire pour le matching
+
+**Modification UX** :
+
+- ✅ Suppression de la checkbox "Utiliser ma position" (géolocalisation toujours activée)
+- ✅ Message clair : "La géolocalisation est nécessaire pour utiliser le matching"
+- ✅ Bouton "Voir les profils" désactivé jusqu'à activation manuelle de la position
+- ✅ Conforme RGPD : consentement explicite requis (pas d'auto-activation)
+
+**Fichiers modifiés** :
+
+```
+apps/web/app/matching/date/page.tsx
+  - Suppression de la checkbox optionnelle
+  - Ajout d'un message informatif obligatoire
+  - Condition stricte : disabled={!dateISO || lat == null || lng == null}
+
+apps/api/src/modules/matching/matching.controller.ts
+  - Retour de résultats vides si pas de géolocalisation (ligne 118)
+  - Cohérence frontend/backend garantie
+```
+
+**Conformité RGPD** :
+
+✅ L'utilisateur doit :
+1. Cliquer manuellement sur "Activer ma position"
+2. Accepter la demande du navigateur
+3. Ne peut accéder au matching qu'après consentement
+
+**Breaking changes** :
+
+```typescript
+// Avant : géolocalisation optionnelle
+disabled={!dateISO || (useGeoloc && (lat == null || lng == null))}
+
+// Après : géolocalisation obligatoire
+disabled={!dateISO || lat == null || lng == null}
+```
+
+**Migration** :
+
+Aucune migration de données nécessaire. Changement uniquement UX/logique.
+
+---
+
 ## Novembre 2025
 
 ### Migration Prisma 6 (11 Nov 2025)
