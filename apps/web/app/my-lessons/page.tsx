@@ -120,8 +120,8 @@ export default function MyLessonsPage() {
                 Explore les créneaux disponibles et réserve ton premier cours pour progresser avec un pro !
               </p>
             </div>
-            <Button onClick={() => router.push('/offers')} className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
-              Explorer les cours
+            <Button onClick={() => router.push('/booking/search')} className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
+              Trouver un pro
             </Button>
           </CardContent>
         </Card>

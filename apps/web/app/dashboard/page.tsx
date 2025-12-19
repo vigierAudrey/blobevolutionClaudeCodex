@@ -412,7 +412,7 @@ export default function DashboardPage() {
           <CardContent className="pt-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Bouton 1 : Chercher un pro */}
-              <Link href="/offers" className="group">
+              <Link href="/booking/search" className="group">
                 <Button
                   size="lg"
                   className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg group-hover:shadow-xl group-hover:scale-105 transition-all duration-200 text-base font-semibold"
@@ -424,11 +424,11 @@ export default function DashboardPage() {
 
               {/* Bouton 2 : Demander un cours - AVEC TOOLTIP */}
               <div className="relative group/tooltip">
-                <Link href="/lesson-request" className="block">
-                  <Button
-                    size="lg"
-                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-base font-semibold"
-                  >
+              <Link href="/lesson-request" className="block">
+                <Button
+                  size="lg"
+                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-base font-semibold"
+                >
                     <RadioTower size={18} className="mr-2" />
                     📡 Demander un cours
                   </Button>

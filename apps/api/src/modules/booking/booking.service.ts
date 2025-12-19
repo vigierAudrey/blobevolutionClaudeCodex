@@ -1,11 +1,13 @@
 import { clientPrisma as prisma, Prisma, BookingRequestStatus } from '@blobinfini/database';
 import type { ProAvailability } from '@blobinfini/database';
-import { bookingRepository } from './booking.repository';
+import { bookingRepository, type SearchAvailabilityRow } from './booking.repository';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { notifyBookingAccepted, notifyBookingRejected } from '../push/push.controller';
 import { withTransactionRetry } from '../../utils/transaction-retry';
 import type { CreateAvailabilityInput } from './dto/createAvailability.dto';
 import type { SearchAvailabilityInput } from './dto/searchAvailability.dto';
+import type { CreateBookingRequestInput } from './dto/createRequest.dto';
+import type { ProsNearbyInput } from './dto/prosNearby.dto';
 import { secureLogger } from '../../utils/secure-logger';
 
 type SearchAvailabilityFilters = SearchAvailabilityInput & {
@@ -15,8 +17,22 @@ type SearchAvailabilityFilters = SearchAvailabilityInput & {
 
 type CachedAvailability = { id: string };
 
+type BookingRiderRow = {
+  availabilityId: string;
+  riderId: string;
+  riderEmail: string;
+  displayName: string | null;
+  photoUrl: string | null;
+};
+
+type ManualBookingInput = {
+  availabilityId: string;
+  riderUserId: string;
+};
+
 export class BookingService {
   async createAvailability(proUserId: string, data: CreateAvailabilityInput) {
+    await this.assertProHasGeo(proUserId);
     // Validate geographic coordinates
     this.validateGeoPoint(data.spotLat, data.spotLng);
 
@@ -143,6 +159,7 @@ export class BookingService {
   }
 
   async updateAvailability(proUserId: string, availabilityId: string, data: Partial<CreateAvailabilityInput>) {
+    await this.assertProHasGeo(proUserId);
     const availability = await bookingRepository.findAvailabilityById(availabilityId);
     if (!availability || availability.proUserId !== proUserId) {
       throw Object.assign(new Error('Availability not found'), { status: 404 });
@@ -251,7 +268,7 @@ export class BookingService {
       throw Object.assign(new Error('Availability not found'), { status: 404 });
     }
 
-    // Check if there are any bookings or pending requests
+    // Check if there are bookings or pending requests
     const bookingCount = await prisma.booking.count({
       where: { availabilityId },
     });
@@ -331,12 +348,12 @@ export class BookingService {
       endAt: filters.endAt,
       page,
       pageSize,
-    });
+    }) as SearchAvailabilityRow[];
 
     // Get booking data with a single optimized query instead of N+1
-    const availabilityIds = rows.map((row: { id: string }) => row.id);
+    const availabilityIds = rows.map((row) => row.id);
     const bookingsData = availabilityIds.length > 0
-      ? await prisma.$queryRaw<Array<any>>`
+      ? await prisma.$queryRaw<BookingRiderRow[]>`
           SELECT
             b."availabilityId",
             ru."id" as "riderId",
@@ -363,7 +380,7 @@ export class BookingService {
       ridersByAvailability.set(booking.availabilityId, collection.slice(0, 6));
     }
 
-    const formattedResults = rows.map((row: any) => ({
+    const formattedResults = rows.map((row) => ({
       id: row.id,
       pro: {
         userId: row.proUserId,
@@ -391,7 +408,7 @@ export class BookingService {
     return formattedResults;
   }
 
-  async createRequest(riderUserId: string, data: any) {
+  async createRequest(riderUserId: string, data: CreateBookingRequestInput) {
     return bookingRepository.createRequest({ ...data, riderUserId });
   }
 
@@ -463,6 +480,7 @@ export class BookingService {
     // Execute the database transaction with retry logic for serialization failures
     const result = await withTransactionRetry(async () => {
       return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      let conversationId: string | undefined;
       const request = await tx.bookingRequest.findUnique({
         where: { id: requestId },
         include: {
@@ -553,8 +571,7 @@ export class BookingService {
           });
         }
 
-        // Stocker l'ID de la conversation pour l'envoyer dans la notification
-        (request as any).conversationId = conversation.id;
+        conversationId = conversation.id;
       } else {
         await tx.bookingRequest.update({
           where: { id: requestId },
@@ -568,21 +585,22 @@ export class BookingService {
       return {
         success: true,
         action,
-        requestData: request // Return request data for notifications
+        requestData: request, // Return request data for notifications
+        conversationId
       };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     }, 7, 150);
 
     // After successful transaction, send push notifications
     try {
-      const { requestData } = result;
+      const { requestData, conversationId } = result;
 
       if (action === 'accept') {
         await notifyBookingAccepted(requestData.riderUserId, {
           proName: requestData.availability?.pro?.proProfile?.businessName || 'Instructeur',
           spotName: requestData.availability?.spotName || 'Spot à définir',
           dateTime: requestData.availability?.startAt?.toISOString() || new Date().toISOString(),
-          conversationId: (requestData as any).conversationId, // Conversation créée automatiquement
+          conversationId, // Conversation créée automatiquement
         });
       } else {
         await notifyBookingRejected(requestData.riderUserId, {
@@ -599,7 +617,7 @@ export class BookingService {
     return { success: true, action };
   }
 
-  async addManualBooking(proUserId: string, data: any) {
+  async addManualBooking(proUserId: string, data: ManualBookingInput) {
     return await withTransactionRetry(async () => {
       return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const availability = await tx.proAvailability.findUnique({
@@ -709,6 +727,163 @@ export class BookingService {
         createdAt: 'desc',
       },
     });
+  }
+
+  async trackAvailabilityInteraction(availabilityId: string, riderUserId: string, eventType: 'VIEW' | 'CLICK') {
+    // Fetch availability to check existence and prevent self-tracking
+    const availability = await prisma.proAvailability.findUnique({
+      where: { id: availabilityId },
+      select: { proUserId: true },
+    });
+
+    if (!availability) {
+      throw Object.assign(new Error('Availability not found'), { status: 404 });
+    }
+
+    // Prevent PROs from tracking their own availabilities
+    if (availability.proUserId === riderUserId) {
+      throw Object.assign(new Error('Cannot track your own availability'), { status: 403 });
+    }
+
+    // Upsert interaction for idempotence
+    await prisma.proAvailabilityInteraction.upsert({
+      where: {
+        availabilityId_riderUserId_eventType: {
+          availabilityId,
+          riderUserId,
+          eventType,
+        },
+      },
+      update: {
+        // Update timestamp on re-interaction
+        createdAt: new Date(),
+      },
+      create: {
+        availabilityId,
+        riderUserId,
+        eventType,
+      },
+    });
+  }
+
+  async getProAvailabilityStats(proUserId: string) {
+    // Get all availabilities for this PRO
+    const availabilities = await prisma.proAvailability.findMany({
+      where: { proUserId },
+      select: {
+        id: true,
+        sport: true,
+        startAt: true,
+        endAt: true,
+        spotName: true,
+        interactions: {
+          select: {
+            eventType: true,
+            riderUserId: true,
+            createdAt: true,
+          },
+        },
+      },
+      orderBy: {
+        startAt: 'desc',
+      },
+    });
+
+    let totalViews = 0;
+    let totalClicks = 0;
+
+    const slots = availabilities.map((availability) => {
+      // Count unique riders per event type
+      const uniqueViewers = new Set(
+        availability.interactions
+          .filter((i) => i.eventType === 'VIEW')
+          .map((i) => i.riderUserId)
+      );
+      const uniqueClickers = new Set(
+        availability.interactions
+          .filter((i) => i.eventType === 'CLICK')
+          .map((i) => i.riderUserId)
+      );
+
+      const uniqueViews = uniqueViewers.size;
+      const uniqueClicks = uniqueClickers.size;
+
+      totalViews += uniqueViews;
+      totalClicks += uniqueClicks;
+
+      // Calculate conversion rate (clicks / views)
+      const conversionRate = uniqueViews > 0 ? ((uniqueClicks / uniqueViews) * 100).toFixed(1) : '0.0';
+
+      // Find last interaction
+      const sortedInteractions = availability.interactions.sort(
+        (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+      );
+      const lastInteraction = sortedInteractions[0];
+
+      return {
+        availabilityId: availability.id,
+        sport: availability.sport,
+        startAt: availability.startAt,
+        endAt: availability.endAt,
+        spotName: availability.spotName,
+        stats: {
+          uniqueViews,
+          uniqueClicks,
+          conversionRate,
+          lastInteractionAt: lastInteraction?.createdAt || null,
+          lastInteractionType: lastInteraction?.eventType || null,
+        },
+      };
+    });
+
+    // Calculate average conversion rate across all slots with views
+    const slotsWithViews = slots.filter((s) => s.stats.uniqueViews > 0);
+    const avgConversionRate =
+      slotsWithViews.length > 0
+        ? (
+            slotsWithViews.reduce((sum, s) => sum + parseFloat(s.stats.conversionRate), 0) /
+            slotsWithViews.length
+          ).toFixed(1)
+        : '0.0';
+
+    return {
+      summary: {
+        totalSlots: availabilities.length,
+        totalViews,
+        totalClicks,
+        averageConversionRate: avgConversionRate,
+      },
+      slots,
+    };
+  }
+
+  private async assertProHasGeo(proUserId: string) {
+    const profile = await prisma.proProfile.findUnique({
+      where: { userId: proUserId },
+      select: { lat: true, lng: true },
+    });
+
+    if (!profile || profile.lat == null || profile.lng == null) {
+      throw Object.assign(new Error('Localisation obligatoire pour publier des créneaux. Ajoutez votre géolocalisation dans votre profil.'), { status: 400 });
+    }
+  }
+
+  async listNearbyPros(params: ProsNearbyInput) {
+    this.validateGeoPoint(params.lat, params.lng);
+    const rows = await bookingRepository.findNearbyPros(params);
+
+    return rows.map((row) => ({
+      proId: row.proUserId,
+      email: row.email,
+      businessName: row.businessName,
+      photoUrl: row.photoUrl,
+      verified: row.verified,
+      lat: row.lat,
+      lng: row.lng,
+      distanceKm: Number(row.distance_m) / 1000,
+      sports: row.sports ?? [],
+      openAvailabilityCount: Number(row.openAvailabilityCount ?? 0),
+    }));
   }
 }
 

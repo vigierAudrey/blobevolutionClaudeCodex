@@ -100,7 +100,6 @@ blobevolutionClaudeCodex/
 - Tests E2E : `apps/web/tests/e2e/ads-consent.spec.ts`
 
 ### Pro Offers (Offres Pros) ✅
-- **Page** : `/pro/offers` (`apps/web/app/pro/offers/page.tsx`)
 - Gestion cours par sport/niveau
 - Configuration disponibilités
 - API : `apps/api/src/modules/pro/`

@@ -1,6 +1,7 @@
 import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import { createApp } from '../../../index';
 import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
+import type { CreateAvailabilityInput } from '../dto/createAvailability.dto';
 
 const app = createApp();
 
@@ -31,6 +32,11 @@ describe('Booking module E2E', () => {
     });
     proToken = proAuth.accessToken;
     proSession = proAuth.session;
+    await prisma.proProfile.upsert({
+      where: { userId: proAuth.userId },
+      create: { userId: proAuth.userId, lat: 43.493, lng: -1.558, verified: true },
+      update: { lat: 43.493, lng: -1.558 },
+    });
 
     const riderAuth = await getAccessToken({
       app,
@@ -57,8 +63,8 @@ describe('Booking module E2E', () => {
     await prisma.$disconnect();
   });
 
-  const createAvailability = async (overrides: Record<string, any> = {}) => {
-    const payload = {
+  const createAvailability = async (overrides: Partial<CreateAvailabilityInput> = {}) => {
+    const payload: CreateAvailabilityInput = {
       sport: 'surf',
       levels: ['beginner', 'intermediate'],
       startAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
@@ -119,7 +125,7 @@ describe('Booking module E2E', () => {
       .set('Authorization', `Bearer ${riderToken}`)
       .expect(200);
 
-    const myRequest = res.body.requests.find((r: any) => r.id === request.id);
+    const myRequest = (res.body.requests as Array<{ id: string }>).find((r) => r.id === request.id);
     expect(myRequest).toBeTruthy();
     expect(myRequest).toMatchObject({
       status: 'PENDING',
@@ -138,7 +144,7 @@ describe('Booking module E2E', () => {
       .expect(200);
 
     expect(Array.isArray(res.body.requests)).toBe(true);
-    const inboxItem = res.body.requests.find((r: any) => r.id === request.id);
+    const inboxItem = (res.body.requests as Array<{ id: string }>).find((r) => r.id === request.id);
     expect(inboxItem).toBeTruthy();
     expect(inboxItem).toMatchObject({
       status: 'PENDING',

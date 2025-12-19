@@ -68,8 +68,7 @@ test.describe('Pro Dashboard', () => {
     const dashboardElements = [
       page.locator('text=/statistiques|statistics/i'),
       page.locator('text=/réservations|bookings/i'),
-      page.locator('text=/messages/i'),
-      page.locator('text=/offres|offers/i')
+      page.locator('text=/messages/i')
     ];
 
     // At least one dashboard element should be visible
@@ -138,7 +137,6 @@ test.describe('Pro Dashboard', () => {
 
     // Look for navigation links to other pro sections
     const actionLinks = [
-      page.getByRole('link', { name: /offres|offers/i }),
       page.getByRole('link', { name: /messages/i }),
       page.getByRole('link', { name: /profil|profile/i }),
       page.getByRole('link', { name: /planning|calendar/i })
@@ -220,7 +218,7 @@ test.describe('Pro Dashboard', () => {
     await context.close();
   });
 
-  test('should navigate to offers from dashboard', async ({ browser }) => {
+  test('should remain accessible without offers module', async ({ browser }) => {
     const context = await browser.newContext({
       extraHTTPHeaders: {
         'X-Forwarded-For': testIp('pro-dashboard-nav-offers'),
@@ -240,13 +238,8 @@ test.describe('Pro Dashboard', () => {
     await page.goto('/pro/dashboard');
     await expect(page).toHaveURL(/\/pro\/dashboard/);
 
-    // Click on offers link
-    const offersLink = page.getByRole('link', { name: /offres|offers/i });
-
-    if (await offersLink.count() > 0) {
-      await offersLink.first().click();
-      await expect(page).toHaveURL(/\/pro\/offers/);
-    }
+    // No offers link anymore; ensure dashboard stays accessible
+    await expect(page).toHaveURL(/\/pro\/dashboard/);
 
     await context.close();
   });

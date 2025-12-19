@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
+import { secureLogger } from '../../utils/secure-logger';
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth, requireVerifiedEmail);
@@ -214,6 +216,16 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
     return res.status(201).json({ id: msg.id });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002' && directKey) {
+      const existing = await prisma.conversation.findFirst({
+        where: { directKey },
+        select: { id: true },
+      });
+      if (existing) {
+        return res.status(200).json({ id: existing.id });
+      }
+    }
+    secureLogger.error('Open conversation error', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -292,7 +304,33 @@ conversationsRouter.post('/empty-trash', async (req, res) => {
 });
 
 // Ensure a direct conversation exists with target user and return its id
-conversationsRouter.post('/open', async (req, res) => {
+const MESSAGE_COOLDOWN_MS = 30_000;
+const openConversationLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests', message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.' },
+  keyGenerator: (req, res) => {
+    const userId = (req as any).user?.id as string | undefined;
+    return userId ? `user:${userId}` : ipKeyGenerator(req, res);
+  },
+  handler: (req, res) => {
+    const retryAfterSeconds =
+      typeof req.rateLimit?.resetTime?.getTime === 'function'
+        ? Math.max(1, Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000))
+        : 60;
+    res.setHeader('Retry-After', retryAfterSeconds.toString());
+    return res.status(429).json({
+      code: 'RATE_LIMIT',
+      message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
+      retryAfterSeconds,
+    });
+  },
+});
+
+conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
+  let directKey: string | null = null;
   try {
     const meId = (req as any).user?.id as string | undefined;
     if (!meId) return res.status(401).json({ error: 'Unauthorized' });
@@ -325,33 +363,78 @@ conversationsRouter.post('/open', async (req, res) => {
       conversationType = 'RIDER_TO_RIDER';
     }
 
-    const myMemberships = await prisma.conversationMember.findMany({
-      where: { userId: meId },
-      select: { conversationId: true },
-      take: 2000,
+    const now = new Date();
+    const participants = [meId, body.targetUserId].sort();
+    directKey = `direct:${participants[0]}:${participants[1]}:${conversationType}`;
+
+    const existingForCooldown = await prisma.conversation.findFirst({
+      where: {
+        type: conversationType as any,
+        members: {
+          some: { userId: meId },
+          some: { userId: body.targetUserId },
+          every: { userId: { in: [meId, body.targetUserId] } },
+        },
+      },
+      select: { id: true },
     });
-    const convIds = myMemberships.map((m: { conversationId: string }) => m.conversationId);
-    if (convIds.length > 0) {
-      const exists = await prisma.conversationMember.findFirst({
-        where: { conversationId: { in: convIds }, userId: body.targetUserId },
-        select: { conversationId: true },
+
+    const recentMessage = existingForCooldown
+      ? await prisma.message.findFirst({
+          where: { senderId: meId, conversationId: existingForCooldown.id },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true, conversationId: true },
+        })
+      : null;
+
+    if (recentMessage && now.getTime() - recentMessage.createdAt.getTime() < MESSAGE_COOLDOWN_MS) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((MESSAGE_COOLDOWN_MS - (now.getTime() - recentMessage.createdAt.getTime())) / 1000));
+      res.setHeader('Retry-After', retryAfterSeconds.toString());
+      return res.status(429).json({
+        code: 'CONVERSATION_COOLDOWN',
+        message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
+        retryAfterSeconds,
       });
-      if (exists) return res.status(200).json({ id: exists.conversationId });
     }
 
-    const conv = await prisma.conversation.create({
-      data: {
-        type: conversationType as any
+    const conv = await prisma.$transaction(async (tx) => {
+      const existing = await tx.conversation.findFirst({
+        where: {
+          type: conversationType as any,
+          members: {
+            some: { userId: meId },
+            some: { userId: body.targetUserId },
+            every: { userId: { in: [meId, body.targetUserId] } },
+          },
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        return { id: existing.id, isNew: false };
       }
+
+      const created = await tx.conversation.create({
+        data: {
+          type: conversationType as any,
+          directKey,
+          members: {
+            createMany: {
+              data: [
+                { userId: meId },
+                { userId: body.targetUserId },
+              ],
+              skipDuplicates: true,
+            },
+          },
+        },
+        select: { id: true },
+      });
+
+      return { id: created.id, isNew: true };
     });
-    await prisma.conversationMember.createMany({
-      data: [
-        { conversationId: conv.id, userId: meId },
-        { conversationId: conv.id, userId: body.targetUserId },
-      ],
-      skipDuplicates: true,
-    });
-    return res.status(201).json({ id: conv.id });
+
+    return res.status(conv.isNew ? 201 : 200).json({ id: conv.id });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
     return res.status(500).json({ error: 'Internal error' });

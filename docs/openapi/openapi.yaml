@@ -1033,6 +1033,50 @@ paths:
                       $ref: '#/components/schemas/Availability'
         '400':
           $ref: '#/components/responses/ValidationError'
+  /booking/pros/nearby:
+    get:
+      tags: [Booking]
+      summary: Pros visibles autour d'une position (RIDER)
+      operationId: bookingProsNearby
+      parameters:
+        - in: query
+          name: lat
+          required: true
+          schema:
+            type: number
+        - in: query
+          name: lng
+          required: true
+          schema:
+            type: number
+        - in: query
+          name: radiusKm
+          schema:
+            type: number
+            default: 25
+        - in: query
+          name: sport
+          schema:
+            type: string
+            enum: [surf, kitesurf]
+      responses:
+        '200':
+          description: Pros autour de la zone
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pros:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NearbyPro'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /booking/requests:
     post:
@@ -1468,6 +1512,21 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          description: Cooldown en cours (message déjà envoyé récemment)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  error:
+                    type: string
+                  message:
+                    type: string
+                  retryAfterSeconds:
+                    type: integer
 
   /contact/request:
     post:
@@ -3488,6 +3547,36 @@ components:
         updatedAt:
           type: string
           format: date-time
+    NearbyPro:
+      type: object
+      properties:
+        proId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        businessName:
+          type: string
+          nullable: true
+        photoUrl:
+          type: string
+          nullable: true
+        verified:
+          type: boolean
+        lat:
+          type: number
+        lng:
+          type: number
+        distanceKm:
+          type: number
+        sports:
+          type: array
+          items:
+            type: string
+            enum: [surf, kitesurf]
+        openAvailabilityCount:
+          type: integer
       additionalProperties: true
     AvailabilityBookedCountInput:
       type: object

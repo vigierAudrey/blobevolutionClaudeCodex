@@ -159,7 +159,10 @@ describe('Admin Controller', () => {
     await prisma.proProfile.create({
       data: {
         userId: pro.id,
-        businessName: 'Admin Pro'
+        businessName: 'Admin Pro',
+        lat: 43.5,
+        lng: -1.5,
+        verified: false
       }
     });
 
@@ -223,7 +226,7 @@ describe('Admin Controller', () => {
       .expect(200);
 
     expect(res.body.pagination).toMatchObject({ page: 1, totalPages: expect.any(Number) });
-    const riderEntry = res.body.users.find((u: any) => u.email === emails.rider);
+    const riderEntry = (res.body.users as Array<{ email: string }>).find((u) => u.email === emails.rider);
     expect(riderEntry).toBeTruthy();
   });
 
@@ -332,7 +335,9 @@ describe('Admin Controller', () => {
       .expect(200);
 
     expect(res.body.reports.length).toBeGreaterThanOrEqual(1);
-    const reportEntry = res.body.reports.find((r: any) => r.id === reportId);
+    const reportEntry = (res.body.reports as Array<{ id: string; reporter: { email: string } }>).find(
+      (r) => r.id === reportId
+    );
     expect(reportEntry).toBeTruthy();
     expect(reportEntry.reporter.email).toBe(emails.rider);
   });
