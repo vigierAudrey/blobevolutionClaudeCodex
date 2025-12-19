@@ -607,7 +607,7 @@ async function refreshAccessToken() {
         body: JSON.stringify({ refreshToken }),
       });
 
-      if (!response.ok) {
+      if (!response || !response.ok) {
         throw new Error('Unable to refresh session');
       }
 
@@ -619,7 +619,9 @@ async function refreshAccessToken() {
 
       throw new Error('Invalid refresh payload');
     } catch (error) {
-      console.warn('[apiClient] Refresh token failed', error);
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn('[apiClient] Refresh token failed', error);
+      }
       clearTokens();
       return false;
     } finally {

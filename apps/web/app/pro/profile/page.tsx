@@ -17,6 +17,7 @@ import { apiClient } from '../../../lib/apiClient';
 import { apiRequest } from '../../../lib/csrf';
 import { useToast } from '../../../components/ui/toast';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../../components/cookies/CookieConsent';
+import { ChangePasswordCard } from '../../../components/profile/ChangePasswordCard';
 
 // Configuration de sécurité pour l'upload de fichiers
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
@@ -522,6 +523,9 @@ export default function ProProfilePage() {
               </form>
             </CardContent>
           </Card>
+
+          {/* Security Section */}
+          <ChangePasswordCard />
 
           {/* RGPD & Privacy Section */}
           <Card className="border-2 rounded-[1.75rem]">

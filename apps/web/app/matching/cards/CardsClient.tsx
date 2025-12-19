@@ -285,7 +285,14 @@ export function CardsClient() {
 
     const newDecision = { targetProfileId, decision, ts: Date.now() };
     mutateDecisionQueue((queue) => queue.concat(newDecision));
-    setLastAction({ id: targetProfileId, decision, profile: current!, wasEndOfBatch: candidates.length <= 1, prevCursor: cursor, timeout });
+    setLastAction({
+      id: targetProfileId,
+      decision,
+      profile: current!,
+      wasEndOfBatch: candidates.length <= 1,
+      prevCursor: cursor,
+      timeout
+    });
   }, [current, candidates, cursor, mutateDecisionQueue, flushDecisions]);
 
   const act = (decision: 'ACCEPT' | 'REFUSE') => {
@@ -326,6 +333,12 @@ export function CardsClient() {
     };
   }, [flushDecisions]);
 
+  useEffect(() => {
+    if (!lastAction) return;
+    const autoHide = setTimeout(() => setLastAction(null), 5000);
+    return () => clearTimeout(autoHide);
+  }, [lastAction]);
+
   const undo = () => {
     if (!lastAction) return;
     try { clearTimeout(lastAction.timeout); } catch {}
@@ -338,6 +351,11 @@ export function CardsClient() {
       setCandidates((prev) => [lastAction.profile, ...prev]);
       setCursor(0);
     } else {
+      setCandidates((prev) => {
+        const updated = [...prev];
+        updated.splice(lastAction.prevCursor, 0, lastAction.profile);
+        return updated;
+      });
       setCursor(lastAction.prevCursor);
     }
     setLastAction(null);

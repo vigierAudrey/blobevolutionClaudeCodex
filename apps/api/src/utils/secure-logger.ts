@@ -52,6 +52,16 @@ function sanitizeValue<T>(value: T): T {
 }
 
 function log(level: LogLevel, event: string, context?: Record<string, unknown>) {
+  const isTestEnv = process.env.NODE_ENV === 'test';
+  const allowTestLogs = process.env.ENABLE_TEST_LOGS === 'true';
+  const shouldLog =
+    allowTestLogs ||
+    !isTestEnv ||
+    level === 'error' ||
+    level === 'warn' ||
+    level === 'security';
+  if (!shouldLog) return;
+
   const timestamp = new Date().toISOString();
   const sanitizedEvent = sanitizeString(event);
   const sanitizedContext = context ? sanitizeValue(context) : undefined;

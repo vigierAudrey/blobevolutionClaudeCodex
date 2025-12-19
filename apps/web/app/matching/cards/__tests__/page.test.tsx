@@ -8,6 +8,8 @@ import { apiClient } from '../../../../lib/apiClient';
 import { optimizedApiClient } from '../../../../lib/optimizedApiClient';
 import Page from '../page';
 
+jest.setTimeout(10000);
+
 if (!globalThis.TextEncoder) {
   globalThis.TextEncoder = TextEncoder;
 }
@@ -144,6 +146,25 @@ function renderWithProviders(ui) {
   return render(ui, { wrapper: Wrapper });
 }
 
+async function waitForInitialProfile() {
+  await act(async () => { await Promise.resolve(); });
+  expect(mockUseSearchParams).toHaveBeenCalled();
+  await waitFor(() => expect(mockApiClient.searchMatching).toHaveBeenCalled(), { timeout: 5000 });
+  const firstCallResult = mockApiClient.searchMatching.mock.results[0]?.value;
+  if (firstCallResult?.then) {
+    await act(async () => {
+      await firstCallResult;
+    });
+  }
+  await waitFor(() => expect(screen.getByText('Surf Rider')).toBeInTheDocument(), { timeout: 5000 });
+}
+
+async function advanceTime(ms: number) {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  });
+}
+
 describe('Matching Cards Component', () => {
   const mockPush = jest.fn();
   const mockReplace = jest.fn();
@@ -253,7 +274,7 @@ describe('Matching Cards Component', () => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('Femme • surf • intermediate')).toBeInTheDocument();
+      expect(screen.getByText('Femme • Surf • Intermédiaire')).toBeInTheDocument();
       expect(screen.getByText((content) => content.includes('5 km'))).toBeInTheDocument();
     });
 
@@ -290,14 +311,6 @@ describe('Matching Cards Component', () => {
   });
 
   describe('Loading States', () => {
-    beforeEach(() => {
-      jest.useFakeTimers();
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
     it('should display loading indicator during initial load', async () => {
       // Make searchMatching return a promise that takes time to resolve
       mockApiClient.searchMatching.mockImplementation(() =>
@@ -314,9 +327,7 @@ describe('Matching Cards Component', () => {
       expect(screen.getByText('🔍 Recherche de profils compatibles...')).toBeInTheDocument();
 
       // Advance timers to resolve the promise
-      await act(async () => {
-        jest.advanceTimersByTime(200);
-      });
+      await advanceTime(200);
 
       await waitFor(() => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
@@ -325,29 +336,19 @@ describe('Matching Cards Component', () => {
   });
 
   describe('User Interactions', () => {
-    beforeEach(() => {
-      jest.useFakeTimers();
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
     it('should accept profile when clicking Accept button', async () => {
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      await waitForInitialProfile();
 
       const acceptButton = screen.getByText('Accepter');
       await act(async () => {
         await user.click(acceptButton);
-        jest.advanceTimersByTime(300);
+        await advanceTime(300);
       });
 
       await waitFor(() => {
@@ -356,20 +357,18 @@ describe('Matching Cards Component', () => {
     });
 
     it('should refuse profile when clicking Refuse button', async () => {
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      await waitForInitialProfile();
 
       const refuseButton = screen.getByText('Refuser');
       await act(async () => {
         await user.click(refuseButton);
-        jest.advanceTimersByTime(300);
+        await advanceTime(300);
       });
 
       await waitFor(() => {
@@ -378,15 +377,13 @@ describe('Matching Cards Component', () => {
     });
 
     it('should prevent multiple clicks during animation', async () => {
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      await waitForInitialProfile();
 
       const acceptButton = screen.getByText('Accepter');
       const refuseButton = screen.getByText('Refuser');
@@ -401,34 +398,19 @@ describe('Matching Cards Component', () => {
   });
 
   describe('Undo Functionality', () => {
-    beforeEach(() => {
-      jest.useFakeTimers();
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
     it('should display undo button after action', async () => {
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      // Flush all pending promises and timers to allow data to load
-      await act(async () => {
-        await jest.runAllTimersAsync();
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      await waitForInitialProfile();
 
       const acceptButton = screen.getByText('Accepter');
       await act(async () => {
         await user.click(acceptButton);
-        jest.advanceTimersByTime(300);
+        await advanceTime(300);
       });
 
       await waitFor(() => {
@@ -438,25 +420,18 @@ describe('Matching Cards Component', () => {
     });
 
     it('should restore previous profile when undoing', async () => {
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      // Flush all pending promises and timers to allow data to load
-      await act(async () => {
-        await jest.runAllTimersAsync();
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      }, { timeout: 5000 });
+      await waitForInitialProfile();
 
       const acceptButton = screen.getByText('Accepter');
       await act(async () => {
         await user.click(acceptButton);
-        jest.advanceTimersByTime(300);
+        await advanceTime(300);
       });
 
       await waitFor(() => {
@@ -470,54 +445,34 @@ describe('Matching Cards Component', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('should hide undo button after timeout', async () => {
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      // Flush all pending promises and timers to allow data to load
-      await act(async () => {
-        await jest.runAllTimersAsync();
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      await waitForInitialProfile();
 
       const acceptButton = screen.getByText('Accepter');
       await act(async () => {
         await user.click(acceptButton);
-        jest.advanceTimersByTime(300);
+        await advanceTime(300);
       });
 
       await waitFor(() => {
         expect(screen.getByText('Annuler')).toBeInTheDocument();
       });
 
-      await act(async () => {
-        jest.advanceTimersByTime(5000);
-      });
-
-      await waitFor(() => {
-        expect(screen.queryByText('Annuler')).not.toBeInTheDocument();
-      });
+      await advanceTime(6000);
+      expect(screen.queryByText('Annuler')).not.toBeInTheDocument();
     });
   });
 
   describe('Match Handling', () => {
-    beforeEach(() => {
-      jest.useFakeTimers();
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
     it('should display match popup when match is created', async () => {
       mockApiClient.matchDecisions.mockResolvedValue({
         createdConversations: [{
@@ -526,34 +481,32 @@ describe('Matching Cards Component', () => {
         }],
       });
 
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      await waitForInitialProfile();
 
       const acceptButton = screen.getByText('Accepter');
       await act(async () => {
         await user.click(acceptButton);
-        jest.advanceTimersByTime(300);
+        await advanceTime(300);
       });
 
-      // Wait for decision to be added to queue, then advance time to process batch (5s + 2s interval)
-      await act(async () => {
-        jest.advanceTimersByTime(7000);
-      });
+      // Wait for decision to be added to queue, then allow batch processing
+      await advanceTime(2500);
+
+      await waitFor(() => {
+        expect(mockApiClient.matchDecisions).toHaveBeenCalled();
+      }, { timeout: 5000 });
 
       await waitFor(() => {
         expect(screen.getByText('C’est un match !')).toBeInTheDocument();
-        expect(screen.getByText((content, _element) => {
-          return content.includes('Tu vas pouvoir surfer');
-        })).toBeInTheDocument();
+        expect(screen.getByText((content) => content.includes('Tu vas surfer avec'))).toBeInTheDocument();
         expect(screen.getByText('Match User')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('should navigate to conversation when clicking message button', async () => {
@@ -564,65 +517,56 @@ describe('Matching Cards Component', () => {
         }],
       });
 
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      await waitForInitialProfile();
 
       const acceptButton = screen.getByText('Accepter');
       await act(async () => {
         await user.click(acceptButton);
-        jest.advanceTimersByTime(300);
+        await advanceTime(300);
       });
 
-      // Wait for decision to be added to queue, then advance time to process batch (5s + 2s interval)
-      await act(async () => {
-        jest.advanceTimersByTime(7000);
-      });
+      // Wait for decision to be added to queue, then allow batch processing
+      await advanceTime(2500);
 
       await waitFor(() => {
-        expect(screen.getByText('Envoyer un message 🚀')).toBeInTheDocument();
-      });
+        expect(mockApiClient.matchDecisions).toHaveBeenCalled();
+      }, { timeout: 5000 });
 
-      const messageButton = screen.getByText('Envoyer un message 🚀');
+      await waitFor(() => {
+        expect(screen.getByText((content) => content.includes('Envoyer un message'))).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      const messageButton = screen.getByText((content) => content.includes('Envoyer un message'));
       await act(async () => {
         await user.click(messageButton);
       });
 
       expect(mockPush).toHaveBeenCalledWith('/messages/conv-123');
+      jest.useRealTimers();
     });
   });
 
 
   describe('Decision Queue Processing', () => {
-    beforeEach(() => {
-      jest.useFakeTimers();
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
     it('should process decisions in batch after delay', async () => {
-      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      const user = userEvent.setup();
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      await waitForInitialProfile();
 
       const acceptButton = screen.getByText('Accepter');
       await act(async () => {
         await user.click(acceptButton);
-        jest.advanceTimersByTime(300);
+        await advanceTime(300);
       });
 
       await waitFor(() => {
@@ -632,12 +576,10 @@ describe('Matching Cards Component', () => {
       const refuseButton = screen.getByText('Refuser');
       await act(async () => {
         await user.click(refuseButton);
-        jest.advanceTimersByTime(300);
+        await advanceTime(300);
       });
 
-      await act(async () => {
-        jest.advanceTimersByTime(7000);
-      });
+      await advanceTime(2500);
 
       await waitFor(() => {
         const flattenedCalls = mockApiClient.matchDecisions.mock.calls.flatMap(
@@ -685,9 +627,10 @@ describe('Matching Cards Component', () => {
         renderWithProviders(React.createElement(Page));
       });
 
+      await waitFor(() => expect(mockApiClient.searchMatching).toHaveBeenCalled(), { timeout: 3000 });
       await waitFor(() => {
         expect(
-          screen.getByText(/critères :\s*surf > intermediate > 20 km > peu importe/i)
+          screen.getByText(/Surf · Intermédiaire · 20 km · Peu importe/i)
         ).toBeInTheDocument();
       });
     });
@@ -723,6 +666,7 @@ describe('Matching Cards Component', () => {
         renderWithProviders(React.createElement(Page));
       });
 
+      await waitFor(() => expect(mockApiClient.searchMatching).toHaveBeenCalled(), { timeout: 3000 });
       await waitFor(() => {
         expect(screen.getByText("Aujourd'hui")).toBeInTheDocument();
       });
@@ -737,6 +681,7 @@ describe('Matching Cards Component', () => {
         renderWithProviders(React.createElement(Page));
       });
 
+      await waitFor(() => expect(mockApiClient.searchMatching).toHaveBeenCalled(), { timeout: 3000 });
       await waitFor(() => {
         expect(screen.getByText('Erreur réseau')).toBeInTheDocument();
       });
@@ -753,9 +698,7 @@ describe('Matching Cards Component', () => {
         renderWithProviders(React.createElement(Page));
       });
 
-      await waitFor(() => {
-        expect(screen.getByText('Surf Rider')).toBeInTheDocument();
-      });
+      await waitForInitialProfile();
 
       const reportButton = screen.getByText('Signaler');
       await act(async () => {

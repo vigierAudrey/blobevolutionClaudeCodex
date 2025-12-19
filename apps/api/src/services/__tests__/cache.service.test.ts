@@ -95,9 +95,7 @@ describe('CacheService', () => {
         expect(mockRedisClient.connect).toHaveBeenCalled();
       });
 
-      it.skip('should return null when no Redis URL is provided', async () => {
-        // This test is skipped because resolveRedisUrl() always returns a string (never null)
-        // The function has a fallback to 'redis://localhost:6379'
+      it('should return null when no Redis URL is provided', async () => {
         mockResolveRedisUrl.mockReturnValue(null as any);
 
         const client = await initializeCache();
