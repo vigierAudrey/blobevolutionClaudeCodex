@@ -9,6 +9,7 @@ import { audit } from '../../middleware/audit';
 import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
 import { requirePermissions } from './admin.guard';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { secureLogger } from '../../utils/secure-logger';
 
 type ConversationMemberWithUser = Prisma.ConversationMemberGetPayload<{
   include: {
@@ -129,7 +130,7 @@ adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:sta
 
     return res.json(stats);
   } catch (error) {
-    console.error('Admin stats error:', error);
+    secureLogger.error('Admin stats error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -195,7 +196,7 @@ adminRouter.get(
         items
       });
     } catch (error) {
-      console.error('Admin availability status error:', error);
+      secureLogger.error('Admin availability status error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -264,7 +265,7 @@ adminRouter.get(
       }
     });
   } catch (error) {
-    console.error('Admin users list error:', error);
+    secureLogger.error('Admin users list error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -309,10 +310,12 @@ adminRouter.patch(
 
     return res.json(updatedUser);
   } catch (error) {
-    console.error('Admin suspend user error:', error);
+    // Don't log validation errors (400) - they are expected client errors
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input' });
     }
+    // Only log actual server errors (500)
+    secureLogger.error('Admin suspend user error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -424,7 +427,7 @@ adminRouter.get(
       }
     });
   } catch (error) {
-    console.error('Admin user detail error:', error);
+    secureLogger.error('Admin user detail error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -453,10 +456,12 @@ adminRouter.patch(
 
     return res.json(proProfile);
   } catch (error) {
-    console.error('Admin verify pro error:', error);
+    // Don't log validation errors (400) - they are expected client errors
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input' });
     }
+    // Only log actual server errors (500)
+    secureLogger.error('Admin verify pro error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -514,7 +519,7 @@ adminRouter.get(
       }
     });
   } catch (error) {
-    console.error('Admin reports list error:', error);
+    secureLogger.error('Admin reports list error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -541,7 +546,7 @@ adminRouter.get(
       roles: ROLE_PERMISSIONS
     });
   } catch (error) {
-    console.error('Admin permissions list error:', error);
+    secureLogger.error('Admin permissions list error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -579,7 +584,7 @@ adminRouter.get(
 
     return res.json({ admins });
   } catch (error) {
-    console.error('Admin list error:', error);
+    secureLogger.error('Admin list error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -640,10 +645,12 @@ adminRouter.patch(
 
     return res.json(adminProfile);
   } catch (error) {
-    console.error('Admin permissions update error:', error);
+    // Don't log validation errors (400) - they are expected client errors
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input' });
     }
+    // Only log actual server errors (500)
+    secureLogger.error('Admin permissions update error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -700,10 +707,12 @@ adminRouter.patch(
 
     return res.json(adminProfile);
   } catch (error) {
-    console.error('Admin role update error:', error);
+    // Don't log validation errors (400) - they are expected client errors
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input' });
     }
+    // Only log actual server errors (500)
+    secureLogger.error('Admin role update error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -762,10 +771,12 @@ adminRouter.patch(
 
     return res.json(adminProfile);
   } catch (error) {
-    console.error('Admin allowed IPs update error:', error);
+    // Don't log validation errors (400) - they are expected client errors
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
     }
+    // Only log actual server errors (500)
+    secureLogger.error('Admin allowed IPs update error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -953,7 +964,7 @@ adminRouter.get(
       timeline
     });
   } catch (error) {
-    console.error('Analytics matching TTFM error:', error);
+    secureLogger.error('Analytics matching TTFM error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -1116,7 +1127,7 @@ adminRouter.get(
     });
 
   } catch (error) {
-    console.error('Analytics engagement error:', error);
+    secureLogger.error('Analytics engagement error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -1383,7 +1394,7 @@ adminRouter.get(
     });
 
   } catch (error) {
-    console.error('Analytics matching error:', error);
+    secureLogger.error('Analytics matching error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -1504,10 +1515,12 @@ adminRouter.post(
         missingEmails
       });
     } catch (error) {
-      console.error('Admin conversation broadcast error:', error);
+      // Don't log validation errors (400) - they are expected client errors
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid input', details: error.errors });
       }
+      // Only log actual server errors (500)
+      secureLogger.error('Admin conversation broadcast error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1582,10 +1595,12 @@ adminRouter.post(
       bannedUserId: action === 'ban' ? targetUser?.id : undefined
     });
   } catch (error) {
-    console.error('Admin report action error:', error);
+    // Don't log validation errors (400) - they are expected client errors
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input' });
     }
+    // Only log actual server errors (500)
+    secureLogger.error('Admin report action error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -1604,7 +1619,7 @@ adminRouter.get(
       const result = await systemAlertService.list({ status, severity, page, limit });
       return res.json(result);
     } catch (error) {
-      console.error('Admin alerts list error:', error);
+      secureLogger.error('Admin alerts list error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1629,7 +1644,7 @@ adminRouter.post(
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid input', details: error.errors });
       }
-      console.error('Admin alert create error:', error);
+      secureLogger.error('Admin alert create error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1644,7 +1659,7 @@ adminRouter.post(
       const alert = await systemAlertService.acknowledge(req.params.id);
       return res.json(alert);
     } catch (error) {
-      console.error('Admin alert ack error:', error);
+      secureLogger.error('Admin alert ack error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1659,7 +1674,7 @@ adminRouter.post(
       const alert = await systemAlertService.resolve(req.params.id);
       return res.json(alert);
     } catch (error) {
-      console.error('Admin alert resolve error:', error);
+      secureLogger.error('Admin alert resolve error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1742,7 +1757,7 @@ adminRouter.get(
         }
       });
     } catch (error) {
-      console.error('Admin blocked conversations list error:', error);
+      secureLogger.error('Admin blocked conversations list error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1832,10 +1847,12 @@ adminRouter.post(
         }))
       });
     } catch (error) {
-      console.error('Admin conversation block error:', error);
+      // Don't log validation errors (400) - they are expected client errors
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid input', details: error.errors });
       }
+      // Only log actual server errors (500)
+      secureLogger.error('Admin conversation block error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1861,7 +1878,7 @@ adminRouter.post(
         count: result.count
       });
     } catch (error) {
-      console.error('Admin unblock all conversations error:', error);
+      secureLogger.error('Admin unblock all conversations error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1904,7 +1921,7 @@ adminRouter.get(
         }
       });
     } catch (error) {
-      console.error('Admin conversation block history error:', error);
+      secureLogger.error('Admin conversation block history error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1938,7 +1955,7 @@ adminRouter.get(
 
       return res.json({ events });
     } catch (error) {
-      console.error('Admin security events error:', error);
+      secureLogger.error('Admin security events error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1978,7 +1995,7 @@ adminRouter.get(
         }))
       });
     } catch (error) {
-      console.error('Admin security logs summary error:', error);
+      secureLogger.error('Admin security logs summary error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -2135,7 +2152,7 @@ adminRouter.get(
         }
       });
     } catch (error) {
-      console.error('Admin login attempts error:', error);
+      secureLogger.error('Admin login attempts error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -2447,7 +2464,7 @@ adminRouter.get(
 
     return res.json(behaviorAnalytics);
   } catch (error) {
-    console.error('Analytics behavior error:', error);
+    secureLogger.error('Analytics behavior error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -2500,7 +2517,7 @@ adminRouter.get(
       }
     });
   } catch (error) {
-    console.error('GDPR compliance report error:', error);
+    secureLogger.error('GDPR compliance report error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -2523,7 +2540,7 @@ adminRouter.post(
       message: 'Purge RGPD exécutée avec succès'
     });
   } catch (error) {
-    console.error('Manual GDPR purge error:', error);
+    secureLogger.error('Manual GDPR purge error', { error });
     return res.status(500).json({
       success: false,
       error: 'Erreur lors de la purge RGPD',
@@ -2562,7 +2579,7 @@ adminRouter.get(
       note: 'Ces données sont conservées conformément aux obligations légales de preuve'
     });
   } catch (error) {
-    console.error('Legal archive search error:', error);
+    secureLogger.error('Legal archive search error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -2619,7 +2636,7 @@ adminRouter.get(
       }
     });
   } catch (error) {
-    console.error('Admin audit logs error:', error);
+    secureLogger.error('Admin audit logs error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -2797,7 +2814,7 @@ adminRouter.get(
       },
     });
   } catch (error) {
-    console.error('GDPR exports monitoring error:', error);
+    secureLogger.error('GDPR exports monitoring error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -2853,7 +2870,7 @@ adminRouter.get(
       totalExports: exportLogs.length,
     });
   } catch (error) {
-    console.error('GDPR user exports error:', error);
+    secureLogger.error('GDPR user exports error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 });

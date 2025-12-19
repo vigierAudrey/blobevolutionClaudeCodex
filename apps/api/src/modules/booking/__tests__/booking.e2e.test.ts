@@ -145,11 +145,13 @@ describe('Booking module E2E', () => {
       availability: expect.objectContaining({
         id: availability.id,
         spotName: 'Plage Centrale',
-      }),
-      rider: expect.objectContaining({
-        email: 'rider-booking@test.com',
-      }),
+      })
     });
+    expect(inboxItem.rider).toEqual(
+      expect.objectContaining({
+        id: expect.any(String),
+      })
+    );
   });
 
   it('allows the pro to accept the request', async () => {

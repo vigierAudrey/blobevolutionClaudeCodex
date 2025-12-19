@@ -8,6 +8,7 @@ import { gdprExportService } from '../../services/gdpr-export.service';
 import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { requireProRole } from './pro.guard';
+import { secureLogger } from '../../utils/secure-logger';
 
 export const proRouter = Router();
 proRouter.use(requireAuth, requireVerifiedEmail);
@@ -47,7 +48,7 @@ const profileUpdateLimiter = rateLimit({
   },
   handler: (req, res) => {
     const userId = (req as any).user?.id;
-    console.warn(`⚠️ Rate limit exceeded for profile update: user=${userId}, ip=${req.ip}`);
+    secureLogger.security('Rate limit exceeded for profile update', { userId, ip: req.ip });
 
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfter = resetTime ? Math.ceil((resetTime.getTime() - Date.now()) / 1000) : 900;
@@ -222,8 +223,6 @@ proRouter.get('/near/lessons', requireProRole, async (req, res) => {
     if (sport !== 'surf' && sport !== 'kitesurf') return res.status(400).json({ error: 'Invalid sport' });
     const plat = me.lat, plng = me.lng;
 
-    console.log(`🗺️  Searching for ${sport} lessons within ${radiusKm}km of (${plat}, ${plng})`);
-
     // Optimized query using PostGIS and SQL filtering instead of JavaScript
     const candidates = await prisma.$queryRaw<LessonCandidateRow[]>(Prisma.sql`
       WITH active_matches AS (
@@ -272,8 +271,6 @@ proRouter.get('/near/lessons', requireProRole, async (req, res) => {
       LIMIT 500
     `);
 
-    console.log(`✅ Found ${candidates.length} riders wanting ${sport} lessons`);
-
     // No more JavaScript filtering needed - everything is done in SQL!
     const items = candidates.map((c: LessonCandidateRow) => ({
       id: c.id,
@@ -291,10 +288,9 @@ proRouter.get('/near/lessons', requireProRole, async (req, res) => {
     }))
       .slice(0, 500);
 
-    console.log(`📤 Returning ${items.length} lesson requests to pro`);
-
     return res.json({ items });
   } catch (err) {
+    secureLogger.error('Error fetching lesson candidates', { error: err });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -339,19 +335,20 @@ proRouter.get('/offers/me', requireProRole, async (req, res) => {
 
     return res.json({ offers: offersWithStats });
   } catch (err) {
-    console.error('Error fetching pro offer:', err);
+    secureLogger.error('Error fetching pro offer', { error: err });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
 
-// Create or update my offer
+// Create or update an offer (supports multiple offers per profil pro)
 proRouter.post('/offers', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Valider les données
-    const body = offerSchema.parse(req.body);
+    // Valider les données (offerId optionnel pour mise à jour)
+    const schema = offerSchema.extend({ offerId: z.string().uuid().optional() });
+    const body = schema.parse(req.body);
 
     // Récupérer le profil pro pour la géolocalisation
     const proProfile = await prisma.proProfile.findUnique({ where: { userId } });
@@ -360,19 +357,33 @@ proRouter.post('/offers', requireProRole, async (req, res) => {
       return res.status(400).json({ error: 'Geolocation required. Please update your pro profile with lat/lng first.' });
     }
 
-    const offer = await prisma.proOffer.upsert({
-      where: { proProfileId: proProfile.id },
-      update: {
-        sport: body.sport,
-        level: body.level,
-        title: body.title,
-        description: body.description,
-        hourlyRate: body.hourlyRate,
-        lat: proProfile.lat,
-        lng: proProfile.lng,
-        isActive: body.isActive,
-      },
-      create: {
+    // Si offerId fourni, mettre à jour l'offre existante (vérifier appartenance)
+    if (body.offerId) {
+      const existing = await prisma.proOffer.findFirst({
+        where: { id: body.offerId, proProfileId: proProfile.id },
+      });
+      if (!existing) return res.status(404).json({ error: 'Offer not found' });
+
+      const updated = await prisma.proOffer.update({
+        where: { id: body.offerId },
+        data: {
+          sport: body.sport,
+          level: body.level,
+          title: body.title,
+          description: body.description,
+          hourlyRate: body.hourlyRate,
+          lat: proProfile.lat,
+          lng: proProfile.lng,
+          isActive: body.isActive,
+        },
+      });
+
+      return res.json(updated);
+    }
+
+    // Sinon, créer une nouvelle offre pour ce profil pro
+    const offer = await prisma.proOffer.create({
+      data: {
         proProfileId: proProfile.id,
         sport: body.sport,
         level: body.level,
@@ -387,8 +398,12 @@ proRouter.post('/offers', requireProRole, async (req, res) => {
 
     return res.status(201).json(offer);
   } catch (err: any) {
-    console.error('Error creating/updating pro offer:', err);
-    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    // Don't log validation errors (400) - they are expected client errors
+    if (err?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    // Only log actual server errors (500)
+    secureLogger.error('Error creating/updating pro offer', { error: err });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -414,7 +429,7 @@ proRouter.delete('/offers/me', requireProRole, async (req, res) => {
 
     return res.status(204).send();
   } catch (err) {
-    console.error('Error deleting pro offer:', err);
+    secureLogger.error('Error deleting pro offer', { error: err });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -425,6 +440,9 @@ proRouter.patch('/offers/me/toggle', requireProRole, async (req, res) => {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+    const toggleSchema = z.object({ isActive: z.boolean() });
+    const { isActive } = toggleSchema.parse(req.body ?? {});
+
     // Récupérer le profil pro et son offre
     const proProfile = await prisma.proProfile.findUnique({
       where: { userId },
@@ -433,15 +451,22 @@ proRouter.patch('/offers/me/toggle', requireProRole, async (req, res) => {
 
     if (!proProfile?.offers || proProfile.offers.length === 0) return res.status(404).json({ error: 'No offer found' });
 
-    // Toggle le statut
-    const updatedOffer = await prisma.proOffer.update({
-      where: { id: proProfile.offers[0].id },
-      data: { isActive: !proProfile.offers[0].isActive }
+    // Appliquer l'état à toutes les offres du profil (pour rester cohérent multi-offres)
+    const updateResult = await prisma.proOffer.updateMany({
+      where: { proProfileId: proProfile.id },
+      data: { isActive, updatedAt: new Date() }
     });
 
-    return res.json(updatedOffer);
+    if (updateResult.count === 0) return res.status(404).json({ error: 'No offer found' });
+
+    const sample = await prisma.proOffer.findFirst({
+      where: { proProfileId: proProfile.id },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    return res.json(sample);
   } catch (err) {
-    console.error('Error toggling offer status:', err);
+    secureLogger.error('Error toggling offer status', { error: err });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -475,8 +500,12 @@ proRouter.post('/offers/:offerId/click', async (req, res) => {
 
     return res.status(204).send();
   } catch (err: any) {
-    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
-    console.error('Error registering offer click:', err);
+    // Don't log validation errors (400) - they are expected client errors
+    if (err?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    // Only log actual server errors (500)
+    secureLogger.error('Error registering offer click', { error: err });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -594,7 +623,7 @@ proRouter.get('/offers/search', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error searching offers:', err);
+    secureLogger.error('Error searching offers', { error: err });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -623,8 +652,7 @@ proRouter.get('/export', exportRateLimiter, async (req, res) => {
     // Send the data
     return res.json(exportData);
   } catch (err: any) {
-    // eslint-disable-next-line no-console
-    console.error('GDPR export error', err);
+    secureLogger.error('GDPR export error', { error: err });
     return res.status(500).json({ error: 'Erreur lors de l\'export de vos données' });
   }
 });
@@ -690,7 +718,7 @@ proRouter.post('/delete-account', async (req, res) => {
       daysRemaining: 30,
     });
   } catch (err: any) {
-    console.error('Account deletion error', err);
+    secureLogger.error('Account deletion error', { error: err });
     return res.status(500).json({ error: 'Erreur lors de la demande de suppression' });
   }
 });
@@ -756,7 +784,7 @@ proRouter.post('/cancel-deletion', async (req, res) => {
       cancelledAt: now,
     });
   } catch (err: any) {
-    console.error('Cancel deletion error', err);
+    secureLogger.error('Cancel deletion error', { error: err });
     return res.status(500).json({ error: 'Erreur lors de l\'annulation' });
   }
 });
@@ -793,7 +821,7 @@ proRouter.get('/deletion-status', async (req, res) => {
       daysRemaining,
     });
   } catch (err: any) {
-    console.error('Deletion status error', err);
+    secureLogger.error('Deletion status error', { error: err });
     return res.status(500).json({ error: 'Erreur lors de la vérification du statut' });
   }
 });

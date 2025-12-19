@@ -3,12 +3,22 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { loadBlobospherePreviews, type BlobosphereArticlePreview } from '@/lib/blobosphere/loadBlobospherePreviews';
 import { cn } from '@/lib/utils';
+import { AlertCircle, BookOpen, Heart, Leaf, Sparkles, Users } from 'lucide-react';
 import type { Metadata } from 'next';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { blobosphereTopics, type BlobosphereTopicSlug } from './static';
 
 type TopicFilterValue = BlobosphereTopicSlug | 'all';
+
+// Map des icônes Lucide pour chaque topic
+const topicIconsLucide: Record<BlobosphereTopicSlug | 'all', typeof Sparkles> = {
+  all: Sparkles,
+  surf: BookOpen,
+  kitesurf: Heart,
+  communaute: Users,
+  impact: Leaf,
+};
 
 const topicFilters = [
   { slug: 'all' as TopicFilterValue, label: 'Tous les sujets', icon: '✨', description: 'Vue globale des publications.' },
@@ -90,51 +100,58 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
         dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
         suppressHydrationWarning
       />
-      <section className="rounded-3xl border bg-gradient-to-br from-white via-sky-50 to-blue-50 px-6 py-10 shadow-sm sm:px-10 lg:py-14">
-        <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-blue-600 to-cyan-500 px-6 py-12 text-white shadow-xl sm:px-10 lg:py-16">
+        {/* Blur effects animés */}
+        <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-8 -left-8 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+
+        <div className="relative z-10 space-y-8">
           <div className="flex flex-wrap gap-3">
-            <Badge variant="secondary">Blobosphère</Badge>
-            <Badge variant="outline">Surf · Kite</Badge>
-            <Badge variant="outline">Équipement · Environnement · Santé</Badge>
-            <Badge variant="outline">Sécurité</Badge>
+            <Badge variant="secondary" className="bg-white/20 text-white hover:bg-white/30 border-0">Blobosphère</Badge>
+            <Badge variant="outline" className="border-white/40 bg-transparent text-white hover:bg-white/10">Surf · Kite</Badge>
+            <Badge variant="outline" className="border-white/40 bg-transparent text-white hover:bg-white/10">Équipement · Environnement · Santé</Badge>
+            <Badge variant="outline" className="border-white/40 bg-transparent text-white hover:bg-white/10">Sécurité</Badge>
           </div>
-          <div className="space-y-4">
-            <h1 className="text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl">
-              Le guide pour t’équiper, rider responsable et rester en forme
-            </h1>
-            <p className="text-lg text-muted-foreground">
-              Des articles courts pour bien choisir ton matériel, comprendre l’environnement (météo, spots, impact)
-              et prendre soin de ta santé. Bientôt: des interviews inspirantes. Chaque article
-              pointe aussi vers des ressources de confiance pour aller plus loin.
-            </p>
-            <div>
-              <Button asChild variant="outline">
-                <Link href="/">← Retour à l’accueil</Link>
-              </Button>
+
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-white/20 p-2.5 backdrop-blur-sm">
+              <Sparkles className="h-7 w-7" />
             </div>
+            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+              Le guide pour t'équiper, rider responsable et rester en forme
+            </h1>
           </div>
-          {/* Bloc statistiques retiré pour alléger la page */}
-          <div className="flex flex-wrap gap-3">
-            <Button asChild size="lg">
+
+          <p className="text-lg text-white/90">
+            Des articles courts pour bien choisir ton matériel, comprendre l'environnement (météo, spots, impact)
+            et prendre soin de ta santé. Bientôt: des interviews inspirantes. Chaque article
+            pointe aussi vers des ressources de confiance pour aller plus loin.
+          </p>
+
+          <div className="flex flex-wrap gap-4">
+            <Button asChild size="lg" className="bg-white text-sky-700 hover:bg-white/90 shadow-lg hover:shadow-xl transition-all border-0">
               <Link href="/register?intent=blobosphere">Créer un compte</Link>
             </Button>
-            <Button asChild variant="outline" size="lg">
+            <Button asChild variant="outline" size="lg" className="border-2 border-white/40 bg-transparent text-white hover:bg-white/10">
               <Link href="/login">Déjà membre ? Se connecter</Link>
             </Button>
-            <Button asChild variant="ghost" size="lg" className="text-sky-700 hover:text-sky-900">
+            <Button asChild variant="ghost" size="lg" className="bg-transparent text-white hover:bg-white/10">
               <Link href="/promos" className="inline-flex items-center gap-2">
                 Voir les promos actives
                 <span aria-hidden="true">→</span>
               </Link>
             </Button>
+            <Button asChild variant="ghost" size="lg" className="bg-transparent text-white hover:bg-white/10">
+              <Link href="/">← Retour à l'accueil</Link>
+            </Button>
           </div>
         </div>
       </section>
 
-      <section aria-labelledby="topics-title" className="space-y-6">
+      <section aria-labelledby="topics-title" className="space-y-8">
         <div className="space-y-3">
-          <p className="text-sm font-semibold text-sky-700">Rubriques</p>
-          <h2 id="topics-title" className="text-3xl font-semibold tracking-tight text-gray-900">
+          <p className="text-sm font-semibold text-sky-700 dark:text-sky-400">Rubriques</p>
+          <h2 id="topics-title" className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-slate-100">
             Choisis un thème
           </h2>
           <p className="text-base text-muted-foreground">
@@ -145,26 +162,29 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
         <TopicFilter activeTopic={activeTopic} />
       </section>
 
-      <section aria-labelledby="articles-title" className="space-y-6">
+      <section aria-labelledby="articles-title" className="space-y-8">
         <div className="space-y-3">
-          <p className="text-sm font-semibold text-sky-700">Articles</p>
-          <h2 id="articles-title" className="text-3xl font-semibold tracking-tight text-gray-900">
+          <p className="text-sm font-semibold text-sky-700 dark:text-sky-400">Articles</p>
+          <h2 id="articles-title" className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-slate-100">
             Sélection {activeTopic === 'all' ? 'Blobosphère' : topicMap.get(activeTopic)?.label}
           </h2>
           <p className="text-base text-muted-foreground">
-            Les guides publiés sont tirés directement des fichiers MDX (`apps/web/content/blobosphere`). Les brouillons restent cachés tant qu’ils ne sont pas publiés.
+            Les guides publiés sont tirés directement des fichiers MDX (`apps/web/content/blobosphere`). Les brouillons restent cachés tant qu'ils ne sont pas publiés.
           </p>
         </div>
         {filteredArticles.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="py-10 text-center">
-              <p className="text-base text-muted-foreground">
-                Aucun article publié pour cette rubrique pour l’instant. Sélectionne “Tous les sujets” ou publie un nouveau guide via l’admin.
-              </p>
+          <Card className="border-2 border-dashed border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20">
+            <CardContent className="py-10">
+              <div className="flex items-start justify-center gap-3">
+                <AlertCircle className="h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                <p className="text-base text-amber-700 dark:text-amber-300">
+                  Aucun article publié pour cette rubrique pour l'instant. Sélectionne "Tous les sujets" ou publie un nouveau guide via l'admin.
+                </p>
+              </div>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {filteredArticles.map((article) => {
               const topic = topicMap.get(article.topic as BlobosphereTopicSlug);
               return (
@@ -172,7 +192,6 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
                   key={article.slug}
                   article={article}
                   topicLabel={topic?.label ?? article.topic}
-                  topicIcon={topic?.icon ?? '📘'}
                 />
               );
             })}
@@ -200,19 +219,20 @@ function TopicFilter({ activeTopic }: { activeTopic: TopicFilterValue }) {
       {topicFilters.map((topic) => {
         const href = topic.slug === 'all' ? '/blobosphere' : `/blobosphere?topic=${topic.slug}`;
         const isActive = topic.slug === activeTopic;
+        const IconComponent = topicIconsLucide[topic.slug];
         return (
           <Link
             key={topic.slug}
             href={href}
             className={cn(
-              'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition',
+              'inline-flex items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition-all duration-200 hover:shadow-md',
               isActive
-                ? 'border-sky-600 bg-sky-600 text-white shadow-sm'
-                : 'border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:text-sky-900',
+                ? 'border-sky-600 bg-sky-600 text-white shadow-md'
+                : 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-sky-500 dark:hover:bg-sky-950',
             )}
             aria-current={isActive ? 'true' : undefined}
           >
-            <span aria-hidden="true">{topic.icon}</span>
+            <IconComponent className="h-4 w-4" />
             {topic.label}
           </Link>
         );
@@ -227,25 +247,32 @@ function TopicCardList({ activeTopic }: { activeTopic: TopicFilterValue }) {
       {blobosphereTopics.map((topic) => {
         const href = `/blobosphere?topic=${topic.slug}`;
         const isActive = topic.slug === activeTopic;
+        const IconComponent = topicIconsLucide[topic.slug as BlobosphereTopicSlug];
         return (
           <Link
             key={topic.slug}
             href={href}
             className={cn(
-              'group rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-lg',
-              isActive ? 'border-sky-500 bg-sky-50' : 'bg-white',
+              'group rounded-2xl border-2 p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg',
+              isActive
+                ? 'border-sky-500 bg-sky-50 dark:border-sky-400 dark:bg-sky-900/20'
+                : 'border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-sky-500 dark:hover:bg-sky-950/30',
             )}
             aria-current={isActive ? 'true' : undefined}
           >
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-sky-700">
-                  <span aria-hidden className="mr-1">{topic.icon}</span>
-                  {topic.label}
-                </p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="rounded-lg bg-sky-100 p-1.5 dark:bg-sky-900/30">
+                    <IconComponent className="h-4 w-4 text-sky-700 dark:text-sky-300" />
+                  </div>
+                  <p className="text-sm font-semibold text-sky-700 dark:text-sky-300">
+                    {topic.label}
+                  </p>
+                </div>
                 <p className="text-sm text-muted-foreground">{topic.description}</p>
               </div>
-              <span aria-hidden className="text-sky-700">→</span>
+              <span aria-hidden className="text-sky-700 transition-transform group-hover:translate-x-1 dark:text-sky-300">→</span>
             </div>
           </Link>
         );
@@ -257,36 +284,55 @@ function TopicCardList({ activeTopic }: { activeTopic: TopicFilterValue }) {
 function ArticleCard({
   article,
   topicLabel,
-  topicIcon,
 }: {
   article: BlobosphereArticlePreview;
   topicLabel: string;
-  topicIcon: string;
 }) {
   const href = `/blobosphere?topic=${article.topic}#${article.slug}`;
+  const IconComponent = topicIconsLucide[article.topic as BlobosphereTopicSlug] || BookOpen;
+
   return (
-    <article id={article.slug} className="flex h-full flex-col rounded-2xl border bg-white/95 p-6 shadow-sm">
-      <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-600">
-        <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-3 py-1 text-sky-700">
-          <span aria-hidden="true">{topicIcon}</span>
-          {topicLabel}
-        </span>
-        <span>{article.readingTime}</span>
+    <article
+      id={article.slug}
+      className="group flex h-full flex-col rounded-2xl border-2 border-transparent bg-white p-6 shadow-sm transition-all duration-200 hover:border-sky-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-sky-500"
+    >
+      <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+        <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+          <div className="rounded bg-sky-100 p-1 dark:bg-sky-900/50">
+            <IconComponent className="h-3 w-3 text-sky-700 dark:text-sky-300" />
+          </div>
+          <span className="font-semibold">{topicLabel}</span>
+        </div>
+        <span className="ml-auto text-muted-foreground">{article.readingTime}</span>
       </div>
-      <div className="mt-4 space-y-2">
-        <h3 className="text-xl font-semibold text-gray-900">{article.title}</h3>
+
+      <div className="mt-5 flex-1 space-y-3">
+        <h3 className="text-xl font-semibold text-gray-900 transition-colors group-hover:text-sky-700 dark:text-slate-100 dark:group-hover:text-sky-400">
+          {article.title}
+        </h3>
         <p className="text-sm text-muted-foreground">{article.excerpt}</p>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {article.tags.map((tag) => (
-          <Badge key={tag} variant="outline">
-            {tag}
-          </Badge>
-        ))}
-      </div>
+
+      {article.tags.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {article.tags.map((tag) => (
+            <Badge key={tag} variant="outline" className="text-xs">
+              {tag}
+            </Badge>
+          ))}
+        </div>
+      )}
+
       <div className="mt-6">
-        <Button asChild size="sm">
-          <Link href={href}>Lire</Link>
+        <Button
+          asChild
+          size="sm"
+          className="w-full bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-md transition-all hover:from-sky-700 hover:to-blue-700 hover:shadow-lg"
+        >
+          <Link href={href} className="inline-flex items-center justify-center gap-2">
+            Lire l'article
+            <span aria-hidden="true">→</span>
+          </Link>
         </Button>
       </div>
     </article>

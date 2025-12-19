@@ -3,13 +3,22 @@ import { resolveRedisUrl } from '../lib/redisConfig';
 
 // Redis client for caching (separate from rate limiting)
 let cacheClient: any = null;
+const shouldLogCache = process.env.NODE_ENV !== 'test' || process.env.ENABLE_TEST_LOGS === 'true';
+const logInfo = (...args: Parameters<typeof console.log>) => { if (shouldLogCache) console.log(...args); };
+const logWarn = (...args: Parameters<typeof console.warn>) => { if (shouldLogCache) console.warn(...args); };
+const logError = (...args: Parameters<typeof console.error>) => console.error(...args);
 
 // Initialize Redis cache client
 export async function initializeCache(): Promise<any> {
   // Enable cache in both development and production
   const redisUrl = resolveRedisUrl();
 
-  console.log('🔗 Connecting to Redis at:', redisUrl);
+  if (redisUrl == null) {
+    logWarn('⚠️ Redis URL not provided, cache disabled');
+    return null;
+  }
+
+  logInfo('🔗 Connecting to Redis at:', redisUrl);
 
   try {
     const client = createClient({
@@ -22,15 +31,15 @@ export async function initializeCache(): Promise<any> {
     });
 
     client.on('error', (error: Error) => {
-      console.error('❌ Redis error:', error.message);
+      logError('❌ Redis error:', error.message);
     });
 
     await client.connect();
     await client.ping();
-    console.log('✅ Redis cache connected');
+    logInfo('✅ Redis cache connected');
     return client;
   } catch (error) {
-    console.error('❌ Redis cache connection failed:', error);
+    logError('❌ Redis cache connection failed:', error);
     return null;
   }
 }
@@ -66,7 +75,7 @@ export class CacheService {
       const value = await this.client.get(key);
       return value ? JSON.parse(value) : null;
     } catch (error) {
-      console.error(`Cache get error for key ${key}:`, error);
+      logError(`Cache get error for key ${key}:`, error);
       return null;
     }
   }
@@ -78,7 +87,7 @@ export class CacheService {
       await this.client.setEx(key, ttlSeconds, JSON.stringify(value));
       return true;
     } catch (error) {
-      console.error(`Cache set error for key ${key}:`, error);
+      logError(`Cache set error for key ${key}:`, error);
       return false;
     }
   }
@@ -90,7 +99,7 @@ export class CacheService {
       await this.client.del(key);
       return true;
     } catch (error) {
-      console.error(`Cache delete error for key ${key}:`, error);
+      logError(`Cache delete error for key ${key}:`, error);
       return false;
     }
   }
@@ -143,10 +152,10 @@ export class CacheService {
       const keys = await this.client.keys(pattern);
       if (keys.length > 0) {
         await this.client.del(keys);
-        console.log(`🗑️ Invalidated ${keys.length} matching cache entries`);
+        logInfo(`🗑️ Invalidated ${keys.length} matching cache entries`);
       }
     } catch (error) {
-      console.error('Cache invalidation error:', error);
+      logError('Cache invalidation error:', error);
     }
   }
 
@@ -162,10 +171,10 @@ export class CacheService {
       const keys = await this.client.keys(pattern);
       if (keys.length > 0) {
         await this.client.del(keys);
-        console.log(`🗑️ Invalidated ${keys.length} availability cache entries`);
+        logInfo(`🗑️ Invalidated ${keys.length} availability cache entries`);
       }
     } catch (error) {
-      console.error('Cache invalidation error:', error);
+      logError('Cache invalidation error:', error);
     }
   }
 
@@ -189,7 +198,7 @@ export class CacheService {
   public async close(): Promise<void> {
     if (this.client) {
       await this.client.quit();
-      console.log('✅ Redis cache client closed');
+      logInfo('✅ Redis cache client closed');
     }
   }
 }

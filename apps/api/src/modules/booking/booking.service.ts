@@ -6,6 +6,7 @@ import { notifyBookingAccepted, notifyBookingRejected } from '../push/push.contr
 import { withTransactionRetry } from '../../utils/transaction-retry';
 import type { CreateAvailabilityInput } from './dto/createAvailability.dto';
 import type { SearchAvailabilityInput } from './dto/searchAvailability.dto';
+import { secureLogger } from '../../utils/secure-logger';
 
 type SearchAvailabilityFilters = SearchAvailabilityInput & {
   cursor?: string;
@@ -28,7 +29,7 @@ export class BookingService {
     try {
       await cacheService.invalidateAvailabilities(data.spotLat ?? undefined, data.spotLng ?? undefined);
     } catch (error) {
-      console.warn('⚠️  Failed to invalidate availability cache after creation', error);
+      secureLogger.warn('Failed to invalidate availability cache after creation', { error });
     }
 
     return availability;
@@ -167,7 +168,7 @@ export class BookingService {
     try {
       await cacheService.invalidateAvailabilities(updated.spotLat ?? undefined, updated.spotLng ?? undefined);
     } catch (error) {
-      console.warn('⚠️  Failed to invalidate availability cache after update', error);
+      secureLogger.warn('Failed to invalidate availability cache after update', { error });
     }
 
     return updated;
@@ -238,7 +239,7 @@ export class BookingService {
         updatedAvailability.spotLng ?? undefined
       );
     } catch (error) {
-      console.warn('⚠️  Failed to invalidate availability cache after bookedCount adjustment', error);
+      secureLogger.warn('Failed to invalidate availability cache after bookedCount adjustment', { error });
     }
 
     return updatedAvailability;
@@ -285,7 +286,7 @@ export class BookingService {
     try {
       await cacheService.invalidateAvailabilities(availability.spotLat ?? undefined, availability.spotLng ?? undefined);
     } catch (error) {
-      console.warn('⚠️  Failed to invalidate availability cache after deletion', error);
+      secureLogger.warn('Failed to invalidate availability cache after deletion', { error });
     }
 
     return { success: true, message: 'Availability deleted' };
@@ -308,8 +309,6 @@ export class BookingService {
 
     const cachedAvailabilities = await cacheService.getAvailabilities(cacheKey) as CachedAvailability[] | null;
     if (cachedAvailabilities && cacheService.isAvailable()) {
-      console.log('🚀 Cache hit for availabilities');
-
       if (useCursorPagination) {
         // Cursor-based pagination on cached results
         const startIndex = cursor ? cachedAvailabilities.findIndex((availability: CachedAvailability) => availability.id === cursor) + 1 : 0;
@@ -387,7 +386,6 @@ export class BookingService {
     // Cache the results for future requests
     if (formattedResults.length > 0 && cacheService.isAvailable()) {
       await cacheService.setAvailabilities(cacheKey, formattedResults, 180); // 3 minutes cache
-      console.log(`💾 Cached ${formattedResults.length} availability results`);
     }
 
     return formattedResults;
@@ -580,7 +578,6 @@ export class BookingService {
       const { requestData } = result;
 
       if (action === 'accept') {
-        console.log('📬 Sending booking accepted notification');
         await notifyBookingAccepted(requestData.riderUserId, {
           proName: requestData.availability?.pro?.proProfile?.businessName || 'Instructeur',
           spotName: requestData.availability?.spotName || 'Spot à définir',
@@ -588,7 +585,6 @@ export class BookingService {
           conversationId: (requestData as any).conversationId, // Conversation créée automatiquement
         });
       } else {
-        console.log('📬 Sending booking rejected notification');
         await notifyBookingRejected(requestData.riderUserId, {
           proName: requestData.availability?.pro?.proProfile?.businessName || 'Instructeur',
           spotName: requestData.availability?.spotName || 'Spot à définir',
@@ -597,7 +593,7 @@ export class BookingService {
       }
     } catch (notificationError) {
       // Log notification errors but don't fail the request
-      console.error('❌ Failed to send push notification:', notificationError);
+      secureLogger.error('Failed to send push notification', { error: notificationError });
     }
 
     return { success: true, action };

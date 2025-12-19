@@ -38,6 +38,7 @@ model User {
   contactRequests         ContactRequest[]         @relation("ProContactRequests")
   contactResponses        ContactRequestResponse[] @relation("RiderContactResponses")
   proAvailabilities       ProAvailability[]        @relation("ProAvailabilityOnUser")
+  proOfferClicks          ProOfferClick[]
   bookingRequests         BookingRequest[]         @relation("BookingRequestOnUser")
   bookings                Booking[]                @relation("BookingOnUser")
   auditLogs              AuditLog[]
@@ -372,7 +373,7 @@ model Message {
 
 model ProOffer {
   id           String     @id @default(uuid())
-  proProfileId String     @unique
+  proProfileId String
   sport        Sport
   level        Level
   title        String

@@ -140,8 +140,6 @@ matchingRouter.post('/search', async (req, res) => {
 
     const cachedResults = await cacheService.getMatchingResults(cacheKey);
     if (cachedResults && cacheService.isAvailable()) {
-      console.log('🚀 Cache hit for matching results');
-
       const myProfileId = profile?.id ?? null;
       const excludeIdsSet = new Set<string>(
         Array.isArray(req.body.excludeIds) ? (req.body.excludeIds as string[]) : []
@@ -340,7 +338,6 @@ matchingRouter.post('/search', async (req, res) => {
       // Cache all results for future requests (reuse allResults, no second query needed)
       if (allResults.length > 0 && cacheService.isAvailable()) {
         await cacheService.setMatchingResults(cacheKey, allResults, 300); // 5 minutes cache
-        console.log(`💾 Cached ${allResults.length} matching results`);
       }
     }
 

@@ -2,12 +2,17 @@ import { clientPrisma as prisma } from '@blobinfini/database';
 import { closeRateLimitStore } from './src/middleware/enhanced-rate-limit';
 import { cacheService } from './src/services/cache.service';
 
-const SUPPRESSED_PUSH_WARNING = 'PUSH_SERVICE_DISABLED';
+const SUPPRESSED_WARNINGS = [
+  'PUSH_SERVICE_DISABLED',
+  '[mailer]',
+  'TWO_FACTOR_MEMORY_FALLBACK_USED',
+  'TWO_FACTOR_EMAIL_FAILED',
+];
 const originalConsoleWarn = console.warn;
 
 console.warn = (...args: Parameters<typeof console.warn>) => {
   const [firstArg] = args;
-  if (typeof firstArg === 'string' && firstArg.includes(SUPPRESSED_PUSH_WARNING)) {
+  if (typeof firstArg === 'string' && SUPPRESSED_WARNINGS.some((token) => firstArg.includes(token))) {
     return;
   }
   originalConsoleWarn(...args);

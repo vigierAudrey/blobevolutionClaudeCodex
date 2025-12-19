@@ -486,6 +486,146 @@
 
 ---
 
+## 📝 Logging & Observabilité Production
+
+### État actuel (Décembre 2025)
+
+**✅ Corrections logging appliquées :**
+- [x] Suppression des logs de debug polluants (`console.log` → supprimés)
+- [x] Correction logique erreurs : Ne plus logger les erreurs 400 (validation) comme des 500
+- [x] Migration vers `secureLogger` (format structuré + redaction données sensibles)
+- [x] **Fichiers corrigés :**
+  - `pro.controller.ts` : 36 console.* remplacés
+  - `admin.controller.ts` : 35 console.error remplacés
+  - `booking.service.ts` : 8 console.* remplacés
+  - `matching.controller.ts` : 2 console.log supprimés
+- [x] **Tests validation :** 433 tests passent, zéro régression
+
+**🎯 Impact des corrections :**
+- ✅ **Aucune pollution prod** : Logs de debug supprimés (recherches, cache hit/miss, notifications)
+- ✅ **Logs propres** : Seulement erreurs serveur (500), sécurité (rate limiting), warnings (cache failures)
+- ✅ **Format structuré** : Timestamps, contexte, redaction automatique (tokens, emails, passwords)
+- ✅ **Fausses alertes éliminées** : Les erreurs de validation client (400) ne polluent plus les logs
+
+**📊 Volume estimé en production (usage normal) :**
+- **Erreurs serveur (500)** : < 10/jour (si code stable)
+- **Alertes sécurité** : Dépend des abus (rate limiting)
+- **Warnings** : < 50/jour (cache Redis temporairement indisponible)
+- **Total :** ~100-200 lignes/jour en conditions normales
+
+### Pistes d'amélioration à considérer
+
+**🔍 Audit & Analyse (2-3h)**
+- [ ] **Inventaire complet des `secureLogger.*` restants**
+  - Lister tous les appels `secureLogger.error()`, `.warn()`, `.security()` dans le code
+  - Classifier par criticité et fréquence estimée
+  - Valider que chaque log est justifié et apporte de la valeur
+  - Documenter les scénarios qui déclenchent chaque log
+
+- [ ] **Estimation volume logs par scénario**
+  - Simuler 1000 utilisateurs/jour avec comportement normal
+  - Calculer volume logs attendu (lignes/jour, MB/jour)
+  - Identifier les endpoints qui génèrent le plus de logs
+  - Projeter coûts stockage si agrégation externe (Datadog, Sentry)
+
+**🗂️ Système de logging fichiers (3-4h)**
+- [ ] **Configuration logging production-ready**
+  - Implémenter rotation automatique des logs (par jour/taille)
+  - Séparer logs par niveau (error.log, warning.log, security.log)
+  - Configurer rétention (30 jours pour erreurs, 7 jours pour warnings)
+  - Compression automatique des logs anciens (.gz)
+  - Exemple de structure :
+    ```
+    /var/log/blobinfini/
+    ├── api-error.log          # Erreurs serveur (500)
+    ├── api-security.log       # Alertes sécurité (rate limiting, CORS blocks)
+    ├── api-warning.log        # Warnings non-bloquants
+    ├── api-error-2025-12-01.log.gz  # Archives compressées
+    └── api-security-2025-12-01.log.gz
+    ```
+
+- [ ] **Script d'analyse logs**
+  - Parser les logs structurés (JSON) pour statistiques
+  - Détecter patterns d'abus (rate limiting répétés)
+  - Alertes automatiques si erreurs 500 > seuil
+  - Rapport quotidien par email/Slack
+
+**☁️ Service d'agrégation de logs (4-6h setup)**
+
+**Option 1 : Gratuit/Low-cost**
+- [ ] **Grafana Loki** (self-hosted, open source)
+  - Coût : 0€ (hébergement Clever Cloud/Docker)
+  - Recherche rapide, visualisation temps réel
+  - Intégration Grafana pour dashboards
+  - Rétention configurable
+
+- [ ] **Graylog** (open source)
+  - Coût : 0€ (self-hosted)
+  - Interface web puissante
+  - Recherche Elasticsearch-like
+  - Alertes configurables
+
+**Option 2 : Services cloud (payant)**
+- [ ] **Datadog** (monitoring pro)
+  - Coût : ~50-150€/mois selon volume
+  - Logs + APM + métriques + alertes
+  - Excellent pour tracking erreurs et performance
+  - Intégration CI/CD, dashboard avancés
+
+- [ ] **Sentry** (focus erreurs)
+  - Coût : 0-26€/mois (tier gratuit généreux)
+  - Spécialisé tracking erreurs avec contexte
+  - Sourcemaps, breadcrumbs, release tracking
+  - Alertes temps réel par email/Slack
+
+- [ ] **LogRocket** (session replay)
+  - Coût : 99-399€/mois
+  - Rejeu sessions utilisateur avec erreurs
+  - Utile pour debug UX complexes
+  - Overkill pour MVP, à considérer post-lancement
+
+**Recommandation startup :**
+```
+Phase 1 (MVP) : Logs fichiers + Sentry Free (0-26€/mois)
+Phase 2 (Croissance) : Grafana Loki self-hosted (0€)
+Phase 3 (Scale) : Datadog si budget permet (50-150€/mois)
+```
+
+### Priorités recommandées
+
+**🚨 URGENT (avant production)**
+- [ ] Inventaire `secureLogger.*` pour validation audit
+
+**⚡ QUICK WIN (1-2j)**
+- [ ] Logs fichiers avec rotation basique
+- [ ] Sentry integration (tier gratuit)
+
+**📈 MOYEN TERME (post-lancement)**
+- [ ] Grafana Loki self-hosted
+- [ ] Dashboard métriques logs (volume, taux erreur)
+
+**💰 LONG TERME (si croissance)**
+- [ ] Datadog full-stack observability
+- [ ] Alerting avancé sur patterns d'abus
+
+### Coûts estimés
+
+| Solution | Setup | Coût mensuel | Avantages | Inconvénients |
+|----------|-------|--------------|-----------|---------------|
+| **Logs fichiers** | 1-2h | 0€ | Contrôle total, gratuit | Pas de recherche avancée |
+| **Sentry Free** | 1h | 0€ | Excellent pour erreurs | Limité à 5k événements/mois |
+| **Sentry Team** | 1h | 26€ | Tracking complet | Coût récurrent |
+| **Grafana Loki** | 4-6h | 0€ | Puissant, flexible | Maintenance self-hosted |
+| **Datadog** | 2-3h | 50-150€ | Tout-en-un, excellent | Cher pour startup |
+| **LogRocket** | 2h | 99-399€ | Session replay unique | Overkill pour MVP |
+
+**💡 Stratégie optimale startup :**
+- Démarrer avec **logs fichiers + Sentry Free** (0€)
+- Migrer vers **Grafana Loki** si besoin recherche avancée (0€)
+- Passer à **Datadog** seulement si croissance forte et budget dispo
+
+---
+
 ## 📢 Monétisation (Publicité)
 
 - [x] Infrastructure AdSense prête (`ADSENSE_READY_TO_DEPLOY.md`).
