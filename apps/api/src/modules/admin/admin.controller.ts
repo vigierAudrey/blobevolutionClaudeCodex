@@ -444,6 +444,22 @@ adminRouter.patch(
       verified: z.boolean()
     }).parse(req.body);
 
+    const existingProfile = await prisma.proProfile.findUnique({
+      where: { userId },
+      select: { id: true, lat: true, lng: true },
+    });
+
+    if (!existingProfile) {
+      return res.status(404).json({ error: 'Pro profile not found' });
+    }
+
+    if (verified && (existingProfile.lat == null || existingProfile.lng == null)) {
+      return res.status(400).json({
+        error: 'Missing pro location',
+        message: 'La géolocalisation est requise pour rendre un profil pro visible.',
+      });
+    }
+
     const proProfile = await prisma.proProfile.update({
       where: { userId },
       data: { verified },

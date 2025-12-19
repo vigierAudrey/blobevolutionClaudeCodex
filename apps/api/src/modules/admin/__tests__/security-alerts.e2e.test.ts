@@ -15,6 +15,21 @@ import { clientPrisma as prisma } from '@blobinfini/database';
 
 const app = createApp();
 
+type AlertMetadata = {
+  endpoint?: string;
+  userRole?: string;
+  attemptedAction?: string;
+  userId?: string;
+  userEmail?: string;
+  action?: string;
+  timestamp?: string;
+  ip?: string | null;
+  userAgent?: string | null;
+};
+
+const getAlertMetadata = (value: unknown): AlertMetadata =>
+  typeof value === 'object' && value !== null ? (value as AlertMetadata) : {};
+
 const ensureSecrets = () => {
   process.env.JWT_SECRET ||= 'test-jwt-secret';
   process.env.ADMIN_EMAIL ||= 'admin-test@blobinfini.com';
@@ -154,7 +169,7 @@ describe('Security Alerts System E2E Tests', () => {
       expect(alerts[0].message).toContain('PRO');
       expect(alerts[0].message).toContain('RIDER');
 
-      const metadata = alerts[0].metadata as any;
+      const metadata = getAlertMetadata(alerts[0].metadata);
       expect(metadata.endpoint).toBe('GET /profile/me');
       expect(metadata.userRole).toBe('PRO');
     });
@@ -181,7 +196,7 @@ describe('Security Alerts System E2E Tests', () => {
       });
 
       expect(alerts).toHaveLength(1);
-      const metadata = alerts[0].metadata as any;
+      const metadata = getAlertMetadata(alerts[0].metadata);
       expect(metadata.endpoint).toBe('PUT /profile/me');
     });
 
@@ -201,7 +216,7 @@ describe('Security Alerts System E2E Tests', () => {
       });
 
       expect(alerts).toHaveLength(1);
-      const metadata = alerts[0].metadata as any;
+      const metadata = getAlertMetadata(alerts[0].metadata);
       expect(metadata.endpoint).toBe('POST /profile/photo/upload-url');
     });
   });
@@ -222,7 +237,7 @@ describe('Security Alerts System E2E Tests', () => {
 
       expect(alerts).toHaveLength(1);
       expect(alerts[0].severity).toBe('CRITICAL');
-      const metadata = alerts[0].metadata as any;
+      const metadata = getAlertMetadata(alerts[0].metadata);
       expect(metadata.userRole).toBe('RIDER');
       expect(metadata.endpoint).toContain('GET /pro/me');
     });
@@ -268,7 +283,7 @@ describe('Security Alerts System E2E Tests', () => {
 
       expect(alerts).toHaveLength(1);
       expect(alerts[0].severity).toBe('CRITICAL');
-      const metadata = alerts[0].metadata as any;
+      const metadata = getAlertMetadata(alerts[0].metadata);
       expect(metadata.userRole).toBe('ADMIN');
       expect(metadata.attemptedAction).toContain('potentiellement compromis');
     });
@@ -296,7 +311,7 @@ describe('Security Alerts System E2E Tests', () => {
       expect(res.status).toBe(403);
       expect(alerts).toHaveLength(1);
       expect(alerts[0].severity).toBe('CRITICAL');
-      const metadata = alerts[0].metadata as any;
+      const metadata = getAlertMetadata(alerts[0].metadata);
       expect(metadata.userRole).toBe('ADMIN');
       expect(metadata.attemptedAction).toContain('potentiellement compromis');
     });
@@ -315,7 +330,7 @@ describe('Security Alerts System E2E Tests', () => {
       });
 
       expect(alerts).toHaveLength(1);
-      const metadata = alerts[0].metadata as any;
+      const metadata = getAlertMetadata(alerts[0].metadata);
 
       // Vérifier que toutes les informations de contexte sont présentes
       expect(metadata).toHaveProperty('userId');
@@ -364,7 +379,7 @@ describe('Security Alerts System E2E Tests', () => {
 
       console.log('Total alerts created:', alerts.length);
       alerts.forEach((alert, i) => {
-        const metadata = alert.metadata as any;
+        const metadata = getAlertMetadata(alert.metadata);
         console.log(`Alert ${i + 1}: ${metadata.endpoint}`);
       });
 

@@ -5,6 +5,7 @@ import { ROLE_PERMISSIONS } from './permissions';
 import { secureLogger } from '../../utils/secure-logger';
 
 type AdminGuardRequest = Request & {
+  user?: { id: string; role?: string };
   adminProfile?: {
     permissions: Permission[];
     email?: string | null;
@@ -24,7 +25,7 @@ async function loadAdminProfile(req: AdminGuardRequest) {
     return req.adminProfile;
   }
 
-  const user = (req as any).user as { id: string; role: string } | undefined;
+  const user = req.user;
   if (!user) {
     return null;
   }
@@ -75,8 +76,8 @@ async function loadAdminProfile(req: AdminGuardRequest) {
 }
 
 export const requirePermissions = (...permissions: Permission[]) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as any).user as { id: string; role: string } | undefined;
+  return async (req: AdminGuardRequest, res: Response, next: NextFunction) => {
+    const user = req.user;
     if (!user || user.role !== 'ADMIN') {
       secureLogger.warn('ADMIN_ACCESS_DENIED', {
         userId: user?.id,

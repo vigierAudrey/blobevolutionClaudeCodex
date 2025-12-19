@@ -41,6 +41,7 @@ model User {
   proOfferClicks          ProOfferClick[]
   bookingRequests         BookingRequest[]         @relation("BookingRequestOnUser")
   bookings                Booking[]                @relation("BookingOnUser")
+  availabilityInteractions ProAvailabilityInteraction[] @relation("RiderAvailabilityInteractions")
   auditLogs              AuditLog[]
   pushTokens             PushToken[]
   loginAttempts          LoginAttempt[]
@@ -256,6 +257,7 @@ model ProAvailability {
   updatedAt    DateTime      @updatedAt
   bookings     Booking[]     @relation("BookingOnAvailability")
   requests     BookingRequest[] @relation("BookingRequestOnAvailability")
+  interactions ProAvailabilityInteraction[] @relation("AvailabilityInteractions")
   pro          User          @relation("ProAvailabilityOnUser", fields: [proUserId], references: [id], onDelete: Cascade)
 
   @@index([proUserId])
@@ -296,6 +298,22 @@ model Booking {
   @@unique([availabilityId, riderUserId])
 }
 
+model ProAvailabilityInteraction {
+  id             String          @id @default(uuid())
+  availabilityId String
+  riderUserId    String
+  eventType      InteractionType
+  createdAt      DateTime        @default(now())
+  availability   ProAvailability @relation("AvailabilityInteractions", fields: [availabilityId], references: [id], onDelete: Cascade)
+  rider          User            @relation("RiderAvailabilityInteractions", fields: [riderUserId], references: [id], onDelete: Cascade)
+
+  @@unique([availabilityId, riderUserId, eventType])
+  @@index([availabilityId])
+  @@index([riderUserId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
 enum AvailabilityStatus {
   OPEN
   CLOSED
@@ -311,6 +329,13 @@ enum BookingStatus {
   CONFIRMED
   CANCELLED_RIDER
   CANCELLED_PRO
+}
+
+enum InteractionType {
+  VIEW
+  CLICK
+  REQUEST
+  BOOKING
 }
 
 model Match {
@@ -333,6 +358,7 @@ model Conversation {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
   type           ConversationType     @default(RIDER_TO_RIDER)
+  directKey      String?              @unique
   match          Match?               @relation(fields: [matchId], references: [id])
   members        ConversationMember[]
   messages       Message[]

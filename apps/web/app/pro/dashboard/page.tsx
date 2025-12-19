@@ -139,6 +139,23 @@ export default function ProDashboardPage() {
         </div>
       )}
 
+      <div className="rounded-[1.75rem] border border-amber-200/70 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100 px-5 py-4 shadow-sm dark:border-amber-900/40 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
+        <div className="flex items-start gap-3">
+          <Map className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0 dark:text-amber-300" />
+          <div className="flex-1">
+            <p className="font-medium text-amber-900 dark:text-amber-100">Renseigne ta localisation</p>
+            <p className="text-sm text-amber-800 mt-1 dark:text-amber-100/80">
+              Ta latitude/longitude sont obligatoires pour apparaître dans la recherche des riders et calculer les distances. Ton adresse précise n’est pas affichée.
+            </p>
+            <Link href="/pro/profile" className="inline-block mt-2">
+              <Button size="sm" variant="ghost" className="text-amber-800 p-0 h-auto hover:bg-transparent dark:text-amber-100 dark:hover:bg-white/10">
+                Mettre à jour ma localisation →
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+
       {/* Section Gérer mon activité */}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
@@ -252,27 +269,28 @@ export default function ProDashboardPage() {
             </Card>
           </Link>
 
-          {/* Propositions de Sessions */}
-          <Link href="/pro/offers" className="group">
-            <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-blue-300 rounded-[1.75rem]">
+          {/* Créneaux & réservations */}
+          <Link href="/pro/planning" className="group">
+            <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-emerald-300 rounded-[1.75rem]">
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-500 text-white group-hover:scale-110 transition-transform">
-                    <Percent size={20}/>
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white group-hover:scale-110 transition-transform">
+                    <Calendar size={20}/>
                   </div>
                   <div>
-                    <CardTitle>Mes Sessions</CardTitle>
-                    <CardDescription>Offres de cours pour attirer des élèves</CardDescription>
+                    <CardTitle>Mes créneaux & réservations</CardTitle>
+                    <CardDescription>Publier, suivre et gérer tes slots</CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Créer et gérer tes propositions de sessions personnalisées.
+                  Crée des disponibilités, vois les demandes et confirme les réservations en un clin d’œil.
                 </p>
               </CardContent>
             </Card>
           </Link>
+
         </div>
       </div>
 

@@ -105,6 +105,7 @@ export async function getAccessToken({
   const { email, password = TEST_PASSWORD, role = Role.RIDER, emailVerified = true } = userOptions;
 
   await getOrCreateUserByEmail({ email, password, role, emailVerified });
+  const user = await prisma.user.findUnique({ where: { email } });
 
   const login = await session
     .post('/auth/login')
@@ -115,6 +116,7 @@ export async function getAccessToken({
     accessToken: login.body.accessToken as string,
     refreshToken: login.body.refreshToken as string,
     session,
+    userId: user?.id as string,
   };
 }
 

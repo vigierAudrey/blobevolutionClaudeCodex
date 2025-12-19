@@ -19,6 +19,11 @@ describe('BookingService Validation', () => {
       }
     });
     testProUserId = testPro.id;
+    await prisma.proProfile.upsert({
+      where: { userId: testProUserId },
+      create: { userId: testProUserId, lat: 43.5, lng: -1.5, verified: true },
+      update: { lat: 43.5, lng: -1.5 },
+    });
 
     const anotherPro = await prisma.user.create({
       data: {
@@ -29,6 +34,11 @@ describe('BookingService Validation', () => {
       }
     });
     anotherProUserId = anotherPro.id;
+    await prisma.proProfile.upsert({
+      where: { userId: anotherProUserId },
+      create: { userId: anotherProUserId, lat: 43.501, lng: -1.51, verified: true },
+      update: { lat: 43.501, lng: -1.51 },
+    });
   });
 
   afterEach(async () => {

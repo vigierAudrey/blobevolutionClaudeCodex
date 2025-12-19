@@ -202,12 +202,6 @@ type MatchingSearchParams = {
   [key: string]: unknown;
 };
 
-type OffersSearchParams = {
-  sport?: string;
-  level?: string;
-  [key: string]: unknown;
-};
-
 export const CacheKeys = {
   user: () => 'user:me',
   profile: () => 'profile:me',
@@ -222,8 +216,6 @@ export const CacheKeys = {
   },
   proAvailabilities: () => 'pro:availabilities',
   proInbox: () => 'pro:inbox',
-  offers: (params: OffersSearchParams) =>
-    `offers:${params.sport || 'all'}:${params.level || 'all'}`,
 };
 
 // Cache TTL constants (in milliseconds)

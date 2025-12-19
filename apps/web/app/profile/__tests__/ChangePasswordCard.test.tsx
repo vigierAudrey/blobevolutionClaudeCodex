@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ChangePasswordCard } from '../ChangePasswordCard';
+import { ChangePasswordCard } from '@/components/profile/ChangePasswordCard';
 import { apiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/ui/toast';
 

@@ -3,7 +3,7 @@
 // Force SSR for dynamic user-specific features
 export const dynamic = 'force-dynamic';
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import Link from 'next/link';
 import dynamicImport from 'next/dynamic';
 import { Button } from '../../../components/ui/button';
@@ -12,7 +12,7 @@ import { Badge } from '../../../components/ui/badge';
 import { Slider } from '../../../components/ui/slider';
 import { ReservationStepper } from '../../../components/reservations/ReservationStepper';
 import { RiderMiniaturesStrip } from '../../../components/reservations/RiderMiniaturesStrip';
-import { apiClient, type BookingAvailabilityResult } from '../../../lib/apiClient';
+import { apiClient, type BookingAvailabilityResult, type NearbyProResult } from '../../../lib/apiClient';
 
 const AvailabilityMap = dynamicImport(() => import('../../../components/MapComponent'), { ssr: false });
 
@@ -46,8 +46,11 @@ export default function ReservationStartPage() {
   const [selectedLevel, setSelectedLevel] = useState<'beginner' | 'intermediate' | 'advanced' | null>(null);
   const [distanceKm, setDistanceKm] = useState(25);
   const [results, setResults] = useState<BookingAvailabilityResult[]>([]);
+  const [nearbyPros, setNearbyPros] = useState<NearbyProResult[]>([]);
   const [loadingResults, setLoadingResults] = useState(false);
+  const [loadingPros, setLoadingPros] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [prosError, setProsError] = useState<string | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>({ lat: 43.493, lng: -1.558 });
   const [manualLat, setManualLat] = useState('43.493');
   const [manualLng, setManualLng] = useState('-1.558');
@@ -55,6 +58,8 @@ export default function ReservationStartPage() {
   const [geoMessage, setGeoMessage] = useState<string | null>(null);
   const [requestingSlot, setRequestingSlot] = useState<BookingAvailabilityResult | null>(null);
   const [requestSuccess, setRequestSuccess] = useState<{ spotName: string | null; startAt: string } | null>(null);
+  const [contactPro, setContactPro] = useState<NearbyProResult | null>(null);
+  const [contactSuccess, setContactSuccess] = useState<string | null>(null);
 
   const steps = useMemo(() => ['Préférences', 'Zone', 'Résultats'], []);
   const safeResults = useMemo(() => (Array.isArray(results) ? results : []), [results]);
@@ -68,10 +73,13 @@ export default function ReservationStartPage() {
 
     let cancelled = false;
     const loadResults = async () => {
-      try {
-        setLoadingResults(true);
-        setError(null);
-        const response = await apiClient.searchBookingAvailability({
+      setLoadingResults(true);
+      setLoadingPros(true);
+      setError(null);
+      setProsError(null);
+
+      const [availabilityResult, prosResult] = await Promise.allSettled([
+        apiClient.searchBookingAvailability({
           sport: selectedSport,
           level: selectedLevel,
           lat: location.lat,
@@ -79,30 +87,45 @@ export default function ReservationStartPage() {
           radiusKm: distanceKm,
           page: 1,
           pageSize: 20,
-        });
-        if (!cancelled) {
-          setResults(response.results);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(getErrorMessage(err, 'Erreur lors du chargement des disponibilités'));
-          setResults([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingResults(false);
-        }
+        }),
+        apiClient.searchNearbyPros({
+          lat: location.lat,
+          lng: location.lng,
+          radiusKm: distanceKm,
+          sport: selectedSport ?? undefined,
+        }),
+      ]);
+
+      if (cancelled) {
+        return;
       }
+
+      if (availabilityResult.status === 'fulfilled') {
+        setResults(availabilityResult.value.results);
+      } else {
+        setError(getErrorMessage(availabilityResult.reason, 'Erreur lors du chargement des disponibilités'));
+        setResults([]);
+      }
+
+      if (prosResult.status === 'fulfilled') {
+        setNearbyPros(prosResult.value.pros);
+      } else {
+        setProsError(getErrorMessage(prosResult.reason, 'Impossible de charger les pros à proximité'));
+        setNearbyPros([]);
+      }
+
+      setLoadingResults(false);
+      setLoadingPros(false);
     };
 
-    loadResults();
+    void loadResults();
     return () => {
       cancelled = true;
     };
   }, [step, selectedSport, selectedLevel, distanceKm, location]);
 
   const mapItems = useMemo(() => {
-    return safeResults
+    const availabilityMarkers = safeResults
       .filter((slot) => slot.spotLat != null && slot.spotLng != null)
       .map((slot) => {
         const isFull = slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity;
@@ -118,16 +141,36 @@ export default function ReservationStartPage() {
           disabledReason: isFull ? 'Ce créneau est complet.' : undefined,
         };
       });
-  }, [safeResults]);
+
+    const proMarkers = nearbyPros.map((pro) => ({
+      id: `pro-${pro.proId}`,
+      lat: pro.lat,
+      lng: pro.lng,
+      displayName: pro.businessName || pro.email,
+      distanceKm: pro.distanceKm,
+      userId: pro.proId,
+      type: 'default' as const,
+      isDisabled: false,
+      disabledReason: pro.openAvailabilityCount === 0 ? 'Pas de créneau publié' : undefined,
+    }));
+
+    return [...availabilityMarkers, ...proMarkers];
+  }, [safeResults, nearbyPros]);
 
   const handleMapContactClick = useCallback(
-    (slotId: string) => {
-      const slot = safeResults.find((item) => item.id === slotId);
+    (itemId: string) => {
+      const slot = safeResults.find((item) => item.id === itemId);
       if (slot && slot.status !== 'CLOSED' && slot.bookedCount < slot.capacity) {
         setRequestingSlot(slot);
+        return;
+      }
+
+      const pro = nearbyPros.find((item) => item.proId === itemId || `pro-${item.proId}` === itemId);
+      if (pro) {
+        setContactPro(pro);
       }
     },
-    [safeResults]
+    [safeResults, nearbyPros]
   );
 
   const handleRequestSubmitted = useCallback((slot: BookingAvailabilityResult) => {
@@ -136,6 +179,14 @@ export default function ReservationStartPage() {
 
   const closeRequestModal = useCallback(() => {
     setRequestingSlot(null);
+  }, []);
+
+  const handleContactSubmitted = useCallback((pro: NearbyProResult) => {
+    setContactSuccess(pro.businessName ?? pro.email);
+  }, []);
+
+  const closeContactModal = useCallback(() => {
+    setContactPro(null);
   }, []);
 
   const requestGeolocation = useCallback(() => {
@@ -326,8 +377,8 @@ export default function ReservationStartPage() {
       {step === 3 && (
         <Card>
           <CardHeader>
-            <CardTitle>Pros disponibles</CardTitle>
-            <CardDescription>Cette section affichera prochainement la carte et la liste filtrée.</CardDescription>
+            <CardTitle>Résultats autour de toi</CardTitle>
+            <CardDescription>Créneaux publiés et pros visibles dans ton rayon.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {requestSuccess && (
@@ -341,10 +392,16 @@ export default function ReservationStartPage() {
               </div>
             )}
 
+            {contactSuccess && (
+              <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                Message envoyé à {contactSuccess}. Tu peux poursuivre la conversation depuis ta messagerie.
+              </div>
+            )}
+
             {location && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm font-medium">
-                  <span>Carte des créneaux</span>
+                  <span>Carte des créneaux et pros</span>
                   <span className="text-xs text-muted-foreground">
                     Centre: {location.lat.toFixed(3)}, {location.lng.toFixed(3)}
                   </span>
@@ -362,82 +419,143 @@ export default function ReservationStartPage() {
                       legend={[
                         { label: 'Votre position', color: '#0ea5e9' },
                         { label: 'Créneaux disponibles', color: '#2563eb' },
+                        { label: 'Pros visibles', color: '#f97316' },
                       ]}
                       radiusKm={distanceKm}
                     />
                   ) : (
                     <div className="p-4 text-sm text-muted-foreground">
-                      Les créneaux trouvés ne disposent pas encore de localisation précise.
+                      Les résultats ne disposent pas encore de localisation précise.
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {loadingResults ? (
-              <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
-                Chargement des offres disponibles…
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold">Slots disponibles</h3>
+                <Badge variant="outline">{safeResults.length} résultat(s)</Badge>
               </div>
-            ) : error ? (
-              <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
-                {error}
-              </div>
-            ) : safeResults.length === 0 ? (
-              <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
-                Aucune offre trouvée dans ce rayon. Essaie d’augmenter la distance ou de modifier ton niveau.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {safeResults.map((slot) => (
-                  <Card key={slot.id}>
-                    <CardHeader className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          {slot.spotName || 'Spot à définir'}
-                          <Badge variant="secondary">{slot.sport}</Badge>
-                          {(slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity) && (
-                            <Badge variant="destructive">Complet</Badge>
+              {loadingResults ? (
+                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
+                  Chargement des créneaux disponibles…
+                </div>
+              ) : error ? (
+                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
+                  {error}
+                </div>
+              ) : safeResults.length === 0 ? (
+                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
+                  Aucun créneau trouvé dans ce rayon. Tu peux élargir la zone ou contacter directement un pro ci-dessous.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {safeResults.map((slot) => (
+                    <Card key={slot.id}>
+                      <CardHeader className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            {slot.spotName || 'Spot à définir'}
+                            <Badge variant="secondary">{slot.sport}</Badge>
+                            {(slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity) && (
+                              <Badge variant="destructive">Complet</Badge>
+                            )}
+                          </CardTitle>
+                          {slot.distanceKm != null && (
+                            <span className="text-xs text-muted-foreground">{slot.distanceKm.toFixed(1)} km</span>
                           )}
-                        </CardTitle>
-                        {slot.distanceKm != null && (
-                          <span className="text-xs text-muted-foreground">{slot.distanceKm.toFixed(1)} km</span>
-                        )}
-                      </div>
-                      <CardDescription>
-                        {new Date(slot.startAt).toLocaleString('fr-FR')} → {new Date(slot.endAt).toLocaleTimeString('fr-FR')}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                        <span>Niveaux acceptés : {slot.levels.join(', ')}</span>
-                        <span>
-                          {slot.bookedCount}/{slot.capacity} riders positionnés
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-sm font-medium">
-                          {slot.pro.businessName || slot.pro.email}
                         </div>
-                        <RiderMiniaturesStrip riders={slot.riders} />
-                      </div>
-                      <div className="flex items-center justify-end gap-2">
-                        {(slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity) && (
-                          <span className="text-xs text-red-700 dark:text-red-300 font-semibold">Créneau complet</span>
-                        )}
-                        <Button
-                          size="sm"
-                          onClick={() => setRequestingSlot(slot)}
-                          disabled={slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity}
-                          title={slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity ? 'Tous les riders sont déjà positionnés.' : undefined}
-                        >
-                          Demander ce créneau
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                        <CardDescription>
+                          {new Date(slot.startAt).toLocaleString('fr-FR')} → {new Date(slot.endAt).toLocaleTimeString('fr-FR')}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                          <span>Niveaux acceptés : {slot.levels.join(', ')}</span>
+                          <span>
+                            {slot.bookedCount}/{slot.capacity} riders positionnés
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-medium">
+                            {slot.pro.businessName || slot.pro.email}
+                          </div>
+                          <RiderMiniaturesStrip riders={slot.riders} />
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                          {(slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity) && (
+                            <span className="text-xs text-red-700 dark:text-red-300 font-semibold">Créneau complet</span>
+                          )}
+                          <Button
+                            size="sm"
+                            onClick={() => setRequestingSlot(slot)}
+                            disabled={slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity}
+                            title={slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity ? 'Tous les riders sont déjà positionnés.' : undefined}
+                          >
+                            Demander ce créneau
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold">Pros autour de toi</h3>
+                <Badge variant="outline">{nearbyPros.length} pro(s)</Badge>
               </div>
-            )}
+              {loadingPros ? (
+                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
+                  Chargement des pros à proximité…
+                </div>
+              ) : prosError ? (
+                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
+                  {prosError}
+                </div>
+              ) : nearbyPros.length === 0 ? (
+                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
+                  Aucun pro visible dans ce rayon. Vérifie ta localisation ou élargis la recherche.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {nearbyPros.map((pro) => (
+                    <Card key={pro.proId}>
+                      <CardHeader className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            {pro.businessName || pro.email}
+                            {pro.verified && <Badge variant="secondary">Vérifié</Badge>}
+                            {pro.openAvailabilityCount === 0 && (
+                              <Badge variant="outline">Pas de créneau publié</Badge>
+                            )}
+                          </CardTitle>
+                          {pro.distanceKm != null && (
+                            <span className="text-xs text-muted-foreground">{pro.distanceKm.toFixed(1)} km</span>
+                          )}
+                        </div>
+                        <CardDescription>
+                          {pro.sports.length > 0
+                            ? `Propose ${pro.sports.join(', ')}`
+                            : 'Sport non renseigné : envoie un message pour préciser ton besoin.'}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-sm text-muted-foreground">
+                          Rayon de visibilité : {distanceKm} km · Contact direct même sans créneau.
+                        </div>
+                        <Button size="sm" variant="secondary" onClick={() => setContactPro(pro)}>
+                          Envoyer un message / Demander un cours
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </section>
 
             <div className="flex justify-between">
               <Button variant="ghost" onClick={() => setStep(2)}>
@@ -457,6 +575,14 @@ export default function ReservationStartPage() {
         onSubmitted={(slot) => {
           handleRequestSubmitted(slot);
           closeRequestModal();
+        }}
+      />
+      <ContactProModal
+        pro={contactPro}
+        onClose={closeContactModal}
+        onSubmitted={(pro) => {
+          handleContactSubmitted(pro);
+          closeContactModal();
         }}
       />
     </div>
@@ -555,6 +681,187 @@ function RequestBookingModal({ slot, onClose, onSubmitted }: RequestBookingModal
           </Button>
           <Button type="submit" disabled={saving} aria-busy={saving}>
             {saving ? 'Envoi…' : 'Envoyer la demande'}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+interface ContactProModalProps {
+  pro: NearbyProResult | null;
+  onClose: () => void;
+  onSubmitted: (pro: NearbyProResult) => void;
+}
+
+const COOLDOWN_SECONDS = 30;
+
+function getEnvKey() {
+  if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_APP_ENV) {
+    return process.env.NEXT_PUBLIC_APP_ENV;
+  }
+  return 'local';
+}
+
+function getCooldownKey(proId: string) {
+  return `blob:contactCooldown:${getEnvKey()}:${proId}`;
+}
+
+export function ContactProModal({ pro, onClose, onSubmitted }: ContactProModalProps) {
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!pro) {
+      setMessage('');
+      setSaving(false);
+      setError(null);
+      setCooldown(0);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem(getCooldownKey(pro.proId));
+      if (stored) {
+        const expiresAt = Number(stored);
+        const remainingMs = expiresAt - Date.now();
+        if (remainingMs > 0) {
+          setCooldown(Math.ceil(remainingMs / 1000));
+        } else {
+          window.localStorage.removeItem(getCooldownKey(pro.proId));
+          setCooldown(0);
+        }
+      }
+    }
+  }, [pro]);
+
+  useEffect(() => {
+    if (cooldown <= 0) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+    intervalRef.current = setInterval(() => {
+      setCooldown((prev) => {
+        const next = prev - 1;
+        if (next <= 0) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem(getCooldownKey(pro?.proId ?? ''));
+          }
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+          return 0;
+        }
+        return next;
+      });
+    }, 1000);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [cooldown, pro?.proId]);
+
+  if (!pro) {
+    return null;
+  }
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!message.trim()) {
+      setError('Ajoute un message pour expliquer ta demande.');
+      return;
+    }
+    try {
+      setSaving(true);
+      setError(null);
+      const conversation = await apiClient.openConversation(pro.proId);
+      await apiClient.sendMessage(conversation.id, { type: 'TEXT', content: message.trim() });
+      onSubmitted(pro);
+    } catch (err) {
+      const status = (err as { status?: number })?.status;
+      const bodyMessage = (err as { body?: { message?: string } })?.body?.message;
+      if (status === 429) {
+        const retry = typeof bodyMessage === 'string' && (err as { body?: { retryAfterSeconds?: number } })?.body?.retryAfterSeconds;
+        const nextCooldown = typeof retry === 'number' && retry > 0 ? retry : COOLDOWN_SECONDS;
+        setCooldown(nextCooldown);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(getCooldownKey(pro.proId), (Date.now() + nextCooldown * 1000).toString());
+        }
+        setError(bodyMessage || 'Trop de tentatives. Attends 30 secondes avant de renvoyer un message.');
+      } else {
+        setError(getErrorMessage(err, 'Impossible d’envoyer ton message.'));
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <form onSubmit={submit} className="w-full max-w-lg space-y-4 rounded-lg bg-white p-6 shadow-lg">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">Contacter {pro.businessName || pro.email}</h2>
+            <p className="text-sm text-muted-foreground">
+              Tu peux demander un cours ou te présenter, même sans créneau publié.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="text-sm text-muted-foreground hover:text-foreground"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Fermer
+          </button>
+        </div>
+
+        <div className="space-y-3 text-sm">
+          <p className="font-medium">Message au pro</p>
+          <textarea
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            rows={4}
+            className="w-full rounded-md border px-3 py-2"
+            placeholder="Présente-toi et décris ton besoin (dates, spot préféré, niveau…)."
+          />
+        </div>
+
+        {error && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" aria-live="assertive">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+            Annuler
+          </Button>
+          <Button
+            type="submit"
+            disabled={saving || cooldown > 0}
+            aria-busy={saving}
+            aria-live="polite"
+            title={cooldown > 0 ? `Réessayer dans ${cooldown}s` : undefined}
+          >
+            {saving
+              ? 'Envoi…'
+              : cooldown > 0
+                ? `Réessayer dans ${cooldown}s`
+                : 'Envoyer le message'}
           </Button>
         </div>
       </form>

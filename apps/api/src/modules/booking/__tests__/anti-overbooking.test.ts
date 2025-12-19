@@ -20,6 +20,11 @@ describe('Système anti-overbooking et gestion des capacités', () => {
       data: { email: 'pro-overbooking@test.com', password: 'testpass', role: 'PRO', emailVerified: true }
     });
     proUserId = proUser.id;
+    await prisma.proProfile.upsert({
+      where: { userId: proUserId },
+      create: { userId: proUserId, lat: 43.4832, lng: -1.5586, verified: true },
+      update: { lat: 43.4832, lng: -1.5586 },
+    });
 
     const rider1 = await prisma.user.create({
       data: { email: 'rider1-overbooking@test.com', password: 'testpass', emailVerified: true }

@@ -8,7 +8,6 @@ import type {
   RiderBookingRequest,
 } from './types/booking';
 import type { ThreadListQuery, ThreadListResponse, MessageListResponse, SendMessagePayload } from '@/types/messages';
-import type { OfferSearchResponse } from '@/types/offers';
 
 export interface AuditLogEntry {
   id: string;
@@ -430,7 +429,6 @@ export interface AdminUserDetail {
       lng: number | null;
       createdAt: string;
       updatedAt: string;
-      offers: Array<{ id: string; sport: string; level: string; title: string; hourlyRate: string; isActive: boolean; createdAt: string; updatedAt: string }>;
     };
     adminProfile?: {
       displayName: string | null;
@@ -472,6 +470,19 @@ export interface BookingAvailabilityResult {
   spotLng: number | null;
   distanceKm: number | null;
   riders: Array<{ id: string; displayName: string; avatarUrl: string | null }>;
+}
+
+export interface NearbyProResult {
+  proId: string;
+  email: string;
+  businessName: string | null;
+  photoUrl: string | null;
+  verified: boolean;
+  lat: number;
+  lng: number;
+  distanceKm: number;
+  sports: Array<'surf' | 'kitesurf'>;
+  openAvailabilityCount: number;
 }
 
 type BookingRequestInboxApiItem = {
@@ -675,9 +686,11 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false, r
     if (res.status === 403 && typeof data?.error === 'string' && data.error.startsWith('CSRF_')) {
       cachedCsrfToken = null;
     }
-    const message = data?.error || `HTTP ${res.status}`;
-    type ApiError = Error & { details?: unknown };
+    const message = data?.message || data?.error || `HTTP ${res.status}`;
+    type ApiError = Error & { details?: unknown; status?: number; body?: unknown };
     const error: ApiError = new Error(message);
+    error.status = res.status;
+    error.body = data;
     // Passer les détails de validation s'ils existent
     if (data?.details) {
       error.details = data.details;
@@ -737,8 +750,6 @@ export const apiClient = {
 
   openConversation: (targetUserId: string) =>
     request('/conversations/open', { method: 'POST', body: JSON.stringify({ targetUserId }) }, true) as Promise<{ id: string }>,
-  trackOfferClick: (offerId: string) =>
-    request(`/pro/offers/${offerId}/click`, { method: 'POST', body: JSON.stringify({}) }, true),
 
   reportProfile: (body: { targetProfileId: string; reason?: string }) =>
     request('/reports/profile', { method: 'POST', body: JSON.stringify(body) }, true),
@@ -780,25 +791,6 @@ export const apiClient = {
     },
   ) =>
     request(`/consent/${hash}`, { method: 'POST', body: JSON.stringify(body) }) as Promise<ConsentResponse>,
-
-  // Pro Offers
-  getProOffer: () => request('/pro/offers/me', { method: 'GET' }, true),
-  createOrUpdateProOffer: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced' | 'anytime'; title: string; description: string; hourlyRate: number; isActive?: boolean }) =>
-    request('/pro/offers', { method: 'POST', body: JSON.stringify(body) }, true),
-  deleteProOffer: () => request('/pro/offers/me', { method: 'DELETE' }, true),
-  toggleProOffer: () => request('/pro/offers/me/toggle', { method: 'PATCH' }, true),
-
-  searchOffers: (params: { lat?: number; lng?: number; radiusKm?: number; sport?: string; level?: string }) => {
-    const query = new URLSearchParams();
-    if (typeof params.lat === 'number') query.append('lat', params.lat.toString());
-    if (typeof params.lng === 'number') query.append('lng', params.lng.toString());
-    if (typeof params.radiusKm === 'number') query.append('radiusKm', params.radiusKm.toString());
-    if (params.sport) query.append('sport', params.sport);
-    if (params.level) query.append('level', params.level);
-
-    const qs = query.toString();
-    return request(`/pro/offers/search${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<OfferSearchResponse>;
-  },
 
   // Admin
   getSecurityHealth: () => request('/security/health', { method: 'GET' }, true) as Promise<SecurityHealth>,
@@ -949,6 +941,19 @@ export const apiClient = {
     if (params.page) query.append('page', params.page.toString());
     if (params.pageSize) query.append('pageSize', params.pageSize.toString());
     return request(`/booking/availability/search?${query.toString()}`, { method: 'GET' }, true) as Promise<{ results: BookingAvailabilityResult[] }>;
+  },
+  searchNearbyPros: (params: {
+    lat: number;
+    lng: number;
+    radiusKm?: number;
+    sport?: 'surf' | 'kitesurf';
+  }) => {
+    const query = new URLSearchParams();
+    query.append('lat', params.lat.toString());
+    query.append('lng', params.lng.toString());
+    query.append('radiusKm', (params.radiusKm ?? 25).toString());
+    if (params.sport) query.append('sport', params.sport);
+    return request(`/booking/pros/nearby?${query.toString()}`, { method: 'GET' }, true) as Promise<{ pros: NearbyProResult[] }>;
   },
   getBookingAvailabilitiesForPro: () =>
     request('/booking/availability/me', { method: 'GET' }, true) as Promise<{ availabilities: BookingAvailability[] }> ,
