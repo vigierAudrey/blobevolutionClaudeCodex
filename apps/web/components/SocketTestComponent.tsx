@@ -9,9 +9,8 @@ import { useSocket } from '../hooks/useSocket';
  * Usage: Ajouter ce composant dans une page protégée pour tester
  */
 export function SocketTestComponent({ token }: { token: string }) {
-  const { socket, connected, connect, disconnect, emit, on } = useSocket({ token });
+  const { socket, connected, connect, disconnect } = useSocket({ token });
   const [status, setStatus] = useState<string>('Déconnecté');
-  const [testMessage, setTestMessage] = useState<string>('');
 
   useEffect(() => {
     if (connected) {
@@ -27,11 +26,6 @@ export function SocketTestComponent({ token }: { token: string }) {
 
   const handleDisconnect = () => {
     disconnect();
-  };
-
-  const handleSendTest = () => {
-    emit('test-event', { message: testMessage });
-    setTestMessage('');
   };
 
   return (
@@ -93,7 +87,7 @@ export function SocketTestComponent({ token }: { token: string }) {
       {!connected && (
         <div style={{ marginTop: '15px' }}>
           <p style={{ color: '#666' }}>
-            Clique sur "Se connecter" pour établir la connexion WebSocket.
+            Clique sur &quot;Se connecter&quot; pour établir la connexion WebSocket.
           </p>
         </div>
       )}

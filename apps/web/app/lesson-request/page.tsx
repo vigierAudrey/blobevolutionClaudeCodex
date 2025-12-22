@@ -11,7 +11,7 @@ import { apiClient } from '../../lib/apiClient';
 import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { Badge } from '../../components/ui/badge';
-import { Sparkles, GraduationCap, Users, CalendarDays, MapPin } from 'lucide-react';
+import { Sparkles, GraduationCap } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -228,7 +228,7 @@ export default function LessonRequestPage() {
 
                 <div>
                   <Label htmlFor="students" className="mb-2 block">
-                    Nombre d'élèves <span className="text-red-500">*</span>
+                    Nombre d&apos;élèves <span className="text-red-500">*</span>
                   </Label>
                   <div className="flex items-center gap-3">
                     <Input

@@ -90,7 +90,6 @@ const DATE_KEY = 'matching.date';
 const DIST_KEY = 'matching.distanceKm';
 const LAT_KEY = 'matching.lat';
 const LNG_KEY = 'matching.lng';
-const USE_GEO_KEY = 'matching.useGeoloc';
 const LESSON_KEY = 'matching.wantsLesson';
 
 function formatDateISO(d: Date) {
@@ -111,7 +110,6 @@ function DateInner() {
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
-  const [useGeoloc] = useState<boolean>(true); // Géolocalisation obligatoire
   const [hasInitialized, setHasInitialized] = useState<boolean>(false);
   const [wantsLesson, setWantsLesson] = useState<boolean>(false);
   const [browserType, setBrowserType] = useState<string>('other');
@@ -233,7 +231,7 @@ function DateInner() {
       <Card className="border-2">
         <CardHeader>
           <CardTitle className="text-xl">Choix de la date</CardTitle>
-          <CardDescription>Sélectionne aujourd'hui, demain ou choisis mode flexible</CardDescription>
+          <CardDescription>Sélectionne aujourd&apos;hui, demain ou choisis mode flexible</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

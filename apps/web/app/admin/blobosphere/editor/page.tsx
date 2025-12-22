@@ -364,7 +364,7 @@ function BlobosphereEditorContent() {
 
 export default function BlobosphereEditorPage() {
   return (
-    <Suspense fallback={<div className="max-w-6xl mx-auto p-6">Chargement de l'éditeur...</div>}>
+    <Suspense fallback={<div className="max-w-6xl mx-auto p-6">Chargement de l&apos;éditeur...</div>}>
       <BlobosphereEditorContent />
     </Suspense>
   );

@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { GraduationCap, MessageSquare, MapPin, Calendar } from 'lucide-react';
-import { apiClient } from '../../lib/apiClient';
+import { apiClient, type RiderBooking } from '../../lib/apiClient';
 import { BackBar } from '../../components/BackBar';
 import type { DashboardUser } from '@/types/user';
 import type { Level } from '@/types/matching';
@@ -23,7 +23,7 @@ const levelLabels: Record<Level, string> = {
 
 export default function MyLessonsPage() {
   const router = useRouter();
-  const [bookings, setBookings] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<RiderBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,7 +105,7 @@ export default function MyLessonsPage() {
           <span className="text-2xl">⚠️</span>
           <div className="space-y-2 text-sm text-amber-800 dark:text-amber-200">
             <p className="font-semibold">Important - MVP :</p>
-            <p>L'application est encore en phase de test (MVP). Pense à vérifier par toi-même la carte professionnelle de ton instructeur avant le cours.</p>
+            <p>L&apos;application est encore en phase de test (MVP). Pense à vérifier par toi-même la carte professionnelle de ton instructeur avant le cours.</p>
           </div>
         </div>
       </div>
@@ -133,6 +133,7 @@ export default function MyLessonsPage() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     {booking.availability?.pro?.proProfile?.photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={booking.availability.pro.proProfile.photoUrl}
                         alt={booking.availability.pro.proProfile.businessName || 'Instructeur'}
@@ -223,7 +224,7 @@ export default function MyLessonsPage() {
                   className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
                 >
                   <MessageSquare className="w-4 h-4 mr-2" />
-                  Contacter l'instructeur
+                  Contacter l&apos;instructeur
                 </Button>
               </CardContent>
             </Card>

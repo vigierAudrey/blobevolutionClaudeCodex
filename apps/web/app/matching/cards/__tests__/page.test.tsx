@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { TextEncoder, TextDecoder } from 'util';
 import { webcrypto } from 'crypto';
 import { apiClient } from '../../../../lib/apiClient';
-import { optimizedApiClient } from '../../../../lib/optimizedApiClient';
 import Page from '../page';
 
 jest.setTimeout(10000);

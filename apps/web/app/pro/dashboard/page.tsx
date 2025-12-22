@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
 import { Badge } from '../../../components/ui/badge';
-import { User, Map, Percent, Info, LogOut, BookOpen, MessageSquare, Gift, Sparkles } from 'lucide-react';
+import { User, Map, Calendar, Info, LogOut, BookOpen, MessageSquare, Gift, Sparkles } from 'lucide-react';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
 

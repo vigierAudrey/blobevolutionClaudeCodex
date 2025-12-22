@@ -265,6 +265,7 @@ export function getMdxComponents(): MDXComponents {
     ),
     img: ({ alt, className, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
       // `img` fallback is only used in preview mode, Next/Image handles production rendering.
+      // eslint-disable-next-line @next/next/no-img-element
       <img {...props} alt={alt ?? ''} className={mergeClasses('my-2 max-w-full rounded-md border', className)} />
     ),
     pre: (props: React.HTMLAttributes<HTMLPreElement>) => <CodeBlock {...props} />,

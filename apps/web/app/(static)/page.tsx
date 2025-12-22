@@ -90,7 +90,7 @@ export default function Home() {
       {/* Section découverte avec CTA */}
       <section aria-label="Découvre la plateforme" className="space-y-10 pb-8">
         <div className="text-center space-y-2">
-          <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Tout ce qu'il te faut</p>
+          <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Tout ce qu&apos;il te faut</p>
           <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Matching, cours, promos et conseils
           </h2>
@@ -119,7 +119,7 @@ export default function Home() {
               Choisis ton circuit
             </h2>
           </div>
-          <p className="text-base text-muted-foreground">Tu viens pour rider avec quelqu'un, ou pour trouver un pro ?</p>
+          <p className="text-base text-muted-foreground">Tu viens pour rider avec quelqu&apos;un, ou pour trouver un pro ?</p>
         </div>
         <div className="grid gap-6 md:grid-cols-2">
           {/* Circuit 1: Ride à deux */}
@@ -147,7 +147,7 @@ export default function Home() {
                   Matching
                 </Badge>
               </div>
-              <CardDescription>Pas besoin d'un pro ? Trouve ton binôme et organise la session.</CardDescription>
+              <CardDescription>Pas besoin d&apos;un pro ? Trouve ton binôme et organise la session.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
               <ul className="text-sm text-muted-foreground space-y-2">
@@ -275,7 +275,7 @@ export default function Home() {
             </CardHeader>
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground mb-4">
-                Profite d'offres exclusives : matériel, spots, hébergements et services pour riders à prix réduits.
+                Profite d&apos;offres exclusives : matériel, spots, hébergements et services pour riders à prix réduits.
               </p>
               <Button size="lg" className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 shadow-lg hover:shadow-xl transition-all group-hover:scale-105">
                 <span className="inline-flex items-center gap-2">

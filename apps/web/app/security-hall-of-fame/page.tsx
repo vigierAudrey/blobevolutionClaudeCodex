@@ -238,13 +238,13 @@ export default function SecurityHallOfFamePage() {
             </li>
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm font-bold mr-3">4</span>
-              <span>Recevez votre récompense et acceptez d'apparaître dans le Hall of Fame</span>
+              <span>Recevez votre récompense et acceptez d&apos;apparaître dans le Hall of Fame</span>
             </li>
           </ol>
           <div className="mt-6 pt-6 border-t border-gray-700">
             <p className="text-sm text-gray-400">
               <strong>Note :</strong> Votre présence dans le Hall of Fame est optionnelle et nécessite votre consentement.
-              Vous pouvez choisir d'être anonyme ou d'utiliser un pseudonyme.
+              Vous pouvez choisir d&apos;être anonyme ou d&apos;utiliser un pseudonyme.
             </p>
           </div>
         </section>
@@ -255,7 +255,7 @@ export default function SecurityHallOfFamePage() {
             href="/"
             className="text-blue-600 hover:underline font-medium"
           >
-            ← Retour à l'accueil
+            ← Retour à l&apos;accueil
           </Link>
           <p className="text-sm text-gray-500 mt-4">
             Dernière mise à jour : 30 novembre 2025

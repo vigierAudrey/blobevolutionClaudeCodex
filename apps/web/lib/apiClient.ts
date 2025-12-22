@@ -429,6 +429,16 @@ export interface AdminUserDetail {
       lng: number | null;
       createdAt: string;
       updatedAt: string;
+      offers: Array<{
+        id: string;
+        sport: string;
+        level: string;
+        title: string;
+        hourlyRate: string | null;
+        isActive: boolean;
+        createdAt: string;
+        updatedAt: string;
+      }>;
     };
     adminProfile?: {
       displayName: string | null;
@@ -484,6 +494,33 @@ export interface NearbyProResult {
   sports: Array<'surf' | 'kitesurf'>;
   openAvailabilityCount: number;
 }
+
+export type ProBooking = {
+  id: string;
+  availability: BookingAvailability;
+  rider: {
+    id: string;
+    riderProfile: {
+      id: string;
+      displayName: string | null;
+      photoUrl: string | null;
+      sex: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED';
+    } | null;
+  };
+};
+
+export type RiderBooking = {
+  id: string;
+  availability: BookingAvailability & {
+    pro: {
+      id: string;
+      proProfile: {
+        businessName: string | null;
+        photoUrl: string | null;
+      } | null;
+    };
+  };
+};
 
 type BookingRequestInboxApiItem = {
   id: string;
@@ -998,9 +1035,9 @@ export const apiClient = {
   decideBookingRequest: (requestId: string, decision: 'ACCEPT' | 'REJECT') =>
     request(`/booking/requests/${requestId}/decision`, { method: 'POST', body: JSON.stringify({ decision }) }, true),
   getProBookings: () =>
-    request('/booking/bookings/me', { method: 'GET' }, true) as Promise<{ bookings: any[] }>,
+    request('/booking/bookings/me', { method: 'GET' }, true) as Promise<{ bookings: ProBooking[] }>,
   getRiderBookings: () =>
-    request('/booking/bookings/rider/me', { method: 'GET' }, true) as Promise<{ bookings: any[] }>,
+    request('/booking/bookings/rider/me', { method: 'GET' }, true) as Promise<{ bookings: RiderBooking[] }>,
   getMyBookingRequests: async () => {
     const response = (await request('/booking/requests/me', { method: 'GET' }, true)) as {
       requests: BookingRequestMeApiItem[];

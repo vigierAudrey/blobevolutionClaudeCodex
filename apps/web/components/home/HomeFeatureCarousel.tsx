@@ -92,16 +92,6 @@ export function HomeFeatureCarousel() {
     return () => {};
   }, [isPaused]);
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (typeof window === 'undefined') return;
-    const container = document.querySelector<HTMLElement>('#home-feature-carousel');
-    if (!container) return;
-    const card = container.querySelector<HTMLElement>('[data-slide-card]');
-    const delta = card ? card.clientWidth + 24 : 280;
-    const offset = direction === 'left' ? -delta : delta;
-    container.scrollBy({ left: offset, behavior: 'smooth' });
-  };
-
   return (
     <section aria-label="Fonctionnalités de la plateforme">
       <div
