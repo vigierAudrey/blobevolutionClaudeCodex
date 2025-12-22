@@ -14,7 +14,7 @@
     "test:coverage": "jest --coverage",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "test:storybook": "test-storybook --ci --failOnConsole"
+    "test:storybook": "cross-env NODE_OPTIONS= test-storybook --ci --failOnConsole"
   },
   "dependencies": {
     "@radix-ui/react-select": "^2.2.6",
