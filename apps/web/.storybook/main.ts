@@ -1,5 +1,6 @@
 import path from 'path';
-import type { StorybookConfig } from '@storybook/nextjs';
+import type { StorybookConfig } from '@storybook/react-webpack5';
+import type { Configuration as WebpackConfig } from 'webpack';
 
 const config: StorybookConfig = {
   stories: ['../components/**/*.stories.@(ts|tsx)'],
@@ -10,16 +11,81 @@ const config: StorybookConfig = {
     '@storybook/addon-a11y',
   ],
   framework: {
-    name: '@storybook/nextjs',
-    options: {
-      nextConfigPath: './next.config.mjs',
-    },
+    name: '@storybook/react-webpack5',
+    options: {},
   },
   docs: {
     autodocs: 'tag',
   },
-  webpackFinal: async (baseConfig) => {
+  typescript: {
+    reactDocgen: 'react-docgen-typescript',
+  },
+  staticDirs: ['../public'],
+  webpackFinal: async (baseConfig: WebpackConfig): Promise<WebpackConfig> => {
     const config = baseConfig;
+
+    // Ensure TypeScript files are transpiled with babel-loader
+    config.module = config.module || { rules: [] };
+    config.module.rules = config.module.rules || [];
+
+    // Find and modify existing rules for TypeScript files
+    const oneOfRule = config.module.rules?.find(
+      (rule): rule is { oneOf: unknown[] } =>
+        typeof rule === 'object' && rule !== null && 'oneOf' in rule
+    );
+
+    if (oneOfRule && Array.isArray(oneOfRule.oneOf)) {
+      // Insert babel-loader before existing loaders
+      oneOfRule.oneOf.unshift({
+        test: /\.(ts|tsx)$/,
+        exclude: /node_modules/,
+        use: [
+          {
+            loader: require.resolve('babel-loader'),
+            options: {
+              presets: [
+                require.resolve('@babel/preset-env'),
+                [require.resolve('@babel/preset-react'), { runtime: 'automatic' }],
+                require.resolve('@babel/preset-typescript'),
+              ],
+            },
+          },
+        ],
+      });
+    } else {
+      // Fallback: prepend babel-loader rule
+      config.module.rules.unshift({
+        test: /\.(ts|tsx)$/,
+        exclude: /node_modules/,
+        use: [
+          {
+            loader: require.resolve('babel-loader'),
+            options: {
+              presets: [
+                require.resolve('@babel/preset-env'),
+                [require.resolve('@babel/preset-react'), { runtime: 'automatic' }],
+                require.resolve('@babel/preset-typescript'),
+              ],
+            },
+          },
+        ],
+      });
+    }
+
+    // Configure alias for Next.js modules, TypeScript paths, and assets
+    config.resolve = config.resolve || {};
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      // Mock Next.js modules for Storybook
+      'next/image': path.resolve(__dirname, './mocks/next-image.tsx'),
+      'next/link': path.resolve(__dirname, './mocks/next-link.tsx'),
+      'next/router': path.resolve(__dirname, './mocks/next-router.tsx'),
+      // TypeScript path alias (@/ → apps/web/)
+      '@': path.resolve(__dirname, '..'),
+      // Map absolute asset paths to mock directory for CSS url() resolution
+      '/hero-wallpaper.webp': path.resolve(__dirname, './app/hero-wallpaper.webp'),
+      '/fonts/AdleryPro.woff': path.resolve(__dirname, './app/fonts/AdleryPro.woff'),
+    };
 
     // Ensure webpack can resolve the package.json of ESM-only packages such as react-leaflet
     try {
@@ -27,28 +93,31 @@ const config: StorybookConfig = {
       const reactLeafletDir = path.dirname(reactLeafletEntry);
       const reactLeafletPkg = path.join(reactLeafletDir, '..', 'package.json');
 
-      config.resolve = config.resolve || {};
-      config.resolve.alias = {
-        ...(config.resolve.alias ?? {}),
-        'react-leaflet/package.json': reactLeafletPkg,
-      };
+      if (config.resolve.alias && typeof config.resolve.alias === 'object' && !Array.isArray(config.resolve.alias)) {
+        config.resolve.alias['react-leaflet/package.json'] = reactLeafletPkg;
+      }
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn('Impossible de résoudre react-leaflet pour Storybook', error);
     }
 
-    // Encourage webpack to create smaller chunks to reduce the likelihood of size warnings
-    const existingSplitChunks = config.optimization?.splitChunks ?? {};
+    // Optimize bundle splitting to reduce chunk sizes
+    const existingSplitChunks = config.optimization?.splitChunks;
+    const existingCacheGroups =
+      existingSplitChunks && typeof existingSplitChunks === 'object' && 'cacheGroups' in existingSplitChunks
+        ? existingSplitChunks.cacheGroups
+        : {};
+
     config.optimization = {
       ...(config.optimization ?? {}),
       splitChunks: {
-        ...existingSplitChunks,
+        ...(typeof existingSplitChunks === 'object' ? existingSplitChunks : {}),
         chunks: 'all',
         maxInitialRequests: 25,
         minSize: 0,
         maxSize: 240000,
         cacheGroups: {
-          ...(existingSplitChunks.cacheGroups ?? {}),
+          ...(typeof existingCacheGroups === 'object' && existingCacheGroups !== null ? existingCacheGroups : {}),
           leafletVendors: {
             test: /[\\/]node_modules[\\/](leaflet|react-leaflet)[\\/]/,
             name: 'leaflet-vendors',

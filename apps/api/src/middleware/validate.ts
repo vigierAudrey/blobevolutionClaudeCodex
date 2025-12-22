@@ -14,7 +14,7 @@ export const validate =
       return next();
     } catch (error: any) {
       if (error?.name === 'ZodError') {
-        secureLogger.error('VALIDATION_ERROR', {
+        secureLogger.warn('VALIDATION_ERROR', {
           path: req.path,
           errorCount: error.errors?.length
         });

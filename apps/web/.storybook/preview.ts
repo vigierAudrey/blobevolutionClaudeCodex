@@ -1,5 +1,5 @@
 import type { Preview } from '@storybook/react';
-import '../app/globals.css';
+import './storybook-globals.css';
 import 'leaflet/dist/leaflet.css';
 
 const preview: Preview = {

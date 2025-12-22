@@ -1,0 +1,6 @@
+/*
+ * Storybook-specific globals
+ * Imports Next.js globals - asset paths resolved via webpack alias
+ */
+
+@import '../app/globals.css';
