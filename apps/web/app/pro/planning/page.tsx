@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
 import { PlusCircle, CalendarDays, Users, Mail } from 'lucide-react';
-import { apiClient } from '../../../lib/apiClient';
+import { apiClient, type ProBooking } from '../../../lib/apiClient';
 import { BackBar } from '../../../components/BackBar';
 import type {
   BookingAvailability,
@@ -34,7 +34,7 @@ export default function ProPlanningPage() {
   const [view, setView] = useState<'calendar' | 'list'>('list');
   const [availabilities, setAvailabilities] = useState<AvailabilityView[]>([]);
   const [requests, setRequests] = useState<RequestView[]>([]);
-  const [bookings, setBookings] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<ProBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [decisionLoadingId, setDecisionLoadingId] = useState<string | null>(null);
@@ -449,6 +449,7 @@ export default function ProPlanningPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       {booking.rider?.riderProfile?.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={booking.rider.riderProfile.photoUrl}
                           alt={booking.rider.riderProfile.displayName || 'Rider'}

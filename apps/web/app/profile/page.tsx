@@ -18,7 +18,7 @@ import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { apiRequest } from '../../lib/csrf';
 import Link from 'next/link';
-import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, User, Waves, Bell, Lock, Settings, Sparkles } from 'lucide-react';
+import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, User, Waves, Bell, Settings, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
 import type { Level } from '@/types/matching';
@@ -695,7 +695,7 @@ export default function ProfilePage() {
                   <div className="flex-1">
                     <p className="font-medium text-sm">Notifications par email</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Reçois un email lorsqu'un partenaire cherche à te joindre ou qu'un nouveau match est disponible
+                      Reçois un email lorsqu&apos;un partenaire cherche à te joindre ou qu&apos;un nouveau match est disponible
                     </p>
                   </div>
                 </label>
@@ -750,7 +750,7 @@ export default function ProfilePage() {
                             Lat: {userLocation.lat.toFixed(4)}, Lng: {userLocation.lng.toFixed(4)}
                           </p>
                           <p className="text-xs text-muted-foreground mt-2">
-                            Utilisée pour le matching et la recherche d'offres à proximité
+                            Utilisée pour le matching et la recherche d&apos;offres à proximité
                           </p>
                         </div>
                       </div>
@@ -824,7 +824,7 @@ export default function ProfilePage() {
                     <h3 className="text-sm font-semibold">Vos Droits RGPD</h3>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Conformément au RGPD, vous disposez d'un droit d'accès, de rectification, de suppression et de portabilité de vos données.
+                    Conformément au RGPD, vous disposez d&apos;un droit d&apos;accès, de rectification, de suppression et de portabilité de vos données.
                   </p>
                   <div className="flex flex-wrap gap-3">
                     <Link href="/about">
@@ -1029,7 +1029,7 @@ export default function ProfilePage() {
           <DialogHeader>
             <DialogTitle>Supprimer la photo de profil</DialogTitle>
             <DialogDescription>
-              Confirme la suppression de ta photo. Le matching restera inaccessible tant qu'une nouvelle photo ne sera pas ajoutée.
+              Confirme la suppression de ta photo. Le matching restera inaccessible tant qu&apos;une nouvelle photo ne sera pas ajoutée.
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">

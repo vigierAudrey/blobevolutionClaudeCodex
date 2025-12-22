@@ -1,7 +1,7 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
-import { ContactProModal } from '../start/page';
+import { ContactProModal } from '../start/ContactProModal';
 
 jest.mock('../../../lib/apiClient', () => ({
   apiClient: {

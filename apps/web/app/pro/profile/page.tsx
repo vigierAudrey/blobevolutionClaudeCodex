@@ -86,7 +86,6 @@ export default function ProProfilePage() {
 
   // Geolocation state
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [enablingLocation, setEnablingLocation] = useState(false);
   const [deletingLocation, setDeletingLocation] = useState(false);
 
   // Account deletion modal state

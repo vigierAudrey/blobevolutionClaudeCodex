@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -59,7 +59,7 @@ export default function AdminAlertsPage() {
     ensureAdmin();
   }, [router]);
 
-  const loadAlerts = async () => {
+  const loadAlerts = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -76,11 +76,11 @@ export default function AdminAlertsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, severity, status]);
 
   useEffect(() => {
     void loadAlerts();
-  }, [status, severity, page]);
+  }, [loadAlerts]);
 
   const handleAcknowledge = async (id: string) => {
     try {

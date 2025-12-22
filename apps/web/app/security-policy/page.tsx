@@ -113,7 +113,7 @@ export default function SecurityPolicyPage() {
                 </h3>
                 <ul className="space-y-2 text-sm text-red-800">
                   <li>• Endpoints admin : <code className="bg-white px-2 py-1 rounded">/admin/*</code></li>
-                  <li>• Données d'autres utilisateurs</li>
+                  <li>• Données d&apos;autres utilisateurs</li>
                   <li>• Attaques DoS/DDoS</li>
                   <li>• Social engineering</li>
                 </ul>
@@ -124,7 +124,7 @@ export default function SecurityPolicyPage() {
           {/* Règles d'Engagement */}
           <section>
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-              📋 Règles d'Engagement
+              📋 Règles d&apos;Engagement
             </h2>
             <ol className="space-y-3">
               {[
@@ -206,8 +206,8 @@ export default function SecurityPolicyPage() {
             <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
               <h3 className="font-semibold text-yellow-900 mb-2">Code Pénal Article 323-1</h3>
               <p className="text-sm text-yellow-800">
-                L'accès frauduleux à un système informatique est puni de 2 ans d'emprisonnement
-                et de 60 000€ d'amende. Ce programme constitue une <strong>autorisation explicite</strong> pour
+                L&apos;accès frauduleux à un système informatique est puni de 2 ans d&apos;emprisonnement
+                et de 60 000€ d&apos;amende. Ce programme constitue une <strong>autorisation explicite</strong> pour
                 les tests de sécurité dans le cadre du scope défini ci-dessus.
               </p>
             </div>
@@ -260,7 +260,7 @@ export default function SecurityPolicyPage() {
                 href="/"
                 className="text-blue-600 hover:underline text-sm font-medium"
               >
-                ← Retour à l'accueil
+                ← Retour à l&apos;accueil
               </Link>
             </div>
           </footer>

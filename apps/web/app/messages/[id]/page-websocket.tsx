@@ -96,7 +96,7 @@ export default function ConversationPage() {
     let active = true;
     const initialize = async () => {
       try {
-        const user = await apiClient.me();
+        await apiClient.me();
 
         // Récupérer le token d'accès depuis localStorage
         const token = localStorage.getItem('accessToken');
@@ -296,7 +296,7 @@ export default function ConversationPage() {
             {/* ✨ Indicateur de frappe */}
             {otherUserTyping && (
               <div className="text-xs text-muted-foreground italic">
-                {conversationInfo?.otherDisplayName || 'L\'autre utilisateur'} est en train d'écrire...
+                {conversationInfo?.otherDisplayName || 'L\'autre utilisateur'} est en train d&apos;écrire...
               </div>
             )}
             <div ref={endRef} />

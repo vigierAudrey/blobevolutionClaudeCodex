@@ -20,12 +20,6 @@ interface MdxPreviewProps {
 // Intentionally does NOT execute arbitrary JSX/MDX components for safety and simplicity.
 function inlineParse(text: string, keyPrefix: string) {
   const parts: React.ReactNode[] = [];
-  let cursor = 0;
-
-  const pushText = (t: string) => {
-    if (!t) return;
-    parts.push(<React.Fragment key={`${keyPrefix}-t-${parts.length}`}>{t}</React.Fragment>);
-  };
 
   // Simple transforms priority: images -> links -> bold -> italic
   // We apply sequentially by splitting.
@@ -41,6 +35,7 @@ function inlineParse(text: string, keyPrefix: string) {
       const alt = m[1];
       const src = m[2];
       out.push(
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           key={`${keyPrefix}-img-${out.length}`}
           src={src}

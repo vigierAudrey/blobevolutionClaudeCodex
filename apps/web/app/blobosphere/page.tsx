@@ -118,12 +118,12 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
               <Sparkles className="h-7 w-7" />
             </div>
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-              Le guide pour t'équiper, rider responsable et rester en forme
+              Le guide pour t&apos;équiper, rider responsable et rester en forme
             </h1>
           </div>
 
           <p className="text-lg text-white/90">
-            Des articles courts pour bien choisir ton matériel, comprendre l'environnement (météo, spots, impact)
+            Des articles courts pour bien choisir ton matériel, comprendre l&apos;environnement (météo, spots, impact)
             et prendre soin de ta santé. Bientôt: des interviews inspirantes. Chaque article
             pointe aussi vers des ressources de confiance pour aller plus loin.
           </p>
@@ -142,7 +142,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
               </Link>
             </Button>
             <Button asChild variant="ghost" size="lg" className="bg-transparent text-white hover:bg-white/10">
-              <Link href="/">← Retour à l'accueil</Link>
+              <Link href="/">← Retour à l&apos;accueil</Link>
             </Button>
           </div>
         </div>
@@ -169,7 +169,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
             Sélection {activeTopic === 'all' ? 'Blobosphère' : topicMap.get(activeTopic)?.label}
           </h2>
           <p className="text-base text-muted-foreground">
-            Les guides publiés sont tirés directement des fichiers MDX (`apps/web/content/blobosphere`). Les brouillons restent cachés tant qu'ils ne sont pas publiés.
+            Les guides publiés sont tirés directement des fichiers MDX (`apps/web/content/blobosphere`). Les brouillons restent cachés tant qu&apos;ils ne sont pas publiés.
           </p>
         </div>
         {filteredArticles.length === 0 ? (
@@ -178,7 +178,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
               <div className="flex items-start justify-center gap-3">
                 <AlertCircle className="h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
                 <p className="text-base text-amber-700 dark:text-amber-300">
-                  Aucun article publié pour cette rubrique pour l'instant. Sélectionne "Tous les sujets" ou publie un nouveau guide via l'admin.
+                  Aucun article publié pour cette rubrique pour l&apos;instant. Sélectionne &quot;Tous les sujets&quot; ou publie un nouveau guide via l&apos;admin.
                 </p>
               </div>
             </CardContent>
@@ -330,7 +330,7 @@ function ArticleCard({
           className="w-full bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-md transition-all hover:from-sky-700 hover:to-blue-700 hover:shadow-lg"
         >
           <Link href={href} className="inline-flex items-center justify-center gap-2">
-            Lire l'article
+            Lire l&apos;article
             <span aria-hidden="true">→</span>
           </Link>
         </Button>

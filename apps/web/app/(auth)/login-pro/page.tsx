@@ -273,7 +273,7 @@ export default function ProLoginPage() {
         <Card className="border-2 border-transparent hover:border-blue-300 transition-all duration-200 hover:shadow-lg cursor-pointer">
           <CardContent className="p-4 text-center">
             <p className="text-sm text-muted-foreground">
-              Tu n'es pas pro ?{' '}
+              Tu n&apos;es pas pro ?{' '}
               <span className="font-medium text-primary">Connexion standard (Riders)</span>
             </p>
           </CardContent>

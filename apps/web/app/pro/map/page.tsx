@@ -312,7 +312,7 @@ export default function ProMapPage() {
                         <span>Autorisations refusées - Comment débloquer</span>
                       </h4>
                       <p className="text-sm text-red-800 dark:text-red-200 mb-3">
-                        Ton navigateur bloque l'accès à ta position. Pour débloquer, suis ces étapes pour {getBrowserInstructions(browserType).title} :
+                        Ton navigateur bloque l&apos;accès à ta position. Pour débloquer, suis ces étapes pour {getBrowserInstructions(browserType).title} :
                       </p>
                       <ol className="text-sm text-red-800 dark:text-red-200 space-y-1 ml-4">
                         {getBrowserInstructions(browserType).steps.map((step, idx) => (
