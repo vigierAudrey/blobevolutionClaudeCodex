@@ -216,15 +216,6 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
     return res.status(201).json({ id: msg.id });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002' && directKey) {
-      const existing = await prisma.conversation.findFirst({
-        where: { directKey },
-        select: { id: true },
-      });
-      if (existing) {
-        return res.status(200).json({ id: existing.id });
-      }
-    }
     secureLogger.error('Open conversation error', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -313,12 +304,13 @@ const openConversationLimiter = rateLimit({
   message: { error: 'Too many requests', message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.' },
   keyGenerator: (req, res) => {
     const userId = (req as any).user?.id as string | undefined;
-    return userId ? `user:${userId}` : ipKeyGenerator(req, res);
+    return userId ? `user:${userId}` : ipKeyGenerator(req.ip ?? '');
   },
   handler: (req, res) => {
+    const rateLimitInfo = (req as { rateLimit?: { resetTime?: Date } }).rateLimit;
     const retryAfterSeconds =
-      typeof req.rateLimit?.resetTime?.getTime === 'function'
-        ? Math.max(1, Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000))
+      typeof rateLimitInfo?.resetTime?.getTime === 'function'
+        ? Math.max(1, Math.ceil((rateLimitInfo.resetTime.getTime() - Date.now()) / 1000))
         : 60;
     res.setHeader('Retry-After', retryAfterSeconds.toString());
     return res.status(429).json({
@@ -370,11 +362,11 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
     const existingForCooldown = await prisma.conversation.findFirst({
       where: {
         type: conversationType as any,
-        members: {
-          some: { userId: meId },
-          some: { userId: body.targetUserId },
-          every: { userId: { in: [meId, body.targetUserId] } },
-        },
+        AND: [
+          { members: { some: { userId: meId } } },
+          { members: { some: { userId: body.targetUserId } } },
+          { members: { every: { userId: { in: [meId, body.targetUserId] } } } },
+        ],
       },
       select: { id: true },
     });
@@ -397,15 +389,15 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
       });
     }
 
-    const conv = await prisma.$transaction(async (tx) => {
+    const conv = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.conversation.findFirst({
         where: {
           type: conversationType as any,
-          members: {
-            some: { userId: meId },
-            some: { userId: body.targetUserId },
-            every: { userId: { in: [meId, body.targetUserId] } },
-          },
+          AND: [
+            { members: { some: { userId: meId } } },
+            { members: { some: { userId: body.targetUserId } } },
+            { members: { every: { userId: { in: [meId, body.targetUserId] } } } },
+          ],
         },
         select: { id: true },
       });

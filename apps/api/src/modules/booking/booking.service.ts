@@ -30,6 +30,31 @@ type ManualBookingInput = {
   riderUserId: string;
 };
 
+const availabilityInteractionSelect = {
+  eventType: true,
+  riderUserId: true,
+  createdAt: true,
+} as const;
+
+const availabilityStatsSelect = {
+  id: true,
+  sport: true,
+  startAt: true,
+  endAt: true,
+  spotName: true,
+  interactions: {
+    select: availabilityInteractionSelect,
+  },
+} as const;
+
+type AvailabilityInteraction = Prisma.ProAvailabilityInteractionGetPayload<{
+  select: typeof availabilityInteractionSelect;
+}>;
+
+type AvailabilityStatsRow = Prisma.ProAvailabilityGetPayload<{
+  select: typeof availabilityStatsSelect;
+}>;
+
 export class BookingService {
   async createAvailability(proUserId: string, data: CreateAvailabilityInput) {
     await this.assertProHasGeo(proUserId);
@@ -768,22 +793,9 @@ export class BookingService {
 
   async getProAvailabilityStats(proUserId: string) {
     // Get all availabilities for this PRO
-    const availabilities = await prisma.proAvailability.findMany({
+    const availabilities: AvailabilityStatsRow[] = await prisma.proAvailability.findMany({
       where: { proUserId },
-      select: {
-        id: true,
-        sport: true,
-        startAt: true,
-        endAt: true,
-        spotName: true,
-        interactions: {
-          select: {
-            eventType: true,
-            riderUserId: true,
-            createdAt: true,
-          },
-        },
-      },
+      select: availabilityStatsSelect,
       orderBy: {
         startAt: 'desc',
       },
@@ -793,14 +805,15 @@ export class BookingService {
     let totalClicks = 0;
 
     const slots = availabilities.map((availability) => {
+      const interactions = availability.interactions as AvailabilityInteraction[];
       // Count unique riders per event type
       const uniqueViewers = new Set(
-        availability.interactions
+        interactions
           .filter((i) => i.eventType === 'VIEW')
           .map((i) => i.riderUserId)
       );
       const uniqueClickers = new Set(
-        availability.interactions
+        interactions
           .filter((i) => i.eventType === 'CLICK')
           .map((i) => i.riderUserId)
       );
@@ -815,7 +828,7 @@ export class BookingService {
       const conversionRate = uniqueViews > 0 ? ((uniqueClicks / uniqueViews) * 100).toFixed(1) : '0.0';
 
       // Find last interaction
-      const sortedInteractions = availability.interactions.sort(
+      const sortedInteractions = interactions.sort(
         (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
       );
       const lastInteraction = sortedInteractions[0];
