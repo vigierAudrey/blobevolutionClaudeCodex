@@ -11,8 +11,9 @@ import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { MapPin, Cookie, Trash2, Target, Shield, Ban } from 'lucide-react';
+import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import Link from 'next/link';
 import { apiClient } from '../../../lib/apiClient';
 import { apiRequest } from '../../../lib/csrf';
 import { useToast } from '../../../components/ui/toast';
@@ -621,74 +622,89 @@ export default function ProProfilePage() {
 
                 <hr className="border-t-2" />
 
-                {/* RGPD Export & Deletion */}
+                {/* RGPD Rights */}
                 <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Vos Droits RGPD</h3>
+                  </div>
                   <p className="text-sm text-muted-foreground">
-                    Conformément au RGPD, vous pouvez exporter ou supprimer vos données personnelles à tout moment.
+                    Conformément au RGPD, vous disposez d&apos;un droit d&apos;accès, de rectification, de suppression et de portabilité de vos données.
                   </p>
-                  <div className="flex flex-wrap gap-2 items-center">
-                  <button
-                    type="button"
-                    className="text-sm text-primary hover:underline"
-                    onClick={async () => {
-                      try {
-                        const tokens = apiClient.getTokens();
-                        if (!tokens?.accessToken) {
-                          toast('Session expirée, veuillez vous reconnecter', 'error');
-                          return;
-                        }
-
-                        toast('Génération de l\'export en cours...', 'info');
-
-                        const response = await apiRequest('/pro/export', {
-                          method: 'GET',
-                          headers: { Authorization: `Bearer ${tokens.accessToken}` },
-                        });
-
-                        if (!response.ok) {
-                          const errorData = await response.json().catch(() => ({}));
-                          throw new Error(errorData.error || 'Erreur lors de l\'export');
-                        }
-
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-
-                        toast('Export téléchargé avec succès', 'success');
-                      } catch (error) {
-                        const message = error instanceof Error ? error.message : 'Erreur lors de l\'export';
-                        toast(message, 'error');
-                      }
-                    }}
-                  >
-                    📥 Exporter mes données
-                  </button>
-                  <span className="text-muted-foreground">•</span>
-                  {deletionStatus?.isScheduled ? (
-                    <button
+                  <div className="flex flex-wrap gap-3">
+                    <Link href="/about">
+                      <Button variant="outline" size="sm">
+                        <FileText className="h-3.5 w-3.5 mr-2" />
+                        Politique RGPD
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       type="button"
-                      className="text-sm text-orange-600 hover:underline font-medium"
-                      onClick={handleCancelDeletion}
-                      disabled={loadingDeletion}
+                      onClick={async () => {
+                        try {
+                          const tokens = apiClient.getTokens();
+                          if (!tokens?.accessToken) {
+                            toast('Session expirée, veuillez vous reconnecter', 'error');
+                            return;
+                          }
+
+                          toast('Génération de l\'export en cours...', 'info');
+
+                          const response = await apiRequest('/pro/export', {
+                            method: 'GET',
+                            headers: { Authorization: `Bearer ${tokens.accessToken}` },
+                          });
+
+                          if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.error || 'Erreur lors de l\'export');
+                          }
+
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
+                          document.body.appendChild(a);
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                          document.body.removeChild(a);
+
+                          toast('Export téléchargé avec succès', 'success');
+                        } catch (error) {
+                          const message = error instanceof Error ? error.message : 'Erreur lors de l\'export';
+                          toast(message, 'error');
+                        }
+                      }}
                     >
-                      ⚠️ Annuler la suppression ({deletionStatus.daysRemaining} jours restants)
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="text-sm text-red-600 hover:underline"
-                      onClick={() => setShowDeletionModal(true)}
-                    >
-                      🗑️ Supprimer mon compte
-                    </button>
-                  )}
-                </div>
+                      📥 Exporter mes données
+                    </Button>
+                    {deletionStatus?.isScheduled ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={handleCancelDeletion}
+                        disabled={loadingDeletion}
+                        className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                      >
+                        ⚠️ Annuler suppression ({deletionStatus.daysRemaining}j)
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={() => setShowDeletionModal(true)}
+                        className="border-red-300 text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-2" />
+                        Supprimer mon compte
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardContent>

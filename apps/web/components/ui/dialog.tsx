@@ -53,8 +53,8 @@ export function DialogContent({ children }: DialogProps) {
   if (!context || !context.open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => context.setOpen(false)}>
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4" onClick={() => context.setOpen(false)}>
+      <div className="w-full max-w-md rounded-lg bg-white dark:bg-slate-900 p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
         {children}
       </div>
     </div>

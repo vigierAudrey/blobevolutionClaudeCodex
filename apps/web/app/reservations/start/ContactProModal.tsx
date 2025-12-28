@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../../components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../../../components/ui/dialog';
+import { StatusMessage } from '../../../components/ui/status-message';
 import { apiClient, type NearbyProResult } from '../../../lib/apiClient';
 
 interface ContactProModalProps {
@@ -139,61 +141,52 @@ export function ContactProModal({ pro, onClose, onSubmitted }: ContactProModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <form onSubmit={submit} className="w-full max-w-lg space-y-4 rounded-lg bg-white p-6 shadow-lg">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">Contacter {pro.businessName || pro.email}</h2>
-            <p className="text-sm text-muted-foreground">
-              Tu peux demander un cours ou te présenter, même sans créneau publié.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="text-sm text-muted-foreground hover:text-foreground"
-            onClick={onClose}
-            disabled={saving}
-          >
-            Fermer
-          </button>
-        </div>
+    <Dialog open={!!pro} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        {pro && (
+          <form onSubmit={submit} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>Contacter {pro.businessName || pro.email}</DialogTitle>
+              <DialogDescription>
+                Tu peux demander un cours ou te présenter, même sans créneau publié
+              </DialogDescription>
+            </DialogHeader>
 
-        <div className="space-y-3 text-sm">
-          <p className="font-medium">Message au pro</p>
-          <textarea
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            rows={4}
-            className="w-full rounded-md border px-3 py-2"
-            placeholder="Présente-toi et décris ton besoin (dates, spot préféré, niveau…)."
-          />
-        </div>
+            <div className="space-y-3">
+              <label className="text-sm font-medium">Message au pro</label>
+              <textarea
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                rows={4}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                placeholder="Présente-toi et décris ton besoin (dates, spot préféré, niveau…)."
+              />
+            </div>
 
-        {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" aria-live="assertive">
-            {error}
-          </div>
+            {error && (
+              <StatusMessage variant="error">
+                {error}
+              </StatusMessage>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="submit"
+                disabled={saving || cooldown > 0}
+                aria-busy={saving}
+                aria-live="polite"
+                title={cooldown > 0 ? `Réessayer dans ${cooldown}s` : undefined}
+              >
+                {saving
+                  ? 'Envoi…'
+                  : cooldown > 0
+                    ? `Réessayer dans ${cooldown}s`
+                    : 'Envoyer le message'}
+              </Button>
+            </DialogFooter>
+          </form>
         )}
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-            Annuler
-          </Button>
-          <Button
-            type="submit"
-            disabled={saving || cooldown > 0}
-            aria-busy={saving}
-            aria-live="polite"
-            title={cooldown > 0 ? `Réessayer dans ${cooldown}s` : undefined}
-          >
-            {saving
-              ? 'Envoi…'
-              : cooldown > 0
-                ? `Réessayer dans ${cooldown}s`
-                : 'Envoyer le message'}
-          </Button>
-        </div>
-      </form>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

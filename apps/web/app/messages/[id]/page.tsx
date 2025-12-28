@@ -9,6 +9,7 @@ import { BackBar } from '../../../components/BackBar';
 import { Button } from '../../../components/ui/button';
 import { Shield, ShieldOff, MoreVertical } from 'lucide-react';
 import { apiClient } from '../../../lib/apiClient';
+import { ConversationMembers } from '../../../components/ConversationMembers';
 import type {
   Message,
   MessageListResponse,
@@ -221,6 +222,18 @@ export default function ConversationPage() {
               <Button onClick={send} className="w-full sm:w-auto">Envoyer</Button>
             </div>
           )}
+
+          <ConversationMembers
+            conversationId={id}
+            onMemberAdded={() => {
+              void loadMessages();
+              void refreshConversationInfo();
+            }}
+            onMemberRemoved={() => {
+              void loadMessages();
+              void refreshConversationInfo();
+            }}
+          />
         </CardContent>
       </Card>
     </div>

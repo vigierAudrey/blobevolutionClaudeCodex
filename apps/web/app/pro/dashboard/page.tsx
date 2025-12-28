@@ -279,7 +279,7 @@ export default function ProDashboardPage() {
                   </div>
                   <div>
                     <CardTitle>Mes créneaux & réservations</CardTitle>
-                    <CardDescription>Publier, suivre et gérer tes slots</CardDescription>
+                    <CardDescription>Publier, suivre et gérer tes créneaux</CardDescription>
                   </div>
                 </div>
               </CardHeader>

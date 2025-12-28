@@ -31,6 +31,7 @@ type FieldErrors = {
   password?: string;
   role?: string;
   consent?: string;
+  ageConfirmation?: string;
 };
 
 const isZodIssueArray = (value: unknown): value is ZodIssue[] => {
@@ -70,6 +71,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [info, setInfo] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [consentAccepted, setConsentAccepted] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [loginConsentNeeded, setLoginConsentNeeded] = useState(false);
   const [loginConsentAccepted, setLoginConsentAccepted] = useState(false);
   const [emailNotVerified, setEmailNotVerified] = useState(false);
@@ -112,6 +114,8 @@ export function AuthForm({ mode }: AuthFormProps) {
         errors.role = 'Rôle invalide.';
       } else if (pathSegment === 'consentAccepted') {
         errors.consent = 'Vous devez accepter la charte pour continuer.';
+      } else if (pathSegment === 'ageConfirmed') {
+        errors.ageConfirmation = 'Vous devez avoir 18 ans ou plus pour vous inscrire.';
       }
     });
 
@@ -131,11 +135,15 @@ export function AuthForm({ mode }: AuthFormProps) {
 
     try {
       if (mode === 'register') {
+        if (!ageConfirmed) {
+          setFieldErrors({ ageConfirmation: 'Vous devez avoir 18 ans ou plus pour vous inscrire.' });
+          return;
+        }
         if (!consentAccepted) {
           setFieldErrors({ consent: 'Merci de confirmer que vous avez lu et accepté la charte.' });
           return;
         }
-        await apiClient.register({ email, password, role, consentAccepted: true });
+        await apiClient.register({ email, password, role, ageConfirmed: true, consentAccepted: true });
         setInfo('Compte créé. Vérifie ta boîte mail pour valider ton email.');
         setTimeout(() => router.push('/login'), 800);
         return;
@@ -441,6 +449,31 @@ export function AuthForm({ mode }: AuthFormProps) {
               {fieldErrors.role && (
                 <p className="text-sm text-red-600" role="alert">
                   {fieldErrors.role}
+                </p>
+              )}
+            </div>
+          )}
+          {mode === 'register' && (
+            <div className="space-y-2 border rounded-md p-3 bg-blue-50/50 dark:bg-blue-950/20">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  id="ageConfirmed"
+                  type="checkbox"
+                  className={`mt-1 ${fieldErrors.ageConfirmation ? 'border-red-500' : ''}`}
+                  checked={ageConfirmed}
+                  onChange={(event) => setAgeConfirmed(event.target.checked)}
+                  required
+                />
+                <span className="font-medium">
+                  Je certifie avoir 18 ans ou plus et accepte les{' '}
+                  <a className="underline text-primary" href="/terms" target="_blank" rel="noopener noreferrer">
+                    Conditions Générales d&apos;Utilisation
+                  </a>
+                </span>
+              </label>
+              {fieldErrors.ageConfirmation && (
+                <p className="text-sm text-red-600 mt-2" role="alert">
+                  {fieldErrors.ageConfirmation}
                 </p>
               )}
             </div>

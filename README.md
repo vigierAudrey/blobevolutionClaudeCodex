@@ -482,6 +482,57 @@ npm run build        # Build de production (API uniquement)
 npm run type-check   # Vérification TypeScript
 ```
 
+## 🖼️ Configuration des Images (Next.js + MinIO)
+
+### Configuration Locale et Production
+
+Next.js nécessite une configuration explicite des domaines autorisés pour le composant `next/image`. Le fichier `apps/web/next.config.mjs` contient la configuration pour MinIO :
+
+```javascript
+images: {
+  remotePatterns: [
+    {
+      protocol: 'http',
+      hostname: 'localhost',
+      port: '9000',
+      pathname: '/blobinfini-dev/**',
+    },
+  ],
+},
+```
+
+**⚠️ Points importants :**
+
+1. **Redémarrage obligatoire** : Après toute modification de `next.config.mjs`, vous devez **redémarrer le serveur Next.js** (Ctrl+C puis `npm run dev`)
+2. **Environnements multiples** : Pour la production, ajoutez un nouveau pattern dans `remotePatterns` avec :
+   - Le hostname de production de MinIO (ex: `minio.votredomaine.com`)
+   - Le protocol `https` (recommandé)
+   - Le pathname correspondant à votre bucket de production
+
+**Exemple de configuration multi-environnements :**
+
+```javascript
+images: {
+  remotePatterns: [
+    // Développement local
+    {
+      protocol: 'http',
+      hostname: 'localhost',
+      port: '9000',
+      pathname: '/blobinfini-dev/**',
+    },
+    // Production
+    {
+      protocol: 'https',
+      hostname: 'minio.votredomaine.com',
+      pathname: '/blobinfini-prod/**',
+    },
+  ],
+},
+```
+
+**Erreur courante :** Si vous voyez `Error: Invalid src prop... hostname is not configured`, c'est que le domaine de l'image n'est pas autorisé dans `next.config.mjs`.
+
 ## 🌐 Déploiement Frontend avec Vercel
 
 ### Configuration Initiale
@@ -602,34 +653,29 @@ act -j e2e-tests
 ### 📦 Architecture de Déploiement
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    GitHub Repository                     │
-│                 (blobevolutionClaudeCodex)              │
-└────────────┬────────────────────────────┬───────────────┘
-             │                             │
-     ┌───────▼────────┐          ┌────────▼──────────┐
-     │  GitHub Actions │          │      Vercel       │
-     │   (CI/CD)       │          │   (Auto Deploy)   │
-     │                 │          │                   │
-     │ • Lint          │          │ • Build Frontend  │
-     │ • Type-check    │          │ • Deploy Next.js  │
-     │ • Tests         │          │ • CDN Global      │
-     └─────────────────┘          └────────┬──────────┘
-                                            │
-                                   ┌────────▼──────────┐
-                                   │  Production URL   │
-                                   │  *.vercel.app     │
-                                   └───────────────────┘
-                                            │
-                                            │ API Calls
-                                            ▼
-                                   ┌───────────────────┐
-                                   │  Clever Cloud     │
-                                   │  (Backend API)    │
-                                   │  + PostgreSQL     │
-                                   │  + Redis          │
-                                   └───────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                     GitHub Repository                         │
+│          (source de vérité, remote principal)                │
+└────────────┬──────────────────────────────┬──────────────────┘
+             │                              │
+     ┌───────▼──────────────────┐   ┌───────▼───────────────┐
+     │ Validation CI            │   │        Vercel         │
+     │ (lint / type / tests)    │   │   Preview + Prod      │
+     │ • act (local, .yml)      │   │   Next.js uniquement  │
+     │ • GitLab CI (remote)     │   │   Build + CDN         │
+     │ • GitHub Actions (quota) │   └────────┬──────────────┘
+     └──────────────────────────┘            │
+                                             │ API Calls
+                                             ▼
+                                    ┌──────────────────────┐
+                                    │    Clever Cloud      │
+                                    │    (Backend API)     │
+                                    │    + PostgreSQL      │
+                                    │    + Redis           │
+                                    └──────────────────────┘
 ```
+
+CI locale avec `act` (lint/type-check/tests/e2e), CI distante via GitLab (lint/type-check/tests, au moins backend), GitHub Actions reste optionnel car soumis aux quotas.
 
 ### 🚀 Workflow de Développement
 
@@ -639,18 +685,38 @@ act -j e2e-tests
      - Démarre l'infra Docker (Postgres, Redis, MinIO, Mailpit) et l'API dans Docker
      - Lance le frontend Next.js en local sur `http://localhost:3002`
 2. **Créer une branche** : `git checkout -b feat/nouvelle-fonctionnalite`
-3. **Commit et push** : `git push origin feat/nouvelle-fonctionnalite`
-4. **Vercel crée automatiquement** une URL de prévisualisation
-5. **GitHub Actions** vérifie lint/tests/type-check
-6. **Merge vers `main`** → Déploiement automatique en production sur Vercel
+3. **Validation locale (recommandée)** avec `act` (voir ci-dessous)
+4. **Commit et push** : `git push origin feat/nouvelle-fonctionnalite`
+5. **GitLab CI (optionnel)** : `git push gitlab` si configuré
+6. **Vercel crée automatiquement** une URL de prévisualisation
+7. **Merge vers `main`** → Déploiement automatique en production sur Vercel
+
+#### Validation locale (recommandée) avec act
+
+- `act` exécute localement les jobs définis dans `.github/workflows/ci.yml` (lint, type-check, tests, e2e).
+- Exemples de commandes (jobs existants) :
+
+```bash
+act -l
+act -j lint
+act -j type-check
+act -j build-and-test -P ubuntu-latest=catthehacker/ubuntu:act-latest
+```
+
+- Au premier lancement, choisir l'image "Medium" ; `act` mémorise ce choix.
+
+#### Validation distante (optionnelle) avec GitLab CI
+
+- `git push gitlab` déclenche le pipeline GitLab (si configuré).
+- Rappel : `origin` = GitHub (source de vérité), `gitlab` = remote secondaire.
 
 ### 🎯 Bonnes Pratiques
 
-- ✅ Testez toujours localement avant de push (`npm run dev:web`)
-- ✅ Vérifiez les logs de build Vercel en cas d'erreur (dashboard Vercel)
-- ✅ Utilisez les URLs de prévisualisation pour tester avant merge
-- ✅ Configurez un domaine custom dans Vercel (Settings → Domains) si besoin
-- ✅ Activez les "Deployment Protection" pour sécuriser la production (Vercel Pro)
+- ✅ Local first : lancez `act` avant de push (lint/type-check/tests/e2e)
+- ✅ GitLab CI sert de backup quand GitHub Actions est bloqué par quota
+- ✅ Vercel valide le frontend en environnement déployé + fournit une URL de preview partageable
+- ✅ Évitez les doublons : pas besoin de rebuild frontend ailleurs si Vercel gère build + CDN
+- ✅ Vérifiez les logs Vercel en cas d'erreur (dashboard, optionnel)
 
 ### 🔗 Ressources Vercel
 

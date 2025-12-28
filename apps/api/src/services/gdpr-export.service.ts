@@ -1,5 +1,5 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
-import type { ProAvailability, ProOffer } from '@blobinfini/database';
+import type { ProAvailability } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
 import * as crypto from 'crypto';
 
@@ -52,6 +52,8 @@ const EXPORT_LIMITS = {
   CONTACT_REQUESTS: 1000,
   AUDIT_LOGS: 100,
 } as const;
+
+type ProOfferExport = Prisma.ProOfferGetPayload<{}>;
 
 interface ExportedData {
   exportDate: string;
@@ -401,14 +403,14 @@ export class GdprExportService {
       };
 
       // Pro offers
-      const offers: ProOffer[] = await prisma.proOffer.findMany({
+      const offers: ProOfferExport[] = await prisma.proOffer.findMany({
         where: { proProfileId: proProfile.id },
         orderBy: { createdAt: 'desc' },
         take: EXPORT_LIMITS.PRO_OFFERS,
       });
 
       if (offers.length > 0) {
-        exportData.proOffers = offers.map((offer: ProOffer) => ({
+        exportData.proOffers = offers.map((offer: ProOfferExport) => ({
           sport: offer.sport,
           level: offer.level,
           title: offer.title,
