@@ -741,7 +741,7 @@ export const apiClient = {
   login: (body: { email: string; password: string; consentAccepted?: boolean }) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(body) }) as Promise<LoginResponse>,
 
-  register: (body: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted: true }) =>
+  register: (body: { email: string; password: string; role: 'RIDER' | 'PRO'; ageConfirmed: true; consentAccepted: true }) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(body) }) as Promise<Record<string, unknown>>,
 
   requestPasswordReset: (email: string) =>

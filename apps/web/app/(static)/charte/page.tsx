@@ -10,13 +10,21 @@ export default function ChartePage() {
     <div className="max-w-3xl mx-auto py-8 px-4">
       <h1 className="text-2xl font-semibold">Charte de sécurité & avertissement</h1>
       <p className="mt-2 text-muted-foreground">
-        Dernière mise à jour: 8 septembre 2025 – Version v1.0.0
+        Dernière mise à jour : 28 décembre 2025 – Version v1.1.0
       </p>
 
       <section className="mt-6 space-y-4">
+        <div className="bg-blue-100 dark:bg-blue-950/30 p-4 rounded-lg border-2 border-blue-400 dark:border-blue-800/50">
+          <p className="font-semibold text-blue-900 dark:text-blue-100">
+            🔞 L&apos;utilisation de BlobConnect est strictement réservée aux personnes majeures (18 ans et plus).
+          </p>
+          <p className="mt-2 text-blue-800 dark:text-blue-200 text-sm">
+            Les sports de glisse comportent des risques. En tant qu&apos;utilisateur majeur, tu es pleinement responsable de tes choix et de ta sécurité.
+          </p>
+        </div>
         <p>
           BlobConnect est une plateforme de mise en relation pour partager des activités et de bons moments.
-          Nous ne sommes ni un organisateur d’activités, ni une agence, ni un assureur.
+          Nous ne sommes ni un organisateur d'activités, ni une agence, ni un assureur.
           Les décisions que tu prends, les rencontres que tu effectues et les activités que tu pratiques
           relèvent de ta seule responsabilité.
         </p>
@@ -42,9 +50,18 @@ export default function ChartePage() {
           Si tu rencontres un profil problématique, signale‑le promptement afin que nous puissions intervenir.
         </p>
         <p className="text-sm text-muted-foreground">
-          Remarque: ce document n’est pas un conseil juridique. Si tu as des questions sur tes droits ou obligations,
+          Remarque: ce document n'est pas un conseil juridique. Si tu as des questions sur tes droits ou obligations,
           consulte un professionnel du droit.
         </p>
+        <div className="pt-4 border-t mt-6">
+          <p className="text-sm text-muted-foreground">
+            Pour plus de détails sur les conditions d&apos;utilisation, consulte les{' '}
+            <a href="/terms" className="underline text-primary">
+              Conditions Générales d&apos;Utilisation (CGU)
+            </a>
+            .
+          </p>
+        </div>
       </section>
     </div>
   );
