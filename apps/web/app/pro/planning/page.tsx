@@ -248,7 +248,7 @@ export default function ProPlanningPage() {
           <div className="space-y-1">
             <p className="font-semibold">Nouveau rappel : ajout d&apos;externes</p>
             <p>
-              Si tu as des élèves qui ont réservé en dehors de l&apos;app, utilise les boutons +/- pour ajuster le nombre d&apos;inscrits manuellement. Le slot se ferme automatiquement quand la capacité est atteinte.
+              Si tu as des élèves qui ont réservé en dehors de l&apos;app, utilise les boutons +/- pour ajuster le nombre d&apos;inscrits manuellement. Le créneau se ferme automatiquement quand la capacité est atteinte.
             </p>
             <p className="text-xs text-amber-800/80 dark:text-amber-200/80">
               Message affiché {adjustTipCount}/3 fois pour t&apos;aider sur les premières utilisations.

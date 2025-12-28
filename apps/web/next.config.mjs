@@ -11,6 +11,16 @@ const nextConfig = {
     // Autoriser l'import de modules en dehors du répertoire Next (monorepo)
     externalDir: true,
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '9000',
+        pathname: '/blobinfini-dev/**',
+      },
+    ],
+  },
 };
 
 export default nextConfig;

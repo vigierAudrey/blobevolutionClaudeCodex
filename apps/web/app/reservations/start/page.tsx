@@ -9,11 +9,15 @@ import dynamicImport from 'next/dynamic';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
+import { Input } from '../../../components/ui/input';
 import { Slider } from '../../../components/ui/slider';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../../../components/ui/dialog';
+import { StatusMessage } from '../../../components/ui/status-message';
 import { ReservationStepper } from '../../../components/reservations/ReservationStepper';
 import { RiderMiniaturesStrip } from '../../../components/reservations/RiderMiniaturesStrip';
 import { apiClient, type BookingAvailabilityResult, type NearbyProResult } from '../../../lib/apiClient';
 import { ContactProModal } from './ContactProModal';
+import { Waves, Wind, Calendar, MapPin, Sparkles, TrendingUp, Users, Target } from 'lucide-react';
 
 const AvailabilityMap = dynamicImport(() => import('../../../components/MapComponent'), { ssr: false });
 
@@ -29,11 +33,6 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   }
   return fallback;
 };
-
-const sports: Array<{ id: 'surf' | 'kitesurf'; label: string }> = [
-  { id: 'surf', label: 'Surf' },
-  { id: 'kitesurf', label: 'Kitesurf' },
-];
 
 const levels: Array<{ id: 'beginner' | 'intermediate' | 'advanced'; label: string }> = [
   { id: 'beginner', label: 'Débutant' },
@@ -61,6 +60,7 @@ export default function ReservationStartPage() {
   const [requestSuccess, setRequestSuccess] = useState<{ spotName: string | null; startAt: string } | null>(null);
   const [contactPro, setContactPro] = useState<NearbyProResult | null>(null);
   const [contactSuccess, setContactSuccess] = useState<string | null>(null);
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
 
   const steps = useMemo(() => ['Préférences', 'Zone', 'Résultats'], []);
   const safeResults = useMemo(() => (Array.isArray(results) ? results : []), [results]);
@@ -253,151 +253,282 @@ export default function ReservationStartPage() {
       <ReservationStepper current={step} steps={steps} />
 
       {step === 1 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Quel sport veux-tu pratiquer ?</CardTitle>
-            <CardDescription>Sélectionne ton sport et ton niveau pour filtrer les pros.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {sports.map((sport) => (
-                <button
-                  key={sport.id}
-                  type="button"
-                  className={`border rounded-lg px-4 py-3 text-left transition ${
-                    selectedSport === sport.id ? 'border-primary bg-primary/5' : 'hover:border-primary'
-                  }`}
-                  onClick={() => setSelectedSport(sport.id)}
-                >
-                  <div className="font-medium">{sport.label}</div>
-                  <div className="text-xs text-muted-foreground">Coaching sur mesure & sessions partagées</div>
-                </button>
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Ton niveau actuel</p>
-              <div className="flex flex-wrap gap-2">
-                {levels.map((level) => (
-                  <Badge
-                    key={level.id}
-                    variant={selectedLevel === level.id ? 'default' : 'outline'}
-                    className="cursor-pointer"
-                    onClick={() => setSelectedLevel(level.id)}
-                  >
-                    {level.label}
-                  </Badge>
-                ))}
+        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+          {/* Header avec gradient */}
+          <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-sky-100 to-cyan-100 dark:from-sky-900/20 dark:to-cyan-900/20 p-4 border-2 border-sky-200/50 dark:border-sky-800/50">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-500 text-white shadow-md">
+                <Target className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Trouver un moniteur</h2>
+                <p className="text-sm text-muted-foreground">Étape 1 sur 3 : Sport & niveau</p>
               </div>
             </div>
+            <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400">
+              Étape 1/3
+            </Badge>
+          </div>
 
-            <div className="flex justify-end">
-              <Button disabled={!canGoNextFromStep1} onClick={() => setStep(2)}>
-                Continuer
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          <Card className="border-2">
+            <CardHeader>
+              <CardTitle className="text-xl">Quel sport veux-tu pratiquer ?</CardTitle>
+              <CardDescription>Sélectionne ton sport et ton niveau pour filtrer les pros</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSport('surf')}
+                  aria-pressed={selectedSport === 'surf'}
+                  className={`rounded-2xl border-2 px-5 py-6 text-left transition-all shadow-sm hover:shadow-md ${
+                    selectedSport === 'surf'
+                      ? 'border-blue-500 bg-blue-50/80 ring-2 ring-blue-200 dark:bg-blue-900/20 dark:ring-blue-800'
+                      : 'border-border hover:border-blue-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-blue-500/10 p-3">
+                      <Waves className="text-blue-600 w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-lg">Surf</p>
+                      <p className="text-sm text-muted-foreground">
+                        Coaching sur mesure & sessions partagées
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSport('kitesurf')}
+                  aria-pressed={selectedSport === 'kitesurf'}
+                  className={`rounded-2xl border-2 px-5 py-6 text-left transition-all shadow-sm hover:shadow-md ${
+                    selectedSport === 'kitesurf'
+                      ? 'border-purple-500 bg-purple-50/80 ring-2 ring-purple-200 dark:bg-purple-900/20 dark:ring-purple-800'
+                      : 'border-border hover:border-purple-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-purple-500/10 p-3">
+                      <Wind className="text-purple-600 w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-lg">Kitesurf</p>
+                      <p className="text-sm text-muted-foreground">
+                        Coaching sur mesure & sessions partagées
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-sm font-semibold">Ton niveau actuel</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {levels.map((level) => {
+                    const isSelected = selectedLevel === level.id;
+                    const iconMap = {
+                      beginner: Users,
+                      intermediate: TrendingUp,
+                      advanced: Sparkles,
+                    };
+                    const Icon = iconMap[level.id];
+
+                    return (
+                      <button
+                        key={level.id}
+                        type="button"
+                        onClick={() => setSelectedLevel(level.id)}
+                        className={`rounded-xl border-2 px-4 py-3 text-sm font-medium transition-all ${
+                          isSelected
+                            ? 'border-teal-500 bg-teal-50/80 ring-2 ring-teal-200 dark:bg-teal-900/20 dark:ring-teal-800'
+                            : 'border-border hover:border-teal-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Icon className={`w-4 h-4 ${isSelected ? 'text-teal-600' : 'text-muted-foreground'}`} />
+                          <span>{level.label}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button disabled={!canGoNextFromStep1} onClick={() => setStep(2)} size="lg">
+                  Continuer
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {step === 2 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Où es-tu prêt·e à te déplacer ?</CardTitle>
-            <CardDescription>Active la géolocalisation ou indique ton spot préféré.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Distance maximale ({distanceKm} km)</p>
-              <Slider
-                defaultValue={[distanceKm]}
-                min={5}
-                max={100}
-                step={5}
-                onValueChange={(values: number[]) => setDistanceKm(values[0] ?? 25)}
-              />
+        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+          {/* Header avec gradient */}
+          <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-emerald-100 to-teal-100 dark:from-emerald-900/20 dark:to-teal-900/20 p-4 border-2 border-emerald-200/50 dark:border-emerald-800/50">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-md">
+                <MapPin className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Zone de recherche</h2>
+                <p className="text-sm text-muted-foreground">Étape 2 sur 3 : Localisation</p>
+              </div>
             </div>
+            <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400">
+              Étape 2/3
+            </Badge>
+          </div>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Position</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="secondary" onClick={requestGeolocation} disabled={geoStatus === 'loading'}>
-                  {geoStatus === 'loading' ? 'Détection en cours…' : 'Utiliser ma position actuelle'}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  Autorise la localisation dans ton navigateur ou entre un spot manuel.
-                </span>
+          <Card className="border-2">
+            <CardHeader>
+              <CardTitle className="text-xl">Où es-tu prêt·e à te déplacer ?</CardTitle>
+              <CardDescription>Active la géolocalisation ou indique ton spot préféré</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold">Distance maximale</p>
+                  <Badge variant="outline" className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400">
+                    {distanceKm} km
+                  </Badge>
+                </div>
+                <Slider
+                  defaultValue={[distanceKm]}
+                  min={5}
+                  max={100}
+                  step={5}
+                  onValueChange={(values: number[]) => setDistanceKm(values[0] ?? 25)}
+                />
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-muted-foreground">
-                  Latitude
-                  <input
-                    type="number"
-                    step="any"
-                    value={manualLat}
-                    onChange={handleManualLatChange}
-                    className="rounded-md border px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-muted-foreground">
-                  Longitude
-                  <input
-                    type="number"
-                    step="any"
-                    value={manualLng}
-                    onChange={handleManualLngChange}
-                    className="rounded-md border px-3 py-2 text-sm"
-                  />
-                </label>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="outline" onClick={applyManualCoordinates}>
-                  Valider ces coordonnées
-                </Button>
-                {location && (
+
+              <div className="space-y-3">
+                <p className="text-sm font-semibold">Ta position</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="default"
+                    variant="secondary"
+                    onClick={requestGeolocation}
+                    disabled={geoStatus === 'loading'}
+                    className="gap-2"
+                  >
+                    <MapPin className="w-4 h-4" />
+                    {geoStatus === 'loading' ? 'Détection en cours…' : 'Utiliser ma position actuelle'}
+                  </Button>
                   <span className="text-xs text-muted-foreground">
-                    Utilisées actuellement : {location.lat.toFixed(3)}, {location.lng.toFixed(3)}
+                    Autorise la localisation dans ton navigateur ou entre un spot manuel
                   </span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Latitude
+                    </label>
+                    <Input
+                      type="number"
+                      step="any"
+                      value={manualLat}
+                      onChange={handleManualLatChange}
+                      placeholder="Ex: 43.493"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Longitude
+                    </label>
+                    <Input
+                      type="number"
+                      step="any"
+                      value={manualLng}
+                      onChange={handleManualLngChange}
+                      placeholder="Ex: -1.558"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={applyManualCoordinates}>
+                    Valider ces coordonnées
+                  </Button>
+                  {location && (
+                    <span className="text-xs text-muted-foreground">
+                      Position actuelle : {location.lat.toFixed(3)}, {location.lng.toFixed(3)}
+                    </span>
+                  )}
+                </div>
+
+                {geoMessage && (
+                  <StatusMessage variant={geoStatus === 'success' ? 'success' : 'error'}>
+                    {geoMessage}
+                  </StatusMessage>
                 )}
               </div>
-              {geoMessage && (
-                <p className={`text-xs ${geoStatus === 'success' ? 'text-green-600' : 'text-red-600'}`}>{geoMessage}</p>
-              )}
-            </div>
 
-            <div className="flex justify-between">
-              <Button variant="ghost" onClick={() => setStep(1)}>
-                Retour
-              </Button>
-              <Button onClick={() => setStep(3)}>Voir les pros disponibles</Button>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="flex justify-between">
+                <Button variant="ghost" onClick={() => setStep(1)}>
+                  Retour
+                </Button>
+                <Button onClick={() => setStep(3)} size="lg">
+                  Voir les pros disponibles
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {step === 3 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Résultats autour de toi</CardTitle>
-            <CardDescription>Créneaux publiés et pros visibles dans ton rayon.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {requestSuccess && (
-              <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-                Demande envoyée pour le créneau du {new Date(requestSuccess.startAt).toLocaleString('fr-FR')}.
-                <div className="mt-2">
-                  <Link className="underline" href="/reservations/requests">
-                    Voir mes demandes
-                  </Link>
-                </div>
+        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+          {/* Header avec gradient */}
+          <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-violet-100 to-purple-100 dark:from-violet-900/20 dark:to-purple-900/20 p-4 border-2 border-violet-200/50 dark:border-violet-800/50">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 text-white shadow-md">
+                <Calendar className="w-5 h-5" />
               </div>
-            )}
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Résultats</h2>
+                <p className="text-sm text-muted-foreground">Étape 3 sur 3 : Choisis ton cours</p>
+              </div>
+            </div>
+            <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-violet-600 dark:text-violet-400">
+              Étape 3/3
+            </Badge>
+          </div>
 
-            {contactSuccess && (
-              <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                Message envoyé à {contactSuccess}. Tu peux poursuivre la conversation depuis ta messagerie.
+          {/* Messages de succès */}
+          {requestSuccess && (
+            <StatusMessage variant="success">
+              <div className="space-y-2">
+                <p className="font-semibold">Demande envoyée avec succès !</p>
+                <p>Créneau du {new Date(requestSuccess.startAt).toLocaleString('fr-FR')}</p>
+                <Link className="inline-block mt-2 underline font-medium hover:text-green-600 dark:hover:text-green-400" href="/reservations/requests">
+                  Voir mes demandes →
+                </Link>
               </div>
-            )}
+            </StatusMessage>
+          )}
+
+          {contactSuccess && (
+            <StatusMessage variant="info">
+              <div className="space-y-1">
+                <p className="font-semibold">Message envoyé !</p>
+                <p>Ton message a été envoyé à {contactSuccess}. Tu peux poursuivre la conversation depuis ta messagerie.</p>
+              </div>
+            </StatusMessage>
+          )}
+
+          <Card className="border-2">
+            <CardHeader>
+              <CardTitle className="text-xl">Résultats autour de toi</CardTitle>
+              <CardDescription>Créneaux publiés et pros visibles dans ton rayon</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
 
             {location && (
               <div className="space-y-2">
@@ -413,6 +544,7 @@ export default function ReservationStartPage() {
                       center={[location.lat, location.lng]}
                       items={mapItems}
                       onContactClick={handleMapContactClick}
+                      highlightedItemId={highlightedItemId}
                       centerMarker={{
                         label: 'Point de recherche',
                         description: 'Les résultats sont calculés depuis cette position.',
@@ -435,125 +567,228 @@ export default function ReservationStartPage() {
 
             <section className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold">Slots disponibles</h3>
+                <h3 className="text-lg font-semibold">Créneaux disponibles</h3>
                 <Badge variant="outline">{safeResults.length} résultat(s)</Badge>
               </div>
               {loadingResults ? (
-                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
-                  Chargement des créneaux disponibles…
-                </div>
-              ) : error ? (
-                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
-                  {error}
-                </div>
-              ) : safeResults.length === 0 ? (
-                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
-                  Aucun créneau trouvé dans ce rayon. Tu peux élargir la zone ou contacter directement un pro ci-dessous.
-                </div>
-              ) : (
                 <div className="space-y-4">
-                  {safeResults.map((slot) => (
-                    <Card key={slot.id}>
-                      <CardHeader className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="flex items-center gap-2 text-base">
-                            {slot.spotName || 'Spot à définir'}
-                            <Badge variant="secondary">{slot.sport}</Badge>
-                            {(slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity) && (
-                              <Badge variant="destructive">Complet</Badge>
-                            )}
-                          </CardTitle>
-                          {slot.distanceKm != null && (
-                            <span className="text-xs text-muted-foreground">{slot.distanceKm.toFixed(1)} km</span>
-                          )}
-                        </div>
-                        <CardDescription>
-                          {new Date(slot.startAt).toLocaleString('fr-FR')} → {new Date(slot.endAt).toLocaleTimeString('fr-FR')}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                          <span>Niveaux acceptés : {slot.levels.join(', ')}</span>
-                          <span>
-                            {slot.bookedCount}/{slot.capacity} riders positionnés
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-medium">
-                            {slot.pro.businessName || slot.pro.email}
+                  {[1, 2, 3].map((i) => (
+                    <Card key={i} className="border-2 animate-pulse">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-full bg-muted w-12 h-12" />
+                          <div className="flex-1 space-y-2">
+                            <div className="h-5 bg-muted rounded w-3/4" />
+                            <div className="h-4 bg-muted rounded w-1/2" />
                           </div>
-                          <RiderMiniaturesStrip riders={slot.riders} />
                         </div>
-                        <div className="flex items-center justify-end gap-2">
-                          {(slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity) && (
-                            <span className="text-xs text-red-700 dark:text-red-300 font-semibold">Créneau complet</span>
-                          )}
-                          <Button
-                            size="sm"
-                            onClick={() => setRequestingSlot(slot)}
-                            disabled={slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity}
-                            title={slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity ? 'Tous les riders sont déjà positionnés.' : undefined}
-                          >
-                            Demander ce créneau
-                          </Button>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <div className="h-4 bg-muted rounded w-full" />
+                          <div className="h-4 bg-muted rounded w-2/3" />
                         </div>
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              ) : error ? (
+                <StatusMessage variant="error">
+                  {error}
+                </StatusMessage>
+              ) : safeResults.length === 0 ? (
+                <div className="rounded-xl border-2 border-dashed p-8 text-center">
+                  <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                    <Calendar className="w-6 h-6 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Aucun créneau trouvé dans ce rayon. Tu peux élargir la zone ou contacter directement un pro ci-dessous.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {safeResults.map((slot) => {
+                    const isFull = slot.status === 'CLOSED' || slot.bookedCount >= slot.capacity;
+                    const SportIcon = slot.sport === 'surf' ? Waves : Wind;
+
+                    return (
+                      <Card
+                        key={slot.id}
+                        className="border-2 hover:shadow-lg transition-all duration-200 hover:border-primary/50"
+                        onMouseEnter={() => setHighlightedItemId(slot.id)}
+                        onMouseLeave={() => setHighlightedItemId(null)}
+                      >
+                        <CardHeader className="pb-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 flex-1">
+                              <div className={`rounded-full p-2.5 ${slot.sport === 'surf' ? 'bg-blue-500/10' : 'bg-purple-500/10'}`}>
+                                <SportIcon className={`w-5 h-5 ${slot.sport === 'surf' ? 'text-blue-600' : 'text-purple-600'}`} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <CardTitle className="text-lg mb-2 flex items-center gap-2 flex-wrap">
+                                  <span className="truncate">{slot.spotName || 'Spot à définir'}</span>
+                                  <Badge variant="outline" className={`${slot.sport === 'surf' ? 'border-blue-500 text-blue-700 dark:text-blue-400' : 'border-purple-500 text-purple-700 dark:text-purple-400'}`}>
+                                    {slot.sport}
+                                  </Badge>
+                                  {isFull && (
+                                    <Badge variant="destructive" className="shadow-sm">Complet</Badge>
+                                  )}
+                                </CardTitle>
+                                <CardDescription className="flex items-center gap-2 text-sm">
+                                  <Calendar className="w-4 h-4" />
+                                  {new Date(slot.startAt).toLocaleString('fr-FR')} → {new Date(slot.endAt).toLocaleTimeString('fr-FR')}
+                                </CardDescription>
+                              </div>
+                            </div>
+                            {slot.distanceKm != null && (
+                              <Badge variant="secondary" className="shrink-0">
+                                {slot.distanceKm.toFixed(1)} km
+                              </Badge>
+                            )}
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3 pt-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                            <div className="flex items-center gap-2">
+                              <Target className="w-4 h-4 text-muted-foreground" />
+                              <span className="text-muted-foreground">Niveaux : {slot.levels.join(', ')}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Users className="w-4 h-4 text-muted-foreground" />
+                              <span className="font-medium">
+                                {slot.bookedCount}/{slot.capacity} riders
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 pt-2 border-t">
+                            <div className="flex items-center gap-3">
+                              <div className="text-sm font-medium">
+                                {slot.pro.businessName || slot.pro.email}
+                              </div>
+                              <RiderMiniaturesStrip riders={slot.riders} />
+                            </div>
+                            <Button
+                              onClick={() => setRequestingSlot(slot)}
+                              disabled={isFull}
+                              title={isFull ? 'Tous les riders sont déjà positionnés.' : undefined}
+                              className="shrink-0"
+                            >
+                              Demander
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </section>
 
             <section className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold">Pros autour de toi</h3>
+                <h3 className="text-lg font-semibold">Pros autour de toi</h3>
                 <Badge variant="outline">{nearbyPros.length} pro(s)</Badge>
               </div>
               {loadingPros ? (
-                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
-                  Chargement des pros à proximité…
-                </div>
-              ) : prosError ? (
-                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
-                  {prosError}
-                </div>
-              ) : nearbyPros.length === 0 ? (
-                <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
-                  Aucun pro visible dans ce rayon. Vérifie ta localisation ou élargis la recherche.
-                </div>
-              ) : (
                 <div className="space-y-4">
-                  {nearbyPros.map((pro) => (
-                    <Card key={pro.proId}>
-                      <CardHeader className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <CardTitle className="flex items-center gap-2 text-base">
-                            {pro.businessName || pro.email}
-                            {pro.verified && <Badge variant="secondary">Vérifié</Badge>}
-                            {pro.openAvailabilityCount === 0 && (
-                              <Badge variant="outline">Pas de créneau publié</Badge>
-                            )}
-                          </CardTitle>
-                          {pro.distanceKm != null && (
-                            <span className="text-xs text-muted-foreground">{pro.distanceKm.toFixed(1)} km</span>
-                          )}
+                  {[1, 2].map((i) => (
+                    <Card key={i} className="border-2 animate-pulse">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-full bg-muted w-12 h-12" />
+                          <div className="flex-1 space-y-2">
+                            <div className="h-5 bg-muted rounded w-3/4" />
+                            <div className="h-4 bg-muted rounded w-1/2" />
+                          </div>
                         </div>
-                        <CardDescription>
-                          {pro.sports.length > 0
-                            ? `Propose ${pro.sports.join(', ')}`
-                            : 'Sport non renseigné : envoie un message pour préciser ton besoin.'}
-                        </CardDescription>
                       </CardHeader>
-                      <CardContent className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="text-sm text-muted-foreground">
-                          Rayon de visibilité : {distanceKm} km · Contact direct même sans créneau.
-                        </div>
-                        <Button size="sm" variant="secondary" onClick={() => setContactPro(pro)}>
-                          Envoyer un message / Demander un cours
-                        </Button>
+                      <CardContent>
+                        <div className="h-4 bg-muted rounded w-full" />
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              ) : prosError ? (
+                <StatusMessage variant="error">
+                  {prosError}
+                </StatusMessage>
+              ) : nearbyPros.length === 0 ? (
+                <div className="rounded-xl border-2 border-dashed p-8 text-center">
+                  <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                    <Users className="w-6 h-6 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Aucun pro visible dans ce rayon. Vérifie ta localisation ou élargis la recherche.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {nearbyPros.map((pro) => {
+                    const hasAvailability = pro.openAvailabilityCount > 0;
+
+                    return (
+                      <Card
+                        key={pro.proId}
+                        className="border-2 hover:shadow-lg transition-all duration-200 hover:border-primary/50"
+                        onMouseEnter={() => setHighlightedItemId(`pro-${pro.proId}`)}
+                        onMouseLeave={() => setHighlightedItemId(null)}
+                      >
+                        <CardHeader className="pb-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 flex-1">
+                              <div className="rounded-full bg-gradient-to-br from-sky-500 to-cyan-500 p-2.5 text-white shadow-md">
+                                <Users className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <CardTitle className="text-lg mb-2 flex items-center gap-2 flex-wrap">
+                                  <span className="truncate">{pro.businessName || pro.email}</span>
+                                  {pro.verified && (
+                                    <Badge variant="default" className="bg-green-500 hover:bg-green-600 shadow-sm">
+                                      ✓ Vérifié
+                                    </Badge>
+                                  )}
+                                  {!hasAvailability && (
+                                    <Badge variant="outline" className="text-amber-700 border-amber-500 dark:text-amber-400">
+                                      Pas de créneau
+                                    </Badge>
+                                  )}
+                                </CardTitle>
+                                <CardDescription className="flex items-center gap-2 text-sm">
+                                  {pro.sports.length > 0 ? (
+                                    <>
+                                      {pro.sports.map((sport) => (
+                                        <Badge key={sport} variant="secondary" className="text-xs">
+                                          {sport}
+                                        </Badge>
+                                      ))}
+                                    </>
+                                  ) : (
+                                    <span className="text-muted-foreground italic">Sport non renseigné</span>
+                                  )}
+                                </CardDescription>
+                              </div>
+                            </div>
+                            {pro.distanceKm != null && (
+                              <Badge variant="secondary" className="shrink-0">
+                                {pro.distanceKm.toFixed(1)} km
+                              </Badge>
+                            )}
+                          </div>
+                        </CardHeader>
+                        <CardContent className="pt-3">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t">
+                            <div className="text-sm text-muted-foreground flex items-center gap-2">
+                              <MapPin className="w-4 h-4" />
+                              <span>Rayon : {distanceKm} km · Contact direct disponible</span>
+                            </div>
+                            <Button variant="default" onClick={() => setContactPro(pro)} className="shrink-0 w-full sm:w-auto">
+                              Contacter le pro
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -568,16 +803,23 @@ export default function ReservationStartPage() {
             </div>
           </CardContent>
         </Card>
+        </div>
       )}
 
-      <RequestBookingModal
-        slot={requestingSlot}
-        onClose={closeRequestModal}
-        onSubmitted={(slot) => {
-          handleRequestSubmitted(slot);
-          closeRequestModal();
-        }}
-      />
+      <Dialog open={!!requestingSlot} onOpenChange={(open) => !open && closeRequestModal()}>
+        <DialogContent>
+          {requestingSlot && (
+            <RequestBookingForm
+              slot={requestingSlot}
+              onSubmitted={(slot) => {
+                handleRequestSubmitted(slot);
+                closeRequestModal();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <ContactProModal
         pro={contactPro}
         onClose={closeContactModal}
@@ -590,28 +832,15 @@ export default function ReservationStartPage() {
   );
 }
 
-interface RequestBookingModalProps {
-  slot: BookingAvailabilityResult | null;
-  onClose: () => void;
+interface RequestBookingFormProps {
+  slot: BookingAvailabilityResult;
   onSubmitted: (slot: BookingAvailabilityResult) => void;
 }
 
-function RequestBookingModal({ slot, onClose, onSubmitted }: RequestBookingModalProps) {
+function RequestBookingForm({ slot, onSubmitted }: RequestBookingFormProps) {
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!slot) {
-      setMessage('');
-      setSaving(false);
-      setError(null);
-    }
-  }, [slot]);
-
-  if (!slot) {
-    return null;
-  }
 
   const startAt = new Date(slot.startAt);
   const endAt = new Date(slot.endAt);
@@ -627,64 +856,46 @@ function RequestBookingModal({ slot, onClose, onSubmitted }: RequestBookingModal
       });
       onSubmitted(slot);
     } catch (err) {
-      setError(getErrorMessage(err, 'Impossible d’envoyer la demande'));
+      setError(getErrorMessage(err, "Impossible d'envoyer la demande"));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-lg space-y-4 rounded-lg bg-white p-6 shadow-lg"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">Demander ce créneau</h2>
-            <p className="text-sm text-muted-foreground">
-              {slot.spotName || 'Spot à définir'} · {startAt.toLocaleDateString('fr-FR')} {startAt.toLocaleTimeString('fr-FR')} – {endAt.toLocaleTimeString('fr-FR')}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="text-sm text-muted-foreground hover:text-foreground"
-            onClick={onClose}
-            disabled={saving}
-          >
-            Fermer
-          </button>
-        </div>
+    <form onSubmit={submit} className="space-y-4">
+      <DialogHeader>
+        <DialogTitle>Demander ce créneau</DialogTitle>
+        <DialogDescription>
+          {slot.spotName || 'Spot à définir'} · {startAt.toLocaleDateString('fr-FR')} {startAt.toLocaleTimeString('fr-FR')} – {endAt.toLocaleTimeString('fr-FR')}
+        </DialogDescription>
+      </DialogHeader>
 
-        <div className="space-y-3 text-sm">
-          <p className="font-medium">Message au pro (optionnel)</p>
-          <textarea
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            rows={4}
-            className="w-full rounded-md border px-3 py-2"
-            placeholder="Dis bonjour, précise ton niveau ou tes attentes."
-          />
-          <p className="text-xs text-muted-foreground">
-            Ton message sera envoyé uniquement au pro concerné.
-          </p>
-        </div>
+      <div className="space-y-3">
+        <label className="text-sm font-medium">Message au pro (optionnel)</label>
+        <textarea
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          rows={4}
+          className="w-full rounded-md border px-3 py-2 text-sm"
+          placeholder="Dis bonjour, précise ton niveau ou tes attentes."
+        />
+        <p className="text-xs text-muted-foreground">
+          Ton message sera envoyé uniquement au pro concerné.
+        </p>
+      </div>
 
-        {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
-        )}
+      {error && (
+        <StatusMessage variant="error">
+          {error}
+        </StatusMessage>
+      )}
 
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-            Annuler
-          </Button>
-          <Button type="submit" disabled={saving} aria-busy={saving}>
-            {saving ? 'Envoi…' : 'Envoyer la demande'}
-          </Button>
-        </div>
-      </form>
-    </div>
+      <DialogFooter>
+        <Button type="submit" disabled={saving} aria-busy={saving}>
+          {saving ? 'Envoi…' : 'Envoyer la demande'}
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }

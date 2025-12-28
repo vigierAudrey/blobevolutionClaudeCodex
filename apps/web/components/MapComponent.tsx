@@ -31,6 +31,7 @@ type MapComponentProps = {
     lessonStudentCount?: number | null;
   }>;
   onContactClick: (userId: string) => void;
+  highlightedItemId?: string | null;
   legend?: Array<{ label: string; color: string }>;
   centerMarker?: {
     label?: string;
@@ -44,6 +45,7 @@ export default function MapComponent({
   center,
   items,
   onContactClick,
+  highlightedItemId,
   legend,
   centerMarker,
   showCenterMarker = true,
@@ -136,33 +138,49 @@ export default function MapComponent({
     const size = isMobile ? 28 : 20; // Bigger markers for touch
     const border = isMobile ? 3 : 2;
 
-    const createIcon = (color: string) =>
-      L.divIcon({
+    const createIcon = (color: string, highlighted = false) => {
+      const finalSize = highlighted ? size * 1.8 : size;
+      const finalBorder = highlighted ? border * 1.5 : border;
+
+      return L.divIcon({
         className: 'map-marker-icon',
         html: `
           <div style="
-            width: ${size}px;
-            height: ${size}px;
+            width: ${finalSize}px;
+            height: ${finalSize}px;
             border-radius: 9999px;
             background: ${color};
-            border: ${border}px solid white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            border: ${finalBorder}px solid white;
+            box-shadow: ${highlighted ? '0 4px 16px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.3)'};
             transform: translate(-50%, -50%);
             cursor: pointer;
-            transition: transform 0.2s ease;
+            transition: all 0.2s ease;
+            ${highlighted ? 'animation: bounce 1s infinite;' : ''}
           "></div>
+          ${highlighted ? `
+          <style>
+            @keyframes bounce {
+              0%, 100% { transform: translate(-50%, -50%) scale(1); }
+              50% { transform: translate(-50%, -55%) scale(1.1); }
+            }
+          </style>
+          ` : ''}
         `,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-        popupAnchor: [0, -size / 2],
+        iconSize: [finalSize, finalSize],
+        iconAnchor: [finalSize / 2, finalSize / 2],
+        popupAnchor: [0, -finalSize / 2],
       });
+    };
 
     return {
       availability: createIcon('#2563eb'),
       rider: createIcon('#16a34a'),
       default: createIcon('#f97316'),
       center: createIcon('#0ea5e9'),
-    } satisfies Record<'availability' | 'rider' | 'default' | 'center', L.DivIcon>;
+      availabilityHighlighted: createIcon('#2563eb', true),
+      riderHighlighted: createIcon('#16a34a', true),
+      defaultHighlighted: createIcon('#f97316', true),
+    } satisfies Record<'availability' | 'rider' | 'default' | 'center' | 'availabilityHighlighted' | 'riderHighlighted' | 'defaultHighlighted', L.DivIcon>;
   }, []);
 
   useEffect(() => {
@@ -299,9 +317,13 @@ export default function MapComponent({
         )}
         {items.map((item) => {
           const type = item.type ?? 'default';
-          const icon = markerIcons[type] ?? markerIcons.default;
+          const isHighlighted = item.id === highlightedItemId;
+          const iconKey = isHighlighted
+            ? (`${type}Highlighted` as 'availabilityHighlighted' | 'riderHighlighted' | 'defaultHighlighted')
+            : type;
+          const icon = markerIcons[iconKey] ?? markerIcons[type] ?? markerIcons.default;
           return (
-            <Marker key={item.id} position={[item.lat, item.lng]} icon={icon}>
+            <Marker key={item.id} position={[item.lat, item.lng]} icon={icon} zIndexOffset={isHighlighted ? 1000 : 0}>
               <Popup
                 minWidth={200}
                 maxWidth={300}

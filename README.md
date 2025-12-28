@@ -482,6 +482,57 @@ npm run build        # Build de production (API uniquement)
 npm run type-check   # Vérification TypeScript
 ```
 
+## 🖼️ Configuration des Images (Next.js + MinIO)
+
+### Configuration Locale et Production
+
+Next.js nécessite une configuration explicite des domaines autorisés pour le composant `next/image`. Le fichier `apps/web/next.config.mjs` contient la configuration pour MinIO :
+
+```javascript
+images: {
+  remotePatterns: [
+    {
+      protocol: 'http',
+      hostname: 'localhost',
+      port: '9000',
+      pathname: '/blobinfini-dev/**',
+    },
+  ],
+},
+```
+
+**⚠️ Points importants :**
+
+1. **Redémarrage obligatoire** : Après toute modification de `next.config.mjs`, vous devez **redémarrer le serveur Next.js** (Ctrl+C puis `npm run dev`)
+2. **Environnements multiples** : Pour la production, ajoutez un nouveau pattern dans `remotePatterns` avec :
+   - Le hostname de production de MinIO (ex: `minio.votredomaine.com`)
+   - Le protocol `https` (recommandé)
+   - Le pathname correspondant à votre bucket de production
+
+**Exemple de configuration multi-environnements :**
+
+```javascript
+images: {
+  remotePatterns: [
+    // Développement local
+    {
+      protocol: 'http',
+      hostname: 'localhost',
+      port: '9000',
+      pathname: '/blobinfini-dev/**',
+    },
+    // Production
+    {
+      protocol: 'https',
+      hostname: 'minio.votredomaine.com',
+      pathname: '/blobinfini-prod/**',
+    },
+  ],
+},
+```
+
+**Erreur courante :** Si vous voyez `Error: Invalid src prop... hostname is not configured`, c'est que le domaine de l'image n'est pas autorisé dans `next.config.mjs`.
+
 ## 🌐 Déploiement Frontend avec Vercel
 
 ### Configuration Initiale
