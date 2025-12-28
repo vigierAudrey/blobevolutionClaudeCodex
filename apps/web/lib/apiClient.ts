@@ -814,6 +814,19 @@ export const apiClient = {
   emptyTrashConversations: () => request('/conversations/empty-trash', { method: 'POST', body: JSON.stringify({}) }, true) as Promise<{ ok: boolean; count: number }>,
   favoriteConversation: (id: string, value: boolean) => request(`/conversations/${id}/favorite`, { method: 'POST', body: JSON.stringify({ value }) }, true),
 
+  searchUsers: (query: string) =>
+    request(`/conversations/users/search?q=${encodeURIComponent(query)}`, { method: 'GET' }, true) as Promise<{
+      items: Array<{ id: string; name: string | null; photoUrl: string | null; role: 'RIDER' | 'PRO' }>;
+    }>,
+  getConversationMembers: (conversationId: string) =>
+    request(`/conversations/${conversationId}/members`, { method: 'GET' }, true) as Promise<{
+      items: Array<{ id: string; name: string | null; photoUrl: string | null; role: string; isCurrentUser: boolean }>;
+    }>,
+  addConversationMember: (conversationId: string, userId: string) =>
+    request(`/conversations/${conversationId}/members`, { method: 'POST', body: JSON.stringify({ userId }) }, true) as Promise<{ ok: boolean }>,
+  removeConversationMember: (conversationId: string, userId: string) =>
+    request(`/conversations/${conversationId}/members/${userId}`, { method: 'DELETE' }, true) as Promise<{ ok: boolean }>,
+
   getConsent: (hash: string) =>
     request(`/consent/${hash}`, { method: 'GET' }) as Promise<ConsentResponse>,
 

@@ -432,3 +432,322 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
     return res.status(500).json({ error: 'Internal error' });
   }
 });
+
+// Get conversation members with their details
+conversationsRouter.get('/:id/members', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const id = req.params.id;
+
+    // Check if current user is a member
+    const member = await prisma.conversationMember.findFirst({
+      where: { conversationId: id, userId },
+    });
+
+    if (!member) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    // Get all members
+    const members = await prisma.conversationMember.findMany({
+      where: { conversationId: id },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            id: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    // Get member details
+    const proIds = members.filter((m: { user: { role: string } }) => m.user.role === 'PRO').map((m: { userId: string }) => m.userId);
+    const riderIds = members.filter((m: { user: { role: string } }) => m.user.role !== 'PRO').map((m: { userId: string }) => m.userId);
+
+    const proProfiles = proIds.length > 0
+      ? await prisma.proProfile.findMany({
+          where: { userId: { in: proIds } },
+          select: { userId: true, businessName: true, photoUrl: true },
+        })
+      : [];
+
+    const riderProfiles = riderIds.length > 0
+      ? await prisma.riderProfile.findMany({
+          where: { userId: { in: riderIds } },
+          select: { userId: true, displayName: true, photoUrl: true },
+        })
+      : [];
+
+    const proMap = new Map(proProfiles.map((p: { userId: string; businessName: string | null; photoUrl: string | null }) => [p.userId, p]));
+    const riderMap = new Map(riderProfiles.map((r: { userId: string; displayName: string | null; photoUrl: string | null }) => [r.userId, r]));
+
+    const results = members.map((m: { userId: string; user: { role: string } }) => {
+      const isPro = m.user.role === 'PRO';
+      const profile = isPro ? proMap.get(m.userId) : riderMap.get(m.userId);
+
+      return {
+        id: m.userId,
+        name: isPro ? (profile as any)?.businessName : (profile as any)?.displayName,
+        photoUrl: (profile as any)?.photoUrl || null,
+        role: m.user.role,
+        isCurrentUser: m.userId === userId,
+      };
+    });
+
+    return res.json({ items: results });
+  } catch (e) {
+    console.error('Get members error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Search users by display name or business name
+conversationsRouter.get('/users/search', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const query = String(req.query.q || '').trim();
+    if (query.length < 2) {
+      return res.status(400).json({ error: 'Query must be at least 2 characters' });
+    }
+
+    // Search in rider profiles
+    const riders = await prisma.riderProfile.findMany({
+      where: {
+        userId: { not: userId }, // Exclude current user
+        displayName: { contains: query, mode: 'insensitive' },
+      },
+      select: {
+        userId: true,
+        displayName: true,
+        photoUrl: true,
+      },
+      take: 10,
+    });
+
+    // Search in pro profiles
+    const pros = await prisma.proProfile.findMany({
+      where: {
+        userId: { not: userId }, // Exclude current user
+        businessName: { contains: query, mode: 'insensitive' },
+      },
+      select: {
+        userId: true,
+        businessName: true,
+        photoUrl: true,
+      },
+      take: 10,
+    });
+
+    // Format results
+    const results = [
+      ...riders.map((r: { userId: string; displayName: string | null; photoUrl: string | null }) => ({
+        id: r.userId,
+        name: r.displayName,
+        photoUrl: r.photoUrl,
+        role: 'RIDER' as const,
+      })),
+      ...pros.map((p: { userId: string; businessName: string | null; photoUrl: string | null }) => ({
+        id: p.userId,
+        name: p.businessName,
+        photoUrl: p.photoUrl,
+        role: 'PRO' as const,
+      })),
+    ];
+
+    return res.json({ items: results });
+  } catch (e) {
+    console.error('User search error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Add a member to a conversation
+conversationsRouter.post('/:id/members', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const id = req.params.id;
+    const body = z.object({ userId: z.string().uuid() }).parse(req.body);
+
+    // Check if current user is a member of this conversation
+    const member = await prisma.conversationMember.findFirst({
+      where: { conversationId: id, userId },
+    });
+
+    if (!member) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    // Check if user to add already exists in conversation
+    const existingMember = await prisma.conversationMember.findFirst({
+      where: { conversationId: id, userId: body.userId },
+    });
+
+    if (existingMember) {
+      return res.status(409).json({ error: 'User is already a member' });
+    }
+
+    // Add new member
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Create conversation member
+      await tx.conversationMember.create({
+        data: {
+          conversationId: id,
+          userId: body.userId,
+        },
+      });
+
+      // Get user info for system message
+      const addedUser = await tx.user.findUnique({
+        where: { id: body.userId },
+        select: { role: true },
+      });
+
+      const currentUserProfile = await (addedUser?.role === 'PRO'
+        ? tx.proProfile.findUnique({ where: { userId: body.userId }, select: { businessName: true } })
+        : tx.riderProfile.findUnique({ where: { userId: body.userId }, select: { displayName: true } }));
+
+      const addedUserName = addedUser?.role === 'PRO'
+        ? (currentUserProfile as any)?.businessName || 'Professionnel'
+        : (currentUserProfile as any)?.displayName || 'Rider';
+
+      const adderProfile = await tx.user.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      }).then(async (user: { role: string } | null) => {
+        if (user?.role === 'PRO') {
+          return tx.proProfile.findUnique({ where: { userId }, select: { businessName: true } });
+        }
+        return tx.riderProfile.findUnique({ where: { userId }, select: { displayName: true } });
+      });
+
+      const adderName = (adderProfile as any)?.businessName || (adderProfile as any)?.displayName || 'Un membre';
+
+      // Create system message
+      await tx.message.create({
+        data: {
+          conversationId: id,
+          senderId: userId,
+          type: 'TEXT',
+          content: `${adderName} a ajouté ${addedUserName} à la conversation`,
+        },
+      });
+
+      // Update conversation timestamp
+      await tx.conversation.update({
+        where: { id },
+        data: { updatedAt: new Date() },
+      });
+    });
+
+    return res.status(201).json({ ok: true });
+  } catch (e: any) {
+    if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
+    console.error('Add member error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Remove a member from a conversation (or leave)
+conversationsRouter.delete('/:id/members/:targetUserId', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const id = req.params.id;
+    const targetUserId = req.params.targetUserId;
+
+    // Check if current user is a member
+    const member = await prisma.conversationMember.findFirst({
+      where: { conversationId: id, userId },
+    });
+
+    if (!member) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    // Check if target user exists in conversation
+    const targetMember = await prisma.conversationMember.findFirst({
+      where: { conversationId: id, userId: targetUserId },
+    });
+
+    if (!targetMember) {
+      return res.status(404).json({ error: 'User is not a member' });
+    }
+
+    // Everyone can remove themselves or others (per user requirement)
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Delete member
+      await tx.conversationMember.delete({
+        where: {
+          conversationId_userId: {
+            conversationId: id,
+            userId: targetUserId,
+          } as any,
+        },
+      });
+
+      // Get user info for system message
+      const removedUser = await tx.user.findUnique({
+        where: { id: targetUserId },
+        select: { role: true },
+      });
+
+      const removedUserProfile = await (removedUser?.role === 'PRO'
+        ? tx.proProfile.findUnique({ where: { userId: targetUserId }, select: { businessName: true } })
+        : tx.riderProfile.findUnique({ where: { userId: targetUserId }, select: { displayName: true } }));
+
+      const removedUserName = removedUser?.role === 'PRO'
+        ? (removedUserProfile as any)?.businessName || 'Professionnel'
+        : (removedUserProfile as any)?.displayName || 'Rider';
+
+      let systemMessage: string;
+      if (userId === targetUserId) {
+        // User left by themselves
+        systemMessage = `${removedUserName} a quitté la conversation`;
+      } else {
+        // User was removed by someone else
+        const removerProfile = await tx.user.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        }).then(async (user: { role: string } | null) => {
+          if (user?.role === 'PRO') {
+            return tx.proProfile.findUnique({ where: { userId }, select: { businessName: true } });
+          }
+          return tx.riderProfile.findUnique({ where: { userId }, select: { displayName: true } });
+        });
+
+        const removerName = (removerProfile as any)?.businessName || (removerProfile as any)?.displayName || 'Un membre';
+        systemMessage = `${removerName} a retiré ${removedUserName} de la conversation`;
+      }
+
+      // Create system message
+      await tx.message.create({
+        data: {
+          conversationId: id,
+          senderId: userId,
+          type: 'TEXT',
+          content: systemMessage,
+        },
+      });
+
+      // Update conversation timestamp
+      await tx.conversation.update({
+        where: { id },
+        data: { updatedAt: new Date() },
+      });
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('Remove member error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
