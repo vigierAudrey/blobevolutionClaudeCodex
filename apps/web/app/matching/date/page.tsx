@@ -302,7 +302,7 @@ function DateInner() {
           {wantsLesson && (
             <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-800 space-y-2">
               <p>
-                Activer ce badge informe les riders et pros que tu cherches un cours. Coordinate-toi avec ton binôme pour éviter
+                Activer ce badge informe uniquement les autres riders en matching que tu cherches un cours. Coordinate-toi avec ton binôme pour éviter
                 les doublons.
               </p>
               <p>
