@@ -6,6 +6,8 @@ export interface GDPRTechnicalStats {
   tokensDeleted: number;
   oldLogsDeleted: number;
   loginAttemptsDeleted: number;
+  analyticsEventsDeleted: number;
+  analyticsDailyAggDeleted: number;
 }
 
 export interface GDPRUserAnonymizationStats {
@@ -53,6 +55,8 @@ export class GDPRPurgeService {
     const now = new Date();
     const logRetentionDays = Number(process.env.AUDIT_LOG_RETENTION_DAYS || '365');
     const logThreshold = new Date(now.getTime() - logRetentionDays * 24 * 60 * 60 * 1000);
+    const analyticsRetentionDays = Number(process.env.ANALYTICS_EVENT_RETENTION_DAYS || '90');
+    const analyticsAggRetentionDays = Number(process.env.ANALYTICS_DAILY_AGG_RETENTION_DAYS || '365');
 
     // Supprimer les sessions expirées
     const sessionsResult = await prisma.session.deleteMany({
@@ -85,13 +89,33 @@ export class GDPRPurgeService {
     // Purger les LoginAttempts anciens (RGPD Article 5.1.e)
     const loginAttemptsDeleted = await this.purgeOldLoginAttempts();
 
-    console.log(`✅ GDPR: Purged ${sessionsResult.count} sessions, ${tokensDeleted} expired tokens, ${loginAttemptsDeleted} login attempts`);
+    let analyticsEventsDeleted = 0;
+    if (analyticsRetentionDays > 0) {
+      const analyticsThreshold = new Date(now.getTime() - analyticsRetentionDays * 24 * 60 * 60 * 1000);
+      const analyticsEventsResult = await prisma.analyticsEvent.deleteMany({
+        where: { occurredAt: { lt: analyticsThreshold } },
+      });
+      analyticsEventsDeleted = analyticsEventsResult.count;
+    }
+
+    let analyticsDailyAggDeleted = 0;
+    if (analyticsAggRetentionDays > 0) {
+      const analyticsAggThreshold = new Date(now.getTime() - analyticsAggRetentionDays * 24 * 60 * 60 * 1000);
+      const analyticsAggResult = await prisma.analyticsDailyAgg.deleteMany({
+        where: { day: { lt: analyticsAggThreshold } },
+      });
+      analyticsDailyAggDeleted = analyticsAggResult.count;
+    }
+
+    console.log(`✅ GDPR: Purged ${sessionsResult.count} sessions, ${tokensDeleted} expired tokens, ${loginAttemptsDeleted} login attempts, ${analyticsEventsDeleted} analytics events`);
 
     return {
       sessionsDeleted: sessionsResult.count,
       tokensDeleted,
       oldLogsDeleted: oldLogsResult.count,
-      loginAttemptsDeleted
+      loginAttemptsDeleted,
+      analyticsEventsDeleted,
+      analyticsDailyAggDeleted
     };
   }
 

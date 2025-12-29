@@ -42,6 +42,10 @@ tags:
     description: Signalements utilisateurs
   - name: Admin
     description: Endpoints réservés aux administrateurs
+  - name: Analytics
+    description: Collecte analytics RGPD-safe (public + admin)
+  - name: Blobosphere
+    description: Contenus publics Blobosphère (read-only)
 paths:
   /health:
     get:
@@ -61,6 +65,36 @@ paths:
                     example: ok
         '500':
           $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /analytics/events:
+    post:
+      tags: [Analytics]
+      summary: Enregistre un événement analytics public (RGPD)
+      description: |
+        Collecte strictement RGPD-safe : whitelist d'événements, consentement analytics requis,
+        payload limité et champs inconnus refusés. Les données personnelles (IP, URL complète, lat/lng)
+        sont rejetées ou ignorées.
+      operationId: analyticsEventIngest
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyticsPublicEventRequest'
+      responses:
+        '202':
+          description: Événement accepté
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsEventAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
@@ -2192,16 +2226,21 @@ paths:
   /admin/analytics/matching/ttfm:
     get:
       tags: [Admin]
-      summary: Temps moyen avant premier match
+      summary: Time-to-first-value (TTFV) riders/pros
       operationId: adminAnalyticsTtfm
+      parameters:
+        - in: query
+          name: period
+          schema:
+            $ref: '#/components/schemas/AdminAnalyticsPeriod'
+          description: Période d'analyse (7d, 30d, 90d, 1y)
       responses:
         '200':
           description: Données analytiques
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/AdminAnalyticsTtfvResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2211,14 +2250,19 @@ paths:
       tags: [Admin]
       summary: KPIs d'engagement
       operationId: adminAnalyticsEngagement
+      parameters:
+        - in: query
+          name: period
+          schema:
+            $ref: '#/components/schemas/AdminAnalyticsPeriod'
+          description: Période d'analyse (7d, 30d, 90d, 1y)
       responses:
         '200':
           description: Données analytiques
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/AdminEngagementAnalyticsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2228,14 +2272,19 @@ paths:
       tags: [Admin]
       summary: Statistiques de matching (volumes, succès)
       operationId: adminAnalyticsMatching
+      parameters:
+        - in: query
+          name: period
+          schema:
+            $ref: '#/components/schemas/AdminAnalyticsPeriod'
+          description: Période d'analyse (7d, 30d, 90d, 1y)
       responses:
         '200':
           description: Données analytiques
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/AdminMatchingAnalyticsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2245,14 +2294,19 @@ paths:
       tags: [Admin]
       summary: Analyse comportementale (funnel, cohortes)
       operationId: adminAnalyticsBehavior
+      parameters:
+        - in: query
+          name: period
+          schema:
+            $ref: '#/components/schemas/AdminAnalyticsPeriod'
+          description: Période d'analyse (7d, 30d, 90d, 1y)
       responses:
         '200':
           description: Données analytiques
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/AdminBehaviorAnalyticsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2559,6 +2613,54 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /blobosphere/articles:
+    get:
+      tags: [Blobosphere]
+      summary: Liste des articles Blobosphère publiés (public)
+      operationId: blobospherePublicList
+      security: []
+      responses:
+        '200':
+          description: Liste des articles publiés
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BlobospherePublicArticle'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /blobosphere/articles/{slug}:
+    get:
+      tags: [Blobosphere]
+      summary: Détail d'un article Blobosphère publié (public)
+      operationId: blobospherePublicGet
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9-]{1,80}$'
+      responses:
+        '200':
+          description: Article publié
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlobospherePublicArticle'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
   /admin/blobosphere/posts:
     get:
       tags: [Admin]
@@ -2813,6 +2915,403 @@ components:
           enum: [fr]
         body:
           type: string
+    BlobospherePublicArticle:
+      type: object
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+        excerpt:
+          type: string
+        publishedAt:
+          type: string
+        cover:
+          type: string
+          nullable: true
+    AnalyticsEventAccepted:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        ignored:
+          type: boolean
+          nullable: true
+    AnalyticsEventBlobosphereView:
+      type: object
+      additionalProperties: false
+      required: [eventType, consentHash, contentId]
+      properties:
+        eventType:
+          type: string
+          enum: [BLOBOSPHERE_VIEW]
+        consentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        contentId:
+          type: string
+          pattern: '^[a-z0-9-]{1,80}$'
+    AnalyticsEventBlobosphereOutbound:
+      type: object
+      additionalProperties: false
+      required: [eventType, consentHash, contentId, domain]
+      properties:
+        eventType:
+          type: string
+          enum: [BLOBOSPHERE_OUTBOUND]
+        consentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        contentId:
+          type: string
+          pattern: '^[a-z0-9-]{1,80}$'
+        domain:
+          type: string
+          pattern: '^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$'
+        campaignId:
+          type: string
+          pattern: '^[a-z0-9_-]{1,48}$'
+    AnalyticsEventBlobosphereSignup:
+      type: object
+      additionalProperties: false
+      required: [eventType, consentHash]
+      properties:
+        eventType:
+          type: string
+          enum: [BLOBOSPHERE_SIGNUP]
+        consentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        contentId:
+          type: string
+          pattern: '^[a-z0-9-]{1,80}$'
+    AnalyticsEventProDashboardOpen:
+      type: object
+      additionalProperties: false
+      required: [eventType, consentHash]
+      properties:
+        eventType:
+          type: string
+          enum: [PRO_DASHBOARD_OPEN]
+        consentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+    AnalyticsPublicEventRequest:
+      oneOf:
+        - $ref: '#/components/schemas/AnalyticsEventBlobosphereView'
+        - $ref: '#/components/schemas/AnalyticsEventBlobosphereOutbound'
+        - $ref: '#/components/schemas/AnalyticsEventBlobosphereSignup'
+        - $ref: '#/components/schemas/AnalyticsEventProDashboardOpen'
+      discriminator:
+        propertyName: eventType
+    AdminAnalyticsPeriod:
+      type: string
+      enum: [7d, 30d, 90d, 1y]
+    AdminRetentionBucket:
+      type: object
+      properties:
+        eligible:
+          type: integer
+        retained:
+          type: integer
+          nullable: true
+        rate:
+          type: number
+          nullable: true
+        masked:
+          type: boolean
+    AdminRetentionCohort:
+      type: object
+      properties:
+        cohortSize:
+          type: integer
+        day1:
+          $ref: '#/components/schemas/AdminRetentionBucket'
+        day7:
+          $ref: '#/components/schemas/AdminRetentionBucket'
+        day30:
+          $ref: '#/components/schemas/AdminRetentionBucket'
+    AdminStickinessTimelineItem:
+      type: object
+      properties:
+        day:
+          type: string
+        total:
+          type: integer
+        riders:
+          type: integer
+        pros:
+          type: integer
+    AdminStickinessMetrics:
+      type: object
+      properties:
+        dauAverage:
+          type: object
+          properties:
+            total:
+              type: number
+            riders:
+              type: number
+            pros:
+              type: number
+        mau:
+          type: object
+          properties:
+            total:
+              type: integer
+            riders:
+              type: integer
+            pros:
+              type: integer
+        stickiness:
+          type: object
+          properties:
+            total:
+              type: number
+            riders:
+              type: number
+            pros:
+              type: number
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminStickinessTimelineItem'
+    AdminEngagementAnalyticsResponse:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/AdminAnalyticsPeriod'
+        privacyThreshold:
+          type: integer
+        definitions:
+          type: object
+          properties:
+            riderActiveDay:
+              type: string
+            proActiveDay:
+              type: string
+            stickiness:
+              type: string
+            retention:
+              type: string
+        totals:
+          type: object
+          properties:
+            riders:
+              type: integer
+            pros:
+              type: integer
+            users:
+              type: integer
+            newRiders:
+              type: integer
+            newPros:
+              type: integer
+        stickiness:
+          $ref: '#/components/schemas/AdminStickinessMetrics'
+        retention:
+          type: object
+          properties:
+            riders:
+              $ref: '#/components/schemas/AdminRetentionCohort'
+            pros:
+              $ref: '#/components/schemas/AdminRetentionCohort'
+    AdminSupplyDemandSegment:
+      type: object
+      properties:
+        sport:
+          type: string
+        zoneLarge:
+          type: string
+        demandRequests:
+          type: integer
+          nullable: true
+        supplyAvailabilities:
+          type: integer
+          nullable: true
+        ratio:
+          type: number
+          nullable: true
+        sampleSize:
+          type: integer
+        masked:
+          type: boolean
+    AdminAcceptanceMetrics:
+      type: object
+      properties:
+        totalRequests:
+          type: integer
+        acceptedRequests:
+          type: integer
+          nullable: true
+        acceptanceRate:
+          type: number
+          nullable: true
+        medianResponseHours:
+          type: number
+          nullable: true
+        responseSampleSize:
+          type: integer
+        masked:
+          type: boolean
+    AdminAcceptanceBySport:
+      type: object
+      properties:
+        sport:
+          type: string
+        totalRequests:
+          type: integer
+        acceptedRequests:
+          type: integer
+          nullable: true
+        acceptanceRate:
+          type: number
+          nullable: true
+        medianResponseHours:
+          type: number
+          nullable: true
+        masked:
+          type: boolean
+    AdminMatchingAnalyticsResponse:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/AdminAnalyticsPeriod'
+        privacyThreshold:
+          type: integer
+        definitions:
+          type: object
+          properties:
+            supplyDemand:
+              type: string
+        supplyDemand:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSupplyDemandSegment'
+        acceptance:
+          $ref: '#/components/schemas/AdminAcceptanceMetrics'
+        acceptanceBySport:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAcceptanceBySport'
+    AdminTrustSafetyMetrics:
+      type: object
+      properties:
+        verifiedProsCount:
+          type: integer
+        totalPros:
+          type: integer
+        verifiedProsRate:
+          type: number
+        reportsTotal:
+          type: integer
+          nullable: true
+        reportsPer1kUsers:
+          type: number
+          nullable: true
+        reportsMasked:
+          type: boolean
+        moderationMedianHours:
+          type: number
+          nullable: true
+        moderationSampleSize:
+          type: integer
+        moderationMasked:
+          type: boolean
+    AdminBlobosphereTotals:
+      type: object
+      properties:
+        pageviews:
+          type: integer
+        outboundClicks:
+          type: integer
+        signupConversions:
+          type: integer
+    AdminBlobosphereItem:
+      type: object
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        publishedAt:
+          type: string
+        cover:
+          type: string
+          nullable: true
+        readingTimeMinutes:
+          type: integer
+        pageviews:
+          type: integer
+          nullable: true
+        outboundClicks:
+          type: integer
+          nullable: true
+        signupConversions:
+          type: integer
+          nullable: true
+        sampleSize:
+          type: integer
+        masked:
+          type: boolean
+    AdminBlobosphereAnalytics:
+      type: object
+      properties:
+        totals:
+          $ref: '#/components/schemas/AdminBlobosphereTotals'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBlobosphereItem'
+    AdminBehaviorAnalyticsResponse:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/AdminAnalyticsPeriod'
+        privacyThreshold:
+          type: integer
+        definitions:
+          type: object
+          properties:
+            trustSafety:
+              type: string
+            blobosphere:
+              type: string
+        trustSafety:
+          $ref: '#/components/schemas/AdminTrustSafetyMetrics'
+        blobosphere:
+          $ref: '#/components/schemas/AdminBlobosphereAnalytics'
+    AdminTtfvMetrics:
+      type: object
+      properties:
+        sampleSize:
+          type: integer
+        medianMinutes:
+          type: number
+          nullable: true
+        p90Minutes:
+          type: number
+          nullable: true
+        masked:
+          type: boolean
+    AdminAnalyticsTtfvResponse:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/AdminAnalyticsPeriod'
+        privacyThreshold:
+          type: integer
+        definitions:
+          type: object
+          properties:
+            ttfvRider:
+              type: string
+            ttfvPro:
+              type: string
+        riders:
+          $ref: '#/components/schemas/AdminTtfvMetrics'
+        pros:
+          $ref: '#/components/schemas/AdminTtfvMetrics'
     GdprPurgeTechnicalStats:
       type: object
       properties:
@@ -2821,6 +3320,12 @@ components:
         tokensDeleted:
           type: integer
         oldLogsDeleted:
+          type: integer
+        loginAttemptsDeleted:
+          type: integer
+        analyticsEventsDeleted:
+          type: integer
+        analyticsDailyAggDeleted:
           type: integer
     GdprPurgeUserStats:
       type: object

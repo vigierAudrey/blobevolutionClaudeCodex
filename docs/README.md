@@ -54,6 +54,14 @@ Ces fichiers sont à la racine pour une visibilité maximale :
 
 ---
 
+### 📊 Analytics & Observabilite
+
+| Document | Description |
+|----------|-------------|
+| **[analytics-definitions.md](analytics-definitions.md)** | Definitions exactes des KPIs analytics (RGPD-safe) |
+
+---
+
 ### 🚀 Déploiement & Infrastructure
 
 | Document | Description |
@@ -121,6 +129,7 @@ docs/
 │
 ├── 🔒 Sécurité & RGPD
 │   ├── blobosphere.md                 # Guide Blobosphère + RGPD
+│   ├── analytics-definitions.md       # Definitions KPIs analytics
 │   └── audits/
 │       ├── security-audit-2025-10.md  # Audit sécurité complet
 │       ├── security-fixes-2025-11.md  # Correctifs appliqués

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
@@ -9,9 +9,15 @@ import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { requireProRole } from './pro.guard';
 import { secureLogger } from '../../utils/secure-logger';
+import { computeZoneLarge, recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 
 export const proRouter = Router();
 proRouter.use(requireAuth, requireVerifiedEmail);
+
+const getConsentHash = (req: Request) => {
+  const header = req.headers['x-consent-hash'];
+  return typeof header === 'string' && header.trim().length > 0 ? header : null;
+};
 
 // GDPR Export rate limiter: max 3 exports per hour per user
 const exportRateLimiter = rateLimit({
@@ -132,6 +138,15 @@ proRouter.put('/me', requireProRole, profileUpdateLimiter, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const body = upsertSchema.parse(req.body);
     const pp = await persistProProfile(userId, body);
+    const consentHash = getConsentHash(req);
+    void recordServerAnalyticsEvent({
+      eventType: 'PRO_PROFILE_UPDATE',
+      actorType: 'PRO',
+      actorId: userId,
+      consentHash,
+      zoneLarge: computeZoneLarge(pp.lat, pp.lng),
+      occurredAt: pp.updatedAt,
+    });
     return res.json(pp);
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
@@ -145,6 +160,15 @@ proRouter.patch('/me', requireProRole, profileUpdateLimiter, async (req, res) =>
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const body = upsertSchema.parse(req.body || {});
     const pp = await persistProProfile(userId, body);
+    const consentHash = getConsentHash(req);
+    void recordServerAnalyticsEvent({
+      eventType: 'PRO_PROFILE_UPDATE',
+      actorType: 'PRO',
+      actorId: userId,
+      consentHash,
+      zoneLarge: computeZoneLarge(pp.lat, pp.lng),
+      occurredAt: pp.updatedAt,
+    });
     return res.json(pp);
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });

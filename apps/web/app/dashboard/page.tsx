@@ -219,7 +219,7 @@ export default function DashboardPage() {
   if (user.role === 'PRO') return null;
 
   const greeting = displayName ? `Salut ${displayName} 👋` : 'Bienvenue sur BlobConnect 👋';
-  const matchingCtaLabel = hasMatchingShortcut ? 'Reprendre le deck' : 'Commencer le matching';
+  const matchingCtaLabel = hasMatchingShortcut ? 'Continuer le matching' : 'Commencer le matching';
   const matchingCardText = hasMatchingShortcut
     ? 'Reviens directement sur les profils proposés avec tes derniers filtres actifs.'
     : 'Swipe, matche et organise ta prochaine session avec des riders de ton niveau.';

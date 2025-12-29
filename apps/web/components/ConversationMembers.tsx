@@ -87,15 +87,18 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
       setShowAddMember(false);
       setSearchQuery('');
       setSearchResults([]);
+      alert('✓ Invitation envoyée ! L\'utilisateur pourra accepter ou refuser votre invitation.');
       await loadMembers();
       onMemberAdded?.();
     } catch (err: any) {
       if (err?.message?.includes('already a member')) {
         alert('Cet utilisateur est déjà membre de la conversation');
+      } else if (err?.message?.includes('already pending')) {
+        alert('Une invitation est déjà en attente pour cet utilisateur');
       } else {
-        alert('Erreur lors de l\'ajout du membre');
+        alert('Erreur lors de l\'envoi de l\'invitation');
       }
-      console.error('Error adding member:', err);
+      console.error('Error sending invitation:', err);
     } finally {
       setAdding(false);
     }

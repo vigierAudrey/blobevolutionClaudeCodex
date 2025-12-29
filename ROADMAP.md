@@ -838,7 +838,10 @@ apps/api/
 
 ### Analytics Avancées
 
-- [ ] Dashboard complet admins.
+- [x] Dashboard complet admins (preuves de valeur RGPD-safe).
+  - [x] Cohortes riders/pros + stickiness + TTFV.
+  - [x] Marketplace health (supply/demand, acceptation, delai).
+  - [x] Trust & Safety + Blobosphere analytics agreges.
 - [ ] Métriques conversion matching→booking.
 - [ ] Analyse géographique utilisateurs.
 - [ ] Reporting pro (revenus, planning).

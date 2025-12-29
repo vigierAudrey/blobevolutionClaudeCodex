@@ -61,6 +61,9 @@ export class BookingService {
     // Validate geographic coordinates
     this.validateGeoPoint(data.spotLat, data.spotLng);
 
+    // Validate only one offer per day
+    await this.validateOnlyOneOfferPerDay(proUserId, data.startAt);
+
     // Validate time overlap with existing availabilities
     await this.validateTimeOverlap(proUserId, data.startAt, data.endAt);
 
@@ -84,6 +87,37 @@ export class BookingService {
       if (lng < -180 || lng > 180) {
         throw Object.assign(new Error('Invalid longitude: must be between -180 and 180'), { status: 400 });
       }
+    }
+  }
+
+  private async validateOnlyOneOfferPerDay(proUserId: string, startAt: Date | string, excludeId?: string): Promise<void> {
+    const start = new Date(startAt);
+
+    // Get start and end of the day (using local date)
+    const dayStart = new Date(start);
+    dayStart.setHours(0, 0, 0, 0);
+
+    const dayEnd = new Date(start);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    // Check if there's already an availability for this calendar date
+    const existingAvailabilities = await prisma.proAvailability.findMany({
+      where: {
+        proUserId,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+        startAt: {
+          gte: dayStart,
+          lte: dayEnd
+        }
+      }
+    });
+
+    if (existingAvailabilities.length > 0) {
+      const existingDate = existingAvailabilities[0].startAt.toLocaleDateString('fr-FR');
+      throw Object.assign(
+        new Error(`Vous avez déjà publié une offre le ${existingDate}. Limite : une offre par jour.`),
+        { status: 409 }
+      );
     }
   }
 
@@ -193,6 +227,11 @@ export class BookingService {
     // Validate geographic coordinates if provided
     if (data.spotLat !== undefined || data.spotLng !== undefined) {
       this.validateGeoPoint(data.spotLat ?? availability.spotLat, data.spotLng ?? availability.spotLng);
+    }
+
+    // Validate only one offer per day if date is being changed
+    if (data.startAt !== undefined) {
+      await this.validateOnlyOneOfferPerDay(proUserId, data.startAt, availabilityId);
     }
 
     // Validate time overlap if dates are being changed

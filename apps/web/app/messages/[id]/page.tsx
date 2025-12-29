@@ -7,7 +7,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { BackBar } from '../../../components/BackBar';
 import { Button } from '../../../components/ui/button';
-import { Shield, ShieldOff, MoreVertical } from 'lucide-react';
+import { Shield, ShieldOff, MoreVertical, Users, Clock, AlertCircle, ArrowDown } from 'lucide-react';
 import { apiClient } from '../../../lib/apiClient';
 import { ConversationMembers } from '../../../components/ConversationMembers';
 import type {
@@ -17,6 +17,40 @@ import type {
   ThreadListResponse,
   ThreadSummary,
 } from '@/types/messages';
+
+// Helper functions for date formatting
+function formatTime(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateSeparator(dateString: string): string {
+  const date = new Date(dateString);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  // Reset time for comparison
+  const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const yesterdayOnly = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+
+  if (dateOnly.getTime() === todayOnly.getTime()) {
+    return "Aujourd'hui";
+  } else if (dateOnly.getTime() === yesterdayOnly.getTime()) {
+    return 'Hier';
+  } else {
+    return date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+}
+
+function isSameDay(date1: string, date2: string): boolean {
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  return d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate();
+}
 
 export default function ConversationPage() {
   const params = useParams();
@@ -28,8 +62,11 @@ export default function ConversationPage() {
   const [input, setInput] = useState('');
   const [conversationInfo, setConversationInfo] = useState<ThreadSummary | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [memberLastRead, setMemberLastRead] = useState<Record<string, Date | null>>({});
   const endRef = useRef<HTMLDivElement | null>(null);
   const pollingRef = useRef<number | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => {
     window.requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }));
@@ -100,15 +137,56 @@ export default function ConversationPage() {
     }
   }, [showMenu]);
 
+  // Detect scroll position to show/hide scroll button
+  useEffect(() => {
+    const handleScroll = () => {
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      const scrollTop = window.scrollY;
+      const distanceFromBottom = documentHeight - (scrollTop + windowHeight);
+
+      // Show button if we're more than 200px from bottom
+      setShowScrollButton(distanceFromBottom > 200);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const send = async () => {
     if (!input.trim()) return;
     const payload: SendMessagePayload = { type: 'TEXT', content: input.trim() };
+    const messageContent = input.trim();
+    setInput(''); // Clear input immediately
+
+    // Optimistic UI: Add message immediately with temporary ID
+    const tempMessage: Message = {
+      id: `temp-${Date.now()}`,
+      senderId: 'current-user',
+      type: 'TEXT',
+      content: messageContent,
+      createdAt: new Date().toISOString(),
+      senderName: 'Vous',
+      senderPhotoUrl: null,
+      isCurrentUser: true,
+      meta: { sending: true } as any, // Mark as sending
+    };
+
+    setMessages(prev => [...prev, tempMessage]);
+    scrollToBottom();
+
     try {
       await apiClient.sendMessage(id, payload);
-      setInput('');
+      // Reload to get the real message with server ID
       await loadMessages();
     } catch (err) {
       console.error('Failed to send message', err);
+      // Mark message as failed
+      setMessages(prev => prev.map(m =>
+        m.id === tempMessage.id
+          ? { ...m, meta: { ...m.meta, failed: true, sending: false } as any }
+          : m
+      ));
     }
   };
 
@@ -139,19 +217,45 @@ export default function ConversationPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              Conversation
-              {conversationInfo?.otherDisplayName && (
-                <span className="text-base font-normal">
-                  avec {conversationInfo.otherDisplayName}
-                </span>
+            <div className="flex flex-col gap-1 flex-1">
+              <CardTitle className="flex items-center gap-2 flex-wrap">
+                {conversationInfo?.isGroup ? (
+                  <>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1.5 text-sm font-semibold">
+                      <Users size={16} />
+                      Groupe
+                    </span>
+                    <span className="text-base font-normal text-muted-foreground">
+                      {conversationInfo.memberCount} membres
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Conversation
+                    {conversationInfo?.otherDisplayName && (
+                      <span className="text-base font-normal">
+                        avec {conversationInfo.otherDisplayName}
+                      </span>
+                    )}
+                  </>
+                )}
+                {conversationInfo?.blocked && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-1 text-xs">
+                    <Shield size={12}/> Bloqué
+                  </span>
+                )}
+              </CardTitle>
+              {conversationInfo?.matchedAt && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Clock size={12} />
+                  Matchés le {new Date(conversationInfo.matchedAt).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric'
+                  })}
+                </p>
               )}
-              {conversationInfo?.blocked && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-1 text-xs">
-                  <Shield size={12}/> Bloqué
-                </span>
-              )}
-            </CardTitle>
+            </div>
             <div className="relative">
               <Button
                 variant="ghost"
@@ -187,19 +291,109 @@ export default function ConversationPage() {
         <CardContent>
           {error && <p className="text-sm text-red-600">{error}</p>}
           {loading && messages.length === 0 && <p className="text-sm text-muted-foreground">Chargement…</p>}
-          <div className="space-y-2 min-h-[300px]">
-            {messages.map((m) => (
-              <div key={m.id} className="text-sm">
-                <div className={"inline-block rounded-lg px-3 py-2 " + (m.type === 'PROPOSAL' ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800' : 'bg-accent') }>
-                  <div className="text-foreground">{m.content}</div>
-                  {m.type === 'PROPOSAL' && m.meta && (
-                    <div className="text-xs text-muted-foreground dark:text-amber-300">
-                      {m.meta?.date} • {m.meta?.place} {m.meta?.note ? `• ${m.meta.note}` : ''}
+          <div className="space-y-1 min-h-[300px]" ref={messagesContainerRef}>
+            {messages.map((m, index) => {
+              const isCurrentUser = (m as any).isCurrentUser;
+              const senderName = (m as any).senderName || 'Utilisateur';
+              const senderPhotoUrl = (m as any).senderPhotoUrl;
+              const isSending = m.meta && (m.meta as any).sending;
+              const isFailed = m.meta && (m.meta as any).failed;
+
+              // Check if we need a date separator
+              const showDateSeparator = index === 0 || !isSameDay(messages[index - 1].createdAt, m.createdAt);
+
+              // Check if we should group with previous message (same sender, within 2 minutes)
+              const prevMessage = index > 0 ? messages[index - 1] : null;
+              const shouldGroup = prevMessage &&
+                (prevMessage as any).isCurrentUser === isCurrentUser &&
+                (prevMessage as any).senderId === m.senderId &&
+                isSameDay(prevMessage.createdAt, m.createdAt) &&
+                (new Date(m.createdAt).getTime() - new Date(prevMessage.createdAt).getTime()) < 120000; // 2 min
+
+              return (
+                <div key={m.id}>
+                  {/* Date separator */}
+                  {showDateSeparator && (
+                    <div className="flex items-center justify-center my-4">
+                      <div className="px-3 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium">
+                        {formatDateSeparator(m.createdAt)}
+                      </div>
                     </div>
                   )}
+
+                  {/* Message */}
+                  <div className={`flex gap-2 ${isCurrentUser ? 'flex-row-reverse' : 'flex-row'} ${shouldGroup ? 'mt-0.5' : 'mt-4'}`}>
+                    {/* Avatar / Miniature - only show if not grouped */}
+                    <div className="flex-shrink-0">
+                      {!shouldGroup ? (
+                        senderPhotoUrl ? (
+                          <img
+                            src={senderPhotoUrl}
+                            alt={senderName}
+                            className="w-8 h-8 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
+                            isCurrentUser ? 'bg-blue-500' : 'bg-gray-500'
+                          }`}>
+                            {senderName[0].toUpperCase()}
+                          </div>
+                        )
+                      ) : (
+                        <div className="w-8 h-8" /> // Spacer
+                      )}
+                    </div>
+
+                    {/* Message bubble */}
+                    <div className={`flex flex-col ${isCurrentUser ? 'items-end' : 'items-start'} max-w-[70%]`}>
+                      {!isCurrentUser && !shouldGroup && (
+                        <span className="text-xs text-muted-foreground mb-1 px-1">{senderName}</span>
+                      )}
+                      <div className={`rounded-lg px-3 py-2 ${
+                        m.type === 'PROPOSAL'
+                          ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800'
+                          : isCurrentUser
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-accent text-foreground'
+                      } ${isFailed ? 'opacity-60' : ''}`}>
+                        <div className="text-sm break-words">{m.content}</div>
+                        {m.type === 'PROPOSAL' && m.meta && (
+                          <div className="text-xs text-muted-foreground dark:text-amber-300 mt-1">
+                            {m.meta?.date} • {m.meta?.place} {m.meta?.note ? `• ${m.meta.note}` : ''}
+                          </div>
+                        )}
+                      </div>
+                      {/* Time and status */}
+                      <div className={`flex items-center gap-1 text-xs mt-1 px-1 ${
+                        isCurrentUser ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
+                      }`}>
+                        {formatTime(m.createdAt)}
+                        {isCurrentUser && !isSending && !isFailed && (
+                          <span className="text-gray-400" title="Envoyé">✓✓</span>
+                        )}
+                        {isSending && <Clock size={12} className="animate-pulse" />}
+                        {isFailed && (
+                          <>
+                            <AlertCircle size={12} className="text-red-500" />
+                            <button
+                              onClick={async () => {
+                                // Retry sending
+                                setMessages(prev => prev.filter(msg => msg.id !== m.id));
+                                setInput(m.content);
+                                setTimeout(() => send(), 100);
+                              }}
+                              className="text-red-500 underline text-xs"
+                            >
+                              Réessayer
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <div ref={endRef} />
           </div>
 
@@ -236,6 +430,17 @@ export default function ConversationPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Scroll to bottom button */}
+      {showScrollButton && (
+        <button
+          onClick={scrollToBottom}
+          className="fixed bottom-24 right-6 rounded-full bg-blue-500 hover:bg-blue-600 text-white p-3 shadow-lg transition-all duration-200 z-50 animate-in fade-in slide-in-from-bottom-2"
+          aria-label="Descendre en bas de la conversation"
+        >
+          <ArrowDown size={24} />
+        </button>
+      )}
     </div>
   );
 }

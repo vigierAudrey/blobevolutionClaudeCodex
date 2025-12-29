@@ -46,6 +46,8 @@ model User {
   pushTokens             PushToken[]
   loginAttempts          LoginAttempt[]
   createdAlerts          SystemAlert[]            @relation("UserSystemAlerts")
+  conversationInvitations ConversationInvitation[] @relation("InvitedToConversation")
+  sentConversationInvitations ConversationInvitation[] @relation("ConversationInviter")
 }
 
 model Session {
@@ -165,6 +167,7 @@ model ProProfile {
   lng          Float?
   radiusKm     Int        @default(25)
   verified     Boolean    @default(false)
+  verifiedAt   DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   offers          ProOffer[]
@@ -363,6 +366,7 @@ model Conversation {
   members        ConversationMember[]
   messages       Message[]
   contactRequests ContactRequest[]
+  invitations    ConversationInvitation[]
 
   @@index([type])
 }
@@ -380,6 +384,23 @@ model ConversationMember {
 
   @@unique([conversationId, userId])
   @@index([userId])
+}
+
+model ConversationInvitation {
+  id             String                      @id @default(uuid())
+  conversationId String
+  invitedUserId  String
+  invitedBy      String
+  status         ConversationInvitationStatus @default(PENDING)
+  createdAt      DateTime                    @default(now())
+  respondedAt    DateTime?
+  conversation   Conversation                @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  invitedUser    User                        @relation("InvitedToConversation", fields: [invitedUserId], references: [id], onDelete: Cascade)
+  inviter        User                        @relation("ConversationInviter", fields: [invitedBy], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, invitedUserId])
+  @@index([invitedUserId, status])
+  @@index([conversationId])
 }
 
 model Message {
@@ -594,6 +615,12 @@ enum ContactResponse {
   REJECT
 }
 
+enum ConversationInvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 enum ConsentLevel {
   personalized
   npa
@@ -604,6 +631,26 @@ enum ConsentLevel {
 enum ConsentSignal {
   granted
   denied
+}
+
+enum AnalyticsActorType {
+  ANON
+  RIDER
+  PRO
+}
+
+enum AnalyticsEventType {
+  RIDER_SEARCH_PROS
+  RIDER_BOOKING_REQUEST
+  RIDER_MATCH_DECISION
+  MESSAGE_SENT
+  PRO_BOOKING_RESPONSE
+  PRO_PROFILE_UPDATE
+  PRO_SLOTS_UPDATE
+  PRO_DASHBOARD_OPEN
+  BLOBOSPHERE_VIEW
+  BLOBOSPHERE_OUTBOUND
+  BLOBOSPHERE_SIGNUP
 }
 
 model UserConsent {
@@ -618,4 +665,48 @@ model UserConsent {
   updatedAt          DateTime       @updatedAt
 
   @@index([updatedAt])
+}
+
+model AnalyticsEvent {
+  id          String             @id @default(uuid())
+  occurredAt  DateTime
+  actorType   AnalyticsActorType
+  actorHash   String?
+  eventType   AnalyticsEventType
+  contentId   String?
+  sport       Sport?
+  zoneLarge   String?
+  metadata    Json?
+  consented   Boolean            @default(false)
+  dedupeKey   String?            @unique
+  createdAt   DateTime           @default(now())
+
+  @@index([occurredAt])
+  @@index([actorType])
+  @@index([actorHash])
+  @@index([eventType])
+  @@index([contentId])
+  @@index([sport])
+  @@index([zoneLarge])
+}
+
+model AnalyticsDailyAgg {
+  id         String             @id @default(uuid())
+  day        DateTime
+  actorType  AnalyticsActorType
+  eventType  AnalyticsEventType
+  contentId  String?
+  sport      Sport?
+  zoneLarge  String?
+  count      Int                @default(0)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@unique([day, actorType, eventType, contentId, sport, zoneLarge])
+  @@index([day])
+  @@index([actorType])
+  @@index([eventType])
+  @@index([contentId])
+  @@index([sport])
+  @@index([zoneLarge])
 }

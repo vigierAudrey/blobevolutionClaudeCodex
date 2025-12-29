@@ -65,6 +65,8 @@ export interface GDPRPurgeResponse {
       sessionsDeleted: number;
       tokensDeleted: number;
       oldLogsDeleted: number;
+      analyticsEventsDeleted: number;
+      analyticsDailyAggDeleted: number;
     };
     userAnonymization: {
       phase1Anonymized: number;
@@ -92,138 +94,138 @@ export type LoginResponse = { accessToken: string; refreshToken: string };
 
 export type AdminAnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
 
+export type PublicAnalyticsEventPayload =
+  | { eventType: 'BLOBOSPHERE_VIEW'; consentHash: string; contentId: string }
+  | { eventType: 'BLOBOSPHERE_OUTBOUND'; consentHash: string; contentId: string; domain: string; campaignId?: string }
+  | { eventType: 'BLOBOSPHERE_SIGNUP'; consentHash: string; contentId?: string }
+  | { eventType: 'PRO_DASHBOARD_OPEN'; consentHash: string };
+
+export type RetentionBucket = {
+  eligible: number;
+  retained: number | null;
+  rate: number | null;
+  masked: boolean;
+};
+
 export interface AdminEngagementAnalytics {
-  overview: {
-    totalUsers: number;
-    totalRiders: number;
-    totalPros: number;
-    activeUsersLast7Days: number;
-    newUsersInPeriod: number;
-    retentionRates: {
-      day1: number;
-      day7: number;
-      day30: number;
-    };
+  period: AdminAnalyticsPeriod;
+  privacyThreshold: number;
+  definitions: {
+    riderActiveDay: string;
+    proActiveDay: string;
+    stickiness: string;
+    retention: string;
   };
-  registrations: Array<{
-    period: string;
-    total: number;
+  totals: {
     riders: number;
     pros: number;
-  }>;
-  activeUsers: Array<{
-    period: string;
-    count: number;
-  }>;
-  period: AdminAnalyticsPeriod;
+    users: number;
+    newRiders: number;
+    newPros: number;
+  };
+  stickiness: {
+    dauAverage: {
+      total: number;
+      riders: number;
+      pros: number;
+    };
+    mau: {
+      total: number;
+      riders: number;
+      pros: number;
+    };
+    stickiness: {
+      total: number;
+      riders: number;
+      pros: number;
+    };
+    timeline: Array<{ day: string; total: number; riders: number; pros: number }>;
+  };
+  retention: {
+    riders: {
+      cohortSize: number;
+      day1: RetentionBucket;
+      day7: RetentionBucket;
+      day30: RetentionBucket;
+    };
+    pros: {
+      cohortSize: number;
+      day1: RetentionBucket;
+      day7: RetentionBucket;
+      day30: RetentionBucket;
+    };
+  };
 }
 
 export interface AdminMatchingAnalytics {
-  overview: {
-    totalDecisions: number;
-    acceptedCount: number;
-    refusedCount: number;
-    acceptRate: number;
-    refuseRate: number;
-    matchRate: number;
-    matchedConversations: number;
-    geoUsageRate: number;
-  };
-  decisionTimeline: Array<{
-    period: string;
-    accepted: number;
-    refused: number;
-    total: number;
-  }>;
-  conversationTimeline: Array<{
-    period: string;
-    conversations: number;
-  }>;
-  periodGranularity: 'day' | 'week' | 'month';
-  matchesOverTime: Array<{
-    period: string;
-    count: number;
-  }>;
-  sportPreferences: Array<{
-    sport: string;
-    count: number;
-  }>;
-  levelPreferences: Array<{
-    level: string;
-    count: number;
-  }>;
-  searchesBySport: Array<{
-    sport: string;
-    count: number;
-  }>;
   period: AdminAnalyticsPeriod;
+  privacyThreshold: number;
+  definitions: {
+    supplyDemand: string;
+  };
+  supplyDemand: Array<{
+    sport: string;
+    zoneLarge: string;
+    demandRequests: number | null;
+    supplyAvailabilities: number | null;
+    ratio: number | null;
+    sampleSize: number;
+    masked: boolean;
+  }>;
+  acceptance: {
+    totalRequests: number;
+    acceptedRequests: number | null;
+    acceptanceRate: number | null;
+    medianResponseHours: number | null;
+    responseSampleSize: number;
+    masked: boolean;
+  };
+  acceptanceBySport: Array<{
+    sport: string;
+    totalRequests: number;
+    acceptedRequests: number | null;
+    acceptanceRate: number | null;
+    medianResponseHours: number | null;
+    masked: boolean;
+  }>;
 }
 
 export interface AdminBehaviorAnalytics {
   period: AdminAnalyticsPeriod;
-  userJourney: {
+  privacyThreshold: number;
+  definitions: {
+    trustSafety: string;
+    blobosphere: string;
+  };
+  trustSafety: {
+    verifiedProsCount: number;
+    totalPros: number;
+    verifiedProsRate: number;
+    reportsTotal: number | null;
+    reportsPer1kUsers: number | null;
+    reportsMasked: boolean;
+    moderationMedianHours: number | null;
+    moderationSampleSize: number;
+    moderationMasked: boolean;
+  };
+  blobosphere: {
     totals: {
-      users: number;
-      riders: number;
-      pros: number;
+      pageviews: number;
+      outboundClicks: number;
+      signupConversions: number;
     };
-    riders: {
-      profileCreated: number;
-      displayName: number;
-      disciplines: number;
-      photo: number;
-      onboardingComplete: number;
-      searchConfigured: number;
-      recentNewUsers: number;
-      recentProfiles: number;
-      recentDisciplines: number;
-      recentPhotoUpdates: number;
-      recentDecisions: number;
-      recentMessagers: number;
-    };
-    pros: {
-      profileCreated: number;
-      offersPublished: number;
-      verified: number;
-      recentNewUsers: number;
-      recentProfiles: number;
-      recentOffers: number;
-    };
-  };
-  sessions: {
-    totalSessions: number;
-    uniqueUsers: number;
-    avgSessionsPerUser: number;
-    avgDurationSeconds: number;
-    medianDurationSeconds: number;
-    maxDurationSeconds: number;
-    distribution: Array<{ sessions: number; users: number }>;
-  };
-  featureUsage: {
-    messaging: {
-      totalMessages: number;
-      activeConversations: number;
-      uniqueSenders: number;
-      avgMessagesPerConversation: number;
-      avgMessagesPerSender: number;
-    };
-    geolocation: {
-      ridersWithLocation: number;
-      searchesWithGeo: number;
-      activeOffers: number;
-      geoSearchRate: number;
-    };
-    search: {
-      totalSearchUpdates: number;
-      geoSearches: number;
-      avgDistanceKm: number | null;
-      uniqueSearchers: number;
-      period: AdminAnalyticsPeriod;
-    };
-  };
-  support: {
-    totalReports: number;
-    reportsByReason: Array<{ reason: string; count: number }>;
+    items: Array<{
+      slug: string;
+      title: string;
+      publishedAt: string;
+      cover: string | null;
+      readingTimeMinutes: number;
+      pageviews: number | null;
+      outboundClicks: number | null;
+      signupConversions: number | null;
+      sampleSize: number;
+      masked: boolean;
+    }>;
   };
 }
 
@@ -355,15 +357,23 @@ export interface LoginAttemptsResponse {
 
 export interface AdminMatchingTTFM {
   period: AdminAnalyticsPeriod;
-  sampleSize: number;
-  averageDays: number;
-  medianDays: number;
-  p90Days: number;
-  buckets: Array<{ label: string; count: number }>;
-  newRidersInPeriod: number;
-  ridersWithoutMatch: number;
-  periodGranularity: 'day' | 'week' | 'month';
-  timeline: Array<{ period: string; averageDays: number; count: number }>;
+  privacyThreshold: number;
+  definitions: {
+    ttfvRider: string;
+    ttfvPro: string;
+  };
+  riders: {
+    sampleSize: number;
+    medianMinutes: number | null;
+    p90Minutes: number | null;
+    masked: boolean;
+  };
+  pros: {
+    sampleSize: number;
+    medianMinutes: number | null;
+    p90Minutes: number | null;
+    masked: boolean;
+  };
 }
 
 export type ConsentMode = 'personalized' | 'npa' | 'limited' | 'none';
@@ -576,6 +586,7 @@ let cachedCsrfToken: string | null = null;
 let csrfTokenPromise: Promise<string | null> | null = null;
 
 const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const CONSENT_HASH_KEY = 'blob_consent_hash';
 
 async function fetchCsrfToken(): Promise<string | null> {
   try {
@@ -631,6 +642,13 @@ function clearTokens() {
   localStorage.removeItem('refreshToken');
 }
 
+function getConsentHash() {
+  if (typeof window === 'undefined') return null;
+  const value = localStorage.getItem(CONSENT_HASH_KEY);
+  if (!value || !value.match(/^[a-f0-9]{64}$/i)) return null;
+  return value;
+}
+
 let refreshPromise: Promise<boolean> | null = null;
 
 async function refreshAccessToken() {
@@ -680,7 +698,13 @@ async function refreshAccessToken() {
   return refreshPromise;
 }
 
-async function request(path: string, opts: RequestInit = {}, withAuth = false, retry = false) {
+async function request(
+  path: string,
+  opts: RequestInit = {},
+  withAuth = false,
+  retry = false,
+  options: { skipCsrf?: boolean } = {},
+) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -690,7 +714,7 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false, r
   });
   const method = (opts.method || 'GET').toUpperCase();
 
-  if (!CSRF_SAFE_METHODS.has(method)) {
+  if (!CSRF_SAFE_METHODS.has(method) && !options.skipCsrf) {
     const token = await ensureCsrfToken();
     if (token) {
       headers['X-CSRF-Token'] = token;
@@ -700,6 +724,11 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false, r
   if (withAuth) {
     const t = getTokens();
     if (t?.accessToken) headers['Authorization'] = `Bearer ${t.accessToken}`;
+  }
+
+  const consentHash = getConsentHash();
+  if (consentHash) {
+    headers['X-Consent-Hash'] = consentHash;
   }
   const res = await fetch(`${API_URL}${path}`, {
     ...opts,
@@ -713,7 +742,7 @@ async function request(path: string, opts: RequestInit = {}, withAuth = false, r
     if (res.status === 401 && withAuth) {
       const refreshed = !retry ? await refreshAccessToken() : false;
       if (refreshed) {
-        return request(path, opts, withAuth, true);
+        return request(path, opts, withAuth, true, options);
       }
       clearTokens();
       const sessionError: Error & { code?: string } = new Error('Session expirée, veuillez vous reconnecter');
@@ -826,6 +855,23 @@ export const apiClient = {
     request(`/conversations/${conversationId}/members`, { method: 'POST', body: JSON.stringify({ userId }) }, true) as Promise<{ ok: boolean }>,
   removeConversationMember: (conversationId: string, userId: string) =>
     request(`/conversations/${conversationId}/members/${userId}`, { method: 'DELETE' }, true) as Promise<{ ok: boolean }>,
+  getPendingConversationInvitations: () =>
+    request('/conversations/invitations/pending', { method: 'GET' }, true) as Promise<{
+      items: Array<{
+        id: string;
+        conversationId: string;
+        inviterName: string;
+        inviterPhotoUrl: string | null;
+        memberCount: number;
+        createdAt: string;
+      }>;
+    }>,
+  respondToConversationInvitation: (invitationId: string, action: 'ACCEPT' | 'REJECT') =>
+    request(`/conversations/invitations/${invitationId}/respond`, { method: 'POST', body: JSON.stringify({ action }) }, true) as Promise<{
+      ok: boolean;
+      action: string;
+      message: string;
+    }>,
 
   getConsent: (hash: string) =>
     request(`/consent/${hash}`, { method: 'GET' }) as Promise<ConsentResponse>,
@@ -841,6 +887,8 @@ export const apiClient = {
     },
   ) =>
     request(`/consent/${hash}`, { method: 'POST', body: JSON.stringify(body) }) as Promise<ConsentResponse>,
+  trackAnalyticsEvent: (payload: PublicAnalyticsEventPayload) =>
+    request('/analytics/events', { method: 'POST', body: JSON.stringify(payload) }, false, false, { skipCsrf: true }),
 
   // Admin
   getSecurityHealth: () => request('/security/health', { method: 'GET' }, true) as Promise<SecurityHealth>,

@@ -182,6 +182,9 @@ export function useConsent() {
       if (typeof window !== 'undefined') {
         const payload = encodeStoredConsent(mode, signals, cmp ?? cmpVersion ?? CMP_VERSION);
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        if (typeof hash === 'string' && hash.trim().length > 0) {
+          window.localStorage.setItem('blob_consent_hash', hash);
+        }
       }
     },
     [cmpVersion],

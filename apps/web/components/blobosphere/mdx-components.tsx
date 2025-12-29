@@ -5,8 +5,65 @@ import { MDXProvider } from '@mdx-js/react';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useAnalytics } from '@/hooks/useAnalytics';
 
 const mergeClasses = (base: string, extra?: string) => [base, extra].filter(Boolean).join(' ');
+
+const isExternalHref = (href: string) => /^https?:\/\//i.test(href);
+
+const extractDomain = (href: string) => {
+  try {
+    const url = new URL(href);
+    return url.hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+type LinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+  'data-campaign'?: string;
+  'data-article'?: string;
+};
+
+function MdxLink({ className, ...props }: LinkProps) {
+  const { trackEvent } = useAnalytics();
+  const href = typeof props.href === 'string' ? props.href : '';
+  const isExternal = href && isExternalHref(href);
+
+  const handleClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    props.onClick?.(event);
+    if (!isExternal) return;
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/blobosphere')) {
+      return;
+    }
+
+    const domain = extractDomain(href);
+    if (!domain) return;
+
+    let contentId = typeof props['data-article'] === 'string' ? props['data-article'] : '';
+    if (!contentId && typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '').trim();
+      if (hash.match(/^[a-z0-9-]{1,80}$/i)) {
+        contentId = hash;
+      }
+    }
+
+    if (!contentId) return;
+
+    const campaignId = typeof props['data-campaign'] === 'string' ? props['data-campaign'] : undefined;
+    trackEvent({ eventType: 'BLOBOSPHERE_OUTBOUND', contentId, domain, campaignId });
+  };
+
+  return (
+    <a
+      {...props}
+      className={mergeClasses('text-sky-700 underline', className)}
+      target="_blank"
+      rel="noreferrer"
+      onClick={handleClick}
+    />
+  );
+}
 
 export function Callout(props: { type?: 'info' | 'warning' | 'success' | 'error'; title?: string; children?: React.ReactNode }) {
   const color = props.type || 'info';
@@ -260,9 +317,7 @@ export function getMdxComponents(): MDXComponents {
     li: ({ className, ...props }: React.LiHTMLAttributes<HTMLLIElement>) => (
       <li {...props} className={mergeClasses('', className)} />
     ),
-    a: ({ className, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-      <a {...props} className={mergeClasses('text-sky-700 underline', className)} target="_blank" rel="noreferrer" />
-    ),
+    a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <MdxLink {...props} />,
     img: ({ alt, className, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
       // `img` fallback is only used in preview mode, Next/Image handles production rendering.
       // eslint-disable-next-line @next/next/no-img-element

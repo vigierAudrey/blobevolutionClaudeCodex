@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { BlobosphereArticleLink, BlobosphereSignupLink } from '@/components/blobosphere/BlobosphereAnalyticsLink';
 import { loadBlobospherePreviews, type BlobosphereArticlePreview } from '@/lib/blobosphere/loadBlobospherePreviews';
 import { cn } from '@/lib/utils';
 import { AlertCircle, BookOpen, Heart, Leaf, Sparkles, Users } from 'lucide-react';
@@ -130,7 +131,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
 
           <div className="flex flex-wrap gap-4">
             <Button asChild size="lg" className="bg-white text-sky-700 hover:bg-white/90 shadow-lg hover:shadow-xl transition-all border-0">
-              <Link href="/register?intent=blobosphere">Créer un compte</Link>
+              <BlobosphereSignupLink href="/register?intent=blobosphere">Créer un compte</BlobosphereSignupLink>
             </Button>
             <Button asChild variant="outline" size="lg" className="border-2 border-white/40 bg-transparent text-white hover:bg-white/10">
               <Link href="/login">Déjà membre ? Se connecter</Link>
@@ -329,10 +330,10 @@ function ArticleCard({
           size="sm"
           className="w-full bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-md transition-all hover:from-sky-700 hover:to-blue-700 hover:shadow-lg"
         >
-          <Link href={href} className="inline-flex items-center justify-center gap-2">
+          <BlobosphereArticleLink href={href} contentId={article.slug} className="inline-flex items-center justify-center gap-2">
             Lire l&apos;article
             <span aria-hidden="true">→</span>
-          </Link>
+          </BlobosphereArticleLink>
         </Button>
       </div>
     </article>

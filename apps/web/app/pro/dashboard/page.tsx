@@ -2,7 +2,7 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { optimizedApiClient, measureApiPerformance } from '../../../lib/optimizedApiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
@@ -12,6 +12,7 @@ import { Badge } from '../../../components/ui/badge';
 import { User, Map, Calendar, Info, LogOut, BookOpen, MessageSquare, Gift, Sparkles } from 'lucide-react';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
+import { useAnalytics } from '@/hooks/useAnalytics';
 
 const DEFAULT_PLANNING_STATS = { availabilityCount: 0, pendingCount: 0 };
 
@@ -20,6 +21,8 @@ export default function ProDashboardPage() {
   const [user, setUser] = useState<DashboardUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [planningStats, setPlanningStats] = useState<{ availabilityCount: number; pendingCount: number } | null>(null);
+  const { trackEvent } = useAnalytics();
+  const trackedRef = useRef(false);
 
   const loadPlanningStats = useCallback(async () => {
     try {
@@ -60,6 +63,12 @@ export default function ProDashboardPage() {
       })
       .finally(() => setLoading(false));
   }, [loadPlanningStats, router]);
+
+  useEffect(() => {
+    if (!user || trackedRef.current) return;
+    trackedRef.current = true;
+    trackEvent({ eventType: 'PRO_DASHBOARD_OPEN' });
+  }, [trackEvent, user]);
 
   const logout = async () => {
     try {

@@ -2,43 +2,67 @@
 
 // Force SSR for admin auth and dynamic data
 export const dynamic = 'force-dynamic';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
-import { Button } from '../../../components/ui/button';
-import { Badge } from '../../../components/ui/badge';
-import { apiClient, type AdminEngagementAnalytics, type AdminMatchingAnalytics, type AdminAnalyticsPeriod, type AdminBehaviorAnalytics, type AdminMatchingTTFM } from '../../../lib/apiClient';
-import { ArrowLeft, TrendingUp, Users, Heart, Target, MapPin, Clock, Activity, Navigation, LifeBuoy, MessageSquare, BarChart3, Hourglass, DollarSign, MousePointer } from 'lucide-react';
 import Link from 'next/link';
+import {
+  apiClient,
+  type AdminEngagementAnalytics,
+  type AdminMatchingAnalytics,
+  type AdminAnalyticsPeriod,
+  type AdminBehaviorAnalytics,
+  type AdminMatchingTTFM,
+} from '../../../lib/apiClient';
+import { Badge } from '../../../components/ui/badge';
+import { Button } from '../../../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
+import {
+  ArrowLeft,
+  BarChart3,
+  Clock,
+  ShieldCheck,
+  Target,
+  Users,
+  AlertTriangle,
+  Globe,
+  LineChart,
+} from 'lucide-react';
 
 const PERIODS: Array<{ value: AdminAnalyticsPeriod; label: string }> = [
   { value: '7d', label: '7 jours' },
   { value: '30d', label: '30 jours' },
   { value: '90d', label: '90 jours' },
-  { value: '1y', label: '1 an' }
+  { value: '1y', label: '1 an' },
 ];
 
-const SPORT_LABELS: Record<string, string> = {
-  surf: 'Surf',
-  kitesurf: 'Kitesurf',
-  windsurf: 'Windsurf'
+const formatNumber = (value: number | null | undefined) =>
+  typeof value === 'number' ? value.toLocaleString('fr-FR') : 'Masqué';
+
+const formatPercent = (value: number | null | undefined) =>
+  typeof value === 'number' ? `${value.toFixed(1)}%` : 'Masqué';
+
+const formatRatio = (value: number | null | undefined) =>
+  typeof value === 'number' ? value.toFixed(2) : 'Masqué';
+
+const formatMinutes = (value: number | null | undefined) => {
+  if (typeof value !== 'number') return 'Masqué';
+  if (value <= 0) return '0 min';
+  if (value >= 180) {
+    const hours = value / 60;
+    return `${hours.toFixed(1)} h`;
+  }
+  return `${Math.round(value)} min`;
 };
 
-const LEVEL_LABELS: Record<string, string> = {
-  beginner: 'Débutant',
-  intermediate: 'Intermédiaire',
-  advanced: 'Confirmé'
+const formatHours = (value: number | null | undefined) => {
+  if (typeof value !== 'number') return 'Masqué';
+  if (value <= 0) return '0 h';
+  if (value >= 48) {
+    const days = value / 24;
+    return `${days.toFixed(1)} j`;
+  }
+  return `${value.toFixed(1)} h`;
 };
-
-// Type pour les analytics publicitaires
-interface AdAnalytics {
-  isEnabled: boolean;
-  impressions: number;
-  revenue: number;
-  cpm: number;
-  ctr: number;
-  topPerformingPages: Array<{ page: string; impressions: number; revenue: number }>;
-}
 
 export default function AdminAnalytics() {
   const router = useRouter();
@@ -46,7 +70,6 @@ export default function AdminAnalytics() {
   const [matchingData, setMatchingData] = useState<AdminMatchingAnalytics | null>(null);
   const [behaviorData, setBehaviorData] = useState<AdminBehaviorAnalytics | null>(null);
   const [ttfmData, setTtfmData] = useState<AdminMatchingTTFM | null>(null);
-  const [adData, setAdData] = useState<AdAnalytics | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,28 +105,13 @@ export default function AdminAnalytics() {
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
-        apiClient.getMatchingTTFMAnalytics(period)
+        apiClient.getMatchingTTFMAnalytics(period),
       ]);
 
       setEngagementData(engagement);
       setMatchingData(matching);
       setBehaviorData(behavior);
       setTtfmData(ttfm);
-
-      // Analytics publicitaires (mock pour maintenant)
-      const adsenseEnabled = process.env.NEXT_PUBLIC_ADSENSE_ENABLED === 'true';
-      setAdData({
-        isEnabled: adsenseEnabled,
-        impressions: adsenseEnabled ? Math.floor(Math.random() * 5000 + 1000) : 0,
-        revenue: adsenseEnabled ? parseFloat((Math.random() * 50 + 10).toFixed(2)) : 0,
-        cpm: adsenseEnabled ? parseFloat((Math.random() * 8 + 2).toFixed(2)) : 0,
-        ctr: adsenseEnabled ? parseFloat((Math.random() * 3 + 1).toFixed(2)) : 0,
-        topPerformingPages: adsenseEnabled ? [
-          { page: '/matching', impressions: 1200, revenue: 8.5 },
-          { page: '/matching/cards', impressions: 800, revenue: 5.2 },
-          { page: '/dashboard', impressions: 400, revenue: 2.1 }
-        ] : []
-      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -116,53 +124,20 @@ export default function AdminAnalytics() {
     void loadAnalytics();
   }, [loadAnalytics]);
 
-  const formatPercent = (value: number) => `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
-  const formatNumber = (value: number) => value.toLocaleString('fr-FR');
-  const formatDecimal = (value: number, digits = 1) =>
-    Number.isFinite(value) ? value.toLocaleString('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '0,0';
-  const formatShare = (value: number, total: number) => formatPercent(total > 0 ? (value / total) * 100 : 0);
-  const formatDuration = (seconds: number) => {
-    if (!Number.isFinite(seconds) || seconds <= 0) return '0 min';
-    const minutes = seconds / 60;
-    if (minutes >= 180) {
-      const hours = minutes / 60;
-      return `${hours.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} h`;
-    }
-    return `${minutes.toLocaleString('fr-FR', { maximumFractionDigits: minutes >= 20 ? 0 : 1 })} min`;
-  };
-  const formatDaysValue = (value: number) => `${value.toLocaleString('fr-FR', { maximumFractionDigits: value >= 10 ? 0 : 1 })} j`;
+  const rgpdThreshold = engagementData?.privacyThreshold ?? matchingData?.privacyThreshold ?? 20;
 
-  const sportPreferencesTotal = matchingData?.sportPreferences.reduce((sum, item) => sum + item.count, 0) ?? 0;
-  const levelPreferencesTotal = matchingData?.levelPreferences.reduce((sum, item) => sum + item.count, 0) ?? 0;
-  const searchesBySportTotal = matchingData?.searchesBySport.reduce((sum, item) => sum + item.count, 0) ?? 0;
-  const totalDecisions = matchingData?.overview.totalDecisions ?? 0;
-  const acceptedDecisionRate = totalDecisions > 0 ? (matchingData?.overview.acceptedCount ?? 0) / totalDecisions * 100 : 0;
-  const refusedDecisionRate = totalDecisions > 0 ? (matchingData?.overview.refusedCount ?? 0) / totalDecisions * 100 : 0;
-  const riderBase = behaviorData?.userJourney.totals.riders ?? 0;
-  const proBase = behaviorData?.userJourney.totals.pros ?? 0;
-  const totalUsersCount = behaviorData?.userJourney.totals.users ?? 0;
-  const currentPeriodLabel = PERIODS.find(p => p.value === period)?.label ?? '30 jours';
-  const granularityLabel = {
-    day: 'jour',
-    week: 'semaine',
-    month: 'mois'
-  } as const;
-  const matchingGranularity = matchingData?.periodGranularity ?? 'day';
-  const ttfmGranularity = ttfmData?.periodGranularity ?? 'day';
-  const ttfmCoverage = ttfmData && ttfmData.newRidersInPeriod > 0
-    ? (ttfmData.sampleSize / ttfmData.newRidersInPeriod) * 100
-    : 0;
+  const stickiness = engagementData?.stickiness;
+  const retention = engagementData?.retention;
+  const tractionTotals = engagementData?.totals;
 
-  const formatTimelinePeriod = (iso: string, granularity: 'day' | 'week' | 'month') => {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return iso;
+  const ttfvRiders = ttfmData?.riders;
+  const ttfvPros = ttfmData?.pros;
 
-    if (granularity === 'month') {
-      return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
-    }
+  const marketplace = matchingData;
+  const trustSafety = behaviorData?.trustSafety;
+  const blobosphere = behaviorData?.blobosphere;
 
-    return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
-  };
+  const blobosphereItems = useMemo(() => blobosphere?.items ?? [], [blobosphere?.items]);
 
   if (loading) {
     return (
@@ -173,9 +148,8 @@ export default function AdminAnalytics() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="max-w-6xl mx-auto space-y-8">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/admin/dashboard">
             <Button variant="outline" size="sm">
@@ -184,16 +158,12 @@ export default function AdminAnalytics() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-3xl font-bold">Analytics Détaillées</h1>
-            <p className="text-muted-foreground">
-              Métriques d&rsquo;engagement et de matching
-            </p>
+            <h1 className="text-3xl font-bold">Preuves de valeur</h1>
+            <p className="text-muted-foreground">Analytics RGPD-safe pour sponsors & partenaires</p>
           </div>
         </div>
-
-        {/* Sélecteur de période */}
         <div className="flex gap-2">
-          {PERIODS.map(p => (
+          {PERIODS.map((p) => (
             <Button
               key={p.value}
               variant={period === p.value ? 'default' : 'outline'}
@@ -206,7 +176,6 @@ export default function AdminAnalytics() {
         </div>
       </div>
 
-      {/* Erreurs */}
       {error && (
         <Card>
           <CardContent className="pt-6">
@@ -215,836 +184,370 @@ export default function AdminAnalytics() {
         </Card>
       )}
 
-      {/* Métriques d'engagement */}
-      {engagementData && (
-        <>
+      <Card className="border-amber-200 bg-amber-50/70">
+        <CardHeader className="flex flex-row items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <CardTitle className="text-sm">RGPD</CardTitle>
+          <Badge variant="outline" className="text-amber-700">Seuil n &gt;= {rgpdThreshold}</Badge>
+        </CardHeader>
+        <CardContent className="text-sm text-amber-800">
+          Segments masqués si l&apos;échantillon est inférieur à {rgpdThreshold}.
+        </CardContent>
+      </Card>
+
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Users className="h-5 w-5 text-blue-600" />
+          <h2 className="text-2xl font-semibold">Traction Riders & Pros</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Vue d&rsquo;ensemble - Engagement
-              </CardTitle>
+              <CardTitle className="text-sm">Utilisateurs actifs (MAU)</CardTitle>
+              <CardDescription>Unique actifs sur la période</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {formatNumber(engagementData.overview.totalUsers)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Utilisateurs total</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">
-                    {formatNumber(engagementData.overview.activeUsersLast7Days)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Actifs (7j)</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">
-                    {formatNumber(engagementData.overview.newUsersInPeriod)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Nouveaux ({PERIODS.find(p => p.value === period)?.label})</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">
-                    {formatNumber(engagementData.overview.totalRiders)} / {formatNumber(engagementData.overview.totalPros)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Riders / Pros</div>
-                </div>
+            <CardContent className="space-y-2">
+              <div className="text-2xl font-semibold">
+                {formatNumber(stickiness?.mau.total ?? null)}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Riders: {formatNumber(stickiness?.mau.riders ?? null)} · Pros: {formatNumber(stickiness?.mau.pros ?? null)}
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Taux de rétention
-              </CardTitle>
-              <CardDescription>Pourcentage d&rsquo;utilisateurs qui reviennent</CardDescription>
+              <CardTitle className="text-sm">Stickiness DAU/MAU</CardTitle>
+              <CardDescription>Ratio moyen sur la période</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-green-500">
-                    {formatPercent(engagementData.overview.retentionRates.day1)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Rétention J+1</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-yellow-500">
-                    {formatPercent(engagementData.overview.retentionRates.day7)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Rétention J+7</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-red-500">
-                    {formatPercent(engagementData.overview.retentionRates.day30)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Rétention J+30</div>
-                </div>
+            <CardContent className="space-y-2">
+              <div className="text-2xl font-semibold">
+                {formatPercent(stickiness?.stickiness.total ?? null)}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Riders: {formatPercent(stickiness?.stickiness.riders ?? null)} · Pros: {formatPercent(stickiness?.stickiness.pros ?? null)}
               </div>
             </CardContent>
           </Card>
-        </>
-      )}
-
-      {/* Métriques de matching */}
-      {matchingData && (
-        <>
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Heart className="h-5 w-5" />
-                Vue d&rsquo;ensemble - Matching
-              </CardTitle>
+              <CardTitle className="text-sm">Nouveaux comptes</CardTitle>
+              <CardDescription>Créés sur la période</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {formatNumber(matchingData.overview.totalDecisions)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Décisions totales</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-emerald-600">
-                    {formatNumber(matchingData.overview.acceptedCount)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Acceptées</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600">
-                    {formatNumber(matchingData.overview.refusedCount)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Refusées</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">
-                    {formatPercent(matchingData.overview.acceptRate)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Taux d&rsquo;acceptation</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">
-                    {formatPercent(matchingData.overview.matchRate)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Taux de match</div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">
-                    {formatNumber(matchingData.overview.matchedConversations)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Conversations créées</div>
-                </div>
+            <CardContent className="space-y-2">
+              <div className="text-2xl font-semibold">
+                {formatNumber(tractionTotals?.newRiders ?? null)} riders
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Taux de match = conversations créées ÷ décisions totales · Usage géolocalisation : {formatPercent(matchingData.overview.geoUsageRate)} des recherches
-              </p>
+              <div className="text-xs text-muted-foreground">{formatNumber(tractionTotals?.newPros ?? null)} pros</div>
             </CardContent>
           </Card>
+        </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5" />
-                  Décisions sur la période
-                </CardTitle>
-                <CardDescription>
-                  Acceptations et refus agrégés par {granularityLabel[matchingGranularity]}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {matchingData.decisionTimeline.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Pas de décisions enregistrées sur cette période.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead className="text-xs uppercase text-muted-foreground">
-                        <tr className="text-left">
-                          <th className="py-2 pr-4">Période</th>
-                          <th className="py-2 pr-4">Acceptées</th>
-                          <th className="py-2 pr-4">Refusées</th>
-                          <th className="py-2">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {matchingData.decisionTimeline.map(item => (
-                          <tr key={item.period} className="border-t border-muted">
-                            <td className="py-2 pr-4">{formatTimelinePeriod(item.period, matchingGranularity)}</td>
-                            <td className="py-2 pr-4 text-emerald-600 font-medium">{formatNumber(item.accepted)}</td>
-                            <td className="py-2 pr-4 text-red-500 font-medium">{formatNumber(item.refused)}</td>
-                            <td className="py-2">{formatNumber(item.total)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Heart className="h-5 w-5" />
-                  Conversations créées
-                </CardTitle>
-                <CardDescription>
-                  Volume de conversations par {granularityLabel[matchingGranularity]}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {matchingData.conversationTimeline.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Aucune conversation ouverte sur cette période.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead className="text-xs uppercase text-muted-foreground">
-                        <tr className="text-left">
-                          <th className="py-2 pr-4">Période</th>
-                          <th className="py-2">Conversations</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {matchingData.conversationTimeline.map(item => (
-                          <tr key={item.period} className="border-t border-muted">
-                            <td className="py-2 pr-4">{formatTimelinePeriod(item.period, matchingGranularity)}</td>
-                            <td className="py-2">{formatNumber(item.conversations)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {ttfmData && (
-            <>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Hourglass className="h-5 w-5" />
-                    Time to First Match
-                  </CardTitle>
-                  <CardDescription>
-                    Médiane et distribution du temps avant premier match sur {granularityLabel[ttfmGranularity]}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {ttfmData.sampleSize === 0 ? (
-                    <p className="text-sm text-muted-foreground">Aucun premier match enregistré sur cette période.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-blue-600">{formatDaysValue(ttfmData.medianDays)}</div>
-                        <div className="text-sm text-muted-foreground">Médiane</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-emerald-600">{formatDaysValue(ttfmData.averageDays)}</div>
-                        <div className="text-sm text-muted-foreground">Moyenne</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-purple-600">{formatDaysValue(ttfmData.p90Days)}</div>
-                        <div className="text-sm text-muted-foreground">P90</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-orange-600">{formatPercent(ttfmCoverage)}</div>
-                        <div className="text-sm text-muted-foreground">Riders matchés ({ttfmData.sampleSize}/{ttfmData.newRidersInPeriod})</div>
-                      </div>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {ttfmData.ridersWithoutMatch > 0
-                      ? `${formatNumber(ttfmData.ridersWithoutMatch)} nouveaux riders n&rsquo;ont pas encore matché sur la période.`
-                      : 'Tous les nouveaux riders de la période ont un premier match.'}
-                  </p>
-                </CardContent>
-              </Card>
-
-              {ttfmData.sampleSize > 0 && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5" />
-                        Répartition des délais
-                      </CardTitle>
-                      <CardDescription>
-                        Temps avant premier match par tranche (jours)
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-sm">
-                          <thead className="text-xs uppercase text-muted-foreground">
-                            <tr className="text-left">
-                              <th className="py-2 pr-4">Tranche</th>
-                              <th className="py-2">Riders</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {ttfmData.buckets.map(bucket => (
-                              <tr key={bucket.label} className="border-t border-muted">
-                                <td className="py-2 pr-4">{bucket.label} jours</td>
-                                <td className="py-2">{formatNumber(bucket.count)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Clock className="h-5 w-5" />
-                        Évolution du TTFM
-                      </CardTitle>
-                      <CardDescription>
-                        Moyenne par {granularityLabel[ttfmGranularity]}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {ttfmData.timeline.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">Aucune donnée suffisante pour tracer la tendance.</p>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full text-sm">
-                            <thead className="text-xs uppercase text-muted-foreground">
-                              <tr className="text-left">
-                                <th className="py-2 pr-4">Période</th>
-                                <th className="py-2 pr-4">TTFM moyen</th>
-                                <th className="py-2">Matches</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {ttfmData.timeline.map(item => (
-                                <tr key={item.period} className="border-t border-muted">
-                                  <td className="py-2 pr-4">{formatTimelinePeriod(item.period, ttfmGranularity)}</td>
-                                  <td className="py-2 pr-4">{formatDaysValue(item.averageDays)}</td>
-                                  <td className="py-2">{formatNumber(item.count)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-            </>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Préférences de sport */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="h-5 w-5" />
-                  Sports populaires
-                </CardTitle>
-                <CardDescription>Répartition des sports pratiqués</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {matchingData.sportPreferences.map((sport, index) => {
-                    const count = sport.count;
-                    const percentage = sportPreferencesTotal > 0 ? (count / sportPreferencesTotal) * 100 : 0;
-
-                    return (
-                      <div key={sport.sport} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-blue-500' : index === 1 ? 'bg-green-500' : 'bg-orange-500'}`}></div>
-                          <span className="font-medium">
-                            {SPORT_LABELS[sport.sport] || sport.sport}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">{formatPercent(percentage)}</Badge>
-                          <span className="text-sm text-muted-foreground">({formatNumber(count)})</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Préférences de niveau */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5" />
-                  Niveaux populaires
-                </CardTitle>
-                <CardDescription>Répartition des niveaux</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {matchingData.levelPreferences.map((level, index) => {
-                    const count = level.count;
-                    const percentage = levelPreferencesTotal > 0 ? (count / levelPreferencesTotal) * 100 : 0;
-
-                    return (
-                      <div key={level.level} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-green-500' : index === 1 ? 'bg-yellow-500' : 'bg-red-500'}`}></div>
-                          <span className="font-medium">
-                            {LEVEL_LABELS[level.level] || level.level}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">{formatPercent(percentage)}</Badge>
-                          <span className="text-sm text-muted-foreground">({formatNumber(count)})</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Détails des décisions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Détail des décisions de matching
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="text-center p-4 border rounded-lg">
-                  <div className="text-3xl font-bold text-green-500">
-                    {formatNumber(matchingData.overview.acceptedCount)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Acceptées</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {formatPercent(acceptedDecisionRate)}
-                  </div>
-                </div>
-
-                <div className="text-center p-4 border rounded-lg">
-                  <div className="text-3xl font-bold text-red-500">
-                    {formatNumber(matchingData.overview.refusedCount)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Refusées</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {formatPercent(refusedDecisionRate)}
-                  </div>
-                </div>
-
-                <div className="text-center p-4 border rounded-lg">
-                  <div className="text-3xl font-bold text-blue-500">
-                    {formatNumber(matchingData.overview.totalDecisions)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Total</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Sur {PERIODS.find(p => p.value === period)?.label}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {/* Analytics publicitaires */}
-      {adData && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
-              Monétisation Publicitaire
-              {adData.isEnabled ? (
-                <Badge variant="default" className="bg-green-500">Actif</Badge>
-              ) : (
-                <Badge variant="secondary">Désactivé</Badge>
-              )}
+            <CardTitle className="flex items-center gap-2 text-base">
+              <LineChart className="h-4 w-4" />
+              Rétention par cohorte (J+1/J+7/J+30)
             </CardTitle>
-            <CardDescription>
-              Revenus AdSense sur {currentPeriodLabel}
-            </CardDescription>
+            <CardDescription>Basée sur les journées actives définies</CardDescription>
           </CardHeader>
           <CardContent>
-            {!adData.isEnabled ? (
-              <div className="text-center py-6 space-y-3">
-                <div className="text-4xl">💰</div>
-                <h3 className="font-semibold">AdSense non configuré</h3>
-                <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                  Activez AdSense pour commencer à générer des revenus publicitaires.
-                  Voir le guide <code>ADSENSE_DEPLOYMENT.md</code> pour la configuration.
-                </p>
-                <Button variant="outline" size="sm" asChild>
-                  <a href="https://www.google.com/adsense/" target="_blank" rel="noopener noreferrer">
-                    Créer compte AdSense
-                  </a>
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">
-                      {formatDecimal(adData.revenue, 2)}€
-                    </div>
-                    <div className="text-sm text-muted-foreground">Revenus totaux</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">
-                      {formatNumber(adData.impressions)}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Impressions</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-orange-600">
-                      {formatDecimal(adData.cpm, 2)}€
-                    </div>
-                    <div className="text-sm text-muted-foreground">CPM moyen</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-purple-600">
-                      {formatDecimal(adData.ctr, 2)}%
-                    </div>
-                    <div className="text-sm text-muted-foreground">CTR moyen</div>
-                  </div>
-                </div>
-
-                {adData.topPerformingPages.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Riders</p>
+                <div className="grid grid-cols-3 gap-3 text-sm">
                   <div>
-                    <h4 className="font-medium mb-3 flex items-center gap-2">
-                      <MousePointer className="h-4 w-4" />
-                      Pages les plus rentables
-                    </h4>
-                    <div className="space-y-2">
-                      {adData.topPerformingPages.map((page, index) => (
-                        <div key={page.page} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-green-500' : index === 1 ? 'bg-blue-500' : 'bg-orange-500'}`}></div>
-                            <span className="font-medium">{page.page}</span>
-                          </div>
-                          <div className="flex items-center gap-4 text-muted-foreground">
-                            <span>{formatNumber(page.impressions)} vues</span>
-                            <span className="font-medium text-green-600">{formatDecimal(page.revenue, 2)}€</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-3">
-                      💡 Utilisez ces données pour négocier des partenariats directs avec les marques surf/kite
-                    </p>
+                    <p className="text-xs text-muted-foreground">J+1</p>
+                    <p className="font-medium">{formatPercent(retention?.riders.day1.rate ?? null)}</p>
                   </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recherches par sport */}
-      {matchingData && matchingData.searchesBySport.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5" />
-              Recherches par sport
-            </CardTitle>
-            <CardDescription>Sports les plus recherchés</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {matchingData.searchesBySport.map((search, index) => {
-                const count = search.count;
-                const percentage = searchesBySportTotal > 0 ? (count / searchesBySportTotal) * 100 : 0;
-
-                return (
-                  <div key={search.sport} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-blue-500' : index === 1 ? 'bg-green-500' : 'bg-orange-500'}`}></div>
-                      <span className="font-medium">
-                        {SPORT_LABELS[search.sport] || search.sport}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{formatPercent(percentage)}</Badge>
-                      <span className="text-sm text-muted-foreground">({formatNumber(count)} recherches)</span>
-                    </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">J+7</p>
+                    <p className="font-medium">{formatPercent(retention?.riders.day7.rate ?? null)}</p>
                   </div>
-                );
-              })}
+                  <div>
+                    <p className="text-xs text-muted-foreground">J+30</p>
+                    <p className="font-medium">{formatPercent(retention?.riders.day30.rate ?? null)}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">Cohorte: {formatNumber(retention?.riders.cohortSize ?? null)}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Pros</p>
+                <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">J+1</p>
+                    <p className="font-medium">{formatPercent(retention?.pros.day1.rate ?? null)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">J+7</p>
+                    <p className="font-medium">{formatPercent(retention?.pros.day7.rate ?? null)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">J+30</p>
+                    <p className="font-medium">{formatPercent(retention?.pros.day30.rate ?? null)}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">Cohorte: {formatNumber(retention?.pros.cohortSize ?? null)}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
-      )}
 
-      {behaviorData && (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
-                Vue d&rsquo;ensemble comportementale
-              </CardTitle>
-              <CardDescription>
-                Indicateurs clés sur la période sélectionnée ({currentPeriodLabel})
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-primary">
-                    {formatNumber(totalUsersCount)}
-                  </div>
-                  <p className="text-sm text-muted-foreground">Utilisateurs actifs</p>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {formatShare(behaviorData.userJourney.riders.onboardingComplete, riderBase)}
-                  </div>
-                  <p className="text-sm text-muted-foreground">Riders onboarding complet</p>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-emerald-600">
-                    {formatShare(behaviorData.userJourney.pros.offersPublished, proBase)}
-                  </div>
-                  <p className="text-sm text-muted-foreground">Pros avec offre active</p>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-rose-600">
-                    {formatNumber(behaviorData.support.totalReports)}
-                  </div>
-                  <p className="text-sm text-muted-foreground">Signalements sur {currentPeriodLabel}</p>
-                </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="h-4 w-4" />
+              Time-to-first-value (TTFV)
+            </CardTitle>
+            <CardDescription>Délai médian avant action valeur</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <p className="text-sm font-semibold">Riders</p>
+                <p className="text-2xl font-semibold">{formatMinutes(ttfvRiders?.medianMinutes ?? null)}</p>
+                <p className="text-xs text-muted-foreground">P90: {formatMinutes(ttfvRiders?.p90Minutes ?? null)}</p>
               </div>
-            </CardContent>
-          </Card>
+              <div>
+                <p className="text-sm font-semibold">Pros</p>
+                <p className="text-2xl font-semibold">{formatMinutes(ttfvPros?.medianMinutes ?? null)}</p>
+                <p className="text-xs text-muted-foreground">P90: {formatMinutes(ttfvPros?.p90Minutes ?? null)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Parcours riders
-                </CardTitle>
-                <CardDescription>Étapes clés et taux de complétion</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { label: 'Profil créé', value: behaviorData.userJourney.riders.profileCreated },
-                  { label: 'Pseudo renseigné', value: behaviorData.userJourney.riders.displayName },
-                  { label: 'Sport+niveau choisis', value: behaviorData.userJourney.riders.disciplines },
-                  { label: 'Photo de profil', value: behaviorData.userJourney.riders.photo },
-                  { label: 'Onboarding complet', value: behaviorData.userJourney.riders.onboardingComplete },
-                  { label: 'Recherche configurée', value: behaviorData.userJourney.riders.searchConfigured }
-                ].map(step => {
-                  const percent = riderBase > 0 ? Math.min(100, Math.round((step.value / riderBase) * 100)) : 0;
-                  return (
-                    <div key={step.label} className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span>{step.label}</span>
-                        <span className="text-muted-foreground">
-                          {formatNumber(step.value)} ({formatShare(step.value, riderBase)})
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full bg-blue-500" style={{ width: `${percent}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Nouveaux riders ({currentPeriodLabel})</p>
-                    <p className="text-lg font-semibold">{formatNumber(behaviorData.userJourney.riders.recentNewUsers)}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Riders actifs (match / message)</p>
-                    <p className="text-lg font-semibold">{formatNumber(behaviorData.userJourney.riders.recentDecisions + behaviorData.userJourney.riders.recentMessagers)}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Navigation className="h-5 w-5" />
-                  Parcours pros
-                </CardTitle>
-                <CardDescription>Progression des profils professionnels</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { label: 'Profil pro créé', value: behaviorData.userJourney.pros.profileCreated },
-                  { label: 'Offre publiée', value: behaviorData.userJourney.pros.offersPublished },
-                  { label: 'Vérifié', value: behaviorData.userJourney.pros.verified }
-                ].map(step => {
-                  const percent = proBase > 0 ? Math.min(100, Math.round((step.value / proBase) * 100)) : 0;
-                  return (
-                    <div key={step.label} className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span>{step.label}</span>
-                        <span className="text-muted-foreground">
-                          {formatNumber(step.value)} ({formatShare(step.value, proBase)})
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full bg-emerald-500" style={{ width: `${percent}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <div className="grid grid-cols-3 gap-4 pt-2">
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Nouveaux pros ({currentPeriodLabel})</p>
-                    <p className="text-lg font-semibold">{formatNumber(behaviorData.userJourney.pros.recentNewUsers)}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Profils créés</p>
-                    <p className="text-lg font-semibold">{formatNumber(behaviorData.userJourney.pros.recentProfiles)}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Offres publiées</p>
-                    <p className="text-lg font-semibold">{formatNumber(behaviorData.userJourney.pros.recentOffers)}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="h-5 w-5" />
-                  Sessions & engagement
-                </CardTitle>
-                <CardDescription>Analyse des sessions sur {currentPeriodLabel}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase">Sessions totales</p>
-                    <p className="text-xl font-semibold">{formatNumber(behaviorData.sessions.totalSessions)}</p>
-                    <p className="text-xs text-muted-foreground">{formatDecimal(behaviorData.sessions.avgSessionsPerUser)} sessions / utilisateur</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase">Utilisateurs actifs</p>
-                    <p className="text-xl font-semibold">{formatNumber(behaviorData.sessions.uniqueUsers)}</p>
-                    <p className="text-xs text-muted-foreground">{formatShare(behaviorData.sessions.uniqueUsers, totalUsersCount)} de la base</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Durée moyenne</p>
-                    <p className="text-lg font-semibold">{formatDuration(behaviorData.sessions.avgDurationSeconds)}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Durée médiane</p>
-                    <p className="text-lg font-semibold">{formatDuration(behaviorData.sessions.medianDurationSeconds)}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Session max</p>
-                    <p className="text-lg font-semibold">{formatDuration(behaviorData.sessions.maxDurationSeconds)}</p>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase mb-2">Répartition sessions / utilisateur</p>
-                  <div className="space-y-2">
-                    {behaviorData.sessions.distribution.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Pas assez de données sur cette période.</p>
-                    ) : (
-                      behaviorData.sessions.distribution.map(item => (
-                        <div key={item.sessions} className="flex justify-between text-sm">
-                          <span>{item.sessions} session{item.sessions > 1 ? 's' : ''}</span>
-                          <span className="text-muted-foreground">{formatNumber(item.users)} utilisateurs</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  Usage des fonctionnalités
-                </CardTitle>
-                <CardDescription>Messagerie, recherche et géolocalisation</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Messagerie</p>
-                    <p className="text-lg font-semibold">{formatNumber(behaviorData.featureUsage.messaging.totalMessages)}</p>
-                    <p className="text-xs text-muted-foreground">{formatNumber(behaviorData.featureUsage.messaging.uniqueSenders)} expéditeurs</p>
-                    <p className="text-xs text-muted-foreground mt-1">{formatDecimal(behaviorData.featureUsage.messaging.avgMessagesPerConversation)} msg/conversation</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Recherche</p>
-                    <p className="text-lg font-semibold">{formatNumber(behaviorData.featureUsage.search.totalSearchUpdates)}</p>
-                    <p className="text-xs text-muted-foreground">{formatDecimal(behaviorData.featureUsage.search.avgDistanceKm ?? 0)} km de rayon moyen</p>
-                    <p className="text-xs text-muted-foreground mt-1">{formatShare(behaviorData.featureUsage.search.geoSearches, behaviorData.featureUsage.search.totalSearchUpdates)} avec géoloc.</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground uppercase">Géolocalisation</p>
-                    <p className="text-lg font-semibold">{formatNumber(behaviorData.featureUsage.geolocation.ridersWithLocation)}</p>
-                    <p className="text-xs text-muted-foreground">Profils riders géolocalisés</p>
-                    <p className="text-xs text-muted-foreground mt-1">{formatShare(behaviorData.featureUsage.geolocation.searchesWithGeo, behaviorData.featureUsage.search.totalSearchUpdates)} des recherches</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Target className="h-5 w-5 text-emerald-600" />
+          <h2 className="text-2xl font-semibold">Marketplace Health</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <LifeBuoy className="h-5 w-5" />
-                Support & signalements
-              </CardTitle>
-              <CardDescription>Principaux motifs sur {currentPeriodLabel}</CardDescription>
+              <CardTitle className="text-sm">Demandes vs offres</CardTitle>
+              <CardDescription>Ratio global</CardDescription>
             </CardHeader>
             <CardContent>
-              {behaviorData.support.totalReports === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucun signalement enregistré sur cette période.</p>
-              ) : (
-                <div className="space-y-2">
-                  {behaviorData.support.reportsByReason.map(reason => (
-                    <div key={reason.reason} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-                      <span>{reason.reason}</span>
-                      <span className="text-muted-foreground">{formatNumber(reason.count)} signalement{reason.count > 1 ? 's' : ''}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="text-2xl font-semibold">
+                {formatRatio(
+                  marketplace?.acceptance.totalRequests && marketplace.acceptance.totalRequests > 0
+                    ? (marketplace.acceptance.totalRequests || 0) / (marketplace.acceptance.responseSampleSize || 1)
+                    : null,
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">Ratio indicatif (demandes / réponses)</p>
             </CardContent>
           </Card>
-        </>
-      )}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Taux d&apos;acceptation</CardTitle>
+              <CardDescription>Bookings acceptés</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{formatPercent(marketplace?.acceptance.acceptanceRate ?? null)}</div>
+              <p className="text-xs text-muted-foreground">Total: {formatNumber(marketplace?.acceptance.totalRequests ?? null)} demandes</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Délai de réponse médian</CardTitle>
+              <CardDescription>Pros → Riders</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{formatHours(marketplace?.acceptance.medianResponseHours ?? null)}</div>
+              <p className="text-xs text-muted-foreground">Sur {formatNumber(marketplace?.acceptance.responseSampleSize ?? null)} réponses</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-4 w-4" />
+              Supply vs Demand par sport & zone large
+            </CardTitle>
+            <CardDescription>Segments masqués si n &lt; {rgpdThreshold}</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-2">Sport</th>
+                  <th>Zone</th>
+                  <th>Demandes</th>
+                  <th>Offres</th>
+                  <th>Ratio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {marketplace?.supplyDemand.map((segment) => (
+                  <tr key={`${segment.sport}-${segment.zoneLarge}`} className="border-t">
+                    <td className="py-2 font-medium">{segment.sport}</td>
+                    <td>{segment.zoneLarge}</td>
+                    <td>{formatNumber(segment.demandRequests)}</td>
+                    <td>{formatNumber(segment.supplyAvailabilities)}</td>
+                    <td>{formatRatio(segment.ratio)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Acceptation par sport</CardTitle>
+            <CardDescription>Masqué si n &lt; {rgpdThreshold}</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-2">Sport</th>
+                  <th>Demandes</th>
+                  <th>Taux d&apos;acceptation</th>
+                  <th>Délai médian</th>
+                </tr>
+              </thead>
+              <tbody>
+                {marketplace?.acceptanceBySport.map((row) => (
+                  <tr key={row.sport} className="border-t">
+                    <td className="py-2 font-medium">{row.sport}</td>
+                    <td>{formatNumber(row.totalRequests)}</td>
+                    <td>{formatPercent(row.acceptanceRate)}</td>
+                    <td>{formatHours(row.medianResponseHours)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5 text-rose-600" />
+          <h2 className="text-2xl font-semibold">Trust & Safety</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Pros vérifiés</CardTitle>
+              <CardDescription>Part du réseau vérifié</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">
+                {formatPercent(trustSafety?.verifiedProsRate ?? null)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {formatNumber(trustSafety?.verifiedProsCount ?? null)} / {formatNumber(trustSafety?.totalPros ?? null)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Signalements / 1k users</CardTitle>
+              <CardDescription>Période sélectionnée</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{formatNumber(trustSafety?.reportsPer1kUsers ?? null)}</div>
+              <p className="text-xs text-muted-foreground">Total: {formatNumber(trustSafety?.reportsTotal ?? null)} signalements</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Délai médian modération</CardTitle>
+              <CardDescription>Signalement → action</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{formatHours(trustSafety?.moderationMedianHours ?? null)}</div>
+              <p className="text-xs text-muted-foreground">{formatNumber(trustSafety?.moderationSampleSize ?? null)} actions</p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Globe className="h-5 w-5 text-sky-600" />
+          <h2 className="text-2xl font-semibold">Blobosphère (SEO / Content)</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Pageviews</CardTitle>
+              <CardDescription>Articles publiés</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{formatNumber(blobosphere?.totals.pageviews ?? null)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Outbound clicks</CardTitle>
+              <CardDescription>Promos / partenaires</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{formatNumber(blobosphere?.totals.outboundClicks ?? null)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Conversions inscription</CardTitle>
+              <CardDescription>Consentement requis</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{formatNumber(blobosphere?.totals.signupConversions ?? null)}</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Performance par article</CardTitle>
+            <CardDescription>Masqué si n &lt; {rgpdThreshold}</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-2">Article</th>
+                  <th>Lecture</th>
+                  <th>Pageviews</th>
+                  <th>Outbound</th>
+                  <th>Signups</th>
+                </tr>
+              </thead>
+              <tbody>
+                {blobosphereItems.map((item) => (
+                  <tr key={item.slug} className="border-t">
+                    <td className="py-2">
+                      <p className="font-medium">{item.title}</p>
+                      <p className="text-xs text-muted-foreground">{item.slug}</p>
+                    </td>
+                    <td>{item.readingTimeMinutes} min</td>
+                    <td>{formatNumber(item.pageviews)}</td>
+                    <td>{formatNumber(item.outboundClicks)}</td>
+                    <td>{formatNumber(item.signupConversions)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Monétisation pub</CardTitle>
+            <CardDescription>AdSense non configuré</CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Not configured · Inventaire interne: {formatNumber(blobosphere?.totals.pageviews ?? null)} pageviews / {formatNumber(blobosphere?.totals.outboundClicks ?? null)} outbound clicks.
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }

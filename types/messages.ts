@@ -20,6 +20,9 @@ export interface ThreadSummary {
   trashed?: boolean;
   favorite?: boolean;
   blocked?: boolean;
+  memberCount?: number;
+  isGroup?: boolean;
+  matchedAt?: Date | string | null;
 }
 
 export interface ThreadListResponse {
@@ -47,6 +50,9 @@ export interface Message {
   content: string;
   meta?: MessageMeta | null;
   createdAt: string;
+  senderName?: string;
+  senderPhotoUrl?: string | null;
+  isCurrentUser?: boolean;
 }
 
 export interface MessageListResponse {

@@ -185,6 +185,8 @@ export default function AdminGDPRPage() {
                     <li>Sessions supprimées : {purgeResult.result.technicalData.sessionsDeleted}</li>
                     <li>Tokens supprimés : {purgeResult.result.technicalData.tokensDeleted}</li>
                     <li>Logs nettoyés : {purgeResult.result.technicalData.oldLogsDeleted}</li>
+                    <li>Events analytics supprimés : {purgeResult.result.technicalData.analyticsEventsDeleted}</li>
+                    <li>Agrégats analytics supprimés : {purgeResult.result.technicalData.analyticsDailyAggDeleted}</li>
                   </ul>
                 </div>
                 <div>

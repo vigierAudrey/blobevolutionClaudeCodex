@@ -4,6 +4,8 @@ export {
   Prisma,
   PrismaClient,
   AvailabilityStatus,
+  AnalyticsActorType,
+  AnalyticsEventType,
   BookingRequestStatus,
   BookingStatus,
   ContactRequestStatus,

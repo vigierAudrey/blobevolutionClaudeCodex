@@ -200,11 +200,24 @@ export default function ProPlanningPage() {
   const pendingRequests = useMemo(() => requests.filter((req) => req.status === 'PENDING'), [requests]);
   const pendingCount = pendingRequests.length;
 
-  const sortedAvailabilities = useMemo(
-    () =>
-      [...availabilities].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
-    [availabilities]
-  );
+  const { activeAvailabilities, pastAvailabilities } = useMemo(() => {
+    const now = new Date();
+    const active: AvailabilityView[] = [];
+    const past: AvailabilityView[] = [];
+
+    availabilities.forEach((slot) => {
+      if (new Date(slot.endAt) > now) {
+        active.push(slot);
+      } else {
+        past.push(slot);
+      }
+    });
+
+    active.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+    past.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime());
+
+    return { activeAvailabilities: active, pastAvailabilities: past };
+  }, [availabilities]);
 
   if (loading) {
     return <p className="max-w-5xl mx-auto py-6 text-sm text-muted-foreground">Chargement du planning…</p>;
@@ -264,92 +277,145 @@ export default function ProPlanningPage() {
       )}
 
       {view === 'list' ? (
-        <section className="space-y-4">
-          {sortedAvailabilities.map((slot) => (
-            <Card key={slot.id} className="border-2 rounded-[1.75rem] hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-foreground">
-                    {slot.spotName || 'Lieu à définir'}
-                    <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">{slot.sport}</Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    {new Date(slot.startAt).toLocaleString('fr-FR')} → {new Date(slot.endAt).toLocaleTimeString('fr-FR')}
-                  </CardDescription>
-                </div>
-                <Badge variant={slot.status === 'OPEN' ? 'outline' : 'destructive'} className={slot.status === 'OPEN' ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : ''}>{slot.status}</Badge>
-              </CardHeader>
-              <CardContent className="flex flex-wrap items-center justify-between gap-4 text-sm">
-                <div className="space-y-1">
-                  <p className="text-muted-foreground">Niveaux acceptés : {slot.levels.join(', ')}</p>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <p className="font-medium">
-                      {slot.bookedCount}/{slot.capacity} riders positionnés
-                    </p>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => handleAdjustBookedCount(slot.id, -1)}
-                        disabled={adjusting[slot.id] || slot.bookedCount <= 0}
-                        aria-label="Diminuer le nombre d'inscrits"
-                      >
-                        -
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => handleAdjustBookedCount(slot.id, 1)}
-                        disabled={adjusting[slot.id] || slot.bookedCount >= slot.capacity}
-                        aria-label="Augmenter le nombre d'inscrits"
-                      >
-                        +
-                      </Button>
-                      {adjusting[slot.id] && (
-                        <span className="text-xs text-muted-foreground">Mise à jour…</span>
+        <section className="space-y-6">
+          {/* Créneaux actifs */}
+          {activeAvailabilities.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-foreground">Créneaux à venir</h2>
+              {activeAvailabilities.map((slot) => (
+                <Card key={slot.id} className="border-2 rounded-[1.75rem] hover:shadow-lg transition-shadow">
+                  <CardHeader className="flex flex-row items-center justify-between bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-foreground">
+                        {slot.spotName || 'Lieu à définir'}
+                        <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">{slot.sport}</Badge>
+                      </CardTitle>
+                      <CardDescription>
+                        {new Date(slot.startAt).toLocaleString('fr-FR')} → {new Date(slot.endAt).toLocaleTimeString('fr-FR')}
+                      </CardDescription>
+                    </div>
+                    <Badge variant={slot.status === 'OPEN' ? 'outline' : 'destructive'} className={slot.status === 'OPEN' ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : ''}>{slot.status}</Badge>
+                  </CardHeader>
+                  <CardContent className="flex flex-wrap items-center justify-between gap-4 text-sm">
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground">Niveaux acceptés : {slot.levels.join(', ')}</p>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <p className="font-medium">
+                          {slot.bookedCount}/{slot.capacity} riders positionnés
+                        </p>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => handleAdjustBookedCount(slot.id, -1)}
+                            disabled={adjusting[slot.id] || slot.bookedCount <= 0}
+                            aria-label="Diminuer le nombre d'inscrits"
+                          >
+                            -
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => handleAdjustBookedCount(slot.id, 1)}
+                            disabled={adjusting[slot.id] || slot.bookedCount >= slot.capacity}
+                            aria-label="Augmenter le nombre d'inscrits"
+                          >
+                            +
+                          </Button>
+                          {adjusting[slot.id] && (
+                            <span className="text-xs text-muted-foreground">Mise à jour…</span>
+                          )}
+                        </div>
+                        {slot.bookedCount >= slot.capacity && (
+                          <Badge variant="destructive" className="uppercase tracking-wide">Complet</Badge>
+                        )}
+                      </div>
+                      {slot.spotName && slot.spotLat && slot.spotLng && (
+                        <p className="text-xs text-muted-foreground">
+                          📍 <a
+                            href={`https://www.google.com/maps?q=${slot.spotLat},${slot.spotLng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline hover:text-foreground"
+                          >
+                            {slot.spotName}
+                          </a>
+                        </p>
                       )}
                     </div>
-                    {slot.bookedCount >= slot.capacity && (
-                      <Badge variant="destructive" className="uppercase tracking-wide">Complet</Badge>
-                    )}
-                  </div>
-                  {slot.spotName && slot.spotLat && slot.spotLng && (
-                    <p className="text-xs text-muted-foreground">
-                      📍 <a
-                        href={`https://www.google.com/maps?q=${slot.spotLat},${slot.spotLng}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline hover:text-foreground"
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingAvailability(slot)}
+                        disabled={deletingId === slot.id}
                       >
-                        {slot.spotName}
-                      </a>
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditingAvailability(slot)}
-                    disabled={deletingId === slot.id}
-                  >
-                    Modifier
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDelete(slot.id)}
-                    disabled={deletingId === slot.id}
-                    aria-busy={deletingId === slot.id}
-                  >
-                    {deletingId === slot.id ? 'Suppression...' : 'Supprimer'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                        Modifier
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDelete(slot.id)}
+                        disabled={deletingId === slot.id}
+                        aria-busy={deletingId === slot.id}
+                      >
+                        {deletingId === slot.id ? 'Suppression...' : 'Supprimer'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
-          {sortedAvailabilities.length === 0 && (
+          {/* Créneaux passés */}
+          {pastAvailabilities.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold text-muted-foreground">Créneaux passés</h2>
+              {pastAvailabilities.map((slot) => (
+                <Card key={slot.id} className="border-2 rounded-[1.75rem] opacity-50 bg-gray-50 dark:bg-gray-900/20">
+                  <CardHeader className="flex flex-row items-center justify-between bg-gradient-to-r from-gray-100 to-gray-100 dark:from-gray-900/30 dark:to-gray-900/30">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-muted-foreground">
+                        {slot.spotName || 'Lieu à définir'}
+                        <Badge variant="secondary" className="bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">{slot.sport}</Badge>
+                      </CardTitle>
+                      <CardDescription className="text-muted-foreground">
+                        {new Date(slot.startAt).toLocaleString('fr-FR')} → {new Date(slot.endAt).toLocaleTimeString('fr-FR')}
+                      </CardDescription>
+                    </div>
+                    <Badge variant="outline" className="border-gray-400 text-gray-600 dark:text-gray-400">Passé</Badge>
+                  </CardHeader>
+                  <CardContent className="flex flex-wrap items-center justify-between gap-4 text-sm">
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground">Niveaux acceptés : {slot.levels.join(', ')}</p>
+                      <p className="text-muted-foreground">
+                        {slot.bookedCount}/{slot.capacity} riders positionnés
+                      </p>
+                      {slot.spotName && slot.spotLat && slot.spotLng && (
+                        <p className="text-xs text-muted-foreground">
+                          📍 {slot.spotName}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDelete(slot.id)}
+                        disabled={deletingId === slot.id}
+                        aria-busy={deletingId === slot.id}
+                      >
+                        {deletingId === slot.id ? 'Suppression...' : 'Supprimer'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {activeAvailabilities.length === 0 && pastAvailabilities.length === 0 && (
             <Card>
               <CardContent className="py-10 text-center text-sm text-muted-foreground">
                 Aucun créneau pour le moment – ajoute ton premier créneau pour être visible dans les recherches riders.
@@ -972,10 +1038,10 @@ function CreateAvailabilityModal({ open, onClose, onCreated, editingAvailability
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto">
       <form
         onSubmit={submit}
-        className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg"
+        className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg my-4"
       >
         <div className="mb-4 flex items-start justify-between">
           <div>
