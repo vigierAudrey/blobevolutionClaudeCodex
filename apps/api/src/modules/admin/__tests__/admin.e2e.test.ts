@@ -388,7 +388,9 @@ describe('Admin Controller', () => {
       technicalData: {
         sessionsDeleted: 0,
         tokensDeleted: 0,
-        oldLogsDeleted: 0
+        oldLogsDeleted: 0,
+        analyticsEventsDeleted: 0,
+        analyticsDailyAggDeleted: 0
       },
       userAnonymization: {
         phase1Anonymized: 0,
@@ -600,5 +602,12 @@ describe('Admin Controller', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .set('X-CSRF-Token', csrf)
       .expect(200);
+  });
+
+  it('rejects analytics access for non-admin users', async () => {
+    await request(app)
+      .get('/admin/analytics/engagement?period=7d')
+      .set('Authorization', `Bearer ${riderToken}`)
+      .expect(403);
   });
 });

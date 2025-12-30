@@ -101,6 +101,7 @@ export class BookingRepository {
           AND pa."status" = 'OPEN'
           AND pa."spotLat" IS NOT NULL
           AND pa."spotLng" IS NOT NULL
+          AND pa."endAt" > NOW()
           ${startCondition}
           ${endCondition}
           AND ST_DWithin(
@@ -154,7 +155,7 @@ export class BookingRepository {
       FROM "User" u
       JOIN "ProProfile" pp ON pp."userId" = u."id"
       LEFT JOIN (
-        SELECT "proUserId", COUNT(*) FILTER (WHERE "status" = 'OPEN') AS "openAvailabilityCount"
+        SELECT "proUserId", COUNT(*) FILTER (WHERE "status" = 'OPEN' AND "endAt" > NOW()) AS "openAvailabilityCount"
         FROM "ProAvailability"
         GROUP BY "proUserId"
       ) open_stats ON open_stats."proUserId" = u."id"

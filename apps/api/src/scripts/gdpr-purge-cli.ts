@@ -64,7 +64,9 @@ async function main() {
         console.log('🔧 DONNÉES TECHNIQUES:');
         console.log(`• Sessions supprimées: ${result.technicalData.sessionsDeleted}`);
         console.log(`• Tokens supprimés: ${result.technicalData.tokensDeleted}`);
-        console.log(`• Logs anciens supprimés: ${result.technicalData.oldLogsDeleted}\n`);
+        console.log(`• Logs anciens supprimés: ${result.technicalData.oldLogsDeleted}`);
+        console.log(`• Events analytics supprimés: ${result.technicalData.analyticsEventsDeleted}`);
+        console.log(`• Agrégats analytics supprimés: ${result.technicalData.analyticsDailyAggDeleted}\n`);
 
         console.log('👤 ANONYMISATION UTILISATEURS:');
         console.log(`• Phase 1 (profils détaillés): ${result.userAnonymization.phase1Anonymized}`);

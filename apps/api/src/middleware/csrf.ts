@@ -16,6 +16,11 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
     return next();
   }
 
+  // Skip CSRF for public analytics ingestion endpoint
+  if (req.path === '/analytics/events') {
+    return next();
+  }
+
   // Get the secret from session (created when user first accesses the app)
   const secret = req.session?.csrfSecret;
 

@@ -1,15 +1,21 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { notifyNewMatch, notifyMatchDecision, notifyNewMatchingCard } from '../../lib/socket';
+import { recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 
 export const matchingRouter = Router();
 matchingRouter.use(requireAuth, requireVerifiedEmail);
 
 const sportEnum = z.enum(['surf', 'kitesurf']);
 const levelEnum = z.enum(['beginner', 'intermediate', 'advanced', 'anytime']);
+
+const getConsentHash = (req: Request) => {
+  const header = req.headers['x-consent-hash'];
+  return typeof header === 'string' && header.trim().length > 0 ? header : null;
+};
 
 const searchSchema = z.object({
   sport: sportEnum,
@@ -458,6 +464,14 @@ matchingRouter.post('/decision', async (req, res) => {
         }
       }
     });
+    const consentHash = getConsentHash(req);
+    void recordServerAnalyticsEvent({
+      eventType: 'RIDER_MATCH_DECISION',
+      actorType: 'RIDER',
+      actorId: userId,
+      consentHash,
+      occurredAt: new Date(),
+    });
     return res.json({ ok: true, createdConversations });
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
@@ -563,6 +577,16 @@ matchingRouter.post('/decisions', async (req, res) => {
         }
       }
     });
+    const consentHash = getConsentHash(req);
+    if (items.length > 0) {
+      void recordServerAnalyticsEvent({
+        eventType: 'RIDER_MATCH_DECISION',
+        actorType: 'RIDER',
+        actorId: userId,
+        consentHash,
+        occurredAt: new Date(),
+      });
+    }
     return res.json({ ok: true, count: items.length, createdConversations });
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });

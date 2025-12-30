@@ -8,6 +8,7 @@ import { BackBar } from '../../components/BackBar';
 import { apiClient } from '../../lib/apiClient';
 import type { ThreadSummary, ThreadListQuery, ThreadListResponse } from '@/types/messages';
 import { Button } from '../../components/ui/button';
+import { ConversationInvitations } from '../../components/ConversationInvitations';
 
 // Force SSR for real-time messaging
 export const dynamic = 'force-dynamic';
@@ -97,6 +98,9 @@ export default function MessagesPage() {
           <p className="font-medium">{error}</p>
         </div>
       )}
+
+      {/* Invitations en attente */}
+      <ConversationInvitations />
 
       {/* Filtres */}
       <Card className="border-2">
@@ -251,7 +255,11 @@ export default function MessagesPage() {
                   <Link href={`/messages/${it.id}`} className="flex-1 flex items-start gap-4">
                     {/* Photo de profil */}
                     <div className="relative flex-shrink-0">
-                      {it.otherPhotoUrl ? (
+                      {it.isGroup ? (
+                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                          <Users size={28} />
+                        </div>
+                      ) : it.otherPhotoUrl ? (
                         <div className="relative">
                           <Image
                             src={it.otherPhotoUrl}
@@ -281,18 +289,26 @@ export default function MessagesPage() {
                         </div>
                       )}
 
-                      {/* Badge rôle */}
-                      <div className={`absolute -bottom-1 -right-1 rounded-full p-1 shadow-md ${
-                        it.otherRole === 'PRO'
-                          ? 'bg-gradient-to-br from-emerald-500 to-teal-500'
-                          : 'bg-gradient-to-br from-blue-500 to-indigo-500'
-                      }`}>
-                        {it.otherRole === 'PRO' ? (
-                          <Briefcase size={12} className="text-white" />
-                        ) : (
-                          <Users size={12} className="text-white" />
-                        )}
-                      </div>
+                      {/* Badge rôle ou unread pour groupe */}
+                      {it.isGroup ? (
+                        it.unread > 0 && (
+                          <div className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white text-xs font-bold ring-2 ring-white animate-pulse">
+                            {it.unread}
+                          </div>
+                        )
+                      ) : (
+                        <div className={`absolute -bottom-1 -right-1 rounded-full p-1 shadow-md ${
+                          it.otherRole === 'PRO'
+                            ? 'bg-gradient-to-br from-emerald-500 to-teal-500'
+                            : 'bg-gradient-to-br from-blue-500 to-indigo-500'
+                        }`}>
+                          {it.otherRole === 'PRO' ? (
+                            <Briefcase size={12} className="text-white" />
+                          ) : (
+                            <Users size={12} className="text-white" />
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -300,6 +316,11 @@ export default function MessagesPage() {
                         <span className={`text-base ${it.unread > 0 ? 'font-bold' : 'font-semibold'}`}>
                           {it.otherDisplayName}
                         </span>
+                        {it.isGroup && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 px-2 py-0.5 text-xs font-medium">
+                            <Users size={10} /> Groupe
+                          </span>
+                        )}
                         {it.favorite && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 text-amber-700 px-2 py-0.5 text-xs font-medium">
                             <Star size={10} className="fill-current"/> Favori
@@ -310,7 +331,7 @@ export default function MessagesPage() {
                             <Shield size={10}/> Bloqué
                           </span>
                         )}
-                        {it.otherRole === 'PRO' && (
+                        {!it.isGroup && it.otherRole === 'PRO' && (
                           <span className="inline-flex items-center rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 px-2 py-0.5 text-xs font-medium">
                             PRO
                           </span>

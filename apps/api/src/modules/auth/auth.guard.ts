@@ -17,6 +17,21 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) {
+    return next();
+  }
+  const token = auth.slice('Bearer '.length);
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+    (req as any).user = { id: payload.sub, role: payload.role };
+  } catch {
+    // Ignore invalid tokens for optional auth routes.
+  }
+  next();
+}
+
 export function requireRole(role: 'RIDER' | 'PRO' | 'ADMIN') {
   return (req: Request, res: Response, next: NextFunction) => {
     const user = (req as any).user as { id: string; role: string } | undefined;

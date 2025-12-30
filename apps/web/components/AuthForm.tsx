@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../lib/apiClient';
@@ -12,6 +12,8 @@ import type { DashboardUser, UserRole } from '@/types/user';
 import { Eye, EyeOff, LogIn, UserPlus, AlertCircle, CheckCircle2, Mail } from 'lucide-react';
 import { getPasswordRequirementStatuses } from '../../api/src/utils/password-validator';
 import { PasswordRequirementsList } from './PasswordRequirementsList';
+import { useAnalytics } from '@/hooks/useAnalytics';
+import { BLOBOSPHERE_SIGNUP_ARTICLE_KEY, BLOBOSPHERE_SIGNUP_INTENT_KEY } from '@/components/blobosphere/BlobosphereAnalyticsLink';
 
 const PUBLIC_ROLES = [
   { value: 'RIDER', label: 'Rider' },
@@ -78,11 +80,20 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
   const [showPassword, setShowPassword] = useState(false);
   const passwordStatuses = useMemo(() => getPasswordRequirementStatuses(password), [password]);
+  const { trackEvent } = useAnalytics();
 
   // ✅ NOUVEAU : États pour 2FA admin
   const [requires2FA, setRequires2FA] = useState(false);
   const [twoFAUserId, setTwoFAUserId] = useState<string | null>(null);
   const [twoFACode, setTwoFACode] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('intent') === 'blobosphere') {
+      window.localStorage.setItem(BLOBOSPHERE_SIGNUP_INTENT_KEY, new Date().toISOString());
+    }
+  }, []);
 
   const handleZodErrors = (details: ZodIssue[]) => {
     const errors: FieldErrors = {};
@@ -144,6 +155,15 @@ export function AuthForm({ mode }: AuthFormProps) {
           return;
         }
         await apiClient.register({ email, password, role, ageConfirmed: true, consentAccepted: true });
+        if (typeof window !== 'undefined') {
+          const intent = window.localStorage.getItem(BLOBOSPHERE_SIGNUP_INTENT_KEY);
+          if (intent) {
+            const articleId = window.localStorage.getItem(BLOBOSPHERE_SIGNUP_ARTICLE_KEY) || undefined;
+            window.localStorage.removeItem(BLOBOSPHERE_SIGNUP_INTENT_KEY);
+            window.localStorage.removeItem(BLOBOSPHERE_SIGNUP_ARTICLE_KEY);
+            trackEvent({ eventType: 'BLOBOSPHERE_SIGNUP', ...(articleId ? { contentId: articleId } : {}) });
+          }
+        }
         setInfo('Compte créé. Vérifie ta boîte mail pour valider ton email.');
         setTimeout(() => router.push('/login'), 800);
         return;

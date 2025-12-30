@@ -387,7 +387,7 @@ export function CardsClient() {
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-foreground">Deck Matching</h1>
+              <h1 className="text-xl font-bold text-foreground">Parcourir les profils</h1>
               <p className="text-sm text-muted-foreground">
                 {sport ? sportLabels[sport] : '—'} · {level ? levelLabels[level] : '—'} · {useGeoloc ? `${distanceKm ?? 20} km` : 'Sans géoloc'} · {date === 'anytime' ? 'Peu importe' : date || '—'}
               </p>

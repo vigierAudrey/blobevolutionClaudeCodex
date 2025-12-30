@@ -86,7 +86,7 @@
     "sourcemap-codec": "^1.4.8",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "next": "14.2.32",
+    "next": "14.2.35",
     "styled-jsx": "5.1.1",
     "@typescript-eslint/eslint-plugin": "7.18.0",
     "@typescript-eslint/parser": "7.18.0",

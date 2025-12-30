@@ -21,12 +21,14 @@
     "@radix-ui/react-slot": "^1.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cookies-next": "^4.3.0",
     "firebase": "^12.3.0",
     "framer-motion": "^12.23.18",
     "gray-matter": "^4.0.3",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.556.0",
-    "next": "14.2.32",
+    "next": "14.2.35",
+    "next-intl": "^4.6.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-leaflet": "^4.2.1",
@@ -74,7 +76,7 @@
   "overrides": {
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "next": "14.2.32",
+    "next": "14.2.35",
     "styled-jsx": "5.1.1"
   }
 }

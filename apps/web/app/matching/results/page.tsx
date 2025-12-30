@@ -115,7 +115,7 @@ function ResultsInner() {
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Résultats détaillés</h1>
           <p className="text-white/80 text-base max-w-2xl">
-            Tu préfères comparer les fiches une à une ? Ce tableau synthétique reprend exactement la même sélection que ton deck.
+            Tu préfères comparer les fiches une à une ? Ce tableau synthétique reprend exactement les mêmes profils que ta sélection.
           </p>
         </div>
       </section>
@@ -201,7 +201,7 @@ function ResultsInner() {
                   Modifier ma sélection
                 </Button>
                 <Button className="flex-1" onClick={() => router.push('/matching/cards')}>
-                  Revenir au deck
+                  Revenir aux profils
                 </Button>
               </div>
             </div>

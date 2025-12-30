@@ -1,12 +1,18 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { secureLogger } from '../../utils/secure-logger';
+import { recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth, requireVerifiedEmail);
+
+const getConsentHash = (req: Request) => {
+  const header = req.headers['x-consent-hash'];
+  return typeof header === 'string' && header.trim().length > 0 ? header : null;
+};
 
 const conversationMemberSelect = {
   conversation: {
@@ -15,7 +21,7 @@ const conversationMemberSelect = {
       type: true,
       updatedAt: true,
       match: {
-        select: { userOneId: true, userTwoId: true },
+        select: { userOneId: true, userTwoId: true, createdAt: true },
       },
       messages: {
         orderBy: { createdAt: 'desc' },
@@ -132,13 +138,18 @@ conversationsRouter.get('/', async (req, res) => {
     // Step 8: Build results without additional DB queries
     const results = filteredConvs.map((cm: ConversationMemberWithRelations) => {
       const conv = cm.conversation;
+      const memberCount = conv.members.length;
+      const isGroup = memberCount > 2;
       const otherId = conv.members.find((m: ConversationParticipant) => m.userId !== userId)?.userId;
 
       let otherDisplayName = 'Profil';
       let otherRole = 'RIDER';
       let otherPhotoUrl: string | null = null;
 
-      if (otherId) {
+      if (isGroup) {
+        otherDisplayName = `Groupe (${memberCount} membres)`;
+        otherRole = 'RIDER'; // Default pour les groupes
+      } else if (otherId) {
         const user = userMap.get(otherId);
         otherRole = user?.role || 'RIDER';
 
@@ -167,6 +178,9 @@ conversationsRouter.get('/', async (req, res) => {
         trashed: !!cm.trashedAt,
         favorite: !!cm.favoritedAt,
         blocked: !!cm.blockedAt,
+        memberCount,
+        isGroup,
+        matchedAt: conv.match?.createdAt ?? null,
       };
     });
 
@@ -186,16 +200,73 @@ conversationsRouter.get('/:id/messages', async (req, res) => {
     const limit = Math.min(Number(req.query.limit || 50), 100);
     const member = await prisma.conversationMember.findFirst({ where: { conversationId: id, userId } });
     if (!member) return res.status(404).json({ error: 'Not found' });
+
     const msgs = await prisma.message.findMany({
       where: { conversationId: id, createdAt: cursor ? { lt: cursor } : undefined },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      select: { id: true, senderId: true, type: true, content: true, meta: true, createdAt: true },
+      select: {
+        id: true,
+        senderId: true,
+        type: true,
+        content: true,
+        meta: true,
+        createdAt: true,
+        sender: {
+          select: {
+            id: true,
+            role: true,
+          },
+        },
+      },
     });
+
+    // Get sender profiles
+    const proIds = msgs.filter((m: any) => m.sender.role === 'PRO').map((m: any) => m.senderId);
+    const riderIds = msgs.filter((m: any) => m.sender.role !== 'PRO').map((m: any) => m.senderId);
+
+    const proProfiles = proIds.length > 0
+      ? await prisma.proProfile.findMany({
+          where: { userId: { in: [...new Set(proIds)] } },
+          select: { userId: true, businessName: true, photoUrl: true },
+        })
+      : [];
+
+    const riderProfiles = riderIds.length > 0
+      ? await prisma.riderProfile.findMany({
+          where: { userId: { in: [...new Set(riderIds)] } },
+          select: { userId: true, displayName: true, photoUrl: true },
+        })
+      : [];
+
+    const proMap = new Map(proProfiles.map((p: any) => [p.userId, p]));
+    const riderMap = new Map(riderProfiles.map((r: any) => [r.userId, r]));
+
+    const messagesWithSenders = msgs.map((m: any) => {
+      const isPro = m.sender.role === 'PRO';
+      const profile = isPro ? proMap.get(m.senderId) : riderMap.get(m.senderId);
+      const senderName = isPro
+        ? (profile as any)?.businessName || 'Professionnel'
+        : (profile as any)?.displayName || 'Rider';
+
+      return {
+        id: m.id,
+        senderId: m.senderId,
+        type: m.type,
+        content: m.content,
+        meta: m.meta,
+        createdAt: m.createdAt,
+        senderName,
+        senderPhotoUrl: (profile as any)?.photoUrl || null,
+        isCurrentUser: m.senderId === userId,
+      };
+    });
+
     // mark read
     await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId: id, userId } as any }, data: { lastReadAt: new Date() } });
-    return res.json({ items: msgs.reverse(), nextCursor: msgs.length === limit ? msgs[msgs.length - 1].createdAt : null });
+    return res.json({ items: messagesWithSenders.reverse(), nextCursor: msgs.length === limit ? msgs[msgs.length - 1].createdAt : null });
   } catch (e) {
+    console.error('Fetch messages error:', e);
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -213,6 +284,17 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
     if (other?.blockedAt) return res.status(403).json({ error: 'You are blocked' });
     const msg = await prisma.message.create({ data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta } });
     await prisma.conversation.update({ where: { id }, data: { updatedAt: new Date() } });
+    const role = (req as any).user?.role as string | undefined;
+    if (role === 'RIDER' || role === 'PRO') {
+      const consentHash = getConsentHash(req);
+      void recordServerAnalyticsEvent({
+        eventType: 'MESSAGE_SENT',
+        actorType: role,
+        actorId: userId as string,
+        consentHash,
+        occurredAt: msg.createdAt,
+      });
+    }
     return res.status(201).json({ id: msg.id });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
@@ -567,7 +649,7 @@ conversationsRouter.get('/users/search', async (req, res) => {
   }
 });
 
-// Add a member to a conversation
+// Send an invitation to add a member to a conversation
 conversationsRouter.post('/:id/members', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
@@ -594,31 +676,46 @@ conversationsRouter.post('/:id/members', async (req, res) => {
       return res.status(409).json({ error: 'User is already a member' });
     }
 
-    // Add new member
+    // Check if there's already a pending invitation
+    const existingInvitation = await prisma.conversationInvitation.findFirst({
+      where: {
+        conversationId: id,
+        invitedUserId: body.userId,
+        status: 'PENDING'
+      },
+    });
+
+    if (existingInvitation) {
+      return res.status(409).json({ error: 'An invitation is already pending for this user' });
+    }
+
+    // Create invitation
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Create conversation member
-      await tx.conversationMember.create({
+      // Create the invitation
+      await tx.conversationInvitation.create({
         data: {
           conversationId: id,
-          userId: body.userId,
+          invitedUserId: body.userId,
+          invitedBy: userId,
+          status: 'PENDING',
         },
       });
 
       // Get user info for system message
-      const addedUser = await tx.user.findUnique({
+      const invitedUser = await tx.user.findUnique({
         where: { id: body.userId },
         select: { role: true },
       });
 
-      const currentUserProfile = await (addedUser?.role === 'PRO'
+      const invitedUserProfile = await (invitedUser?.role === 'PRO'
         ? tx.proProfile.findUnique({ where: { userId: body.userId }, select: { businessName: true } })
         : tx.riderProfile.findUnique({ where: { userId: body.userId }, select: { displayName: true } }));
 
-      const addedUserName = addedUser?.role === 'PRO'
-        ? (currentUserProfile as any)?.businessName || 'Professionnel'
-        : (currentUserProfile as any)?.displayName || 'Rider';
+      const invitedUserName = invitedUser?.role === 'PRO'
+        ? (invitedUserProfile as any)?.businessName || 'Professionnel'
+        : (invitedUserProfile as any)?.displayName || 'Rider';
 
-      const adderProfile = await tx.user.findUnique({
+      const inviterProfile = await tx.user.findUnique({
         where: { id: userId },
         select: { role: true },
       }).then(async (user: { role: string } | null) => {
@@ -628,15 +725,15 @@ conversationsRouter.post('/:id/members', async (req, res) => {
         return tx.riderProfile.findUnique({ where: { userId }, select: { displayName: true } });
       });
 
-      const adderName = (adderProfile as any)?.businessName || (adderProfile as any)?.displayName || 'Un membre';
+      const inviterName = (inviterProfile as any)?.businessName || (inviterProfile as any)?.displayName || 'Un membre';
 
-      // Create system message
+      // Create system message (visible only to current members)
       await tx.message.create({
         data: {
           conversationId: id,
           senderId: userId,
           type: 'TEXT',
-          content: `${adderName} a ajouté ${addedUserName} à la conversation`,
+          content: `${inviterName} a invité ${invitedUserName} à rejoindre la conversation`,
         },
       });
 
@@ -647,10 +744,192 @@ conversationsRouter.post('/:id/members', async (req, res) => {
       });
     });
 
-    return res.status(201).json({ ok: true });
+    return res.status(201).json({ ok: true, message: 'Invitation envoyée' });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
-    console.error('Add member error:', e);
+    console.error('Send invitation error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Get pending invitations for the current user
+conversationsRouter.get('/invitations/pending', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const invitations = await prisma.conversationInvitation.findMany({
+      where: {
+        invitedUserId: userId,
+        status: 'PENDING',
+      },
+      select: {
+        id: true,
+        conversationId: true,
+        invitedBy: true,
+        createdAt: true,
+        conversation: {
+          select: {
+            id: true,
+            type: true,
+            members: {
+              select: {
+                userId: true,
+              },
+            },
+          },
+        },
+        inviter: {
+          select: {
+            id: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    // Get inviter profiles
+    const proIds = invitations.filter((inv: any) => inv.inviter.role === 'PRO').map((inv: any) => inv.invitedBy);
+    const riderIds = invitations.filter((inv: any) => inv.inviter.role !== 'PRO').map((inv: any) => inv.invitedBy);
+
+    const proProfiles = proIds.length > 0
+      ? await prisma.proProfile.findMany({
+          where: { userId: { in: proIds } },
+          select: { userId: true, businessName: true, photoUrl: true },
+        })
+      : [];
+
+    const riderProfiles = riderIds.length > 0
+      ? await prisma.riderProfile.findMany({
+          where: { userId: { in: riderIds } },
+          select: { userId: true, displayName: true, photoUrl: true },
+        })
+      : [];
+
+    const proMap = new Map(proProfiles.map((p: any) => [p.userId, p]));
+    const riderMap = new Map(riderProfiles.map((r: any) => [r.userId, r]));
+
+    const results = invitations.map((inv: any) => {
+      const isPro = inv.inviter.role === 'PRO';
+      const profile = isPro ? proMap.get(inv.invitedBy) : riderMap.get(inv.invitedBy);
+      const inviterName = isPro
+        ? (profile as any)?.businessName || 'Professionnel'
+        : (profile as any)?.displayName || 'Rider';
+
+      return {
+        id: inv.id,
+        conversationId: inv.conversationId,
+        inviterName,
+        inviterPhotoUrl: (profile as any)?.photoUrl || null,
+        memberCount: inv.conversation.members.length,
+        createdAt: inv.createdAt,
+      };
+    });
+
+    return res.json({ items: results });
+  } catch (e) {
+    console.error('Get pending invitations error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Accept or reject a conversation invitation
+conversationsRouter.post('/invitations/:invitationId/respond', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const invitationId = req.params.invitationId;
+    const body = z.object({ action: z.enum(['ACCEPT', 'REJECT']) }).parse(req.body);
+
+    // Get the invitation
+    const invitation = await prisma.conversationInvitation.findUnique({
+      where: { id: invitationId },
+      select: {
+        id: true,
+        conversationId: true,
+        invitedUserId: true,
+        invitedBy: true,
+        status: true,
+      },
+    });
+
+    if (!invitation) {
+      return res.status(404).json({ error: 'Invitation not found' });
+    }
+
+    // Check if user is the invited one
+    if (invitation.invitedUserId !== userId) {
+      return res.status(403).json({ error: 'Not authorized to respond to this invitation' });
+    }
+
+    // Check if invitation is still pending
+    if (invitation.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Invitation already processed' });
+    }
+
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Update invitation status
+      await tx.conversationInvitation.update({
+        where: { id: invitationId },
+        data: {
+          status: body.action === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED',
+          respondedAt: new Date(),
+        },
+      });
+
+      if (body.action === 'ACCEPT') {
+        // Add user to conversation
+        await tx.conversationMember.create({
+          data: {
+            conversationId: invitation.conversationId,
+            userId: userId,
+          },
+        });
+
+        // Get user info for system message
+        const joinedUser = await tx.user.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        });
+
+        const joinedUserProfile = await (joinedUser?.role === 'PRO'
+          ? tx.proProfile.findUnique({ where: { userId }, select: { businessName: true } })
+          : tx.riderProfile.findUnique({ where: { userId }, select: { displayName: true } }));
+
+        const joinedUserName = joinedUser?.role === 'PRO'
+          ? (joinedUserProfile as any)?.businessName || 'Professionnel'
+          : (joinedUserProfile as any)?.displayName || 'Rider';
+
+        // Create system message
+        await tx.message.create({
+          data: {
+            conversationId: invitation.conversationId,
+            senderId: userId,
+            type: 'TEXT',
+            content: `${joinedUserName} a rejoint la conversation`,
+          },
+        });
+
+        // Update conversation timestamp
+        await tx.conversation.update({
+          where: { id: invitation.conversationId },
+          data: { updatedAt: new Date() },
+        });
+      }
+    });
+
+    return res.json({
+      ok: true,
+      action: body.action,
+      message: body.action === 'ACCEPT' ? 'Invitation acceptée' : 'Invitation refusée',
+    });
+  } catch (e: any) {
+    if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
+    console.error('Respond to invitation error:', e);
     return res.status(500).json({ error: 'Internal error' });
   }
 });

@@ -191,11 +191,13 @@ import { proRouter } from './modules/pro/pro.controller';
 import { adminRouter } from './modules/admin/admin.controller';
 import { securityRouter } from './modules/security/security.controller';
 import { blobosphereAdminRouter } from './modules/blobosphere/blobosphere.controller';
+import { blobospherePublicRouter } from './modules/blobosphere/blobosphere.public';
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
 import { requireAuth, requireAdmin, requireVerifiedEmail } from './modules/auth/auth.guard';
 import { consentRouter } from './modules/consent/consent.controller';
+import { analyticsRouter } from './modules/analytics/analytics.controller';
 
 
 const OPENAPI_SPEC_PATH = resolve(process.cwd(), 'docs/openapi/openapi.yaml');
@@ -229,6 +231,8 @@ export function createApp() {
       return compression.filter(req, res);
     }
   }));
+  const analyticsJsonLimit = process.env.ANALYTICS_EVENT_MAX_BYTES || '8kb';
+  app.use('/analytics', express.json({ limit: analyticsJsonLimit }));
   app.use(express.json());
   app.use(cookieParser());
 
@@ -459,6 +463,8 @@ export function createApp() {
   app.use('/conversations', conversationsRouter);
   app.use('/pro', proRouter);
   app.use('/consent', consentRouter);
+  app.use('/analytics', analyticsRouter);
+  app.use('/blobosphere', blobospherePublicRouter);
   app.use('/admin', adminRouter);
   app.use('/admin/blobosphere', blobosphereAdminRouter);
   app.use('/security', securityRouter);
