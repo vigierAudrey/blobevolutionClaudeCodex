@@ -424,14 +424,14 @@ matchingRouter.post('/decision', async (req, res) => {
               }
               createdConversations.push({ conversationId: conv.id, otherDisplayName: targetProfile.displayName ?? 'Profil' });
 
-              // ✨ Notifier les deux utilisateurs du nouveau match (WebSocket)
+              // ✨ Notifier les deux utilisateurs du nouveau match (WebSocket + Push)
               // Get my profile info for the notification
               const myFullProfile = await tx.riderProfile.findUnique({
                 where: { userId },
                 select: { displayName: true, photoUrl: true }
               });
 
-              // Notifier l'autre utilisateur
+              // Notifier l'autre utilisateur via Socket.io
               notifyNewMatch(targetProfile.userId, {
                 matchId: match.id,
                 conversationId: conv.id,
@@ -442,7 +442,7 @@ matchingRouter.post('/decision', async (req, res) => {
                 }
               });
 
-              // Notifier moi-même
+              // Notifier moi-même via Socket.io
               notifyNewMatch(userId, {
                 matchId: match.id,
                 conversationId: conv.id,
@@ -451,6 +451,25 @@ matchingRouter.post('/decision', async (req, res) => {
                   displayName: targetProfile.displayName || 'Un rider',
                   photoUrl: null // On pourrait fetch photoUrl ici si nécessaire
                 }
+              });
+
+              // Notifications Push (asynchrone, non-bloquant)
+              const { notifyNewMatchPush } = await import('../push/push.controller');
+
+              notifyNewMatchPush(targetProfile.userId, {
+                matchedUserName: myFullProfile?.displayName || 'Un rider',
+                matchedUserPhoto: myFullProfile?.photoUrl,
+                conversationId: conv.id
+              }).catch((error) => {
+                console.error('Failed to send push notification for match:', error);
+              });
+
+              notifyNewMatchPush(userId, {
+                matchedUserName: targetProfile.displayName || 'Un rider',
+                matchedUserPhoto: undefined,
+                conversationId: conv.id
+              }).catch((error) => {
+                console.error('Failed to send push notification for match:', error);
               });
             } else {
               // ✨ Notifier l'autre utilisateur de ma décision (sans match mutuel)

@@ -67,6 +67,11 @@ export class CacheService {
     return this.client !== null;
   }
 
+  // Get raw Redis client for advanced operations (e.g., throttling with setex)
+  public getClient(): any | null {
+    return this.client;
+  }
+
   // Generic get/set with TTL
   public async get<T>(key: string): Promise<T | null> {
     if (!this.client) return null;

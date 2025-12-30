@@ -186,7 +186,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           data: { updatedAt: new Date() }
         });
 
-        // Envoyer le message à tous les membres de la conversation
+        // Envoyer le message à tous les membres de la conversation via Socket.io
         io?.to(`conversation:${conversationId}`).emit('new-message', {
           id: message.id,
           conversationId: message.conversationId,
@@ -196,6 +196,32 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           createdAt: message.createdAt,
           sender: message.sender
         });
+
+        // Envoyer push notification aux membres offline/autres devices
+        const senderName = message.sender.role === 'PRO'
+          ? message.sender.proProfile?.businessName || 'Un professionnel'
+          : message.sender.riderProfile?.displayName || 'Un rider';
+
+        // Récupérer tous les membres sauf l'expéditeur
+        const otherMembers = await prisma.conversationMember.findMany({
+          where: {
+            conversationId,
+            userId: { not: userId }
+          },
+          select: { userId: true }
+        });
+
+        // Envoyer notification push à chaque membre (non-bloquant)
+        const { notifyNewMessage } = await import('../modules/push/push.controller');
+        for (const member of otherMembers) {
+          notifyNewMessage(member.userId, {
+            senderName,
+            message: message.content,
+            conversationId
+          }).catch((error) => {
+            console.error(`[WebSocket] Failed to send push notification to ${member.userId}:`, error);
+          });
+        }
 
         console.log(`[WebSocket] Message sent in conversation ${conversationId} by user ${userId}`);
       } catch (error) {

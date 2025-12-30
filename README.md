@@ -259,6 +259,33 @@ Un système complet de détection et notification des violations de sécurité a
 - ✅ **Détection de comptes compromis** : même les comptes ADMIN déclenchent des alertes critiques s'ils tentent d'accéder aux endpoints PRO/RIDER
 - ✅ **Tests E2E complets** : 10/10 tests de sécurité passent (security-alerts.e2e.test.ts)
 
+### ✅ Responsible Disclosure (RFC 9116)
+
+Le projet implémente le standard **RFC 9116** pour faciliter le signalement de vulnérabilités par les chercheurs en sécurité.
+
+**Fichier** : `apps/web/public/.well-known/security.txt`
+
+Ce fichier est **automatiquement accessible** publiquement via l'URL `https://votredomaine.com/.well-known/security.txt` une fois déployé. Il contient :
+- Contact email pour signaler des vulnérabilités
+- Politique de divulgation responsable
+- Programme de bug bounty (récompenses 20€/10€/reconnaissance)
+- Périmètre autorisé pour les tests de sécurité
+- Conformité Code Pénal français (Art. 323-1)
+
+**⚠️ Action requise avant production** :
+Remplacer les 3 occurrences de `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobinfini.com` dans :
+- Ligne 4 : `Contact:`
+- Ligne 53 : Commentaire Contact
+- Ligne 64 : Commentaire découverte accidentelle
+
+**Comment ça fonctionne ?**
+Les chercheurs en sécurité (white hat hackers) consultent automatiquement `/.well-known/security.txt` pour savoir :
+1. Comment contacter l'équipe sécurité de manière responsable
+2. Quel est le scope autorisé pour les tests
+3. Quelles sont les récompenses offertes (bug bounty)
+
+Ce standard est reconnu par Google, Facebook, GitHub et recommandé par l'ANSSI.
+
 **Configuration requise :**
 
 ```bash

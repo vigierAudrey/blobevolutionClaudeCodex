@@ -2,7 +2,8 @@ import { clientPrisma as prisma, Prisma, BookingRequestStatus } from '@blobinfin
 import type { ProAvailability } from '@blobinfini/database';
 import { bookingRepository, type SearchAvailabilityRow } from './booking.repository';
 import { cacheService, CacheKeys } from '../../services/cache.service';
-import { notifyBookingAccepted, notifyBookingRejected } from '../push/push.controller';
+import { notifyBookingAccepted, notifyBookingRejected, notifyNewLessonRequest } from '../push/push.controller';
+import { notifyUser } from '../../lib/socket';
 import { withTransactionRetry } from '../../utils/transaction-retry';
 import type { CreateAvailabilityInput } from './dto/createAvailability.dto';
 import type { SearchAvailabilityInput } from './dto/searchAvailability.dto';
@@ -473,7 +474,183 @@ export class BookingService {
   }
 
   async createRequest(riderUserId: string, data: CreateBookingRequestInput) {
-    return bookingRepository.createRequest({ ...data, riderUserId });
+    const request = await bookingRepository.createRequest({ ...data, riderUserId });
+
+    // Notify nearby PROs about the new lesson request (non-blocking)
+    this.notifyNearbyProsAboutRequest(riderUserId, request.id, data.availabilityId).catch((error) => {
+      secureLogger.error('Failed to notify nearby PROs about lesson request', {
+        requestId: request.id,
+        error
+      });
+    });
+
+    return request;
+  }
+
+  private async notifyNearbyProsAboutRequest(
+    riderUserId: string,
+    requestId: string,
+    availabilityId: string
+  ): Promise<void> {
+    try {
+      // Get rider info and availability details
+      const [rider, availability] = await Promise.all([
+        prisma.user.findUnique({
+          where: { id: riderUserId },
+          select: {
+            riderProfile: {
+              select: {
+                displayName: true,
+                lessonSport: true,
+                lessonDate: true,
+                lessonPlace: true
+              }
+            }
+          }
+        }),
+        prisma.proAvailability.findUnique({
+          where: { id: availabilityId },
+          select: {
+            spotLat: true,
+            spotLng: true,
+            spotName: true,
+            sport: true
+          }
+        })
+      ]);
+
+      if (!availability?.spotLat || !availability?.spotLng) {
+        secureLogger.warn('Cannot notify PROs - availability has no location', { availabilityId });
+        return;
+      }
+
+      const riderName = rider?.riderProfile?.displayName || 'Un rider';
+      const sport = availability.sport;
+      const spotName = availability.spotName || rider?.riderProfile?.lessonPlace;
+      const lessonDate = rider?.riderProfile?.lessonDate?.toISOString();
+
+      // Find all PROs within their configured radius using PostGIS
+      type NearbyProRow = {
+        userId: string;
+        radiusKm: number;
+        distanceKm: number;
+        notificationPreferences: any;
+      };
+
+      const nearbyPros = await prisma.$queryRaw<NearbyProRow[]>`
+        SELECT
+          pp."userId",
+          pp."radiusKm",
+          pp."notificationPreferences",
+          ST_Distance(
+            ST_SetSRID(ST_MakePoint(${availability.spotLng}, ${availability.spotLat}), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(pp."lng", pp."lat"), 4326)::geography
+          ) / 1000.0 AS "distanceKm"
+        FROM "ProProfile" pp
+        WHERE pp."lat" IS NOT NULL
+          AND pp."lng" IS NOT NULL
+          AND ST_DWithin(
+            ST_SetSRID(ST_MakePoint(${availability.spotLng}, ${availability.spotLat}), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(pp."lng", pp."lat"), 4326)::geography,
+            pp."radiusKm" * 1000
+          )
+          AND pp."userId" != (
+            SELECT "proUserId" FROM "ProAvailability" WHERE "id" = ${availabilityId}
+          )
+        LIMIT 100
+      `;
+
+      if (nearbyPros.length === 0) {
+        secureLogger.info('No nearby PROs found for lesson request notification', {
+          requestId,
+          location: { lat: availability.spotLat, lng: availability.spotLng }
+        });
+        return;
+      }
+
+      // Filter PROs based on notification preferences
+      const eligiblePros = nearbyPros.filter((pro: NearbyProRow) => {
+        const prefs = pro.notificationPreferences || {};
+
+        // Default to enabled if preferences not set
+        const pushEnabled = prefs.pushEnabled !== false;
+
+        // Check sport-specific preferences
+        const sportKey = sport === 'surf' ? 'notifyForSurf' : 'notifyForKitesurf';
+        const sportEnabled = prefs[sportKey] !== false; // Default to true
+
+        return pushEnabled && sportEnabled;
+      });
+
+      if (eligiblePros.length === 0) {
+        secureLogger.info('No eligible PROs after filtering preferences', {
+          requestId,
+          totalNearby: nearbyPros.length,
+          sport
+        });
+        return;
+      }
+
+      // Check Redis throttling (5-minute window) and send notifications
+      const redisClient = cacheService.getClient();
+      const notificationPromises = eligiblePros.map(async (pro: NearbyProRow) => {
+        try {
+          // Throttle key: pro:{userId}:lesson-request-notif
+          const throttleKey = `pro:${pro.userId}:lesson-request-notif`;
+
+          if (redisClient) {
+            // Check if notification was sent in last 5 minutes
+            const lastNotified = await redisClient.get(throttleKey);
+            if (lastNotified) {
+              secureLogger.debug('Notification throttled', {
+                proUserId: pro.userId,
+                lastNotified
+              });
+              return; // Skip this PRO due to throttling
+            }
+
+            // Set throttle with 5-minute expiry
+            await redisClient.setex(throttleKey, 300, new Date().toISOString());
+          }
+
+          // Send push notification
+          await notifyNewLessonRequest(pro.userId, {
+            riderName,
+            sport,
+            distanceKm: pro.distanceKm,
+            lessonDate,
+            spotName: spotName || undefined
+          });
+
+          // Send Socket.io real-time notification
+          notifyUser(pro.userId, 'new-lesson-request', {
+            requestId,
+            riderName,
+            sport,
+            distanceKm: Math.round(pro.distanceKm * 10) / 10,
+            lessonDate,
+            spotName,
+            spotLat: availability.spotLat,
+            spotLng: availability.spotLng
+          });
+        } catch (error) {
+          secureLogger.error('Failed to notify individual PRO', { proUserId: pro.userId, error });
+        }
+      });
+
+      const results = await Promise.allSettled(notificationPromises);
+      const successCount = results.filter((r: PromiseSettledResult<void>) => r.status === 'fulfilled').length;
+
+      secureLogger.info('Notified nearby PROs about lesson request', {
+        requestId,
+        totalNearby: nearbyPros.length,
+        eligiblePros: eligiblePros.length,
+        successCount
+      });
+    } catch (error) {
+      secureLogger.error('Error in notifyNearbyProsAboutRequest', { requestId, error });
+      throw error;
+    }
   }
 
   async listRiderRequests(riderUserId: string) {
