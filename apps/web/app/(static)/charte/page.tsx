@@ -24,7 +24,7 @@ export default function ChartePage() {
         </div>
         <p>
           BlobConnect est une plateforme de mise en relation pour partager des activités et de bons moments.
-          Nous ne sommes ni un organisateur d'activités, ni une agence, ni un assureur.
+          Nous ne sommes ni un organisateur d&apos;activités, ni une agence, ni un assureur.
           Les décisions que tu prends, les rencontres que tu effectues et les activités que tu pratiques
           relèvent de ta seule responsabilité.
         </p>
@@ -50,7 +50,7 @@ export default function ChartePage() {
           Si tu rencontres un profil problématique, signale‑le promptement afin que nous puissions intervenir.
         </p>
         <p className="text-sm text-muted-foreground">
-          Remarque: ce document n'est pas un conseil juridique. Si tu as des questions sur tes droits ou obligations,
+          Remarque: ce document n&apos;est pas un conseil juridique. Si tu as des questions sur tes droits ou obligations,
           consulte un professionnel du droit.
         </p>
         <div className="pt-4 border-t mt-6">

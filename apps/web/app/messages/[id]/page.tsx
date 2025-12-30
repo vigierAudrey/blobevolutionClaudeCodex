@@ -4,6 +4,7 @@
 export const dynamic = 'force-dynamic';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { BackBar } from '../../../components/BackBar';
 import { Button } from '../../../components/ui/button';
@@ -63,7 +64,6 @@ export default function ConversationPage() {
   const [conversationInfo, setConversationInfo] = useState<ThreadSummary | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [memberLastRead, setMemberLastRead] = useState<Record<string, Date | null>>({});
   const endRef = useRef<HTMLDivElement | null>(null);
   const pollingRef = useRef<number | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -169,7 +169,7 @@ export default function ConversationPage() {
       senderName: 'Vous',
       senderPhotoUrl: null,
       isCurrentUser: true,
-      meta: { sending: true } as any, // Mark as sending
+      meta: { sending: true }, // Mark as sending
     };
 
     setMessages(prev => [...prev, tempMessage]);
@@ -184,7 +184,7 @@ export default function ConversationPage() {
       // Mark message as failed
       setMessages(prev => prev.map(m =>
         m.id === tempMessage.id
-          ? { ...m, meta: { ...m.meta, failed: true, sending: false } as any }
+          ? { ...m, meta: { ...m.meta, failed: true, sending: false } }
           : m
       ));
     }
@@ -293,11 +293,11 @@ export default function ConversationPage() {
           {loading && messages.length === 0 && <p className="text-sm text-muted-foreground">Chargement…</p>}
           <div className="space-y-1 min-h-[300px]" ref={messagesContainerRef}>
             {messages.map((m, index) => {
-              const isCurrentUser = (m as any).isCurrentUser;
-              const senderName = (m as any).senderName || 'Utilisateur';
-              const senderPhotoUrl = (m as any).senderPhotoUrl;
-              const isSending = m.meta && (m.meta as any).sending;
-              const isFailed = m.meta && (m.meta as any).failed;
+              const isCurrentUser = m.isCurrentUser;
+              const senderName = m.senderName || 'Utilisateur';
+              const senderPhotoUrl = m.senderPhotoUrl;
+              const isSending = m.meta && 'sending' in m.meta && Boolean(m.meta.sending);
+              const isFailed = m.meta && 'failed' in m.meta && Boolean(m.meta.failed);
 
               // Check if we need a date separator
               const showDateSeparator = index === 0 || !isSameDay(messages[index - 1].createdAt, m.createdAt);
@@ -305,8 +305,8 @@ export default function ConversationPage() {
               // Check if we should group with previous message (same sender, within 2 minutes)
               const prevMessage = index > 0 ? messages[index - 1] : null;
               const shouldGroup = prevMessage &&
-                (prevMessage as any).isCurrentUser === isCurrentUser &&
-                (prevMessage as any).senderId === m.senderId &&
+                prevMessage.isCurrentUser === isCurrentUser &&
+                prevMessage.senderId === m.senderId &&
                 isSameDay(prevMessage.createdAt, m.createdAt) &&
                 (new Date(m.createdAt).getTime() - new Date(prevMessage.createdAt).getTime()) < 120000; // 2 min
 
@@ -327,10 +327,12 @@ export default function ConversationPage() {
                     <div className="flex-shrink-0">
                       {!shouldGroup ? (
                         senderPhotoUrl ? (
-                          <img
+                          <Image
                             src={senderPhotoUrl}
                             alt={senderName}
-                            className="w-8 h-8 rounded-full object-cover"
+                            width={32}
+                            height={32}
+                            className="rounded-full object-cover"
                           />
                         ) : (
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${

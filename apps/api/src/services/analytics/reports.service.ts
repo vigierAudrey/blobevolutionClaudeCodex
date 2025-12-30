@@ -62,7 +62,7 @@ const computeRetention = async (role: 'RIDER' | 'PRO', period: AnalyticsPeriod) 
     };
   }
 
-  const hashes = users.map((user) => ({
+  const hashes = users.map((user: { id: string; createdAt: Date }) => ({
     id: user.id,
     createdAt: user.createdAt,
     hash: hashIdentifier(user.id),
@@ -70,7 +70,7 @@ const computeRetention = async (role: 'RIDER' | 'PRO', period: AnalyticsPeriod) 
 
   const events = await prisma.analyticsEvent.findMany({
     where: {
-      actorHash: { in: hashes.map((entry) => entry.hash) },
+      actorHash: { in: hashes.map((entry: { id: string; createdAt: Date; hash: string }) => entry.hash) },
       actorType: role as AnalyticsActorType,
       eventType: { in: ACTIVITY_EVENTS_BY_ROLE[role] },
       occurredAt: { gte: startDate, lte: now },
@@ -90,9 +90,9 @@ const computeRetention = async (role: 'RIDER' | 'PRO', period: AnalyticsPeriod) 
 
   const computeOffset = (offsetDays: number) => {
     const cutoff = new Date(now.getTime() - offsetDays * 24 * 60 * 60 * 1000);
-    const eligible = hashes.filter((entry) => entry.createdAt <= cutoff);
+    const eligible = hashes.filter((entry: { id: string; createdAt: Date; hash: string }) => entry.createdAt <= cutoff);
     const eligibleCount = eligible.length;
-    const retainedCount = eligible.reduce((count, entry) => {
+    const retainedCount = eligible.reduce((count: number, entry: { id: string; createdAt: Date; hash: string }) => {
       const day = normalizeDay(entry.createdAt);
       day.setUTCDate(day.getUTCDate() + offsetDays);
       const key = day.toISOString().slice(0, 10);
@@ -216,7 +216,7 @@ const computeTtfvRiders = async (period: AnalyticsPeriod) => {
     return { sampleSize: 0, medianMinutes: null, p90Minutes: null, masked: true };
   }
 
-  const riderIds = riders.map((r) => r.id);
+  const riderIds = riders.map((r: { id: string; createdAt: Date }) => r.id);
 
   const bookingRequests = await prisma.bookingRequest.groupBy({
     by: ['riderUserId'],
@@ -236,9 +236,9 @@ const computeTtfvRiders = async (period: AnalyticsPeriod) => {
     _min: { createdAt: true },
   });
 
-  const bookingMap = new Map(bookingRequests.map((row) => [row.riderUserId, row._min?.createdAt]));
-  const messageMap = new Map(messages.map((row) => [row.senderId, row._min?.createdAt]));
-  const decisionMap = new Map(decisions.map((row) => [row.actorUserId, row._min?.createdAt]));
+  const bookingMap = new Map(bookingRequests.map((row: { riderUserId: string | null; _min: { createdAt: Date | null } | null }) => [row.riderUserId, row._min?.createdAt]));
+  const messageMap = new Map(messages.map((row: { senderId: string | null; _min: { createdAt: Date | null } | null }) => [row.senderId, row._min?.createdAt]));
+  const decisionMap = new Map(decisions.map((row: { actorUserId: string | null; _min: { createdAt: Date | null } | null }) => [row.actorUserId, row._min?.createdAt]));
 
   const durations: number[] = [];
   for (const rider of riders) {
@@ -278,7 +278,7 @@ const computeTtfvPros = async (period: AnalyticsPeriod) => {
     return { sampleSize: 0, medianMinutes: null, p90Minutes: null, masked: true };
   }
 
-  const proIds = pros.map((p) => p.userId);
+  const proIds = pros.map((p: { userId: string; verifiedAt: Date | null }) => p.userId);
 
   const requests = await prisma.bookingRequest.findMany({
     where: {
@@ -305,7 +305,7 @@ const computeTtfvPros = async (period: AnalyticsPeriod) => {
     where: { senderId: { in: proIds } },
     _min: { createdAt: true },
   });
-  const messageMap = new Map(messages.map((row) => [row.senderId, row._min?.createdAt]));
+  const messageMap = new Map(messages.map((row: { senderId: string | null; _min: { createdAt: Date | null } | null }) => [row.senderId, row._min?.createdAt]));
 
   const durations: number[] = [];
   for (const pro of pros) {
@@ -397,10 +397,10 @@ const computeMarketplaceHealth = async (period: AnalyticsPeriod) => {
   });
 
   const totalRequests = bookingRequests.length;
-  const acceptedRequests = bookingRequests.filter((request) => request.status === 'ACCEPTED').length;
+  const acceptedRequests = bookingRequests.filter((request: { status: string; createdAt: Date; respondedAt: Date | null }) => request.status === 'ACCEPTED').length;
   const responseDurations = bookingRequests
-    .filter((request) => request.respondedAt)
-    .map((request) => (request.respondedAt!.getTime() - request.createdAt.getTime()) / (60 * 60 * 1000));
+    .filter((request: { status: string; createdAt: Date; respondedAt: Date | null }) => request.respondedAt)
+    .map((request: { status: string; createdAt: Date; respondedAt: Date | null }) => (request.respondedAt!.getTime() - request.createdAt.getTime()) / (60 * 60 * 1000));
 
   const acceptanceMasked = totalRequests < PRIVACY_THRESHOLD;
   const medianResponseHours = responseDurations.length

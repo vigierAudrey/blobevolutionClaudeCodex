@@ -4,6 +4,8 @@ import Script from 'next/script';
 import './globals.css';
 import ClientProvider from '@/components/ui/ClientProvider';
 import { ThemeScript } from '@/components/theme/ThemeScript';
+import { NextIntlClientProvider } from 'next-intl';
+import { getLocale, getMessages } from 'next-intl/server';
 
 // Force dynamic rendering for all pages (no static generation)
 export const dynamic = 'force-dynamic';
@@ -28,12 +30,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const adsenseClientId = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID;
   const adsenseEnabled = process.env.NEXT_PUBLIC_ADSENSE_ENABLED === 'true';
 
+  const locale = await getLocale();
+  const messages = await getMessages();
+
   return (
-    <html lang="fr">
+    <html lang={locale}>
       <head>
         {/* Apply theme class before paint to avoid FOUC */}
         <ThemeScript />
@@ -48,10 +53,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       {/* Use design tokens so dark mode can flip background/foreground */}
       <body className="min-h-screen bg-background text-foreground">
-        <ClientProvider>
-          <main className="container-responsive py-6 sm:py-10">{children}</main>
-          <CookieConsent />
-        </ClientProvider>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <ClientProvider>
+            <main className="container-responsive py-6 sm:py-10">{children}</main>
+            <CookieConsent />
+          </ClientProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

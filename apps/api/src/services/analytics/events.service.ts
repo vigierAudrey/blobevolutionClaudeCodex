@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import {
   clientPrisma as prisma,
+  Prisma,
   type AnalyticsActorType,
   type AnalyticsEventType,
   type ConsentLevel,
@@ -143,7 +144,7 @@ const persistEvent = async (input: PersistEventInput) => {
       return { stored: false, deduped: true };
     }
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.analyticsEvent.create({
         data: {
           occurredAt,
@@ -186,7 +187,7 @@ const persistEvent = async (input: PersistEventInput) => {
     return { stored: true, deduped: false };
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.analyticsEvent.create({
       data: {
         occurredAt,

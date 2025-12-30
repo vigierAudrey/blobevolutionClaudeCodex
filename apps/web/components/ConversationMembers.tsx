@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { apiClient } from '../lib/apiClient';
 import { Button } from './ui/button';
 import { UserPlus, X, Search, UserMinus, LogOut } from 'lucide-react';
@@ -36,12 +37,7 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
 
-  // Load members on mount
-  useEffect(() => {
-    loadMembers();
-  }, [conversationId]);
-
-  const loadMembers = async () => {
+  const loadMembers = useCallback(async () => {
     setLoadingMembers(true);
     try {
       const data = await apiClient.getConversationMembers(conversationId);
@@ -51,7 +47,12 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
     } finally {
       setLoadingMembers(false);
     }
-  };
+  }, [conversationId]);
+
+  // Load members on mount
+  useEffect(() => {
+    loadMembers();
+  }, [loadMembers]);
 
   // Search users when query changes
   useEffect(() => {
@@ -90,10 +91,11 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
       alert('✓ Invitation envoyée ! L\'utilisateur pourra accepter ou refuser votre invitation.');
       await loadMembers();
       onMemberAdded?.();
-    } catch (err: any) {
-      if (err?.message?.includes('already a member')) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (errorMessage?.includes('already a member')) {
         alert('Cet utilisateur est déjà membre de la conversation');
-      } else if (err?.message?.includes('already pending')) {
+      } else if (errorMessage?.includes('already pending')) {
         alert('Une invitation est déjà en attente pour cet utilisateur');
       } else {
         alert('Erreur lors de l\'envoi de l\'invitation');
@@ -165,10 +167,12 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
               className="flex items-center gap-2 p-2 rounded-md bg-accent border border-border"
             >
               {member.photoUrl ? (
-                <img
+                <Image
                   src={member.photoUrl}
                   alt={member.name || 'User'}
-                  className="w-8 h-8 rounded-full object-cover"
+                  width={32}
+                  height={32}
+                  className="rounded-full object-cover"
                 />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">
@@ -239,10 +243,12 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
                   className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-background border border-transparent hover:border-border transition-colors disabled:opacity-50"
                 >
                   {user.photoUrl ? (
-                    <img
+                    <Image
                       src={user.photoUrl}
                       alt={user.name || 'User'}
-                      className="w-8 h-8 rounded-full object-cover"
+                      width={32}
+                      height={32}
+                      className="rounded-full object-cover"
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">

@@ -295,27 +295,43 @@ describe('Système anti-overbooking et gestion des capacités', () => {
     });
 
     it('devrait valider les chevauchements de créneaux', async () => {
-      const baseTime = Date.now() + 60 * 60 * 1000;
+      // Créer un créneau qui commence le jour J à 23h et se termine le jour J+1 à 1h
+      const dayJ = new Date();
+      dayJ.setDate(dayJ.getDate() + 2); // Dans 2 jours
+      dayJ.setHours(23, 0, 0, 0);
 
-      // Créer un premier créneau
+      const dayJPlus1End = new Date(dayJ);
+      dayJPlus1End.setDate(dayJPlus1End.getDate() + 1);
+      dayJPlus1End.setHours(1, 0, 0, 0);
+
+      // Créer un premier créneau (Jour J, 23h -> Jour J+1, 1h)
       await bookingService.createAvailability(proUserId, {
         sport: 'surf',
         levels: ['beginner'],
-        startAt: new Date(baseTime),
-        endAt: new Date(baseTime + 60 * 60 * 1000), // 1h
+        startAt: dayJ,
+        endAt: dayJPlus1End,
         capacity: 3,
         spotName: 'Test Overlap',
         spotLat: 43.4832,
         spotLng: -1.5586,
       });
 
-      // Tenter de créer un créneau qui chevauche
+      // Créer un deuxième créneau qui commence le jour J+1 à 0h et se termine à 2h
+      const dayJPlus1Start = new Date(dayJ);
+      dayJPlus1Start.setDate(dayJPlus1Start.getDate() + 1);
+      dayJPlus1Start.setHours(0, 0, 0, 0);
+
+      const dayJPlus1End2 = new Date(dayJPlus1Start);
+      dayJPlus1End2.setHours(2, 0, 0, 0);
+
+      // Tenter de créer un créneau qui chevauche (Jour J+1, 0h -> Jour J+1, 2h)
+      // Ce créneau chevauche le premier de 0h à 1h
       await expect(
         bookingService.createAvailability(proUserId, {
           sport: 'surf',
           levels: ['intermediate'],
-          startAt: new Date(baseTime + 30 * 60 * 1000), // 30min plus tard
-          endAt: new Date(baseTime + 90 * 60 * 1000), // 1h30 plus tard
+          startAt: dayJPlus1Start,
+          endAt: dayJPlus1End2,
           capacity: 2,
           spotName: 'Test Overlap 2',
           spotLat: 43.4832,

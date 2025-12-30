@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { apiClient } from '../lib/apiClient';
 import { Button } from './ui/button';
-import { UserPlus, X, Check } from 'lucide-react';
+import { X, Check } from 'lucide-react';
 
 interface ConversationInvitation {
   id: string;
@@ -16,7 +17,7 @@ interface ConversationInvitation {
 
 export function ConversationInvitations() {
   const [invitations, setInvitations] = useState<ConversationInvitation[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [responding, setResponding] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,10 +73,12 @@ export function ConversationInvitations() {
           className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800"
         >
           {invitation.inviterPhotoUrl ? (
-            <img
+            <Image
               src={invitation.inviterPhotoUrl}
               alt={invitation.inviterName}
-              className="w-10 h-10 rounded-full object-cover"
+              width={40}
+              height={40}
+              className="rounded-full object-cover"
             />
           ) : (
             <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold">
