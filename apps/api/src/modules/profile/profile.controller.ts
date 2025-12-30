@@ -588,3 +588,174 @@ profileRouter.get('/deletion-status', async (req, res) => {
     return res.status(500).json({ error: 'Erreur lors de la récupération du statut' });
   }
 });
+
+// Notification Preferences - Validation schema
+const notificationPreferencesSchema = z.object({
+  pushEnabled: z.boolean().optional(),
+  emailEnabled: z.boolean().optional(),
+  notifyMessages: z.boolean().optional(),
+  notifyMatches: z.boolean().optional(),
+  notifyInvitations: z.boolean().optional(),
+  notifyLessonRequests: z.boolean().optional(),
+  notifyBookingAccepted: z.boolean().optional(),
+  notifyBookingRejected: z.boolean().optional(),
+  notifyProMessages: z.boolean().optional(),
+  notifyForSurf: z.boolean().optional(),
+  notifyForKitesurf: z.boolean().optional(),
+  emailDigestFrequency: z.enum(['NEVER', 'DAILY', 'WEEKLY']).optional(),
+});
+
+// Get notification preferences (works for both RIDER and PRO)
+profileRouter.get('/notifications', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Get user role
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get or create notification preferences
+    let preferences = await prisma.notificationPreferences.findUnique({
+      where: { userId },
+    });
+
+    if (!preferences) {
+      // Create default preferences
+      preferences = await prisma.notificationPreferences.create({
+        data: { userId },
+      });
+    }
+
+    // Filter preferences based on role
+    const basePreferences = {
+      pushEnabled: preferences.pushEnabled,
+      emailEnabled: preferences.emailEnabled,
+      emailDigestFrequency: preferences.emailDigestFrequency,
+    };
+
+    // RIDER-specific preferences
+    const riderPreferences = user.role === 'RIDER' ? {
+      notifyMessages: preferences.notifyMessages,
+      notifyMatches: preferences.notifyMatches,
+      notifyInvitations: preferences.notifyInvitations,
+    } : {};
+
+    // PRO-specific preferences
+    const proPreferences = user.role === 'PRO' ? {
+      notifyLessonRequests: preferences.notifyLessonRequests,
+      notifyBookingAccepted: preferences.notifyBookingAccepted,
+      notifyBookingRejected: preferences.notifyBookingRejected,
+      notifyProMessages: preferences.notifyProMessages,
+      notifyForSurf: preferences.notifyForSurf,
+      notifyForKitesurf: preferences.notifyForKitesurf,
+    } : {};
+
+    return res.json({
+      role: user.role,
+      preferences: {
+        ...basePreferences,
+        ...riderPreferences,
+        ...proPreferences,
+      },
+    });
+  } catch (err: any) {
+    console.error('Get notification preferences error', err);
+    return res.status(500).json({ error: 'Erreur lors de la récupération des préférences' });
+  }
+});
+
+// Update notification preferences (works for both RIDER and PRO)
+profileRouter.put('/notifications', validate(notificationPreferencesSchema), async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Get user role to filter allowed preferences
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const body = req.body;
+
+    // Filter body based on role to prevent unauthorized preference updates
+    const allowedFields: any = {
+      // Common fields for all roles
+      pushEnabled: body.pushEnabled,
+      emailEnabled: body.emailEnabled,
+      emailDigestFrequency: body.emailDigestFrequency,
+    };
+
+    // RIDER-only fields
+    if (user.role === 'RIDER') {
+      if (body.notifyMessages !== undefined) allowedFields.notifyMessages = body.notifyMessages;
+      if (body.notifyMatches !== undefined) allowedFields.notifyMatches = body.notifyMatches;
+      if (body.notifyInvitations !== undefined) allowedFields.notifyInvitations = body.notifyInvitations;
+    }
+
+    // PRO-only fields
+    if (user.role === 'PRO') {
+      if (body.notifyLessonRequests !== undefined) allowedFields.notifyLessonRequests = body.notifyLessonRequests;
+      if (body.notifyBookingAccepted !== undefined) allowedFields.notifyBookingAccepted = body.notifyBookingAccepted;
+      if (body.notifyBookingRejected !== undefined) allowedFields.notifyBookingRejected = body.notifyBookingRejected;
+      if (body.notifyProMessages !== undefined) allowedFields.notifyProMessages = body.notifyProMessages;
+      if (body.notifyForSurf !== undefined) allowedFields.notifyForSurf = body.notifyForSurf;
+      if (body.notifyForKitesurf !== undefined) allowedFields.notifyForKitesurf = body.notifyForKitesurf;
+    }
+
+    // Upsert preferences with filtered fields
+    const preferences = await prisma.notificationPreferences.upsert({
+      where: { userId },
+      create: { userId, ...allowedFields },
+      update: { ...allowedFields },
+    });
+
+    // Return only role-appropriate preferences
+    const basePreferences = {
+      pushEnabled: preferences.pushEnabled,
+      emailEnabled: preferences.emailEnabled,
+      emailDigestFrequency: preferences.emailDigestFrequency,
+    };
+
+    const riderPreferences = user.role === 'RIDER' ? {
+      notifyMessages: preferences.notifyMessages,
+      notifyMatches: preferences.notifyMatches,
+      notifyInvitations: preferences.notifyInvitations,
+    } : {};
+
+    const proPreferences = user.role === 'PRO' ? {
+      notifyLessonRequests: preferences.notifyLessonRequests,
+      notifyBookingAccepted: preferences.notifyBookingAccepted,
+      notifyBookingRejected: preferences.notifyBookingRejected,
+      notifyProMessages: preferences.notifyProMessages,
+      notifyForSurf: preferences.notifyForSurf,
+      notifyForKitesurf: preferences.notifyForKitesurf,
+    } : {};
+
+    return res.json({
+      ok: true,
+      preferences: {
+        ...basePreferences,
+        ...riderPreferences,
+        ...proPreferences,
+      },
+    });
+  } catch (err: any) {
+    console.error('Update notification preferences error', err);
+    if (err?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    return res.status(500).json({ error: 'Erreur lors de la mise à jour des préférences' });
+  }
+});

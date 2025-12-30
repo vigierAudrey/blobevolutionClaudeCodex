@@ -11,12 +11,13 @@ import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText } from 'lucide-react';
+import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText, Bell } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { apiClient } from '../../../lib/apiClient';
 import { apiRequest } from '../../../lib/csrf';
 import { useToast } from '../../../components/ui/toast';
+import { Spinner } from '../../../components/ui/spinner';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../../components/cookies/CookieConsent';
 import { ChangePasswordCard } from '../../../components/profile/ChangePasswordCard';
 
@@ -94,6 +95,21 @@ export default function ProProfilePage() {
   const [deletionStatus, setDeletionStatus] = useState<DeletionStatus | null>(null);
   const [loadingDeletion, setLoadingDeletion] = useState(false);
 
+  // Notification preferences state
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    pushEnabled: true,
+    emailEnabled: false,
+    notifyLessonRequests: true,
+    notifyBookingAccepted: true,
+    notifyBookingRejected: true,
+    notifyProMessages: true,
+    notifyForSurf: true,
+    notifyForKitesurf: true,
+    emailDigestFrequency: 'NEVER',
+  });
+  const [loadingNotifPrefs, setLoadingNotifPrefs] = useState(true);
+  const [savingNotifPrefs, setSavingNotifPrefs] = useState(false);
+
   // Cookie consent summary
   const consentSummary = useMemo(() => {
     type Summary = {
@@ -152,6 +168,34 @@ export default function ProProfilePage() {
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
   }, [blobUrl]);
+
+  // Load notification preferences on mount
+  useEffect(() => {
+    const loadNotificationPreferences = async () => {
+      try {
+        const tokens = apiClient.getTokens();
+        if (!tokens?.accessToken) return;
+
+        const response = await apiRequest('/profile/notifications', {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${tokens.accessToken}` },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.preferences) {
+            setNotificationPrefs((prev) => ({ ...prev, ...data.preferences }));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading notification preferences:', error);
+      } finally {
+        setLoadingNotifPrefs(false);
+      }
+    };
+
+    void loadNotificationPreferences();
+  }, []);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -373,6 +417,41 @@ export default function ProProfilePage() {
     } catch (error) {
       console.error('Erreur handleReopenCookieConsent:', error);
       toast('Erreur lors de la réinitialisation des préférences.', 'error');
+    }
+  };
+
+  const toggleNotificationPref = (key: keyof typeof notificationPrefs) => {
+    setNotificationPrefs((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const saveNotificationPreferences = async () => {
+    if (savingNotifPrefs) return;
+    setSavingNotifPrefs(true);
+
+    try {
+      const tokens = apiClient.getTokens();
+      if (!tokens?.accessToken) {
+        toast('Session expirée, veuillez vous reconnecter', 'error');
+        return;
+      }
+
+      const response = await apiRequest('/profile/notifications', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${tokens.accessToken}` },
+        body: JSON.stringify(notificationPrefs),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Erreur lors de la sauvegarde');
+      }
+
+      toast('Préférences de notification sauvegardées', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde';
+      toast(message, 'error');
+    } finally {
+      setSavingNotifPrefs(false);
     }
   };
 
@@ -616,6 +695,262 @@ export default function ProProfilePage() {
                   ) : (
                     <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
                       Chargement des préférences…
+                    </div>
+                  )}
+                </div>
+
+                <hr className="border-t-2" />
+
+                {/* Notification Preferences */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Préférences de Notification</h3>
+                  </div>
+                  {loadingNotifPrefs ? (
+                    <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
+                      Chargement des préférences…
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Push Notifications Master Toggle */}
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
+                            <Bell className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold">Notifications Push</h4>
+                            <p className="text-xs text-muted-foreground">Reçois des alertes instantanées</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleNotificationPref('pushEnabled')}
+                          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                            notificationPrefs.pushEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                          aria-label="Toggle push notifications"
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* PRO-specific preferences */}
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activité professionnelle</h4>
+
+                        {/* Lesson Requests */}
+                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-amber-300 dark:hover:border-amber-700 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">🗺️</span>
+                            <div>
+                              <p className="text-sm font-medium">Demandes de cours (BloboMap)</p>
+                              <p className="text-xs text-muted-foreground">Riders cherchant un cours</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleNotificationPref('notifyLessonRequests')}
+                            disabled={!notificationPrefs.pushEnabled}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPrefs.notifyLessonRequests && notificationPrefs.pushEnabled
+                                ? 'bg-amber-600'
+                                : 'bg-gray-300 dark:bg-gray-600'
+                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            aria-label="Toggle lesson request notifications"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPrefs.notifyLessonRequests && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Booking Accepted */}
+                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-green-300 dark:hover:border-green-700 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">✅</span>
+                            <div>
+                              <p className="text-sm font-medium">Réservations acceptées</p>
+                              <p className="text-xs text-muted-foreground">Quand un rider accepte ta dispo</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleNotificationPref('notifyBookingAccepted')}
+                            disabled={!notificationPrefs.pushEnabled}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPrefs.notifyBookingAccepted && notificationPrefs.pushEnabled
+                                ? 'bg-green-600'
+                                : 'bg-gray-300 dark:bg-gray-600'
+                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            aria-label="Toggle booking accepted notifications"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPrefs.notifyBookingAccepted && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Booking Rejected */}
+                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-red-300 dark:hover:border-red-700 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">❌</span>
+                            <div>
+                              <p className="text-sm font-medium">Réservations refusées</p>
+                              <p className="text-xs text-muted-foreground">Quand un rider refuse ta dispo</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleNotificationPref('notifyBookingRejected')}
+                            disabled={!notificationPrefs.pushEnabled}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPrefs.notifyBookingRejected && notificationPrefs.pushEnabled
+                                ? 'bg-red-600'
+                                : 'bg-gray-300 dark:bg-gray-600'
+                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            aria-label="Toggle booking rejected notifications"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPrefs.notifyBookingRejected && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* PRO Messages */}
+                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">💬</span>
+                            <div>
+                              <p className="text-sm font-medium">Messages</p>
+                              <p className="text-xs text-muted-foreground">Messages des riders</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleNotificationPref('notifyProMessages')}
+                            disabled={!notificationPrefs.pushEnabled}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPrefs.notifyProMessages && notificationPrefs.pushEnabled
+                                ? 'bg-blue-600'
+                                : 'bg-gray-300 dark:bg-gray-600'
+                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            aria-label="Toggle message notifications"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPrefs.notifyProMessages && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Sport filters */}
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Filtres par sport</h4>
+
+                        {/* Surf */}
+                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">🏄</span>
+                            <div>
+                              <p className="text-sm font-medium">Demandes Surf</p>
+                              <p className="text-xs text-muted-foreground">Cours de surf uniquement</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleNotificationPref('notifyForSurf')}
+                            disabled={!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPrefs.notifyForSurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests
+                                ? 'bg-blue-600'
+                                : 'bg-gray-300 dark:bg-gray-600'
+                            } ${!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            aria-label="Toggle surf notifications"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPrefs.notifyForSurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Kitesurf */}
+                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-cyan-300 dark:hover:border-cyan-700 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">🪁</span>
+                            <div>
+                              <p className="text-sm font-medium">Demandes Kitesurf</p>
+                              <p className="text-xs text-muted-foreground">Cours de kitesurf uniquement</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleNotificationPref('notifyForKitesurf')}
+                            disabled={!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPrefs.notifyForKitesurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests
+                                ? 'bg-cyan-600'
+                                : 'bg-gray-300 dark:bg-gray-600'
+                            } ${!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            aria-label="Toggle kitesurf notifications"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPrefs.notifyForKitesurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Info box when push disabled */}
+                      {!notificationPrefs.pushEnabled && (
+                        <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3">
+                          <div className="flex items-start gap-2">
+                            <span className="text-lg">ℹ️</span>
+                            <div className="flex-1">
+                              <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Notifications désactivées</p>
+                              <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
+                                Active les notifications push pour recevoir des alertes en temps réel.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Save button */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={saveNotificationPreferences}
+                        disabled={savingNotifPrefs}
+                        className="w-full sm:w-auto"
+                      >
+                        {savingNotifPrefs ? (
+                          <span className="inline-flex items-center gap-2">
+                            <Spinner />
+                            Sauvegarde...
+                          </span>
+                        ) : (
+                          '💾 Sauvegarder mes préférences'
+                        )}
+                      </Button>
                     </div>
                   )}
                 </div>
