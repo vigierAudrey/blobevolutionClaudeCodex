@@ -10,6 +10,13 @@ const createRedisClientMock = () => ({
   setEx: jest.fn(async () => 'OK'),
   del: jest.fn(async () => 0),
   keys: jest.fn(async () => []),
+  incr: jest.fn(async () => 1),
+  sAdd: jest.fn(async () => 1),
+  sMembers: jest.fn(async () => []),
+  expire: jest.fn(async () => 1),
+  unlink: jest.fn(async () => 0),
+  scan: jest.fn(async () => ({ cursor: 0, keys: [] })),
+  eval: jest.fn(async () => 'VALID'), // Lua script execution (default: success)
   sendCommand: jest.fn(async () => null),
 }) as any;
 

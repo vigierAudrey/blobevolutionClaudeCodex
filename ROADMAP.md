@@ -197,10 +197,11 @@
 
 **Configuration (30 min)**
 - [ ] Générer secrets forts. _(Actuel : `.env` et `.env.example` gardent `please-change-in-dev`; exécuter `./scripts/generate-secrets.sh` et injecter les valeurs en prod.)_
-- [ ] Configurer `ALLOWED_ORIGINS`. _(Actuel : aucune valeur définie ; en prod l’API planterait, mais prévoir la liste CSV des domaines front.)_
+- [ ] Configurer `ALLOWED_ORIGINS`. _(Actuel : aucune valeur définie ; en prod l'API planterait, mais prévoir la liste CSV des domaines front.)_
 - [ ] Configurer `TRUSTED_PROXY_IPS`. _(Actuel : variable absente ; à compléter avec les IP/CIDR du reverse proxy avant mise en prod.)_
 - [ ] `DATABASE_URL` avec `sslmode=require`. _(Actuel : chaînes locales sans `sslmode`; forcer `?sslmode=require` côté env prod.)_
-- [ ] `REDIS_URL` avec mot de passe fort. _(Actuel : `change-me-strong`; générer un secret robuste et mettre à jour l’URL.)_
+- [ ] `REDIS_URL` avec mot de passe fort. _(Actuel : `change-me-strong`; générer un secret robuste et mettre à jour l'URL.)_
+- [ ] `TWO_FACTOR_SECRET` avec valeur aléatoire forte (32+ caractères). _(Nouveau : requis pour hash codes 2FA, API refuse de démarrer si valeur par défaut en prod.)_
 - [x] `AUTH_REQUIRE_VERIFIED=true`. _(Depuis cette mise à jour, la prod force la vérification email riders/pro + middleware `requireVerifiedEmail` sur les modules critiques.)_
 - [ ] `NODE_ENV=production`. _(Actuel : dév local en `development`; vérifier que le déploiement exporte `NODE_ENV=production`.)_
 
@@ -216,15 +217,24 @@
   - [x] **Test automatisé** : `auth.e2e.test.ts` (appel `/auth/me` avec token corrompu → 401).
 - [ ] Endpoints admin accessibles uniquement par admin. _(Tests E2E présents, prévoir exécution `npm test -w @blobinfini/api` avant go-live.)_
   - [x] **Test Playwright** : `apps/web/tests/e2e/admin-access.spec.ts` (non connecté → /login, rider → /dashboard, admin → succès).
-- [ ] Consentement pubs ↔ AdSense. _(Nouvelle exigence CNIL : bannière doit bloquer AdSense tant que pas d’opt-in.)_
+- [ ] Consentement pubs ↔ AdSense. _(Nouvelle exigence CNIL : bannière doit bloquer AdSense tant que pas d'opt-in.)_
   - [x] **Test Playwright** : `apps/web/tests/e2e/ads-consent.spec.ts` (mode basique → placeholder, opt-in personnalisé → `<ins.adsbygoogle>`).
+
+**Tests Redis & 2FA (30 min)**
+- [ ] Vérifier REDIS_PASSWORD non par défaut. _(Exécuter : `curl localhost:4000/security/health` → ne doit PAS lister "REDIS_PASSWORD".)_
+- [ ] Vérifier TWO_FACTOR_SECRET configuré. _(L'API refuse de démarrer en prod si valeur par défaut "change-me-2fa-secret-production".)_
+- [ ] Tester 2FA rate limiting : 6 codes invalides → blocage 5 min. _(Manuel : POST /auth/verify-2fa avec mauvais codes.)_
+- [ ] Vérifier aucun code 2FA en clair dans Redis. _(Exécuter : `redis-cli --scan --pattern "2fa:*" | xargs redis-cli MGET` → doit afficher des hash SHA-256, pas de codes 6 chiffres.)_
+- [ ] Vérifier invalidation cache sans KEYS(). _(Logs Redis : `redis-cli monitor | grep KEYS` pendant 1 min sur l'API → doit être vide.)_
 
 **Monitoring (30 min)**
 - [ ] Alertes Clever Cloud 5xx.
 - [ ] Alertes 429 excessifs.
+- [ ] Alertes 2FA rate-limit (monitoring `2fa:attempts:*` dans Redis).
 - [ ] Dashboard 401/403/429 par endpoint.
 - [ ] Revue hebdomadaire audit logs.
 - [ ] Optimiser le compteur de messages non lus : supprimer le polling `/conversations` en prod au profit d'un flux temps réel (Socket.io) avec events d'update d'unread.
+- [ ] Monitorer Redis : Aucune commande KEYS() en production (logs `redis-cli monitor`).
 
 **Documentation (30 min)**
 - [ ] `SECURITY.md` mis à jour.
@@ -1023,7 +1033,8 @@ apps/api/
 
 ## 🗓️ Mémo
 
-- **Dernière mise à jour :** 12 octobre 2025.
-- **Branch actuelle :** `fix/ci-prisma-db-push`.
-- **Prochaine étape urgente :** Sécurité Production-Ready (Phase 3 monitoring + checklist, 2h) – BLOCKER avant déploiement.
-- **Étapes normales ensuite :** Optimisations performance gratuites (Claude) | Analytics dashboard (Codex).
+- **Dernière mise à jour :** 31 décembre 2025.
+- **Branch actuelle :** `feat/storybook-react-webpack5`.
+- **Derniers travaux :** Refonte Redis complète (cache + invalidation sécurisée + 2FA durci) ✅
+- **Prochaine étape urgente :** Tests sécurité checklist pré-déploiement (1h) – BLOCKER avant déploiement.
+- **Étapes normales ensuite :** Déploiement AdSense (5 min) | Analytics dashboard (Codex).

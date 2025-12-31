@@ -1,4 +1,9 @@
 import './config/loadEnv';
+
+// Validate production environment variables (fail-fast on insecure defaults)
+import { validateProductionEnv } from './lib/env-validation';
+validateProductionEnv();
+
 import { resolve } from 'path';
 import fs from 'fs';
 import { randomBytes } from 'crypto';

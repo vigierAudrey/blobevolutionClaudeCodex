@@ -191,8 +191,12 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
   try {
     const { userId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
 
-    // Vérifier le code 2FA
-    const verification = await twoFactorService.verifyCode(userId, code);
+    // Extract client IP for rate limiting
+    const ips = (req as any).ips as string[] | undefined;
+    const clientIp = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress;
+
+    // Vérifier le code 2FA avec rate limiting
+    const verification = await twoFactorService.verifyCode(userId, code, clientIp);
 
     if (!verification.valid) {
       return res.status(401).json({ error: verification.message });
@@ -208,15 +212,12 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Vérifier IP whitelisting si configuré
-    const ips = (req as any).ips as string[] | undefined;
-    const clientIP = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress;
-
+    // Vérifier IP whitelisting si configuré (reuse clientIp from 2FA verification)
     if (user.adminProfile?.allowedIPs && user.adminProfile.allowedIPs.length > 0) {
-      if (!clientIP || !user.adminProfile.allowedIPs.includes(clientIP)) {
+      if (!clientIp || !user.adminProfile.allowedIPs.includes(clientIp)) {
         return res.status(403).json({
           error: 'IP non autorisée',
-          clientIP,
+          clientIP: clientIp,
           message: 'Votre adresse IP n\'est pas autorisée à accéder à ce compte admin'
         });
       }
@@ -229,7 +230,7 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
     });
 
     // Générer les tokens
-    const ip = clientIP || undefined;
+    const ip = clientIp || undefined;
     const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip });
 
     return res.json(tokens);
@@ -444,12 +445,15 @@ authRouter.post('/2fa/verify', async (req, res) => {
       return res.status(403).json({ error: '2FA disponible uniquement pour les pros' });
     }
 
-    const verification = await twoFactorService.verifyCode(user.id, code);
+    // Extract client IP for rate limiting
+    const ips = (req as any).ips as string[] | undefined;
+    const clientIp = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress;
+
+    const verification = await twoFactorService.verifyCode(user.id, code, clientIp);
 
     if (verification.valid) {
       // Code valide - générer les tokens JWT comme pour un login normal
-      const ips = (req as any).ips as string[] | undefined;
-      const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+      const ip = clientIp || undefined;
 
       // Utiliser le service de login avec des données simulées (pas besoin de re-vérifier password)
       const tokens = await service.generateTokens(user, { consentAccepted: true, consentIp: ip });
