@@ -10,6 +10,7 @@ import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
 import { createHash } from 'crypto';
 import { getClientIp } from '../../lib/client-ip';
+import { hashIpHmac } from '../../lib/hash-ip';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -122,7 +123,7 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     await prisma.loginAttempt.create({
       data: {
         email,
-        ip,
+        ipHash: hashIpHmac(ip) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
         userAgent,
         success: true,
         userId: user?.id
@@ -136,14 +137,14 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     if (err?.name === 'ZodError') {
       reason = 'Invalid input';
       await prisma.loginAttempt.create({
-        data: { email, ip, userAgent, success: false, reason }
+        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
       }).catch(() => {});
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
       reason = 'Invalid credentials';
       await prisma.loginAttempt.create({
-        data: { email, ip, userAgent, success: false, reason }
+        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
       }).catch(() => {});
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -154,7 +155,7 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     if (err?.code === 'EMAIL_NOT_VERIFIED') {
       reason = 'Email not verified';
       await prisma.loginAttempt.create({
-        data: { email, ip, userAgent, success: false, reason }
+        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
       }).catch(() => {});
       return res.status(403).json({ error: 'Email not verified' });
     }
@@ -172,7 +173,7 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     // Log unexpected errors
     reason = 'Internal server error';
     await prisma.loginAttempt.create({
-      data: { email, ip, userAgent, success: false, reason }
+      data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
     }).catch(() => {});
     return res.status(500).json({ error: 'Internal error' });
   }

@@ -21,6 +21,7 @@ model User {
   updatedAt               DateTime                 @updatedAt
   consentVersion          String?
   consentIp               String?
+  consentIpHash           String?                  // HMAC-SHA256 hash of consentIp (RGPD compliant, 24 hex chars)
   adminProfile            AdminProfile?
   conversationMembers     ConversationMember[]
   emailVerificationTokens EmailVerificationToken[]
@@ -102,6 +103,7 @@ model LoginAttempt {
   id        String   @id @default(uuid())
   email     String
   ip        String?
+  ipHash    String?  // HMAC-SHA256 hash of ip (RGPD compliant, 24 hex chars)
   userAgent String?
   success   Boolean
   reason    String?
@@ -111,6 +113,7 @@ model LoginAttempt {
 
   @@index([email])
   @@index([ip])
+  @@index([ipHash])
   @@index([createdAt])
   @@index([success])
 }

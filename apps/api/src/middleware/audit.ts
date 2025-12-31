@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { clientPrisma as prisma } from '@blobinfini/database';
-import { getClientIp, hashIp } from '../lib/client-ip';
+import { getClientIp } from '../lib/client-ip';
+import { hashIpHmac } from '../lib/hash-ip';
 
 export type AuditResourceResolver = (req: Request, res: Response) => string;
 
@@ -14,15 +15,17 @@ export const audit = (action: string, resolveResource?: AuditResourceResolver) =
       const extraMetadata = res.locals?.auditMetadata && typeof res.locals.auditMetadata === 'object'
         ? res.locals.auditMetadata
         : undefined;
+      // Privacy-by-design: hash IP before storing (RGPD compliant)
+      // HMAC-SHA256 with IP_HASH_SECRET (v2) - replaces SHA-256 (v1)
+      const ipHash = hashIpHmac(ip ?? undefined);
+
       const metadata = {
         method: req.method,
         statusCode: res.statusCode,
         params: req.params,
+        hashVersion: 'v2', // HMAC-SHA256 (24 hex chars) for rainbow table protection
         ...(extraMetadata || {})
       };
-      // Privacy-by-design: hash IP before storing (RGPD compliant)
-      // This allows correlation while preventing raw IP storage
-      const ipHash = hashIp(ip ?? undefined);
 
       prisma.auditLog.create({
         data: {

@@ -2,7 +2,7 @@ import { createHash, randomInt } from 'crypto';
 import { cacheService } from './cache.service';
 import { send2FACode } from '../lib/mailer';
 import { secureLogger } from '../utils/secure-logger';
-import { hashIp } from '../lib/client-ip';
+import { hashIpHmac } from '../lib/hash-ip';
 
 // Memory fallback is allowed outside production (dev + tests) to keep UX smooth; prod must rely on Redis
 const allowMemoryFallback = process.env.NODE_ENV !== 'production';
@@ -238,7 +238,7 @@ export class TwoFactorService {
       // If Redis available, use Lua script for atomic verification
       const redisClient = cacheService.getClient();
       if (redisClient && clientIp) {
-        const ipHash = hashIp(clientIp)!;
+        const ipHash = hashIpHmac(clientIp)!;
 
         const keys = [
           cacheKey,
@@ -297,7 +297,7 @@ export class TwoFactorService {
           case 'BLOCKED_USER':
           case 'BLOCKED_IP':
           case 'BLOCKED_USER_IP':
-            secureLogger.warn('TWO_FACTOR_RATE_LIMITED', { userId, reason: result, ipHash: hashIp(clientIp) });
+            secureLogger.warn('TWO_FACTOR_RATE_LIMITED', { userId, reason: result, ipHash: hashIpHmac(clientIp) });
             return { valid: false, message: 'Trop de tentatives. Veuillez réessayer dans 5 minutes.' };
 
           case 'NO_CODE':
