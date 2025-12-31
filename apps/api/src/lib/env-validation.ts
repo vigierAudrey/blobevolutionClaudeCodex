@@ -10,6 +10,7 @@ import { isTrustProxyConfigSafe, getTrustProxyMode } from './client-ip';
 const INSECURE_DEFAULTS = {
   REDIS_PASSWORD: ['change-me-strong', 'change-me'],
   TWO_FACTOR_SECRET: ['change-me-2fa-secret-production', 'change-me'],
+  IP_HASH_SECRET: ['change-me-strong-ip-hash-secret-production-min-32-chars', 'change-me'],
   JWT_SECRET: ['please-change-in-dev', 'change-me', 'secret'],
   JWT_REFRESH_SECRET: ['please-change-in-dev-refresh', 'change-me', 'secret'],
 };
@@ -65,6 +66,13 @@ export function validateProductionEnv(): void {
   // Warn if trust proxy mode is not set (safe but may be unintentional)
   if (!process.env.TRUST_PROXY_MODE) {
     console.warn('⚠️  INFO: TRUST_PROXY_MODE not set, defaulting to "disabled" (safest). Set explicitly if behind reverse proxy.');
+  }
+
+  // Validate IP_HASH_SECRET is different from TWO_FACTOR_SECRET (security isolation)
+  if (process.env.IP_HASH_SECRET && process.env.TWO_FACTOR_SECRET) {
+    if (process.env.IP_HASH_SECRET === process.env.TWO_FACTOR_SECRET) {
+      errors.push('IP_HASH_SECRET must be different from TWO_FACTOR_SECRET (security isolation)');
+    }
   }
 
   if (errors.length > 0) {
