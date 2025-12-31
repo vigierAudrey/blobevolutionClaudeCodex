@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, randomInt } from 'crypto';
 import { cacheService } from './cache.service';
 import { send2FACode } from '../lib/mailer';
 import { secureLogger } from '../utils/secure-logger';
@@ -136,10 +136,13 @@ export class TwoFactorService {
   }
 
   /**
-   * Generate a secure 6-digit OTP code.
+   * Generate a cryptographically secure 6-digit OTP code.
+   *
+   * Uses crypto.randomInt instead of Math.random for security.
+   * Range: 100000-999999 (inclusive-exclusive) → always 6 digits
    */
   private generateCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return randomInt(100000, 1000000).toString().padStart(6, '0');
   }
 
   /**

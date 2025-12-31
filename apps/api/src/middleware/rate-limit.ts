@@ -1,3 +1,5 @@
+import { getClientIp } from '../lib/client-ip';
+
 type Window = {
   hits: number;
   resetAt: number;
@@ -7,7 +9,8 @@ const store = new Map<string, Window>();
 
 export function rateLimit({ key, limit = 100, windowMs = 60_000 }: { key: string; limit?: number; windowMs?: number }) {
   return (req: any, res: any, next: any) => {
-    const ip = (req.headers['x-forwarded-for'] as string) || req.ip || 'local';
+    // Use secure IP extraction (prevents spoofing)
+    const ip = getClientIp(req) || 'local';
     const bucket = `${key}:${ip}`;
     const now = Date.now();
     const w = store.get(bucket);

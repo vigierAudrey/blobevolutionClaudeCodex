@@ -33,8 +33,11 @@ services:
       - "allkeys-lru"  # Evict least recently used keys when full
       - "--save"
       - ""  # Disable RDB snapshots (no persistence)
-    ports:
-      - "6379:6379"
+    # SECURITY: Redis NOT exposed to host (internal Docker network only)
+    # Services connect via redis:6379 (internal DNS)
+    # For local dev debugging, use: docker-compose.override.yml with ports: ["127.0.0.1:6379:6379"]
+    # ports:
+    #   - "6379:6379"  # ❌ NEVER expose publicly (security risk)
     volumes:
       - redis-data:/data  # Volume kept for compatibility but won't be used
     healthcheck:

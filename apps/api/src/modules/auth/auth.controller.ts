@@ -9,6 +9,7 @@ import { passwordSchema } from '../../utils/password-validator';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
 import { createHash } from 'crypto';
+import { getClientIp } from '../../lib/client-ip';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -76,10 +77,8 @@ const verify2FAProSchema = z.object({
 authRouter.post('/register', validate(registerSchema), async (req, res) => {
   try {
     const data = req.body as z.infer<typeof registerSchema>;
-    // Extraire la meilleure IP disponible
-    // Si trust proxy est activé (voir apps/api/src/index.ts), req.ips[0] reflète le premier IP client
-    const ips = (req as any).ips as string[] | undefined;
-    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+    // Use secure IP extraction (prevents spoofing)
+    const ip = getClientIp(req);
     const result = await service.register(data, { consentIp: ip });
     res.status(201).json(result);
   } catch (err: any) {
@@ -112,8 +111,7 @@ function categorizeUserAgent(userAgent: string | undefined): string | undefined 
 
 authRouter.post('/login', validate(loginSchema), async (req, res) => {
   const { email, password, consentAccepted } = req.body as z.infer<typeof loginSchema>;
-  const ips = (req as any).ips as string[] | undefined;
-  const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+  const ip = getClientIp(req);
   const userAgent = categorizeUserAgent(req.get('User-Agent'));
 
   try {
@@ -191,9 +189,8 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
   try {
     const { userId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
 
-    // Extract client IP for rate limiting
-    const ips = (req as any).ips as string[] | undefined;
-    const clientIp = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress;
+    // Extract client IP for rate limiting (secure extraction)
+    const clientIp = getClientIp(req);
 
     // Vérifier le code 2FA avec rate limiting
     const verification = await twoFactorService.verifyCode(userId, code, clientIp);
@@ -445,9 +442,8 @@ authRouter.post('/2fa/verify', async (req, res) => {
       return res.status(403).json({ error: '2FA disponible uniquement pour les pros' });
     }
 
-    // Extract client IP for rate limiting
-    const ips = (req as any).ips as string[] | undefined;
-    const clientIp = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress;
+    // Extract client IP for rate limiting (secure extraction)
+    const clientIp = getClientIp(req);
 
     const verification = await twoFactorService.verifyCode(user.id, code, clientIp);
 

@@ -5,6 +5,8 @@
  * before the application starts. Prevents deployment with insecure defaults.
  */
 
+import { isTrustProxyConfigSafe, getTrustProxyMode } from './client-ip';
+
 const INSECURE_DEFAULTS = {
   REDIS_PASSWORD: ['change-me-strong', 'change-me'],
   TWO_FACTOR_SECRET: ['change-me-2fa-secret-production', 'change-me'],
@@ -50,9 +52,19 @@ export function validateProductionEnv(): void {
     console.warn('⚠️  WARNING: DATABASE_URL does not include sslmode=require (recommended in production)');
   }
 
-  // Check TRUSTED_PROXY_IPS if behind proxy
-  if (!process.env.TRUSTED_PROXY_IPS) {
-    console.warn('⚠️  WARNING: TRUSTED_PROXY_IPS not set. IP extraction may be unreliable behind reverse proxy.');
+  // Validate trust proxy configuration
+  const trustProxyMode = getTrustProxyMode();
+  if (!isTrustProxyConfigSafe()) {
+    if (trustProxyMode === 'true') {
+      errors.push('TRUST_PROXY_MODE="true" is UNSAFE in production (allows IP spoofing). Use "ips" or "loopback" instead.');
+    } else if (trustProxyMode === 'ips' && !process.env.TRUSTED_PROXY_IPS) {
+      errors.push('TRUST_PROXY_MODE="ips" requires TRUSTED_PROXY_IPS to be set');
+    }
+  }
+
+  // Warn if trust proxy mode is not set (safe but may be unintentional)
+  if (!process.env.TRUST_PROXY_MODE) {
+    console.warn('⚠️  INFO: TRUST_PROXY_MODE not set, defaulting to "disabled" (safest). Set explicitly if behind reverse proxy.');
   }
 
   if (errors.length > 0) {

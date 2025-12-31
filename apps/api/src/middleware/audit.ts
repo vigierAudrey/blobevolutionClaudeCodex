@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { clientPrisma as prisma } from '@blobinfini/database';
+import { getClientIp } from '../lib/client-ip';
 
 export type AuditResourceResolver = (req: Request, res: Response) => string;
 
@@ -8,7 +9,7 @@ export const audit = (action: string, resolveResource?: AuditResourceResolver) =
     res.on('finish', () => {
       if (res.statusCode >= 500) return;
       const userId = (req as any).user?.id as string | undefined;
-      const ip = ((req as any).ips?.[0]) || req.ip || (req.socket as any)?.remoteAddress || null;
+      const ip = getClientIp(req) || null;
       const resource = resolveResource ? resolveResource(req, res) : req.originalUrl;
       const extraMetadata = res.locals?.auditMetadata && typeof res.locals.auditMetadata === 'object'
         ? res.locals.auditMetadata
