@@ -7,6 +7,7 @@ import {
   parseTrustedProxies,
   isIpTrusted,
   normalizeIp,
+  hashIp,
   resetTrustedProxiesCache,
 } from '../client-ip';
 
@@ -188,6 +189,44 @@ describe('client-ip (anti-spoofing + CIDR support)', () => {
 
     it('should return false for null config', () => {
       expect(isIpTrusted('10.0.0.1', null)).toBe(false);
+    });
+  });
+
+  describe('hashIp (privacy-preserving logs)', () => {
+    it('should hash IP address using SHA-256', () => {
+      const ip = '192.168.1.100';
+      const hashed = hashIp(ip);
+
+      expect(hashed).toBeDefined();
+      expect(hashed).toHaveLength(16); // Truncated to 16 chars
+      expect(hashed).toMatch(/^[a-f0-9]{16}$/); // Hex format
+    });
+
+    it('should return consistent hash for same IP', () => {
+      const ip = '10.0.0.1';
+      const hash1 = hashIp(ip);
+      const hash2 = hashIp(ip);
+
+      expect(hash1).toBe(hash2);
+    });
+
+    it('should return different hashes for different IPs', () => {
+      const hash1 = hashIp('192.168.1.1');
+      const hash2 = hashIp('192.168.1.2');
+
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('should return undefined for undefined IP', () => {
+      expect(hashIp(undefined)).toBeUndefined();
+    });
+
+    it('should hash IPv6 addresses', () => {
+      const ip = '2001:db8::1';
+      const hashed = hashIp(ip);
+
+      expect(hashed).toBeDefined();
+      expect(hashed).toHaveLength(16);
     });
   });
 

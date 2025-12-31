@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { clientPrisma as prisma } from '@blobinfini/database';
-import { getClientIp } from '../lib/client-ip';
+import { getClientIp, hashIp } from '../lib/client-ip';
 
 export type AuditResourceResolver = (req: Request, res: Response) => string;
 
@@ -20,13 +20,17 @@ export const audit = (action: string, resolveResource?: AuditResourceResolver) =
         params: req.params,
         ...(extraMetadata || {})
       };
+      // Privacy-by-design: hash IP before storing (RGPD compliant)
+      // This allows correlation while preventing raw IP storage
+      const ipHash = hashIp(ip ?? undefined);
+
       prisma.auditLog.create({
         data: {
           userId,
           action,
           resource,
           metadata,
-          ip: ip ?? undefined,
+          ip: ipHash ?? undefined,
         }
       }).catch((error: unknown) => {
         console.error('Audit log error:', error);

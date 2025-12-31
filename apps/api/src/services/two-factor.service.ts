@@ -2,6 +2,7 @@ import { createHash, randomInt } from 'crypto';
 import { cacheService } from './cache.service';
 import { send2FACode } from '../lib/mailer';
 import { secureLogger } from '../utils/secure-logger';
+import { hashIp } from '../lib/client-ip';
 
 // Memory fallback is allowed outside production (dev + tests) to keep UX smooth; prod must rely on Redis
 const allowMemoryFallback = process.env.NODE_ENV !== 'production';
@@ -153,13 +154,6 @@ export class TwoFactorService {
   }
 
   /**
-   * Hash an IP address for rate limiting (privacy-preserving).
-   */
-  private hashIp(ip: string): string {
-    return createHash('sha256').update(ip).digest('hex').substring(0, 16);
-  }
-
-  /**
    * Send a 2FA code by email and store it securely.
    *
    * @param userId - User identifier
@@ -238,7 +232,7 @@ export class TwoFactorService {
       // If Redis available, use Lua script for atomic verification
       const redisClient = cacheService.getClient();
       if (redisClient && clientIp) {
-        const ipHash = this.hashIp(clientIp);
+        const ipHash = hashIp(clientIp)!;
 
         const result = await redisClient.eval(VERIFY_2FA_LUA_SCRIPT, {
           keys: [
@@ -264,16 +258,16 @@ export class TwoFactorService {
           case 'BLOCKED_USER':
           case 'BLOCKED_IP':
           case 'BLOCKED_USER_IP':
-            secureLogger.warn('TWO_FACTOR_RATE_LIMITED', { userId, reason: result, ip: clientIp });
+            secureLogger.warn('TWO_FACTOR_RATE_LIMITED', { userId, reason: result, ipHash: hashIp(clientIp) });
             return { valid: false, message: 'Trop de tentatives. Veuillez réessayer dans 5 minutes.' };
 
           case 'NO_CODE':
-            return { valid: false, message: 'Code expiré ou inexistant' };
-
           case 'INVALID':
           default:
-            secureLogger.warn('TWO_FACTOR_INVALID_CODE', { userId });
-            return { valid: false, message: 'Code incorrect' };
+            // Anti-oracle: unify NO_CODE and INVALID messages to prevent user enumeration
+            // This prevents attackers from distinguishing whether a 2FA code exists or not
+            secureLogger.warn('TWO_FACTOR_VERIFICATION_FAILED', { userId });
+            return { valid: false, message: 'Code invalide ou expiré' };
         }
       }
 
@@ -293,17 +287,11 @@ export class TwoFactorService {
         }
       }
 
-      if (!storedHash) {
+      if (!storedHash || storedHash !== providedHash) {
+        // Anti-oracle: same generic message whether code is missing or invalid
         return {
           valid: false,
-          message: 'Code expiré ou inexistant'
-        };
-      }
-
-      if (storedHash !== providedHash) {
-        return {
-          valid: false,
-          message: 'Code incorrect'
+          message: 'Code invalide ou expiré'
         };
       }
 

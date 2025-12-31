@@ -344,6 +344,24 @@ export function isTrustProxyConfigSafe(): boolean {
 }
 
 /**
+ * Hash an IP address for privacy-preserving logs/storage (RGPD compliant).
+ *
+ * Uses SHA-256 truncated to 16 characters.
+ * This allows correlation of activity from the same IP without storing the raw IP.
+ *
+ * @param ip - IP address to hash
+ * @returns Hashed IP (SHA-256 truncated to 16 chars)
+ */
+export function hashIp(ip: string | undefined): string | undefined {
+  if (!ip) {
+    return undefined;
+  }
+
+  const crypto = require('crypto');
+  return crypto.createHash('sha256').update(ip).digest('hex').substring(0, 16);
+}
+
+/**
  * Reset cached trusted proxies (useful for testing).
  * @internal
  */

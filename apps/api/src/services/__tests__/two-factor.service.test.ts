@@ -253,7 +253,8 @@ describe('TwoFactorService', () => {
       const result = await twoFactorServiceInstance.verifyCode(userId, '654321');
 
       expect(result.valid).toBe(false);
-      expect(result.message).toBe('Code incorrect');
+      // Anti-oracle: unified message (same as NO_CODE to prevent user enumeration)
+      expect(result.message).toBe('Code invalide ou expiré');
 
       // Code should still exist in memory store (not deleted on wrong code)
       expect(twoFactorMemoryStore?.has(`2fa:${userId}`)).toBe(true);
@@ -266,7 +267,8 @@ describe('TwoFactorService', () => {
       const result = await twoFactorServiceInstance.verifyCode(userId, sentCode);
 
       expect(result.valid).toBe(false);
-      expect(result.message).toBe('Code expiré ou inexistant');
+      // Anti-oracle: same message whether code is missing or invalid
+      expect(result.message).toBe('Code invalide ou expiré');
     });
 
     it('should trim whitespace from provided code', async () => {
@@ -301,7 +303,8 @@ describe('TwoFactorService', () => {
       const result = await twoFactorServiceInstance.verifyCode(userId, sentCode);
 
       expect(result.valid).toBe(false);
-      expect(result.message).toBe('Code expiré ou inexistant');
+      // Anti-oracle: same message whether code is missing or invalid
+      expect(result.message).toBe('Code invalide ou expiré');
     });
 
     it('should handle unexpected errors gracefully', async () => {
@@ -425,7 +428,8 @@ describe('TwoFactorService', () => {
       // Second verification should fail (code was deleted)
       const secondVerify = await twoFactorServiceInstance.verifyCode(userId, sentCode);
       expect(secondVerify.valid).toBe(false);
-      expect(secondVerify.message).toBe('Code expiré ou inexistant');
+      // Anti-oracle: same message whether code is missing or invalid
+      expect(secondVerify.message).toBe('Code invalide ou expiré');
     });
 
     it('should handle multiple users simultaneously', async () => {
