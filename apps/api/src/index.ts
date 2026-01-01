@@ -298,9 +298,15 @@ export function createApp() {
     try {
       const threshold = new Date(Date.now() - purgeDays * 24 * 60 * 60 * 1000);
       const { clientPrisma: prisma } = await import('@blobinfini/database');
+      // Purge raw consentIp (legacy)
       await prisma.user.updateMany({
         where: { consentIp: { not: null }, consentedAt: { lt: threshold } },
         data: { consentIp: null },
+      });
+      // Purge consentIpHash (HMAC v2) - RGPD data minimization
+      await prisma.user.updateMany({
+        where: { consentIpHash: { not: null }, consentedAt: { lt: threshold } },
+        data: { consentIpHash: null },
       });
     } catch (e) {
       // eslint-disable-next-line no-console

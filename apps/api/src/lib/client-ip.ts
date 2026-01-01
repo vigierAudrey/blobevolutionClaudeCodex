@@ -346,11 +346,17 @@ export function isTrustProxyConfigSafe(): boolean {
 /**
  * Hash an IP address for privacy-preserving logs/storage (RGPD compliant).
  *
- * Uses SHA-256 truncated to 16 characters.
- * This allows correlation of activity from the same IP without storing the raw IP.
+ * ⚠️ DEPRECATED: Use hashIpHmac() from '../lib/hash-ip' instead.
+ *
+ * This function uses plain SHA-256 (vulnerable to rainbow tables).
+ * hashIpHmac() uses HMAC-SHA256 with IP_HASH_SECRET for better security.
+ *
+ * This function is kept only for backward compatibility with existing tests.
+ * DO NOT use in new application code.
  *
  * @param ip - IP address to hash
  * @returns Hashed IP (SHA-256 truncated to 16 chars)
+ * @deprecated Use hashIpHmac() from '../lib/hash-ip' instead
  */
 export function hashIp(ip: string | undefined): string | undefined {
   if (!ip) {

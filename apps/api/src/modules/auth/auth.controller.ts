@@ -11,6 +11,7 @@ import { secureLogger } from '../../utils/secure-logger';
 import { createHash } from 'crypto';
 import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmac } from '../../lib/hash-ip';
+import { securityEventAlertService } from '../../services/security-event-alert.service';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -130,6 +131,15 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
       }
     }).catch(() => {}); // Ignore logging errors
 
+    // Check for suspicious pattern: successful login after multiple failures (possible brute-force success)
+    if (user?.id && ip) {
+      securityEventAlertService.reportSuccessAfterFailures(
+        email,
+        hashIpHmac(ip)!,
+        user.id
+      ).catch(() => {}); // Fire-and-forget, never fail login flow
+    }
+
     res.json(result);
   } catch (err: any) {
     // Log failed login attempt
@@ -146,6 +156,15 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
       await prisma.loginAttempt.create({
         data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
       }).catch(() => {});
+
+      // Detect brute-force or targeted attack patterns (fire-and-forget)
+      if (ip) {
+        securityEventAlertService.detectAndReportLoginFailurePattern(
+          email,
+          hashIpHmac(ip)!
+        ).catch(() => {}); // Never fail login flow
+      }
+
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     if (err?.code === 'CONSENT_REQUIRED') {
@@ -215,7 +234,6 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
       if (!clientIp || !user.adminProfile.allowedIPs.includes(clientIp)) {
         return res.status(403).json({
           error: 'IP non autorisée',
-          clientIP: clientIp,
           message: 'Votre adresse IP n\'est pas autorisée à accéder à ce compte admin'
         });
       }
@@ -331,7 +349,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
         twoFactorEnabled: true,
         consentedAt: true,
         consentVersion: true,
-        consentIp: true,
+        // RGPD: consentIp excluded from API response (privacy-by-design)
         createdAt: true,
         updatedAt: true,
       },

@@ -1465,6 +1465,11 @@ adminRouter.get(
  * IPv4: Masque les 2 derniers octets (192.168.xxx.xxx)
  * IPv6: Masque les 64 derniers bits
  */
+/**
+ * @deprecated RGPD v2: This function is no longer used.
+ * LoginAttempt.ipHash (HMAC-SHA256) is already anonymized and should be used instead of raw IPs.
+ * Kept for reference only - DO NOT USE in new code.
+ */
 function pseudonymizeIP(ip: string | null): string {
   if (!ip) return 'N/A';
 
@@ -1535,38 +1540,38 @@ adminRouter.get(
           orderBy: { createdAt: 'desc' }
         });
 
-        // Group by IP and email to find suspicious patterns
-        const ipCounts = new Map<string, number>();
+        // Group by ipHash and email to find suspicious patterns (RGPD v2: use ipHash)
+        const ipHashCounts = new Map<string, number>();
         const emailCounts = new Map<string, number>();
 
         for (const attempt of failedAttempts) {
-          if (attempt.ip) {
-            ipCounts.set(attempt.ip, (ipCounts.get(attempt.ip) || 0) + 1);
+          if (attempt.ipHash) {
+            ipHashCounts.set(attempt.ipHash, (ipHashCounts.get(attempt.ipHash) || 0) + 1);
           }
           emailCounts.set(attempt.email, (emailCounts.get(attempt.email) || 0) + 1);
         }
 
-        // Filter suspicious IPs (3+ failed attempts) and emails (5+ failed attempts)
-        const suspiciousIPs = Array.from(ipCounts.entries())
+        // Filter suspicious ipHashes (3+ failed attempts) and emails (5+ failed attempts)
+        const suspiciousIpHashes = Array.from(ipHashCounts.entries())
           .filter(([, count]) => count >= 3)
-          .map(([ip]) => ip);
+          .map(([ipHash]) => ipHash);
         const suspiciousEmails = Array.from(emailCounts.entries())
           .filter(([, count]) => count >= 5)
           .map(([email]) => email);
 
-        if (suspiciousIPs.length > 0 || suspiciousEmails.length > 0) {
+        if (suspiciousIpHashes.length > 0 || suspiciousEmails.length > 0) {
           await systemAlertService.ensureAlert({
             type: 'security:suspicious-login',
             message: 'Tentatives de connexion suspectes détectées',
             severity: 'WARNING',
-            metadata: { suspiciousIPs, suspiciousEmails }
+            metadata: { suspiciousIpHashes, suspiciousEmails }
           });
         }
 
         attempts = await prisma.loginAttempt.findMany({
           where: {
             OR: [
-              { ip: { in: suspiciousIPs } },
+              { ipHash: { in: suspiciousIpHashes } },
               { email: { in: suspiciousEmails } }
             ]
           },
@@ -1596,14 +1601,16 @@ adminRouter.get(
       const failed = await prisma.loginAttempt.count({ where: { success: false } });
       const successRate = total > 0 ? ((total - failed) / total) * 100 : 0;
 
-      // Pseudonymiser les IPs avant de retourner (conformité RGPD Article 5.1.c)
-      const pseudonymizedAttempts = attempts.map((attempt: LoginAttemptWithUser) => ({
+      // RGPD v2: ipHash already anonymized (HMAC-SHA256), no need to pseudonymize
+      // Remove raw IP field from response (privacy-by-design)
+      const sanitizedAttempts = attempts.map((attempt: LoginAttemptWithUser) => ({
         ...attempt,
-        ip: pseudonymizeIP(attempt.ip)
+        ip: undefined, // Exclude raw IP (should be null after migration anyway)
+        ipHash: attempt.ipHash // Already HMAC-SHA256 hashed
       }));
 
       return res.json({
-        attempts: pseudonymizedAttempts,
+        attempts: sanitizedAttempts,
         stats: {
           total,
           failed,

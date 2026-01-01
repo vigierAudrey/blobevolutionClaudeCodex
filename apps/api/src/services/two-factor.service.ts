@@ -3,6 +3,7 @@ import { cacheService } from './cache.service';
 import { send2FACode } from '../lib/mailer';
 import { secureLogger } from '../utils/secure-logger';
 import { hashIpHmac } from '../lib/hash-ip';
+import { securityEventAlertService } from './security-event-alert.service';
 
 // Memory fallback is allowed outside production (dev + tests) to keep UX smooth; prod must rely on Redis
 const allowMemoryFallback = process.env.NODE_ENV !== 'production';
@@ -298,6 +299,14 @@ export class TwoFactorService {
           case 'BLOCKED_IP':
           case 'BLOCKED_USER_IP':
             secureLogger.warn('TWO_FACTOR_RATE_LIMITED', { userId, reason: result, ipHash: hashIpHmac(clientIp) });
+
+            // Create SystemAlert for 2FA rate limiting (fire-and-forget, never fails 2FA flow)
+            securityEventAlertService.reportTwoFactorRateLimit(
+              userId,
+              result as 'BLOCKED_USER' | 'BLOCKED_IP' | 'BLOCKED_USER_IP',
+              ipHash
+            ).catch(() => {}); // Ignore errors - alert failure should never block authentication
+
             return { valid: false, message: 'Trop de tentatives. Veuillez réessayer dans 5 minutes.' };
 
           case 'NO_CODE':
