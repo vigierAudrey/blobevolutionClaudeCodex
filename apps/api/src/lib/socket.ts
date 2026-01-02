@@ -3,6 +3,20 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
+import {
+  joinConversationSchema,
+  leaveConversationSchema,
+  sendMessageSchema,
+  typingSchema,
+  validateSocketPayload,
+  SocketErrorCode
+} from './socket-schemas';
+import {
+  getSendMessageLimiter,
+  getTypingLimiter,
+  getJoinLimiter,
+  checkRateLimit
+} from './socket-rate-limit';
 
 let io: SocketIOServer | null = null;
 
@@ -95,8 +109,29 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
     socket.join(`user:${userId}`);
 
     // Rejoindre une conversation
-    socket.on('join-conversation', async (conversationId: string) => {
+    socket.on('join-conversation', async (rawData: unknown) => {
       try {
+        // ✅ PR1: Validation Zod (accepte string OU { conversationId })
+        const validation = validateSocketPayload(joinConversationSchema, rawData);
+        if (!validation.success) {
+          secureLogger.warn('SOCKET_VALIDATION_ERROR', {
+            userId,
+            event: 'join-conversation',
+            error: validation.error
+          });
+          socket.emit('error', validation.error);
+          return;
+        }
+
+        const { conversationId } = validation.data;
+
+        // ✅ PR2: Rate limiting (20 joins/min par user)
+        const rateCheck = await checkRateLimit(() => getJoinLimiter(), userId);
+        if (!rateCheck.allowed) {
+          socket.emit('error', rateCheck.error);
+          return;
+        }
+
         // Vérifier que l'utilisateur est membre de cette conversation
         const member = await prisma.conversationMember.findFirst({
           where: {
@@ -106,7 +141,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         });
 
         if (!member) {
-          socket.emit('error', { message: 'Not a member of this conversation' });
+          socket.emit('error', {
+            code: SocketErrorCode.NOT_MEMBER,
+            message: 'Not a member of this conversation'
+          });
           return;
         }
 
@@ -114,24 +152,51 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         console.log(`[WebSocket] User ${userId} joined conversation ${conversationId}`);
       } catch (error) {
         console.error('[WebSocket] Error joining conversation:', error);
-        socket.emit('error', { message: 'Failed to join conversation' });
+        socket.emit('error', {
+          code: SocketErrorCode.INTERNAL_ERROR,
+          message: 'Failed to join conversation'
+        });
       }
     });
 
     // Quitter une conversation
-    socket.on('leave-conversation', (conversationId: string) => {
+    socket.on('leave-conversation', (rawData: unknown) => {
+      // ✅ PR1: Validation permissive (string non vide, pas UUID strict)
+      const validation = validateSocketPayload(leaveConversationSchema, rawData);
+      if (!validation.success) {
+        // Silencieux (leave non critique, pas de log ni d'erreur émise)
+        return;
+      }
+
+      const { conversationId } = validation.data;
       socket.leave(`conversation:${conversationId}`);
       console.log(`[WebSocket] User ${userId} left conversation ${conversationId}`);
     });
 
     // Envoyer un message
-    socket.on('send-message', async (data: {
-      conversationId: string;
-      content: string;
-      type?: 'TEXT' | 'PROPOSAL';
-    }) => {
+    socket.on('send-message', async (rawData: unknown) => {
       try {
-        const { conversationId, content, type = 'TEXT' } = data;
+        // ✅ PR1: Validation Zod (UUID, longueur 1-1000, type valide)
+        const validation = validateSocketPayload(sendMessageSchema, rawData);
+        if (!validation.success) {
+          secureLogger.warn('SOCKET_VALIDATION_ERROR', {
+            userId,
+            event: 'send-message',
+            error: validation.error
+          });
+          socket.emit('error', validation.error);
+          return;
+        }
+
+        const { conversationId, content, type } = validation.data;
+
+        // ✅ PR2: Rate limiting (10 msg/min par user+conversation)
+        const rateLimitKey = `${userId}:${conversationId}`;
+        const rateCheck = await checkRateLimit(() => getSendMessageLimiter(), rateLimitKey);
+        if (!rateCheck.allowed) {
+          socket.emit('error', rateCheck.error);
+          return;
+        }
 
         // Vérifier que l'utilisateur est membre
         const member = await prisma.conversationMember.findFirst({
@@ -139,7 +204,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         });
 
         if (!member) {
-          socket.emit('error', { message: 'Not a member of this conversation' });
+          socket.emit('error', {
+            code: SocketErrorCode.NOT_MEMBER,
+            message: 'Not a member of this conversation'
+          });
           return;
         }
 
@@ -152,7 +220,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         });
 
         if (otherMember?.blockedAt) {
-          socket.emit('error', { message: 'You are blocked' });
+          socket.emit('error', {
+            code: SocketErrorCode.BLOCKED,
+            message: 'You are blocked'
+          });
           return;
         }
 
@@ -162,7 +233,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
             conversationId,
             senderId: userId,
             type: type as any,
-            content: content.trim().substring(0, 1000) // Limiter à 1000 caractères
+            content: content.trim() // ✅ Déjà validé par Zod (max 1000)
           },
           include: {
             sender: {
@@ -226,16 +297,40 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         console.log(`[WebSocket] Message sent in conversation ${conversationId} by user ${userId}`);
       } catch (error) {
         console.error('[WebSocket] Error sending message:', error);
-        socket.emit('error', { message: 'Failed to send message' });
+        socket.emit('error', {
+          code: SocketErrorCode.INTERNAL_ERROR,
+          message: 'Failed to send message'
+        });
       }
     });
 
     // Indicateur de frappe (typing)
-    socket.on('typing', (data: { conversationId: string; isTyping: boolean }) => {
-      socket.to(`conversation:${data.conversationId}`).emit('user-typing', {
-        userId,
-        isTyping: data.isTyping
-      });
+    socket.on('typing', async (rawData: unknown) => {
+      try {
+        // ✅ PR1: Validation Zod (silencieuse, typing non critique)
+        const validation = validateSocketPayload(typingSchema, rawData);
+        if (!validation.success) {
+          // Pas de log ni d'erreur pour typing (non critique)
+          return;
+        }
+
+        const { conversationId, isTyping } = validation.data;
+
+        // ✅ PR2: Rate limiting (30 events/min par user+conversation)
+        const rateLimitKey = `${userId}:${conversationId}`;
+        const rateCheck = await checkRateLimit(() => getTypingLimiter(), rateLimitKey, { failOpen: true });
+        if (!rateCheck.allowed) {
+          // Silencieux (typing non critique, pas d'erreur émise au client)
+          return;
+        }
+
+        socket.to(`conversation:${conversationId}`).emit('user-typing', {
+          userId,
+          isTyping
+        });
+      } catch (error) {
+        // Silencieux (typing non critique)
+      }
     });
 
     // Déconnexion
