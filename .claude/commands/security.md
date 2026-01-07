@@ -6,7 +6,7 @@ description: Audit de sécurité complet ou ciblé du projet - Blocage de TOUTES
 
 ## Contexte de la commande
 - **Arguments fournis** : $ARGUMENTS
-- **Projet** : Blobinfini (plateforme éducative avec auth JWT, Next.js, Express, Prisma, PostgreSQL, Redis)
+- **Projet** : BlobConnect / Blobinfini (plateforme sports de glisse avec auth JWT, Next.js, Express, Prisma, PostgreSQL, Redis)
 - **Checklists de référence** :
   - `/ai/checklists/securite_auth.md`
   - `/ai/checklists/rgpd.md`

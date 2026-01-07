@@ -12,3 +12,9 @@ for (const filename of candidates) {
     break;
   }
 }
+
+// Force TRUST_PROXY_MODE=disabled in tests to prevent warnings
+// Tests should not rely on proxy headers
+if (process.env.NODE_ENV === 'test' && !process.env.TRUST_PROXY_MODE) {
+  process.env.TRUST_PROXY_MODE = 'disabled';
+}

@@ -34,14 +34,15 @@ docker compose up -d postgres
 # Dépendances + DB
 npm ci
 npm run db:generate
-npm run db:migrate
+npm run db:migrate:deploy
 
 # Tests API E2E
-npm test --workspace @blobinfini/api
+RUN_E2E=1 npm test --workspace @blobinfini/api
 ```
 
 - API écoute en local sur `4000` pendant les E2E (lancée par les tests).
 - Web en dev par défaut: `3001` (utile pour tester visuellement à côté).
+- `RUN_E2E=1` évite les `db:push` répétitifs en setup Jest: la DB doit être migrée avant le run.
 
 ## Ce que couvrent les E2E (aujourd’hui)
 - Auth: register → login → refresh rotation → logout (all/single).

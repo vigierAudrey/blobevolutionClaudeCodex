@@ -165,169 +165,145 @@ export default function ProDashboardPage() {
         </div>
       </div>
 
-      {/* Section Gérer mon activité */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="h-1 w-1 rounded-full bg-blue-500" />
-          <h2 className="text-lg font-semibold text-foreground">Gérer mon activité</h2>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Profil Pro - Hero Card */}
-          <Link href="/pro/profile" className="group block">
-            <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-amber-200/70 dark:border-white/10 bg-gradient-to-br from-white via-amber-50 to-orange-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg group-hover:scale-110 transition-transform">
-                      <User size={24}/>
-                    </div>
-                    <div>
-                      <CardTitle className="text-2xl">Profil Pro</CardTitle>
-                      <CardDescription className="text-base mt-1">Renseigne tes infos professionnelles</CardDescription>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Nom commercial, bio, tarif, logo : tout pour attirer tes futurs élèves.
-                </p>
-                <div className="inline-flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium group-hover:gap-3 transition-all">
-                  Ouvrir mon profil
-                  <span className="group-hover:translate-x-1 transition-transform">→</span>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          {/* Réservations - Hero Card */}
-          <Link href="/pro/planning" className="group block">
-            <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-emerald-200/70 dark:border-white/10 bg-gradient-to-br from-white via-emerald-50 to-teal-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="relative p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg group-hover:scale-110 transition-transform">
-                      <BookOpen size={24}/>
-                      {hasPendingRequests && (
-                        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-white animate-pulse">
-                          {safePlanningStats.pendingCount}
-                        </span>
-                      )}
-                    </div>
-                    <div>
-                      <CardTitle className="text-2xl flex items-center gap-2">
-                        Réservations
-                        {hasPendingRequests && (
-                          <span className="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5 text-xs font-semibold text-red-700 dark:text-red-400">
-                            {safePlanningStats.pendingCount} en attente
-                          </span>
-                        )}
-                      </CardTitle>
-                      <CardDescription className="text-base mt-1">Créneaux et demandes</CardDescription>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  <Badge variant="outline" className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200">
-                    {availabilityLabel}
-                  </Badge>
-                  {hasPendingRequests && (
-                    <Badge variant="secondary" className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
-                      {pendingLabel}
-                    </Badge>
-                  )}
-                </div>
-                <div className="inline-flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-medium group-hover:gap-3 transition-all">
-                  Ouvrir mon planning
-                  <span className="group-hover:translate-x-1 transition-transform">→</span>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-        </div>
-      </div>
-
-      {/* Section Trouver des élèves */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="h-1 w-1 rounded-full bg-cyan-500" />
-          <h2 className="text-lg font-semibold text-foreground">Trouver des élèves</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* BloboMap */}
-          <Link href="/pro/map" className="group">
-            <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-cyan-300 rounded-[1.75rem]">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 text-white group-hover:scale-110 transition-transform">
-                    <Map size={20}/>
-                  </div>
-                  <div>
-                    <CardTitle>BloboMap</CardTitle>
-                    <CardDescription>Demandes de cours autour de toi</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Carte interactive des riders qui cherchent un coach près de toi.
-                </p>
-              </CardContent>
-            </Card>
-          </Link>
-
-          {/* Créneaux & réservations */}
-          <Link href="/pro/planning" className="group">
-            <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-emerald-300 rounded-[1.75rem]">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white group-hover:scale-110 transition-transform">
-                    <Calendar size={20}/>
-                  </div>
-                  <div>
-                    <CardTitle>Mes créneaux & réservations</CardTitle>
-                    <CardDescription>Publier, suivre et gérer tes créneaux</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Crée des disponibilités, vois les demandes et confirme les réservations en un clin d’œil.
-                </p>
-              </CardContent>
-            </Card>
-          </Link>
-
-        </div>
-      </div>
-
-      {/* Section Communication & Promos */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Messages */}
-        <Link href="/pro/messages" className="group">
-          <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-purple-300 rounded-[1.75rem]">
+      {/* Ligne 1 : Profil Pro + Messages */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Profil Pro - Hero Card */}
+        <Link href="/pro/profile" className="group block">
+          <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-amber-200/70 dark:border-white/10 bg-gradient-to-br from-white via-amber-50 to-orange-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
             <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 text-white group-hover:scale-110 transition-transform">
-                  <MessageSquare size={20}/>
-                </div>
-                <div>
-                  <CardTitle>Messages</CardTitle>
-                  <CardDescription>Communiquer avec tes riders</CardDescription>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <User size={24}/>
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl">Profil Pro</CardTitle>
+                    <CardDescription className="text-base mt-1">Renseigne tes infos professionnelles</CardDescription>
+                  </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Gère tes conversations avec tes élèves et futurs élèves.
+              <p className="text-sm text-muted-foreground mb-4">
+                Nom commercial, bio, tarif, logo : tout pour attirer tes futurs élèves.
               </p>
+              <div className="inline-flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium group-hover:gap-3 transition-all">
+                Ouvrir mon profil
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </div>
             </CardContent>
           </Card>
         </Link>
 
-        {/* Offres Promotionnelles */}
+        {/* Messages - Hero Card */}
+        <Link href="/pro/messages" className="group block">
+          <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-purple-200/70 dark:border-white/10 bg-gradient-to-br from-white via-purple-50 to-pink-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <MessageSquare size={24}/>
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl">Messages</CardTitle>
+                    <CardDescription className="text-base mt-1">Communiquer avec tes riders</CardDescription>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-4">
+                Gère tes conversations avec tes élèves et futurs élèves.
+              </p>
+              <div className="inline-flex items-center gap-2 text-purple-600 dark:text-purple-400 font-medium group-hover:gap-3 transition-all">
+                Ouvrir mes messages
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      {/* Ligne 2 : Mes créneaux & réservations + BloboMap */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Mes créneaux & réservations - Hero Card */}
+        <Link href="/pro/planning" className="group block">
+          <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-emerald-200/70 dark:border-white/10 bg-gradient-to-br from-white via-emerald-50 to-teal-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="relative p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <Calendar size={24}/>
+                    {hasPendingRequests && (
+                      <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-white animate-pulse">
+                        {safePlanningStats.pendingCount}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl flex items-center gap-2">
+                      Mes créneaux & réservations
+                      {hasPendingRequests && (
+                        <span className="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5 text-xs font-semibold text-red-700 dark:text-red-400">
+                          {safePlanningStats.pendingCount} en attente
+                        </span>
+                      )}
+                    </CardTitle>
+                    <CardDescription className="text-base mt-1">Publier, suivre et gérer tes disponibilités</CardDescription>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2 mb-4">
+                <Badge variant="outline" className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200">
+                  {availabilityLabel}
+                </Badge>
+                {hasPendingRequests && (
+                  <Badge variant="secondary" className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                    {pendingLabel}
+                  </Badge>
+                )}
+              </div>
+              <div className="inline-flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-medium group-hover:gap-3 transition-all">
+                Ouvrir mon planning
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        {/* BloboMap - Hero Card */}
+        <Link href="/pro/map" className="group block">
+          <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-cyan-200/70 dark:border-white/10 bg-gradient-to-br from-white via-cyan-50 to-blue-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <Map size={24}/>
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl">BloboMap</CardTitle>
+                    <CardDescription className="text-base mt-1">Demandes de cours autour de toi</CardDescription>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-4">
+                Carte interactive des riders qui cherchent un coach près de toi.
+              </p>
+              <div className="inline-flex items-center gap-2 text-cyan-600 dark:text-cyan-400 font-medium group-hover:gap-3 transition-all">
+                Voir la carte
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      {/* Ligne 3 : Offres Promotionnelles + Notifications - Centrées */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Link href="/pro/promos" className="group">
           <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-amber-300 rounded-[1.75rem]">
             <CardHeader>
@@ -344,6 +320,29 @@ export default function ProDashboardPage() {
             <CardContent>
               <p className="text-sm text-muted-foreground">
                 Découvre les opportunités de visibilité et de collaboration.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/pro/settings/notifications" className="group">
+          <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-purple-300 rounded-[1.75rem]">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white group-hover:scale-110 transition-transform">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                </div>
+                <div>
+                  <CardTitle>Notifications</CardTitle>
+                  <CardDescription>Personnalise tes alertes</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Choisis quelles demandes de cours tu veux recevoir.
               </p>
             </CardContent>
           </Card>

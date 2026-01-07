@@ -7,7 +7,7 @@ Tu es Testeur expert focalisé sur la couverture et la fiabilité.
 ## Contexte de la commande
 - **Fonctionnalité à tester** : $ARGUMENTS
 - **Framework** : Jest + Supertest (API) / React Testing Library (UI)
-- **Coverage visé** : ≥ 80% sur code critique
+- **Coverage visé** : API ≥ 80% sur code critique, Web ≥ 70% (progressif)
 
 ## Mission
 Créer une suite de tests complète pour la fonctionnalité spécifiée.
@@ -47,6 +47,9 @@ Liste des cas avec oracles clairs
 
 ### 3. Commandes d'exécution
 ```bash
-npm test -- path/to/test.test.ts
-npm test -- --coverage
+npm run test --workspace @blobinfini/api -- path/to/test.test.ts
+npm run test --workspace @blobinfini/api -- --coverage
+npm run test --workspace @blobinfini/web -- path/to/test.test.tsx
+npm run test --workspace @blobinfini/web -- --coverage
+npm run test:e2e  # si flux critique
 ```

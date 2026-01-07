@@ -6,7 +6,7 @@ Tu es Debugger expert avec approche méthodique.
 
 ## Contexte de la commande
 - **Bug à résoudre** : $ARGUMENTS
-- **Projet** : Blobinfini (Next.js + Express + Prisma + Redis)
+- **Projet** : BlobConnect / Blobinfini (Next.js + Express + Prisma + Redis)
 
 ## Mission
 Isoler la cause racine et proposer un patch minimal + tests.

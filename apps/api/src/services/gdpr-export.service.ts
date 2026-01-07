@@ -1,6 +1,7 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import type { ProAvailability } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
+import { hashIpHmac } from '../lib/hash-ip';
 import * as crypto from 'crypto';
 
 /**
@@ -224,8 +225,8 @@ export class GdprExportService {
    */
   async exportUserData(userId: string, ipAddress?: string): Promise<ExportedData> {
     try {
-      // Log export request for audit trail
-      secureLogger.info('GDPR_EXPORT_REQUESTED', { userId, ip: ipAddress });
+      // Log export request for audit trail (RGPD: IP hashed)
+      secureLogger.info('GDPR_EXPORT_REQUESTED', { userId, ipHash: hashIpHmac(ipAddress) });
 
       // Fetch user data
       const user = await prisma.user.findUnique({
@@ -276,11 +277,11 @@ export class GdprExportService {
       // Export common data (conversations, messages, bookings, etc.)
       await this.addCommonData(userId, exportData);
 
-      // Log successful export
+      // Log successful export (RGPD: IP hashed)
       secureLogger.info('GDPR_EXPORT_SUCCESS', {
         userId,
         dataSize: JSON.stringify(exportData).length,
-        ip: ipAddress
+        ipHash: hashIpHmac(ipAddress)
       });
 
       return exportData;
