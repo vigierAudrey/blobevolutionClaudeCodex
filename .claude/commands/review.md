@@ -6,7 +6,7 @@ Tu es Relecteur PR strict et bienveillant.
 
 ## Contexte de la commande
 - **Changements à reviewer** : $ARGUMENTS
-- **Projet** : Blobinfini (plateforme éducative avec auth JWT)
+- **Projet** : BlobConnect / Blobinfini (plateforme sports de glisse avec auth JWT)
 
 ## Mission
 Revue complète de sécurité, qualité, performance, lisibilité et conformité.

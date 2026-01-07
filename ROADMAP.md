@@ -1,10 +1,18 @@
-# 🚀 Roadmap de Développement Blobinfini
+# 🚀 Roadmap de Développement BlobConnect (Blobinfini interne)
+
+---
+
+## 🏷️ Naming produit (IMPORTANT)
+
+- **BlobConnect** = nom **visible utilisateurs** (UI, emails, pages publiques, wording marketing).
+- **Blobinfini** = nom **interne/tech** (repo, namespaces, packages) tant qu’aucune décision de renommage globale n’est actée.
+- Ne pas “renommer en masse” (variables, packages, env, Sentry, Firebase, URLs) sans ticket/validation : risque casse SEO, config, observabilité, clés, routes.
 
 ---
 
 ## 🧭 Vision & Stratégie
 
-- **Philosophie 100% Open Source & Gratuit :** Monitoring Clever Cloud + dashboards libres, infrastructure low-cost, outils open source-first pour réinvestir dans les fonctionnalités.
+- **Philosophie 100% Open Source & Gratuit :** Monitoring (Clever Cloud ou alternative) + dashboards libres, infrastructure low-cost, outils open source-first pour réinvestir dans les fonctionnalités.
 - **Positionnement MVP Simplifié :**
   - ✅ **Auth complète** (register, login, 2FA, reset password)
   - ✅ **Matching géospatial** (PostGIS, cartes, swipe)
@@ -26,7 +34,7 @@
 - **Sécurité :** 7.0/10 ⚠️ à renforcer (CORS, secrets, logs, validation).
 - **Performance :** Optimisations majeures complétées ✅.
 - **PWA :** Push notifications + Service Worker + Offline ✅.
-- **Monitoring :** Clever Cloud logs + standards (0€) ✅.
+- **Monitoring :** Logs backend (Clever Cloud ou alternative) + standards (0€) ✅.
 
 ---
 
@@ -150,7 +158,7 @@
   CSP à nonce, HSTS, referrerPolicy deny + frameguard actifs depuis la refonte du middleware `createHelmetMiddleware`.  
   Test : `apps/api/src/index.security.test.ts` vérifie la présence des headers clés.
 - [x] **Trust proxy sécurisé** `apps/api/src/index.ts:236`  
-  Production : crash si `TRUSTED_PROXY_IPS` est vide, sinon liste blanche IP/CIDR Clever Cloud ; en dev seuls les réseaux privés sont autorisés.  
+  Production : crash si `TRUSTED_PROXY_IPS` est vide, sinon liste blanche IP/CIDR du reverse proxy (Clever Cloud ou autre) ; en dev seuls les réseaux privés sont autorisés.  
   Test : démarrage API sans variable → throw attendu.
 - [x] **Database SSL obligatoire** `packages/database/src/client.ts:6`  
   `?sslmode=require|verify-full` exigé en production, sinon démarrage bloqué (tests unitaires `packages/database/src/__tests__/client.test.ts`).  
@@ -228,7 +236,7 @@
 - [ ] Vérifier invalidation cache sans KEYS(). _(Logs Redis : `redis-cli monitor | grep KEYS` pendant 1 min sur l'API → doit être vide.)_
 
 **Monitoring (30 min)**
-- [ ] Alertes Clever Cloud 5xx.
+- [ ] Alertes 5xx via logs provider (Clever Cloud ou autre).
 - [ ] Alertes 429 excessifs.
 - [ ] Alertes 2FA rate-limit (monitoring `2fa:attempts:*` dans Redis).
 - [ ] Dashboard 401/403/429 par endpoint.
@@ -263,6 +271,7 @@
 
 ### Priorités tests
 
+- [x] Stabiliser E2E API (agg analytics NULLs + setup DB `RUN_E2E=1` + horaires booking).
 - [ ] Tester composants UI manquants (Storybook + Jest/RTL).
 - [ ] Nettoyer données Playwright (`Playwright Spot …`) avant `npm run test:e2e`.
 - [ ] Gérer flux CSRF côté UI (cookie `connect.sid` avant `POST /booking/requests`).
@@ -508,7 +517,7 @@
 - [x] Documentation OpenAPI/Swagger (`openapi.yaml`, Swagger UI, lint CI).
 - [x] Storybook v8.0.10 + tests visuels (7/7 OK).
 - [x] Collection Postman partagée.
-- [x] Monitoring performance gratuit Clever Cloud.
+- [x] Monitoring performance gratuit (Clever Cloud ou alternative).
 - [x] Docs Storybook (`docs/storybook.md`).
 - [ ] Analytics dashboard métriques techniques (open source).
 - [ ] Endpoint `/security/health` (Phase 3 sécurité).
@@ -585,7 +594,7 @@
 
 **Option 1 : Gratuit/Low-cost**
 - [ ] **Grafana Loki** (self-hosted, open source)
-  - Coût : 0€ (hébergement Clever Cloud/Docker)
+  - Coût : 0€ (hébergement Docker + provider gratuit)
   - Recherche rapide, visualisation temps réel
   - Intégration Grafana pour dashboards
   - Rétention configurable
@@ -925,7 +934,7 @@ apps/api/
 | ~~Push Notifications~~ | ~~5j~~ | ~~📱 Engagement~~ | ~~🎯 PWA~~ | ✅ Terminé | 0€ |
 | ~~AdSense Infrastructure~~ | ~~1j~~ | ~~💰 Revenus immédiat~~ | ~~🎯 Monétisation~~ | ✅ Terminé | 0€ |
 | ~~Tests Services Core~~ | ~~3j~~ | ~~🛡️ Qualité~~ | ~~🛡️ Stabilité~~ | ✅ Terminé | 0€ |
-| ~~Monitoring Gratuit Clever Cloud~~ | ~~0.5j~~ | ~~🛡️ Production~~ | ~~🛡️ Stabilité~~ | ✅ Terminé | **300€/an** |
+| ~~Monitoring Gratuit (Clever Cloud ou autre)~~ | ~~0.5j~~ | ~~🛡️ Production~~ | ~~🛡️ Stabilité~~ | ✅ Terminé | **300€/an** |
 | **Sécurité Production-Ready** | **1-2j** | **🔥 BLOCKER PROD** | **🔥 Critique** | 🚨 URGENT | **0€** |
 | ├─ Phase 1 : CORS + Secrets + Validation | 2h | 🔥 Critique | 🔥 Critique | ✅ Terminé | 0€ |
 | ├─ Phase 2 : Helmet + SSL + Scripts | 3h | 🛡️ Important | 🛡️ Important | ✅ Terminé | 0€ |
@@ -972,7 +981,7 @@ apps/api/
 
 **Claude #2 – Phase 2 (3h)**
 - [x] Helmet renforcé (CSP, HSTS).
-- [x] Trust proxy Clever Cloud.
+- [x] Trust proxy provider (Clever Cloud ou autre).
 - [x] DB SSL obligatoire.
 - [x] Script génération secrets.
 
@@ -990,7 +999,7 @@ apps/api/
 
 ### Après sécurité
 
-- **Claude #3 :** Observabilité Clever Cloud (dashboards, alertes, rotation logs).
+- **Claude #3 :** Observabilité provider (dashboards, alertes, rotation logs).
 - **Claude #4 :** Optimisations DB (pooling, batching) + CDN.
 - **Codex #3 :** Documentation OpenAPI (term.) ✅.
 - **Codex #4 :** Storybook composants (term.) ✅.
@@ -1024,7 +1033,7 @@ apps/api/
 
 ## 💰 Économies Stack 100% Gratuite
 
-- Monitoring Clever Cloud : 0€.
+- Monitoring (Clever Cloud ou autre) : 0€.
 - Analytics futures : Grafana/Prometheus self-hosted (objectif 200€/mois d’économie).
 - CDN : Cloudflare free tier (50€/mois économisés).
 - Total estimé : ~2 700€/an réinvestis dans les features business.

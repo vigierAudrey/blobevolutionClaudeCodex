@@ -6,7 +6,7 @@ description: Générer un audit de sécurité complet à jour (format octobre 20
 
 ## Contexte de la commande
 - **Arguments fournis** : $ARGUMENTS
-- **Projet** : Blobinfini (plateforme éducative française)
+- **Projet** : BlobConnect / Blobinfini (plateforme sports de glisse)
 - **Audit de référence** : `docs/audits/security-audit-2025-10.md` (octobre 2025, Score: 95/100)
 - **Format de sortie** : Markdown structuré avec sections standardisées
 

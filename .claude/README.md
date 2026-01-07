@@ -1,6 +1,14 @@
-# 🤖 Configuration Claude Code - Blobinfini
+# 🤖 Configuration Claude Code - BlobConnect (Blobinfini interne)
 
 Ce dossier contient la configuration spécifique à **Claude Code CLI** pour automatiser les workflows de développement.
+
+## ✅ Appeler les commandes
+
+1. Ouvrir le repo avec Claude Code CLI (à la racine du projet).
+2. Les commandes `/...` sont automatiquement chargées depuis `.claude/commands/`.
+3. Les agents spécialisés sont chargés depuis `.claude/agents/`.
+
+Si des commandes shell sont bloquées, ajuster l’allowlist dans `.claude/settings.local.json`.
 
 ---
 
