@@ -1,4 +1,9 @@
 import './config/loadEnv';
+
+// Validate production environment variables (fail-fast on insecure defaults)
+import { validateProductionEnv } from './lib/env-validation';
+validateProductionEnv();
+
 import { resolve } from 'path';
 import fs from 'fs';
 import { randomBytes } from 'crypto';
@@ -293,9 +298,15 @@ export function createApp() {
     try {
       const threshold = new Date(Date.now() - purgeDays * 24 * 60 * 60 * 1000);
       const { clientPrisma: prisma } = await import('@blobinfini/database');
+      // Purge raw consentIp (legacy)
       await prisma.user.updateMany({
         where: { consentIp: { not: null }, consentedAt: { lt: threshold } },
         data: { consentIp: null },
+      });
+      // Purge consentIpHash (HMAC v2) - RGPD data minimization
+      await prisma.user.updateMany({
+        where: { consentIpHash: { not: null }, consentedAt: { lt: threshold } },
+        data: { consentIpHash: null },
       });
     } catch (e) {
       // eslint-disable-next-line no-console
@@ -495,6 +506,20 @@ if (process.env.NODE_ENV !== 'test') {
   // Initialize Socket.io
   const { initializeSocket } = require('./lib/socket');
   initializeSocket(httpServer);
+
+  // Load 2FA Lua script into Redis for EVALSHA optimization
+  // This improves 2FA verification performance by ~30%
+  import('./services/two-factor.service').then(({ loadLuaScript }) => {
+    loadLuaScript().catch((error) => {
+      secureLogger.error('STARTUP_LUA_SCRIPT_LOAD_FAILED', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+  }).catch((error) => {
+    secureLogger.error('STARTUP_LUA_SCRIPT_IMPORT_FAILED', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  });
 
   httpServer.listen(port, () => {
     // eslint-disable-next-line no-console

@@ -8,6 +8,8 @@
 
 ## Navigation Rapide
 
+**Source de vérité terrain (2026-02-14)** : [SECURITY_TESTS_SYNTHESIS.md](/home/audrey/dev/blobevolutionClaudeCodex/SECURITY_TESTS_SYNTHESIS.md)
+
 **Pour une lecture rapide** : Commencez par le [Résumé Exécutif](#résumé-exécutif)
 
 **Pour les correctifs urgents** : Consultez [SECURITY_FIXES_RIDER_SUMMARY.md](/home/audrey/dev/blobevolutionClaudeCodex/SECURITY_FIXES_RIDER_SUMMARY.md)
@@ -283,4 +285,3 @@ npm run test --workspace @blobinfini/api -- pro-rider-isolation.e2e.test.ts
 **Recommandation** : Suivre le guide [SECURITY_FIXES_RIDER_SUMMARY.md](/home/audrey/dev/blobevolutionClaudeCodex/SECURITY_FIXES_RIDER_SUMMARY.md) pour corriger les failles RIDER
 
 **Score cible après correctifs** : **10/10** (isolation complète PRO ↔ RIDER)
-

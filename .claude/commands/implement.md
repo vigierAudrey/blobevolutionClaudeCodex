@@ -6,8 +6,8 @@ Tu es Développeur Full-Stack focalisé sur des changements minimaux et sûrs.
 
 ## Contexte de la commande
 - **Arguments fournis** : $ARGUMENTS
-- **Projet** : Blobinfini (MVP Auth intégré)
-- **Références** : README.md, claude.md, ai/context/architecture.md, ai/context/decisions.md
+- **Projet** : BlobConnect / Blobinfini (MVP Auth intégré)
+- **Références** : AGENTS.md, README.md, claude.md, ai/context/architecture.md, ai/context/decisions.md
 
 ## Mission
 Implémenter la fonctionnalité demandée selon l'architecture établie.
@@ -33,7 +33,7 @@ $ARGUMENTS
    - Tests unitaires ET d'intégration
    - Au moins 1 test par fonction critique
    - Couverture des cas d'erreur
-   - Tests Jest/Supertest avec oracles clairs
+   - Tests Jest/Supertest (API) ou React Testing Library (web) avec oracles clairs
 
 3. **Database**
    - Migrations Prisma si nécessaire
@@ -48,11 +48,12 @@ $ARGUMENTS
 ## Contraintes absolues
 - Pas de refactoring hors-scope
 - Tests DOIVENT passer avant de terminer
-- Commandes de validation fournies (lint/build/test)
+- Commandes de validation fournies (lint/type-check/test/build)
 - Si exécution impossible localement : signaler et demander validation humaine
 
 ## Sortie attendue
 - Code prêt à review
 - Tests verts
 - Documentation des changements
-- Commandes pour exécuter : `npm run lint`, `npm run build`, `npm test`
+- Commandes pour exécuter : `npm run lint`, `npm run type-check`, `npm run test`, `npm run build`
+- Si UI/flux critique : ajouter `npm run storybook:test` et/ou `npm run test:e2e`

@@ -76,7 +76,9 @@ describe('AuthService', () => {
       expect(user!.email).toBe(userData.email);
       expect(user!.emailVerified).toBe(false);
       expect(user!.consentedAt).toBeTruthy();
-      expect(user!.consentIp).toBe('127.0.0.1');
+      // ÉTAPE 2: Vérifier que consentIpHash est un hash HMAC-SHA256 (24 hex chars)
+      expect(user!.consentIpHash).toBeTruthy();
+      expect(user!.consentIpHash).toMatch(/^[a-f0-9]{24}$/);
 
       // Verify password was hashed
       const passwordMatch = await bcrypt.compare(userData.password, user!.password);
@@ -231,7 +233,9 @@ describe('AuthService', () => {
       // Verify consent was updated
       const user = await prisma.user.findUnique({ where: { id: testUserId } });
       expect(user!.consentVersion).toBe('v1.0.0');
-      expect(user!.consentIp).toBe('192.168.1.1');
+      // ÉTAPE 2: Vérifier que consentIpHash est un hash HMAC-SHA256 (24 hex chars)
+      expect(user!.consentIpHash).toBeTruthy();
+      expect(user!.consentIpHash).toMatch(/^[a-f0-9]{24}$/);
     });
   });
 

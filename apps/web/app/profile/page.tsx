@@ -136,6 +136,18 @@ export default function ProfilePage() {
   const [bio, setBio] = useState('');
   const [emailNotif, setEmailNotif] = useState<boolean>(false);
 
+  // Notification preferences state
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    pushEnabled: true,
+    emailEnabled: false,
+    notifyMessages: true,
+    notifyMatches: true,
+    notifyInvitations: true,
+    emailDigestFrequency: 'NEVER',
+  });
+  const [loadingNotifPrefs, setLoadingNotifPrefs] = useState(true);
+  const [savingNotifPrefs, setSavingNotifPrefs] = useState(false);
+
   // Geolocation state for privacy section
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [deletingLocation, setDeletingLocation] = useState(false);
@@ -156,6 +168,34 @@ export default function ProfilePage() {
   // Check deletion status on mount
   useEffect(() => {
     void checkDeletionStatus();
+  }, []);
+
+  // Load notification preferences on mount
+  useEffect(() => {
+    const loadNotificationPreferences = async () => {
+      try {
+        const tokens = apiClient.getTokens();
+        if (!tokens?.accessToken) return;
+
+        const response = await apiRequest('/profile/notifications', {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${tokens.accessToken}` },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.preferences) {
+            setNotificationPrefs((prev) => ({ ...prev, ...data.preferences }));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading notification preferences:', error);
+      } finally {
+        setLoadingNotifPrefs(false);
+      }
+    };
+
+    void loadNotificationPreferences();
   }, []);
 
   useEffect(() => {
@@ -374,6 +414,41 @@ export default function ProfilePage() {
         console.warn('Impossible de rouvrir immédiatement la fenêtre de consentement', error);
         window.location.reload();
       }
+    }
+  };
+
+  const toggleNotificationPref = (key: keyof typeof notificationPrefs) => {
+    setNotificationPrefs((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const saveNotificationPreferences = async () => {
+    if (savingNotifPrefs) return;
+    setSavingNotifPrefs(true);
+
+    try {
+      const tokens = apiClient.getTokens();
+      if (!tokens?.accessToken) {
+        toast('Session expirée, veuillez vous reconnecter', 'error');
+        return;
+      }
+
+      const response = await apiRequest('/profile/notifications', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${tokens.accessToken}` },
+        body: JSON.stringify(notificationPrefs),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Erreur lors de la sauvegarde');
+      }
+
+      toast('Préférences de notification sauvegardées', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde';
+      toast(message, 'error');
+    } finally {
+      setSavingNotifPrefs(false);
     }
   };
 
@@ -665,44 +740,6 @@ export default function ProfilePage() {
             </Card>
           </div>
 
-          {/* Section Préférences */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="h-1 w-1 rounded-full bg-orange-500" />
-              <h2 className="text-lg font-semibold text-foreground">Préférences</h2>
-            </div>
-            <Card className="border-2 hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white">
-                    <Bell size={20}/>
-                  </div>
-                  <div>
-                    <CardTitle>Notifications</CardTitle>
-                    <CardDescription>Gère tes alertes et notifications</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-transparent hover:border-orange-200 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-all cursor-pointer">
-                  <input
-                    id="emailNotif"
-                    type="checkbox"
-                    checked={emailNotif}
-                    onChange={(e) => setEmailNotif(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-                  />
-                  <div className="flex-1">
-                    <p className="font-medium text-sm">Notifications par email</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Reçois un email lorsqu&apos;un partenaire cherche à te joindre ou qu&apos;un nouveau match est disponible
-                    </p>
-                  </div>
-                </label>
-              </CardContent>
-            </Card>
-          </div>
-
           {/* Section Sécurité */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -811,6 +848,173 @@ export default function ProfilePage() {
                   ) : (
                     <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
                       Chargement des préférences…
+                    </div>
+                  )}
+                </div>
+
+                <hr className="border-t-2" />
+
+                {/* Notification Preferences */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Préférences de Notification</h3>
+                  </div>
+                  {loadingNotifPrefs ? (
+                    <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
+                      Chargement des préférences…
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Push Notifications Master Toggle */}
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
+                            <Bell className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold">Notifications Push</h4>
+                            <p className="text-xs text-muted-foreground">Reçois des alertes instantanées sur tous tes appareils</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleNotificationPref('pushEnabled')}
+                          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                            notificationPrefs.pushEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                          aria-label="Toggle push notifications"
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Rider-specific preferences */}
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Messagerie & Matching</h4>
+
+                        {/* Messages */}
+                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-cyan-300 dark:hover:border-cyan-700 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">💬</span>
+                            <div>
+                              <p className="text-sm font-medium">Messages</p>
+                              <p className="text-xs text-muted-foreground">Quand tu reçois un nouveau message</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleNotificationPref('notifyMessages')}
+                            disabled={!notificationPrefs.pushEnabled}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPrefs.notifyMessages && notificationPrefs.pushEnabled
+                                ? 'bg-cyan-600'
+                                : 'bg-gray-300 dark:bg-gray-600'
+                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            aria-label="Toggle message notifications"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPrefs.notifyMessages && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Matches */}
+                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-pink-300 dark:hover:border-pink-700 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">🎉</span>
+                            <div>
+                              <p className="text-sm font-medium">Nouveaux matchs</p>
+                              <p className="text-xs text-muted-foreground">Quand tu matches avec un autre rider</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleNotificationPref('notifyMatches')}
+                            disabled={!notificationPrefs.pushEnabled}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPrefs.notifyMatches && notificationPrefs.pushEnabled
+                                ? 'bg-pink-600'
+                                : 'bg-gray-300 dark:bg-gray-600'
+                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            aria-label="Toggle match notifications"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPrefs.notifyMatches && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Group Invitations */}
+                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">👥</span>
+                            <div>
+                              <p className="text-sm font-medium">Invitations groupe</p>
+                              <p className="text-xs text-muted-foreground">Quand on t'invite dans une conversation</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleNotificationPref('notifyInvitations')}
+                            disabled={!notificationPrefs.pushEnabled}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPrefs.notifyInvitations && notificationPrefs.pushEnabled
+                                ? 'bg-indigo-600'
+                                : 'bg-gray-300 dark:bg-gray-600'
+                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            aria-label="Toggle invitation notifications"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPrefs.notifyInvitations && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Info box when push disabled */}
+                      {!notificationPrefs.pushEnabled && (
+                        <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3">
+                          <div className="flex items-start gap-2">
+                            <span className="text-lg">ℹ️</span>
+                            <div className="flex-1">
+                              <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Notifications désactivées</p>
+                              <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
+                                Active les notifications push pour recevoir des alertes en temps réel.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Save button */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={saveNotificationPreferences}
+                        disabled={savingNotifPrefs}
+                        className="w-full sm:w-auto"
+                      >
+                        {savingNotifPrefs ? (
+                          <span className="inline-flex items-center gap-2">
+                            <Spinner />
+                            Sauvegarde...
+                          </span>
+                        ) : (
+                          '💾 Sauvegarder mes préférences'
+                        )}
+                      </Button>
                     </div>
                   )}
                 </div>

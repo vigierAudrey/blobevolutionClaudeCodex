@@ -283,24 +283,29 @@ describe('CacheService', () => {
     });
 
     describe('Matching cache methods', () => {
-      it('should get matching results with prefixed key', async () => {
+      it('should get matching results with versioned key', async () => {
         const matchingData = [{ id: 1, name: 'Match1' }];
-        mockRedisClient.get.mockResolvedValue(JSON.stringify(matchingData));
+        mockRedisClient.get.mockResolvedValueOnce('1'); // version
+        mockRedisClient.get.mockResolvedValueOnce(JSON.stringify(matchingData)); // actual data
 
         const result = await cacheServiceInstance.getMatchingResults('surf:beginner:123');
 
-        expect(mockRedisClient.get).toHaveBeenCalledWith('matching:surf:beginner:123');
+        // Should fetch version first, then data with versioned key
+        expect(mockRedisClient.get).toHaveBeenCalledWith('cache:version:matching');
+        expect(mockRedisClient.get).toHaveBeenCalledWith('matching:v1:surf:beginner:123');
         expect(result).toEqual(matchingData);
       });
 
-      it('should set matching results with prefixed key and custom TTL', async () => {
+      it('should set matching results with versioned key and custom TTL', async () => {
         const matchingData = [{ id: 1, name: 'Match1' }];
+        mockRedisClient.get.mockResolvedValue('1'); // version
         mockRedisClient.setEx.mockResolvedValue('OK' as any);
 
         const result = await cacheServiceInstance.setMatchingResults('surf:beginner:123', matchingData, 600);
 
+        // Should include version in key
         expect(mockRedisClient.setEx).toHaveBeenCalledWith(
-          'matching:surf:beginner:123',
+          'matching:v1:surf:beginner:123',
           600,
           JSON.stringify(matchingData)
         );
@@ -394,39 +399,29 @@ describe('CacheService', () => {
     });
 
     describe('invalidateMatching method', () => {
-      it('should invalidate specific matching cache entries', async () => {
-        const mockKeys = ['matching:surf:beginner:1', 'matching:surf:beginner:2'];
-        mockRedisClient.keys.mockResolvedValue(mockKeys as any);
-        mockRedisClient.del.mockResolvedValue(mockKeys.length as any);
+      it('should invalidate using version increment (O(1) global invalidation)', async () => {
+        mockRedisClient.incr.mockResolvedValue(2); // New version
 
         await cacheServiceInstance.invalidateMatching('surf', 'beginner');
 
-        expect(mockRedisClient.keys).toHaveBeenCalledWith('matching:surf:beginner:*');
-        expect(mockRedisClient.del).toHaveBeenCalledWith(mockKeys);
-      });
-
-      it('should invalidate all matching cache entries when no sport/level specified', async () => {
-        const mockKeys = ['matching:surf:beginner:1', 'matching:kite:advanced:1'];
-        mockRedisClient.keys.mockResolvedValue(mockKeys as any);
-        mockRedisClient.del.mockResolvedValue(mockKeys.length as any);
-
-        await cacheServiceInstance.invalidateMatching();
-
-        expect(mockRedisClient.keys).toHaveBeenCalledWith('matching:*');
-        expect(mockRedisClient.del).toHaveBeenCalledWith(mockKeys);
-      });
-
-      it('should handle no matching keys gracefully', async () => {
-        mockRedisClient.keys.mockResolvedValue([] as any);
-
-        await cacheServiceInstance.invalidateMatching('surf', 'beginner');
-
-        expect(mockRedisClient.keys).toHaveBeenCalledWith('matching:surf:beginner:*');
+        // Should increment version instead of using KEYS
+        expect(mockRedisClient.incr).toHaveBeenCalledWith('cache:version:matching');
+        // Should NOT use KEYS command
+        expect(mockRedisClient.keys).not.toHaveBeenCalled();
         expect(mockRedisClient.del).not.toHaveBeenCalled();
       });
 
+      it('should work the same with or without sport/level parameters', async () => {
+        mockRedisClient.incr.mockResolvedValue(3);
+
+        await cacheServiceInstance.invalidateMatching(); // No parameters
+
+        // Global invalidation via version increment
+        expect(mockRedisClient.incr).toHaveBeenCalledWith('cache:version:matching');
+      });
+
       it('should handle Redis errors during invalidation', async () => {
-        mockRedisClient.keys.mockRejectedValue(new Error('Redis error'));
+        mockRedisClient.incr.mockRejectedValue(new Error('Redis error'));
 
         // Should not throw
         await expect(cacheServiceInstance.invalidateMatching('surf', 'beginner')).resolves.not.toThrow();
@@ -437,35 +432,62 @@ describe('CacheService', () => {
 
         await cacheServiceInstance.invalidateMatching('surf', 'beginner');
 
-        expect(mockRedisClient.keys).not.toHaveBeenCalled();
-        expect(mockRedisClient.del).not.toHaveBeenCalled();
+        expect(mockRedisClient.incr).not.toHaveBeenCalled();
       });
     });
 
     describe('invalidateAvailabilities method', () => {
-      it('should invalidate specific availability cache entries with coordinates', async () => {
-        const mockKeys = [
-          'availabilities:surf:beginner:435:-15:25',
-          'availabilities:surf:beginner:435:-15:50',
+      it('should invalidate using tags when coordinates provided (targeted invalidation)', async () => {
+        // Mock tag-based invalidation
+        const mockTagKeys = [
+          'availabilities:surf:beginner:g43.478:-1.572:25',
+          'availabilities:kite:advanced:g43.478:-1.572:50',
         ];
-        mockRedisClient.keys.mockResolvedValue(mockKeys as any);
-        mockRedisClient.del.mockResolvedValue(mockKeys.length as any);
+        mockRedisClient.sMembers.mockResolvedValue(mockTagKeys as any);
+        mockRedisClient.unlink.mockResolvedValue(mockTagKeys.length as any);
+        mockRedisClient.del.mockResolvedValue(1 as any); // Delete tag itself
 
         await cacheServiceInstance.invalidateAvailabilities(43.5, -1.5);
 
-        expect(mockRedisClient.keys).toHaveBeenCalledWith('availabilities:*:*:435:-15:*');
-        expect(mockRedisClient.del).toHaveBeenCalledWith(mockKeys);
+        // Should use tag-based invalidation (SMEMBERS + UNLINK + DEL tag)
+        expect(mockRedisClient.sMembers).toHaveBeenCalledWith(expect.stringMatching(/^tag:avail:g43\.\d+:-1\.\d+$/));
+        expect(mockRedisClient.unlink).toHaveBeenCalledWith(mockTagKeys);
+        expect(mockRedisClient.del).toHaveBeenCalledWith(expect.stringMatching(/^tag:avail:g43\.\d+:-1\.\d+$/));
+
+        // Should NOT use KEYS command
+        expect(mockRedisClient.keys).not.toHaveBeenCalled();
       });
 
-      it('should invalidate all availability cache entries when no coordinates specified', async () => {
-        const mockKeys = ['availabilities:43:-1:1', 'availabilities:44:-2:1'];
-        mockRedisClient.keys.mockResolvedValue(mockKeys as any);
-        mockRedisClient.del.mockResolvedValue(mockKeys.length as any);
+      it('should use SCAN fallback when no coordinates provided (global invalidation)', async () => {
+        // Mock SCAN cursor iteration
+        mockRedisClient.scan.mockResolvedValueOnce({
+          cursor: 10,
+          keys: ['availabilities:1', 'availabilities:2']
+        } as any);
+        mockRedisClient.scan.mockResolvedValueOnce({
+          cursor: 0, // End of scan
+          keys: ['availabilities:3']
+        } as any);
+        mockRedisClient.unlink.mockResolvedValue(2 as any);
 
         await cacheServiceInstance.invalidateAvailabilities();
 
-        expect(mockRedisClient.keys).toHaveBeenCalledWith('availabilities:*');
-        expect(mockRedisClient.del).toHaveBeenCalledWith(mockKeys);
+        // Should use SCAN instead of KEYS
+        expect(mockRedisClient.scan).toHaveBeenCalled();
+        expect(mockRedisClient.unlink).toHaveBeenCalled();
+
+        // Should NOT use KEYS command
+        expect(mockRedisClient.keys).not.toHaveBeenCalled();
+      });
+
+      it('should handle empty tag gracefully', async () => {
+        mockRedisClient.sMembers.mockResolvedValue([] as any); // Empty tag
+
+        await cacheServiceInstance.invalidateAvailabilities(43.5, -1.5);
+
+        // Should check tag but not attempt deletion
+        expect(mockRedisClient.sMembers).toHaveBeenCalled();
+        expect(mockRedisClient.unlink).not.toHaveBeenCalled();
       });
     });
   });
@@ -510,17 +532,28 @@ describe('CacheService', () => {
 
   describe('Cache Key Generation', () => {
     describe('CacheKeys.matching', () => {
-      it('should generate consistent matching cache keys', () => {
+      it('should generate consistent matching cache keys using grid cells', () => {
         const key1 = CacheKeys.matching('surf', 'beginner', 43.4832, -1.5586, 10);
         const key2 = CacheKeys.matching('surf', 'beginner', 43.4832, -1.5586, 10);
 
         expect(key1).toBe(key2);
-        expect(key1).toBe('surf:beginner:4348:-156:10');
+        // New format: sport:level:cellId:radius (cellId format: gLAT:LNG)
+        expect(key1).toMatch(/^surf:beginner:g43\.\d+:-1\.\d+:10$/);
       });
 
-      it('should generate different keys for different coordinates', () => {
+      it('should generate same key for coordinates in same grid cell (5km)', () => {
+        // Two coordinates ~3km apart should map to same 5km cell
         const key1 = CacheKeys.matching('surf', 'beginner', 43.4832, -1.5586, 10);
-        const key2 = CacheKeys.matching('surf', 'beginner', 43.5000, -1.5586, 10);
+        const key2 = CacheKeys.matching('surf', 'beginner', 43.4901, -1.5621, 10);
+
+        // Same cell = same cache key = better cache hit rate ✓
+        expect(key1).toBe(key2);
+      });
+
+      it('should generate different keys for coordinates in different cells', () => {
+        // Coordinates ~10km apart should be in different 5km cells
+        const key1 = CacheKeys.matching('surf', 'beginner', 43.4832, -1.5586, 10);
+        const key2 = CacheKeys.matching('surf', 'beginner', 43.5732, -1.5586, 10);
 
         expect(key1).not.toBe(key2);
       });
@@ -534,9 +567,18 @@ describe('CacheService', () => {
     });
 
     describe('CacheKeys.availabilities', () => {
-      it('should generate availability cache keys with zone precision', () => {
+      it('should generate availability cache keys using grid cells', () => {
         const key = CacheKeys.availabilities('surf', 'beginner', 43.4832, -1.5586, 10);
-        expect(key).toBe('surf:beginner:434:-16:10');
+        // New format: sport:level:cellId:radius (cellId format: gLAT:LNG)
+        expect(key).toMatch(/^surf:beginner:g43\.\d+:-1\.\d+:10$/);
+      });
+
+      it('should generate same key for nearby coordinates (grid stability)', () => {
+        const key1 = CacheKeys.availabilities('surf', 'beginner', 43.4832, -1.5586, 10);
+        const key2 = CacheKeys.availabilities('surf', 'beginner', 43.4850, -1.5590, 10);
+
+        // Coordinates ~2km apart in same 5km cell = same key
+        expect(key1).toBe(key2);
       });
     });
 

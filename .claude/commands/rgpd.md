@@ -6,7 +6,7 @@ description: Audit RGPD complet et conformité CNIL française
 
 ## Contexte de la commande
 - **Arguments fournis** : $ARGUMENTS
-- **Projet** : Blobinfini (plateforme éducative française)
+- **Projet** : BlobConnect / Blobinfini (plateforme sports de glisse)
 - **Juridiction** : France (CNIL) + Union Européenne (RGPD)
 - **Checklist de référence** : `/ai/checklists/rgpd.md`
 - **Niveau d'exigence** : Conformité TOTALE avant production

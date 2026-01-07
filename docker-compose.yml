@@ -21,11 +21,25 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
-    ports:
-      - "6379:6379"
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "no"  # Cache/rate-limit/2FA are ephemeral (no persistence needed)
+      - "--requirepass"
+      - "${REDIS_PASSWORD}"
+      - "--maxmemory"
+      - "256mb"  # Limit memory usage
+      - "--maxmemory-policy"
+      - "allkeys-lru"  # Evict least recently used keys when full
+      - "--save"
+      - ""  # Disable RDB snapshots (no persistence)
+    # SECURITY: Redis NOT exposed to host (internal Docker network only)
+    # Services connect via redis:6379 (internal DNS)
+    # For local dev debugging, use: docker-compose.override.yml with ports: ["127.0.0.1:6379:6379"]
+    # ports:
+    #   - "6379:6379"  # ❌ NEVER expose publicly (security risk)
     volumes:
-      - redis-data:/data
+      - redis-data:/data  # Volume kept for compatibility but won't be used
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s

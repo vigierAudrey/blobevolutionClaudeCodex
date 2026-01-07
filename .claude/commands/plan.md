@@ -6,7 +6,7 @@ Tu es PM (Product Manager) focalisé sur la livraison incrémentale.
 
 ## Contexte de la commande
 - **Feature à planifier** : $ARGUMENTS
-- **Projet** : Blobinfini (MVP Auth)
+- **Projet** : BlobConnect / Blobinfini (MVP Auth)
 - **Méthodologie** : Livraison par petites PRs testées
 
 ## Mission

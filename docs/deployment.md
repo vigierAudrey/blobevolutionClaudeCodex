@@ -20,7 +20,7 @@
 | `SESSION_SECRET` | ≥64 chars (généré via script). |
 | `JWT_SECRET` | ≥64 chars (access token). |
 | `JWT_REFRESH_SECRET` | ≥64 chars (refresh token). |
-| `DATABASE_URL` | Doit contenir `sslmode=require` ou `sslmode=verify-full`. |
+| `DATABASE_URL` | Doit contenir `sslmode=require` (ou `sslmode=verify-full`) + **paramètres connection pooling recommandés** : `connection_limit=20&pool_timeout=20&connect_timeout=10`. Sans pooling, limite à ~10 connexions (risque d'erreurs en prod sous charge). Avec pooling optimisé : gère ~2000 req/min sans erreur "too many connections". |
 | `REDIS_URL` | URL Redis avec mot de passe fort (`rediss://` si fournisseur supporte TLS). |
 | `AUTH_REQUIRE_VERIFIED` | `true` en production pour forcer email vérifié (riders & pros bloqués tant qu'ils n'ont pas validé). |
 

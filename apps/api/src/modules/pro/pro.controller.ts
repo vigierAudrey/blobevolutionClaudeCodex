@@ -67,6 +67,13 @@ const profileUpdateLimiter = rateLimit({
   },
 });
 
+const notificationPreferencesSchema = z.object({
+  notifyForSurf: z.boolean().optional(),
+  notifyForKitesurf: z.boolean().optional(),
+  pushEnabled: z.boolean().optional(),
+  emailEnabled: z.boolean().optional(),
+}).optional();
+
 const upsertSchema = z.object({
   businessName: z.string().min(1).max(120).optional().or(z.literal('').transform(() => undefined)),
   bio: z.string().max(2000).optional().or(z.literal('').transform(() => undefined)),
@@ -75,6 +82,7 @@ const upsertSchema = z.object({
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   radiusKm: z.number().int().min(1).max(200).optional(),
+  notificationPreferences: notificationPreferencesSchema,
 });
 
 type LessonCandidateRow = {
@@ -107,6 +115,11 @@ proRouter.get('/me', requireProRole, async (req, res) => {
 
 const persistProProfile = async (userId: string, body: z.infer<typeof upsertSchema>) => {
   const radiusSegment = (value: number | undefined) => (value !== undefined ? { radiusKm: value } : {});
+  const notifPrefsSegment = (value: any) => {
+    if (value === undefined) return {};
+    // Merge with existing preferences to avoid overwriting unspecified fields
+    return { notificationPreferences: value };
+  };
 
   return prisma.proProfile.upsert({
     where: { userId },
@@ -119,6 +132,7 @@ const persistProProfile = async (userId: string, body: z.infer<typeof upsertSche
       lat: body.lat,
       lng: body.lng,
       ...radiusSegment(body.radiusKm),
+      ...notifPrefsSegment(body.notificationPreferences),
     },
     update: {
       businessName: body.businessName,
@@ -128,6 +142,7 @@ const persistProProfile = async (userId: string, body: z.infer<typeof upsertSche
       lat: body.lat,
       lng: body.lng,
       ...radiusSegment(body.radiusKm),
+      ...notifPrefsSegment(body.notificationPreferences),
     },
   });
 };

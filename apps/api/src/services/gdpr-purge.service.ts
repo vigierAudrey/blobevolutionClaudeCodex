@@ -246,14 +246,16 @@ export class GDPRPurgeService {
           originalUserId: user.id,
           consentedAt: user.consentedAt ?? null,
           consentVersion: user.consentVersion ?? null,
-          consentIpHash: user.consentIp ? this.anonymizeData(user.consentIp, user.id) : null,
+          // RGPD v2: use consentIpHash (already HMAC-SHA256), no need to re-anonymize
+          consentIpHash: user.consentIpHash ?? null,
           deletedAt: user.deletedAt,
           archivedAt: new Date()
         },
         update: {
           consentedAt: user.consentedAt ?? null,
           consentVersion: user.consentVersion ?? null,
-          consentIpHash: user.consentIp ? this.anonymizeData(user.consentIp, user.id) : null,
+          // RGPD v2: use consentIpHash (already HMAC-SHA256), no need to re-anonymize
+          consentIpHash: user.consentIpHash ?? null,
           archivedAt: new Date()
         }
       });
