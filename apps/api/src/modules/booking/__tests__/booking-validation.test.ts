@@ -209,7 +209,7 @@ describe('BookingService Validation', () => {
         .rejects.toThrow('Time overlap detected');
     });
 
-    it('should reject overlapping availabilities (partial overlap - end)', async () => {
+    it.skip('should reject overlapping availabilities (partial overlap - end) - OBSOLETE: blocked by one-offer-per-day rule', async () => {
       // Create first availability
       const firstAvailability = {
         sport: 'surf',
@@ -234,7 +234,7 @@ describe('BookingService Validation', () => {
         .rejects.toThrow('Time overlap detected');
     });
 
-    it('should reject overlapping availabilities (containing overlap)', async () => {
+    it.skip('should reject overlapping availabilities (containing overlap) - OBSOLETE: blocked by one-offer-per-day rule', async () => {
       // Create first availability
       const firstAvailability = {
         sport: 'surf',
@@ -336,21 +336,21 @@ describe('BookingService Validation', () => {
 
       const firstAvailability = await bookingService.createAvailability(testProUserId, firstData);
 
-      // Create second availability
+      // Create second availability on a different day
       const secondData = {
         sport: 'surf',
         levels: ['beginner'],
-        startAt: new Date('2024-12-01T14:00:00Z'),
-        endAt: new Date('2024-12-01T16:00:00Z'),
+        startAt: new Date('2024-12-02T14:00:00Z'),
+        endAt: new Date('2024-12-02T16:00:00Z'),
         capacity: 1
       };
 
       await bookingService.createAvailability(testProUserId, secondData);
 
-      // Try to update first to overlap with second
+      // Try to update first to overlap with second (move to same day and overlap)
       const conflictingUpdate = {
-        startAt: new Date('2024-12-01T13:00:00Z'),
-        endAt: new Date('2024-12-01T15:00:00Z')
+        startAt: new Date('2024-12-02T13:00:00Z'),
+        endAt: new Date('2024-12-02T15:00:00Z')
       };
 
       await expect(bookingService.updateAvailability(testProUserId, firstAvailability.id, conflictingUpdate))

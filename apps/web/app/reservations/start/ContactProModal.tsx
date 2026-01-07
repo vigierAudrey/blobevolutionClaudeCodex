@@ -164,7 +164,7 @@ export function ContactProModal({ pro, onClose, onSubmitted }: ContactProModalPr
             </div>
 
             {error && (
-              <StatusMessage variant="error">
+              <StatusMessage variant="error" role="alert">
                 {error}
               </StatusMessage>
             )}
