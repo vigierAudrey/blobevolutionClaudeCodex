@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../../lib/mailer';
 import { secureLogger } from '../../utils/secure-logger';
 import { AVAILABLE_PERMISSIONS } from '../admin/permissions';
+import { hashIpHmac } from '../../lib/hash-ip';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
@@ -51,7 +52,7 @@ export class AuthService {
           role: data.role,
           consentedAt: new Date(),
           consentVersion: AuthService.CONSENT_VERSION,
-          consentIp: opts?.consentIp,
+          consentIpHash: hashIpHmac(opts?.consentIp) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
         },
       });
       // Génère un token de vérification email
@@ -88,7 +89,7 @@ export class AuthService {
       if (opts?.consentAccepted) {
         await prisma.user.update({
           where: { id: user.id },
-          data: { consentedAt: new Date(), consentVersion: AuthService.CONSENT_VERSION, consentIp: opts?.consentIp },
+          data: { consentedAt: new Date(), consentVersion: AuthService.CONSENT_VERSION, consentIpHash: hashIpHmac(opts?.consentIp) ?? undefined },
         });
       } else {
         throw { code: 'CONSENT_REQUIRED' };

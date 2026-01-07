@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 
 let socket: Socket | null = null;
+let currentToken: string | null = null;
 
 /**
  * Récupère ou crée l'instance Socket.io
@@ -11,12 +12,13 @@ export function getSocket(token?: string): Socket {
   }
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  currentToken = token || '';
 
   socket = io(apiUrl, {
     autoConnect: false, // Connexion manuelle
     withCredentials: true,
     auth: {
-      token: token || ''
+      token: currentToken
     },
     transports: ['websocket', 'polling'], // WebSocket en priorité
     reconnection: true,
@@ -24,24 +26,34 @@ export function getSocket(token?: string): Socket {
     reconnectionAttempts: 5
   });
 
-  // Logs de connexion/déconnexion
-  socket.on('connect', () => {
-    console.log('[WebSocket] Connected to server');
-  });
-
-  socket.on('disconnect', (reason) => {
-    console.log('[WebSocket] Disconnected:', reason);
-  });
-
-  socket.on('connect_error', (error) => {
-    console.error('[WebSocket] Connection error:', error.message);
-  });
-
-  socket.on('error', (error) => {
-    console.error('[WebSocket] Error:', error);
-  });
+  // ✅ E-REVIEW P0 #4: Supprimer console.* (logs gérés dans useSocket)
+  // Pas de logs ici, gestion dans le hook React
 
   return socket;
+}
+
+/**
+ * ✅ E-REVIEW P0 #3: Reconnexion fiable avec cycle disconnect/connect
+ * Utilisé après refresh token pour éviter la perte de connexion
+ *
+ * Force un cycle complet disconnect → update auth → connect pour garantir
+ * que Socket.IO utilise le nouveau token lors du handshake
+ */
+export function reconnectSocketWithNewToken(newToken: string): void {
+  if (!socket) return;
+
+  currentToken = newToken;
+
+  // Mettre à jour le token d'authentification
+  socket.auth = { token: newToken };
+
+  // ✅ E-REVIEW P0 #3: Force disconnect puis reconnect pour refresh handshake
+  if (socket.connected) {
+    socket.disconnect();
+  }
+
+  // Reconnexion avec nouveau token
+  socket.connect();
 }
 
 /**

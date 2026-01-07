@@ -323,4 +323,61 @@ export async function notifyCourseReminder(
   }
 }
 
+/**
+ * Trigger new lesson request notification (PRO receives notification about nearby rider)
+ */
+export async function notifyNewLessonRequest(
+  userId: string,
+  requestData: {
+    riderName: string;
+    sport: string;
+    distanceKm: number;
+    lessonDate?: string;
+    spotName?: string;
+  }
+): Promise<void> {
+  try {
+    await pushNotificationService.sendNewLessonRequest(userId, requestData);
+  } catch (error) {
+    secureLogger.error('PUSH_NOTIFY_NEW_LESSON_REQUEST_FAILED', { userId, error: (error as Error)?.message });
+  }
+}
+
+/**
+ * Trigger new match notification (Rider matched with another rider)
+ */
+export async function notifyNewMatchPush(
+  userId: string,
+  matchData: {
+    matchedUserName: string;
+    matchedUserPhoto?: string;
+    conversationId: string;
+  }
+): Promise<void> {
+  try {
+    await pushNotificationService.sendNewMatch(userId, matchData);
+  } catch (error) {
+    secureLogger.error('PUSH_NOTIFY_NEW_MATCH_FAILED', { userId, error: (error as Error)?.message });
+  }
+}
+
+/**
+ * Trigger group invitation notification
+ */
+export async function notifyGroupInvitation(
+  userId: string,
+  invitationData: {
+    inviterName: string;
+    conversationId: string;
+    invitationId: string;
+    memberCount: number;
+  }
+): Promise<void> {
+  try {
+    await pushNotificationService.sendGroupInvitation(userId, invitationData);
+  } catch (error) {
+    secureLogger.error('PUSH_NOTIFY_GROUP_INVITATION_FAILED', { userId, error: (error as Error)?.message });
+  }
+}
+
 export default router;

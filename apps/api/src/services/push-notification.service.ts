@@ -25,7 +25,7 @@ if (!admin.apps.length && firebaseConfig.privateKey && firebaseConfig.clientEmai
 export interface PushNotificationData {
   title: string;
   body: string;
-  type: 'booking_accepted' | 'booking_rejected' | 'new_message' | 'reminder' | 'general';
+  type: 'booking_accepted' | 'booking_rejected' | 'new_message' | 'reminder' | 'general' | 'new_lesson_request';
   url?: string;
   icon?: string;
   userId?: string;
@@ -285,6 +285,95 @@ export class PushNotificationService {
   }
 
   /**
+   * Send new lesson request notification to PRO
+   */
+  async sendNewLessonRequest(userId: string, requestData: {
+    riderName: string;
+    sport: string;
+    distanceKm: number;
+    lessonDate?: string;
+    spotName?: string;
+  }): Promise<boolean> {
+    const sportEmoji = requestData.sport === 'surf' ? '🏄' : '🪁';
+    const distance = Math.round(requestData.distanceKm);
+
+    let bodyText = `${requestData.riderName} cherche un cours de ${requestData.sport} à ${distance} km de toi`;
+    if (requestData.spotName) {
+      bodyText += ` près de ${requestData.spotName}`;
+    }
+
+    const notification: PushNotificationData = {
+      title: `${sportEmoji} Nouvelle demande de cours !`,
+      body: bodyText,
+      type: 'new_lesson_request',
+      url: `/pro/map`,
+      userId,
+      data: {
+        sport: requestData.sport,
+        distanceKm: requestData.distanceKm,
+        lessonDate: requestData.lessonDate,
+        spotName: requestData.spotName,
+        riderName: requestData.riderName,
+        mapUrl: '/pro/map'
+      }
+    };
+
+    return this.sendToUser(userId, notification);
+  }
+
+  /**
+   * Send new match notification to rider
+   */
+  async sendNewMatch(userId: string, matchData: {
+    matchedUserName: string;
+    matchedUserPhoto?: string;
+    conversationId: string;
+  }): Promise<boolean> {
+    const notification: PushNotificationData = {
+      title: '🎉 Nouveau match !',
+      body: `Tu as matché avec ${matchData.matchedUserName} ! Envoie un message pour démarrer la conversation.`,
+      type: 'new_message', // Réutilise le type message pour l'instant
+      url: `/messages/${matchData.conversationId}`,
+      userId,
+      data: {
+        conversationId: matchData.conversationId,
+        matchedUserName: matchData.matchedUserName,
+        matchedUserPhoto: matchData.matchedUserPhoto,
+        messageUrl: `/messages/${matchData.conversationId}`
+      }
+    };
+
+    return this.sendToUser(userId, notification);
+  }
+
+  /**
+   * Send group invitation notification
+   */
+  async sendGroupInvitation(userId: string, invitationData: {
+    inviterName: string;
+    conversationId: string;
+    invitationId: string;
+    memberCount: number;
+  }): Promise<boolean> {
+    const notification: PushNotificationData = {
+      title: '👥 Invitation à un groupe',
+      body: `${invitationData.inviterName} t'invite à rejoindre une conversation de groupe (${invitationData.memberCount} membres)`,
+      type: 'new_message', // Réutilise le type message pour l'instant
+      url: `/messages/invitations`,
+      userId,
+      data: {
+        invitationId: invitationData.invitationId,
+        conversationId: invitationData.conversationId,
+        inviterName: invitationData.inviterName,
+        memberCount: invitationData.memberCount,
+        invitationsUrl: '/messages/invitations'
+      }
+    };
+
+    return this.sendToUser(userId, notification);
+  }
+
+  /**
    * Build FCM message object
    */
   private buildFCMMessage(token: string, notification: PushNotificationData): admin.messaging.Message {
@@ -341,6 +430,7 @@ export class PushNotificationService {
         return 'high';
       case 'new_message':
       case 'reminder':
+      case 'new_lesson_request':
         return 'normal';
       default:
         return 'low';
@@ -360,6 +450,8 @@ export class PushNotificationService {
         return [150]; // Simple buzz
       case 'reminder':
         return [300, 100, 300]; // Attention pattern
+      case 'new_lesson_request':
+        return [200, 100, 200]; // Alert pattern
       default:
         return [200];
     }
@@ -383,6 +475,11 @@ export class PushNotificationService {
         return [
           { action: 'reply', title: '↩️ Répondre' },
           { action: 'view', title: '👀 Voir la conversation' }
+        ];
+      case 'new_lesson_request':
+        return [
+          { action: 'view_map', title: '🗺️ Voir sur la carte' },
+          { action: 'view_requests', title: '📋 Voir mes demandes' }
         ];
       default:
         return [];

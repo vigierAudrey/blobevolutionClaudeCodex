@@ -284,6 +284,7 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
     if (other?.blockedAt) return res.status(403).json({ error: 'You are blocked' });
     const msg = await prisma.message.create({ data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta } });
     await prisma.conversation.update({ where: { id }, data: { updatedAt: new Date() } });
+
     const role = (req as any).user?.role as string | undefined;
     if (role === 'RIDER' || role === 'PRO') {
       const consentHash = getConsentHash(req);
@@ -295,6 +296,36 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
         occurredAt: msg.createdAt,
       });
     }
+
+    // Envoyer push notification aux autres membres (non-bloquant)
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId as string },
+      include: {
+        riderProfile: { select: { displayName: true } },
+        proProfile: { select: { businessName: true } }
+      }
+    });
+
+    const senderName = role === 'PRO'
+      ? currentUser?.proProfile?.businessName || 'Un professionnel'
+      : currentUser?.riderProfile?.displayName || 'Un rider';
+
+    const otherMembers = await prisma.conversationMember.findMany({
+      where: { conversationId: id, userId: { not: userId as string } },
+      select: { userId: true }
+    });
+
+    const { notifyNewMessage } = await import('../push/push.controller');
+    for (const member of otherMembers) {
+      notifyNewMessage(member.userId, {
+        senderName,
+        message: body.content,
+        conversationId: id
+      }).catch((error) => {
+        secureLogger.error('Failed to send push notification for message', { error, userId: member.userId });
+      });
+    }
+
     return res.status(201).json({ id: msg.id });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
@@ -690,9 +721,13 @@ conversationsRouter.post('/:id/members', async (req, res) => {
     }
 
     // Create invitation
+    let invitationId: string = '';
+    let inviterName: string = '';
+    let memberCount: number = 0;
+
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Create the invitation
-      await tx.conversationInvitation.create({
+      const invitation = await tx.conversationInvitation.create({
         data: {
           conversationId: id,
           invitedUserId: body.userId,
@@ -700,6 +735,18 @@ conversationsRouter.post('/:id/members', async (req, res) => {
           status: 'PENDING',
         },
       });
+
+      invitationId = invitation.id;
+
+      // Get conversation info for notification
+      const conversation = await tx.conversation.findUnique({
+        where: { id },
+        include: {
+          members: true
+        }
+      });
+
+      memberCount = conversation?.members.length || 0;
 
       // Get user info for system message
       const invitedUser = await tx.user.findUnique({
@@ -725,7 +772,7 @@ conversationsRouter.post('/:id/members', async (req, res) => {
         return tx.riderProfile.findUnique({ where: { userId }, select: { displayName: true } });
       });
 
-      const inviterName = (inviterProfile as any)?.businessName || (inviterProfile as any)?.displayName || 'Un membre';
+      inviterName = (inviterProfile as any)?.businessName || (inviterProfile as any)?.displayName || 'Un membre';
 
       // Create system message (visible only to current members)
       await tx.message.create({
@@ -742,6 +789,26 @@ conversationsRouter.post('/:id/members', async (req, res) => {
         where: { id },
         data: { updatedAt: new Date() },
       });
+    });
+
+    // Send push notification to invited user (non-blocking)
+    const { notifyGroupInvitation } = await import('../push/push.controller');
+    notifyGroupInvitation(body.userId, {
+      inviterName,
+      conversationId: id,
+      invitationId,
+      memberCount
+    }).catch((error) => {
+      secureLogger.error('Failed to send group invitation push notification', { error, userId: body.userId });
+    });
+
+    // Send Socket.io real-time notification
+    const { notifyUser } = await import('../../lib/socket');
+    notifyUser(body.userId, 'group-invitation', {
+      invitationId,
+      conversationId: id,
+      inviterName,
+      memberCount
     });
 
     return res.status(201).json({ ok: true, message: 'Invitation envoyée' });

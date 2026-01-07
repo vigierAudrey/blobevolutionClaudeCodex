@@ -1129,6 +1129,8 @@ export const apiClient = {
   saveTokens: setTokens,
   clearTokens: clearTokens,
   getTokens,
+  // ✅ PATCH 1 (P0 #2): Expose refresh pour WebSocket retry
+  refreshToken: refreshAccessToken,
   // Blobosphère admin
   adminBlobosphereList: () => request('/admin/blobosphere/posts', { method: 'GET' }, true) as Promise<{ items: Array<{ category: string; file: string; slug: string; title: string; status: string; publishedAt: string|null }> }>,
   adminBlobosphereGet: (category: 'surf'|'kitesurf'|'communaute'|'impact', slug: string) => request(`/admin/blobosphere/posts/${category}/${slug}`, { method: 'GET' }, true) as Promise<{ raw: string }>,

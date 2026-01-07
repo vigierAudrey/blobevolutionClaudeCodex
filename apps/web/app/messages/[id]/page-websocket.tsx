@@ -34,6 +34,8 @@ export default function ConversationPage() {
   const [conversationInfo, setConversationInfo] = useState<ThreadSummary | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [accessToken, setAccessToken] = useState<string>('');
+  const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => {
@@ -41,7 +43,7 @@ export default function ConversationPage() {
   };
 
   // ✨ WebSocket chat integration
-  const { connected, sendMessage, setTyping, otherUserTyping } = useChat({
+  const { connected, sendMessage, setTyping, otherUserTyping, lastError } = useChat({
     conversationId: id,
     token: accessToken,
     onNewMessage: (newMessage) => {
@@ -66,6 +68,13 @@ export default function ConversationPage() {
     }
   });
 
+  // Remonter socket errors vers UI (sauf RATE_LIMITED qui a sa propre UI)
+  useEffect(() => {
+    if (lastError && lastError.code !== 'RATE_LIMITED') {
+      setError(lastError.message);
+    }
+  }, [lastError]);
+
   const loadMessages = useCallback(async () => {
     try {
       setLoading(true);
@@ -87,7 +96,8 @@ export default function ConversationPage() {
       const convInfo = (conversations.items ?? []).find((c: ThreadSummary) => c.id === id) ?? null;
       setConversationInfo(convInfo);
     } catch (err) {
-      console.error('Error loading conversation info:', err);
+      // ✅ E-REVIEW P0 #4: Pas de console.error, erreur silencieuse ou UI
+      setError('Erreur de chargement des informations');
     }
   }, [id]);
 
@@ -144,13 +154,50 @@ export default function ConversationPage() {
     };
   }, [input, connected, setTyping]);
 
+  // ✅ PATCH 3 (P1 #4): Cooldown countdown pour rate limiting
+  useEffect(() => {
+    if (!rateLimitedUntil) {
+      setCooldownSeconds(0);
+      return;
+    }
+
+    const updateCooldown = () => {
+      const remaining = Math.max(0, Math.ceil((rateLimitedUntil - Date.now()) / 1000));
+      setCooldownSeconds(remaining);
+
+      if (remaining === 0) {
+        setRateLimitedUntil(null);
+        setError(null);
+      }
+    };
+
+    updateCooldown();
+    const interval = setInterval(updateCooldown, 1000);
+
+    return () => clearInterval(interval);
+  }, [rateLimitedUntil]);
+
   const send = async () => {
     if (!input.trim()) return;
+    if (rateLimitedUntil && Date.now() < rateLimitedUntil) return; // ✅ PATCH 3: Prevent send during cooldown
 
     // ✨ Envoyer via WebSocket si connecté, sinon fallback sur REST
     if (connected) {
-      sendMessage(input.trim(), 'TEXT');
-      setInput('');
+      // ✅ PATCH 2 (P0 #3): Await sendMessage et gérer les erreurs ACK
+      const result = await sendMessage(input.trim(), 'TEXT');
+      if (result.success) {
+        setInput('');
+        setError(null);
+      } else if (result.error) {
+        // ✅ PATCH 3 (P1 #4): Détecter RATE_LIMITED et activer cooldown
+        if (result.error.code === 'RATE_LIMITED' && result.error.retryAfter) {
+          const cooldownUntil = Date.now() + (result.error.retryAfter * 1000);
+          setRateLimitedUntil(cooldownUntil);
+          setError(`Trop de messages envoyés. Réessayez dans ${result.error.retryAfter}s`);
+        } else {
+          setError(`Erreur: ${result.error.message}`);
+        }
+      }
     } else {
       // Fallback REST API
       const payload: SendMessagePayload = { type: 'TEXT', content: input.trim() };
@@ -159,7 +206,8 @@ export default function ConversationPage() {
         setInput('');
         await loadMessages();
       } catch (err) {
-        console.error('Failed to send message', err);
+        // ✅ E-REVIEW P0 #4: Pas de console.error, UI uniquement
+        setError('Erreur lors de l\'envoi du message');
       }
     }
   };
@@ -170,11 +218,17 @@ export default function ConversationPage() {
 
     // ✨ Envoyer via WebSocket si connecté
     if (connected) {
-      sendMessage(`Proposition de session ${pDate} @ ${pPlace}`, 'PROPOSAL');
-      setShowProposal(false);
-      setPDate('');
-      setPPlace('');
-      setPNote('');
+      // ✅ PATCH 2 (P0 #3): Await sendMessage et gérer les erreurs ACK
+      const result = await sendMessage(`Proposition de session ${pDate} @ ${pPlace}`, 'PROPOSAL');
+      if (result.success) {
+        setShowProposal(false);
+        setPDate('');
+        setPPlace('');
+        setPNote('');
+        setError(null);
+      } else if (result.error) {
+        setError(`Erreur: ${result.error.message}`);
+      }
     } else {
       // Fallback REST API
       const payload: SendMessagePayload = {
@@ -190,7 +244,8 @@ export default function ConversationPage() {
         setPNote('');
         await loadMessages();
       } catch (err) {
-        console.error('Failed to send proposal', err);
+        // ✅ E-REVIEW P0 #4: Pas de console.error, UI uniquement
+        setError('Erreur lors de l\'envoi de la proposition');
       }
     }
   };
@@ -211,8 +266,8 @@ export default function ConversationPage() {
       await refreshConversationInfo();
       setShowMenu(false);
     } catch (err) {
-      console.error('Error blocking/unblocking:', err);
-      alert('Erreur lors du blocage ou du déblocage');
+      // ✅ E-REVIEW P0 #4: Pas de console.error, UI uniquement
+      setError('Erreur lors du blocage ou du déblocage');
     }
   };
 
@@ -317,14 +372,18 @@ export default function ConversationPage() {
                 value={input}
                 onChange={(e)=>setInput(e.target.value)}
                 onKeyDown={(e)=>{
-                  if(e.key==='Enter'){
+                  if(e.key==='Enter' && !rateLimitedUntil){
                     e.preventDefault();
                     send();
                   }
                 }}
+                disabled={!!rateLimitedUntil}
               />
-              <Button onClick={send}>Envoyer</Button>
-              <Button variant="secondary" onClick={()=>setShowProposal((v)=>!v)}>Proposer une session</Button>
+              {/* ✅ PATCH 3 (P1 #4): Disable button + countdown pendant rate limit */}
+              <Button onClick={send} disabled={!!rateLimitedUntil || !input.trim()}>
+                {cooldownSeconds > 0 ? `Attendre ${cooldownSeconds}s` : 'Envoyer'}
+              </Button>
+              <Button variant="secondary" onClick={()=>setShowProposal((v)=>!v)} disabled={!!rateLimitedUntil}>Proposer une session</Button>
             </div>
           )}
           {showProposal && !conversationInfo?.blocked && (

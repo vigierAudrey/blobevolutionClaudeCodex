@@ -10,6 +10,13 @@ Ce monorepo contient la version vivante de BlobConnect, marketplace de mise en r
 
 **Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de BlobConnect via du contenu partageable (SEO + réseaux sociaux).
 
+## 🏷️ Naming produit (IMPORTANT)
+
+- **BlobConnect** = nom **visible utilisateurs** (UI, emails, pages publiques, wording marketing).
+- **Blobinfini** = nom **interne/tech** (repo, namespaces, packages) tant qu’aucune décision de renommage globale n’est actée.
+- Ne pas “renommer en masse” (variables, packages, env, Sentry, Firebase, URLs) sans ticket/validation : risque casse SEO, config, observabilité, clés, routes.
+- Dans les textes UI, toujours afficher **BlobConnect**.
+
 ## 🎯 Vision Produit
 
 BlobConnect connecte les passionnés de sports de glisse en proposant :
@@ -63,7 +70,7 @@ Services:
 Infrastructure:
   - Docker Compose (dev)
   - Vercel (frontend production - gratuit)
-  - Clever Cloud ou alternatives gratuites (backend production)
+  - Clever Cloud ou autre hébergeur (backend production: Render/Railway/Fly.io possibles)
   - Firebase (push notifications)
   - CI/CD GitHub Actions
   - PostGIS activé (image `postgis/postgis:15-3.4` pour dev & CI)
@@ -93,10 +100,10 @@ Pour la phase MVP, plusieurs options d'hébergement backend gratuites sont dispo
 - **Inconvénient** : Configuration plus technique (Dockerfile requis)
 - **Site** : https://fly.io
 
-#### Option 4 : **Clever Cloud** (Payant)
+#### Option 4 : **Clever Cloud** (Payant, option possible)
 - **Payant** : À partir de ~7€/mois
 - **Avantages** : Hébergement France (RGPD), support Docker natif, pas de limitations
-- **Idéal pour** : Production avec budget
+- **Idéal pour** : Production avec budget (non obligatoire pour le lancement)
 - **Site** : https://www.clever-cloud.com
 
 **Note** : Pour le frontend Next.js, Vercel reste gratuit et illimité (voir section déploiement ci-dessous).
@@ -113,26 +120,31 @@ blobevolutionClaudeCodex/
 │   └── api/                    # API Express monolithique modulaire
 │       ├── src/
 │       │   ├── modules/
-│       │   │   ├── auth/       # 🔐 Module authentification
+│       │   │   ├── admin/       # Gouvernance & modération
+│       │   │   ├── analytics/   # Analytics
+│       │   │   ├── auth/        # 🔐 Module authentification
 │       │   │   │   ├── auth.controller.ts
 │       │   │   │   ├── auth.service.ts
 │       │   │   │   ├── auth.guard.ts
 │       │   │   │   ├── strategies/
 │       │   │   │   └── dto/
-│       │   │   ├── users/      # Gestion profils
-│       │   │   ├── matching/   # Algorithme matching
-│       │   │   ├── bookings/   # Réservations
-│       │   │   ├── payments/   # Intégration Stripe (mise en pause)
-│       │   │   ├── messaging/  # Chat Socket.io
-│       │   │   └── blobosphere/ # Contenus éditoriaux & partage social
+│       │   │   ├── blobosphere/ # Contenus éditoriaux & partage social
+│       │   │   ├── booking/     # Réservations & mise en relation
+│       │   │   ├── chat/        # Messagerie temps réel
+│       │   │   ├── consent/     # Consentement & publicité
+│       │   │   ├── contact/     # Contact & support
+│       │   │   ├── matching/    # Algorithme matching
+│       │   │   ├── pro/         # Profils pros
+│       │   │   ├── profile/     # Profils riders
+│       │   │   ├── push/        # Notifications push
+│       │   │   ├── reports/     # Signalements
+│       │   │   └── security/    # Sécurité & audits
 │       │   ├── middleware/     # Rate limit, CORS, etc.
 │       │   └── lib/           # Redis, Prisma, etc.
 │       └── Dockerfile
 ├── packages/
-│   ├── database/               # Prisma schemas + client
-│   ├── shared/                 # Types TypeScript partagés
-│   ├── ui/                     # Composants réutilisables
-│   └── utils/                  # Helpers communs
+│   └── database/               # Prisma schemas + client
+├── types/                      # Types TypeScript partagés (actuel)
 ├── docker-compose.yml
 ├── turbo.json                  # Turborepo config
 └── claude.md                   # Guide IA
@@ -145,8 +157,8 @@ blobevolutionClaudeCodex/
 ├── services/                   # Microservices (après 1000+ users)
 │   ├── auth-service/          # Service auth dédié
 │   ├── matching-service/      # Service matching dédié
-│   ├── payment-service/       # Service paiements dédié
-│   └── messaging-service/     # Service chat dédié
+│   ├── payment-service/       # Service paiements dédié (si réactivé)
+│   └── chat-service/          # Service chat dédié
 ```
 
 ## 🔐 Architecture Authentification
@@ -211,7 +223,7 @@ model User {
 - ✅ **Droit à l'oubli** (soft delete + purge automatique 3 phases)
 - ✅ **Export données utilisateur** (GDPR CLI intégré)
 - ✅ **Logs anonymisés** après 30 jours
-- ✅ **Hébergement données en Europe** (Clever Cloud France)
+- ✅ **Hébergement données en Europe** (Clever Cloud France ou autre hébergeur UE)
 
 ### ✅ Sécurité Technique (Implémenté)
 
@@ -258,6 +270,33 @@ Un système complet de détection et notification des violations de sécurité a
 - ✅ **Enregistrement en base** de toutes les violations dans la table `SystemAlert` pour audit
 - ✅ **Détection de comptes compromis** : même les comptes ADMIN déclenchent des alertes critiques s'ils tentent d'accéder aux endpoints PRO/RIDER
 - ✅ **Tests E2E complets** : 10/10 tests de sécurité passent (security-alerts.e2e.test.ts)
+
+### ✅ Responsible Disclosure (RFC 9116)
+
+Le projet implémente le standard **RFC 9116** pour faciliter le signalement de vulnérabilités par les chercheurs en sécurité.
+
+**Fichier** : `apps/web/public/.well-known/security.txt`
+
+Ce fichier est **automatiquement accessible** publiquement via l'URL `https://votredomaine.com/.well-known/security.txt` une fois déployé. Il contient :
+- Contact email pour signaler des vulnérabilités
+- Politique de divulgation responsable
+- Programme de bug bounty (récompenses 20€/10€/reconnaissance)
+- Périmètre autorisé pour les tests de sécurité
+- Conformité Code Pénal français (Art. 323-1)
+
+**⚠️ Action requise avant production** :
+Remplacer les 3 occurrences de `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobinfini.com` dans :
+- Ligne 4 : `Contact:`
+- Ligne 53 : Commentaire Contact
+- Ligne 64 : Commentaire découverte accidentelle
+
+**Comment ça fonctionne ?**
+Les chercheurs en sécurité (white hat hackers) consultent automatiquement `/.well-known/security.txt` pour savoir :
+1. Comment contacter l'équipe sécurité de manière responsable
+2. Quel est le scope autorisé pour les tests
+3. Quelles sont les récompenses offertes (bug bounty)
+
+Ce standard est reconnu par Google, Facebook, GitHub et recommandé par l'ANSSI.
 
 **Configuration requise :**
 
@@ -433,7 +472,7 @@ Voir `docs/mcp-setup.md` pour :
 ### Lignes directrices
 
 - Travaillez exclusivement dans `blobevolutionClaudeCodex`.
-- Respectez l'architecture modulaire (auth, matching, bookings, payments, messaging).
+- Respectez l'architecture modulaire (`apps/api/src/modules/*` : auth, booking, chat, matching, blobosphere, consent, profile/pro, push, security, etc.).
 - Intégrez le module `blobosphere` (contenus éditoriaux) pour renforcer la visibilité externe.
 - Utilisez les serveurs MCP disponibles (Sentry, GitHub, Playwright, Chrome DevTools, Context7, Vercel) pour enrichir vos capacités d'analyse et de déploiement.
 - Sécurité systématique : Zod sur tous les inputs, Prisma uniquement, rate limiting, CSRF, headers de sécurité.
@@ -537,7 +576,7 @@ images: {
 
 ### Configuration Initiale
 
-Le frontend Next.js (`apps/web`) est déployé sur **Vercel**, tandis que le backend NestJS (`apps/api`) reste hébergé sur **Clever Cloud**.
+Le frontend Next.js (`apps/web`) est déployé sur **Vercel**, tandis que le backend API Express (`apps/api`) est hébergé sur **Clever Cloud** ou un autre provider (Render/Railway/Fly.io).
 
 #### 1. Installation du CLI Vercel
 
@@ -573,7 +612,7 @@ Ajoutez ces variables dans le tableau de bord Vercel (Settings → Environment V
 
 ```bash
 # OBLIGATOIRE
-NEXT_PUBLIC_API_URL=https://votre-api.cleverapps.io
+NEXT_PUBLIC_API_URL=https://api.votredomaine.com
 NEXT_PUBLIC_SITE_URL=https://blobinfini.vercel.app
 
 # OPTIONNEL - Push Notifications (Firebase)
@@ -618,7 +657,7 @@ Vous pouvez consulter tous les déploiements sur : `https://vercel.com/dashboard
 
 - ✅ **GitHub Actions** : Lint, type-check, tests unitaires, tests API E2E et job Playwright (`e2e-tests`) qui rejoue les scénarios web critiques (`npm run test:e2e`). Le job provisionne Postgres (service `postgres`), applique `db:generate`, `db:migrate:deploy`, `db:reseed`, installe les navigateurs Playwright (`npx playwright install --with-deps`) puis lance les tests. Il s’exécute sur chaque push et sur les pull requests ciblant `main`.
 - ✅ **Vercel** : Build et déploiement du frontend Next.js uniquement
-- ✅ **Clever Cloud** : Déploiement du backend NestJS (via Docker)
+- ✅ **Backend API** : Déploiement via Docker (Clever Cloud ou autre hébergeur)
 
 Le workflow `.github/workflows/ci.yml` a été adapté pour :
 - **Supprimer** l'étape `Build web app` (gérée par Vercel)
@@ -668,8 +707,9 @@ act -j e2e-tests
                                              │ API Calls
                                              ▼
                                     ┌──────────────────────┐
-                                    │    Clever Cloud      │
-                                    │    (Backend API)     │
+                                    │   Backend Hosting    │
+                                    │ (Clever Cloud/Render)│
+                                    │  (Railway/Fly.io)    │
                                     │    + PostgreSQL      │
                                     │    + Redis           │
                                     └──────────────────────┘
@@ -728,14 +768,14 @@ act -j build-and-test -P ubuntu-latest=catthehacker/ubuntu:act-latest
 
 ## 🔔 Push Notifications - Architecture Hybride
 
-### Décision Technique : Clever Cloud + Firebase
+### Décision Technique : Hébergement backend + Firebase
 
-**Choix architectural** : Hébergement API sur Clever Cloud avec Firebase Cloud Messaging pour les notifications push.
+**Choix architectural** : Hébergement API sur Clever Cloud ou autre provider (Render/Railway/Fly.io) avec Firebase Cloud Messaging pour les notifications push.
 
 #### Pourquoi cette combinaison ?
 
 ```yaml
-Clever Cloud:
+Hébergeur backend (Clever Cloud/Render/Railway/Fly.io):
   - Hébergement API Node.js ✅
   - Base de données PostgreSQL ✅
   - Redis pour le cache ✅
@@ -753,7 +793,7 @@ Firebase FCM:
 #### Architecture de communication
 
 ```
-[Frontend PWA] ←→ [Clever Cloud API] ←→ [Firebase FCM] → [Dispositifs Users]
+[Frontend PWA] ←→ [Backend API (hébergeur)] ←→ [Firebase FCM] → [Dispositifs Users]
      ↑                    ↑                   ↑
 Service Worker     Firebase Admin SDK   Push Service
    (Client)           (Serveur)        (Google/Apple)
@@ -761,7 +801,7 @@ Service Worker     Firebase Admin SDK   Push Service
 
 #### Configuration requise
 
-**Variables d'environnement Clever Cloud :**
+**Variables d'environnement backend (API) :**
 ```bash
 FIREBASE_PROJECT_ID=blobinfini-prod
 FIREBASE_CLIENT_EMAIL=firebase-admin@blobinfini.iam.gserviceaccount.com
@@ -788,7 +828,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 
 #### Coûts
 
-- **Clever Cloud** : ~10-30€/mois (API + DB)
+- **Hébergeur backend (option Clever Cloud)** : ~10-30€/mois (API + DB, selon provider)
 - **Firebase FCM** : Gratuit (jusqu'à millions de notifications)
 - **Total** : Très économique pour une startup
 
@@ -797,7 +837,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 - **OneSignal** : Payant après 10k users
 - **AWS SNS** : Plus complexe, coûts variables
 - **Web Push natif** : Complexité serveur énorme
-- **Services Clever Cloud tiers** : Aucun disponible
+- **Services tiers hébergeur** : Dépend du provider (souvent limités en gratuit)
 
 ## 📋 Changements récents
 
@@ -858,7 +898,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
     updatedAt     DateTime @updatedAt
   }
   ```
-- Stockage médias : bucket S3/MinIO (géré par le package `blobinfini/storage`), génération de formats responsive.
+- Stockage médias : S3/MinIO (voir `docs/blobosphere.md`), génération de formats responsive.
 - SEO : ISR/SSG par post, réhydratation côté client pour interactions (likes, commentaires futurs).
 
 ### Mesure & analytics
@@ -981,81 +1021,58 @@ Sans SMTP actif, l’API continue de fonctionner et ignore l’envoi (log d’in
 
 ### Module Auth
 
+Extrait réel : `apps/api/src/modules/auth/dto/register.dto.ts`
+
 ```typescript
-// apps/api/src/modules/auth/auth.service.ts
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 
-const registerSchema = z.object({
+export const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(['RIDER', 'PRO']),
+  role: z.enum(['RIDER', 'PRO']).default('RIDER'),
+  ageConfirmed: z.literal(true, {
+    errorMap: () => ({ message: 'Vous devez avoir 18 ans ou plus pour vous inscrire.' }),
+  }),
+  consentAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'Vous devez accepter la charte et l\'avertissement.' }),
+  }),
 });
 
-export class AuthService {
-  async register(data: unknown) {
-    const validated = registerSchema.parse(data);
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(validated.password, 12);
-
-    // Create user with Prisma
-    const user = await prisma.user.create({
-      data: {
-        email: validated.email,
-        password: hashedPassword,
-        role: validated.role,
-        verifyToken: crypto.randomBytes(32).toString('hex'),
-      },
-    });
-
-    // Send verification email
-    await emailService.sendVerification(user.email, user.verifyToken);
-
-    return { message: 'Check email to verify account' };
-  }
-
-  async login(email: string, password: string) {
-    const user = await prisma.user.findUnique({ where: { email } });
-
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      throw new UnauthorizedException();
-    }
-
-    // Generate tokens
-    const accessToken = jwt.sign({ sub: user.id, role: user.role }, process.env.JWT_SECRET, {
-      expiresIn: '15m',
-    });
-
-    const refreshToken = jwt.sign({ sub: user.id }, process.env.JWT_REFRESH_SECRET, {
-      expiresIn: '30d',
-    });
-
-    // Save session
-    await this.saveSession(user.id, refreshToken);
-
-    return { accessToken, refreshToken };
-  }
-}
+export type RegisterInput = z.infer<typeof registerSchema>;
 ```
 
 ### API Route Protégée
 
-```typescript
-// apps/api/src/modules/bookings/bookings.controller.ts
-import { requireAuth } from '@/modules/auth/auth.guard';
+Extrait réel : `apps/api/src/modules/booking/booking.controller.ts`
 
-router.post(
-  '/bookings',
-  requireAuth, // Vérifie JWT
-  requireRole('RIDER'), // Vérifie rôle
-  rateLimit(100), // Rate limiting
-  async (req, res) => {
-    const booking = await bookingService.create(req.user.id, req.body);
-    res.json(booking);
-  },
-);
+```typescript
+bookingRouter.post('/availability', ensureRole('PRO'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const body = createAvailabilitySchema.parse(req.body);
+    const current = req.user;
+    if (!current) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const availability = await bookingService.createAvailability(current.id, body);
+    const consentHash = getConsentHash(req);
+    void recordServerAnalyticsEvent({
+      eventType: 'PRO_SLOTS_UPDATE',
+      actorType: 'PRO',
+      actorId: current.id,
+      consentHash,
+      sport: availability.sport,
+      zoneLarge: computeZoneLarge(availability.spotLat, availability.spotLng),
+      occurredAt: availability.createdAt,
+    });
+    return res.status(201).json(availability);
+  } catch (error: unknown) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    const status = getErrorStatus(error);
+    return res.status(status).json({ error: getErrorMessage(error) });
+  }
+});
 ```
 
 ## 🔍 Points d'Attention Spécifiques

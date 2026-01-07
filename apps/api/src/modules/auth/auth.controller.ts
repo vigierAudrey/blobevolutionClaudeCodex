@@ -9,6 +9,9 @@ import { passwordSchema } from '../../utils/password-validator';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
 import { createHash } from 'crypto';
+import { getClientIp } from '../../lib/client-ip';
+import { hashIpHmac } from '../../lib/hash-ip';
+import { securityEventAlertService } from '../../services/security-event-alert.service';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -76,10 +79,8 @@ const verify2FAProSchema = z.object({
 authRouter.post('/register', validate(registerSchema), async (req, res) => {
   try {
     const data = req.body as z.infer<typeof registerSchema>;
-    // Extraire la meilleure IP disponible
-    // Si trust proxy est activé (voir apps/api/src/index.ts), req.ips[0] reflète le premier IP client
-    const ips = (req as any).ips as string[] | undefined;
-    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+    // Use secure IP extraction (prevents spoofing)
+    const ip = getClientIp(req);
     const result = await service.register(data, { consentIp: ip });
     res.status(201).json(result);
   } catch (err: any) {
@@ -112,8 +113,7 @@ function categorizeUserAgent(userAgent: string | undefined): string | undefined 
 
 authRouter.post('/login', validate(loginSchema), async (req, res) => {
   const { email, password, consentAccepted } = req.body as z.infer<typeof loginSchema>;
-  const ips = (req as any).ips as string[] | undefined;
-  const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+  const ip = getClientIp(req);
   const userAgent = categorizeUserAgent(req.get('User-Agent'));
 
   try {
@@ -124,12 +124,21 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     await prisma.loginAttempt.create({
       data: {
         email,
-        ip,
+        ipHash: hashIpHmac(ip) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
         userAgent,
         success: true,
         userId: user?.id
       }
     }).catch(() => {}); // Ignore logging errors
+
+    // Check for suspicious pattern: successful login after multiple failures (possible brute-force success)
+    if (user?.id && ip) {
+      securityEventAlertService.reportSuccessAfterFailures(
+        email,
+        hashIpHmac(ip)!,
+        user.id
+      ).catch(() => {}); // Fire-and-forget, never fail login flow
+    }
 
     res.json(result);
   } catch (err: any) {
@@ -138,15 +147,24 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     if (err?.name === 'ZodError') {
       reason = 'Invalid input';
       await prisma.loginAttempt.create({
-        data: { email, ip, userAgent, success: false, reason }
+        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
       }).catch(() => {});
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
       reason = 'Invalid credentials';
       await prisma.loginAttempt.create({
-        data: { email, ip, userAgent, success: false, reason }
+        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
       }).catch(() => {});
+
+      // Detect brute-force or targeted attack patterns (fire-and-forget)
+      if (ip) {
+        securityEventAlertService.detectAndReportLoginFailurePattern(
+          email,
+          hashIpHmac(ip)!
+        ).catch(() => {}); // Never fail login flow
+      }
+
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     if (err?.code === 'CONSENT_REQUIRED') {
@@ -156,7 +174,7 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     if (err?.code === 'EMAIL_NOT_VERIFIED') {
       reason = 'Email not verified';
       await prisma.loginAttempt.create({
-        data: { email, ip, userAgent, success: false, reason }
+        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
       }).catch(() => {});
       return res.status(403).json({ error: 'Email not verified' });
     }
@@ -174,7 +192,7 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     // Log unexpected errors
     reason = 'Internal server error';
     await prisma.loginAttempt.create({
-      data: { email, ip, userAgent, success: false, reason }
+      data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
     }).catch(() => {});
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -191,8 +209,11 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
   try {
     const { userId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
 
-    // Vérifier le code 2FA
-    const verification = await twoFactorService.verifyCode(userId, code);
+    // Extract client IP for rate limiting (secure extraction)
+    const clientIp = getClientIp(req);
+
+    // Vérifier le code 2FA avec rate limiting
+    const verification = await twoFactorService.verifyCode(userId, code, clientIp);
 
     if (!verification.valid) {
       return res.status(401).json({ error: verification.message });
@@ -208,15 +229,11 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Vérifier IP whitelisting si configuré
-    const ips = (req as any).ips as string[] | undefined;
-    const clientIP = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress;
-
+    // Vérifier IP whitelisting si configuré (reuse clientIp from 2FA verification)
     if (user.adminProfile?.allowedIPs && user.adminProfile.allowedIPs.length > 0) {
-      if (!clientIP || !user.adminProfile.allowedIPs.includes(clientIP)) {
+      if (!clientIp || !user.adminProfile.allowedIPs.includes(clientIp)) {
         return res.status(403).json({
           error: 'IP non autorisée',
-          clientIP,
           message: 'Votre adresse IP n\'est pas autorisée à accéder à ce compte admin'
         });
       }
@@ -229,7 +246,7 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
     });
 
     // Générer les tokens
-    const ip = clientIP || undefined;
+    const ip = clientIp || undefined;
     const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip });
 
     return res.json(tokens);
@@ -332,7 +349,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
         twoFactorEnabled: true,
         consentedAt: true,
         consentVersion: true,
-        consentIp: true,
+        // RGPD: consentIp excluded from API response (privacy-by-design)
         createdAt: true,
         updatedAt: true,
       },
@@ -444,12 +461,14 @@ authRouter.post('/2fa/verify', async (req, res) => {
       return res.status(403).json({ error: '2FA disponible uniquement pour les pros' });
     }
 
-    const verification = await twoFactorService.verifyCode(user.id, code);
+    // Extract client IP for rate limiting (secure extraction)
+    const clientIp = getClientIp(req);
+
+    const verification = await twoFactorService.verifyCode(user.id, code, clientIp);
 
     if (verification.valid) {
       // Code valide - générer les tokens JWT comme pour un login normal
-      const ips = (req as any).ips as string[] | undefined;
-      const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+      const ip = clientIp || undefined;
 
       // Utiliser le service de login avec des données simulées (pas besoin de re-vérifier password)
       const tokens = await service.generateTokens(user, { consentAccepted: true, consentIp: ip });

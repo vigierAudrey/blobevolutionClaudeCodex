@@ -21,6 +21,7 @@ model User {
   updatedAt               DateTime                 @updatedAt
   consentVersion          String?
   consentIp               String?
+  consentIpHash           String?                  // HMAC-SHA256 hash of consentIp (RGPD compliant, 24 hex chars)
   adminProfile            AdminProfile?
   conversationMembers     ConversationMember[]
   emailVerificationTokens EmailVerificationToken[]
@@ -44,6 +45,7 @@ model User {
   availabilityInteractions ProAvailabilityInteraction[] @relation("RiderAvailabilityInteractions")
   auditLogs              AuditLog[]
   pushTokens             PushToken[]
+  notificationPreferences NotificationPreferences?
   loginAttempts          LoginAttempt[]
   createdAlerts          SystemAlert[]            @relation("UserSystemAlerts")
   conversationInvitations ConversationInvitation[] @relation("InvitedToConversation")
@@ -101,6 +103,7 @@ model LoginAttempt {
   id        String   @id @default(uuid())
   email     String
   ip        String?
+  ipHash    String?  // HMAC-SHA256 hash of ip (RGPD compliant, 24 hex chars)
   userAgent String?
   success   Boolean
   reason    String?
@@ -110,6 +113,7 @@ model LoginAttempt {
 
   @@index([email])
   @@index([ip])
+  @@index([ipHash])
   @@index([createdAt])
   @@index([success])
 }
@@ -168,6 +172,7 @@ model ProProfile {
   radiusKm     Int        @default(25)
   verified     Boolean    @default(false)
   verifiedAt   DateTime?
+  notificationPreferences Json?  // { notifyForSurf: true, notifyForKitesurf: true, pushEnabled: true, emailEnabled: false }
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   offers          ProOffer[]
@@ -183,6 +188,39 @@ model PushToken {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model NotificationPreferences {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Master toggles
+  pushEnabled  Boolean @default(true)
+  emailEnabled Boolean @default(false)
+
+  // Preferences for Riders
+  notifyMessages    Boolean @default(true) // New message notifications
+  notifyMatches     Boolean @default(true) // New match notifications
+  notifyInvitations Boolean @default(true) // Group invitation notifications
+
+  // Preferences for PROs (all defaults true)
+  notifyLessonRequests   Boolean @default(true) // Nearby rider looking for lessons
+  notifyBookingAccepted  Boolean @default(true) // Booking request accepted by rider
+  notifyBookingRejected  Boolean @default(true) // Booking request rejected by rider
+  notifyProMessages      Boolean @default(true) // Messages from riders
+
+  // Sport-specific for PROs
+  notifyForSurf     Boolean @default(true)
+  notifyForKitesurf Boolean @default(true)
+
+  // Email digest (future)
+  emailDigestFrequency String @default("NEVER") // NEVER, DAILY, WEEKLY
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
 }
