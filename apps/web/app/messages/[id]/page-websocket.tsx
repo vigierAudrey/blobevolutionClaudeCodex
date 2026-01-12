@@ -10,6 +10,9 @@ import { Button } from '../../../components/ui/button';
 import { Shield, ShieldOff, MoreVertical, Wifi, WifiOff } from 'lucide-react';
 import { apiClient } from '../../../lib/apiClient';
 import { useChat } from '../../../hooks/useChat';
+import { normalizeAppError } from '../../../lib/normalizeAppError';
+import { getUserFacingMessage } from '../../../lib/getUserFacingMessage';
+import { ERROR_CODES } from '../../../lib/socketAck';
 import type {
   Message,
   MessageListResponse,
@@ -70,9 +73,34 @@ export default function ConversationPage() {
 
   // Remonter socket errors vers UI (sauf RATE_LIMITED qui a sa propre UI)
   useEffect(() => {
-    if (lastError && lastError.code !== 'RATE_LIMITED') {
-      setError(lastError.message);
+    if (!lastError) return;
+
+    // Normaliser l'erreur socket
+    const appErr = normalizeAppError(lastError);
+
+    // Log unknown error codes (telemetry)
+    if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
+        !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
+      console.warn('[UNKNOWN_ERROR_CODE]', {
+        code: appErr.code,
+        source: appErr.source, // debug/telemetry only
+        debug: appErr.debug,
+      });
     }
+
+    // Skip RATE_LIMITED (has dedicated UI)
+    if (appErr.code === ERROR_CODES.RATE_LIMITED) {
+      return;
+    }
+
+    // Get user-facing message
+    const userMsg = getUserFacingMessage(appErr, {
+      domain: 'chat',
+      action: 'socket-error',
+    });
+
+    // Display user message (not raw error)
+    setError(userMsg.text);
   }, [lastError]);
 
   const loadMessages = useCallback(async () => {
@@ -179,35 +207,112 @@ export default function ConversationPage() {
 
   const send = async () => {
     if (!input.trim()) return;
-    if (rateLimitedUntil && Date.now() < rateLimitedUntil) return; // ✅ PATCH 3: Prevent send during cooldown
+    if (rateLimitedUntil && Date.now() < rateLimitedUntil) return; // Prevent send during cooldown
 
-    // ✨ Envoyer via WebSocket si connecté, sinon fallback sur REST
+    // WS primary path if connected, else HTTP fallback
     if (connected) {
-      // ✅ PATCH 2 (P0 #3): Await sendMessage et gérer les erreurs ACK
       const result = await sendMessage(input.trim(), 'TEXT');
+
       if (result.success) {
         setInput('');
         setError(null);
-      } else if (result.error) {
-        // ✅ PATCH 3 (P1 #4): Détecter RATE_LIMITED et activer cooldown
-        if (result.error.code === 'RATE_LIMITED' && result.error.retryAfter) {
-          const cooldownUntil = Date.now() + (result.error.retryAfter * 1000);
-          setRateLimitedUntil(cooldownUntil);
-          setError(`Trop de messages envoyés. Réessayez dans ${result.error.retryAfter}s`);
-        } else {
-          setError(`Erreur: ${result.error.message}`);
+        return;
+      }
+
+      // WS failed, normalize error
+      const appErr = normalizeAppError(result.error);
+
+      // Log unknown error codes (telemetry)
+      if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
+          !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
+        console.warn('[UNKNOWN_ERROR_CODE]', {
+          code: appErr.code,
+          source: appErr.source, // debug/telemetry only
+          debug: appErr.debug,
+        });
+      }
+
+      // CLIENT_TIMEOUT only: try HTTP fallback (1 WS + max 1 HTTP)
+      if (appErr.code === 'CLIENT_TIMEOUT') {
+        const payload: SendMessagePayload = { type: 'TEXT', content: input.trim() };
+        try {
+          await apiClient.sendMessage(id, payload);
+          setInput('');
+          setError(null);
+          await loadMessages();
+          return;
+        } catch (httpErr) {
+          // HTTP fallback failed, normalize and show to user
+          const httpAppErr = normalizeAppError(httpErr);
+
+          // Log unknown codes
+          if (!ERROR_CODES[httpAppErr.code as keyof typeof ERROR_CODES] &&
+              !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(httpAppErr.code)) {
+            console.warn('[UNKNOWN_ERROR_CODE]', {
+              code: httpAppErr.code,
+              source: httpAppErr.source,
+              debug: httpAppErr.debug,
+            });
+          }
+
+          const httpUserMsg = getUserFacingMessage(httpAppErr, {
+            domain: 'chat',
+            action: 'send-message',
+          });
+
+          setError(httpUserMsg.text);
+          return;
         }
       }
+
+      // RATE_LIMITED: activate cooldown UI
+      if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
+        const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
+        setRateLimitedUntil(cooldownUntil);
+
+        const userMsg = getUserFacingMessage(appErr, {
+          domain: 'chat',
+          action: 'send-message',
+        });
+
+        setError(userMsg.text);
+        return;
+      }
+
+      // Other WS errors: show user message
+      const userMsg = getUserFacingMessage(appErr, {
+        domain: 'chat',
+        action: 'send-message',
+      });
+
+      setError(userMsg.text);
     } else {
-      // Fallback REST API
+      // Not connected: HTTP fallback
       const payload: SendMessagePayload = { type: 'TEXT', content: input.trim() };
       try {
         await apiClient.sendMessage(id, payload);
         setInput('');
+        setError(null);
         await loadMessages();
       } catch (err) {
-        // ✅ E-REVIEW P0 #4: Pas de console.error, UI uniquement
-        setError('Erreur lors de l\'envoi du message');
+        const appErr = normalizeAppError(err);
+
+        // Log unknown codes
+        if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
+            !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
+          console.warn('[UNKNOWN_ERROR_CODE]', {
+            code: appErr.code,
+            source: appErr.source,
+            debug: appErr.debug,
+          });
+        }
+
+        const userMsg = getUserFacingMessage(appErr, {
+          domain: 'chat',
+          action: 'send-message',
+        });
+
+        setError(userMsg.text);
       }
     }
   };
@@ -215,37 +320,120 @@ export default function ConversationPage() {
   const sendProposal = async () => {
     if (!pDate || !pPlace) return;
     const meta: MessageMeta = { date: pDate, place: pPlace, note: pNote || undefined };
+    const content = `Proposition de session ${pDate} @ ${pPlace}`;
 
-    // ✨ Envoyer via WebSocket si connecté
+    // WS primary path if connected, else HTTP fallback
     if (connected) {
-      // ✅ PATCH 2 (P0 #3): Await sendMessage et gérer les erreurs ACK
-      const result = await sendMessage(`Proposition de session ${pDate} @ ${pPlace}`, 'PROPOSAL');
+      const result = await sendMessage(content, 'PROPOSAL');
+
       if (result.success) {
         setShowProposal(false);
         setPDate('');
         setPPlace('');
         setPNote('');
         setError(null);
-      } else if (result.error) {
-        setError(`Erreur: ${result.error.message}`);
+        return;
       }
+
+      // WS failed, normalize error
+      const appErr = normalizeAppError(result.error);
+
+      // Log unknown error codes
+      if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
+          !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
+        console.warn('[UNKNOWN_ERROR_CODE]', {
+          code: appErr.code,
+          source: appErr.source,
+          debug: appErr.debug,
+        });
+      }
+
+      // CLIENT_TIMEOUT only: try HTTP fallback
+      if (appErr.code === 'CLIENT_TIMEOUT') {
+        const payload: SendMessagePayload = { type: 'PROPOSAL', content, meta };
+        try {
+          await apiClient.sendMessage(id, payload);
+          setShowProposal(false);
+          setPDate('');
+          setPPlace('');
+          setPNote('');
+          setError(null);
+          await loadMessages();
+          return;
+        } catch (httpErr) {
+          const httpAppErr = normalizeAppError(httpErr);
+
+          // Log unknown codes
+          if (!ERROR_CODES[httpAppErr.code as keyof typeof ERROR_CODES] &&
+              !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(httpAppErr.code)) {
+            console.warn('[UNKNOWN_ERROR_CODE]', {
+              code: httpAppErr.code,
+              source: httpAppErr.source,
+              debug: httpAppErr.debug,
+            });
+          }
+
+          const httpUserMsg = getUserFacingMessage(httpAppErr, {
+            domain: 'chat',
+            action: 'send-proposal',
+          });
+
+          setError(httpUserMsg.text);
+          return;
+        }
+      }
+
+      // RATE_LIMITED: activate cooldown
+      if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
+        const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
+        setRateLimitedUntil(cooldownUntil);
+
+        const userMsg = getUserFacingMessage(appErr, {
+          domain: 'chat',
+          action: 'send-proposal',
+        });
+
+        setError(userMsg.text);
+        return;
+      }
+
+      // Other WS errors
+      const userMsg = getUserFacingMessage(appErr, {
+        domain: 'chat',
+        action: 'send-proposal',
+      });
+
+      setError(userMsg.text);
     } else {
-      // Fallback REST API
-      const payload: SendMessagePayload = {
-        type: 'PROPOSAL',
-        content: `Proposition de session ${pDate} @ ${pPlace}`,
-        meta,
-      };
+      // Not connected: HTTP fallback
+      const payload: SendMessagePayload = { type: 'PROPOSAL', content, meta };
       try {
         await apiClient.sendMessage(id, payload);
         setShowProposal(false);
         setPDate('');
         setPPlace('');
         setPNote('');
+        setError(null);
         await loadMessages();
       } catch (err) {
-        // ✅ E-REVIEW P0 #4: Pas de console.error, UI uniquement
-        setError('Erreur lors de l\'envoi de la proposition');
+        const appErr = normalizeAppError(err);
+
+        // Log unknown codes
+        if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
+            !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
+          console.warn('[UNKNOWN_ERROR_CODE]', {
+            code: appErr.code,
+            source: appErr.source,
+            debug: appErr.debug,
+          });
+        }
+
+        const userMsg = getUserFacingMessage(appErr, {
+          domain: 'chat',
+          action: 'send-proposal',
+        });
+
+        setError(userMsg.text);
       }
     }
   };
