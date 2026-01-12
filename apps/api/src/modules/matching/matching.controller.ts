@@ -5,6 +5,10 @@ import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { cacheService, CacheKeys } from '../../services/cache.service';
 import { notifyNewMatch, notifyMatchDecision, notifyNewMatchingCard } from '../../lib/socket';
 import { recordServerAnalyticsEvent } from '../../services/analytics/events.service';
+import { notifyNewMatchPush } from '../push/push.controller';
+import { mapErrorToApiError, sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
+import { ERROR_CODES } from '../../utils/error-codes';
+import { secureLogger } from '../../utils/secure-logger';
 
 export const matchingRouter = Router();
 matchingRouter.use(requireAuth, requireVerifiedEmail);
@@ -61,6 +65,30 @@ type MatchingResponseItem = {
   distanceKm: number | null;
 };
 
+const matchingResultSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  gender: z.enum(['FEMALE','MALE','OTHER','UNSPECIFIED']).nullable(),
+  photoUrl: z.string().nullable(),
+  bio: z.string().nullable().optional(),
+  sport: z.string(),
+  level: z.string(),
+  wantsLesson: z.boolean(),
+  lessonSport: z.string().nullable(),
+  distanceKm: z.number().nullable(),
+});
+
+const matchingSearchResponseSchema = z.object({
+  criteria: z.any().optional(),
+  results: z.array(matchingResultSchema),
+  hasMore: z.boolean().optional(),
+  nextCursor: z.string().nullable().optional(),
+  total: z.number().optional(),
+  page: z.number().optional(),
+  pageSize: z.number().optional(),
+  cached: z.boolean().optional(),
+});
+
 type TargetProfileSummary = Prisma.RiderProfileGetPayload<{
   select: { id: true; userId: true; displayName: true };
 }>;
@@ -69,9 +97,20 @@ type ReciprocalDecisionSummary = Prisma.MatchDecisionGetPayload<{
 }>;
 
 matchingRouter.post('/search', async (req, res) => {
+  const envelope = wantsEnvelope(req);
   try {
     const userId = (req as any).user?.id as string | undefined;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!userId) {
+      return envelope
+        ? sendError(res, 401, ERROR_CODES.UNAUTHORIZED, 'Unauthorized')
+        : res.status(401).json({ error: 'Unauthorized' });
+    }
+    const role = (req as any).user?.role as string | undefined;
+    if (role && role !== 'RIDER') {
+      return envelope
+        ? sendError(res, 403, ERROR_CODES.FORBIDDEN, 'Forbidden')
+        : res.status(403).json({ error: 'Forbidden' });
+    }
 
     const { sport, level, date, distanceKm, location, cursor, limit, page, pageSize, sortBy } = searchSchema.parse(req.body);
 
@@ -122,7 +161,7 @@ matchingRouter.post('/search', async (req, res) => {
 
     // If no location provided, return empty results (no DB dependency in this path)
     if (!criteria.location) {
-      return res.json({
+      const payload = {
         criteria,
         results: [],
         hasMore: false,
@@ -131,7 +170,9 @@ matchingRouter.post('/search', async (req, res) => {
         total: 0,
         page: page || 1,
         pageSize: pageSize || limit
-      });
+      };
+      const parsedPayload = matchingSearchResponseSchema.parse(payload);
+      return envelope ? sendOk(res, 200, parsedPayload) : res.json(payload);
     }
 
     // Determine pagination method (cursor-based preferred, fallback to offset)
@@ -351,7 +392,7 @@ matchingRouter.post('/search', async (req, res) => {
     const responseNextCursor = nextCursor || (results.length > 0 ? results[results.length - 1].id : null);
 
     if (useCursorPagination) {
-      return res.json({
+      const payload = {
         criteria,
         results,
         hasMore,
@@ -360,9 +401,11 @@ matchingRouter.post('/search', async (req, res) => {
         total: total || results.length,
         page: 1,
         pageSize: effectiveLimit
-      });
+      };
+      const parsedPayload = matchingSearchResponseSchema.parse(payload);
+      return envelope ? sendOk(res, 200, parsedPayload) : res.json(payload);
     } else {
-      return res.json({
+      const payload = {
         criteria,
         results,
         total,
@@ -371,30 +414,59 @@ matchingRouter.post('/search', async (req, res) => {
         hasMore,
         // Include cursor fields for forward compatibility
         nextCursor: responseNextCursor
-      });
+      };
+      const parsedPayload = matchingSearchResponseSchema.parse(payload);
+      return envelope ? sendOk(res, 200, parsedPayload) : res.json(payload);
     }
   } catch (err: any) {
     if (err?.name === 'ZodError') {
-      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+      return envelope
+        ? sendError(res, 400, ERROR_CODES.VALIDATION_ERROR, 'Invalid input', err.errors)
+        : res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
-    return res.status(500).json({ error: 'Internal error' });
+    const mapped = mapErrorToApiError(err);
+    return envelope
+      ? sendError(res, mapped.status, (mapped.code as string) || ERROR_CODES.INTERNAL_ERROR, mapped.message, mapped.details)
+      : res.status(mapped.status).json({ error: mapped.message, ...(mapped.details ? { details: mapped.details } : {}) });
   }
 });
 
 // Record a decision (accept/refuse) for a target profile
 const decisionSchema = z.object({ targetProfileId: z.string().uuid(), decision: z.enum(['ACCEPT','REFUSE']) });
+let deprecatedDecisionCount = 0;
 matchingRouter.post('/decision', async (req, res) => {
+  const envelope = wantsEnvelope(req);
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', '2026-04-12T00:00:00Z');
+  res.setHeader('Link', '</matching/decisions>; rel="alternate"');
+  deprecatedDecisionCount += 1;
+  secureLogger.info('deprecated_endpoint_used', { endpoint: '/matching/decision', mode: envelope ? 'enveloped' : 'legacy', count: deprecatedDecisionCount });
   try {
     const userId = (req as any).user?.id as string | undefined;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const { targetProfileId, decision } = decisionSchema.parse(req.body);
+    if (!userId) {
+      return envelope ? sendError(res, 401, ERROR_CODES.UNAUTHORIZED, 'Unauthorized') : res.status(401).json({ error: 'Unauthorized' });
+    }
+    const parsed = decisionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const details = parsed.error.errors;
+      return envelope
+        ? sendError(res, 400, ERROR_CODES.VALIDATION_ERROR, 'Invalid input', details)
+        : res.status(400).json({ error: 'Invalid input', details });
+    }
+    const { targetProfileId, decision } = parsed.data;
     const createdConversations: Array<{ conversationId: string; otherDisplayName: string | null }> = [];
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.matchDecision.upsert({
-        where: { actorUserId_targetProfileId: { actorUserId: userId, targetProfileId } as any },
-        update: { decision },
-        create: { actorUserId: userId, targetProfileId, decision },
-      });
+      if (envelope) {
+        await tx.matchDecision.create({
+          data: { actorUserId: userId, targetProfileId, decision },
+        });
+      } else {
+        await tx.matchDecision.upsert({
+          where: { actorUserId_targetProfileId: { actorUserId: userId, targetProfileId } as any },
+          update: { decision },
+          create: { actorUserId: userId, targetProfileId, decision },
+        });
+      }
       if (decision === 'ACCEPT') {
         const targetProfile = await tx.riderProfile.findUnique({ where: { id: targetProfileId }, select: { userId: true, displayName: true } });
         if (targetProfile?.userId) {
@@ -454,22 +526,22 @@ matchingRouter.post('/decision', async (req, res) => {
               });
 
               // Notifications Push (asynchrone, non-bloquant)
-              const { notifyNewMatchPush } = await import('../push/push.controller');
-
               notifyNewMatchPush(targetProfile.userId, {
                 matchedUserName: myFullProfile?.displayName || 'Un rider',
                 matchedUserPhoto: myFullProfile?.photoUrl,
                 conversationId: conv.id
-              }).catch((error) => {
-                console.error('Failed to send push notification for match:', error);
+              }).catch((error: unknown) => {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                console.error('Failed to send push notification for match:', errorMessage);
               });
 
               notifyNewMatchPush(userId, {
                 matchedUserName: targetProfile.displayName || 'Un rider',
                 matchedUserPhoto: undefined,
                 conversationId: conv.id
-              }).catch((error) => {
-                console.error('Failed to send push notification for match:', error);
+              }).catch((error: unknown) => {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                console.error('Failed to send push notification for match:', errorMessage);
               });
             } else {
               // ✨ Notifier l'autre utilisateur de ma décision (sans match mutuel)
@@ -491,10 +563,17 @@ matchingRouter.post('/decision', async (req, res) => {
       consentHash,
       occurredAt: new Date(),
     });
-    return res.json({ ok: true, createdConversations });
+    return envelope ? sendOk(res, 200, { createdConversations }) : res.json({ ok: true, createdConversations });
   } catch (err: any) {
+    const mapped = mapErrorToApiError(err);
+    if (mapped.code === 'UNIQUE_CONSTRAINT') {
+      mapped.code = ERROR_CODES.MATCHING_CONFLICT;
+    }
+    if (envelope) {
+      return sendError(res, mapped.status, mapped.code, mapped.message, mapped.details);
+    }
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
-    return res.status(500).json({ error: 'Internal error' });
+    return res.status(mapped.status).json({ error: mapped.message, ...(mapped.details ? { details: mapped.details } : {}) });
   }
 });
 

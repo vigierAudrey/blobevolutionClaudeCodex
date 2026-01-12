@@ -851,6 +851,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /matching/decision:
     post:
+      deprecated: true
+      description: Deprecated. Use POST /matching/decisions (batch) instead.
       tags: [Matching]
       summary: Enregistre une décision (accept/refuse) pour un profil ciblé
       operationId: matchingDecision
