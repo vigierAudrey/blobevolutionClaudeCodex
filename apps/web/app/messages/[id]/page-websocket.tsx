@@ -22,6 +22,35 @@ import type {
   ThreadSummary,
 } from '@/types/messages';
 
+// Known client-only error codes (not from server ERROR_CODES)
+const KNOWN_CLIENT_CODES = new Set([
+  'CLIENT_TIMEOUT',
+  'NOT_CONNECTED',
+  'NO_SOCKET',
+  'AUTH_FAILED',
+  'CONNECT_ERROR',
+  'INVALID_ENVELOPE',
+  'INVALID_RESPONSE',
+  'INVALID_JSON',
+]);
+
+/**
+ * Log unknown error codes for telemetry
+ * @param appErr - Normalized AppError
+ */
+function logUnknownCode(appErr: { code: string; source: string; debug?: unknown }) {
+  const isServerCode = Object.values(ERROR_CODES).includes(appErr.code as any);
+  const isClientCode = KNOWN_CLIENT_CODES.has(appErr.code);
+
+  if (!isServerCode && !isClientCode) {
+    console.warn('[UNKNOWN_ERROR_CODE]', {
+      code: appErr.code,
+      source: appErr.source, // debug/telemetry only
+      debug: appErr.debug,
+    });
+  }
+}
+
 export default function ConversationPage() {
   const params = useParams();
   const router = useRouter();
@@ -79,14 +108,7 @@ export default function ConversationPage() {
     const appErr = normalizeAppError(lastError);
 
     // Log unknown error codes (telemetry)
-    if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
-        !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
-      console.warn('[UNKNOWN_ERROR_CODE]', {
-        code: appErr.code,
-        source: appErr.source, // debug/telemetry only
-        debug: appErr.debug,
-      });
-    }
+    logUnknownCode(appErr);
 
     // Skip RATE_LIMITED (has dedicated UI)
     if (appErr.code === ERROR_CODES.RATE_LIMITED) {
@@ -223,14 +245,7 @@ export default function ConversationPage() {
       const appErr = normalizeAppError(result.error);
 
       // Log unknown error codes (telemetry)
-      if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
-          !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
-        console.warn('[UNKNOWN_ERROR_CODE]', {
-          code: appErr.code,
-          source: appErr.source, // debug/telemetry only
-          debug: appErr.debug,
-        });
-      }
+      logUnknownCode(appErr);
 
       // CLIENT_TIMEOUT only: try HTTP fallback (1 WS + max 1 HTTP)
       if (appErr.code === 'CLIENT_TIMEOUT') {
@@ -246,14 +261,7 @@ export default function ConversationPage() {
           const httpAppErr = normalizeAppError(httpErr);
 
           // Log unknown codes
-          if (!ERROR_CODES[httpAppErr.code as keyof typeof ERROR_CODES] &&
-              !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(httpAppErr.code)) {
-            console.warn('[UNKNOWN_ERROR_CODE]', {
-              code: httpAppErr.code,
-              source: httpAppErr.source,
-              debug: httpAppErr.debug,
-            });
-          }
+          logUnknownCode(httpAppErr);
 
           const httpUserMsg = getUserFacingMessage(httpAppErr, {
             domain: 'chat',
@@ -298,14 +306,7 @@ export default function ConversationPage() {
         const appErr = normalizeAppError(err);
 
         // Log unknown codes
-        if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
-            !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
-          console.warn('[UNKNOWN_ERROR_CODE]', {
-            code: appErr.code,
-            source: appErr.source,
-            debug: appErr.debug,
-          });
-        }
+        logUnknownCode(appErr);
 
         const userMsg = getUserFacingMessage(appErr, {
           domain: 'chat',
@@ -339,14 +340,7 @@ export default function ConversationPage() {
       const appErr = normalizeAppError(result.error);
 
       // Log unknown error codes
-      if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
-          !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
-        console.warn('[UNKNOWN_ERROR_CODE]', {
-          code: appErr.code,
-          source: appErr.source,
-          debug: appErr.debug,
-        });
-      }
+      logUnknownCode(appErr);
 
       // CLIENT_TIMEOUT only: try HTTP fallback
       if (appErr.code === 'CLIENT_TIMEOUT') {
@@ -364,14 +358,7 @@ export default function ConversationPage() {
           const httpAppErr = normalizeAppError(httpErr);
 
           // Log unknown codes
-          if (!ERROR_CODES[httpAppErr.code as keyof typeof ERROR_CODES] &&
-              !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(httpAppErr.code)) {
-            console.warn('[UNKNOWN_ERROR_CODE]', {
-              code: httpAppErr.code,
-              source: httpAppErr.source,
-              debug: httpAppErr.debug,
-            });
-          }
+          logUnknownCode(httpAppErr);
 
           const httpUserMsg = getUserFacingMessage(httpAppErr, {
             domain: 'chat',
@@ -419,14 +406,7 @@ export default function ConversationPage() {
         const appErr = normalizeAppError(err);
 
         // Log unknown codes
-        if (!ERROR_CODES[appErr.code as keyof typeof ERROR_CODES] &&
-            !['CLIENT_TIMEOUT', 'NOT_CONNECTED', 'NO_SOCKET', 'AUTH_FAILED', 'CONNECT_ERROR', 'INVALID_ENVELOPE', 'INVALID_RESPONSE', 'INVALID_JSON'].includes(appErr.code)) {
-          console.warn('[UNKNOWN_ERROR_CODE]', {
-            code: appErr.code,
-            source: appErr.source,
-            debug: appErr.debug,
-          });
-        }
+        logUnknownCode(appErr);
 
         const userMsg = getUserFacingMessage(appErr, {
           domain: 'chat',
