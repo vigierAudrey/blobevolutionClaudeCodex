@@ -3,12 +3,9 @@ import { z } from 'zod';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { cacheService, CacheKeys } from '../../services/cache.service';
-import { notifyNewMatch, notifyMatchDecision, notifyNewMatchingCard } from '../../lib/socket';
 import { recordServerAnalyticsEvent } from '../../services/analytics/events.service';
-import { notifyNewMatchPush } from '../push/push.controller';
 import { mapErrorToApiError, sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
 import { ERROR_CODES } from '../../utils/error-codes';
-import { secureLogger } from '../../utils/secure-logger';
 
 export const matchingRouter = Router();
 matchingRouter.use(requireAuth, requireVerifiedEmail);
@@ -431,150 +428,17 @@ matchingRouter.post('/search', async (req, res) => {
   }
 });
 
-// Record a decision (accept/refuse) for a target profile
-const decisionSchema = z.object({ targetProfileId: z.string().uuid(), decision: z.enum(['ACCEPT','REFUSE']) });
-let deprecatedDecisionCount = 0;
-matchingRouter.post('/decision', async (req, res) => {
+// Legacy endpoint removed
+matchingRouter.post('/decision', (req, res) => {
   const envelope = wantsEnvelope(req);
+  const message = 'This endpoint is removed. Use POST /matching/decisions.';
   res.setHeader('Deprecation', 'true');
   res.setHeader('Sunset', '2026-04-12T00:00:00Z');
   res.setHeader('Link', '</matching/decisions>; rel="alternate"');
-  deprecatedDecisionCount += 1;
-  secureLogger.info('deprecated_endpoint_used', { endpoint: '/matching/decision', mode: envelope ? 'enveloped' : 'legacy', count: deprecatedDecisionCount });
-  try {
-    const userId = (req as any).user?.id as string | undefined;
-    if (!userId) {
-      return envelope ? sendError(res, 401, ERROR_CODES.UNAUTHORIZED, 'Unauthorized') : res.status(401).json({ error: 'Unauthorized' });
-    }
-    const parsed = decisionSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      const details = parsed.error.errors;
-      return envelope
-        ? sendError(res, 400, ERROR_CODES.VALIDATION_ERROR, 'Invalid input', details)
-        : res.status(400).json({ error: 'Invalid input', details });
-    }
-    const { targetProfileId, decision } = parsed.data;
-    const createdConversations: Array<{ conversationId: string; otherDisplayName: string | null }> = [];
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      if (envelope) {
-        await tx.matchDecision.create({
-          data: { actorUserId: userId, targetProfileId, decision },
-        });
-      } else {
-        await tx.matchDecision.upsert({
-          where: { actorUserId_targetProfileId: { actorUserId: userId, targetProfileId } as any },
-          update: { decision },
-          create: { actorUserId: userId, targetProfileId, decision },
-        });
-      }
-      if (decision === 'ACCEPT') {
-        const targetProfile = await tx.riderProfile.findUnique({ where: { id: targetProfileId }, select: { userId: true, displayName: true } });
-        if (targetProfile?.userId) {
-          const myProfile = await tx.riderProfile.findUnique({ where: { userId }, select: { id: true } });
-          if (myProfile?.id) {
-            const reciprocal = await tx.matchDecision.findUnique({
-              where: { actorUserId_targetProfileId: { actorUserId: targetProfile.userId, targetProfileId: myProfile.id } as any },
-              select: { decision: true },
-            });
-            if (reciprocal?.decision === 'ACCEPT') {
-              const [one, two] = userId < targetProfile.userId ? [userId, targetProfile.userId] : [targetProfile.userId, userId];
-              const match = await tx.match.upsert({
-                where: { userOneId_userTwoId: { userOneId: one, userTwoId: two } as any },
-                update: { status: 'ACTIVE' },
-                create: { userOneId: one, userTwoId: two, status: 'ACTIVE' },
-              });
-              let conv = await tx.conversation.findFirst({ where: { matchId: match.id } });
-              if (!conv) {
-                conv = await tx.conversation.create({ data: { matchId: match.id } });
-                await tx.conversationMember.createMany({
-                  data: [
-                    { conversationId: conv.id, userId: userId },
-                    { conversationId: conv.id, userId: targetProfile.userId },
-                  ],
-                  skipDuplicates: true,
-                });
-              }
-              createdConversations.push({ conversationId: conv.id, otherDisplayName: targetProfile.displayName ?? 'Profil' });
-
-              // ✨ Notifier les deux utilisateurs du nouveau match (WebSocket + Push)
-              // Get my profile info for the notification
-              const myFullProfile = await tx.riderProfile.findUnique({
-                where: { userId },
-                select: { displayName: true, photoUrl: true }
-              });
-
-              // Notifier l'autre utilisateur via Socket.io
-              notifyNewMatch(targetProfile.userId, {
-                matchId: match.id,
-                conversationId: conv.id,
-                otherUser: {
-                  id: userId,
-                  displayName: myFullProfile?.displayName || 'Un rider',
-                  photoUrl: myFullProfile?.photoUrl
-                }
-              });
-
-              // Notifier moi-même via Socket.io
-              notifyNewMatch(userId, {
-                matchId: match.id,
-                conversationId: conv.id,
-                otherUser: {
-                  id: targetProfile.userId,
-                  displayName: targetProfile.displayName || 'Un rider',
-                  photoUrl: null // On pourrait fetch photoUrl ici si nécessaire
-                }
-              });
-
-              // Notifications Push (asynchrone, non-bloquant)
-              notifyNewMatchPush(targetProfile.userId, {
-                matchedUserName: myFullProfile?.displayName || 'Un rider',
-                matchedUserPhoto: myFullProfile?.photoUrl,
-                conversationId: conv.id
-              }).catch((error: unknown) => {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                console.error('Failed to send push notification for match:', errorMessage);
-              });
-
-              notifyNewMatchPush(userId, {
-                matchedUserName: targetProfile.displayName || 'Un rider',
-                matchedUserPhoto: undefined,
-                conversationId: conv.id
-              }).catch((error: unknown) => {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                console.error('Failed to send push notification for match:', errorMessage);
-              });
-            } else {
-              // ✨ Notifier l'autre utilisateur de ma décision (sans match mutuel)
-              notifyMatchDecision(targetProfile.userId, {
-                actorUserId: userId,
-                decision: 'ACCEPT',
-                mutualMatch: false
-              });
-            }
-          }
-        }
-      }
-    });
-    const consentHash = getConsentHash(req);
-    void recordServerAnalyticsEvent({
-      eventType: 'RIDER_MATCH_DECISION',
-      actorType: 'RIDER',
-      actorId: userId,
-      consentHash,
-      occurredAt: new Date(),
-    });
-    return envelope ? sendOk(res, 200, { createdConversations }) : res.json({ ok: true, createdConversations });
-  } catch (err: any) {
-    const mapped = mapErrorToApiError(err);
-    if (mapped.code === 'UNIQUE_CONSTRAINT') {
-      mapped.code = ERROR_CODES.MATCHING_CONFLICT;
-    }
-    if (envelope) {
-      return sendError(res, mapped.status, mapped.code, mapped.message, mapped.details);
-    }
-    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
-    return res.status(mapped.status).json({ error: mapped.message, ...(mapped.details ? { details: mapped.details } : {}) });
+  if (envelope) {
+    return sendError(res, 410, ERROR_CODES.GONE, message, { redirect: '/matching/decisions' });
   }
+  return res.status(410).json({ error: message, redirect: '/matching/decisions' });
 });
 
 // Batch decisions

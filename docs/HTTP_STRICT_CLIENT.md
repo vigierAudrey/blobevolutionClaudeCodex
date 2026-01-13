@@ -42,7 +42,6 @@ const data = await requestStrict(
 | /matching/decisions | POST | Strict (requestStrict) | P0 | Batch décisions |
 | /booking/requests/:id/decision | POST | Strict (requestStrict) | P0 | Décision booking |
 | /reports/profile | POST | Strict (requestStrict) | P0 | Signalement profil |
-| /matching/decision | POST | Deprecated (use /matching/decisions) | P0 | Décision unitaire (non utilisée, dépréciée) |
 | /booking/availability | POST | Strict (requestStrict) | P0 | Création dispo |
 | /booking/availability/:id | PATCH/DELETE | Strict (requestStrict) | P0 | Mise à jour / suppression dispo |
 | /conversations/:id/messages | POST | Strict (requestStrict) | P0 | Envoi message HTTP fallback |

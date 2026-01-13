@@ -197,15 +197,6 @@ if (connected) {
 
 ### 3.1 Matching Decisions
 
-#### Single Decision
-**Location**: `apps/web/lib/apiClient.ts:949-950`
-
-**API**: `POST /matching/decision`
-**Method**: Legacy `request()` (NOT `requestStrict`)
-**Envelope**: ❌ No envelope validation
-
-**⚠️ Problem**: Does not use strict envelope, loses error codes.
-
 #### Batch Decisions
 **Location**: `apps/web/lib/apiClient.ts:952-967`
 

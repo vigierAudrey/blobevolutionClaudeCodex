@@ -131,21 +131,22 @@
           }
         },
         {
-          "name": "Accept Profile",
+          "name": "Batch Decisions",
           "request": {
             "method": "POST",
             "header": [
               { "key": "Authorization", "value": "Bearer {{accessToken}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-ENVELOPE", "value": "1" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"targetProfileId\": \"<profile-id>\",\n  \"decision\": \"ACCEPT\"\n}"
+              "raw": "{\n  \"items\": [\n    { \"targetProfileId\": \"<profile-id>\", \"decision\": \"ACCEPT\" }\n  ]\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/matching/decision",
+              "raw": "{{baseUrl}}/matching/decisions",
               "host": ["{{baseUrl}}"],
-              "path": ["matching", "decision"]
+              "path": ["matching", "decisions"]
             }
           }
         }
