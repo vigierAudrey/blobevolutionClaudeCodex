@@ -231,91 +231,46 @@ export default function ConversationPage() {
     if (!input.trim()) return;
     if (rateLimitedUntil && Date.now() < rateLimitedUntil) return; // Prevent send during cooldown
 
-    // WS primary path if connected, else HTTP fallback
-    if (connected) {
-      const result = await sendMessage(input.trim(), 'TEXT');
+    // C2: sendMessage now handles WS→HTTP fallback internally
+    const result = await sendMessage(input.trim(), 'TEXT');
 
-      if (result.success) {
-        setInput('');
-        setError(null);
-        return;
+    if (result.success) {
+      setInput('');
+      setError(null);
+      // Reload messages if HTTP fallback was used (optimistic WS messages already handled)
+      if (result.transport === 'HTTP') {
+        await loadMessages();
       }
+      return;
+    }
 
-      // WS failed, normalize error
-      const appErr = normalizeAppError(result.error);
+    // Failed: normalize error and show to user
+    const appErr = normalizeAppError(result.error);
 
-      // Log unknown error codes (telemetry)
-      logUnknownCode(appErr);
+    // Log unknown error codes (telemetry)
+    logUnknownCode(appErr);
 
-      // CLIENT_TIMEOUT only: try HTTP fallback (1 WS + max 1 HTTP)
-      if (appErr.code === 'CLIENT_TIMEOUT') {
-        const payload: SendMessagePayload = { type: 'TEXT', content: input.trim() };
-        try {
-          await apiClient.sendMessage(id, payload);
-          setInput('');
-          setError(null);
-          await loadMessages();
-          return;
-        } catch (httpErr) {
-          // HTTP fallback failed, normalize and show to user
-          const httpAppErr = normalizeAppError(httpErr);
+    // RATE_LIMITED: activate cooldown UI
+    if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
+      const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
+      setRateLimitedUntil(cooldownUntil);
 
-          // Log unknown codes
-          logUnknownCode(httpAppErr);
-
-          const httpUserMsg = getUserFacingMessage(httpAppErr, {
-            domain: 'chat',
-            action: 'send-message',
-          });
-
-          setError(httpUserMsg.text);
-          return;
-        }
-      }
-
-      // RATE_LIMITED: activate cooldown UI
-      if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
-        const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
-        setRateLimitedUntil(cooldownUntil);
-
-        const userMsg = getUserFacingMessage(appErr, {
-          domain: 'chat',
-          action: 'send-message',
-        });
-
-        setError(userMsg.text);
-        return;
-      }
-
-      // Other WS errors: show user message
       const userMsg = getUserFacingMessage(appErr, {
         domain: 'chat',
         action: 'send-message',
       });
 
       setError(userMsg.text);
-    } else {
-      // Not connected: HTTP fallback
-      const payload: SendMessagePayload = { type: 'TEXT', content: input.trim() };
-      try {
-        await apiClient.sendMessage(id, payload);
-        setInput('');
-        setError(null);
-        await loadMessages();
-      } catch (err) {
-        const appErr = normalizeAppError(err);
-
-        // Log unknown codes
-        logUnknownCode(appErr);
-
-        const userMsg = getUserFacingMessage(appErr, {
-          domain: 'chat',
-          action: 'send-message',
-        });
-
-        setError(userMsg.text);
-      }
+      return;
     }
+
+    // Other errors: show user message
+    const userMsg = getUserFacingMessage(appErr, {
+      domain: 'chat',
+      action: 'send-message',
+    });
+
+    setError(userMsg.text);
   };
 
   const sendProposal = async () => {
@@ -323,99 +278,49 @@ export default function ConversationPage() {
     const meta: MessageMeta = { date: pDate, place: pPlace, note: pNote || undefined };
     const content = `Proposition de session ${pDate} @ ${pPlace}`;
 
-    // WS primary path if connected, else HTTP fallback
-    if (connected) {
-      const result = await sendMessage(content, 'PROPOSAL');
+    // C2: sendMessage now handles WS→HTTP fallback internally
+    const result = await sendMessage(content, 'PROPOSAL', meta);
 
-      if (result.success) {
-        setShowProposal(false);
-        setPDate('');
-        setPPlace('');
-        setPNote('');
-        setError(null);
-        return;
+    if (result.success) {
+      setShowProposal(false);
+      setPDate('');
+      setPPlace('');
+      setPNote('');
+      setError(null);
+      // Reload messages if HTTP fallback was used
+      if (result.transport === 'HTTP') {
+        await loadMessages();
       }
+      return;
+    }
 
-      // WS failed, normalize error
-      const appErr = normalizeAppError(result.error);
+    // Failed: normalize error and show to user
+    const appErr = normalizeAppError(result.error);
 
-      // Log unknown error codes
-      logUnknownCode(appErr);
+    // Log unknown error codes
+    logUnknownCode(appErr);
 
-      // CLIENT_TIMEOUT only: try HTTP fallback
-      if (appErr.code === 'CLIENT_TIMEOUT') {
-        const payload: SendMessagePayload = { type: 'PROPOSAL', content, meta };
-        try {
-          await apiClient.sendMessage(id, payload);
-          setShowProposal(false);
-          setPDate('');
-          setPPlace('');
-          setPNote('');
-          setError(null);
-          await loadMessages();
-          return;
-        } catch (httpErr) {
-          const httpAppErr = normalizeAppError(httpErr);
+    // RATE_LIMITED: activate cooldown
+    if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
+      const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
+      setRateLimitedUntil(cooldownUntil);
 
-          // Log unknown codes
-          logUnknownCode(httpAppErr);
-
-          const httpUserMsg = getUserFacingMessage(httpAppErr, {
-            domain: 'chat',
-            action: 'send-proposal',
-          });
-
-          setError(httpUserMsg.text);
-          return;
-        }
-      }
-
-      // RATE_LIMITED: activate cooldown
-      if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
-        const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
-        setRateLimitedUntil(cooldownUntil);
-
-        const userMsg = getUserFacingMessage(appErr, {
-          domain: 'chat',
-          action: 'send-proposal',
-        });
-
-        setError(userMsg.text);
-        return;
-      }
-
-      // Other WS errors
       const userMsg = getUserFacingMessage(appErr, {
         domain: 'chat',
         action: 'send-proposal',
       });
 
       setError(userMsg.text);
-    } else {
-      // Not connected: HTTP fallback
-      const payload: SendMessagePayload = { type: 'PROPOSAL', content, meta };
-      try {
-        await apiClient.sendMessage(id, payload);
-        setShowProposal(false);
-        setPDate('');
-        setPPlace('');
-        setPNote('');
-        setError(null);
-        await loadMessages();
-      } catch (err) {
-        const appErr = normalizeAppError(err);
-
-        // Log unknown codes
-        logUnknownCode(appErr);
-
-        const userMsg = getUserFacingMessage(appErr, {
-          domain: 'chat',
-          action: 'send-proposal',
-        });
-
-        setError(userMsg.text);
-      }
+      return;
     }
+
+    // Other errors
+    const userMsg = getUserFacingMessage(appErr, {
+      domain: 'chat',
+      action: 'send-proposal',
+    });
+
+    setError(userMsg.text);
   };
 
   const handleBlock = async () => {
