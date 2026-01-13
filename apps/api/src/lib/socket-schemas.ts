@@ -33,7 +33,7 @@ export type SendMessagePayload = {
   conversationId: string;
   content: string;
   type: 'TEXT' | 'PROPOSAL';
-  clientMessageId?: string;
+  clientMsgId?: string;
 };
 export type TypingPayload = {
   conversationId: string;
@@ -81,8 +81,8 @@ export const sendMessageSchema = z.object({
     .min(1, 'Message cannot be empty')
     .max(1000, 'Message too long (max 1000 characters)'),
   type: z.enum(['TEXT', 'PROPOSAL']).optional().default('TEXT'),
-  // Pour Phase P1 (idempotence) - optionnel en P0
-  clientMessageId: z.string().uuid().optional()
+  // Backend idempotence - optionnel
+  clientMsgId: z.string().uuid().optional()
 });
 
 /**

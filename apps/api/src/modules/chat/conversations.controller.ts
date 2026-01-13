@@ -1,10 +1,14 @@
-import { Router, type Request } from 'express';
+import { Router, type Request, type Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { secureLogger } from '../../utils/secure-logger';
 import { recordServerAnalyticsEvent } from '../../services/analytics/events.service';
+import { notifyGroupInvitation, notifyNewMessage } from '../push/push.controller';
+import { notifyUser } from '../../lib/socket';
+import { sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
+import { ERROR_CODES } from '../../utils/error-codes';
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth, requireVerifiedEmail);
@@ -273,16 +277,48 @@ conversationsRouter.get('/:id/messages', async (req, res) => {
 
 // Send message
 conversationsRouter.post('/:id/messages', async (req, res) => {
+  const envelope = wantsEnvelope(req);
   try {
     const userId = (req as any).user?.id as string | undefined;
     const id = req.params.id;
-    const body = z.object({ type: z.enum(['TEXT', 'PROPOSAL']).default('TEXT'), content: z.string().min(1).max(1000), meta: z.any().optional() }).parse(req.body);
+    const body = z
+      .object({
+        type: z.enum(['TEXT', 'PROPOSAL']).default('TEXT'),
+        content: z.string().min(1).max(1000),
+        meta: z.any().optional(),
+        clientMsgId: z.string().uuid().optional(),
+      })
+      .parse(req.body);
     // Access check + block
     const me = await prisma.conversationMember.findFirst({ where: { conversationId: id, userId } });
-    if (!me) return res.status(404).json({ error: 'Not found' });
+    if (!me) {
+      return envelope ? sendError(res, 403, ERROR_CODES.FORBIDDEN, 'Not a member of this conversation') : res.status(404).json({ error: 'Not found' });
+    }
     const other = await prisma.conversationMember.findFirst({ where: { conversationId: id, userId: { not: userId } } });
-    if (other?.blockedAt) return res.status(403).json({ error: 'You are blocked' });
-    const msg = await prisma.message.create({ data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta } });
+    if (other?.blockedAt) {
+      return envelope ? sendError(res, 403, ERROR_CODES.FORBIDDEN, 'You are blocked') : res.status(403).json({ error: 'You are blocked' });
+    }
+    // Créer ou récupérer le message (idempotent si clientMsgId fourni)
+    const msg = body.clientMsgId
+      ? await prisma.message.upsert({
+          where: {
+            conversation_client_msg_unique: { conversationId: id, clientMsgId: body.clientMsgId }
+          },
+          create: {
+            conversationId: id,
+            senderId: userId as string,
+            type: body.type as any,
+            content: body.content,
+            meta: body.meta,
+            clientMsgId: body.clientMsgId
+          },
+          update: {}, // Ne rien modifier si existe déjà (idempotent)
+          select: { id: true, content: true, type: true, createdAt: true },
+        })
+      : await prisma.message.create({
+          data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta },
+          select: { id: true, content: true, type: true, createdAt: true },
+        });
     await prisma.conversation.update({ where: { id }, data: { updatedAt: new Date() } });
 
     const role = (req as any).user?.role as string | undefined;
@@ -315,22 +351,22 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
       select: { userId: true }
     });
 
-    const { notifyNewMessage } = await import('../push/push.controller');
     for (const member of otherMembers) {
       notifyNewMessage(member.userId, {
         senderName,
         message: body.content,
         conversationId: id
-      }).catch((error) => {
-        secureLogger.error('Failed to send push notification for message', { error, userId: member.userId });
+      }).catch((error: unknown) => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        secureLogger.error('Failed to send push notification for message', { error: errorMessage, userId: member.userId });
       });
     }
 
-    return res.status(201).json({ id: msg.id });
+    return envelope ? sendOk(res, 201, msg) : res.status(201).json({ id: msg.id });
   } catch (e: any) {
-    if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
+    if (e?.name === 'ZodError') return envelope ? sendError(res, 400, ERROR_CODES.VALIDATION_ERROR, 'Invalid input', e.errors) : res.status(400).json({ error: 'Invalid input' });
     secureLogger.error('Open conversation error', { error: e });
-    return res.status(500).json({ error: 'Internal error' });
+    return envelope ? sendError(res, 500, ERROR_CODES.INTERNAL_ERROR, 'Internal error') : res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -426,6 +462,16 @@ const openConversationLimiter = rateLimit({
         ? Math.max(1, Math.ceil((rateLimitInfo.resetTime.getTime() - Date.now()) / 1000))
         : 60;
     res.setHeader('Retry-After', retryAfterSeconds.toString());
+    const envelope = wantsEnvelope(req as Request);
+    if (envelope) {
+      return sendError(
+        res,
+        429,
+        ERROR_CODES.RATE_LIMITED,
+        'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
+        { reason: 'RATE_LIMIT', retryAfterSeconds }
+      );
+    }
     return res.status(429).json({
       code: 'RATE_LIMIT',
       message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
@@ -435,10 +481,15 @@ const openConversationLimiter = rateLimit({
 });
 
 conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
+  const envelope = wantsEnvelope(req);
   let directKey: string | null = null;
   try {
     const meId = (req as any).user?.id as string | undefined;
-    if (!meId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!meId) {
+      return envelope
+        ? sendError(res, 401, ERROR_CODES.UNAUTHORIZED, 'Unauthorized')
+        : res.status(401).json({ error: 'Unauthorized' });
+    }
     const body = z.object({ targetUserId: z.string().uuid() }).parse(req.body);
 
     // Determine conversation type based on target user's role
@@ -448,7 +499,9 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
     });
 
     if (!targetUser) {
-      return res.status(404).json({ error: 'Target user not found' });
+      return envelope
+        ? sendError(res, 404, ERROR_CODES.VALIDATION_ERROR, 'Target user not found')
+        : res.status(404).json({ error: 'Target user not found' });
     }
 
     // Déterminer le type de conversation selon les rôles
@@ -495,11 +548,16 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
     if (recentMessage && now.getTime() - recentMessage.createdAt.getTime() < MESSAGE_COOLDOWN_MS) {
       const retryAfterSeconds = Math.max(1, Math.ceil((MESSAGE_COOLDOWN_MS - (now.getTime() - recentMessage.createdAt.getTime())) / 1000));
       res.setHeader('Retry-After', retryAfterSeconds.toString());
-      return res.status(429).json({
-        code: 'CONVERSATION_COOLDOWN',
-        message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
-        retryAfterSeconds,
-      });
+      return envelope
+        ? sendError(res, 429, ERROR_CODES.RATE_LIMITED, 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.', {
+            reason: 'CONVERSATION_COOLDOWN',
+            retryAfterSeconds,
+          })
+        : res.status(429).json({
+            code: 'CONVERSATION_COOLDOWN',
+            message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
+            retryAfterSeconds,
+          });
     }
 
     const conv = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -539,10 +597,18 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
       return { id: created.id, isNew: true };
     });
 
-    return res.status(conv.isNew ? 201 : 200).json({ id: conv.id });
+    return envelope
+      ? sendOk(res, conv.isNew ? 201 : 200, { id: conv.id, created: conv.isNew })
+      : res.status(conv.isNew ? 201 : 200).json({ id: conv.id });
   } catch (e: any) {
-    if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
-    return res.status(500).json({ error: 'Internal error' });
+    if (e instanceof ZodError) {
+      return envelope
+        ? sendError(res, 400, ERROR_CODES.VALIDATION_ERROR, 'Invalid input', e.errors)
+        : res.status(400).json({ error: 'Invalid input' });
+    }
+    return envelope
+      ? sendError(res, 500, ERROR_CODES.INTERNAL_ERROR, 'Internal error')
+      : res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -792,18 +858,17 @@ conversationsRouter.post('/:id/members', async (req, res) => {
     });
 
     // Send push notification to invited user (non-blocking)
-    const { notifyGroupInvitation } = await import('../push/push.controller');
     notifyGroupInvitation(body.userId, {
       inviterName,
       conversationId: id,
       invitationId,
       memberCount
-    }).catch((error) => {
-      secureLogger.error('Failed to send group invitation push notification', { error, userId: body.userId });
+    }).catch((error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      secureLogger.error('Failed to send group invitation push notification', { error: errorMessage, userId: body.userId });
     });
 
     // Send Socket.io real-time notification
-    const { notifyUser } = await import('../../lib/socket');
     notifyUser(body.userId, 'group-invitation', {
       invitationId,
       conversationId: id,

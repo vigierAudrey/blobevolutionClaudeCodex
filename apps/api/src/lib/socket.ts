@@ -3,6 +3,10 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
+import { notifyNewMessage } from '../modules/push/push.controller';
+import { ackErrorSchema, ackSuccessSchema, ackSuccessSchemaRequired, createAckOnce, type AckResult } from './socket-ack';
+import { ERROR_CODES } from '../utils/error-codes';
+import { z } from 'zod';
 import {
   joinConversationSchema,
   leaveConversationSchema,
@@ -28,6 +32,63 @@ interface SocketUser {
 interface AuthenticatedSocket extends Socket {
   user?: SocketUser;
 }
+
+type AckFn = (payload: AckResult<unknown>) => void;
+type AckSchema = z.ZodType<{ ok: true; data: unknown }>;
+
+const ensureAck = (ack?: unknown): AckFn => {
+  if (typeof ack === 'function') return ack as AckFn;
+  return () => {};
+};
+
+const ackSuccess = (ack: AckFn, data: unknown, schema: AckSchema) => {
+  const payload: AckResult<unknown> = { ok: true, data };
+  schema.parse(payload);
+  ack(payload);
+};
+
+const ackError = (ack: AckFn, code: (typeof ERROR_CODES)[keyof typeof ERROR_CODES], message: string, details?: unknown) => {
+  const payload = { ok: false, error: { code, message, ...(details !== undefined ? { details } : {}) } };
+  ackErrorSchema.parse(payload);
+  ack(payload);
+};
+
+const mapSocketErrorCode = (code: SocketErrorCode): (typeof ERROR_CODES)[keyof typeof ERROR_CODES] => {
+  switch (code) {
+    case SocketErrorCode.VALIDATION_ERROR:
+      return ERROR_CODES.VALIDATION_ERROR;
+    case SocketErrorCode.RATE_LIMITED:
+      return ERROR_CODES.RATE_LIMITED;
+    default:
+      return ERROR_CODES.FORBIDDEN;
+  }
+};
+
+const sanitizeRateLimitDetails = (details: unknown) => {
+  if (!details || typeof details !== 'object') return undefined;
+  const d = details as Record<string, unknown>;
+  const safe: Record<string, unknown> = {};
+  if (typeof d.retryAfter === 'number') safe.retryAfter = d.retryAfter;
+  if (typeof d.retryAfterMs === 'number') safe.retryAfterMs = d.retryAfterMs;
+  if (typeof d.limit === 'number') safe.limit = d.limit;
+  if (typeof d.windowMs === 'number') safe.windowMs = d.windowMs;
+  return Object.keys(safe).length > 0 ? safe : undefined;
+};
+
+const emitSocketError = (
+  socket: Socket,
+  payload: { ok: false; error: { code: (typeof ERROR_CODES)[keyof typeof ERROR_CODES]; message: string; details?: unknown } },
+  legacyCode?: SocketErrorCode
+) => {
+  const mergedDetails =
+    legacyCode !== undefined
+      ? { ...(payload.error.details as Record<string, unknown> | undefined), legacyCode }
+      : payload.error.details;
+  const normalized = { ok: false as const, error: { ...payload.error, ...(mergedDetails !== undefined ? { details: mergedDetails } : {}) } };
+  ackErrorSchema.parse(normalized);
+  socket.emit('socket-error', normalized);
+  socket.emit('error', normalized);
+};
 
 /**
  * Middleware d'authentification Socket.io
@@ -109,7 +170,21 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
     socket.join(`user:${userId}`);
 
     // Rejoindre une conversation
-    socket.on('join-conversation', async (rawData: unknown) => {
+    socket.on('join-conversation', async (rawData: unknown, ackCb?: unknown) => {
+      const ack = createAckOnce(ensureAck(ackCb));
+      const fail = (
+        code: (typeof ERROR_CODES)[keyof typeof ERROR_CODES],
+        message: string,
+        details?: unknown,
+        legacyCode?: SocketErrorCode
+      ) => {
+        const safeDetails =
+          code === ERROR_CODES.RATE_LIMITED ? sanitizeRateLimitDetails(details) : details;
+        const payload = { ok: false as const, error: { code, message, ...(safeDetails !== undefined ? { details: safeDetails } : {}) } };
+        ackErrorSchema.parse(payload);
+        ack(payload);
+        emitSocketError(socket, payload, legacyCode);
+      };
       try {
         // ✅ PR1: Validation Zod (accepte string OU { conversationId })
         const validation = validateSocketPayload(joinConversationSchema, rawData);
@@ -119,7 +194,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
             event: 'join-conversation',
             error: validation.error
           });
-          socket.emit('error', validation.error);
+          fail(ERROR_CODES.VALIDATION_ERROR, 'Invalid input', validation.error, validation.error.code);
           return;
         }
 
@@ -128,7 +203,8 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         // ✅ PR2: Rate limiting (20 joins/min par user)
         const rateCheck = await checkRateLimit(() => getJoinLimiter(), userId);
         if (!rateCheck.allowed) {
-          socket.emit('error', rateCheck.error);
+          const code = mapSocketErrorCode(rateCheck.error.code);
+          fail(code, rateCheck.error.message, { retryAfter: rateCheck.error.retryAfter }, rateCheck.error.code);
           return;
         }
 
@@ -141,21 +217,28 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         });
 
         if (!member) {
-          socket.emit('error', {
+          const errPayload = {
             code: SocketErrorCode.NOT_MEMBER,
             message: 'Not a member of this conversation'
-          });
+          };
+          fail(ERROR_CODES.FORBIDDEN, errPayload.message, errPayload, errPayload.code);
           return;
         }
 
         socket.join(`conversation:${conversationId}`);
         console.log(`[WebSocket] User ${userId} joined conversation ${conversationId}`);
+        ackSuccess(
+          ack,
+          { conversationId },
+          ackSuccessSchemaRequired(z.object({ conversationId: z.string() }))
+        );
       } catch (error) {
         console.error('[WebSocket] Error joining conversation:', error);
-        socket.emit('error', {
+        const payload = {
           code: SocketErrorCode.INTERNAL_ERROR,
           message: 'Failed to join conversation'
-        });
+        };
+        fail(ERROR_CODES.INTERNAL_ERROR, payload.message, payload, payload.code);
       }
     });
 
@@ -174,7 +257,19 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
     });
 
     // Envoyer un message
-    socket.on('send-message', async (rawData: unknown) => {
+    socket.on('send-message', async (rawData: unknown, ackCb?: unknown) => {
+      const ack = createAckOnce(ensureAck(ackCb));
+      const fail = (
+        code: (typeof ERROR_CODES)[keyof typeof ERROR_CODES],
+        message: string,
+        details?: unknown,
+        legacyCode?: SocketErrorCode
+      ) => {
+        const payload = { ok: false as const, error: { code, message, ...(details !== undefined ? { details } : {}) } };
+        ackErrorSchema.parse(payload);
+        ack(payload);
+        emitSocketError(socket, payload, legacyCode);
+      };
       try {
         // ✅ PR1: Validation Zod (UUID, longueur 1-1000, type valide)
         const validation = validateSocketPayload(sendMessageSchema, rawData);
@@ -184,17 +279,18 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
             event: 'send-message',
             error: validation.error
           });
-          socket.emit('error', validation.error);
+          fail(ERROR_CODES.VALIDATION_ERROR, 'Invalid input', validation.error, validation.error.code);
           return;
         }
 
-        const { conversationId, content, type } = validation.data;
+        const { conversationId, content, type, clientMsgId } = validation.data;
 
         // ✅ PR2: Rate limiting (10 msg/min par user+conversation)
         const rateLimitKey = `${userId}:${conversationId}`;
         const rateCheck = await checkRateLimit(() => getSendMessageLimiter(), rateLimitKey);
         if (!rateCheck.allowed) {
-          socket.emit('error', rateCheck.error);
+          const code = mapSocketErrorCode(rateCheck.error.code);
+          fail(code, rateCheck.error.message, { retryAfter: rateCheck.error.retryAfter }, rateCheck.error.code);
           return;
         }
 
@@ -204,10 +300,11 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         });
 
         if (!member) {
-          socket.emit('error', {
+          const errPayload = {
             code: SocketErrorCode.NOT_MEMBER,
             message: 'Not a member of this conversation'
-          });
+          };
+          fail(ERROR_CODES.FORBIDDEN, errPayload.message, errPayload, errPayload.code);
           return;
         }
 
@@ -220,36 +317,65 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         });
 
         if (otherMember?.blockedAt) {
-          socket.emit('error', {
+          const errPayload = {
             code: SocketErrorCode.BLOCKED,
             message: 'You are blocked'
-          });
+          };
+          fail(ERROR_CODES.FORBIDDEN, errPayload.message, errPayload, errPayload.code);
           return;
         }
 
-        // Créer le message en base
-        const message = await prisma.message.create({
-          data: {
-            conversationId,
-            senderId: userId,
-            type: type as any,
-            content: content.trim() // ✅ Déjà validé par Zod (max 1000)
-          },
-          include: {
-            sender: {
-              select: {
-                id: true,
-                role: true,
-                riderProfile: {
-                  select: { displayName: true, photoUrl: true }
-                },
-                proProfile: {
-                  select: { businessName: true, photoUrl: true }
+        // Créer ou récupérer le message (idempotent si clientMsgId fourni)
+        const message = clientMsgId
+          ? await prisma.message.upsert({
+              where: {
+                conversation_client_msg_unique: { conversationId, clientMsgId }
+              },
+              create: {
+                conversationId,
+                senderId: userId,
+                type: type as any,
+                content: content.trim(),
+                clientMsgId
+              },
+              update: {}, // Ne rien modifier si existe déjà (idempotent)
+              include: {
+                sender: {
+                  select: {
+                    id: true,
+                    role: true,
+                    riderProfile: {
+                      select: { displayName: true, photoUrl: true }
+                    },
+                    proProfile: {
+                      select: { businessName: true, photoUrl: true }
+                    }
+                  }
                 }
               }
-            }
-          }
-        });
+            })
+          : await prisma.message.create({
+              data: {
+                conversationId,
+                senderId: userId,
+                type: type as any,
+                content: content.trim() // ✅ Déjà validé par Zod (max 1000)
+              },
+              include: {
+                sender: {
+                  select: {
+                    id: true,
+                    role: true,
+                    riderProfile: {
+                      select: { displayName: true, photoUrl: true }
+                    },
+                    proProfile: {
+                      select: { businessName: true, photoUrl: true }
+                    }
+                  }
+                }
+              }
+            });
 
         // Mettre à jour la date de la conversation
         await prisma.conversation.update({
@@ -283,24 +409,44 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         });
 
         // Envoyer notification push à chaque membre (non-bloquant)
-        const { notifyNewMessage } = await import('../modules/push/push.controller');
         for (const member of otherMembers) {
           notifyNewMessage(member.userId, {
             senderName,
             message: message.content,
             conversationId
-          }).catch((error) => {
-            console.error(`[WebSocket] Failed to send push notification to ${member.userId}:`, error);
+          }).catch((error: unknown) => {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error(`[WebSocket] Failed to send push notification to ${member.userId}:`, errorMessage);
           });
         }
 
         console.log(`[WebSocket] Message sent in conversation ${conversationId} by user ${userId}`);
+        ackSuccess(
+          ack,
+          {
+            id: message.id,
+            conversationId: message.conversationId,
+            content: message.content,
+            type: message.type,
+            createdAt: message.createdAt.toISOString()
+          },
+          ackSuccessSchemaRequired(
+            z.object({
+              id: z.string(),
+              conversationId: z.string(),
+              content: z.string(),
+              type: z.string(),
+              createdAt: z.string()
+            })
+          )
+        );
       } catch (error) {
         console.error('[WebSocket] Error sending message:', error);
-        socket.emit('error', {
+        const payload = {
           code: SocketErrorCode.INTERNAL_ERROR,
           message: 'Failed to send message'
-        });
+        };
+        fail(ERROR_CODES.INTERNAL_ERROR, payload.message, payload, payload.code);
       }
     });
 

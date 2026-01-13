@@ -448,11 +448,13 @@ model Message {
   type           MessageType  @default(TEXT)
   content        String
   meta           Json?
+  clientMsgId    String?      @db.VarChar(255)
   createdAt      DateTime     @default(now())
   readAt         DateTime?
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
+  @@unique([conversationId, clientMsgId], name: "conversation_client_msg_unique")
   @@index([conversationId, createdAt])
 }
 
