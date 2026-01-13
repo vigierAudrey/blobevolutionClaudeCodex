@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type {
   BookingAvailability,
   BookingRequestInboxItem,
@@ -8,6 +9,7 @@ import type {
   RiderBookingRequest,
 } from './types/booking';
 import type { ThreadListQuery, ThreadListResponse, MessageListResponse, SendMessagePayload } from '@/types/messages';
+import { requestStrict, envelopeSuccessSchema } from './requestStrict';
 
 export interface AuditLogEntry {
   id: string;
@@ -766,6 +768,156 @@ async function request(
   return data;
 }
 
+const matchingSearchResultSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  gender: z.enum(['FEMALE', 'MALE', 'OTHER', 'UNSPECIFIED']).nullable(),
+  sport: z.string(),
+  level: z.string(),
+  distanceKm: z.number().nullable(),
+  wantsLesson: z.boolean(),
+  lessonSport: z.string().nullable(),
+  photoUrl: z.string().nullable().optional(),
+  bio: z.string().nullable().optional(),
+});
+
+const matchingSearchDataSchema = z.object({
+  criteria: z.record(z.any()).optional(),
+  results: z.array(matchingSearchResultSchema),
+  total: z.number().optional(),
+  page: z.number().optional(),
+  pageSize: z.number().optional(),
+  hasMore: z.boolean().optional(),
+  nextCursor: z.string().nullable().optional(),
+  cached: z.boolean().optional(),
+});
+
+const matchingSearchEnvelopeSchema = z.object({
+  ok: z.literal(true),
+  data: matchingSearchDataSchema,
+});
+
+const matchDecisionItemSchema = z.object({
+  targetProfileId: z.string(),
+  decision: z.enum(['ACCEPT', 'REFUSE']),
+});
+
+const matchDecisionsDataSchema = z.object({
+  count: z.number(),
+  createdConversations: z
+    .array(
+      z.object({
+        conversationId: z.string(),
+        otherDisplayName: z.string().optional(),
+      })
+    )
+    .optional(),
+});
+
+async function postMatchDecisions(
+  list: Array<{ targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }>,
+) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  const csrf = await ensureCsrfToken();
+  if (csrf) headers['X-CSRF-Token'] = csrf;
+
+  const tokens = getTokens();
+  if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+
+  const body = matchDecisionItemSchema.array().parse(list);
+
+  return requestStrict(
+    '/matching/decisions',
+    { method: 'POST', body: JSON.stringify({ items: body }), headers },
+    matchDecisionsDataSchema,
+  );
+}
+
+const openConversationPayloadSchema = z.object({
+  targetUserId: z.string().uuid(),
+});
+
+const openConversationDataSchema = z
+  .object({
+    id: z.string().uuid(),
+    created: z.boolean().optional(),
+  })
+  .strict();
+
+const createBookingAvailabilityPayloadSchema = z.object({
+  sport: z.enum(['surf', 'kitesurf']),
+  levels: z.array(z.enum(['beginner', 'intermediate', 'advanced'])).min(1),
+  startAt: z.string().datetime(),
+  endAt: z.string().datetime(),
+  capacity: z.number().int().positive().max(20).optional(),
+  spotName: z.string().min(1).max(120).optional(),
+  spotLat: z.number().min(-90).max(90).optional(),
+  spotLng: z.number().min(-180).max(180).optional(),
+  price: z.number().nonnegative().max(9999).optional(),
+});
+
+const proAvailabilityDataSchema = z
+  .object({
+    id: z.string().uuid(),
+    proUserId: z.string().uuid().optional(),
+    sport: z.enum(['surf', 'kitesurf']),
+    levels: z.array(z.enum(['beginner', 'intermediate', 'advanced'])),
+    startAt: z.string(),
+    endAt: z.string(),
+    capacity: z.number().int().nullable().optional(),
+    bookedCount: z.number().int().nonnegative().optional(),
+    spotName: z.string().nullable().optional(),
+    spotLat: z.number().nullable().optional(),
+    spotLng: z.number().nullable().optional(),
+    price: z.number().nullable().optional(),
+    status: z.enum(['OPEN', 'CLOSED']).optional(),
+    createdAt: z.string().optional(),
+    updatedAt: z.string().optional(),
+  })
+  .strict();
+
+const sendMessagePayloadSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('TEXT'), content: z.string().min(1).max(1000) }),
+  z.object({
+    type: z.literal('PROPOSAL'),
+    content: z.string().min(1).max(1000),
+    meta: z.record(z.any()).optional(),
+  }),
+]);
+
+const sendMessageDataSchema = z
+  .object({
+    id: z.string().uuid(),
+    content: z.string(),
+    type: z.enum(['TEXT', 'PROPOSAL']),
+    createdAt: z.string(),
+  })
+  .strict();
+
+// Booking API expects decision enum 'ACCEPT' | 'REJECT' and returns canonical action 'accept' | 'reject' (see API decideBookingRequestSchema).
+const bookingDecisionPayloadSchema = z.object({
+  decision: z.enum(['ACCEPT', 'REJECT']),
+});
+
+const bookingDecisionDataSchema = z.object({
+  success: z.boolean(),
+  action: z.enum(['accept', 'reject']),
+});
+
+const reportProfileBodySchema = z.object({
+  targetProfileId: z.string().uuid(),
+  reason: z.string().trim().min(1).max(1000).optional(),
+});
+
+const reportProfileDataSchema = z
+  .object({
+    id: z.string().uuid(),
+  })
+  .strict();
+
 export const apiClient = {
   login: (body: { email: string; password: string; consentAccepted?: boolean }) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(body) }) as Promise<LoginResponse>,
@@ -806,19 +958,59 @@ export const apiClient = {
     request('/profile/disciplines', { method: 'PUT', body: JSON.stringify(items) }, true),
 
   searchMatching: (body: { sport: 'surf' | 'kitesurf'; level: 'beginner' | 'intermediate' | 'advanced' | 'anytime'; date: string; partner?: 'ALL' | 'WOMEN' | 'MEN'; distanceKm?: number; location?: { lat: number; lng: number }; page?: number; pageSize?: number; sortBy?: 'distance' | 'name'; excludeIds?: string[] }) =>
-    request('/matching/search', { method: 'POST', body: JSON.stringify(body) }, true),
+    request(
+      '/matching/search',
+      { method: 'POST', body: JSON.stringify(body), headers: { 'X-API-ENVELOPE': '1' } },
+      true,
+    ).then((payload) => {
+      const envelope = matchingSearchEnvelopeSchema.safeParse(payload);
+      if (envelope.success) return envelope.data.data;
+      return matchingSearchDataSchema.parse(payload);
+    }),
 
   matchDecision: (body: { targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }) =>
-    request('/matching/decision', { method: 'POST', body: JSON.stringify(body) }, true),
+    postMatchDecisions([body]).then((result) => ({
+      ok: true,
+      count: result.count,
+      createdConversations: result.createdConversations,
+    })),
 
   matchDecisions: (list: Array<{ targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }>) =>
-    request('/matching/decisions', { method: 'POST', body: JSON.stringify({ items: list }) }, true),
+    postMatchDecisions(list),
 
   openConversation: (targetUserId: string) =>
-    request('/conversations/open', { method: 'POST', body: JSON.stringify({ targetUserId }) }, true) as Promise<{ id: string }>,
+    (async () => {
+      const parsed = openConversationPayloadSchema.parse({ targetUserId });
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      const csrf = await ensureCsrfToken();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+
+      const tokens = getTokens();
+      if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+
+      return requestStrict('/conversations/open', { method: 'POST', headers, body: JSON.stringify(parsed) }, openConversationDataSchema);
+    })(),
 
   reportProfile: (body: { targetProfileId: string; reason?: string }) =>
-    request('/reports/profile', { method: 'POST', body: JSON.stringify(body) }, true),
+    (async () => {
+      const parsed = reportProfileBodySchema.parse(body);
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      const csrf = await ensureCsrfToken();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+
+      const tokens = getTokens();
+      if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+
+      return requestStrict('/reports/profile', { method: 'POST', headers, body: JSON.stringify(parsed) }, reportProfileDataSchema);
+    })(),
 
   listConversations: (opts?: ThreadListQuery) => {
     const params = new URLSearchParams();
@@ -834,7 +1026,21 @@ export const apiClient = {
       true,
     ) as Promise<MessageListResponse>,
   sendMessage: (id: string, body: SendMessagePayload) =>
-    request(`/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify(body) }, true),
+    (async () => {
+      const parsed = sendMessagePayloadSchema.parse(body);
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      const csrf = await ensureCsrfToken();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+
+      const tokens = getTokens();
+      if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+
+      return requestStrict(`/conversations/${id}/messages`, { method: 'POST', headers, body: JSON.stringify(parsed) }, sendMessageDataSchema);
+    })(),
   blockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({ action: 'block' }) }, true),
   unblockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({ action: 'unblock' }) }, true),
   unmatchConversation: (id: string) => request(`/conversations/${id}/unmatch`, { method: 'POST', body: JSON.stringify({}) }, true),
@@ -1056,7 +1262,21 @@ export const apiClient = {
   getBookingAvailabilitiesForPro: () =>
     request('/booking/availability/me', { method: 'GET' }, true) as Promise<{ availabilities: BookingAvailability[] }> ,
   createBookingAvailability: (payload: CreateBookingAvailabilityPayload) =>
-    request('/booking/availability', { method: 'POST', body: JSON.stringify(payload) }, true) as Promise<BookingAvailability>,
+    (async () => {
+      const parsed = createBookingAvailabilityPayloadSchema.parse(payload);
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      const csrf = await ensureCsrfToken();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+
+      const tokens = getTokens();
+      if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+
+      return requestStrict('/booking/availability', { method: 'POST', headers, body: JSON.stringify(parsed) }, proAvailabilityDataSchema);
+    })(),
   updateBookingAvailability: (availabilityId: string, payload: Partial<CreateBookingAvailabilityPayload>) =>
     request(`/booking/availability/${availabilityId}`, { method: 'PATCH', body: JSON.stringify(payload) }, true) as Promise<BookingAvailability>,
   adjustBookingAvailabilityBookedCount: (availabilityId: string, delta: number) =>
@@ -1094,7 +1314,25 @@ export const apiClient = {
     };
   },
   decideBookingRequest: (requestId: string, decision: 'ACCEPT' | 'REJECT') =>
-    request(`/booking/requests/${requestId}/decision`, { method: 'POST', body: JSON.stringify({ decision }) }, true),
+    (async () => {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      const csrf = await ensureCsrfToken();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+
+      const t = getTokens();
+      if (t?.accessToken) headers['Authorization'] = `Bearer ${t.accessToken}`;
+
+      const payload = bookingDecisionPayloadSchema.parse({ decision });
+
+      return requestStrict(
+        `/booking/requests/${requestId}/decision`,
+        { method: 'POST', body: JSON.stringify(payload), headers },
+        bookingDecisionDataSchema
+      );
+    })(),
   getProBookings: () =>
     request('/booking/bookings/me', { method: 'GET' }, true) as Promise<{ bookings: ProBooking[] }>,
   getRiderBookings: () =>
