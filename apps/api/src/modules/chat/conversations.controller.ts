@@ -287,6 +287,27 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
         content: z.string().min(1).max(1000),
         meta: z.any().optional(),
         clientMsgId: z.string().uuid().optional(),
+        clientMessageId: z.string().uuid().optional(), // Legacy
+      })
+      .refine(
+        (data) => {
+          // Si les deux présents, doivent être identiques
+          if (data.clientMsgId && data.clientMessageId) {
+            return data.clientMsgId === data.clientMessageId;
+          }
+          return true;
+        },
+        { message: 'clientMsgId and clientMessageId must be identical if both provided' }
+      )
+      .transform((data) => {
+        // Normaliser: clientMessageId → clientMsgId si absent
+        const clientMsgId = data.clientMsgId || data.clientMessageId;
+        return {
+          type: data.type,
+          content: data.content,
+          meta: data.meta,
+          clientMsgId
+        };
       })
       .parse(req.body);
     // Access check + block
@@ -298,13 +319,16 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
     if (other?.blockedAt) {
       return envelope ? sendError(res, 403, ERROR_CODES.FORBIDDEN, 'You are blocked') : res.status(403).json({ error: 'You are blocked' });
     }
-    // Créer ou récupérer le message (idempotent si clientMsgId fourni)
-    const msg = body.clientMsgId
-      ? await prisma.message.upsert({
-          where: {
-            conversation_client_msg_unique: { conversationId: id, clientMsgId: body.clientMsgId }
-          },
-          create: {
+
+    // Pattern create-then-fallback pour détecter création vs replay
+    let msg;
+    let wasCreated = true;
+
+    if (body.clientMsgId) {
+      // Tenter création avec clientMsgId
+      try {
+        msg = await prisma.message.create({
+          data: {
             conversationId: id,
             senderId: userId as string,
             type: body.type as any,
@@ -312,13 +336,37 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
             meta: body.meta,
             clientMsgId: body.clientMsgId
           },
-          update: {}, // Ne rien modifier si existe déjà (idempotent)
-          select: { id: true, content: true, type: true, createdAt: true },
-        })
-      : await prisma.message.create({
-          data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta },
           select: { id: true, content: true, type: true, createdAt: true },
         });
+        wasCreated = true;
+      } catch (e: any) {
+        // Si erreur unique constraint P2002 (on assume que c'est notre contrainte composite)
+        if (e?.code === 'P2002') {
+          // Récupérer le message existant
+          msg = await prisma.message.findUnique({
+            where: {
+              conversation_client_msg_unique: { conversationId: id, clientMsgId: body.clientMsgId }
+            },
+            select: { id: true, content: true, type: true, createdAt: true },
+          });
+          wasCreated = false;
+          if (!msg) {
+            // Cas improbable: constraint hit mais findUnique échoue
+            throw new Error('Message should exist after unique constraint violation');
+          }
+        } else {
+          // Autre erreur, propager
+          throw e;
+        }
+      }
+    } else {
+      // Sans clientMsgId: création classique
+      msg = await prisma.message.create({
+        data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta },
+        select: { id: true, content: true, type: true, createdAt: true },
+      });
+      wasCreated = true;
+    }
     await prisma.conversation.update({ where: { id }, data: { updatedAt: new Date() } });
 
     const role = (req as any).user?.role as string | undefined;
@@ -362,7 +410,9 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
       });
     }
 
-    return envelope ? sendOk(res, 201, msg) : res.status(201).json({ id: msg.id });
+    // Retourner 201 si création, 200 si replay
+    const statusCode = wasCreated ? 201 : 200;
+    return envelope ? sendOk(res, statusCode, msg) : res.status(statusCode).json({ id: msg.id });
   } catch (e: any) {
     if (e?.name === 'ZodError') return envelope ? sendError(res, 400, ERROR_CODES.VALIDATION_ERROR, 'Invalid input', e.errors) : res.status(400).json({ error: 'Invalid input' });
     secureLogger.error('Open conversation error', { error: e });

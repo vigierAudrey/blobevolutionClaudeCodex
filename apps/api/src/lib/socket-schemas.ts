@@ -29,12 +29,24 @@ const leaveConversationObject = z.object({
  */
 export type JoinConversationPayload = z.infer<typeof conversationIdObject>;
 export type LeaveConversationPayload = z.infer<typeof leaveConversationObject>;
+
+// Type d'input (avant normalisation)
+export type SendMessageInput = {
+  conversationId: string;
+  content: string;
+  type: 'TEXT' | 'PROPOSAL';
+  clientMsgId?: string; // Canonique
+  clientMessageId?: string; // Legacy (deprecated)
+};
+
+// Type de sortie (après normalisation via transform)
 export type SendMessagePayload = {
   conversationId: string;
   content: string;
   type: 'TEXT' | 'PROPOSAL';
-  clientMsgId?: string;
+  clientMsgId?: string; // Normalisé
 };
+
 export type TypingPayload = {
   conversationId: string;
   isTyping: boolean;
@@ -73,7 +85,9 @@ export const leaveConversationSchema = z.preprocess(
  *
  * BACKWARD COMPATIBLE:
  * - Accepte: { conversationId, content, type? } (format actuel)
- * - content.substring(0, 1000) était fait côté serveur → remplacé par validation Zod
+ * - Accepte: clientMessageId (legacy) OU clientMsgId (nouveau)
+ * - Si les deux présents: doivent être identiques, sinon VALIDATION_ERROR
+ * - Normalise vers clientMsgId canonique
  */
 export const sendMessageSchema = z.object({
   conversationId: z.string().uuid('conversationId must be a valid UUID'),
@@ -81,9 +95,29 @@ export const sendMessageSchema = z.object({
     .min(1, 'Message cannot be empty')
     .max(1000, 'Message too long (max 1000 characters)'),
   type: z.enum(['TEXT', 'PROPOSAL']).optional().default('TEXT'),
-  // Backend idempotence - optionnel
-  clientMsgId: z.string().uuid().optional()
-});
+  clientMsgId: z.string().uuid().optional(), // Nouveau (canonique)
+  clientMessageId: z.string().uuid().optional() // Legacy (deprecated)
+})
+.refine(
+  (data) => {
+    // Si les deux présents, doivent être identiques
+    if (data.clientMsgId && data.clientMessageId) {
+      return data.clientMsgId === data.clientMessageId;
+    }
+    return true;
+  },
+  { message: 'clientMsgId and clientMessageId must be identical if both provided' }
+)
+.transform((data) => {
+  // Normaliser: clientMessageId → clientMsgId si absent
+  const clientMsgId = data.clientMsgId || data.clientMessageId;
+  return {
+    conversationId: data.conversationId,
+    content: data.content,
+    type: data.type,
+    clientMsgId
+  };
+}) as z.ZodType<SendMessagePayload>;
 
 /**
  * Schéma pour typing

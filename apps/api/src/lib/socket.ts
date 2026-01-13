@@ -325,41 +325,20 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           return;
         }
 
-        // Créer ou récupérer le message (idempotent si clientMsgId fourni)
-        const message = clientMsgId
-          ? await prisma.message.upsert({
-              where: {
-                conversation_client_msg_unique: { conversationId, clientMsgId }
-              },
-              create: {
+        // Pattern create-then-fallback pour détecter création vs replay
+        let message;
+        let wasCreated = true;
+
+        if (clientMsgId) {
+          // Tenter création avec clientMsgId
+          try {
+            message = await prisma.message.create({
+              data: {
                 conversationId,
                 senderId: userId,
                 type: type as any,
                 content: content.trim(),
                 clientMsgId
-              },
-              update: {}, // Ne rien modifier si existe déjà (idempotent)
-              include: {
-                sender: {
-                  select: {
-                    id: true,
-                    role: true,
-                    riderProfile: {
-                      select: { displayName: true, photoUrl: true }
-                    },
-                    proProfile: {
-                      select: { businessName: true, photoUrl: true }
-                    }
-                  }
-                }
-              }
-            })
-          : await prisma.message.create({
-              data: {
-                conversationId,
-                senderId: userId,
-                type: type as any,
-                content: content.trim() // ✅ Déjà validé par Zod (max 1000)
               },
               include: {
                 sender: {
@@ -376,6 +355,71 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
                 }
               }
             });
+            wasCreated = true;
+          } catch (e: any) {
+            // Si erreur unique constraint P2002 (on assume que c'est notre contrainte composite)
+            if (e?.code === 'P2002') {
+              // Récupérer le message existant
+              message = await prisma.message.findUnique({
+                where: {
+                  conversation_client_msg_unique: { conversationId, clientMsgId }
+                },
+                include: {
+                  sender: {
+                    select: {
+                      id: true,
+                      role: true,
+                      riderProfile: {
+                        select: { displayName: true, photoUrl: true }
+                      },
+                      proProfile: {
+                        select: { businessName: true, photoUrl: true }
+                      }
+                    }
+                  }
+                }
+              });
+              wasCreated = false;
+              if (!message) {
+                // Cas improbable: constraint hit mais findUnique échoue
+                const errPayload = {
+                  code: SocketErrorCode.INTERNAL_ERROR,
+                  message: 'Message should exist after unique constraint violation'
+                };
+                fail(ERROR_CODES.INTERNAL_ERROR, errPayload.message, errPayload, errPayload.code);
+                return;
+              }
+            } else {
+              // Autre erreur, propager
+              throw e;
+            }
+          }
+        } else {
+          // Sans clientMsgId: création classique
+          message = await prisma.message.create({
+            data: {
+              conversationId,
+              senderId: userId,
+              type: type as any,
+              content: content.trim()
+            },
+            include: {
+              sender: {
+                select: {
+                  id: true,
+                  role: true,
+                  riderProfile: {
+                    select: { displayName: true, photoUrl: true }
+                  },
+                  proProfile: {
+                    select: { businessName: true, photoUrl: true }
+                  }
+                }
+              }
+            }
+          });
+          wasCreated = true;
+        }
 
         // Mettre à jour la date de la conversation
         await prisma.conversation.update({
@@ -420,7 +464,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           });
         }
 
-        console.log(`[WebSocket] Message sent in conversation ${conversationId} by user ${userId}`);
+        console.log(`[WebSocket] Message ${wasCreated ? 'created' : 'replayed (idempotent)'} in conversation ${conversationId} by user ${userId}`);
         ackSuccess(
           ack,
           {
@@ -428,7 +472,8 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
             conversationId: message.conversationId,
             content: message.content,
             type: message.type,
-            createdAt: message.createdAt.toISOString()
+            createdAt: message.createdAt.toISOString(),
+            created: wasCreated // true si création, false si replay
           },
           ackSuccessSchemaRequired(
             z.object({
@@ -436,7 +481,8 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
               conversationId: z.string(),
               content: z.string(),
               type: z.string(),
-              createdAt: z.string()
+              createdAt: z.string(),
+              created: z.boolean()
             })
           )
         );

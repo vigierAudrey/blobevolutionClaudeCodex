@@ -2,20 +2,71 @@
 
 **Date**: 2026-01-13
 **Scope**: Backend only (apps/api + packages/database)
-**Goal**: Add optional clientMsgId field for idempotent message creation
+**Goal**: Add optional clientMsgId field for idempotent message creation with proper HTTP status codes
 
 ---
 
 ## Summary
 
-This PR adds backend idempotence for chat messages using an optional `clientMsgId` field. When provided, the same (conversationId, clientMsgId) pair will always return the same message without creating duplicates, even under concurrent requests.
+This PR adds backend idempotence for chat messages using an optional `clientMsgId` field. The implementation uses a create-then-fallback pattern to correctly distinguish between creation (201) and replay (200).
 
-**Key guarantees**:
-- ✅ Backward compatible (clientMsgId optional)
-- ✅ No breaking changes to existing APIs
-- ✅ Atomic upsert prevents race conditions
-- ✅ HTTP 200 OK always (idempotent behavior)
-- ✅ 6 integration tests covering all scenarios
+**Key features**:
+- ✅ **Backward compatible**: Accepts legacy `clientMessageId` field
+- ✅ **Proper HTTP status**: 201 Created vs 200 OK (replay detection)
+- ✅ **Atomic**: Create-then-fallback prevents race conditions
+- ✅ **Safe validation**: Rejects if both fields provided but differ
+- ✅ **WS support**: ACK includes `created` flag
+- ✅ **9 integration tests** covering all scenarios
+
+---
+
+## Status Code Semantics
+
+**IMPORTANT**: This PR implements Option B (201/200 distinction):
+
+- **201 Created**: Message was actually created (first send)
+- **200 OK**: Message already exists (replay/idempotent)
+
+**Detection method**: Create-then-fallback pattern
+1. Try `prisma.message.create()`
+2. If unique constraint error (P2002) → fetch existing → return 200
+3. If success → return 201
+
+**Why not upsert?** Upsert doesn't tell us if a row was created or already existed, making it impossible to return correct HTTP status codes.
+
+---
+
+## Backward Compatibility
+
+### Field Normalization
+
+The API accepts **two field names** for the same purpose:
+
+- `clientMessageId` (legacy, deprecated)
+- `clientMsgId` (canonical, recommended)
+
+**Normalization rules**:
+1. If only `clientMsgId` present → use it
+2. If only `clientMessageId` present → normalize to `clientMsgId`
+3. If both present AND identical → use the value
+4. If both present AND different → **400 VALIDATION_ERROR**
+
+**Example**:
+```json
+// ✅ OK: Legacy field
+{ "content": "Hello", "clientMessageId": "uuid-1" }
+
+// ✅ OK: New field
+{ "content": "Hello", "clientMsgId": "uuid-1" }
+
+// ✅ OK: Both identical
+{ "content": "Hello", "clientMsgId": "uuid-1", "clientMessageId": "uuid-1" }
+
+// ❌ 400 VALIDATION_ERROR: Both different
+{ "content": "Hello", "clientMsgId": "uuid-1", "clientMessageId": "uuid-2" }
+```
+
+**Storage**: Only `clientMsgId` is stored in database (normalized during validation).
 
 ---
 
@@ -23,121 +74,70 @@ This PR adds backend idempotence for chat messages using an optional `clientMsgI
 
 ### 1. `packages/database/prisma/schema.prisma`
 
-**Added fields to Message model**:
-```prisma
-model Message {
-  id             String       @id @default(uuid())
-  conversationId String
-  senderId       String
-  type           MessageType  @default(TEXT)
-  content        String
-  meta           Json?
-  clientMsgId    String?      @db.VarChar(255)  // NEW: Optional idempotence key
-  createdAt      DateTime     @default(now())
-  readAt         DateTime?
-  conversation   Conversation @relation(...)
-  sender         User         @relation(...)
-
-  @@unique([conversationId, clientMsgId], name: "conversation_client_msg_unique")  // NEW
-  @@index([conversationId, createdAt])
-}
-```
-
-**Why this design**:
-- **Optional field** (`String?`): Backward compatible, no migration required for existing messages
-- **Composite unique** `(conversationId, clientMsgId)`: Same clientMsgId allowed across different conversations
-- **Partial index** (WHERE NOT NULL): Multiple messages without clientMsgId are allowed
-- **VARCHAR(255)**: UUIDs are 36 chars, allows some flexibility
+**No changes** (schema already had `clientMsgId` field from previous commit).
 
 ---
 
 ### 2. `apps/api/src/lib/socket-schemas.ts`
 
-**Updated WebSocket schema**:
+**Added legacy field + validation**:
+
 ```typescript
 export type SendMessagePayload = {
   conversationId: string;
   content: string;
   type: 'TEXT' | 'PROPOSAL';
-  clientMsgId?: string;  // NEW: Optional UUID
+  clientMsgId?: string; // Canonique
+  clientMessageId?: string; // Legacy (deprecated)
 };
 
 export const sendMessageSchema = z.object({
   conversationId: z.string().uuid(),
   content: z.string().min(1).max(1000),
   type: z.enum(['TEXT', 'PROPOSAL']).optional().default('TEXT'),
-  clientMsgId: z.string().uuid().optional()  // NEW: Validated as UUID
+  clientMsgId: z.string().uuid().optional(),
+  clientMessageId: z.string().uuid().optional()
+})
+.refine(
+  (data) => {
+    // Si les deux présents, doivent être identiques
+    if (data.clientMsgId && data.clientMessageId) {
+      return data.clientMsgId === data.clientMessageId;
+    }
+    return true;
+  },
+  { message: 'clientMsgId and clientMessageId must be identical if both provided' }
+)
+.transform((data) => {
+  // Normaliser: clientMessageId → clientMsgId si absent
+  const clientMsgId = data.clientMsgId || data.clientMessageId;
+  return {
+    conversationId: data.conversationId,
+    content: data.content,
+    type: data.type,
+    clientMsgId
+  };
 });
 ```
 
-**Changes**:
-- Renamed from `clientMessageId` to `clientMsgId` for consistency
-- UUID validation enforced by Zod
-- Fully optional (backward compatible)
+**Why `.transform()`?** Ensures downstream code only sees `clientMsgId` (single source of truth).
 
 ---
 
-### 3. `apps/api/src/lib/socket.ts`
+### 3. `apps/api/src/modules/chat/conversations.controller.ts`
 
-**Added upsert logic to send-message handler** (lines 286-378):
+**Added create-then-fallback pattern** (lines 323-369):
+
 ```typescript
-const { conversationId, content, type, clientMsgId } = validation.data;
+// Pattern create-then-fallback pour détecter création vs replay
+let msg;
+let wasCreated = true;
 
-// ... rate limiting, access checks ...
-
-// Créer ou récupérer le message (idempotent si clientMsgId fourni)
-const message = clientMsgId
-  ? await prisma.message.upsert({
-      where: {
-        conversation_client_msg_unique: { conversationId, clientMsgId }
-      },
-      create: {
-        conversationId,
-        senderId: userId,
-        type: type as any,
-        content: content.trim(),
-        clientMsgId
-      },
-      update: {}, // Ne rien modifier si existe déjà (idempotent)
-      include: { /* ... */ }
-    })
-  : await prisma.message.create({
-      data: { /* ... classic path ... */ },
-      include: { /* ... */ }
-    });
-```
-
-**Why upsert**:
-- **Atomic operation**: Prevents race conditions (2 concurrent POSTs → 1 message created)
-- **Idempotent**: Replay returns existing message without modification
-- **No error on replay**: Always returns 200 OK (not 409 Conflict)
-
----
-
-### 4. `apps/api/src/modules/chat/conversations.controller.ts`
-
-**Updated HTTP POST /conversations/:id/messages**:
-
-**Zod schema** (lines 285-291):
-```typescript
-const body = z
-  .object({
-    type: z.enum(['TEXT', 'PROPOSAL']).default('TEXT'),
-    content: z.string().min(1).max(1000),
-    meta: z.any().optional(),
-    clientMsgId: z.string().uuid().optional(),  // NEW
-  })
-  .parse(req.body);
-```
-
-**Upsert logic** (lines 301-321):
-```typescript
-const msg = body.clientMsgId
-  ? await prisma.message.upsert({
-      where: {
-        conversation_client_msg_unique: { conversationId: id, clientMsgId: body.clientMsgId }
-      },
-      create: {
+if (body.clientMsgId) {
+  // Tenter création avec clientMsgId
+  try {
+    msg = await prisma.message.create({
+      data: {
         conversationId: id,
         senderId: userId as string,
         type: body.type as any,
@@ -145,276 +145,387 @@ const msg = body.clientMsgId
         meta: body.meta,
         clientMsgId: body.clientMsgId
       },
-      update: {}, // Ne rien modifier si existe déjà
       select: { id: true, content: true, type: true, createdAt: true },
-    })
-  : await prisma.message.create({
-      data: { /* ... classic path ... */ },
-      select: { /* ... */ },
     });
+    wasCreated = true;
+  } catch (e: any) {
+    // Si erreur unique constraint P2002 (on assume que c'est notre contrainte composite)
+    if (e?.code === 'P2002') {
+      // Récupérer le message existant
+      msg = await prisma.message.findUnique({
+        where: {
+          conversation_client_msg_unique: { conversationId: id, clientMsgId: body.clientMsgId }
+        },
+        select: { id: true, content: true, type: true, createdAt: true },
+      });
+      wasCreated = false;
+      if (!msg) {
+        // Cas improbable: constraint hit mais findUnique échoue
+        throw new Error('Message should exist after unique constraint violation');
+      }
+    } else {
+      // Autre erreur, propager
+      throw e;
+    }
+  }
+} else {
+  // Sans clientMsgId: création classique
+  msg = await prisma.message.create({
+    data: { /* ... */ },
+    select: { /* ... */ },
+  });
+  wasCreated = true;
+}
+
+// Retourner 201 si création, 200 si replay
+const statusCode = wasCreated ? 201 : 200;
+return envelope ? sendOk(res, statusCode, msg) : res.status(statusCode).json({ id: msg.id });
 ```
 
-**Same pattern as WS**: Optional clientMsgId → upsert, otherwise classic create.
+**Why P2002 only?** Prisma error code P2002 = unique constraint violation. We assume it's our composite constraint.
 
 ---
 
-### 5. `apps/api/src/modules/chat/__tests__/client-msg-id-idempotence.test.ts` (NEW)
+### 4. `apps/api/src/lib/socket.ts`
 
-**6 integration tests** covering all required scenarios:
+**Same pattern as HTTP** + ACK with `created` flag (lines 328-488):
 
-1. ✅ **Sans clientMsgId**: Classic create (backward compatibility)
-   - Verifies clientMsgId is null in DB
-   - No regression for existing behavior
-
-2. ✅ **Avec clientMsgId (1er envoi)**: Creates new message
-   - clientMsgId saved in DB
-   - Returns 201 Created
-
-3. ✅ **Replay (même clientMsgId)**: Returns existing message
-   - 2 POSTs with same clientMsgId
-   - Only 1 message in DB
-   - Content NOT modified (original preserved)
-   - Both requests return 201 OK (idempotent)
-
-4. ✅ **Concurrence**: 2 simultaneous POSTs with same clientMsgId
-   - `Promise.all([POST, POST])`
-   - Both return same message ID
-   - Only 1 message created (atomic)
-
-5. ✅ **clientMsgId différents**: Creates distinct messages
-   - Different clientMsgIds → different messages
-   - 2 messages in DB
-
-6. ✅ **Même clientMsgId, conversations différentes**: Allowed
-   - Composite unique constraint scoped per conversation
-   - Same clientMsgId in conv1 and conv2 → 2 distinct messages
-
----
-
-## Behavior Changes
-
-### User-Facing: NONE (Backward Compatible)
-
-**Before**: POST /conversations/:id/messages creates message, no idempotence
-**After**: Same, BUT if `clientMsgId` provided → idempotent
-
-**API Contract**:
-- `clientMsgId` **optional** in payload (WS and HTTP)
-- If omitted: classic behavior (no change)
-- If provided: idempotent (replay returns existing)
-- Always returns 200/201 OK (never 409 Conflict)
-
-### Internal
-
-**What changed**:
-- Prisma schema: Added `clientMsgId String?` + composite unique constraint
-- WS handler: Upsert if clientMsgId, else create
-- HTTP handler: Upsert if clientMsgId, else create
-- 6 new integration tests
-
-**What didn't change**:
-- No migration required (field optional, db push applied)
-- No changes to message emission (WS new-message event)
-- No changes to rate limiting
-- No changes to access control
-
----
-
-## Implementation Details
-
-### Database Strategy
-
-**Choice**: Prisma `upsert` with composite unique constraint
-
-**Alternatives considered**:
-1. ❌ Manual SELECT then INSERT: Race condition risk
-2. ❌ Unique constraint on clientMsgId alone: Can't reuse same ID across conversations
-3. ✅ Composite unique + upsert: Atomic, scoped per conversation
-
-**Migration strategy**:
-- Used `prisma db push` (dev environment)
-- Production: Generate migration with `prisma migrate dev --name add_client_msg_id_idempotence`
-- No data loss: Field optional, existing messages have NULL clientMsgId
-
-### Idempotence Contract
-
-**Guarantee**: Same (conversationId, clientMsgId) → same message
-
-**Replay behavior**:
 ```typescript
-// 1er envoi
-POST /conversations/conv-123/messages
-{ content: "Hello", clientMsgId: "uuid-1" }
-→ 201 Created, message { id: "msg-1", content: "Hello" }
+// Pattern create-then-fallback (identique à HTTP)
+let message;
+let wasCreated = true;
 
-// Replay (même clientMsgId, contenu différent)
-POST /conversations/conv-123/messages
-{ content: "Different", clientMsgId: "uuid-1" }
-→ 201 OK, message { id: "msg-1", content: "Hello" }  // Original préservé
+if (clientMsgId) {
+  try {
+    message = await prisma.message.create({ /* ... */ });
+    wasCreated = true;
+  } catch (e: any) {
+    if (e?.code === 'P2002') {
+      message = await prisma.message.findUnique({ /* ... */ });
+      wasCreated = false;
+      // ...
+    } else {
+      throw e;
+    }
+  }
+} else {
+  message = await prisma.message.create({ /* ... */ });
+  wasCreated = true;
+}
+
+// ACK avec flag created
+ackSuccess(
+  ack,
+  {
+    id: message.id,
+    conversationId: message.conversationId,
+    content: message.content,
+    type: message.type,
+    createdAt: message.createdAt.toISOString(),
+    created: wasCreated // true si création, false si replay
+  },
+  ackSuccessSchemaRequired(
+    z.object({
+      id: z.string(),
+      conversationId: z.string(),
+      content: z.string(),
+      type: z.string(),
+      createdAt: z.string(),
+      created: z.boolean()
+    })
+  )
+);
 ```
 
-**Key point**: Replay returns **original message unchanged** (not 409 Conflict).
+**WebSocket difference**: Can't return HTTP status, so ACK payload includes `created: boolean`.
 
-### Concurrency Handling
+---
 
-**Prisma upsert** handles race conditions:
-```
-Thread A: upsert(clientMsgId=uuid-1) → INSERT
-Thread B: upsert(clientMsgId=uuid-1) → Unique constraint hit → SELECT existing
-```
+### 5. `apps/api/src/modules/chat/__tests__/client-msg-id-idempotence.test.ts`
 
-**Result**: Only 1 message created, both requests return same message.
+**9 integration tests** (all passing):
+
+1. ✅ **Without clientMsgId**: Classic create → 201 (backward compatible)
+2. ✅ **With clientMsgId (first send)**: Create → 201
+3. ✅ **Replay (same clientMsgId)**: First 201, second 200
+4. ✅ **Concurrent requests**: One 201, other 200 (race handled)
+5. ✅ **Different clientMsgIds**: Creates distinct messages
+6. ✅ **Same clientMsgId, different conversations**: Allowed (scoped)
+7. ✅ **clientMessageId (legacy)**: Normalizes to clientMsgId → 201
+8. ✅ **Both fields identical**: OK → 201
+9. ✅ **Both fields different**: 400 VALIDATION_ERROR
 
 **Test evidence**:
-```typescript
-const [res1, res2] = await Promise.all([
-  POST({ clientMsgId: "uuid-1" }),
-  POST({ clientMsgId: "uuid-1" })
-]);
-expect(res1.body.data.id).toBe(res2.body.data.id);  // ✅ Pass
+```
+PASS src/modules/chat/__tests__/client-msg-id-idempotence.test.ts
+  ✓ creates message without clientMsgId (classic behavior)
+  ✓ creates message with clientMsgId (first send) - returns 201
+  ✓ returns 201 on first send, 200 on replay (same clientMsgId)
+  ✓ handles concurrent requests with same clientMsgId (one 201, other 200)
+  ✓ creates distinct messages with different clientMsgIds
+  ✓ allows same clientMsgId in different conversations
+  ✓ accepts clientMessageId (legacy) and normalizes to clientMsgId
+  ✓ accepts both clientMsgId and clientMessageId if identical
+  ✓ rejects if clientMsgId and clientMessageId differ
+
+Tests:       9 passed, 9 total
+Time:        25.617 s
+```
+
+---
+
+## Behavior Examples
+
+### Scenario 1: First send (creation)
+
+**Request**:
+```http
+POST /conversations/:id/messages
+{ "content": "Hello", "clientMsgId": "uuid-1" }
+```
+
+**Response**: 201 Created
+```json
+{ "ok": true, "data": { "id": "msg-1", "content": "Hello", "type": "TEXT" } }
+```
+
+---
+
+### Scenario 2: Replay (idempotent)
+
+**Request** (same clientMsgId):
+```http
+POST /conversations/:id/messages
+{ "content": "Different content", "clientMsgId": "uuid-1" }
+```
+
+**Response**: 200 OK
+```json
+{ "ok": true, "data": { "id": "msg-1", "content": "Hello", "type": "TEXT" } }
+```
+
+**Note**: Content NOT modified (original preserved).
+
+---
+
+### Scenario 3: Concurrent sends
+
+**Requests** (simultaneous with same clientMsgId):
+```http
+POST /conversations/:id/messages (Thread A)
+POST /conversations/:id/messages (Thread B)
+```
+
+**Responses**:
+- Thread A: 201 Created (wins race)
+- Thread B: 200 OK (sees existing)
+
+**Result**: Only 1 message in DB, both requests succeed.
+
+---
+
+### Scenario 4: Legacy field
+
+**Request**:
+```http
+POST /conversations/:id/messages
+{ "content": "Legacy", "clientMessageId": "uuid-2" }
+```
+
+**Response**: 201 Created
+**DB**: `clientMsgId` = "uuid-2" (normalized)
+
+---
+
+### Scenario 5: Both fields (conflict)
+
+**Request**:
+```http
+POST /conversations/:id/messages
+{ "content": "Conflict", "clientMsgId": "uuid-1", "clientMessageId": "uuid-2" }
+```
+
+**Response**: 400 Bad Request
+```json
+{ "ok": false, "error": { "code": "VALIDATION_ERROR", "message": "clientMsgId and clientMessageId must be identical if both provided" } }
 ```
 
 ---
 
 ## Anti-Regression Checklist
 
-✅ **Backward compatibility**: clientMsgId optional, no breaking changes
-✅ **Without clientMsgId**: Classic behavior unchanged (6 tests pass)
-✅ **Idempotence**: Replay returns existing (test 3 + 4 pass)
-✅ **Concurrency safe**: Atomic upsert (test 4 passes)
-✅ **Per-conversation scope**: Same clientMsgId allowed across conversations (test 6 passes)
-✅ **No content matching**: Server doesn't compare content, trusts clientMsgId
-✅ **Build successful**: `npm run build` passes
-✅ **All tests pass**: 6/6 new tests + existing tests unaffected
+✅ **Backward compatible**: clientMsgId optional, no breaking changes
+✅ **Without clientMsgId**: Classic behavior unchanged (always 201)
+✅ **With clientMsgId**: First send → 201, replay → 200
+✅ **Concurrency safe**: Create-then-fallback handles race (P2002 catch)
+✅ **Per-conversation scope**: Same clientMsgId allowed across conversations
+✅ **Legacy support**: clientMessageId normalized transparently
+✅ **Validation**: Both fields different → 400 error
+✅ **No content matching**: Server trusts clientMsgId, doesn't compare content
+✅ **Build successful**: TypeScript compilation passes
+✅ **All tests pass**: 9/9 integration tests passing
 
 ---
 
-## Test Summary
+## Implementation Details
 
-**New tests**: `apps/api/src/modules/chat/__tests__/client-msg-id-idempotence.test.ts`
+### Why Create-Then-Fallback (Not Upsert)?
 
+**Problem with upsert**: Prisma `upsert()` doesn't return info about whether row was created or already existed.
+
+**Solution**: Create-then-fallback pattern:
+```typescript
+try {
+  msg = await prisma.message.create({ clientMsgId });
+  wasCreated = true; // Know it was created
+} catch (e) {
+  if (e.code === 'P2002') {
+    msg = await prisma.message.findUnique({ clientMsgId });
+    wasCreated = false; // Know it was replay
+  }
+}
 ```
-PASS src/modules/chat/__tests__/client-msg-id-idempotence.test.ts
-  POST /conversations/:id/messages (clientMsgId idempotence)
-    ✓ creates message without clientMsgId (classic behavior)
-    ✓ creates message with clientMsgId (first send)
-    ✓ returns existing message on replay (same clientMsgId)
-    ✓ handles concurrent requests with same clientMsgId (only 1 message created)
-    ✓ creates distinct messages with different clientMsgIds
-    ✓ allows same clientMsgId in different conversations
 
-Test Suites: 1 passed, 1 total
-Tests:       6 passed, 6 total
+**Benefit**: Explicit `wasCreated` flag for correct HTTP status.
+
+---
+
+### Concurrency Guarantees
+
+**Race condition**:
+```
+Thread A: create(clientMsgId=uuid-1) → SUCCESS (201)
+Thread B: create(clientMsgId=uuid-1) → P2002 → findUnique() → SUCCESS (200)
 ```
 
-**Coverage**: All 5 required scenarios + 1 bonus (different conversations).
+**Result**: Both threads succeed, only 1 message in DB, correct status codes.
+
+**Why safe**: PostgreSQL unique constraint enforced at DB level (atomic).
 
 ---
 
-## Next Steps (Out of Scope)
+### Security Notes
 
-### Frontend Integration (Deliverable C4)
+**No sensitive data in logs**:
+- Error logs never include message content
+- Only log: `code`, `conversationId`, `userId` (metadata)
+- Prisma error includes `meta.target` (column names), not data
 
-**Not included in this PR** (backend only):
-- Update `apps/web/hooks/useChat.ts` to send clientMsgId
-- Update `apps/web/app/messages/[id]/page-websocket.tsx` to pass clientMsgId from optimistic state
-- Update retry logic to reuse same clientMsgId
+**Example secure log**:
+```typescript
+// ❌ BAD: Would log content
+console.error('Create failed', { error: e, content: body.content });
 
-**Why separate PR**: Backend foundation must be deployed first, frontend can follow incrementally.
-
-### Other Domains
-
-**Not included** (chat only):
-- Booking: Add clientMsgId to booking decisions
-- Matching: Add clientMsgId to match actions
-- Reporting: Add clientMsgId to report submissions
-
-**Planned**: Deliverable C4 will apply same pattern to other domains.
-
----
-
-## Migration Guide (Production)
-
-**For deploying to production**:
-
-1. **Generate migration**:
-   ```bash
-   cd packages/database
-   npx prisma migrate dev --name add_client_msg_id_idempotence
-   ```
-
-2. **Review generated SQL**:
-   ```sql
-   ALTER TABLE "Message" ADD COLUMN "clientMsgId" VARCHAR(255);
-   CREATE UNIQUE INDEX "conversation_client_msg_unique"
-     ON "Message"("conversationId", "clientMsgId")
-     WHERE "clientMsgId" IS NOT NULL;
-   ```
-
-3. **Deploy**:
-   - Migration is **non-destructive** (adds nullable field)
-   - No downtime required
-   - Existing messages unaffected (clientMsgId = NULL)
-
-4. **Verify**:
-   - Run integration tests: `npm test client-msg-id-idempotence`
-   - Check constraint exists: `\d "Message"` in psql
-   - Test idempotence manually with same clientMsgId
+// ✅ GOOD: Metadata only
+console.error('Create failed', { error: { code: e.code, conversationId: id, userId } });
+```
 
 ---
 
 ## Code Diff Summary
 
 ```diff
-packages/database/prisma/schema.prisma:
-  + clientMsgId    String?      @db.VarChar(255)
-  + @@unique([conversationId, clientMsgId], name: "conversation_client_msg_unique")
-
 apps/api/src/lib/socket-schemas.ts:
-  - clientMessageId?: string;
-  + clientMsgId?: string;
+  export type SendMessagePayload = {
+    conversationId: string;
+    content: string;
+    type: 'TEXT' | 'PROPOSAL';
+    clientMsgId?: string;
+  + clientMessageId?: string; // Legacy
+  };
 
-apps/api/src/lib/socket.ts:
-  - const { conversationId, content, type } = validation.data;
-  + const { conversationId, content, type, clientMsgId } = validation.data;
-  - const message = await prisma.message.create({ ... });
-  + const message = clientMsgId
-      ? await prisma.message.upsert({ where: { conversation_client_msg_unique: { conversationId, clientMsgId } }, ... })
-      : await prisma.message.create({ ... });
+  + .refine((data) => {
+  +   if (data.clientMsgId && data.clientMessageId) {
+  +     return data.clientMsgId === data.clientMessageId;
+  +   }
+  +   return true;
+  + })
+  + .transform((data) => {
+  +   const clientMsgId = data.clientMsgId || data.clientMessageId;
+  +   return { ...data, clientMsgId };
+  + });
 
 apps/api/src/modules/chat/conversations.controller.ts:
-  + clientMsgId: z.string().uuid().optional(),
-  - const msg = await prisma.message.create({ ... });
-  + const msg = body.clientMsgId
-      ? await prisma.message.upsert({ ... })
-      : await prisma.message.create({ ... });
+  - const msg = body.clientMsgId ? await prisma.message.upsert(...) : await prisma.message.create(...);
+  + let msg;
+  + let wasCreated = true;
+  + if (body.clientMsgId) {
+  +   try {
+  +     msg = await prisma.message.create({ clientMsgId: body.clientMsgId });
+  +     wasCreated = true;
+  +   } catch (e) {
+  +     if (e.code === 'P2002') {
+  +       msg = await prisma.message.findUnique({ clientMsgId: body.clientMsgId });
+  +       wasCreated = false;
+  +     } else {
+  +       throw e;
+  +     }
+  +   }
+  + } else {
+  +   msg = await prisma.message.create({ ... });
+  +   wasCreated = true;
+  + }
+
+  - return envelope ? sendOk(res, 201, msg) : res.status(201).json({ id: msg.id });
+  + const statusCode = wasCreated ? 201 : 200;
+  + return envelope ? sendOk(res, statusCode, msg) : res.status(statusCode).json({ id: msg.id });
+
+apps/api/src/lib/socket.ts:
+  (same pattern as HTTP controller)
+
+  + created: wasCreated // ACK flag
+
+apps/api/src/modules/chat/__tests__/client-msg-id-idempotence.test.ts:
+  + 3 new backward compat tests
+  ~ Updated existing tests to expect 201/200
 ```
 
-**Total**: ~100 insertions, minimal deletions (backward compatible)
+**Total**: ~200 insertions, ~100 deletions
+
+---
+
+## Next Steps (Out of Scope)
+
+### Frontend Integration
+
+**Not included** (backend only):
+- Update `apps/web/hooks/useChat.ts` to send clientMsgId
+- Handle 200 OK (replay) in frontend
+- Update retry logic to reuse clientMsgId
+
+**Migration guide**: Frontend can start sending `clientMsgId` immediately (backward compatible).
 
 ---
 
 ## Commit Message
 
 ```
-feat(api): idempotent chat send with clientMsgId
+fix(api): clientMsgId idempotence status 201/200 + ws backward compat
 
-Add optional clientMsgId field for idempotent message creation.
-When provided, same (conversationId, clientMsgId) returns existing message.
+Implement proper idempotence with correct HTTP status codes and legacy support.
 
 Changes:
-- Schema: Add clientMsgId String? + composite unique constraint
-- WS + HTTP: Upsert if clientMsgId, else create (backward compatible)
-- Tests: 6 integration tests (all scenarios + concurrency)
+- Pattern: create-then-fallback (not upsert) for 201 vs 200 detection
+- Backward compat: accept clientMessageId (legacy) + clientMsgId (new)
+- Validation: reject if both fields present but differ (400 error)
+- WS: ACK includes created flag
+- Tests: 9 integration tests (all passing)
 
-Guarantees:
-- Backward compatible (clientMsgId optional)
-- Atomic upsert (no race conditions)
-- Always 200 OK (idempotent replay)
-- Scoped per conversation (same clientMsgId allowed across convs)
+Status semantics:
+- 201 Created = message created (first send)
+- 200 OK = message exists (replay/idempotent)
+
+Safety:
+- Atomic: DB constraint enforced
+- Concurrent: one 201, other 200 (race handled)
+- No breaking changes: clientMsgId optional
 
 Build: ✅ Successful
-Tests: ✅ 6/6 passed
+Tests: ✅ 9/9 passed
+
+🤖 Generated with Claude Code (https://claude.com/claude-code)
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 ```
 
 ---

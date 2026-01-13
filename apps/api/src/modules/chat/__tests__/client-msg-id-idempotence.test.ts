@@ -92,8 +92,8 @@ describe('POST /conversations/:id/messages (clientMsgId idempotence)', () => {
     expect(msg?.clientMsgId).toBeNull();
   });
 
-  // Scenario 2: Avec clientMsgId (1er envoi) - create
-  it('creates message with clientMsgId (first send)', async () => {
+  // Scenario 2: Avec clientMsgId (1er envoi) - create → 201
+  it('creates message with clientMsgId (first send) - returns 201', async () => {
     const clientMsgId = randomUUID();
 
     const res = await session
@@ -101,7 +101,7 @@ describe('POST /conversations/:id/messages (clientMsgId idempotence)', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .set('X-API-ENVELOPE', '1')
       .send({ type: 'TEXT', content: 'Hello with clientMsgId', clientMsgId })
-      .expect(201);
+      .expect(201); // 201 Created
 
     expect(res.body).toMatchObject({
       ok: true,
@@ -117,27 +117,27 @@ describe('POST /conversations/:id/messages (clientMsgId idempotence)', () => {
     expect(msg?.content).toBe('Hello with clientMsgId');
   });
 
-  // Scenario 3: Avec même clientMsgId (replay) - idempotent return
-  it('returns existing message on replay (same clientMsgId)', async () => {
+  // Scenario 3: Avec même clientMsgId (replay) - 201 puis 200
+  it('returns 201 on first send, 200 on replay (same clientMsgId)', async () => {
     const clientMsgId = randomUUID();
 
-    // 1er envoi
+    // 1er envoi → 201 Created
     const res1 = await session
       .post(`/conversations/${conversationId}/messages`)
       .set('Authorization', `Bearer ${accessToken}`)
       .set('X-API-ENVELOPE', '1')
       .send({ type: 'TEXT', content: 'Original message', clientMsgId })
-      .expect(201);
+      .expect(201); // 201 Created
 
     const firstMsgId = res1.body.data.id;
 
-    // 2ème envoi (replay avec même clientMsgId, contenu différent)
+    // 2ème envoi (replay avec même clientMsgId, contenu différent) → 200 OK
     const res2 = await session
       .post(`/conversations/${conversationId}/messages`)
       .set('Authorization', `Bearer ${accessToken}`)
       .set('X-API-ENVELOPE', '1')
       .send({ type: 'TEXT', content: 'Should be ignored', clientMsgId })
-      .expect(201); // Toujours 201 (idempotent)
+      .expect(200); // 200 OK (replay)
 
     // Le 2ème appel doit retourner le message original (pas de modification)
     expect(res2.body).toMatchObject({
@@ -160,7 +160,7 @@ describe('POST /conversations/:id/messages (clientMsgId idempotence)', () => {
   });
 
   // Scenario 4: Concurrence (2 POST simultanés avec même clientMsgId)
-  it('handles concurrent requests with same clientMsgId (only 1 message created)', async () => {
+  it('handles concurrent requests with same clientMsgId (one 201, other 200)', async () => {
     const clientMsgId = randomUUID();
 
     // Envoyer 2 requêtes en parallèle avec le même clientMsgId
@@ -177,9 +177,9 @@ describe('POST /conversations/:id/messages (clientMsgId idempotence)', () => {
         .send({ type: 'TEXT', content: 'Concurrent message 2', clientMsgId }),
     ]);
 
-    // Les deux doivent retourner 201 OK
-    expect(res1.status).toBe(201);
-    expect(res2.status).toBe(201);
+    // L'un doit être 201 (create), l'autre 200 (replay) - ordre non déterministe
+    const statuses = [res1.status, res2.status].sort();
+    expect(statuses).toEqual([200, 201]); // Un de chaque
 
     // Les deux doivent retourner le même message ID
     const id1 = res1.body.data.id;
@@ -282,5 +282,70 @@ describe('POST /conversations/:id/messages (clientMsgId idempotence)', () => {
     });
     expect(count1).toBe(1);
     expect(count2).toBe(1);
+  });
+
+  // BACKWARD COMPATIBILITY TESTS
+
+  // Test 1: clientMessageId (legacy) fonctionne
+  it('accepts clientMessageId (legacy) and normalizes to clientMsgId', async () => {
+    const clientMessageId = randomUUID();
+
+    const res = await session
+      .post(`/conversations/${conversationId}/messages`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('X-API-ENVELOPE', '1')
+      .send({ type: 'TEXT', content: 'Legacy field', clientMessageId })
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      ok: true,
+      data: { id: expect.any(String), content: 'Legacy field' },
+    });
+
+    // Vérifier que clientMsgId est sauvegardé (normalisé)
+    const msg = await prisma.message.findUnique({
+      where: { id: res.body.data.id },
+      select: { clientMsgId: true },
+    });
+    expect(msg?.clientMsgId).toBe(clientMessageId);
+  });
+
+  // Test 2: Les deux champs identiques → OK
+  it('accepts both clientMsgId and clientMessageId if identical', async () => {
+    const uuid = randomUUID();
+
+    const res = await session
+      .post(`/conversations/${conversationId}/messages`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('X-API-ENVELOPE', '1')
+      .send({ type: 'TEXT', content: 'Both fields same', clientMsgId: uuid, clientMessageId: uuid })
+      .expect(201);
+
+    expect(res.body.ok).toBe(true);
+
+    // Vérifier que clientMsgId est sauvegardé
+    const msg = await prisma.message.findUnique({
+      where: { id: res.body.data.id },
+      select: { clientMsgId: true },
+    });
+    expect(msg?.clientMsgId).toBe(uuid);
+  });
+
+  // Test 3: Les deux champs différents → 400 VALIDATION_ERROR
+  it('rejects if clientMsgId and clientMessageId differ', async () => {
+    const uuid1 = randomUUID();
+    const uuid2 = randomUUID();
+
+    const res = await session
+      .post(`/conversations/${conversationId}/messages`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('X-API-ENVELOPE', '1')
+      .send({ type: 'TEXT', content: 'Different fields', clientMsgId: uuid1, clientMessageId: uuid2 })
+      .expect(400);
+
+    expect(res.body).toMatchObject({
+      ok: false,
+      error: { code: 'VALIDATION_ERROR' },
+    });
   });
 });
