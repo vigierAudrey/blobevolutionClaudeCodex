@@ -291,11 +291,8 @@ export default function ConversationPage() {
 
     const trimmedInput = input.trim();
 
-    // C3: Anti-dup - vérifier si déjà en cours (single-flight par clientMsgId)
-    const alreadyInFlight = optimisticMessages.some(m => m.inFlight);
-    if (alreadyInFlight) {
-      return; // Ignorer silently
-    }
+    // C3.1 FIX 2: Guard removed - buttons already disabled during inFlight
+    // Input also disabled below to prevent Enter spam
 
     // C3: Créer optimistic message
     const clientMsgId = generateClientMsgId();
@@ -316,29 +313,18 @@ export default function ConversationPage() {
     const result = await sendMessage(trimmedInput, 'TEXT');
 
     if (result.success) {
-      // Marquer inFlight=false
-      setOptimisticMessages(prev =>
-        prev.map(m =>
-          m.clientMsgId === clientMsgId
-            ? { ...m, inFlight: false }
-            : m
-        )
-      );
-
       setError(null);
 
-      // Reload messages if HTTP fallback was used + cleanup optimistic
+      // C3.1 FIX 1: Supprimer explicitement l'optimistic par clientMsgId (succès confirmé)
+      setOptimisticMessages(prev =>
+        prev.filter(opt => opt.clientMsgId !== clientMsgId)
+      );
+
+      // HTTP fallback : reload pour récupérer le message serveur
       if (result.transport === 'HTTP') {
         await loadMessages();
-        // Supprimer les optimistic pending récents (réconciliation après reload)
-        setOptimisticMessages(prev =>
-          prev.filter(opt =>
-            opt.status === 'failed' || // Garder failed pour retry
-            (Date.now() - opt.createdAtLocal) >= 5000 // Garder seulement très anciens (edge case)
-          )
-        );
       }
-      // WS: attendre onNewMessage pour réconciliation automatique
+      // WS: le message serveur arrivera via onNewMessage (réconciliation safety net)
 
       return;
     }
@@ -375,11 +361,7 @@ export default function ConversationPage() {
   const sendProposal = async () => {
     if (!pDate || !pPlace) return;
 
-    // C3: Anti-dup - vérifier si déjà en cours
-    const alreadyInFlight = optimisticMessages.some(m => m.inFlight);
-    if (alreadyInFlight) {
-      return; // Ignorer silently
-    }
+    // C3.1 FIX 2: Guard removed - button already disabled during inFlight
 
     const meta: MessageMeta = { date: pDate, place: pPlace, note: pNote || undefined };
     const content = `Proposition de session ${pDate} @ ${pPlace}`;
@@ -403,32 +385,22 @@ export default function ConversationPage() {
     const result = await sendMessage(content, 'PROPOSAL', meta);
 
     if (result.success) {
-      // Marquer inFlight=false
-      setOptimisticMessages(prev =>
-        prev.map(m =>
-          m.clientMsgId === clientMsgId
-            ? { ...m, inFlight: false }
-            : m
-        )
-      );
-
       setShowProposal(false);
       setPDate('');
       setPPlace('');
       setPNote('');
       setError(null);
 
-      // Reload messages if HTTP fallback was used + cleanup optimistic
+      // C3.1 FIX 1: Supprimer explicitement l'optimistic par clientMsgId
+      setOptimisticMessages(prev =>
+        prev.filter(opt => opt.clientMsgId !== clientMsgId)
+      );
+
+      // HTTP fallback : reload pour récupérer le message serveur
       if (result.transport === 'HTTP') {
         await loadMessages();
-        setOptimisticMessages(prev =>
-          prev.filter(opt =>
-            opt.status === 'failed' ||
-            (Date.now() - opt.createdAtLocal) >= 5000
-          )
-        );
       }
-      // WS: attendre onNewMessage pour réconciliation
+      // WS: le message serveur arrivera via onNewMessage
 
       return;
     }
@@ -487,27 +459,18 @@ export default function ConversationPage() {
     const result = await sendMessage(optMsg.content, optMsg.type, optMsg.meta);
 
     if (result.success) {
-      // Marquer inFlight=false
-      setOptimisticMessages(prev =>
-        prev.map(m =>
-          m.clientMsgId === clientMsgId
-            ? { ...m, inFlight: false }
-            : m
-        )
-      );
-
       setError(null);
 
-      // Reload + cleanup si HTTP fallback
+      // C3.1 FIX 1: Supprimer explicitement l'optimistic par clientMsgId
+      setOptimisticMessages(prev =>
+        prev.filter(opt => opt.clientMsgId !== clientMsgId)
+      );
+
+      // HTTP fallback : reload pour récupérer le message serveur
       if (result.transport === 'HTTP') {
         await loadMessages();
-        setOptimisticMessages(prev =>
-          prev.filter(opt =>
-            opt.status === 'failed' ||
-            (Date.now() - opt.createdAtLocal) >= 5000
-          )
-        );
       }
+      // WS: le message serveur arrivera via onNewMessage
 
       return;
     }
@@ -704,12 +667,12 @@ export default function ConversationPage() {
                 value={input}
                 onChange={(e)=>setInput(e.target.value)}
                 onKeyDown={(e)=>{
-                  if(e.key==='Enter' && !rateLimitedUntil){
+                  if(e.key==='Enter' && !rateLimitedUntil && !optimisticMessages.some(m => m.inFlight)){
                     e.preventDefault();
                     send();
                   }
                 }}
-                disabled={!!rateLimitedUntil}
+                disabled={!!rateLimitedUntil || optimisticMessages.some(m => m.inFlight)}
               />
               {/* ✅ PATCH 3 (P1 #4): Disable button + countdown pendant rate limit */}
               {/* C3: Disable also si message inFlight */}
