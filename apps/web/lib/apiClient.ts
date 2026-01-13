@@ -1,15 +1,15 @@
+import type { MessageListResponse, SendMessagePayload, ThreadListQuery, ThreadListResponse } from '@/types/messages';
 import { z } from 'zod';
+import { requestStrict } from './requestStrict';
 import type {
-  BookingAvailability,
-  BookingRequestInboxItem,
-  CreateBookingAvailabilityPayload,
   AvailabilityLevel,
   AvailabilitySport,
   AvailabilityStatus,
+  BookingAvailability,
+  BookingRequestInboxItem,
+  CreateBookingAvailabilityPayload,
   RiderBookingRequest,
 } from './types/booking';
-import type { ThreadListQuery, ThreadListResponse, MessageListResponse, SendMessagePayload } from '@/types/messages';
-import { requestStrict, envelopeSuccessSchema } from './requestStrict';
 
 export interface AuditLogEntry {
   id: string;
@@ -814,18 +814,28 @@ const matchDecisionsDataSchema = z.object({
     .optional(),
 });
 
-async function postMatchDecisions(
-  list: Array<{ targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }>,
-) {
+async function buildStrictHeaders(withAuth = true) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-API-ENVELOPE': '1',
   };
 
   const csrf = await ensureCsrfToken();
   if (csrf) headers['X-CSRF-Token'] = csrf;
 
   const tokens = getTokens();
-  if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+  if (withAuth && tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+
+  const consentHash = getConsentHash();
+  if (consentHash) headers['X-Consent-Hash'] = consentHash;
+
+  return headers;
+}
+
+async function postMatchDecisions(
+  list: Array<{ targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }>,
+) {
+  const headers = await buildStrictHeaders(true);
 
   const body = matchDecisionItemSchema.array().parse(list);
 
@@ -982,15 +992,7 @@ export const apiClient = {
     (async () => {
       const parsed = openConversationPayloadSchema.parse({ targetUserId });
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      const csrf = await ensureCsrfToken();
-      if (csrf) headers['X-CSRF-Token'] = csrf;
-
-      const tokens = getTokens();
-      if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+      const headers = await buildStrictHeaders(true);
 
       return requestStrict('/conversations/open', { method: 'POST', headers, body: JSON.stringify(parsed) }, openConversationDataSchema);
     })(),
@@ -999,15 +1001,7 @@ export const apiClient = {
     (async () => {
       const parsed = reportProfileBodySchema.parse(body);
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      const csrf = await ensureCsrfToken();
-      if (csrf) headers['X-CSRF-Token'] = csrf;
-
-      const tokens = getTokens();
-      if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+      const headers = await buildStrictHeaders(true);
 
       return requestStrict('/reports/profile', { method: 'POST', headers, body: JSON.stringify(parsed) }, reportProfileDataSchema);
     })(),
@@ -1029,15 +1023,7 @@ export const apiClient = {
     (async () => {
       const parsed = sendMessagePayloadSchema.parse(body);
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      const csrf = await ensureCsrfToken();
-      if (csrf) headers['X-CSRF-Token'] = csrf;
-
-      const tokens = getTokens();
-      if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+      const headers = await buildStrictHeaders(true);
 
       return requestStrict(`/conversations/${id}/messages`, { method: 'POST', headers, body: JSON.stringify(parsed) }, sendMessageDataSchema);
     })(),
@@ -1265,15 +1251,7 @@ export const apiClient = {
     (async () => {
       const parsed = createBookingAvailabilityPayloadSchema.parse(payload);
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      const csrf = await ensureCsrfToken();
-      if (csrf) headers['X-CSRF-Token'] = csrf;
-
-      const tokens = getTokens();
-      if (tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+      const headers = await buildStrictHeaders(true);
 
       return requestStrict('/booking/availability', { method: 'POST', headers, body: JSON.stringify(parsed) }, proAvailabilityDataSchema);
     })(),

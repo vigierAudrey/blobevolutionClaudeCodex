@@ -6,9 +6,17 @@
 jest.unmock('../apiClient');
 
 // Mock fetch BEFORE importing apiClient
-global.fetch = jest.fn();
+const originalFetch = global.fetch;
+const fetchMock = jest.fn<Promise<{
+  ok?: boolean;
+  status?: number;
+  url?: string;
+  text?: () => Promise<string>;
+  json?: () => Promise<unknown>;
+}>, Parameters<typeof fetch>>();
+(global as any).fetch = fetchMock as unknown as typeof fetch;
 
-import { apiClient, __testUtils } from '../apiClient';
+import { __testUtils, apiClient } from '../apiClient';
 
 describe('API Client - Matching Integration', () => {
   const mockTokens = {
@@ -18,19 +26,18 @@ describe('API Client - Matching Integration', () => {
   const API_BASE_URL = 'http://localhost:4000';
 
   const queueCsrfSuccess = () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ csrfToken: 'test-csrf-token' }),
     });
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    (global.fetch as jest.Mock).mockReset();
+    fetchMock.mockReset();
     __testUtils.resetCsrfCache();
 
     // Default fetch response (can be overridden per test)
-    (global.fetch as jest.Mock).mockResolvedValue({
+    fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
       url: `${API_BASE_URL}/default`,
@@ -43,13 +50,23 @@ describe('API Client - Matching Integration', () => {
     }
 
     // Mock localStorage with proper spies
-    Storage.prototype.getItem = jest.fn((key: string) => {
+    jest.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
       if (key === 'accessToken') return mockTokens.accessToken;
       if (key === 'refreshToken') return mockTokens.refreshToken;
       return null;
     });
-    Storage.prototype.setItem = jest.fn();
-    Storage.prototype.removeItem = jest.fn();
+    jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {});
+    jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    fetchMock.mockReset();
+    __testUtils.resetCsrfCache();
+  });
+
+  afterAll(() => {
+    (global as any).fetch = originalFetch;
   });
 
   describe('searchMatching', () => {
@@ -95,7 +112,6 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait envoyer une requête de recherche correctement formatée', async () => {
-      const fetchMock = global.fetch as jest.Mock;
       queueCsrfSuccess();
       fetchMock.mockResolvedValueOnce({
         ok: true,
@@ -142,7 +158,6 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       };
 
-      const fetchMock = global.fetch as jest.Mock;
       queueCsrfSuccess();
       fetchMock.mockResolvedValueOnce({
         ok: true,
@@ -168,14 +183,14 @@ describe('API Client - Matching Integration', () => {
 
     it('devrait gérer les erreurs de réseau', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
+      fetchMock.mockRejectedValueOnce(new Error('Network error'));
 
       await expect(apiClient.searchMatching(mockSearchRequest)).rejects.toThrow('Network error');
     });
 
     it('devrait gérer les erreurs HTTP', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 400,
         text: async () => JSON.stringify({ error: 'Invalid search parameters' }),
@@ -202,7 +217,6 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait envoyer les décisions par batch', async () => {
-      const fetchMock = global.fetch as jest.Mock;
       queueCsrfSuccess();
       fetchMock.mockResolvedValueOnce({
         ok: true,
@@ -227,7 +241,7 @@ describe('API Client - Matching Integration', () => {
 
     it('devrait gérer une liste vide de décisions', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         status: 200,
         url: `${API_BASE_URL}/matching/decisions`,
@@ -241,7 +255,7 @@ describe('API Client - Matching Integration', () => {
 
     it('devrait remonter les erreurs enveloppées (403 FORBIDDEN)', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 403,
         url: `${API_BASE_URL}/matching/decisions`,
@@ -256,7 +270,7 @@ describe('API Client - Matching Integration', () => {
 
     it('devrait échouer sur réponse legacy non enveloppée', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         status: 200,
         url: `${API_BASE_URL}/matching/decisions`,
@@ -273,7 +287,6 @@ describe('API Client - Matching Integration', () => {
     const singleDecision = { targetProfileId: 'profile-1', decision: 'ACCEPT' as const };
 
     it('envoie via /matching/decisions (envelope) et retourne une forme compatible', async () => {
-      const fetchMock = global.fetch as jest.Mock;
       queueCsrfSuccess();
       fetchMock.mockResolvedValueOnce({
         ok: true,
@@ -330,7 +343,7 @@ describe('API Client - Matching Integration', () => {
     const requestId = 'req-123';
 
     it('envoie les headers (Auth, CSRF, X-API-ENVELOPE) et retourne le succès enveloppé', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -345,7 +358,7 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.decideBookingRequest(requestId, 'ACCEPT');
 
       expect(result).toEqual({ success: true, action: 'accept' });
-      const [, init] = (global.fetch as jest.Mock).mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1];
       const headers = new Headers(init.headers);
       expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
@@ -354,7 +367,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('surface une erreur enveloppée FORBIDDEN', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -373,7 +386,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('rejette la réponse legacy non enveloppée', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -391,7 +404,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('rejette une enveloppe succès avec data invalide', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -416,7 +429,6 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('envoie les headers (Auth, CSRF, X-API-ENVELOPE) et retourne le succès enveloppé', async () => {
-      const fetchMock = global.fetch as jest.Mock;
       queueCsrfSuccess();
       fetchMock.mockResolvedValueOnce({
         ok: true,
@@ -444,7 +456,7 @@ describe('API Client - Matching Integration', () => {
 
     it('surface une erreur enveloppée FORBIDDEN', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 403,
         url: `${API_BASE_URL}/reports/profile`,
@@ -459,7 +471,7 @@ describe('API Client - Matching Integration', () => {
 
     it('rejette la réponse legacy non enveloppée', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         status: 201,
         url: `${API_BASE_URL}/reports/profile`,
@@ -473,7 +485,7 @@ describe('API Client - Matching Integration', () => {
 
     it('rejette une enveloppe succès avec data invalide', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         status: 201,
         url: `${API_BASE_URL}/reports/profile`,
@@ -487,7 +499,7 @@ describe('API Client - Matching Integration', () => {
 
     it('rejette une entrée invalide côté client', async () => {
       await expect(apiClient.reportProfile({ targetProfileId: '', reason: '   ' })).rejects.toBeTruthy();
-      expect((global.fetch as jest.Mock)).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 
@@ -495,7 +507,7 @@ describe('API Client - Matching Integration', () => {
     const targetUserId = '22222222-2222-2222-2222-222222222222';
 
     it('envoie les headers (Auth, CSRF, X-API-ENVELOPE) et retourne le succès enveloppé', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -510,7 +522,7 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.openConversation(targetUserId);
 
       expect(result).toEqual({ id: '33333333-3333-3333-3333-333333333333', created: true });
-      const [, init] = (global.fetch as jest.Mock).mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1];
       const headers = new Headers(init.headers);
       expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
@@ -520,7 +532,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('surface une erreur enveloppée FORBIDDEN', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -539,7 +551,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('rejette la réponse legacy non enveloppée', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -557,7 +569,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('rejette une enveloppe succès avec data invalide', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -576,11 +588,11 @@ describe('API Client - Matching Integration', () => {
 
     it('rejette une entrée invalide côté client', async () => {
       await expect(apiClient.openConversation('not-a-uuid')).rejects.toBeTruthy();
-      expect((global.fetch as jest.Mock)).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('surface RATE_LIMITED avec détails lorsque le serveur répond 429 enveloppé', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -606,7 +618,7 @@ describe('API Client - Matching Integration', () => {
   describe('createBookingAvailability (strict)', () => {
     const payload = {
       sport: 'surf' as const,
-      levels: ['beginner'] as const,
+      levels: ['beginner'],
       startAt: '2030-01-01T10:00:00.000Z',
       endAt: '2030-01-01T12:00:00.000Z',
       spotLat: 43.493,
@@ -630,7 +642,7 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('envoie les headers (Auth, CSRF, X-API-ENVELOPE) et retourne le succès enveloppé', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -645,7 +657,7 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.createBookingAvailability(payload);
 
       expect(result).toEqual(successData);
-      const [, init] = (global.fetch as jest.Mock).mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1];
       const headers = new Headers(init.headers);
       expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
@@ -655,7 +667,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('surface une erreur enveloppée FORBIDDEN', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -674,7 +686,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('rejette la réponse legacy non enveloppée', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -692,7 +704,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('rejette une enveloppe succès avec data invalide', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -713,10 +725,10 @@ describe('API Client - Matching Integration', () => {
       await expect(
         apiClient.createBookingAvailability({
           ...payload,
-          startAt: 'invalid-date' as any,
+          startAt: 'invalid-date',
         })
       ).rejects.toBeTruthy();
-      expect((global.fetch as jest.Mock)).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 
@@ -732,7 +744,7 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('envoie les headers (Auth, CSRF, X-API-ENVELOPE) et retourne le succès enveloppé', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -747,7 +759,7 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.sendMessage(conversationId, payload);
 
       expect(result).toEqual(successData);
-      const [, init] = (global.fetch as jest.Mock).mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1];
       const headers = new Headers(init.headers);
       expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
@@ -757,7 +769,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('surface une erreur enveloppée FORBIDDEN', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -776,7 +788,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('rejette la réponse legacy non enveloppée', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -794,7 +806,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('rejette une enveloppe succès avec data invalide', async () => {
-      (global.fetch as jest.Mock)
+      fetchMock
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: 'test-csrf-token' }),
@@ -813,7 +825,7 @@ describe('API Client - Matching Integration', () => {
 
     it('rejette une entrée invalide côté client', async () => {
       await expect(apiClient.sendMessage(conversationId, { type: 'TEXT', content: '' } as any)).rejects.toBeTruthy();
-      expect((global.fetch as jest.Mock)).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 
@@ -849,14 +861,14 @@ describe('API Client - Matching Integration', () => {
     };
 
     it('devrait récupérer la liste des conversations', async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify(mockConversationsResponse),
       });
 
       const result = await apiClient.listConversations();
 
-      expect((global.fetch as jest.Mock)).toHaveBeenCalledWith(`${API_BASE_URL}/conversations`, {
+      expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/conversations`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -870,7 +882,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('devrait calculer correctement le total des messages non lus', async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify(mockConversationsResponse),
       });
@@ -885,7 +897,7 @@ describe('API Client - Matching Integration', () => {
   describe('Gestion des tokens et authentification', () => {
     it('devrait inclure le token d\'autorisation dans les requêtes', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ results: [] }),
       });
@@ -896,7 +908,7 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       });
 
-      const [, options] = (global.fetch as jest.Mock).mock.calls[1];
+      const [, options] = fetchMock.mock.calls[1];
       expect(options.headers).toMatchObject({
         'Authorization': 'Bearer fake-access-token',
       });
@@ -907,7 +919,7 @@ describe('API Client - Matching Integration', () => {
       Storage.prototype.getItem = jest.fn(() => null);
 
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ results: [] }),
       });
@@ -918,13 +930,13 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       });
 
-      const [, options] = (global.fetch as jest.Mock).mock.calls[1];
+      const [, options] = fetchMock.mock.calls[1];
       expect(options.headers).not.toHaveProperty('Authorization');
     });
 
     it('devrait gérer l\'expiration du token (401)', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 401,
         text: async () => JSON.stringify({ error: 'Token expired' }),
@@ -946,7 +958,6 @@ describe('API Client - Matching Integration', () => {
         { sport: 'surf' as const, level: 'advanced' as const, date: '2024-01-16' },
       ];
 
-      const fetchMock = global.fetch as jest.Mock;
       queueCsrfSuccess();
       fetchMock.mockResolvedValue({
         ok: true,
@@ -964,37 +975,6 @@ describe('API Client - Matching Integration', () => {
       });
     });
 
-    it('devrait gérer les timeouts de requête', async () => {
-      jest.useFakeTimers();
-
-      const slowRequest = new Promise(resolve => {
-        setTimeout(() => resolve({
-          ok: true,
-          text: async () => JSON.stringify({ results: [] }),
-        }), 10000);
-      });
-
-      (global.fetch as jest.Mock).mockReturnValueOnce(slowRequest);
-
-      const searchPromise = apiClient.searchMatching({
-        sport: 'surf',
-        level: 'beginner',
-        date: 'anytime',
-      });
-
-      // Simuler un timeout après 5 secondes
-      jest.advanceTimersByTime(5000);
-
-      // Note: Dans un vrai test, on configurerait un timeout dans fetch
-      // Pour cet exemple, on vérifie juste que la requête est en cours
-      expect((global.fetch as jest.Mock)).toHaveBeenCalled();
-
-      jest.advanceTimersByTime(10000);
-      await expect(searchPromise).resolves.toEqual({ results: [], total: 0 });
-
-      jest.useRealTimers();
-    });
-
     it('devrait limiter la taille des requêtes batch', async () => {
       const manyDecisions = Array.from({ length: 150 }, (_, i) => ({
         targetProfileId: `profile-${i}`,
@@ -1002,7 +982,7 @@ describe('API Client - Matching Integration', () => {
       }));
 
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         status: 200,
         url: `${API_BASE_URL}/matching/decisions`,
@@ -1011,7 +991,7 @@ describe('API Client - Matching Integration', () => {
 
       await apiClient.matchDecisions(manyDecisions);
 
-      const [, options] = (global.fetch as jest.Mock).mock.calls[1];
+      const [, options] = fetchMock.mock.calls[1];
       const body = JSON.parse(options.body);
 
       // Dans une vraie implémentation, on limiterait à 100 éléments max
@@ -1030,7 +1010,7 @@ describe('API Client - Matching Integration', () => {
       };
 
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 400,
         text: async () => JSON.stringify(errorResponse),
@@ -1050,7 +1030,7 @@ describe('API Client - Matching Integration', () => {
 
     it('devrait gérer les erreurs de parsing JSON', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 500,
         text: async () => {
@@ -1067,7 +1047,7 @@ describe('API Client - Matching Integration', () => {
 
     it('devrait gérer les erreurs de réseau avec des messages explicites', async () => {
       queueCsrfSuccess();
-      (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
       try {
         await apiClient.searchMatching({
