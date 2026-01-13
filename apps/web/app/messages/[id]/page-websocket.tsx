@@ -2,25 +2,24 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
-import { BackBar } from '../../../components/BackBar';
-import { Button } from '../../../components/ui/button';
-import { Shield, ShieldOff, MoreVertical, Wifi, WifiOff } from 'lucide-react';
-import { apiClient } from '../../../lib/apiClient';
-import { useChat } from '../../../hooks/useChat';
-import { normalizeAppError } from '../../../lib/normalizeAppError';
-import { getUserFacingMessage } from '../../../lib/getUserFacingMessage';
-import { ERROR_CODES } from '../../../lib/socketAck';
 import type {
   Message,
   MessageListResponse,
   MessageMeta,
-  SendMessagePayload,
   ThreadListResponse,
-  ThreadSummary,
+  ThreadSummary
 } from '@/types/messages';
+import { MoreVertical, Shield, ShieldOff, Wifi, WifiOff } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { BackBar } from '../../../components/BackBar';
+import { Button } from '../../../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
+import { useChat } from '../../../hooks/useChat';
+import { apiClient } from '../../../lib/apiClient';
+import { getUserFacingMessage } from '../../../lib/getUserFacingMessage';
+import { normalizeAppError } from '../../../lib/normalizeAppError';
+import { ERROR_CODES } from '../../../lib/socketAck';
 
 // Known client-only error codes (not from server ERROR_CODES)
 const KNOWN_CLIENT_CODES = new Set([
@@ -33,6 +32,31 @@ const KNOWN_CLIENT_CODES = new Set([
   'INVALID_RESPONSE',
   'INVALID_JSON',
 ]);
+
+/**
+ * C3: Optimistic message for pending/failed state
+ */
+interface OptimisticMessage {
+  clientMsgId: string;
+  content: string;
+  type: 'TEXT' | 'PROPOSAL';
+  meta?: MessageMeta;
+  status: 'pending' | 'failed';
+  createdAtLocal: number;
+  lastErrorUserText?: string;
+  inFlight: boolean;
+}
+
+/**
+ * Generate unique clientMsgId
+ */
+function generateClientMsgId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older browsers
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+}
 
 /**
  * Log unknown error codes for telemetry
@@ -68,6 +92,7 @@ export default function ConversationPage() {
   const [accessToken, setAccessToken] = useState<string>('');
   const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
+  const [optimisticMessages, setOptimisticMessages] = useState<OptimisticMessage[]>([]);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => {
@@ -96,6 +121,24 @@ export default function ConversationPage() {
         }
         return [...prev, formattedMessage];
       });
+
+      // C3: Reconciliation - supprimer l'optimistic correspondant
+      setOptimisticMessages(prev => {
+        // Trouver le premier pending correspondant (pas les failed)
+        const matchIndex = prev.findIndex(opt =>
+          opt.status === 'pending' &&
+          opt.type === formattedMessage.type &&
+          opt.content === formattedMessage.content &&
+          (Date.now() - opt.createdAtLocal) < 10000 // 10s window
+        );
+
+        if (matchIndex !== -1) {
+          // Supprimer AU PLUS 1 optimistic
+          return prev.filter((_, i) => i !== matchIndex);
+        }
+        return prev;
+      });
+
       scrollToBottom();
     }
   });
@@ -227,20 +270,76 @@ export default function ConversationPage() {
     return () => clearInterval(interval);
   }, [rateLimitedUntil]);
 
+  // C3: Cleanup orphan optimistic messages (timeout très long)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOptimisticMessages(prev =>
+        prev.filter(opt =>
+          opt.status === 'failed' || // Garder failed pour retry
+          opt.inFlight || // Garder inFlight (en cours)
+          (Date.now() - opt.createdAtLocal) < 120000 // < 120s
+        )
+      );
+    }, 60000); // Check toutes les 60s
+
+    return () => clearInterval(interval);
+  }, []);
+
   const send = async () => {
     if (!input.trim()) return;
     if (rateLimitedUntil && Date.now() < rateLimitedUntil) return; // Prevent send during cooldown
 
+    const trimmedInput = input.trim();
+
+    // C3: Anti-dup - vérifier si déjà en cours (single-flight par clientMsgId)
+    const alreadyInFlight = optimisticMessages.some(m => m.inFlight);
+    if (alreadyInFlight) {
+      return; // Ignorer silently
+    }
+
+    // C3: Créer optimistic message
+    const clientMsgId = generateClientMsgId();
+    const optimistic: OptimisticMessage = {
+      clientMsgId,
+      content: trimmedInput,
+      type: 'TEXT',
+      status: 'pending',
+      createdAtLocal: Date.now(),
+      inFlight: true,
+    };
+
+    setOptimisticMessages(prev => [...prev, optimistic]);
+    setInput(''); // Clear immédiatement (UX responsive)
+    scrollToBottom();
+
     // C2: sendMessage now handles WS→HTTP fallback internally
-    const result = await sendMessage(input.trim(), 'TEXT');
+    const result = await sendMessage(trimmedInput, 'TEXT');
 
     if (result.success) {
-      setInput('');
+      // Marquer inFlight=false
+      setOptimisticMessages(prev =>
+        prev.map(m =>
+          m.clientMsgId === clientMsgId
+            ? { ...m, inFlight: false }
+            : m
+        )
+      );
+
       setError(null);
-      // Reload messages if HTTP fallback was used (optimistic WS messages already handled)
+
+      // Reload messages if HTTP fallback was used + cleanup optimistic
       if (result.transport === 'HTTP') {
         await loadMessages();
+        // Supprimer les optimistic pending récents (réconciliation après reload)
+        setOptimisticMessages(prev =>
+          prev.filter(opt =>
+            opt.status === 'failed' || // Garder failed pour retry
+            (Date.now() - opt.createdAtLocal) >= 5000 // Garder seulement très anciens (edge case)
+          )
+        );
       }
+      // WS: attendre onNewMessage pour réconciliation automatique
+
       return;
     }
 
@@ -250,47 +349,87 @@ export default function ConversationPage() {
     // Log unknown error codes (telemetry)
     logUnknownCode(appErr);
 
-    // RATE_LIMITED: activate cooldown UI
-    if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
-      const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
-      setRateLimitedUntil(cooldownUntil);
-
-      const userMsg = getUserFacingMessage(appErr, {
-        domain: 'chat',
-        action: 'send-message',
-      });
-
-      setError(userMsg.text);
-      return;
-    }
-
-    // Other errors: show user message
     const userMsg = getUserFacingMessage(appErr, {
       domain: 'chat',
       action: 'send-message',
     });
+
+    // Marquer optimistic en failed
+    setOptimisticMessages(prev =>
+      prev.map(m =>
+        m.clientMsgId === clientMsgId
+          ? { ...m, inFlight: false, status: 'failed', lastErrorUserText: userMsg.text }
+          : m
+      )
+    );
+
+    // RATE_LIMITED: activate cooldown UI
+    if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
+      const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
+      setRateLimitedUntil(cooldownUntil);
+    }
 
     setError(userMsg.text);
   };
 
   const sendProposal = async () => {
     if (!pDate || !pPlace) return;
+
+    // C3: Anti-dup - vérifier si déjà en cours
+    const alreadyInFlight = optimisticMessages.some(m => m.inFlight);
+    if (alreadyInFlight) {
+      return; // Ignorer silently
+    }
+
     const meta: MessageMeta = { date: pDate, place: pPlace, note: pNote || undefined };
     const content = `Proposition de session ${pDate} @ ${pPlace}`;
+
+    // C3: Créer optimistic message
+    const clientMsgId = generateClientMsgId();
+    const optimistic: OptimisticMessage = {
+      clientMsgId,
+      content,
+      type: 'PROPOSAL',
+      meta,
+      status: 'pending',
+      createdAtLocal: Date.now(),
+      inFlight: true,
+    };
+
+    setOptimisticMessages(prev => [...prev, optimistic]);
+    scrollToBottom();
 
     // C2: sendMessage now handles WS→HTTP fallback internally
     const result = await sendMessage(content, 'PROPOSAL', meta);
 
     if (result.success) {
+      // Marquer inFlight=false
+      setOptimisticMessages(prev =>
+        prev.map(m =>
+          m.clientMsgId === clientMsgId
+            ? { ...m, inFlight: false }
+            : m
+        )
+      );
+
       setShowProposal(false);
       setPDate('');
       setPPlace('');
       setPNote('');
       setError(null);
-      // Reload messages if HTTP fallback was used
+
+      // Reload messages if HTTP fallback was used + cleanup optimistic
       if (result.transport === 'HTTP') {
         await loadMessages();
+        setOptimisticMessages(prev =>
+          prev.filter(opt =>
+            opt.status === 'failed' ||
+            (Date.now() - opt.createdAtLocal) >= 5000
+          )
+        );
       }
+      // WS: attendre onNewMessage pour réconciliation
+
       return;
     }
 
@@ -300,25 +439,102 @@ export default function ConversationPage() {
     // Log unknown error codes
     logUnknownCode(appErr);
 
-    // RATE_LIMITED: activate cooldown
-    if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
-      const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
-      setRateLimitedUntil(cooldownUntil);
-
-      const userMsg = getUserFacingMessage(appErr, {
-        domain: 'chat',
-        action: 'send-proposal',
-      });
-
-      setError(userMsg.text);
-      return;
-    }
-
-    // Other errors
     const userMsg = getUserFacingMessage(appErr, {
       domain: 'chat',
       action: 'send-proposal',
     });
+
+    // Marquer optimistic en failed
+    setOptimisticMessages(prev =>
+      prev.map(m =>
+        m.clientMsgId === clientMsgId
+          ? { ...m, inFlight: false, status: 'failed', lastErrorUserText: userMsg.text }
+          : m
+      )
+    );
+
+    // RATE_LIMITED: activate cooldown
+    if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
+      const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
+      setRateLimitedUntil(cooldownUntil);
+    }
+
+    setError(userMsg.text);
+  };
+
+  // C3: Retry failed message
+  const retryMessage = async (clientMsgId: string) => {
+    const optMsg = optimisticMessages.find(m => m.clientMsgId === clientMsgId);
+    if (!optMsg || optMsg.inFlight || optMsg.status !== 'failed') {
+      return; // Guard: only retry failed non-inFlight messages
+    }
+
+    // Vérifier cooldown
+    if (rateLimitedUntil && Date.now() < rateLimitedUntil) {
+      return; // Ignorer pendant cooldown
+    }
+
+    // Réactiver (même clientMsgId = no new optimistic)
+    setOptimisticMessages(prev =>
+      prev.map(m =>
+        m.clientMsgId === clientMsgId
+          ? { ...m, status: 'pending', inFlight: true, lastErrorUserText: undefined }
+          : m
+      )
+    );
+
+    // Réessayer
+    const result = await sendMessage(optMsg.content, optMsg.type, optMsg.meta);
+
+    if (result.success) {
+      // Marquer inFlight=false
+      setOptimisticMessages(prev =>
+        prev.map(m =>
+          m.clientMsgId === clientMsgId
+            ? { ...m, inFlight: false }
+            : m
+        )
+      );
+
+      setError(null);
+
+      // Reload + cleanup si HTTP fallback
+      if (result.transport === 'HTTP') {
+        await loadMessages();
+        setOptimisticMessages(prev =>
+          prev.filter(opt =>
+            opt.status === 'failed' ||
+            (Date.now() - opt.createdAtLocal) >= 5000
+          )
+        );
+      }
+
+      return;
+    }
+
+    // Failed again
+    const appErr = normalizeAppError(result.error);
+    logUnknownCode(appErr);
+
+    const userMsg = getUserFacingMessage(appErr, {
+      domain: 'chat',
+      action: optMsg.type === 'PROPOSAL' ? 'send-proposal' : 'send-message',
+    });
+
+    // Re-marquer failed
+    setOptimisticMessages(prev =>
+      prev.map(m =>
+        m.clientMsgId === clientMsgId
+          ? { ...m, inFlight: false, status: 'failed', lastErrorUserText: userMsg.text }
+          : m
+      )
+    );
+
+    // RATE_LIMITED
+    if (appErr.code === ERROR_CODES.RATE_LIMITED && appErr.retryAfterSeconds) {
+      const cooldownUntil = Date.now() + (appErr.retryAfterSeconds * 1000);
+      setRateLimitedUntil(cooldownUntil);
+    }
 
     setError(userMsg.text);
   };
@@ -409,6 +625,7 @@ export default function ConversationPage() {
           {error && <p className="text-sm text-red-600">{error}</p>}
           {loading && messages.length === 0 && <p className="text-sm text-muted-foreground">Chargement…</p>}
           <div className="space-y-2 min-h-[300px]">
+            {/* Messages serveur normaux */}
             {messages.map((m) => (
               <div key={m.id} className="text-sm">
                 <div className={"inline-block rounded-lg px-3 py-2 " + (m.type === 'PROPOSAL' ? 'bg-amber-50 border border-amber-200' : 'bg-accent') }>
@@ -421,6 +638,48 @@ export default function ConversationPage() {
                 </div>
               </div>
             ))}
+
+            {/* C3: Messages optimistic (pending/failed) */}
+            {optimisticMessages.map((opt) => (
+              <div key={opt.clientMsgId} className="text-sm">
+                <div className={
+                  "inline-block rounded-lg px-3 py-2 " +
+                  (opt.type === 'PROPOSAL' ? 'bg-amber-50 border border-amber-200' : 'bg-accent') +
+                  (opt.status === 'failed' ? ' opacity-60 border-red-300' : ' opacity-75')
+                }>
+                  <div>{opt.content}</div>
+                  {opt.type === 'PROPOSAL' && opt.meta && (
+                    <div className="text-xs text-muted-foreground">
+                      {opt.meta?.date} • {opt.meta?.place} {opt.meta?.note ? `• ${opt.meta.note}` : ''}
+                    </div>
+                  )}
+
+                  {/* Badge status */}
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {opt.status === 'pending' && '⏳ Envoi…'}
+                    {opt.status === 'failed' && (
+                      <span className="text-red-600">
+                        ⚠️ Échec
+                        {!rateLimitedUntil && !opt.inFlight && (
+                          <button
+                            onClick={() => retryMessage(opt.clientMsgId)}
+                            className="ml-2 underline text-blue-600 hover:text-blue-800"
+                          >
+                            Réessayer
+                          </button>
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Erreur user-facing */}
+                  {opt.status === 'failed' && opt.lastErrorUserText && (
+                    <div className="text-xs text-red-600 mt-1">{opt.lastErrorUserText}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+
             {/* ✨ Indicateur de frappe */}
             {otherUserTyping && (
               <div className="text-xs text-muted-foreground italic">
@@ -453,10 +712,24 @@ export default function ConversationPage() {
                 disabled={!!rateLimitedUntil}
               />
               {/* ✅ PATCH 3 (P1 #4): Disable button + countdown pendant rate limit */}
-              <Button onClick={send} disabled={!!rateLimitedUntil || !input.trim()}>
+              {/* C3: Disable also si message inFlight */}
+              <Button
+                onClick={send}
+                disabled={
+                  !!rateLimitedUntil ||
+                  !input.trim() ||
+                  optimisticMessages.some(m => m.inFlight)
+                }
+              >
                 {cooldownSeconds > 0 ? `Attendre ${cooldownSeconds}s` : 'Envoyer'}
               </Button>
-              <Button variant="secondary" onClick={()=>setShowProposal((v)=>!v)} disabled={!!rateLimitedUntil}>Proposer une session</Button>
+              <Button
+                variant="secondary"
+                onClick={()=>setShowProposal((v)=>!v)}
+                disabled={!!rateLimitedUntil || optimisticMessages.some(m => m.inFlight)}
+              >
+                Proposer une session
+              </Button>
             </div>
           )}
           {showProposal && !conversationInfo?.blocked && (
@@ -469,7 +742,12 @@ export default function ConversationPage() {
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" onClick={()=>setShowProposal(false)}>Annuler</Button>
-                <Button onClick={sendProposal}>Envoyer la proposition</Button>
+                <Button
+                  onClick={sendProposal}
+                  disabled={optimisticMessages.some(m => m.inFlight)}
+                >
+                  Envoyer la proposition
+                </Button>
               </div>
             </div>
           )}
