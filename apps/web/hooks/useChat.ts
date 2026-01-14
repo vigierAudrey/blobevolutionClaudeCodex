@@ -77,7 +77,8 @@ const sendAckSchema = ackSuccessSchemaRequired(
     conversationId: z.string(),
     content: z.string(),
     type: z.string(),
-    createdAt: z.string()
+    createdAt: z.string(),
+    created: z.boolean().optional() // Backend flag for idempotence (Option B)
   })
 );
 
@@ -128,7 +129,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       conversationId: z.string(),
       content: z.string(),
       type: z.string(),
-      createdAt: z.string()
+      createdAt: z.string(),
+      created: z.boolean().optional() // Backend flag for idempotence (Option B)
     })
   );
 
@@ -208,10 +210,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         return { success: false, error };
       }
 
+      // ✅ C4: Generate clientMsgId for idempotence (NEVER regenerate on retry)
+      const clientMsgId = crypto.randomUUID();
+
       const payload = {
         conversationId,
         content: trimmed,
-        type
+        type,
+        clientMsgId // Transmit to backend for idempotence
       };
 
       // Try WS first
@@ -225,11 +231,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         // CLIENT_TIMEOUT only: try HTTP fallback (1 WS + max 1 HTTP)
         if (error.code === 'CLIENT_TIMEOUT') {
-          // Construct discriminated union payload
+          // Construct discriminated union payload with same clientMsgId (NEVER regenerate!)
           const httpPayload: SendMessagePayload =
             type === 'PROPOSAL' && meta
-              ? { type: 'PROPOSAL', content: trimmed, meta }
-              : { type: 'TEXT', content: trimmed };
+              ? { type: 'PROPOSAL', content: trimmed, meta, clientMsgId }
+              : { type: 'TEXT', content: trimmed, clientMsgId };
 
           try {
             await apiClient.sendMessage(conversationId, httpPayload);

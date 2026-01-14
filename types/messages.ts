@@ -53,6 +53,7 @@ export interface Message {
   senderName?: string;
   senderPhotoUrl?: string | null;
   isCurrentUser?: boolean;
+  clientMsgId?: string; // For idempotence
 }
 
 export interface MessageListResponse {
@@ -60,5 +61,5 @@ export interface MessageListResponse {
 }
 
 export type SendMessagePayload =
-  | { type: 'TEXT'; content: string }
-  | { type: 'PROPOSAL'; content: string; meta: MessageMeta };
+  | { type: 'TEXT'; content: string; clientMsgId?: string }
+  | { type: 'PROPOSAL'; content: string; meta: MessageMeta; clientMsgId?: string };
