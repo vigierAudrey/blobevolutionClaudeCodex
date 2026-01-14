@@ -123,8 +123,20 @@ export default function ConversationPage() {
       });
 
       // C3: Reconciliation - supprimer l'optimistic correspondant
+      // C4.1: Match by clientMsgId first (strict), fallback to content+time if no clientMsgId
       setOptimisticMessages(prev => {
-        // Trouver le premier pending correspondant (pas les failed)
+        // Try to match by clientMsgId if available (strict match)
+        if (formattedMessage.clientMsgId) {
+          const matchIndex = prev.findIndex(opt =>
+            opt.clientMsgId === formattedMessage.clientMsgId &&
+            opt.status === 'pending'
+          );
+          if (matchIndex !== -1) {
+            return prev.filter((_, i) => i !== matchIndex);
+          }
+        }
+
+        // Fallback: content+time matching for backward compatibility
         const matchIndex = prev.findIndex(opt =>
           opt.status === 'pending' &&
           opt.type === formattedMessage.type &&
@@ -310,7 +322,8 @@ export default function ConversationPage() {
     scrollToBottom();
 
     // C2: sendMessage now handles WS→HTTP fallback internally
-    const result = await sendMessage(trimmedInput, 'TEXT');
+    // C4.1: Pass clientMsgId for idempotence (same ID across WS + HTTP fallback)
+    const result = await sendMessage(trimmedInput, 'TEXT', undefined, clientMsgId);
 
     if (result.success) {
       setError(null);
@@ -382,7 +395,8 @@ export default function ConversationPage() {
     scrollToBottom();
 
     // C2: sendMessage now handles WS→HTTP fallback internally
-    const result = await sendMessage(content, 'PROPOSAL', meta);
+    // C4.1: Pass clientMsgId for idempotence
+    const result = await sendMessage(content, 'PROPOSAL', meta, clientMsgId);
 
     if (result.success) {
       setShowProposal(false);
@@ -456,7 +470,8 @@ export default function ConversationPage() {
     );
 
     // Réessayer
-    const result = await sendMessage(optMsg.content, optMsg.type, optMsg.meta);
+    // C4.1: Critical - reuse same clientMsgId for idempotence (NEVER regenerate!)
+    const result = await sendMessage(optMsg.content, optMsg.type, optMsg.meta, optMsg.clientMsgId);
 
     if (result.success) {
       setError(null);

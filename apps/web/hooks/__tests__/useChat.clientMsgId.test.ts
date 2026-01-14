@@ -104,7 +104,11 @@ describe('useChat - clientMsgId integration', () => {
       });
     });
 
-    await waitFor(() => expect(sendPromise).resolves.toEqual({ success: true, transport: 'WS' }));
+    const sendResult = await sendPromise;
+    expect(sendResult.success).toBe(true);
+    expect(sendResult.transport).toBe('WS');
+    expect(sendResult.clientMsgId).toBeDefined();
+    expect(sendResult.created).toBe(true);
   });
 
   /**
@@ -154,8 +158,12 @@ describe('useChat - clientMsgId integration', () => {
       });
     });
 
-    // Hook should handle created:false without crashing
-    await expect(sendPromise).resolves.toEqual({ success: true, transport: 'WS' });
+    // Hook should handle created:false without crashing and return it
+    const sendResult = await sendPromise;
+    expect(sendResult.success).toBe(true);
+    expect(sendResult.transport).toBe('WS');
+    expect(sendResult.clientMsgId).toBeDefined();
+    expect(sendResult.created).toBe(false);
   });
 
   /**
@@ -222,7 +230,11 @@ describe('useChat - clientMsgId integration', () => {
       );
     });
 
-    await expect(sendPromise).resolves.toEqual({ success: true, transport: 'HTTP' });
+    // HTTP fallback should return clientMsgId
+    const sendResult = await sendPromise;
+    expect(sendResult.success).toBe(true);
+    expect(sendResult.transport).toBe('HTTP');
+    expect(sendResult.clientMsgId).toBe(capturedClientMsgId);
   });
 
   /**
@@ -275,7 +287,10 @@ describe('useChat - clientMsgId integration', () => {
       sendPromise = result.current.sendMessage('Replay message');
     });
 
-    await expect(sendPromise).resolves.toEqual({ success: true, transport: 'HTTP' });
+    const sendResult = await sendPromise;
+    expect(sendResult.success).toBe(true);
+    expect(sendResult.transport).toBe('HTTP');
+    expect(sendResult.clientMsgId).toBeDefined();
 
     // Backend a retourné 200 = replay, donc pas de nouveau message créé
     expect(mockApiClient.sendMessage).toHaveBeenCalledTimes(1);
@@ -347,7 +362,11 @@ describe('useChat - clientMsgId integration', () => {
       firstPromise = result.current.sendMessage('First message');
     });
 
-    await expect(firstPromise).resolves.toEqual({ success: true, transport: 'WS' });
+    const firstResult = await firstPromise;
+    expect(firstResult.success).toBe(true);
+    expect(firstResult.transport).toBe('WS');
+    expect(firstResult.clientMsgId).toBe(firstClientMsgId);
+    expect(firstResult.created).toBe(true);
 
     // Second message (different from first)
     let secondPromise: Promise<any>;
@@ -355,7 +374,252 @@ describe('useChat - clientMsgId integration', () => {
       secondPromise = result.current.sendMessage('Second message');
     });
 
-    await expect(secondPromise).resolves.toEqual({ success: true, transport: 'WS' });
+    await expect(secondPromise).resolves.toEqual({ success: true, transport: 'WS', clientMsgId: secondClientMsgId, created: true });
+    expect(callCount).toBe(2);
+  });
+
+  /**
+   * C4.1 Scénario 1: Accept optional clientMsgId parameter
+   * - Parent passes clientMsgId to sendMessage
+   * - useChat uses provided ID instead of generating new one
+   * - Returns same clientMsgId in result
+   */
+  it('should accept and use provided clientMsgId parameter', async () => {
+    const { result } = renderHook(() =>
+      useChat({ conversationId, token })
+    );
+
+    // Join
+    const joinAckCallback = mockEmit.mock.calls.find(
+      (call) => call[0] === 'join-conversation'
+    )?.[2];
+    act(() => {
+      joinAckCallback?.({ ok: true, data: { conversationId } });
+    });
+
+    const providedClientMsgId = 'custom-client-msg-id-123';
+    let capturedClientMsgId: string;
+
+    mockEmit.mockImplementation((event, payload, callback) => {
+      if (event === 'send-message') {
+        capturedClientMsgId = payload.clientMsgId;
+        callback?.({
+          ok: true,
+          data: {
+            id: 'msg-123',
+            conversationId,
+            content: 'Hello',
+            type: 'TEXT',
+            createdAt: new Date().toISOString(),
+            created: true
+          }
+        });
+      }
+      return mockSocket;
+    });
+
+    let sendPromise: Promise<any>;
+    act(() => {
+      sendPromise = result.current.sendMessage('Hello', 'TEXT', undefined, providedClientMsgId);
+    });
+
+    await waitFor(() => {
+      // Should use provided clientMsgId, not generate new one
+      expect(capturedClientMsgId).toBe(providedClientMsgId);
+    });
+
+    // Should return the provided clientMsgId
+    await expect(sendPromise).resolves.toEqual({
+      success: true,
+      transport: 'WS',
+      clientMsgId: providedClientMsgId,
+      created: true
+    });
+  });
+
+  /**
+   * C4.1 Scénario 2: Return clientMsgId in success result
+   * - WS success returns clientMsgId + created flag
+   * - HTTP success returns clientMsgId
+   */
+  it('should return clientMsgId and created flag in WS success result', async () => {
+    const { result } = renderHook(() =>
+      useChat({ conversationId, token })
+    );
+
+    // Join
+    const joinAckCallback = mockEmit.mock.calls.find(
+      (call) => call[0] === 'join-conversation'
+    )?.[2];
+    act(() => {
+      joinAckCallback?.({ ok: true, data: { conversationId } });
+    });
+
+    let capturedClientMsgId: string;
+
+    mockEmit.mockImplementation((event, payload, callback) => {
+      if (event === 'send-message') {
+        capturedClientMsgId = payload.clientMsgId;
+        callback?.({
+          ok: true,
+          data: {
+            id: 'msg-123',
+            conversationId,
+            content: 'Hello',
+            type: 'TEXT',
+            createdAt: new Date().toISOString(),
+            created: false // Replay detected
+          }
+        });
+      }
+      return mockSocket;
+    });
+
+    let sendPromise: Promise<any>;
+    act(() => {
+      sendPromise = result.current.sendMessage('Hello');
+    });
+
+    await expect(sendPromise).resolves.toEqual({
+      success: true,
+      transport: 'WS',
+      clientMsgId: capturedClientMsgId,
+      created: false // Backend flag passed through
+    });
+  });
+
+  /**
+   * C4.1 Scénario 3: Return clientMsgId in failure result
+   * - WS failure returns clientMsgId for retry tracking
+   */
+  it('should return clientMsgId in failure result', async () => {
+    const { result } = renderHook(() =>
+      useChat({ conversationId, token })
+    );
+
+    // Join
+    const joinAckCallback = mockEmit.mock.calls.find(
+      (call) => call[0] === 'join-conversation'
+    )?.[2];
+    act(() => {
+      joinAckCallback?.({ ok: true, data: { conversationId } });
+    });
+
+    let capturedClientMsgId: string;
+
+    mockEmit.mockImplementation((event, payload, callback) => {
+      if (event === 'send-message') {
+        capturedClientMsgId = payload.clientMsgId;
+        callback?.({
+          ok: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Server error'
+          }
+        });
+      }
+      return mockSocket;
+    });
+
+    let sendPromise: Promise<any>;
+    act(() => {
+      sendPromise = result.current.sendMessage('Hello');
+    });
+
+    const sendResult = await sendPromise;
+    expect(sendResult.success).toBe(false);
+    expect(sendResult.clientMsgId).toBe(capturedClientMsgId);
+  });
+
+  /**
+   * C4.1 Scénario 4: Retry reuses same clientMsgId
+   * - Parent calls sendMessage with same clientMsgId on retry
+   * - WS receives same ID both times
+   */
+  it('should reuse same clientMsgId on retry (parent responsibility)', async () => {
+    const { result } = renderHook(() =>
+      useChat({ conversationId, token })
+    );
+
+    // Join
+    const joinAckCallback = mockEmit.mock.calls.find(
+      (call) => call[0] === 'join-conversation'
+    )?.[2];
+    act(() => {
+      joinAckCallback?.({ ok: true, data: { conversationId } });
+    });
+
+    const fixedClientMsgId = 'retry-test-id';
+    let firstCallClientMsgId: string;
+    let secondCallClientMsgId: string;
+    let callCount = 0;
+
+    mockEmit.mockImplementation((event, payload, callback) => {
+      if (event === 'send-message') {
+        callCount++;
+        if (callCount === 1) {
+          firstCallClientMsgId = payload.clientMsgId;
+          // First attempt fails
+          callback?.({
+            ok: false,
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Temporary error'
+            }
+          });
+        } else if (callCount === 2) {
+          secondCallClientMsgId = payload.clientMsgId;
+          // Retry succeeds with created:false (replay detected)
+          callback?.({
+            ok: true,
+            data: {
+              id: 'msg-123',
+              conversationId,
+              content: 'Hello',
+              type: 'TEXT',
+              createdAt: new Date().toISOString(),
+              created: false // Backend detected replay via clientMsgId
+            }
+          });
+        }
+      }
+      return mockSocket;
+    });
+
+    // First attempt (fails)
+    let firstPromise: Promise<any>;
+    act(() => {
+      firstPromise = result.current.sendMessage('Hello', 'TEXT', undefined, fixedClientMsgId);
+    });
+
+    await waitFor(() => {
+      expect(firstCallClientMsgId).toBe(fixedClientMsgId);
+    });
+
+    const firstResult = await firstPromise;
+    expect(firstResult.success).toBe(false);
+    expect(firstResult.clientMsgId).toBe(fixedClientMsgId);
+
+    // Retry with SAME clientMsgId (parent's responsibility)
+    let retryPromise: Promise<any>;
+    act(() => {
+      retryPromise = result.current.sendMessage('Hello', 'TEXT', undefined, fixedClientMsgId);
+    });
+
+    await waitFor(() => {
+      expect(secondCallClientMsgId).toBe(fixedClientMsgId);
+    });
+
+    // Retry succeeds, backend detects replay via clientMsgId
+    await expect(retryPromise).resolves.toEqual({
+      success: true,
+      transport: 'WS',
+      clientMsgId: fixedClientMsgId,
+      created: false // Backend flag: replay detected
+    });
+
+    // Both calls used same clientMsgId
+    expect(firstCallClientMsgId).toBe(secondCallClientMsgId);
     expect(callCount).toBe(2);
   });
 });

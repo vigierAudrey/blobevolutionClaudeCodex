@@ -53,18 +53,21 @@ interface SocketError {
 interface SendMessageSuccess {
   success: true;
   transport: 'WS' | 'HTTP';
+  clientMsgId: string; // ✅ C4.1: Return clientMsgId for parent tracking
+  created?: boolean; // ✅ C4.1: Backend Option B flag (optional for backward compat)
 }
 
 interface SendMessageFailure {
   success: false;
   error: unknown; // Raw error (not normalized)
+  clientMsgId?: string; // ✅ C4.1: clientMsgId even on failure (for retry tracking)
 }
 
 type SendMessageResult = SendMessageSuccess | SendMessageFailure;
 
 interface UseChatReturn {
   connected: boolean;
-  sendMessage: (content: string, type?: 'TEXT' | 'PROPOSAL', meta?: { date?: string; place?: string; note?: string }) => Promise<SendMessageResult>;
+  sendMessage: (content: string, type?: 'TEXT' | 'PROPOSAL', meta?: { date?: string; place?: string; note?: string }, clientMsgId?: string) => Promise<SendMessageResult>;
   setTyping: (isTyping: boolean) => void;
   otherUserTyping: boolean;
   lastError: SocketError | null;
@@ -195,23 +198,28 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   }, [socket, on, off, onNewMessage]);
 
   // ✅ C2: Envoyer un message avec WS→HTTP fallback sur CLIENT_TIMEOUT
+  // ✅ C4.1: Accept optional clientMsgId for retry idempotence
   const sendMessage = useCallback(
-    async (content: string, type: 'TEXT' | 'PROPOSAL' = 'TEXT', meta?: { date?: string; place?: string; note?: string }): Promise<SendMessageResult> => {
+    async (content: string, type: 'TEXT' | 'PROPOSAL' = 'TEXT', meta?: { date?: string; place?: string; note?: string }, providedClientMsgId?: string): Promise<SendMessageResult> => {
       const trimmed = content.trim();
       if (!connected || !trimmed) {
         const error: SocketError = { code: 'NOT_CONNECTED', message: 'Socket not connected' };
         setLastError(error);
-        return { success: false, error };
+        return { success: false, error, clientMsgId: providedClientMsgId };
       }
 
       if (!socket) {
         const error: SocketError = { code: 'NO_SOCKET', message: 'Socket instance not available' };
         setLastError(error);
-        return { success: false, error };
+        return { success: false, error, clientMsgId: providedClientMsgId };
       }
 
-      // ✅ C4: Generate clientMsgId for idempotence (NEVER regenerate on retry)
-      const clientMsgId = crypto.randomUUID();
+      // ✅ C4.1: Use provided clientMsgId OR generate new one (with fallback for old browsers)
+      const clientMsgId = providedClientMsgId || (
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
+      );
 
       const payload = {
         conversationId,
@@ -222,9 +230,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
       // Try WS first
       try {
-        await emitWithAck(socket, 'send-message', payload, sendAckSchema);
+        const ackData = await emitWithAck(socket, 'send-message', payload, sendAckSchema);
         setLastError(null);
-        return { success: true, transport: 'WS' };
+        return {
+          success: true,
+          transport: 'WS',
+          clientMsgId,
+          created: ackData.created // Backend Option B flag (optional)
+        };
       } catch (wsErr: any) {
         const error = normalizeSocketError(wsErr);
         setLastError(error);
@@ -240,15 +253,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           try {
             await apiClient.sendMessage(conversationId, httpPayload);
             setLastError(null);
-            return { success: true, transport: 'HTTP' };
+            return { success: true, transport: 'HTTP', clientMsgId };
           } catch (httpErr: unknown) {
             // HTTP fallback failed, return raw HTTP error (not normalized)
-            return { success: false, error: httpErr };
+            return { success: false, error: httpErr, clientMsgId };
           }
         }
 
         // Other WS errors: return raw error (not normalized)
-        return { success: false, error: wsErr };
+        return { success: false, error: wsErr, clientMsgId };
       }
     },
     [connected, conversationId, socket]
