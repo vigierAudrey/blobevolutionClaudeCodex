@@ -202,15 +202,15 @@ describe('useChat - clientMsgId integration', () => {
       return mockSocket;
     });
 
-    // Mock HTTP fallback
+    // Mock HTTP fallback (C4.2: return { data, status })
     mockApiClient.sendMessage = jest.fn().mockResolvedValue({
-      ok: true,
       data: {
         id: 'msg-http-123',
         content: 'Hello HTTP',
         type: 'TEXT',
         createdAt: new Date().toISOString()
-      }
+      },
+      status: 201 // C4.2: Include status
     });
 
     let sendPromise: Promise<any>;
@@ -270,9 +270,8 @@ describe('useChat - clientMsgId integration', () => {
       return mockSocket;
     });
 
-    // HTTP retourne 200 (replay)
+    // HTTP retourne 200 (replay) - C4.2: return { data, status }
     mockApiClient.sendMessage = jest.fn().mockResolvedValue({
-      ok: true,
       data: {
         id: 'msg-existing',
         content: 'Replay message',
@@ -621,5 +620,188 @@ describe('useChat - clientMsgId integration', () => {
     // Both calls used same clientMsgId
     expect(firstCallClientMsgId).toBe(secondCallClientMsgId);
     expect(callCount).toBe(2);
+  });
+
+  /**
+   * C4.2 Scénario 1: UUID v4 fallback when crypto.randomUUID unavailable
+   * - Mock crypto.randomUUID as undefined
+   * - Verify generated clientMsgId is valid UUID v4
+   */
+  it('should generate valid UUID v4 when crypto.randomUUID is unavailable', async () => {
+    // Mock crypto.randomUUID as undefined
+    const originalCrypto = global.crypto;
+    Object.defineProperty(global, 'crypto', {
+      value: undefined,
+      writable: true,
+      configurable: true
+    });
+
+    const { result } = renderHook(() =>
+      useChat({ conversationId, token })
+    );
+
+    // Join
+    const joinAckCallback = mockEmit.mock.calls.find(
+      (call) => call[0] === 'join-conversation'
+    )?.[2];
+    act(() => {
+      joinAckCallback?.({ ok: true, data: { conversationId } });
+    });
+
+    let capturedClientMsgId: string;
+
+    mockEmit.mockImplementation((event, payload, callback) => {
+      if (event === 'send-message') {
+        capturedClientMsgId = payload.clientMsgId;
+        callback?.({
+          ok: true,
+          data: {
+            id: 'msg-123',
+            conversationId,
+            content: 'Hello',
+            type: 'TEXT',
+            createdAt: new Date().toISOString(),
+            created: true
+          }
+        });
+      }
+      return mockSocket;
+    });
+
+    let sendPromise: Promise<any>;
+    act(() => {
+      sendPromise = result.current.sendMessage('Hello');
+    });
+
+    await waitFor(() => {
+      // Verify clientMsgId is valid UUID v4 (RFC4122)
+      const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      expect(capturedClientMsgId).toMatch(uuidV4Regex);
+    });
+
+    // Restore crypto
+    Object.defineProperty(global, 'crypto', {
+      value: originalCrypto,
+      writable: true,
+      configurable: true
+    });
+
+    await expect(sendPromise).resolves.toMatchObject({ success: true });
+  });
+
+  /**
+   * C4.2 Scénario 2: HTTP fallback returns created:true on 201 Created
+   * - WS timeout → HTTP fallback
+   * - Backend returns 201
+   * - Verify created: true
+   */
+  it('should return created:true when HTTP fallback gets 201 Created', async () => {
+    const { result } = renderHook(() =>
+      useChat({ conversationId, token })
+    );
+
+    // Join
+    const joinAckCallback = mockEmit.mock.calls.find(
+      (call) => call[0] === 'join-conversation'
+    )?.[2];
+    act(() => {
+      joinAckCallback?.({ ok: true, data: { conversationId } });
+    });
+
+    // WS emit lance CLIENT_TIMEOUT
+    mockEmit.mockImplementation((event, payload, callback) => {
+      if (event === 'send-message') {
+        callback?.({
+          ok: false,
+          error: {
+            code: 'CLIENT_TIMEOUT',
+            message: 'WebSocket timeout'
+          }
+        });
+      }
+      return mockSocket;
+    });
+
+    // Mock HTTP fallback with status 201
+    mockApiClient.sendMessage = jest.fn().mockResolvedValue({
+      data: {
+        id: 'msg-http-123',
+        content: 'Hello HTTP',
+        type: 'TEXT',
+        createdAt: new Date().toISOString()
+      },
+      status: 201 // First creation
+    });
+
+    let sendPromise: Promise<any>;
+    act(() => {
+      sendPromise = result.current.sendMessage('Hello HTTP');
+    });
+
+    // Should derive created: true from status 201
+    await expect(sendPromise).resolves.toEqual({
+      success: true,
+      transport: 'HTTP',
+      clientMsgId: expect.any(String),
+      created: true // Derived from 201
+    });
+  });
+
+  /**
+   * C4.2 Scénario 3: HTTP fallback returns created:false on 200 OK
+   * - WS timeout → HTTP fallback
+   * - Backend returns 200 (replay detected)
+   * - Verify created: false
+   */
+  it('should return created:false when HTTP fallback gets 200 OK', async () => {
+    const { result } = renderHook(() =>
+      useChat({ conversationId, token })
+    );
+
+    // Join
+    const joinAckCallback = mockEmit.mock.calls.find(
+      (call) => call[0] === 'join-conversation'
+    )?.[2];
+    act(() => {
+      joinAckCallback?.({ ok: true, data: { conversationId } });
+    });
+
+    // WS timeout
+    mockEmit.mockImplementation((event, payload, callback) => {
+      if (event === 'send-message') {
+        callback?.({
+          ok: false,
+          error: {
+            code: 'CLIENT_TIMEOUT',
+            message: 'WebSocket timeout'
+          }
+        });
+      }
+      return mockSocket;
+    });
+
+    // Mock HTTP fallback with status 200 (replay)
+    mockApiClient.sendMessage = jest.fn().mockResolvedValue({
+      data: {
+        id: 'msg-existing',
+        content: 'Replay message',
+        type: 'TEXT',
+        createdAt: new Date().toISOString()
+      },
+      status: 200 // Replay detected
+    });
+
+    let sendPromise: Promise<any>;
+    act(() => {
+      sendPromise = result.current.sendMessage('Replay message');
+    });
+
+    // Should derive created: false from status 200
+    await expect(sendPromise).resolves.toEqual({
+      success: true,
+      transport: 'HTTP',
+      clientMsgId: expect.any(String),
+      created: false // Derived from 200
+    });
   });
 });

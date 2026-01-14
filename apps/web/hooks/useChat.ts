@@ -8,6 +8,20 @@ import { ackSuccessSchemaRequired, ERROR_CODES, type ErrorCode } from '../lib/so
 import { apiClient } from '../lib/apiClient';
 import type { SendMessagePayload } from '@/types/messages';
 
+/**
+ * Generate UUID v4 (RFC4122) as fallback when crypto.randomUUID is unavailable
+ * Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+ * - x: random hex digit
+ * - y: random hex digit from set [8,9,a,b] (variant bits)
+ */
+function generateUuidV4Fallback(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 interface Message {
   id: string;
   conversationId: string;
@@ -214,11 +228,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         return { success: false, error, clientMsgId: providedClientMsgId };
       }
 
-      // ✅ C4.1: Use provided clientMsgId OR generate new one (with fallback for old browsers)
+      // ✅ C4.1: Use provided clientMsgId OR generate new one
+      // ✅ C4.2: Always generate valid UUID v4 (backend expects RFC4122)
       const clientMsgId = providedClientMsgId || (
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
+          : generateUuidV4Fallback()
       );
 
       const payload = {
@@ -251,9 +266,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               : { type: 'TEXT', content: trimmed, clientMsgId };
 
           try {
-            await apiClient.sendMessage(conversationId, httpPayload);
+            // C4.2: Capture status to derive created flag (201 = true, 200 = false)
+            const httpResult = await apiClient.sendMessage(conversationId, httpPayload);
             setLastError(null);
-            return { success: true, transport: 'HTTP', clientMsgId };
+
+            // Derive created flag from HTTP status: 201 Created = true, 200 OK = false
+            const created = httpResult.status === 201 ? true : httpResult.status === 200 ? false : undefined;
+
+            return { success: true, transport: 'HTTP', clientMsgId, created };
           } catch (httpErr: unknown) {
             // HTTP fallback failed, return raw HTTP error (not normalized)
             return { success: false, error: httpErr, clientMsgId };

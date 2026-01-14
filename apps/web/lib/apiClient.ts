@@ -1,6 +1,6 @@
 import type { MessageListResponse, SendMessagePayload, ThreadListQuery, ThreadListResponse } from '@/types/messages';
 import { z } from 'zod';
-import { requestStrict } from './requestStrict';
+import { requestStrict, requestStrictWithStatus } from './requestStrict';
 import type {
   AvailabilityLevel,
   AvailabilitySport,
@@ -1025,7 +1025,8 @@ export const apiClient = {
 
       const headers = await buildStrictHeaders(true);
 
-      return requestStrict(`/conversations/${id}/messages`, { method: 'POST', headers, body: JSON.stringify(parsed) }, sendMessageDataSchema);
+      // C4.2: Use requestStrictWithStatus to get HTTP status (201 Created vs 200 OK)
+      return requestStrictWithStatus(`/conversations/${id}/messages`, { method: 'POST', headers, body: JSON.stringify(parsed) }, sendMessageDataSchema);
     })(),
   blockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({ action: 'block' }) }, true),
   unblockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({ action: 'unblock' }) }, true),

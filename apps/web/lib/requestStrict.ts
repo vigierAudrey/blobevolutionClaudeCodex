@@ -121,3 +121,88 @@ export async function requestStrict<T>(
     body: json,
   });
 }
+
+/**
+ * C4.2: Variant that returns both data and HTTP status
+ * Used for endpoints where status semantic matters (201 Created vs 200 OK)
+ */
+export async function requestStrictWithStatus<T>(
+  path: string,
+  init: RequestInit,
+  dataSchema: z.ZodType<T>
+): Promise<{ data: T; status: number }> {
+  const headers = new Headers(init.headers || {});
+  headers.set('X-API-ENVELOPE', '1');
+
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: init.credentials ?? 'include',
+    cache: init.cache ?? 'no-store',
+  });
+
+  const url = res.url || `${API_URL}${path}`;
+  const status = res.status;
+
+  let text: string;
+  try {
+    text = await res.text();
+  } catch (err) {
+    throw makeError({
+      code: 'INVALID_RESPONSE',
+      message: 'Failed to read response body',
+      details: err,
+      status,
+      url,
+    });
+  }
+
+  if (!text || text.trim() === '') {
+    throw makeError({
+      code: 'INVALID_ENVELOPE',
+      message: 'Missing enveloped response body',
+      status,
+      url,
+    });
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (err) {
+    throw makeError({
+      code: 'INVALID_JSON',
+      message: 'Response is not valid JSON',
+      details: err,
+      status,
+      url,
+    });
+  }
+
+  const parsedError = envelopeErrorSchema.safeParse(json);
+  if (parsedError.success) {
+    const { code, message, details } = parsedError.data.error;
+    throw makeError({
+      code,
+      message,
+      details,
+      status,
+      url,
+      body: json,
+    });
+  }
+
+  const parsedSuccess = envelopeSuccessSchema(dataSchema).safeParse(json);
+  if (parsedSuccess.success) {
+    return { data: parsedSuccess.data.data as T, status };
+  }
+
+  throw makeError({
+    code: 'INVALID_ENVELOPE',
+    message: 'Invalid enveloped response',
+    details: parsedSuccess.error.flatten(),
+    status,
+    url,
+    body: json,
+  });
+}
