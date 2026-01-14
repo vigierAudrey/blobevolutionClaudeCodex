@@ -18,11 +18,14 @@ The create-then-fallback pattern intentionally catches P2002 errors to detect re
 
 ```typescript
 try {
-  msg = await prisma.message.create({ clientMsgId }); // First send succeeds
+  msg = await prisma.message.create({ conversationId, clientMsgId }); // First send succeeds
   wasCreated = true; // → 201 Created
 } catch (e) {
   if (e.code === 'P2002') { // Replay throws P2002 (EXPECTED!)
-    msg = await prisma.message.findUnique({ clientMsgId });
+    // Uses composite unique constraint (conversationId, clientMsgId)
+    msg = await prisma.message.findUnique({
+      where: { conversation_client_msg_unique: { conversationId, clientMsgId } }
+    });
     wasCreated = false; // → 200 OK
   }
 }

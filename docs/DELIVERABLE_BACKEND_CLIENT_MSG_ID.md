@@ -376,11 +376,14 @@ POST /conversations/:id/messages
 **Solution**: Create-then-fallback pattern:
 ```typescript
 try {
-  msg = await prisma.message.create({ clientMsgId });
+  msg = await prisma.message.create({ conversationId, clientMsgId });
   wasCreated = true; // Know it was created
 } catch (e) {
   if (e.code === 'P2002') {
-    msg = await prisma.message.findUnique({ clientMsgId });
+    // IMPORTANT: Use composite unique constraint (conversationId, clientMsgId)
+    msg = await prisma.message.findUnique({
+      where: { conversation_client_msg_unique: { conversationId, clientMsgId } }
+    });
     wasCreated = false; // Know it was replay
   }
 }
@@ -455,7 +458,9 @@ apps/api/src/modules/chat/conversations.controller.ts:
   +     wasCreated = true;
   +   } catch (e) {
   +     if (e.code === 'P2002') {
-  +       msg = await prisma.message.findUnique({ clientMsgId: body.clientMsgId });
+  +       msg = await prisma.message.findUnique({
+  +         where: { conversation_client_msg_unique: { conversationId, clientMsgId } }
+  +       });
   +       wasCreated = false;
   +     } else {
   +       throw e;
