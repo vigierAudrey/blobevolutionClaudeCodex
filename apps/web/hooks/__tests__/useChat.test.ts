@@ -10,6 +10,7 @@ jest.mock('../../lib/emitWithAck');
 jest.mock('../../lib/apiClient', () => ({
   apiClient: {
     sendMessage: jest.fn(),
+    sendMessageWithStatus: jest.fn(),
   },
 }));
 
@@ -45,6 +46,7 @@ describe('useChat', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (apiClient.sendMessage as jest.Mock).mockReset();
+    (apiClient.sendMessageWithStatus as jest.Mock).mockReset();
   });
 
   it('joins conversation and clears error on ACK success', async () => {
@@ -104,12 +106,17 @@ describe('useChat', () => {
       sendResult = await result.current.sendMessage('hello');
     });
 
-    expect(sendResult).toEqual({ success: true, transport: 'WS' });
+    expect(sendResult).toMatchObject({
+      success: true,
+      transport: 'WS',
+      clientMsgId: expect.any(String),
+      created: undefined // undefined because mock doesn't return created flag
+    });
     expect(result.current.lastError).toBeNull();
     expect(emitWithAck).toHaveBeenLastCalledWith(
       expect.anything(),
       'send-message',
-      { conversationId: 'conv-1', content: 'hello', type: 'TEXT' },
+      { conversationId: 'conv-1', content: 'hello', type: 'TEXT', clientMsgId: expect.any(String) },
       expect.anything()
     );
   });
@@ -173,7 +180,10 @@ describe('useChat', () => {
     (emitWithAck as jest.Mock)
       .mockResolvedValueOnce({ conversationId: 'conv-1' }) // join
       .mockRejectedValueOnce({ code: 'CLIENT_TIMEOUT', message: 'ACK timeout' });
-    (apiClient.sendMessage as jest.Mock).mockResolvedValueOnce({ id: 'msg-2' });
+    (apiClient.sendMessageWithStatus as jest.Mock).mockResolvedValueOnce({
+      data: { id: 'msg-2' },
+      status: 201 // Created
+    });
 
     const { result } = renderHook(() =>
       useChat({
@@ -189,11 +199,17 @@ describe('useChat', () => {
       sendResult = await result.current.sendMessage('hello');
     });
 
-    expect(sendResult).toEqual({ success: true, transport: 'HTTP' });
+    expect(sendResult).toMatchObject({
+      success: true,
+      transport: 'HTTP',
+      clientMsgId: expect.any(String),
+      created: true // 201 = created
+    });
     expect(result.current.lastError).toBeNull(); // Cleared after HTTP success
-    expect(apiClient.sendMessage).toHaveBeenCalledWith('conv-1', {
+    expect(apiClient.sendMessageWithStatus).toHaveBeenCalledWith('conv-1', {
       type: 'TEXT',
       content: 'hello',
+      clientMsgId: expect.any(String)
     });
   });
 
@@ -202,7 +218,11 @@ describe('useChat', () => {
     (emitWithAck as jest.Mock)
       .mockResolvedValueOnce({ conversationId: 'conv-1' }) // join
       .mockRejectedValueOnce({ code: 'CLIENT_TIMEOUT', message: 'ACK timeout' });
-    (apiClient.sendMessage as jest.Mock).mockRejectedValueOnce({ code: ERROR_CODES.FORBIDDEN, message: 'Access denied', status: 403 });
+    (apiClient.sendMessageWithStatus as jest.Mock).mockRejectedValueOnce({
+      code: ERROR_CODES.FORBIDDEN,
+      message: 'Access denied',
+      status: 403
+    });
 
     const { result } = renderHook(() =>
       useChat({
@@ -220,7 +240,8 @@ describe('useChat', () => {
 
     expect(sendResult?.success).toBe(false);
     expect((sendResult as any)?.error?.code).toBe(ERROR_CODES.FORBIDDEN);
-    expect(apiClient.sendMessage).toHaveBeenCalledTimes(1); // HTTP fallback attempted once
+    expect((sendResult as any)?.clientMsgId).toBeDefined();
+    expect(apiClient.sendMessageWithStatus).toHaveBeenCalledTimes(1); // HTTP fallback attempted once
   });
 
   it('sendMessage WS CLIENT_TIMEOUT triggers HTTP fallback exactly once (anti-loop)', async () => {
@@ -228,7 +249,10 @@ describe('useChat', () => {
     (emitWithAck as jest.Mock)
       .mockResolvedValueOnce({ conversationId: 'conv-1' }) // join
       .mockRejectedValueOnce({ code: 'CLIENT_TIMEOUT', message: 'ACK timeout' });
-    (apiClient.sendMessage as jest.Mock).mockResolvedValueOnce({ id: 'msg-3' });
+    (apiClient.sendMessageWithStatus as jest.Mock).mockResolvedValueOnce({
+      data: { id: 'msg-3' },
+      status: 201
+    });
 
     const { result } = renderHook(() =>
       useChat({
@@ -245,7 +269,7 @@ describe('useChat', () => {
 
     // Verify: 1 WS attempt + 1 HTTP attempt = 2 total calls
     expect(emitWithAck).toHaveBeenCalledTimes(2); // 1 join + 1 send-message
-    expect(apiClient.sendMessage).toHaveBeenCalledTimes(1); // Exactly 1 HTTP fallback
+    expect(apiClient.sendMessageWithStatus).toHaveBeenCalledTimes(1); // Exactly 1 HTTP fallback
   });
 
   it('sendMessage with meta passes meta to HTTP fallback', async () => {
@@ -253,7 +277,10 @@ describe('useChat', () => {
     (emitWithAck as jest.Mock)
       .mockResolvedValueOnce({ conversationId: 'conv-1' }) // join
       .mockRejectedValueOnce({ code: 'CLIENT_TIMEOUT', message: 'ACK timeout' });
-    (apiClient.sendMessage as jest.Mock).mockResolvedValueOnce({ id: 'msg-4' });
+    (apiClient.sendMessageWithStatus as jest.Mock).mockResolvedValueOnce({
+      data: { id: 'msg-4' },
+      status: 201
+    });
 
     const { result } = renderHook(() =>
       useChat({
@@ -268,10 +295,11 @@ describe('useChat', () => {
       await result.current.sendMessage('Proposition', 'PROPOSAL', { date: '2025-01-15', place: 'Beach' });
     });
 
-    expect(apiClient.sendMessage).toHaveBeenCalledWith('conv-1', {
+    expect(apiClient.sendMessageWithStatus).toHaveBeenCalledWith('conv-1', {
       type: 'PROPOSAL',
       content: 'Proposition',
       meta: { date: '2025-01-15', place: 'Beach' },
+      clientMsgId: expect.any(String)
     });
   });
 });

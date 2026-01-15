@@ -187,15 +187,19 @@ User Action
 
 ## Références
 
-- **Backend Option B**: `DELIVERABLE_BACKEND_CLIENT_MSG_ID.md`
-- **Frontend C4.x**: commits `60bb912`, `659cd27`, `7129a60`
-- **Tests**: `hooks/__tests__/useChat.clientMsgId.test.ts`, `useChat.integration.test.ts`
+- **Backend Option B**: `DELIVERABLE_BACKEND_CLIENT_MSG_ID.md` (project root docs/)
+- **Frontend C4.x**: commits `60bb912`, `659cd27`, `7129a60`, `8c5eb3a`
+- **Tests**:
+  - `hooks/__tests__/useChat.clientMsgId.test.ts` (unit tests)
+  - `hooks/__tests__/useChat.integration.test.ts` (integration tests)
+  - `hooks/__tests__/useChat.contract-guard.test.ts` (contract drift guards)
 - **Composite constraint**: `packages/database/prisma/schema.prisma`
 
 ---
 
 ## Changelog
 
+- **2026-01-15 (C4.4)**: Anti-flake hardening + contract drift guards
 - **2026-01-15 (C4.3)**: Documentation contractuelle initiale
 - **2026-01-14 (C4.2)**: UUID fallback hardened, HTTP status parity
 - **2026-01-14 (C4.1)**: Retry reuse same clientMsgId
