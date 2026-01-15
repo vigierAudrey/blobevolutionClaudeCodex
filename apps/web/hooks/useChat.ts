@@ -11,13 +11,23 @@ import type { SendMessagePayload } from '@/types/messages';
 /**
  * Generate UUID v4 (RFC4122) as fallback when crypto.randomUUID is unavailable
  * Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
- * - x: random hex digit
- * - y: random hex digit from set [8,9,a,b] (variant bits)
+ * - Version 4: always has '4' at position 14 (version field)
+ * - Variant: bits 10 at positions 19-20 (variant field = [8,9,a,b])
+ * Prefers crypto.getRandomValues for better entropy, falls back to Math.random
  */
 function generateUuidV4Fallback(): string {
+  // Use crypto.getRandomValues if available (better entropy than Math.random)
+  const getRandomByte = typeof crypto !== 'undefined' && crypto.getRandomValues
+    ? () => {
+        const arr = new Uint8Array(1);
+        crypto.getRandomValues(arr);
+        return arr[0];
+      }
+    : () => Math.floor(Math.random() * 256);
+
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    const r = (getRandomByte() >> 4) & 0xf; // Get 4 random bits
+    const v = c === 'x' ? r : (r & 0x3 | 0x8); // For 'y', set variant bits to 10xx
     return v.toString(16);
   });
 }
@@ -266,8 +276,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               : { type: 'TEXT', content: trimmed, clientMsgId };
 
           try {
-            // C4.2: Capture status to derive created flag (201 = true, 200 = false)
-            const httpResult = await apiClient.sendMessage(conversationId, httpPayload);
+            // C4.2: Use sendMessageWithStatus to capture HTTP status for created flag
+            const httpResult = await apiClient.sendMessageWithStatus(conversationId, httpPayload);
             setLastError(null);
 
             // Derive created flag from HTTP status: 201 Created = true, 200 OK = false

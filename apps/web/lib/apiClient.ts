@@ -1025,7 +1025,16 @@ export const apiClient = {
 
       const headers = await buildStrictHeaders(true);
 
-      // C4.2: Use requestStrictWithStatus to get HTTP status (201 Created vs 200 OK)
+      // Backward compat: return data only (original contract)
+      return requestStrict(`/conversations/${id}/messages`, { method: 'POST', headers, body: JSON.stringify(parsed) }, sendMessageDataSchema);
+    })(),
+  // C4.2: New method that returns { data, status } for HTTP status semantic awareness
+  sendMessageWithStatus: (id: string, body: SendMessagePayload) =>
+    (async () => {
+      const parsed = sendMessagePayloadSchema.parse(body);
+
+      const headers = await buildStrictHeaders(true);
+
       return requestStrictWithStatus(`/conversations/${id}/messages`, { method: 'POST', headers, body: JSON.stringify(parsed) }, sendMessageDataSchema);
     })(),
   blockConversation: (id: string) => request(`/conversations/${id}/block`, { method: 'POST', body: JSON.stringify({ action: 'block' }) }, true),

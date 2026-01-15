@@ -202,8 +202,8 @@ describe('useChat - clientMsgId integration', () => {
       return mockSocket;
     });
 
-    // Mock HTTP fallback (C4.2: return { data, status })
-    mockApiClient.sendMessage = jest.fn().mockResolvedValue({
+    // Mock HTTP fallback (C4.2: use sendMessageWithStatus)
+    mockApiClient.sendMessageWithStatus = jest.fn().mockResolvedValue({
       data: {
         id: 'msg-http-123',
         content: 'Hello HTTP',
@@ -219,8 +219,8 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     await waitFor(() => {
-      // Vérifier que HTTP a été appelé avec clientMsgId
-      expect(mockApiClient.sendMessage).toHaveBeenCalledWith(
+      // Vérifier que sendMessageWithStatus a été appelé avec clientMsgId
+      expect(mockApiClient.sendMessageWithStatus).toHaveBeenCalledWith(
         conversationId,
         expect.objectContaining({
           type: 'TEXT',
@@ -270,8 +270,8 @@ describe('useChat - clientMsgId integration', () => {
       return mockSocket;
     });
 
-    // HTTP retourne 200 (replay) - C4.2: return { data, status }
-    mockApiClient.sendMessage = jest.fn().mockResolvedValue({
+    // HTTP retourne 200 (replay) - C4.2: use sendMessageWithStatus
+    mockApiClient.sendMessageWithStatus = jest.fn().mockResolvedValue({
       data: {
         id: 'msg-existing',
         content: 'Replay message',
@@ -292,7 +292,7 @@ describe('useChat - clientMsgId integration', () => {
     expect(sendResult.clientMsgId).toBeDefined();
 
     // Backend a retourné 200 = replay, donc pas de nouveau message créé
-    expect(mockApiClient.sendMessage).toHaveBeenCalledTimes(1);
+    expect(mockApiClient.sendMessageWithStatus).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -723,7 +723,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Mock HTTP fallback with status 201
-    mockApiClient.sendMessage = jest.fn().mockResolvedValue({
+    mockApiClient.sendMessageWithStatus = jest.fn().mockResolvedValue({
       data: {
         id: 'msg-http-123',
         content: 'Hello HTTP',
@@ -781,7 +781,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Mock HTTP fallback with status 200 (replay)
-    mockApiClient.sendMessage = jest.fn().mockResolvedValue({
+    mockApiClient.sendMessageWithStatus = jest.fn().mockResolvedValue({
       data: {
         id: 'msg-existing',
         content: 'Replay message',
