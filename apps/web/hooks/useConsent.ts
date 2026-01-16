@@ -1,6 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiClient, type ConsentMode, type ConsentSignal } from '../lib/apiClient';
 
+// External API types
+interface TCData {
+  tcString?: string;
+  gdprApplies?: boolean;
+  purpose?: {
+    consents?: Record<string, boolean>;
+  };
+  purposeConsents?: Record<string, boolean>;
+  specialFeatureOptins?: Record<string, boolean>;
+  // Add other TCF fields as needed
+}
+
+interface WindowWithTCF extends Window {
+  __tcfapi?: (command: string, version: number, callback: (tcData: TCData, success: boolean) => void) => void;
+}
+
+interface WindowWithGtag extends Window {
+  gtag?: (...args: unknown[]) => void;
+}
+
 type ConsentSource = 'tcf' | 'local' | 'remote' | 'default' | 'manual';
 
 type ConsentSignals = {
@@ -108,7 +128,7 @@ const DEFAULT_STATE: ConsentState = {
 
 const readTcString = async (): Promise<StoredConsent | null> =>
   new Promise((resolve) => {
-    if (typeof window === 'undefined' || typeof (window as any).__tcfapi !== 'function') {
+    if (typeof window === 'undefined' || typeof (window as WindowWithTCF).__tcfapi !== 'function') {
       resolve(null);
       return;
     }
@@ -119,7 +139,7 @@ const readTcString = async (): Promise<StoredConsent | null> =>
         if (!resolved) resolve(null);
       }, 800);
 
-      (window as any).__tcfapi('getTCData', 2, (tcData: any, success: boolean) => {
+      (window as WindowWithTCF).__tcfapi!('getTCData', 2, (tcData: TCData, success: boolean) => {
         if (resolved) return;
         resolved = true;
         clearTimeout(timeout);
@@ -258,8 +278,9 @@ export function useConsent() {
     if (gtagSnapshotRef.current === snapshot) return;
     gtagSnapshotRef.current = snapshot;
 
-    if (typeof (window as any).gtag === 'function') {
-      (window as any).gtag('consent', 'update', {
+    const windowWithGtag = window as WindowWithGtag;
+    if (typeof windowWithGtag.gtag === 'function') {
+      windowWithGtag.gtag('consent', 'update', {
         ad_storage: state.signals.ad_storage,
         ad_user_data: state.signals.ad_user_data,
         ad_personalization: state.signals.ad_personalization,

@@ -1,6 +1,6 @@
 import { Socket } from 'socket.io-client';
 import { z } from 'zod';
-import { ackErrorSchema, ackSuccessSchemaRequired, type ErrorCode } from './socketAck';
+import { ackErrorSchema, type ErrorCode } from './socketAck';
 
 export type EmitWithAckOptions = {
   timeoutMs?: number;
@@ -61,7 +61,7 @@ export async function emitWithAck<T>(
       reject({ code: 'CLIENT_TIMEOUT', message: `ACK timeout after ${timeoutMs}ms` } satisfies AckResultError);
     }, timeoutMs);
 
-    const finish = (fn: (value?: any) => void, value: any) => {
+    const finish = <V>(fn: (value: V) => void, value: V) => {
       if (settled) return;
       settled = true;
       safeClearTimeout(timer as unknown as ReturnType<typeof setTimeout>);

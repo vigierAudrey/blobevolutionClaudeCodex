@@ -18,7 +18,7 @@ const CLIENT_ONLY_CODES = new Set([
 /**
  * Classify error code into kind, canRetry, and actionHint
  */
-function classifyError(code: string, retryAfterSeconds?: number): {
+function classifyError(code: string, _retryAfterSeconds?: number): {
   kind: ErrorKind;
   canRetry: boolean;
   actionHint: ActionHint;
@@ -94,17 +94,23 @@ function classifyError(code: string, retryAfterSeconds?: number): {
  * Extract retryAfter from error object
  * Supports both top-level retryAfter and details.retryAfter
  */
-function extractRetryAfter(err: any): number | undefined {
-  // Top-level retryAfter
-  if (typeof err?.retryAfter === 'number' && err.retryAfter > 0) {
-    return err.retryAfter;
+function extractRetryAfter(err: unknown): number | undefined {
+  // Type guard for object with retryAfter
+  if (typeof err === 'object' && err !== null && 'retryAfter' in err) {
+    const retryAfter = (err as { retryAfter: unknown }).retryAfter;
+    if (typeof retryAfter === 'number' && retryAfter > 0) {
+      return retryAfter;
+    }
   }
 
   // details.retryAfter
-  if (typeof err?.details === 'object' && err.details !== null) {
-    const detailsRetryAfter = (err.details as Record<string, unknown>).retryAfter;
-    if (typeof detailsRetryAfter === 'number' && detailsRetryAfter > 0) {
-      return detailsRetryAfter;
+  if (typeof err === 'object' && err !== null && 'details' in err) {
+    const details = (err as { details: unknown }).details;
+    if (typeof details === 'object' && details !== null && 'retryAfter' in details) {
+      const detailsRetryAfter = (details as { retryAfter: unknown }).retryAfter;
+      if (typeof detailsRetryAfter === 'number' && detailsRetryAfter > 0) {
+        return detailsRetryAfter;
+      }
     }
   }
 
@@ -114,20 +120,22 @@ function extractRetryAfter(err: any): number | undefined {
 /**
  * Detect error source based on error shape
  */
-function detectSource(err: any): ErrorSource {
+function detectSource(err: unknown): ErrorSource {
   // HTTP strict error: has status or url from requestStrict (check first to handle client-only codes with HTTP context)
-  if (err?.status !== undefined || err?.url !== undefined) {
+  if (typeof err === 'object' && err !== null && ('status' in err || 'url' in err)) {
     return 'HTTP_STRICT';
   }
 
   // WS ACK error: has client-only code (CLIENT_TIMEOUT, NOT_CONNECTED, etc.)
-  if (err?.code && typeof err.code === 'string' && CLIENT_ONLY_CODES.has(err.code)) {
-    return 'WS_ACK';
-  }
-
-  // WS channel error: has code from ERROR_CODES + message, from socket-error/error event
-  if (err?.code && typeof err.code === 'string' && err.code in ERROR_CODES) {
-    return 'WS_CHANNEL';
+  if (typeof err === 'object' && err !== null && 'code' in err) {
+    const code = (err as { code: unknown }).code;
+    if (typeof code === 'string' && CLIENT_ONLY_CODES.has(code)) {
+      return 'WS_ACK';
+    }
+    // WS channel error: has code from ERROR_CODES + message, from socket-error/error event
+    if (typeof code === 'string' && code in ERROR_CODES) {
+      return 'WS_CHANNEL';
+    }
   }
 
   // Legacy Error
@@ -156,22 +164,39 @@ function detectSource(err: any): ErrorSource {
  */
 export function normalizeAppError(err: unknown): AppError {
   try {
-    const errAny = err as any;
+    // Extract basic fields with type guards
+    const source = detectSource(err);
 
-    // Extract basic fields
-    const source = detectSource(errAny);
-    const code = typeof errAny?.code === 'string' ? errAny.code : 'INTERNAL_ERROR';
-    const message = errAny?.message || (err != null ? String(err) : 'Unknown error');
-    const retryAfterSeconds = extractRetryAfter(errAny);
+    // Extract code
+    const code = (typeof err === 'object' && err !== null && 'code' in err && typeof (err as { code: unknown }).code === 'string')
+      ? (err as { code: string }).code
+      : 'INTERNAL_ERROR';
+
+    // Extract message
+    const message = (typeof err === 'object' && err !== null && 'message' in err && typeof (err as { message: unknown }).message === 'string')
+      ? (err as { message: string }).message
+      : (err != null ? String(err) : 'Unknown error');
+
+    const retryAfterSeconds = extractRetryAfter(err);
 
     // Classify error
     const { kind, canRetry, actionHint } = classifyError(code, retryAfterSeconds);
 
-    // Build debug info
+    // Build debug info with type guards
     const debug: AppError['debug'] = {};
-    if (errAny?.status !== undefined) debug.status = errAny.status;
-    if (errAny?.url) debug.url = errAny.url;
-    if (errAny?.details !== undefined) debug.details = errAny.details;
+    if (typeof err === 'object' && err !== null) {
+      if ('status' in err) {
+        const status = (err as { status: unknown }).status;
+        if (typeof status === 'number') debug.status = status;
+      }
+      if ('url' in err) {
+        const url = (err as { url: unknown }).url;
+        if (typeof url === 'string') debug.url = url;
+      }
+      if ('details' in err) {
+        debug.details = (err as { details: unknown }).details;
+      }
+    }
 
     return {
       source,

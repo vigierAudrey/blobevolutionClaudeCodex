@@ -142,7 +142,9 @@ describe('useChat', () => {
     });
 
     expect(sendResult?.success).toBe(false);
-    expect((sendResult as any)?.error?.code).toBe(ERROR_CODES.FORBIDDEN);
+    if (sendResult && !sendResult.success) {
+      expect((sendResult.error as { code?: string })?.code).toBe(ERROR_CODES.FORBIDDEN);
+    }
     expect(result.current.lastError?.code).toBe(ERROR_CODES.FORBIDDEN);
     expect(apiClient.sendMessage).not.toHaveBeenCalled(); // No HTTP fallback on FORBIDDEN
   });
@@ -168,8 +170,11 @@ describe('useChat', () => {
     });
 
     expect(sendResult?.success).toBe(false);
-    expect((sendResult as any)?.error?.code).toBe(ERROR_CODES.RATE_LIMITED);
-    expect((sendResult as any)?.error?.details?.retryAfter).toBe(3); // Raw error has retryAfter in details
+    if (sendResult && !sendResult.success) {
+      const error = sendResult.error as { code?: string; details?: { retryAfter?: number } };
+      expect(error?.code).toBe(ERROR_CODES.RATE_LIMITED);
+      expect(error?.details?.retryAfter).toBe(3); // Raw error has retryAfter in details
+    }
     expect(result.current.lastError?.code).toBe(ERROR_CODES.RATE_LIMITED);
     expect(apiClient.sendMessage).not.toHaveBeenCalled(); // No HTTP fallback on RATE_LIMITED
   });
@@ -239,8 +244,10 @@ describe('useChat', () => {
     });
 
     expect(sendResult?.success).toBe(false);
-    expect((sendResult as any)?.error?.code).toBe(ERROR_CODES.FORBIDDEN);
-    expect((sendResult as any)?.clientMsgId).toBeDefined();
+    if (sendResult && !sendResult.success) {
+      expect((sendResult.error as { code?: string })?.code).toBe(ERROR_CODES.FORBIDDEN);
+      expect(sendResult.clientMsgId).toBeDefined();
+    }
     expect(apiClient.sendMessageWithStatus).toHaveBeenCalledTimes(1); // HTTP fallback attempted once
   });
 

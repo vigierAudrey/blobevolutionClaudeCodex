@@ -119,14 +119,29 @@ const SOCKET_ERROR_CODES = new Set<string>([
 ]);
 
 const normalizeSocketError = (err: unknown): SocketError => {
-  const rawCode = (err as any)?.code;
+  // Extract code with type guard
+  const rawCode = (typeof err === 'object' && err !== null && 'code' in err) ? (err as { code: unknown }).code : undefined;
   const code: SocketErrorCode = typeof rawCode === 'string' && SOCKET_ERROR_CODES.has(rawCode) ? rawCode as SocketErrorCode : 'INTERNAL_ERROR';
-  const details = (err as any)?.details;
-  const retryAfterFromDetails = typeof details?.retryAfter === 'number' ? details.retryAfter : undefined;
-  const retryAfter = typeof (err as any)?.retryAfter === 'number' ? (err as any).retryAfter : retryAfterFromDetails;
+
+  // Extract details with type guard
+  const details = (typeof err === 'object' && err !== null && 'details' in err) ? (err as { details: unknown }).details : undefined;
+  const retryAfterFromDetails = (typeof details === 'object' && details !== null && 'retryAfter' in details && typeof (details as { retryAfter: unknown }).retryAfter === 'number')
+    ? (details as { retryAfter: number }).retryAfter
+    : undefined;
+
+  // Extract retryAfter with type guard
+  const retryAfter = (typeof err === 'object' && err !== null && 'retryAfter' in err && typeof (err as { retryAfter: unknown }).retryAfter === 'number')
+    ? (err as { retryAfter: number }).retryAfter
+    : retryAfterFromDetails;
+
+  // Extract message with type guard
+  const message = (typeof err === 'object' && err !== null && 'message' in err && typeof (err as { message: unknown }).message === 'string')
+    ? (err as { message: string }).message
+    : 'Unknown error';
+
   return {
     code,
-    message: (err as any)?.message ?? 'Unknown error',
+    message,
     retryAfter,
     details
   };
@@ -178,7 +193,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       try {
         await emitWithAck(socket, 'join-conversation', { conversationId }, joinAckSchema);
         if (!cancelled) setLastError(null);
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (cancelled) return;
         const error = normalizeSocketError(err);
         setLastError(error);
@@ -197,18 +212,26 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   useEffect(() => {
     if (!socket) return;
 
-    const handleNewMessage = (message: Message) => {
-      if (onNewMessage) {
-        onNewMessage(message);
+    const handleNewMessage = (data: unknown) => {
+      // Type narrowing for Message
+      if (typeof data === 'object' && data !== null && 'id' in data && 'content' in data) {
+        const message = data as Message;
+        if (onNewMessage) {
+          onNewMessage(message);
+        }
       }
     };
 
-    const handleUserTyping = (data: { userId: string; isTyping: boolean }) => {
-      setOtherUserTyping(data.isTyping);
+    const handleUserTyping = (data: unknown) => {
+      // Type narrowing for typing event
+      if (typeof data === 'object' && data !== null && 'userId' in data && 'isTyping' in data) {
+        const typingData = data as { userId: string; isTyping: boolean };
+        setOtherUserTyping(typingData.isTyping);
 
-      // Désactiver l'indicateur après 3 secondes
-      if (data.isTyping) {
-        setTimeout(() => setOtherUserTyping(false), 3000);
+        // Désactiver l'indicateur après 3 secondes
+        if (typingData.isTyping) {
+          setTimeout(() => setOtherUserTyping(false), 3000);
+        }
       }
     };
 
@@ -263,7 +286,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           clientMsgId,
           created: ackData.created // Backend Option B flag (optional)
         };
-      } catch (wsErr: any) {
+      } catch (wsErr: unknown) {
         const error = normalizeSocketError(wsErr);
         setLastError(error);
 

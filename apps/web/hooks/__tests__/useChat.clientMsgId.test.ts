@@ -24,7 +24,7 @@ describe('useChat - clientMsgId integration', () => {
   const conversationId = 'conv-123';
   const token = 'test-token';
 
-  let mockSocket: any;
+  let mockSocket: unknown;
   let mockEmit: jest.Mock;
   let mockOn: jest.Mock;
   let mockOff: jest.Mock;
@@ -72,7 +72,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Send message
-    let sendAckCallback: any;
+    let sendAckCallback: unknown;
     mockEmit.mockImplementation((event, payload, callback) => {
       if (event === 'send-message') {
         sendAckCallback = callback;
@@ -130,7 +130,7 @@ describe('useChat - clientMsgId integration', () => {
       joinAckCallback?.({ ok: true, data: { conversationId } });
     });
 
-    let sendAckCallback: any;
+    let sendAckCallback: unknown;
     mockEmit.mockImplementation((event, payload, callback) => {
       if (event === 'send-message') {
         sendAckCallback = callback;

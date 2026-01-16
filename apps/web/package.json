@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "next lint",
+    "lint:strict": "next lint --max-warnings=0",
     "type-check": "tsc -p tsconfig.typecheck.json --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",

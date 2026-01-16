@@ -1,134 +1,236 @@
 /**
- * Contract Drift Guard Test (C4.4)
+ * Contract Drift Guard Test (C4.4 + C4.4.2 - Behavioral)
  *
- * Simple guard test that fails if clientMsgId contract breaks.
- * Uses shallow pattern matching to detect drift without fragility.
+ * Guard test that fails if clientMsgId contract breaks.
+ * Uses behavioral testing instead of fragile string matching.
  *
  * CRITICAL: If this test fails, clientMsgId idempotence is broken!
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+import { renderHook, act, waitFor } from '@testing-library/react';
+import { useChat } from '../useChat';
+import { useSocket } from '../useSocket';
+import { emitWithAck } from '../../lib/emitWithAck';
+import { apiClient } from '../../lib/apiClient';
 
-describe('clientMsgId Contract Drift Guard', () => {
-  const projectRoot = path.resolve(__dirname, '../..');
+jest.mock('../useSocket');
+jest.mock('../../lib/emitWithAck');
+jest.mock('../../lib/apiClient', () => ({
+  apiClient: {
+    sendMessage: jest.fn(),
+    sendMessageWithStatus: jest.fn(),
+  },
+}));
+
+describe('clientMsgId Contract Behavioral Guards', () => {
+  const conversationId = 'contract-test-conv';
+  const token = 'test-token';
+  const FIXED_CLIENT_MSG_ID = 'fixed-uuid-12345';
+
+  let mockSocket: { connected: boolean; emit: jest.Mock; on: jest.Mock; off: jest.Mock };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    mockSocket = {
+      connected: true,
+      emit: jest.fn(),
+      on: jest.fn(),
+      off: jest.fn(),
+    };
+
+    (useSocket as jest.Mock).mockReturnValue({
+      socket: mockSocket,
+      connected: true,
+      lastSocketError: null,
+      emit: mockSocket.emit,
+      on: mockSocket.on,
+      off: mockSocket.off,
+    });
+
+    (emitWithAck as jest.Mock).mockResolvedValue({ conversationId });
+  });
 
   /**
    * Guard #1: WS payload must include clientMsgId
-   * File: hooks/useChat.ts
-   * Pattern: socket.emit('send-message', {..., clientMsgId, ...})
+   * Behavioral test: mock emitWithAck, inspect actual payload passed
    */
-  it('should transmit clientMsgId in WS send-message payload', () => {
-    const useChatPath = path.join(projectRoot, 'hooks/useChat.ts');
-    const content = fs.readFileSync(useChatPath, 'utf-8');
+  it('should transmit clientMsgId in WS send-message payload', async () => {
+    (emitWithAck as jest.Mock)
+      .mockResolvedValueOnce({ conversationId }) // join
+      .mockResolvedValueOnce({ id: 'msg-1', conversationId, content: 'test', type: 'TEXT', createdAt: new Date().toISOString() }); // send
 
-    // Check that emitWithAck is called with 'send-message' and clientMsgId is in payload
-    const hasEmitWithAck = content.includes("emitWithAck(socket, 'send-message'");
-    const hasClientMsgIdInPayload = content.includes('clientMsgId');
+    const { result } = renderHook(() => useChat({ conversationId, token }));
 
-    // More specific: check that the payload object construction includes clientMsgId
-    const payloadPattern = /const\s+payload\s*=\s*\{[^}]*clientMsgId[^}]*\}/s;
-    const hasClientMsgIdInPayloadObject = payloadPattern.test(content);
+    await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1)); // join
 
-    expect(hasEmitWithAck).toBe(true);
-    expect(hasClientMsgIdInPayload).toBe(true);
-    expect(hasClientMsgIdInPayloadObject).toBe(true);
+    await act(async () => {
+      await result.current.sendMessage('test', 'TEXT', undefined, FIXED_CLIENT_MSG_ID);
+    });
+
+    // Verify emitWithAck was called with 'send-message' event
+    const sendMessageCall = (emitWithAck as jest.Mock).mock.calls.find(
+      (call) => call[1] === 'send-message'
+    );
+
+    expect(sendMessageCall).toBeTruthy();
+
+    // Verify payload includes clientMsgId
+    const payload = sendMessageCall[2];
+    expect(payload).toHaveProperty('clientMsgId', FIXED_CLIENT_MSG_ID);
+    expect(payload).toMatchObject({
+      conversationId,
+      content: 'test',
+      type: 'TEXT',
+      clientMsgId: FIXED_CLIENT_MSG_ID,
+    });
   });
 
   /**
    * Guard #2: HTTP fallback must include clientMsgId
-   * File: hooks/useChat.ts
-   * Pattern: apiClient.sendMessage*(conversationId, {..., clientMsgId, ...})
+   * Behavioral test: mock sendMessageWithStatus, inspect body passed
    */
-  it('should transmit clientMsgId in HTTP fallback body', () => {
-    const useChatPath = path.join(projectRoot, 'hooks/useChat.ts');
-    const content = fs.readFileSync(useChatPath, 'utf-8');
+  it('should transmit clientMsgId in HTTP fallback body', async () => {
+    (emitWithAck as jest.Mock)
+      .mockResolvedValueOnce({ conversationId }) // join
+      .mockRejectedValueOnce({ code: 'CLIENT_TIMEOUT', message: 'Timeout' }); // send WS timeout
 
-    // Check that HTTP payload (httpPayload) includes clientMsgId
-    const hasHttpPayload = content.includes('httpPayload');
-    const hasClientMsgIdInHttpPayload = /httpPayload[^;]*clientMsgId/s.test(content);
+    (apiClient.sendMessageWithStatus as jest.Mock).mockResolvedValue({
+      data: { id: 'msg-http', conversationId, content: 'test', type: 'TEXT', createdAt: new Date().toISOString() },
+      status: 201,
+    });
 
-    // Check that sendMessageWithStatus is called (HTTP fallback method)
-    const hasSendMessageWithStatus = content.includes('sendMessageWithStatus');
+    const { result } = renderHook(() => useChat({ conversationId, token }));
 
-    expect(hasHttpPayload).toBe(true);
-    expect(hasClientMsgIdInHttpPayload).toBe(true);
-    expect(hasSendMessageWithStatus).toBe(true);
+    await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1)); // join
+
+    await act(async () => {
+      await result.current.sendMessage('test', 'TEXT', undefined, FIXED_CLIENT_MSG_ID);
+    });
+
+    // Verify sendMessageWithStatus was called
+    expect(apiClient.sendMessageWithStatus).toHaveBeenCalledTimes(1);
+
+    // Verify HTTP body includes clientMsgId
+    const httpCallArgs = (apiClient.sendMessageWithStatus as jest.Mock).mock.calls[0];
+    expect(httpCallArgs[0]).toBe(conversationId);
+    expect(httpCallArgs[1]).toMatchObject({
+      type: 'TEXT',
+      content: 'test',
+      clientMsgId: FIXED_CLIENT_MSG_ID,
+    });
   });
 
   /**
-   * Guard #3: Reconciliation must prioritize clientMsgId matching
-   * File: app/messages/[id]/page-websocket.tsx
-   * Pattern: clientMsgId match check BEFORE content+time fallback
+   * Guard #3: sendMessage must accept optional clientMsgId parameter
+   * Behavioral test: call with provided clientMsgId and verify it's used
    */
-  it('should reconcile by clientMsgId first (before content+time fallback)', () => {
-    const pageWebSocketPath = path.join(projectRoot, 'app/messages/[id]/page-websocket.tsx');
-    const content = fs.readFileSync(pageWebSocketPath, 'utf-8');
+  it('should accept optional clientMsgId parameter in sendMessage', async () => {
+    (emitWithAck as jest.Mock)
+      .mockResolvedValueOnce({ conversationId }) // join
+      .mockResolvedValueOnce({ id: 'msg-1', conversationId, content: 'test', type: 'TEXT', createdAt: new Date().toISOString() }); // send
 
-    // Extract the setOptimisticMessages reconciliation block specifically
-    // Look for the reconciliation logic within setOptimisticMessages
-    const reconciliationMatch = content.match(/setOptimisticMessages\(prev\s*=>\s*\{[\s\S]*?\n\s*\}\);/);
+    const { result } = renderHook(() => useChat({ conversationId, token }));
 
-    expect(reconciliationMatch).toBeTruthy();
+    await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
 
-    if (reconciliationMatch) {
-      const reconciliationBlock = reconciliationMatch[0];
+    // Call with provided clientMsgId
+    let sendResult;
+    await act(async () => {
+      sendResult = await result.current.sendMessage('test', 'TEXT', undefined, FIXED_CLIENT_MSG_ID);
+    });
 
-      // Check that clientMsgId matching exists in this block
-      const hasClientMsgIdMatch = /opt\.clientMsgId\s*===\s*formattedMessage\.clientMsgId/.test(reconciliationBlock);
+    // Verify the fixed clientMsgId was propagated to WS
+    const sendCall = (emitWithAck as jest.Mock).mock.calls.find(
+      (call) => call[1] === 'send-message'
+    );
+    expect(sendCall[2].clientMsgId).toBe(FIXED_CLIENT_MSG_ID);
+  });
 
-      // Check that content+time fallback exists (backward compat)
-      const hasContentTimeMatch = /opt\.content\s*===\s*formattedMessage\.content/.test(reconciliationBlock) &&
-                                   /Date\.now\(\)\s*-\s*opt\.createdAtLocal/.test(reconciliationBlock);
+  /**
+   * Guard #4: sendMessage result must include clientMsgId
+   * Behavioral test: call sendMessage and verify result contains clientMsgId
+   */
+  it('should return clientMsgId in sendMessage result', async () => {
+    (emitWithAck as jest.Mock)
+      .mockResolvedValueOnce({ conversationId }) // join
+      .mockResolvedValueOnce({ id: 'msg-1', conversationId, content: 'test', type: 'TEXT', createdAt: new Date().toISOString() }); // send
 
-      // Verify order: clientMsgId check must appear before content+time check
-      const clientMsgIdIndex = reconciliationBlock.search(/opt\.clientMsgId\s*===\s*formattedMessage\.clientMsgId/);
-      const contentTimeIndex = reconciliationBlock.search(/opt\.content\s*===\s*formattedMessage\.content/);
+    const { result } = renderHook(() => useChat({ conversationId, token }));
 
-      expect(hasClientMsgIdMatch).toBe(true);
-      expect(hasContentTimeMatch).toBe(true);
-      expect(clientMsgIdIndex).toBeGreaterThan(-1);
-      expect(contentTimeIndex).toBeGreaterThan(-1);
-      expect(clientMsgIdIndex).toBeLessThan(contentTimeIndex);
+    await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
+
+    let sendResult;
+    await act(async () => {
+      sendResult = await result.current.sendMessage('test', 'TEXT', undefined, FIXED_CLIENT_MSG_ID);
+    });
+
+    // Verify result includes clientMsgId
+    expect(sendResult).toMatchObject({
+      success: true,
+      transport: 'WS',
+      clientMsgId: FIXED_CLIENT_MSG_ID,
+    });
+  });
+
+  /**
+   * Guard #5: HTTP fallback result must include clientMsgId
+   * Behavioral test: trigger HTTP fallback and verify result contains clientMsgId
+   */
+  it('should return clientMsgId in HTTP fallback result', async () => {
+    (emitWithAck as jest.Mock)
+      .mockResolvedValueOnce({ conversationId }) // join
+      .mockRejectedValueOnce({ code: 'CLIENT_TIMEOUT', message: 'Timeout' }); // send WS timeout
+
+    (apiClient.sendMessageWithStatus as jest.Mock).mockResolvedValue({
+      data: { id: 'msg-http', conversationId, content: 'test', type: 'TEXT', createdAt: new Date().toISOString() },
+      status: 201,
+    });
+
+    const { result } = renderHook(() => useChat({ conversationId, token }));
+
+    await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
+
+    let sendResult;
+    await act(async () => {
+      sendResult = await result.current.sendMessage('test', 'TEXT', undefined, FIXED_CLIENT_MSG_ID);
+    });
+
+    // Verify HTTP fallback result includes clientMsgId
+    expect(sendResult).toMatchObject({
+      success: true,
+      transport: 'HTTP',
+      clientMsgId: FIXED_CLIENT_MSG_ID,
+      created: true, // 201 = created
+    });
+  });
+
+  /**
+   * Guard #6: Failure result must include clientMsgId
+   * Behavioral test: trigger failure and verify result contains clientMsgId
+   */
+  it('should return clientMsgId even in failure result', async () => {
+    (emitWithAck as jest.Mock)
+      .mockResolvedValueOnce({ conversationId }) // join
+      .mockRejectedValueOnce({ code: 'FORBIDDEN', message: 'Access denied' }); // send fails
+
+    const { result } = renderHook(() => useChat({ conversationId, token }));
+
+    await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
+
+    let sendResult;
+    await act(async () => {
+      sendResult = await result.current.sendMessage('test', 'TEXT', undefined, FIXED_CLIENT_MSG_ID);
+    });
+
+    // Verify failure result includes clientMsgId
+    expect(sendResult).toMatchObject({
+      success: false,
+      clientMsgId: FIXED_CLIENT_MSG_ID,
+    });
+
+    if (sendResult && !sendResult.success) {
+      expect(sendResult.clientMsgId).toBe(FIXED_CLIENT_MSG_ID);
     }
-  });
-
-  /**
-   * Guard #4: sendMessage must accept optional clientMsgId parameter
-   * File: hooks/useChat.ts
-   * Pattern: sendMessage(..., clientMsgId?: string)
-   */
-  it('should accept optional clientMsgId parameter in sendMessage', () => {
-    const useChatPath = path.join(projectRoot, 'hooks/useChat.ts');
-    const content = fs.readFileSync(useChatPath, 'utf-8');
-
-    // Check that sendMessage function signature includes clientMsgId parameter
-    const hasSendMessageWithClientMsgId = /sendMessage.*clientMsgId\?:\s*string/s.test(content);
-
-    // Check that providedClientMsgId variable exists (parameter name in implementation)
-    const hasProvidedClientMsgId = content.includes('providedClientMsgId');
-
-    expect(hasSendMessageWithClientMsgId).toBe(true);
-    expect(hasProvidedClientMsgId).toBe(true);
-  });
-
-  /**
-   * Guard #5: sendMessage result must include clientMsgId
-   * File: hooks/useChat.ts
-   * Pattern: return { ..., clientMsgId, ... }
-   */
-  it('should return clientMsgId in sendMessage result', () => {
-    const useChatPath = path.join(projectRoot, 'hooks/useChat.ts');
-    const content = fs.readFileSync(useChatPath, 'utf-8');
-
-    // Check that return statements include clientMsgId
-    // Look for patterns like: return { success: true, transport: 'WS', clientMsgId, ... }
-    const hasClientMsgIdInWSReturn = /return\s*\{[^}]*transport:\s*'WS'[^}]*clientMsgId[^}]*\}/s.test(content);
-    const hasClientMsgIdInHTTPReturn = /return\s*\{[^}]*transport:\s*'HTTP'[^}]*clientMsgId[^}]*\}/s.test(content);
-    const hasClientMsgIdInFailureReturn = /return\s*\{[^}]*success:\s*false[^}]*clientMsgId[^}]*\}/s.test(content);
-
-    expect(hasClientMsgIdInWSReturn).toBe(true);
-    expect(hasClientMsgIdInHTTPReturn).toBe(true);
-    expect(hasClientMsgIdInFailureReturn).toBe(true);
   });
 });

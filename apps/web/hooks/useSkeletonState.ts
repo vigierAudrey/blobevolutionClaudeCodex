@@ -39,7 +39,7 @@ export function useSkeletonState(config: SkeletonConfig = {}) {
     startTime?: number;
   }>({});
 
-  const debugLog = useCallback((message: string, data?: any) => {
+  const debugLog = useCallback((message: string, data?: unknown) => {
     if (finalConfig.debugMode) {
       console.log(`🏗️ Skeleton: ${message}`, data);
     }

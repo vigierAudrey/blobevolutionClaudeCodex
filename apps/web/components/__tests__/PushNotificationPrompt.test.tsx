@@ -15,7 +15,7 @@ jest.mock('../../hooks/usePushNotifications', () => {
 });
 
 const getHookMock = () =>
-  (jest.requireMock('../../hooks/usePushNotifications') as any).__mock.hookMock as jest.Mock;
+  (jest.requireMock('../../hooks/usePushNotifications') as { __mock: { hookMock: jest.Mock } }).__mock.hookMock;
 
 describe('PushNotificationPrompt', () => {
   beforeEach(() => {

@@ -959,7 +959,7 @@ export default function ProfilePage() {
                             <span className="text-xl">👥</span>
                             <div>
                               <p className="text-sm font-medium">Invitations groupe</p>
-                              <p className="text-xs text-muted-foreground">Quand on t'invite dans une conversation</p>
+                              <p className="text-xs text-muted-foreground">Quand on t&apos;invite dans une conversation</p>
                             </div>
                           </div>
                           <button

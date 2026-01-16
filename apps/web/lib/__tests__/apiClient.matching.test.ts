@@ -14,7 +14,7 @@ const fetchMock = jest.fn<Promise<{
   text?: () => Promise<string>;
   json?: () => Promise<unknown>;
 }>, Parameters<typeof fetch>>();
-(global as any).fetch = fetchMock as unknown as typeof fetch;
+(global as { fetch?: unknown }).fetch = fetchMock as unknown as typeof fetch;
 
 import { __testUtils, apiClient } from '../apiClient';
 
@@ -46,7 +46,7 @@ describe('API Client - Matching Integration', () => {
 
     // Ensure window is defined (for jsdom)
     if (typeof window === 'undefined') {
-      (global as any).window = {};
+      (global as { window?: unknown }).window = {};
     }
 
     // Mock localStorage with proper spies
@@ -66,7 +66,7 @@ describe('API Client - Matching Integration', () => {
   });
 
   afterAll(() => {
-    (global as any).fetch = originalFetch;
+    (global as { fetch?: unknown }).fetch = originalFetch;
   });
 
   describe('searchMatching', () => {
@@ -824,7 +824,7 @@ describe('API Client - Matching Integration', () => {
     });
 
     it('rejette une entrée invalide côté client', async () => {
-      await expect(apiClient.sendMessage(conversationId, { type: 'TEXT', content: '' } as any)).rejects.toBeTruthy();
+      await expect(apiClient.sendMessage(conversationId, { type: 'TEXT', content: '' } as unknown as Parameters<typeof apiClient.sendMessage>[1])).rejects.toBeTruthy();
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
@@ -888,7 +888,7 @@ describe('API Client - Matching Integration', () => {
       });
 
       const result = await apiClient.listConversations();
-      const totalUnread = result.items.reduce((acc: number, conv: any) => acc + conv.unread, 0);
+      const totalUnread = result.items.reduce((acc: number, conv: { unread: number }) => acc + conv.unread, 0);
 
       expect(totalUnread).toBe(2);
     });

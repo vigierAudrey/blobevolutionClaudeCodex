@@ -43,8 +43,7 @@ function getSeverity(code: string, kind: AppError['kind']): Severity {
 /**
  * Get user-facing title for error code
  */
-function getTitle(code: string, context: ErrorContext): string {
-  const { domain, action } = context;
+function getTitle(code: string, _context: ErrorContext): string {
 
   switch (code) {
     case ERROR_CODES.RATE_LIMITED:

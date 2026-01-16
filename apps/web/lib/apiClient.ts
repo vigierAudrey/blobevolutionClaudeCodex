@@ -978,6 +978,7 @@ export const apiClient = {
       return matchingSearchDataSchema.parse(payload);
     }),
 
+  /** @deprecated Utiliser apiClient.matchDecisions (batch) */
   matchDecision: (body: { targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }) =>
     postMatchDecisions([body]).then((result) => ({
       ok: true,

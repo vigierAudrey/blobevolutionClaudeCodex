@@ -1,6 +1,5 @@
 import { normalizeAppError } from '../normalizeAppError';
 import { ERROR_CODES } from '../socketAck';
-import type { AppError } from '../types/appError';
 
 describe('normalizeAppError', () => {
   describe('WS ACK errors', () => {
@@ -360,8 +359,8 @@ describe('normalizeAppError', () => {
     });
 
     it('normalizes Error with custom properties', () => {
-      const err = new Error('Unauthorized');
-      (err as any).status = 401;
+      const err = new Error('Unauthorized') as Error & { status: number };
+      err.status = 401;
 
       const result = normalizeAppError(err);
 
@@ -455,7 +454,7 @@ describe('normalizeAppError', () => {
     });
 
     it('handles circular reference', () => {
-      const err: any = { code: ERROR_CODES.INTERNAL_ERROR, message: 'Error' };
+      const err: { code: string; message: string; circular?: unknown } = { code: ERROR_CODES.INTERNAL_ERROR, message: 'Error' };
       err.circular = err;
 
       // Should not throw, even if debug info can't be serialized

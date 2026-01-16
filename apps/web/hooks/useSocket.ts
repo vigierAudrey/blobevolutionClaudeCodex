@@ -23,9 +23,9 @@ interface UseSocketReturn {
   lastSocketError: SocketError | null;
   connect: () => void;
   disconnect: () => void;
-  emit: (event: string, data: any) => void;
-  on: (event: string, handler: (data: any) => void) => void;
-  off: (event: string, handler?: (data: any) => void) => void;
+  emit: (event: string, data: unknown) => void;
+  on: (event: string, handler: (data: unknown) => void) => void;
+  off: (event: string, handler?: (data: unknown) => void) => void;
 }
 
 /**
@@ -175,7 +175,7 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
   }, []);
 
   // Fonction pour émettre un événement
-  const emit = useCallback((event: string, data: any) => {
+  const emit = useCallback((event: string, data: unknown) => {
     if (socket?.connected) {
       socket.emit(event, data);
     }
@@ -183,14 +183,14 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
   }, [socket]);
 
   // Fonction pour écouter un événement
-  const on = useCallback((event: string, handler: (data: any) => void) => {
+  const on = useCallback((event: string, handler: (data: unknown) => void) => {
     if (socket) {
       socket.on(event, handler);
     }
   }, [socket]);
 
   // Fonction pour arrêter d'écouter un événement
-  const off = useCallback((event: string, handler?: (data: any) => void) => {
+  const off = useCallback((event: string, handler?: (data: unknown) => void) => {
     if (socket) {
       if (handler) {
         socket.off(event, handler);

@@ -81,9 +81,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       }
 
       return success;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error subscribing to push notifications:', error);
-      trackPushEvent('subscribe_error', { error: error.message });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      trackPushEvent('subscribe_error', { error: errorMessage });
       return false;
     } finally {
       setIsLoading(false);
@@ -105,9 +106,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       }
 
       return success;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error unsubscribing from push notifications:', error);
-      trackPushEvent('unsubscribe_error', { error: error.message });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      trackPushEvent('unsubscribe_error', { error: errorMessage });
       return false;
     } finally {
       setIsLoading(false);
@@ -139,9 +141,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         trackPushEvent('permission_denied');
         return false;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error requesting permission:', error);
-      trackPushEvent('permission_error', { error: error.message });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      trackPushEvent('permission_error', { error: errorMessage });
       return false;
     } finally {
       setIsLoading(false);
@@ -161,9 +164,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       const success = await pushManager.testNotification();
       trackPushEvent('test_notification', { success });
       return success;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error sending test notification:', error);
-      trackPushEvent('test_notification_error', { error: error.message });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      trackPushEvent('test_notification_error', { error: errorMessage });
       return false;
     }
   }, [isSubscribed]);
@@ -274,7 +278,7 @@ function getCurrentUserId(): string | undefined {
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
       return payload.sub || payload.userId;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error parsing token:', error);
     }
   }
@@ -300,7 +304,7 @@ function trackPushEvent(event: string, data?: Record<string, any>) {
         userAgent: navigator.userAgent,
         url: window.location.href
       })
-    }).catch((error: any) => {
+    }).catch((error: unknown) => {
       console.log('📊 Analytics tracking failed:', error);
     });
 
@@ -308,7 +312,7 @@ function trackPushEvent(event: string, data?: Record<string, any>) {
     if (process.env.NODE_ENV === 'development') {
       console.log(`📊 Push Event: ${event}`, data);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error tracking push event:', error);
   }
 }

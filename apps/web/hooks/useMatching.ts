@@ -72,41 +72,53 @@ export function useMatching(options: UseMatchingOptions): UseMatchingReturn {
   useEffect(() => {
     if (!socket) return;
 
-    const handleNewMatch = (match: NewMatchNotification) => {
-      console.log('[useMatching] New match received:', match);
+    const handleNewMatch = (data: unknown) => {
+      // Type narrowing for NewMatchNotification
+      if (typeof data === 'object' && data !== null && 'matchId' in data) {
+        const match = data as NewMatchNotification;
+        console.log('[useMatching] New match received:', match);
 
-      setNewMatchesCount(prev => prev + 1);
-      setLatestMatch(match);
+        setNewMatchesCount(prev => prev + 1);
+        setLatestMatch(match);
 
-      if (onNewMatch) {
-        onNewMatch(match);
-      }
-    };
-
-    const handleMatchDecision = (decision: MatchDecisionNotification) => {
-      console.log('[useMatching] Match decision received:', decision);
-
-      if (onMatchDecision) {
-        onMatchDecision(decision);
-      }
-    };
-
-    const handleNewCard = (card: NewMatchingCardNotification) => {
-      console.log('[useMatching] New matching card:', card);
-
-      // Filtrer côté client : notifier seulement si ça correspond aux critères actuels
-      if (currentCriteria) {
-        const matchesCriteria =
-          (!currentCriteria.sport || card.sport === currentCriteria.sport) &&
-          (!currentCriteria.level || card.level === currentCriteria.level);
-
-        if (!matchesCriteria) {
-          return; // Ignorer cette notification
+        if (onNewMatch) {
+          onNewMatch(match);
         }
       }
+    };
 
-      if (onNewCard) {
-        onNewCard(card);
+    const handleMatchDecision = (data: unknown) => {
+      // Type narrowing for MatchDecisionNotification
+      if (typeof data === 'object' && data !== null && 'decision' in data) {
+        const decision = data as MatchDecisionNotification;
+        console.log('[useMatching] Match decision received:', decision);
+
+        if (onMatchDecision) {
+          onMatchDecision(decision);
+        }
+      }
+    };
+
+    const handleNewCard = (data: unknown) => {
+      // Type narrowing for NewMatchingCardNotification
+      if (typeof data === 'object' && data !== null && 'sport' in data && 'level' in data && 'profileId' in data) {
+        const card = data as NewMatchingCardNotification;
+        console.log('[useMatching] New matching card:', card);
+
+        // Filtrer côté client : notifier seulement si ça correspond aux critères actuels
+        if (currentCriteria) {
+          const matchesCriteria =
+            (!currentCriteria.sport || card.sport === currentCriteria.sport) &&
+            (!currentCriteria.level || card.level === currentCriteria.level);
+
+          if (!matchesCriteria) {
+            return; // Ignorer cette notification
+          }
+        }
+
+        if (onNewCard) {
+          onNewCard(card);
+        }
       }
     };
 

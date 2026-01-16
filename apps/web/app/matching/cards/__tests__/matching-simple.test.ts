@@ -241,7 +241,7 @@ describe('Matching Cards - Tests fonctionnels', () => {
       return batches;
     }
 
-    function debounce<T extends (...args: any[]) => any>(
+    function debounce<T extends (...args: never[]) => unknown>(
       func: T,
       delay: number
     ): (...args: Parameters<T>) => void {

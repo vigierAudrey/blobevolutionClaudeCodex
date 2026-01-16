@@ -28,11 +28,11 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
   const conversationId = 'conv-integration-test';
   const token = 'test-token';
 
-  let mockSocket: any;
+  let mockSocket: unknown;
   let mockEmit: jest.Mock;
   let mockOn: jest.Mock;
   let mockOff: jest.Mock;
-  let onNewMessageCallback: ((msg: any) => void) | null = null;
+  let onNewMessageCallback: ((msg: unknown) => void) | null = null;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -67,7 +67,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
    * Vérifie que reconciliation par clientMsgId évite doublons
    */
   it('should avoid duplicate when WS timeout → HTTP 200 (replay) → Server push', async () => {
-    const receivedMessages: any[] = [];
+    const receivedMessages: unknown[] = [];
     const onNewMessage = jest.fn((msg) => {
       receivedMessages.push(msg);
     });
@@ -161,7 +161,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
    * Vérifie que reconciliation par clientMsgId fonctionne aussi pour WS
    */
   it('should reconcile by clientMsgId when WS succeeds and server pushes', async () => {
-    const receivedMessages: any[] = [];
+    const receivedMessages: unknown[] = [];
     const onNewMessage = jest.fn((msg) => {
       receivedMessages.push(msg);
     });
@@ -179,7 +179,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
     });
 
     const testClientMsgId = 'test-uuid-67890';
-    let sendAckCallback: any;
+    let sendAckCallback: unknown;
 
     mockEmit.mockImplementation((event, payload, callback) => {
       if (event === 'send-message') {
@@ -245,7 +245,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
    * Vérifie que chaque message est distinct
    */
   it('should handle multiple messages with different clientMsgIds correctly', async () => {
-    const receivedMessages: any[] = [];
+    const receivedMessages: unknown[] = [];
     const onNewMessage = jest.fn((msg) => {
       receivedMessages.push(msg);
     });
@@ -265,7 +265,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
     const clientMsgId1 = 'uuid-msg-1';
     const clientMsgId2 = 'uuid-msg-2';
 
-    let ackCallbacks: any[] = [];
+    let ackCallbacks: unknown[] = [];
     mockEmit.mockImplementation((event, payload, callback) => {
       if (event === 'send-message') {
         ackCallbacks.push({ clientMsgId: payload.clientMsgId, callback });

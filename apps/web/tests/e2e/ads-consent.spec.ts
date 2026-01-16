@@ -1,4 +1,10 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+
+// Extend window interface for gtag tracking
+interface WindowWithGtagTracking extends Window {
+  __gtagCalls?: unknown[];
+  gtag?: (...args: unknown[]) => void;
+}
 
 type ConsentMode = 'personalized' | 'npa' | 'limited' | 'none';
 
@@ -17,16 +23,16 @@ const encodeConsent = (mode: ConsentMode) =>
     updatedAt: new Date().toISOString(),
   });
 
-async function bootstrapConsent(context: any, mode: ConsentMode) {
+async function bootstrapConsent(context: BrowserContext, mode: ConsentMode) {
   await context.addInitScript(
     ({ consent, modeSignals }) => {
       window.localStorage.setItem('blob_consent', consent);
       window.localStorage.setItem('blob_device_id', 'playwright-device');
       window.localStorage.setItem('cookie-consent', modeSignals.mode === 'personalized' ? 'personalized' : modeSignals.mode === 'npa' || modeSignals.mode === 'limited' ? 'essential' : 'none');
       window.adsbygoogle = [];
-      const callStore: any[] = [];
-      (window as any).__gtagCalls = callStore;
-      (window as any).gtag = (...args: any[]) => {
+      const callStore: unknown[] = [];
+      (window as WindowWithGtagTracking).__gtagCalls = callStore;
+      (window as WindowWithGtagTracking).gtag = (...args: unknown[]) => {
         callStore.push(args);
       };
     },
@@ -34,18 +40,22 @@ async function bootstrapConsent(context: any, mode: ConsentMode) {
   );
 }
 
-async function assertGtagSignals(page: any, expected: typeof SIGNALS[ConsentMode], mode: ConsentMode) {
-  const calls = await page.evaluate(() => (window as any).__gtagCalls ?? []);
-  const consentCall = calls.find((args: any[]) => args[0] === 'consent' && args[1] === 'update');
+async function assertGtagSignals(page: Page, expected: typeof SIGNALS[ConsentMode], mode: ConsentMode) {
+  const calls = await page.evaluate(() => (window as WindowWithGtagTracking).__gtagCalls ?? []);
+  const consentCall = calls.find((args: unknown) => Array.isArray(args) && args[0] === 'consent' && args[1] === 'update');
   expect(consentCall).toBeTruthy();
-  expect(consentCall[2]).toMatchObject(expected);
+  if (Array.isArray(consentCall)) {
+    expect(consentCall[2]).toMatchObject(expected);
+  }
 
   if (mode === 'none') {
     return;
   }
-  const impression = calls.find((args: any[]) => args[0] === 'event' && args[1] === 'ad_impression');
+  const impression = calls.find((args: unknown) => Array.isArray(args) && args[0] === 'event' && args[1] === 'ad_impression');
   expect(impression).toBeTruthy();
-  expect(impression[2]).toMatchObject({ ad_mode: mode });
+  if (Array.isArray(impression)) {
+    expect(impression[2]).toMatchObject({ ad_mode: mode });
+  }
 }
 
 test.describe('Consent-driven ads', () => {

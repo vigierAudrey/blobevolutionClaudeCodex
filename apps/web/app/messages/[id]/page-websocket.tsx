@@ -63,7 +63,7 @@ function generateClientMsgId(): string {
  * @param appErr - Normalized AppError
  */
 function logUnknownCode(appErr: { code: string; source: string; debug?: unknown }) {
-  const isServerCode = Object.values(ERROR_CODES).includes(appErr.code as any);
+  const isServerCode = Object.values(ERROR_CODES).some(v => v === appErr.code);
   const isClientCode = KNOWN_CLIENT_CODES.has(appErr.code);
 
   if (!isServerCode && !isClientCode) {

@@ -16,7 +16,7 @@ jest.mock('../../lib/socketUtils', () => ({
 }));
 
 describe('useSocket retry logic', () => {
-  let mockSocket: any;
+  let mockSocket: unknown;
   let connectErrorHandler: ((error: Error) => void) | null = null;
 
   beforeEach(() => {
@@ -25,7 +25,7 @@ describe('useSocket retry logic', () => {
     // Mock socket instance
     mockSocket = {
       connected: false,
-      on: jest.fn((event: string, handler: any) => {
+      on: jest.fn((event: string, handler: unknown) => {
         if (event === 'connect_error') {
           connectErrorHandler = handler;
         }
@@ -100,7 +100,7 @@ describe('useSocket retry logic', () => {
 
     let connectHandler: (() => void) | null = null;
 
-    mockSocket.on = jest.fn((event: string, handler: any) => {
+    mockSocket.on = jest.fn((event: string, handler: unknown) => {
       if (event === 'connect_error') {
         connectErrorHandler = handler;
       } else if (event === 'connect') {

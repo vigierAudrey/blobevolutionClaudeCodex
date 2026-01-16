@@ -17,7 +17,7 @@ describe('ToastProvider', () => {
 
   beforeEach(() => {
     counter = 0;
-    ((global.crypto as any).randomUUID as jest.Mock).mockClear();
+    ((global.crypto as { randomUUID: jest.Mock }).randomUUID).mockClear();
     jest.useFakeTimers();
   });
 

@@ -5,7 +5,7 @@ import LocationPickerMap from '../LocationPickerMap';
 jest.mock('leaflet', () => {
   class FakeIconDefault {}
   Object.assign(FakeIconDefault.prototype, { _getIconUrl: jest.fn() });
-  (FakeIconDefault as any).mergeOptions = jest.fn();
+  (FakeIconDefault as unknown).mergeOptions = jest.fn();
 
   class FakeMarker {
     getLatLng() {
@@ -31,7 +31,7 @@ jest.mock('leaflet', () => {
 });
 
 jest.mock('react-leaflet', () => {
-  const MapContainer = ({ children, center, zoom, ...rest }: any) => {
+  const MapContainer = ({ children, center, zoom, ...rest }: unknown) => {
     const { scrollWheelZoom, ...divProps } = rest;
     return (
       <div
@@ -45,17 +45,17 @@ jest.mock('react-leaflet', () => {
       </div>
     );
   };
-  const TileLayer = (props: any) => <div data-testid="tile-layer" {...props} />;
+  const TileLayer = (props: unknown) => <div data-testid="tile-layer" {...props} />;
   const mapInstance = {
     setView: jest.fn(),
     flyTo: jest.fn(),
     getZoom: jest.fn(() => 13),
   };
-  const mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null } = {
+  const mapEventsHandlers: { current: Record<string, (...args: unknown[]) => void> | null } = {
     current: null,
   };
-  const markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }> = [];
-  const Marker = ({ children, position, eventHandlers, ...rest }: any) => {
+  const markerInstances: Array<{ eventHandlers?: Record<string, (...args: unknown[]) => void>; position?: unknown }> = [];
+  const Marker = ({ children, position, eventHandlers, ...rest }: unknown) => {
     markerInstances.push({ eventHandlers, position });
     return (
       <div data-testid="marker" data-position={JSON.stringify(position)} {...rest}>
@@ -70,7 +70,7 @@ jest.mock('react-leaflet', () => {
     TileLayer,
     Marker,
     useMap: () => mapInstance,
-    useMapEvents: (handlers: Record<string, (...args: any[]) => void>) => {
+    useMapEvents: (handlers: Record<string, (...args: unknown[]) => void>) => {
       mapEventsHandlers.current = handlers;
       return mapInstance;
     },
@@ -83,14 +83,14 @@ jest.mock('react-leaflet', () => {
 });
 
 const getReactLeafletMocks = () =>
-  (jest.requireMock('react-leaflet') as any).__mock as {
+  (jest.requireMock('react-leaflet') as unknown).__mock as {
     mapInstance: {
       setView: jest.Mock;
       flyTo: jest.Mock;
       getZoom: jest.Mock;
     };
-    mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null };
-    markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }>;
+    mapEventsHandlers: { current: Record<string, (...args: unknown[]) => void> | null };
+    markerInstances: Array<{ eventHandlers?: Record<string, (...args: unknown[]) => void>; position?: unknown }>;
   };
 
 describe('LocationPickerMap', () => {
@@ -111,7 +111,7 @@ describe('LocationPickerMap', () => {
     expect(handlers).toBeTruthy();
 
     act(() => {
-      handlers?.click?.({ latlng: { lat: 43.1234567, lng: -1.9876543 } } as any);
+      handlers?.click?.({ latlng: { lat: 43.1234567, lng: -1.9876543 } } as unknown);
     });
 
     expect(onChange).toHaveBeenCalledWith({ lat: 43.123457, lng: -1.987654 });
@@ -144,11 +144,11 @@ describe('LocationPickerMap', () => {
     expect(instance).toBeDefined();
 
     act(() => {
-      const leafletModule: any = jest.requireMock('leaflet');
+      const leafletModule: unknown = jest.requireMock('leaflet');
       const MarkerClass = leafletModule.default?.Marker || leafletModule.Marker;
       const target = new MarkerClass();
       target.getLatLng = () => ({ lat: 44.1234567, lng: -1.6543219 });
-      instance?.eventHandlers?.dragend?.({ target } as any);
+      instance?.eventHandlers?.dragend?.({ target } as unknown);
     });
 
     expect(onChange).toHaveBeenCalledWith({ lat: 44.123457, lng: -1.654322 });

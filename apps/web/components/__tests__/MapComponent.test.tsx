@@ -17,7 +17,7 @@ jest.mock('leaflet', () => {
 
   class FakeIconDefault {}
   Object.assign(FakeIconDefault.prototype, { _getIconUrl: jest.fn() });
-  (FakeIconDefault as any).mergeOptions = jest.fn();
+  (FakeIconDefault as unknown).mergeOptions = jest.fn();
 
   return {
     __esModule: true,
@@ -41,17 +41,17 @@ jest.mock('react-leaflet', () => {
     flyTo: jest.fn(),
     getZoom: jest.fn(() => 12),
   };
-  const mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null } = {
+  const mapEventsHandlers: { current: Record<string, (...args: unknown[]) => void> | null } = {
     current: null,
   };
-  const markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }> = [];
-  const MapContainer = ({ children, center, zoom }: any) => (
+  const markerInstances: Array<{ eventHandlers?: Record<string, (...args: unknown[]) => void>; position?: unknown }> = [];
+  const MapContainer = ({ children, center, zoom }: unknown) => (
     <div data-testid="map-container" data-center={JSON.stringify(center)} data-zoom={zoom}>
       {children}
     </div>
   );
   const TileLayer = () => <div data-testid="tile-layer" />;
-  const Marker = ({ children, position, eventHandlers }: any) => {
+  const Marker = ({ children, position, eventHandlers }: unknown) => {
     markerInstances.push({ eventHandlers, position });
     return (
       <div data-testid="marker" data-position={JSON.stringify(position)}>
@@ -59,7 +59,7 @@ jest.mock('react-leaflet', () => {
       </div>
     );
   };
-  const Popup = ({ children }: any) => <div data-testid="popup">{children}</div>;
+  const Popup = ({ children }: unknown) => <div data-testid="popup">{children}</div>;
   const Circle = () => <div data-testid="circle" />;
 
   return {
@@ -70,7 +70,7 @@ jest.mock('react-leaflet', () => {
     Popup,
     Circle,
     useMap: () => mapInstance,
-    useMapEvents: (handlers: Record<string, (...args: any[]) => void>) => {
+    useMapEvents: (handlers: Record<string, (...args: unknown[]) => void>) => {
       mapEventsHandlers.current = handlers;
       return mapInstance;
     },
@@ -83,15 +83,15 @@ jest.mock('react-leaflet', () => {
 });
 
 const getReactLeafletMocks = () =>
-  (jest.requireMock('react-leaflet') as any).__mock as {
+  (jest.requireMock('react-leaflet') as unknown).__mock as {
     mapInstance: {
       flyToBounds: jest.Mock;
       setView: jest.Mock;
       flyTo: jest.Mock;
       getZoom: jest.Mock;
     };
-    mapEventsHandlers: { current: Record<string, (...args: any[]) => void> | null };
-    markerInstances: Array<{ eventHandlers?: Record<string, (...args: any[]) => void>; position?: any }>;
+    mapEventsHandlers: { current: Record<string, (...args: unknown[]) => void> | null };
+    markerInstances: Array<{ eventHandlers?: Record<string, (...args: unknown[]) => void>; position?: unknown }>;
   };
 
 describe('MapComponent', () => {

@@ -222,7 +222,7 @@ describe('Matching Cards Component', () => {
     });
     mockApiClient.listConversations.mockResolvedValue({ items: [] });
     mockApiClient.matchDecisions.mockResolvedValue({ createdConversations: [] });
-    (mockApiClient as any).getConsent = jest.fn().mockResolvedValue({ consent: null });
+    (mockApiClient as unknown as typeof mockApiClient & { getConsent: jest.Mock }).getConsent = jest.fn().mockResolvedValue({ consent: null });
   });
 
   describe('Authentication and Authorization', () => {
@@ -659,7 +659,7 @@ describe('Matching Cards Component', () => {
         [Symbol.iterator]: jest.fn(),
       };
 
-      mockUseSearchParams.mockReturnValue(mockUrlSearchParams as any);
+      mockUseSearchParams.mockReturnValue(mockUrlSearchParams as unknown as ReturnType<typeof useSearchParams>);
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
