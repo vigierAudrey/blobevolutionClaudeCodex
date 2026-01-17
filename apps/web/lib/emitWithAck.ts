@@ -1,6 +1,12 @@
-import { Socket } from 'socket.io-client';
 import { z } from 'zod';
 import { ackErrorSchema, type ErrorCode } from './socketAck';
+
+/**
+ * Minimal socket interface for emitWithAck (enables testing without Socket type assertion)
+ */
+export interface SocketEmitter {
+  emit(event: string, payload: unknown, callback: (ack: unknown) => void): void;
+}
 
 export type EmitWithAckOptions = {
   timeoutMs?: number;
@@ -18,7 +24,7 @@ export type AckResultError = {
  * - Missing/invalid ACK or timeout => throws with code CLIENT_TIMEOUT or INTERNAL_ERROR.
  */
 export async function emitWithAck<T>(
-  socket: Socket | null,
+  socket: SocketEmitter | null,
   event: string,
   payload: unknown,
   successSchema: z.ZodType<{ ok: true; data: T }>,
