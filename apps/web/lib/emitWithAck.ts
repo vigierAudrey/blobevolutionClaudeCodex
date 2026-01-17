@@ -5,7 +5,7 @@ import { ackErrorSchema, type ErrorCode } from './socketAck';
  * Minimal socket interface for emitWithAck (enables testing without Socket type assertion)
  */
 export interface SocketEmitter {
-  emit(event: string, payload: unknown, callback: (ack: unknown) => void): void;
+  emit(event: string, ...args: unknown[]): void;
 }
 
 export type EmitWithAckOptions = {
@@ -17,6 +17,30 @@ export type AckResultError = {
   message: string;
   details?: unknown;
 };
+
+/**
+ * Normalize ACK callback arguments into a single value.
+ * - 0 args => undefined
+ * - 1 arg => ackArgs[0]
+ * - >1 args => prefer first ack-like object (has ok:true/false or error), else return array
+ */
+function normalizeAck(ackArgs: unknown[]): unknown {
+  if (ackArgs.length === 0) return undefined;
+  if (ackArgs.length === 1) return ackArgs[0];
+
+  // Multiple args: try to find an ack-like object
+  for (const arg of ackArgs) {
+    if (arg !== null && typeof arg === 'object') {
+      const obj = arg as Record<string, unknown>;
+      if ('ok' in obj || 'error' in obj) {
+        return arg;
+      }
+    }
+  }
+
+  // No ack-like object found, return the array (will likely fail Zod validation)
+  return ackArgs;
+}
 
 /**
  * Emit a Socket.IO event and await a typed ACK.
@@ -36,47 +60,29 @@ export async function emitWithAck<T>(
   }
 
   const timeoutMs = opts.timeoutMs ?? 5000;
-  // Use globalThis for cross-platform timer support (DOM returns number, Node returns Timeout object)
-  type TimerId = ReturnType<typeof setTimeout>;
-
-  const safeSetTimeout =
-    typeof globalThis !== 'undefined' && typeof globalThis.setTimeout === 'function'
-      ? globalThis.setTimeout.bind(globalThis)
-      : typeof window !== 'undefined' && typeof window.setTimeout === 'function'
-        ? window.setTimeout.bind(window)
-        : null;
-
-  const safeClearTimeout = (id: TimerId) => {
-    if (typeof globalThis !== 'undefined' && typeof globalThis.clearTimeout === 'function') {
-      globalThis.clearTimeout(id);
-    }
-  };
 
   return new Promise<T>((resolve, reject) => {
-    if (!safeSetTimeout) {
-      reject({ code: 'CLIENT_TIMEOUT', message: 'Timer unavailable' } satisfies AckResultError);
-      return;
-    }
-
     let settled = false;
-    const timer = safeSetTimeout(() => {
+
+    const timer: ReturnType<typeof setTimeout> = globalThis.setTimeout(() => {
       if (settled) return;
       settled = true;
-      safeClearTimeout(timer);
       reject({ code: 'CLIENT_TIMEOUT', message: `ACK timeout after ${timeoutMs}ms` } satisfies AckResultError);
     }, timeoutMs);
 
     const finish = <V>(fn: (value: V) => void, value: V) => {
       if (settled) return;
       settled = true;
-      safeClearTimeout(timer);
+      globalThis.clearTimeout(timer);
       fn(value);
     };
 
-    socket.emit(event, payload, (ack: unknown) => {
+    socket.emit(event, payload, (...ackArgs: unknown[]) => {
       try {
+        const normalizedAck = normalizeAck(ackArgs);
+
         // First try error schema
-        const maybeError = ackErrorSchema.safeParse(ack);
+        const maybeError = ackErrorSchema.safeParse(normalizedAck);
         if (maybeError.success) {
           return finish(reject, {
             code: maybeError.data.error.code,
@@ -85,13 +91,13 @@ export async function emitWithAck<T>(
           } satisfies AckResultError);
         }
 
-        const success = successSchema.parse(ack);
+        const success = successSchema.parse(normalizedAck);
         return finish(resolve, success.data);
       } catch (err) {
         return finish(
           reject,
           {
-            code: 'CLIENT_TIMEOUT',
+            code: 'INTERNAL_ERROR',
             message: err instanceof Error ? err.message : 'Invalid ACK',
             details: err,
           } satisfies AckResultError
