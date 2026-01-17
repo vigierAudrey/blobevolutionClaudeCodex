@@ -36,8 +36,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run lint
-        run: npm run lint
+      - name: Run lint (strict mode, zero warnings)
+        run: npm run lint:strict
 
   build-and-test:
     name: Build and Test API

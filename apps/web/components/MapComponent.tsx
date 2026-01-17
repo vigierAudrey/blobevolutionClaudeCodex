@@ -4,7 +4,11 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-le
 import L from 'leaflet';
 
 // Fix pour les icônes Leaflet dans Next.js
-const defaultIconPrototype = L.Icon.Default.prototype as unknown as { _getIconUrl?: () => string };
+// Type assertion pour accéder à la propriété privée _getIconUrl de Leaflet
+interface LeafletIconPrototype {
+  _getIconUrl?: () => string;
+}
+const defaultIconPrototype = L.Icon.Default.prototype as LeafletIconPrototype;
 delete defaultIconPrototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',

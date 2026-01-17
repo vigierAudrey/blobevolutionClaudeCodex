@@ -25,7 +25,7 @@ export const ackErrorSchema = z
   .strict();
 
 export const ackSuccessSchemaOptional = <T extends z.ZodTypeAny>(dataSchema: T) => {
-  const strictDataSchema = dataSchema instanceof z.ZodObject ? (dataSchema.strict() as unknown as T) : dataSchema;
+  const strictDataSchema = dataSchema instanceof z.ZodObject ? dataSchema.strict() : dataSchema;
   return z
     .object({
       ok: z.literal(true),
@@ -35,7 +35,7 @@ export const ackSuccessSchemaOptional = <T extends z.ZodTypeAny>(dataSchema: T) 
 };
 
 export const ackSuccessSchemaRequired = <T extends z.ZodTypeAny>(dataSchema: T) => {
-  const strictDataSchema = dataSchema instanceof z.ZodObject ? (dataSchema.strict() as unknown as T) : dataSchema;
+  const strictDataSchema = dataSchema instanceof z.ZodObject ? dataSchema.strict() : dataSchema;
   return z
     .object({
       ok: z.literal(true),

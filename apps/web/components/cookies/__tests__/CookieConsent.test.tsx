@@ -24,7 +24,7 @@ const createConsentState = (overrides: Partial<MockConsent> = {}): MockConsent =
   updateConsent: jest.fn(),
   houseAdsEnabled: true,
   ...overrides,
-} as MockConsent);
+});
 
 const originalEnv = process.env;
 

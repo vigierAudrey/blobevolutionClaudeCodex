@@ -30,6 +30,9 @@ export async function emitWithAck<T>(
   }
 
   const timeoutMs = opts.timeoutMs ?? 5000;
+  // Use globalThis for cross-platform timer support (DOM returns number, Node returns Timeout object)
+  type TimerId = ReturnType<typeof setTimeout>;
+
   const safeSetTimeout =
     typeof globalThis !== 'undefined' && typeof globalThis.setTimeout === 'function'
       ? globalThis.setTimeout.bind(globalThis)
@@ -37,13 +40,9 @@ export async function emitWithAck<T>(
         ? window.setTimeout.bind(window)
         : null;
 
-  const safeClearTimeout = (id: ReturnType<typeof setTimeout>) => {
+  const safeClearTimeout = (id: TimerId) => {
     if (typeof globalThis !== 'undefined' && typeof globalThis.clearTimeout === 'function') {
       globalThis.clearTimeout(id);
-      return;
-    }
-    if (typeof window !== 'undefined' && typeof window.clearTimeout === 'function') {
-      window.clearTimeout(id as unknown as number);
     }
   };
 
@@ -57,14 +56,14 @@ export async function emitWithAck<T>(
     const timer = safeSetTimeout(() => {
       if (settled) return;
       settled = true;
-      safeClearTimeout(timer as unknown as ReturnType<typeof setTimeout>);
+      safeClearTimeout(timer);
       reject({ code: 'CLIENT_TIMEOUT', message: `ACK timeout after ${timeoutMs}ms` } satisfies AckResultError);
     }, timeoutMs);
 
     const finish = <V>(fn: (value: V) => void, value: V) => {
       if (settled) return;
       settled = true;
-      safeClearTimeout(timer as unknown as ReturnType<typeof setTimeout>);
+      safeClearTimeout(timer);
       fn(value);
     };
 
