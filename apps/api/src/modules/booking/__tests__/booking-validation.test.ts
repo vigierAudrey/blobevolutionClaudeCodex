@@ -146,12 +146,12 @@ describe('BookingService Validation', () => {
 
       await bookingService.createAvailability(testProUserId, firstAvailability);
 
-      // Create second availability (no overlap)
+      // Create second availability on different day (no overlap, complies with one-offer-per-day rule)
       const secondAvailability = {
         sport: 'surf',
         levels: ['beginner'],
-        startAt: new Date('2024-12-01T12:00:00Z'),
-        endAt: new Date('2024-12-01T14:00:00Z'),
+        startAt: new Date('2024-12-02T12:00:00Z'),
+        endAt: new Date('2024-12-02T14:00:00Z'),
         capacity: 1
       };
 

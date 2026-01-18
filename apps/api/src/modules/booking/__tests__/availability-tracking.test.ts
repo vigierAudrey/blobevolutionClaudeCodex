@@ -251,8 +251,8 @@ describe('Availability Tracking', () => {
     it('calculates stats correctly with interactions', async () => {
       const availability1 = await createAvailability();
       const availability2 = await createAvailability({
-        startAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-        endAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        startAt: new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(), // +25h (next day)
+        endAt: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(), // +26h (next day)
       });
 
       // Availability 1: 2 riders view, 1 clicks
