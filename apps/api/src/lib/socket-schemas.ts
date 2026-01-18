@@ -130,6 +130,93 @@ export const typingSchema = z.object({
   isTyping: z.boolean()
 });
 
+// ============================================================================
+// OUTBOUND SCHEMAS (Server → Client)
+// ============================================================================
+
+/**
+ * Schema for 'new-message' event payload (server → client)
+ * Validates message broadcast to conversation members
+ */
+export const newMessageOutboundSchema = z.object({
+  id: z.string().uuid(),
+  conversationId: z.string().uuid(),
+  senderId: z.string().uuid(),
+  type: z.enum(['TEXT', 'PROPOSAL']),
+  content: z.string(),
+  createdAt: z.string(), // ISO 8601 string (NOT Date object)
+  sender: z.object({
+    id: z.string().uuid(),
+    role: z.string(),
+    riderProfile: z.object({
+      displayName: z.string(),
+      photoUrl: z.string().nullable()
+    }).optional(),
+    proProfile: z.object({
+      businessName: z.string(),
+      photoUrl: z.string().nullable()
+    }).optional()
+  })
+}).strict();
+
+export type NewMessageOutbound = z.infer<typeof newMessageOutboundSchema>;
+
+/**
+ * Schema for 'user-typing' event payload (server → client)
+ * Validates typing indicator broadcast to conversation
+ */
+export const userTypingOutboundSchema = z.object({
+  userId: z.string().uuid(),
+  isTyping: z.boolean()
+}).strict();
+
+export type UserTypingOutbound = z.infer<typeof userTypingOutboundSchema>;
+
+/**
+ * Schema for 'new-match' event payload (server → client)
+ * Validates new match notification to user
+ */
+export const newMatchOutboundSchema = z.object({
+  matchId: z.string(),
+  conversationId: z.string().optional(),
+  otherUser: z.object({
+    id: z.string(),
+    displayName: z.string(),
+    photoUrl: z.string().nullable().optional()
+  })
+}).strict();
+
+export type NewMatchOutbound = z.infer<typeof newMatchOutboundSchema>;
+
+/**
+ * Schema for 'match-decision' event payload (server → client)
+ * Validates match decision notification (accept/decline)
+ */
+export const matchDecisionOutboundSchema = z.object({
+  actorUserId: z.string(),
+  decision: z.enum(['ACCEPT', 'DECLINE']),
+  mutualMatch: z.boolean(),
+  conversationId: z.string().optional()
+}).strict();
+
+export type MatchDecisionOutbound = z.infer<typeof matchDecisionOutboundSchema>;
+
+/**
+ * Schema for 'new-matching-card' event payload (server → client)
+ * Validates new matching card broadcast to all users
+ */
+export const newMatchingCardOutboundSchema = z.object({
+  sport: z.string(),
+  level: z.string(),
+  profileId: z.string()
+}).strict();
+
+export type NewMatchingCardOutbound = z.infer<typeof newMatchingCardOutboundSchema>;
+
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+
 /**
  * Codes d'erreur standardisés pour les événements WebSocket
  */
