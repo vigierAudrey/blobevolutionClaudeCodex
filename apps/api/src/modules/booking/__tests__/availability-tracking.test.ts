@@ -222,8 +222,8 @@ describe('Availability Tracking', () => {
     it('returns stats for PRO with no interactions', async () => {
       await createAvailability();
       await createAvailability({
-        startAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-        endAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        startAt: new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(), // +25h (next day)
+        endAt: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(), // +26h (next day)
       });
 
       const res = await proSession

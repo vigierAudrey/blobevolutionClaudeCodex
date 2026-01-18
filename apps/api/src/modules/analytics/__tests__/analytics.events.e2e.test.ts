@@ -27,6 +27,7 @@ describe('Analytics events endpoint', () => {
 
   afterAll(async () => {
     await cleanup();
+    await prisma.$disconnect();
   });
 
   it('rejects invalid payloads', async () => {
