@@ -13,7 +13,12 @@ import {
   sendMessageSchema,
   typingSchema,
   validateSocketPayload,
-  SocketErrorCode
+  SocketErrorCode,
+  newMessageOutboundSchema,
+  userTypingOutboundSchema,
+  newMatchOutboundSchema,
+  matchDecisionOutboundSchema,
+  newMatchingCardOutboundSchema
 } from './socket-schemas';
 import {
   getSendMessageLimiter,
@@ -428,15 +433,17 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         });
 
         // Envoyer le message à tous les membres de la conversation via Socket.io
-        io?.to(`conversation:${conversationId}`).emit('new-message', {
+        // ✅ P1: Validate outbound payload with Zod before emit
+        const newMessagePayload = newMessageOutboundSchema.parse({
           id: message.id,
           conversationId: message.conversationId,
           senderId: message.senderId,
           type: message.type,
           content: message.content,
-          createdAt: message.createdAt,
+          createdAt: message.createdAt.toISOString(), // Convert Date to ISO string
           sender: message.sender
         });
+        io?.to(`conversation:${conversationId}`).emit('new-message', newMessagePayload);
 
         // Envoyer push notification aux membres offline/autres devices
         const senderName = message.sender.role === 'PRO'
@@ -516,10 +523,12 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           return;
         }
 
-        socket.to(`conversation:${conversationId}`).emit('user-typing', {
+        // ✅ P1: Validate outbound payload with Zod before emit
+        const userTypingPayload = userTypingOutboundSchema.parse({
           userId,
           isTyping
         });
+        socket.to(`conversation:${conversationId}`).emit('user-typing', userTypingPayload);
       } catch (error) {
         // Silencieux (typing non critique)
       }
@@ -587,7 +596,9 @@ export function notifyNewMatch(userId: string, matchData: {
     return;
   }
 
-  io.to(`user:${userId}`).emit('new-match', matchData);
+  // ✅ P1: Validate outbound payload with Zod before emit
+  const newMatchPayload = newMatchOutboundSchema.parse(matchData);
+  io.to(`user:${userId}`).emit('new-match', newMatchPayload);
   console.log(`[WebSocket] New match notification sent to user ${userId}`);
 }
 
@@ -608,11 +619,13 @@ export function notifyNewMatchingCard(criteria: {
   }
 
   // Broadcast à tous les utilisateurs connectés (ils filtreront côté client)
-  io.emit('new-matching-card', {
+  // ✅ P1: Validate outbound payload with Zod before emit
+  const newMatchingCardPayload = newMatchingCardOutboundSchema.parse({
     sport: criteria.sport,
     level: criteria.level,
     profileId: criteria.profileId
   });
+  io.emit('new-matching-card', newMatchingCardPayload);
 
   console.log(`[WebSocket] New matching card broadcasted: ${criteria.profileId}`);
 }
@@ -631,6 +644,8 @@ export function notifyMatchDecision(targetUserId: string, decision: {
     return;
   }
 
-  io.to(`user:${targetUserId}`).emit('match-decision', decision);
+  // ✅ P1: Validate outbound payload with Zod before emit
+  const matchDecisionPayload = matchDecisionOutboundSchema.parse(decision);
+  io.to(`user:${targetUserId}`).emit('match-decision', matchDecisionPayload);
   console.log(`[WebSocket] Match decision sent to user ${targetUserId}: ${decision.decision}`);
 }
