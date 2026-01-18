@@ -509,13 +509,13 @@ if (process.env.NODE_ENV !== 'test') {
 
   // Load 2FA Lua script into Redis for EVALSHA optimization
   // This improves 2FA verification performance by ~30%
-  import('./services/two-factor.service').then(({ loadLuaScript }) => {
-    loadLuaScript().catch((error) => {
+  import('./services/two-factor.service.js').then(({ loadLuaScript }) => {
+    loadLuaScript().catch((error: unknown) => {
       secureLogger.error('STARTUP_LUA_SCRIPT_LOAD_FAILED', {
         error: error instanceof Error ? error.message : String(error)
       });
     });
-  }).catch((error) => {
+  }).catch((error: unknown) => {
     secureLogger.error('STARTUP_LUA_SCRIPT_IMPORT_FAILED', {
       error: error instanceof Error ? error.message : String(error)
     });
