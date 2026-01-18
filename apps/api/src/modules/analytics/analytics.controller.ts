@@ -127,3 +127,14 @@ analyticsRouter.post('/events', analyticsRateLimit, async (req: Request, res: Re
 
   return res.status(202).json({ ok: true });
 });
+
+/**
+ * Clear rate limit map (for testing only)
+ * This allows tests to reset rate limiting state between test cases
+ */
+export function clearAnalyticsRateLimit(): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('clearAnalyticsRateLimit can only be called in test environment');
+  }
+  rateMap.clear();
+}

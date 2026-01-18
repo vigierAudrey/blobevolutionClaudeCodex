@@ -160,28 +160,38 @@ const persistEvent = async (input: PersistEventInput) => {
         },
       });
 
-      await tx.analyticsDailyAgg.upsert({
+      // Find or create daily aggregate
+      // Note: We use findFirst + upsert pattern because Prisma doesn't handle null values well
+      // in composite unique constraints where clauses
+      const existingAgg = await tx.analyticsDailyAgg.findFirst({
         where: {
-          day_actorType_eventType_contentId_sport_zoneLarge: {
-            day,
-            actorType: input.actorType,
-            eventType: input.eventType,
-            contentId: input.contentId ?? null,
-            sport: input.sport ?? null,
-            zoneLarge: input.zoneLarge ?? null,
-          },
-        },
-        update: { count: { increment: 1 }, updatedAt: new Date() },
-        create: {
           day,
           actorType: input.actorType,
           eventType: input.eventType,
           contentId: input.contentId ?? null,
           sport: input.sport ?? null,
           zoneLarge: input.zoneLarge ?? null,
-          count: 1,
         },
       });
+
+      if (existingAgg) {
+        await tx.analyticsDailyAgg.update({
+          where: { id: existingAgg.id },
+          data: { count: { increment: 1 }, updatedAt: new Date() },
+        });
+      } else {
+        await tx.analyticsDailyAgg.create({
+          data: {
+            day,
+            actorType: input.actorType,
+            eventType: input.eventType,
+            contentId: input.contentId ?? null,
+            sport: input.sport ?? null,
+            zoneLarge: input.zoneLarge ?? null,
+            count: 1,
+          },
+        });
+      }
     });
 
     return { stored: true, deduped: false };

@@ -1,9 +1,14 @@
 import request from 'supertest';
 import { clientPrisma as prisma } from '@blobinfini/database';
-import { createApp } from '../../../index';
 
+// IMPORTANT: Set env vars BEFORE importing createApp
+// so that analytics.controller constants are initialized with test values
 process.env.ANALYTICS_RATE_LIMIT_MAX = '2';
 process.env.ANALYTICS_RATE_LIMIT_WINDOW_MS = '60000';
+
+import { createApp } from '../../../index';
+import { clearAnalyticsRateLimit } from '../analytics.controller';
+
 const app = createApp();
 
 const CONSENT_HASH = 'a3f0b7c1d9e24b2c8d1f3a5b7c9d1e2f3a5b7c9d1e2f3a5b7c9d1e2f3a5b7c9d';
@@ -23,6 +28,10 @@ describe('Analytics events endpoint', () => {
   beforeAll(async () => {
     ensureSecrets();
     await cleanup();
+  });
+
+  beforeEach(() => {
+    clearAnalyticsRateLimit();
   });
 
   afterAll(async () => {
@@ -86,8 +95,16 @@ describe('Analytics events endpoint', () => {
   });
 
   it('enforces rate limits', async () => {
-    await request(app)
+    // Use agent to maintain consistent connection and headers
+    const agent = request.agent(app);
+    const headers = {
+      'x-forwarded-for': '192.168.1.100',
+      'user-agent': 'test-agent'
+    };
+
+    await agent
       .post('/analytics/events')
+      .set(headers)
       .send({
         eventType: 'BLOBOSPHERE_VIEW',
         consentHash: CONSENT_HASH,
@@ -95,8 +112,9 @@ describe('Analytics events endpoint', () => {
       })
       .expect(202);
 
-    await request(app)
+    await agent
       .post('/analytics/events')
+      .set(headers)
       .send({
         eventType: 'BLOBOSPHERE_VIEW',
         consentHash: CONSENT_HASH,
@@ -104,8 +122,9 @@ describe('Analytics events endpoint', () => {
       })
       .expect(202);
 
-    const res = await request(app)
+    const res = await agent
       .post('/analytics/events')
+      .set(headers)
       .send({
         eventType: 'BLOBOSPHERE_VIEW',
         consentHash: CONSENT_HASH,
