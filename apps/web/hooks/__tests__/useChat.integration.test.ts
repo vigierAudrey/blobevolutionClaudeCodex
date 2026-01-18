@@ -36,6 +36,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useFakeTimers();
     onNewMessageCallback = null;
 
     mockEmit = jest.fn();
@@ -62,6 +63,10 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
     });
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   /**
    * Test critique: WS timeout → HTTP 200 → Server push via WS
    * Vérifie que reconciliation par clientMsgId évite doublons
@@ -84,21 +89,15 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
       joinAckCallback?.({ ok: true, data: { conversationId } });
     });
 
-    // Setup: WS times out
+    // Setup: WS times out (don't call callback to simulate network timeout)
     const testClientMsgId = 'test-uuid-12345';
     mockEmit.mockImplementation((event, payload, callback) => {
       if (event === 'send-message') {
         // Capture clientMsgId from payload
         expect(payload.clientMsgId).toBe(testClientMsgId);
 
-        // Simulate WS timeout
-        callback?.({
-          ok: false,
-          error: {
-            code: 'CLIENT_TIMEOUT',
-            message: 'WebSocket timeout'
-          }
-        });
+        // Simulate WS timeout: DON'T call callback (emitWithAck will timeout after 5s)
+        // Callback intentionally not called to trigger CLIENT_TIMEOUT in emitWithAck
       }
       return mockSocket;
     });
@@ -118,6 +117,11 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
     let sendPromise: Promise<any>;
     act(() => {
       sendPromise = result.current.sendMessage('Test message', 'TEXT', undefined, testClientMsgId);
+    });
+
+    // Advance timers to trigger WS timeout (default 5000ms)
+    act(() => {
+      jest.advanceTimersByTime(5000);
     });
 
     // HTTP fallback should succeed with created:false

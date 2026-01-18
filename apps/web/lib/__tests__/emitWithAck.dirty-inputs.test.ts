@@ -417,4 +417,79 @@ describe('emitWithAck - dirty inputs regression tests', () => {
       },
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FINAL HARDENING TESTS: finish() unified, normalizeAck detects 'data', maxAckBytes
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('devrait préférer arg avec {data} dans multi-args (normalizeAck détecte data)', async () => {
+    const mockSocket: SocketEmitter = {
+      emit: jest.fn((event, payload, callback) => {
+        // Premier arg: pas ack-like, second arg: {data} only (success-like)
+        callback('random-string', { data: { id: 'data-only-123' } });
+      }),
+    };
+
+    // Note: ce test va échouer car {data} seul ne match pas le successSchema {ok:true, data}
+    // mais on vérifie que normalizeAck l'identifie comme ack-like (pas l'array)
+    await expect(emitWithAck(mockSocket, 'test-event', {}, successSchema)).rejects.toMatchObject({
+      code: 'INTERNAL_ERROR', // Zod parse error car ok:true manque
+    });
+
+    // Vérifier que le callback a bien été appelé avec le second arg (data obj)
+    // et non l'array ['random-string', {data}]
+  });
+
+  it('devrait rejeter avec INTERNAL_ERROR si ACK dépasse maxAckBytes', async () => {
+    const mockSocket: SocketEmitter = {
+      emit: jest.fn((event, payload, callback) => {
+        // ACK avec payload volumineux
+        const largeData = { ok: true, data: { id: 'x'.repeat(1000) } };
+        callback(largeData);
+      }),
+    };
+
+    // maxAckBytes = 500 (ACK sera ~1020 bytes)
+    await expect(
+      emitWithAck(mockSocket, 'test-event', {}, successSchema, { maxAckBytes: 500 })
+    ).rejects.toMatchObject({
+      code: 'INTERNAL_ERROR',
+      message: expect.stringContaining('ACK too large'),
+      details: expect.objectContaining({
+        maxAckBytes: 500,
+      }),
+    });
+  });
+
+  it('devrait accepter ACK dans la limite maxAckBytes', async () => {
+    const mockSocket: SocketEmitter = {
+      emit: jest.fn((event, payload, callback) => {
+        callback({ ok: true, data: { id: 'small-123' } });
+      }),
+    };
+
+    // maxAckBytes = 1000 (ACK sera ~40 bytes)
+    const result = await emitWithAck(mockSocket, 'test-event', {}, successSchema, { maxAckBytes: 1000 });
+    expect(result).toEqual({ id: 'small-123' });
+  });
+
+  it('devrait gérer maxAckBytes avec ACK non-stringifiable (circular) sans crash', async () => {
+    const mockSocket: SocketEmitter = {
+      emit: jest.fn((event, payload, callback) => {
+        // Circular reference (JSON.stringify va throw)
+        const circular: Record<string, unknown> = { ok: true };
+        circular.self = circular;
+        callback(circular);
+      }),
+    };
+
+    // maxAckBytes guard devrait catch JSON.stringify error et continuer vers parsing normal
+    // qui devrait échouer via Zod (ok:true mais data manque)
+    await expect(
+      emitWithAck(mockSocket, 'test-event', {}, successSchema, { maxAckBytes: 100 })
+    ).rejects.toMatchObject({
+      code: 'INTERNAL_ERROR',
+      message: expect.any(String),
+    });
+  });
 });

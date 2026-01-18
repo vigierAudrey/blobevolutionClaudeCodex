@@ -10,6 +10,12 @@ export interface SocketEmitter {
 
 export type EmitWithAckOptions = {
   timeoutMs?: number;
+  /**
+   * Maximum ACK payload size in bytes (approximate, via JSON.stringify).
+   * If ACK exceeds this, reject with INTERNAL_ERROR.
+   * Default: no limit.
+   */
+  maxAckBytes?: number;
 };
 
 export type AckResultError = {
@@ -90,7 +96,7 @@ function toSafeDetails(err: unknown): unknown {
  * Normalize ACK callback arguments into a single value.
  * - 0 args => undefined
  * - 1 arg => ackArgs[0]
- * - >1 args => prefer first ack-like object (has ok:true/false or error), else return array
+ * - >1 args => prefer first ack-like object (has 'ok', 'error', or 'data'), else return array
  *
  * Ultra-safe: uses Object.getOwnPropertyDescriptor to detect ack-like objects,
  * and validates that accessing properties doesn't throw before returning.
@@ -103,21 +109,23 @@ function normalizeAck(ackArgs: unknown[]): unknown {
   for (const arg of ackArgs) {
     if (arg !== null && typeof arg === 'object') {
       try {
-        // Safe detection: check if 'ok' or 'error' property exists without triggering getters
+        // Safe detection: check if 'ok', 'error', or 'data' property exists without triggering getters
         const okDesc = Object.getOwnPropertyDescriptor(arg, 'ok');
         const errorDesc = Object.getOwnPropertyDescriptor(arg, 'error');
+        const dataDesc = Object.getOwnPropertyDescriptor(arg, 'data');
 
-        // If either descriptor exists (value or getter), verify access doesn't throw
-        if (okDesc !== undefined || errorDesc !== undefined) {
-          // Try to access the property to ensure getter doesn't throw
+        // If any descriptor exists (value or getter), verify access doesn't throw
+        if (okDesc !== undefined || errorDesc !== undefined || dataDesc !== undefined) {
+          // Try to access the properties to ensure getters don't throw
           const obj = arg as Record<string, unknown>;
           if (okDesc !== undefined) {
-            // Access ok property (will trigger getter if present)
             void obj.ok;
           }
           if (errorDesc !== undefined) {
-            // Access error property (will trigger getter if present)
             void obj.error;
+          }
+          if (dataDesc !== undefined) {
+            void obj.data;
           }
           // If we reach here, accessing properties didn't throw
           return arg;
@@ -152,15 +160,10 @@ export async function emitWithAck<T>(
   }
 
   const timeoutMs = opts.timeoutMs ?? 5000;
+  const maxAckBytes = opts.maxAckBytes;
 
   return new Promise<T>((resolve, reject) => {
     let settled = false;
-
-    const timer: ReturnType<typeof setTimeout> = globalThis.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject({ code: 'CLIENT_TIMEOUT', message: `ACK timeout after ${timeoutMs}ms` } satisfies AckResultError);
-    }, timeoutMs);
 
     const finish = <V>(fn: (value: V) => void, value: V) => {
       if (settled) return;
@@ -169,11 +172,36 @@ export async function emitWithAck<T>(
       fn(value);
     };
 
+    // Timeout handler: uses finish() to ensure cleanup
+    const timer: ReturnType<typeof setTimeout> = globalThis.setTimeout(() => {
+      finish(reject, {
+        code: 'CLIENT_TIMEOUT',
+        message: `ACK timeout after ${timeoutMs}ms`,
+      } satisfies AckResultError);
+    }, timeoutMs);
+
     // Wrap emit() in try/catch: emit itself can throw (e.g., transport error)
     try {
       socket.emit(event, payload, (...ackArgs: unknown[]) => {
         try {
           const normalizedAck = normalizeAck(ackArgs);
+
+          // Guard: check ACK size if maxAckBytes is set
+          if (maxAckBytes !== undefined) {
+            try {
+              const ackSize = JSON.stringify(normalizedAck).length;
+              if (ackSize > maxAckBytes) {
+                return finish(reject, {
+                  code: 'INTERNAL_ERROR',
+                  message: `ACK too large: ${ackSize} bytes (max: ${maxAckBytes})`,
+                  details: { ackSize, maxAckBytes },
+                } satisfies AckResultError);
+              }
+            } catch {
+              // If JSON.stringify fails (circular ref, etc.), continue to normal parsing
+              // which will catch the issue via Zod or toSafeDetails
+            }
+          }
 
           // First try error schema
           const maybeError = ackErrorSchema.safeParse(normalizedAck);
