@@ -24,7 +24,6 @@ Cet audit de sécurité ciblé sur l'isolation des rôles a identifié **4 vuln�
 
 ### Phase 1 : Reconnaissance (30 min)
 - Lecture des documents de référence :
-  - `docs/audits/security-audit-2025-10.md` (Score: 95/100, octobre 2025)
   - `ROADMAP.md` lignes 50-219 (Sécurité Production-Ready)
   - `/ai/checklists/securite_auth.md` et `/ai/checklists/rgpd.md`
 - Analyse des tests existants : `apps/api/src/modules/pro/__tests__/pro-security.e2e.test.ts`

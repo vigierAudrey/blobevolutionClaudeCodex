@@ -47,10 +47,13 @@ Ces fichiers sont à la racine pour une visibilité maximale :
 - Checklist sécurité avant déploiement
 
 **Audits de sécurité** (dossier `/audits`) :
-- [security-audit-2025-10.md](audits/security-audit-2025-10.md) - Audit complet sécurité (Oct 2025)
-- [security-fixes-2025-11.md](audits/security-fixes-2025-11.md) - Correctifs appliqués
-- [api-client-audit-2025-11.md](audits/api-client-audit-2025-11.md) - Audit cohérence API client
-- [vercel-build-fixes-2025-11.md](audits/vercel-build-fixes-2025-11.md) - Correctifs build Vercel
+- [security-audit-pro-profile-2025-12.md](audits/security-audit-pro-profile-2025-12.md) - Audit sécurité page profil PRO (Déc 2025)
+- [pro-profile-security-patch-2025-12.txt](audits/pro-profile-security-patch-2025-12.txt) - Patch correctifs profil PRO (Déc 2025)
+- [ACTIONS_URGENTES_PRO_PROFILE.sh](audits/ACTIONS_URGENTES_PRO_PROFILE.sh) - Script d'actions urgentes (Déc 2025)
+
+**Synthèses d'audit récentes** (racine du repo) :
+- [AUDIT_SUMMARY_2025-12-08.md](../AUDIT_SUMMARY_2025-12-08.md) - Audit isolation des rôles (Déc 2025)
+- [SECURITY_EXECUTIVE_SUMMARY_2025-12-08.md](../SECURITY_EXECUTIVE_SUMMARY_2025-12-08.md) - Résumé exécutif sécurité (Déc 2025)
 
 ---
 
@@ -131,10 +134,9 @@ docs/
 │   ├── blobosphere.md                 # Guide Blobosphère + RGPD
 │   ├── analytics-definitions.md       # Definitions KPIs analytics
 │   └── audits/
-│       ├── security-audit-2025-10.md  # Audit sécurité complet
-│       ├── security-fixes-2025-11.md  # Correctifs appliqués
-│       ├── api-client-audit-2025-11.md
-│       └── vercel-build-fixes-2025-11.md
+│       ├── security-audit-pro-profile-2025-12.md  # Audit sécurité profil PRO
+│       ├── pro-profile-security-patch-2025-12.txt # Patch correctifs profil PRO
+│       └── ACTIONS_URGENTES_PRO_PROFILE.sh        # Script actions urgentes
 │
 ├── 🚀 Déploiement & Infra
 │   ├── deployment.md                  # Déploiement production
@@ -163,7 +165,7 @@ docs/
 1. **Setup initial** → [README.md](../README.md)
 2. **Architecture** → [claude.md](../claude.md) sections "Architecture Technique" et "Patterns de Code"
 3. **Tests** → [testing.md](testing.md)
-4. **Sécurité** → [SECURITY.md](../SECURITY.md) + [audits/security-audit-2025-10.md](audits/security-audit-2025-10.md)
+4. **Sécurité** → [SECURITY.md](../SECURITY.md) + [AUDIT_SUMMARY_2025-12-08.md](../AUDIT_SUMMARY_2025-12-08.md) + [audits/security-audit-pro-profile-2025-12.md](audits/security-audit-pro-profile-2025-12.md)
 
 ### Pour les IA (Codex, Claude Code)
 
@@ -216,7 +218,7 @@ docs/
 ### Nomenclature fichiers
 
 - **kebab-case** : `business-model.md`, `adsense-deployment.md`
-- **Dates dans audits** : `security-audit-2025-10.md` (format YYYY-MM)
+- **Dates dans audits** : `security-audit-pro-profile-2025-12.md` (format YYYY-MM)
 - **Préfixes clairs** : `adsense-`, `api-`, `security-`
 
 ### Structure documents

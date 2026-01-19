@@ -2,6 +2,8 @@
 
 Ce document trace la réorganisation complète de la documentation projet effectuée le 07/11/2025.
 
+**Mise à jour (2025-01-17)** : les audits 2025-10/11 ont été supprimés lors du nettoyage. Les exemples ci-dessous reflètent les audits actifs.
+
 ## 🎯 Objectif
 
 Clarifier la structure documentaire pour :
@@ -69,11 +71,10 @@ Clarifier la structure documentaire pour :
 
 🔒 Sécurité & RGPD
 📄 blobosphere.md                 → 🆕 Guide + focus RGPD renforcé
-📁 audits/                        → 🆕 Dossier audits archivés
-  ├── security-audit-2025-10.md   → ⬅️ READMESECURITY.md
-  ├── security-fixes-2025-11.md   → ⬅️ SECURITY_FIXES.md
-  ├── api-client-audit-2025-11.md → ⬅️ API_CLIENT_AUDIT.md
-  └── vercel-build-fixes-2025-11.md → ⬅️ VERCEL_BUILD_FIXES.md
+📁 audits/                        → 🆕 Dossier audits actifs
+  ├── security-audit-pro-profile-2025-12.md
+  ├── pro-profile-security-patch-2025-12.txt
+  └── ACTIONS_URGENTES_PRO_PROFILE.sh
 
 🚀 Déploiement & Infra
 📄 deployment.md                  → ⬅️ DEPLOYMENT.md
@@ -171,12 +172,11 @@ MONITORING_GRATUIT.md → docs/monitoring.md
 - `ADSENSE_READY_TO_DEPLOY.md` → Fusionné avec `adsense-deployment.md`
 - `ROADMAP_ADMIN.md` → Fusionné avec `ROADMAP.md`
 
-### 3️⃣ Archiver audits → /docs/audits
+### 3️⃣ Audits récents → /docs/audits
 ```bash
-READMESECURITY.md → docs/audits/security-audit-2025-10.md
-API_CLIENT_AUDIT.md → docs/audits/api-client-audit-2025-11.md
-VERCEL_BUILD_FIXES.md → docs/audits/vercel-build-fixes-2025-11.md
-SECURITY_FIXES.md → docs/audits/security-fixes-2025-11.md
+docs/audits/security-audit-pro-profile-2025-12.md
+docs/audits/pro-profile-security-patch-2025-12.txt
+docs/audits/ACTIONS_URGENTES_PRO_PROFILE.sh
 ```
 
 ### 4️⃣ Supprimer fichiers obsolètes
@@ -223,7 +223,7 @@ SECURITY_FIXES.md → docs/audits/security-fixes-2025-11.md
 
 ### Nomenclature
 - **kebab-case** : `business-model.md`, `adsense-deployment.md`
-- **Dates dans audits** : `security-audit-2025-10.md` (format YYYY-MM)
+- **Dates dans audits** : `security-audit-pro-profile-2025-12.md` (format YYYY-MM)
 - **Préfixes clairs** : `adsense-`, `api-`, `security-`
 
 ### Organisation
