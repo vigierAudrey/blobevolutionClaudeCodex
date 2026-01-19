@@ -10,7 +10,7 @@
     "lint": "next lint",
     "lint:strict": "next lint --max-warnings=0",
     "type-check": "tsc -p tsconfig.typecheck.json --noEmit",
-    "test": "jest",
+    "test": "jest --maxWorkers=2",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "storybook": "storybook dev -p 6006",
