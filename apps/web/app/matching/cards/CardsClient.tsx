@@ -319,6 +319,7 @@ export function CardsClient() {
   const activeTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   useEffect(() => {
+    const activeTimeouts = activeTimeoutsRef.current;
     const t = setInterval(() => {
       void flushDecisions();
     }, 1500);
@@ -330,8 +331,8 @@ export function CardsClient() {
       clearInterval(t);
       document.removeEventListener('visibilitychange', onHide);
       // ✅ Cleanup all pending animation timeouts on unmount
-      activeTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
-      activeTimeoutsRef.current.clear();
+      activeTimeouts.forEach(timeout => clearTimeout(timeout));
+      activeTimeouts.clear();
     };
   }, [flushDecisions]);
 
