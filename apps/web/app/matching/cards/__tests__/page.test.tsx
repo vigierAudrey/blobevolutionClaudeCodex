@@ -157,7 +157,6 @@ describe('Matching Cards Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.clearAllTimers();
     jest.useRealTimers();
 
     // Setup router mock

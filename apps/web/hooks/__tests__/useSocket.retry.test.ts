@@ -21,7 +21,6 @@ describe('useSocket retry logic', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.clearAllTimers();
     jest.useRealTimers();
 
     // Mock socket instance
