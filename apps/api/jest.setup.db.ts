@@ -12,6 +12,29 @@ beforeAll(async () => {
   if (dbSetupDone) return;
 
   try {
+    // SECURITY GUARD: Verify test environment before db:push
+    const APP_ENV = process.env.APP_ENV;
+    const CI_PROD = process.env.CI_PROD;
+    const NODE_ENV = process.env.NODE_ENV;
+
+    // Hard deny if production environment
+    if (APP_ENV === 'production' || CI_PROD === 'true') {
+      throw new Error(
+        '❌ BLOCKED: Cannot run db:push in production context.\n' +
+        `   APP_ENV=${APP_ENV}, CI_PROD=${CI_PROD}\n` +
+        '   This is a CRITICAL security violation.'
+      );
+    }
+
+    // Verify test context
+    if (NODE_ENV !== 'test' && APP_ENV !== 'test') {
+      throw new Error(
+        '❌ BLOCKED: db:push requires test environment.\n' +
+        `   Current NODE_ENV=${NODE_ENV}, APP_ENV=${APP_ENV}\n` +
+        '   Set NODE_ENV=test or APP_ENV=test to proceed.'
+      );
+    }
+
     // Push le schéma Prisma dans la base de test
     console.log('⏳ Setting up test database schema...');
     // Générer le client Prisma
@@ -19,14 +42,16 @@ beforeAll(async () => {
       stdio: 'inherit',
       cwd: repoRoot
     });
-    // Pusher le schéma vers la DB de test
+    // Pusher le schéma vers la DB de test (wrapper will perform additional checks)
     execSync('npm run db:push --workspace @blobinfini/database', {
       stdio: 'inherit',
       cwd: repoRoot,
       env: {
         ...process.env,
         DATABASE_URL: process.env.DATABASE_URL,
-        SHADOW_DATABASE_URL: process.env.SHADOW_DATABASE_URL
+        SHADOW_DATABASE_URL: process.env.SHADOW_DATABASE_URL,
+        ALLOW_ACCEPT_DATA_LOSS: 'true', // Explicit unlock for test setup
+        NODE_ENV: 'test' // Ensure test context
       }
     });
     console.log('✅ Database schema ready');

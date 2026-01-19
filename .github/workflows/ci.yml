@@ -13,7 +13,51 @@ env:
   NODE_VERSION: '20'
 
 jobs:
+  security-guard:
+    name: Security Guard - DB Push Protection
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify ALLOW_ACCEPT_DATA_LOSS is not set in CI
+        run: |
+          echo "🔒 Checking CI environment for forbidden flags..."
+
+          # Hard deny if ALLOW_ACCEPT_DATA_LOSS is set to true
+          if [ "$ALLOW_ACCEPT_DATA_LOSS" = "true" ]; then
+            echo "❌ CRITICAL SECURITY VIOLATION DETECTED!"
+            echo "   ALLOW_ACCEPT_DATA_LOSS is set to 'true' in CI environment."
+            echo ""
+            echo "   This flag enables 'prisma db push --accept-data-loss' which can"
+            echo "   result in irreversible data loss in production databases."
+            echo ""
+            echo "   IMMEDIATE ACTION REQUIRED:"
+            echo "   - Remove ALLOW_ACCEPT_DATA_LOSS from workflow env vars"
+            echo "   - Remove ALLOW_ACCEPT_DATA_LOSS from GitHub secrets"
+            echo "   - Use 'prisma migrate deploy' for production deployments"
+            echo ""
+            exit 1
+          fi
+
+          # Check workflow files for accidental ALLOW_ACCEPT_DATA_LOSS usage
+          if grep -r "ALLOW_ACCEPT_DATA_LOSS.*true" .github/workflows/*.yml 2>/dev/null; then
+            echo "❌ SECURITY VIOLATION: Found ALLOW_ACCEPT_DATA_LOSS=true in workflow files!"
+            echo ""
+            echo "   Detected in:"
+            grep -rn "ALLOW_ACCEPT_DATA_LOSS.*true" .github/workflows/*.yml || true
+            echo ""
+            echo "   This flag must NEVER be set in CI workflows."
+            echo "   It is only permitted in local test environments."
+            echo ""
+            exit 1
+          fi
+
+          echo "✅ Security check passed: No forbidden flags detected."
+          echo "   ALLOW_ACCEPT_DATA_LOSS: ${ALLOW_ACCEPT_DATA_LOSS:-not set}"
+
   lint:
+    needs: security-guard
     name: Lint
     runs-on: ubuntu-22.04
     steps:
