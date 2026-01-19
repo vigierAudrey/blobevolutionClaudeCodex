@@ -21,6 +21,8 @@ describe('useSocket retry logic', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.clearAllTimers();
+    jest.useRealTimers();
 
     // Mock socket instance
     mockSocket = {
@@ -39,6 +41,11 @@ describe('useSocket retry logic', () => {
 
     (socketLib.getSocket as jest.Mock).mockReturnValue(mockSocket);
     (socketLib.reconnectSocketWithNewToken as jest.Mock).mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
   });
 
   it('should only attempt token refresh once on repeated auth errors', async () => {

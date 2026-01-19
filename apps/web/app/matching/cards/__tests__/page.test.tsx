@@ -2,27 +2,13 @@ import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { TextEncoder, TextDecoder } from 'util';
-import { webcrypto } from 'crypto';
 import { apiClient } from '../../../../lib/apiClient';
 import Page from '../page';
 
 jest.setTimeout(10000);
 
-if (!globalThis.TextEncoder) {
-  globalThis.TextEncoder = TextEncoder;
-}
-
-if (!globalThis.TextDecoder) {
-  globalThis.TextDecoder = TextDecoder as typeof globalThis.TextDecoder;
-}
-
-if (!globalThis.crypto || !globalThis.crypto.subtle) {
-  Object.defineProperty(globalThis, 'crypto', {
-    value: webcrypto as Crypto,
-    configurable: true,
-  });
-}
+// ✅ Polyfills (TextEncoder, TextDecoder, crypto) are already set up in jest.setup.js
+// Removed duplicate setup to prevent Jest worker conflicts
 
 // Mock modules
 jest.mock('next/navigation');
@@ -171,6 +157,7 @@ describe('Matching Cards Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.clearAllTimers();
     jest.useRealTimers();
 
     // Setup router mock
@@ -223,6 +210,11 @@ describe('Matching Cards Component', () => {
     mockApiClient.listConversations.mockResolvedValue({ items: [] });
     mockApiClient.matchDecisions.mockResolvedValue({ createdConversations: [] });
     (mockApiClient as unknown as typeof mockApiClient & { getConsent: jest.Mock }).getConsent = jest.fn().mockResolvedValue({ consent: null });
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
   });
 
   describe('Authentication and Authorization', () => {
@@ -547,7 +539,6 @@ describe('Matching Cards Component', () => {
       });
 
       expect(mockPush).toHaveBeenCalledWith('/messages/conv-123');
-      jest.useRealTimers();
     });
   });
 
