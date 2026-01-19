@@ -146,7 +146,7 @@ jobs:
         run: npm ci
 
       - name: Run web tests
-        run: npm run test --workspace @blobinfini/web
+        run: npm run test --workspace @blobinfini/web -- --detectOpenHandles
 
   contracts:
     name: API Contracts
