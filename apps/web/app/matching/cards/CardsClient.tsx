@@ -273,6 +273,7 @@ export function CardsClient() {
     setAnimDir(decision === 'ACCEPT' ? 'right' : 'left');
 
     const timeout = setTimeout(() => {
+      activeTimeoutsRef.current.delete(timeout);
       setAnimating(false);
       setAnimDir(null);
       setCandidates((prev) => prev.slice(1));
@@ -282,6 +283,7 @@ export function CardsClient() {
         void flushDecisions();
       }
     }, 200);
+    activeTimeoutsRef.current.add(timeout);
 
     const newDecision = { targetProfileId, decision, ts: Date.now() };
     mutateDecisionQueue((queue) => queue.concat(newDecision));
@@ -313,6 +315,9 @@ export function CardsClient() {
     }
   };
 
+  // ✅ Track all active timeouts for cleanup on unmount
+  const activeTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
   useEffect(() => {
     const t = setInterval(() => {
       void flushDecisions();
@@ -324,6 +329,9 @@ export function CardsClient() {
     return () => {
       clearInterval(t);
       document.removeEventListener('visibilitychange', onHide);
+      // ✅ Cleanup all pending animation timeouts on unmount
+      activeTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      activeTimeoutsRef.current.clear();
     };
   }, [flushDecisions]);
 
@@ -336,7 +344,13 @@ export function CardsClient() {
   useEffect(() => {
     if (!lastAction) return;
     const autoHide = setTimeout(() => setLastAction(null), 5000);
-    return () => clearTimeout(autoHide);
+    return () => {
+      clearTimeout(autoHide);
+      // ✅ Cleanup pending animation timeout to prevent Jest worker leak
+      if (lastAction.timeout) {
+        clearTimeout(lastAction.timeout);
+      }
+    };
   }, [lastAction]);
 
   const undo = () => {
