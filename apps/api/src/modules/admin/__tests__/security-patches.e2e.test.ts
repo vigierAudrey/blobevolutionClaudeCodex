@@ -28,7 +28,8 @@ describe('Security Patches E2E', () => {
     const admin = await prisma.user.create({
       data: {
         email: 'security-test-admin@test.com',
-        passwordHash: 'dummy-hash',
+        password: 'Test1234!',
+        passwordHash: '$2b$10$dummy.hash.for.testing.only.with.proper.format',
         role: 'ADMIN',
         emailVerified: true,
         consentedAt: new Date(),
