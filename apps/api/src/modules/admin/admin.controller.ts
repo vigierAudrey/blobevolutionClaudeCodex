@@ -555,8 +555,20 @@ const auditQuerySchema = z.object({
   action: z.string().trim().min(1).optional(),
   userId: z.string().trim().min(1).optional(),
   resource: z.string().trim().min(1).optional(),
-  startDate: z.coerce.date().optional(),
-  endDate: z.coerce.date().optional(),
+  startDate: z.coerce.date({
+    errorMap: () => ({ message: 'startDate is required for audit exports' })
+  }),
+  endDate: z.coerce.date({
+    errorMap: () => ({ message: 'endDate is required for audit exports' })
+  }),
+}).refine((data) => {
+  // Validate date range is not more than 30 days
+  const diffMs = data.endDate.getTime() - data.startDate.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays <= 30 && diffDays >= 0;
+}, {
+  message: 'Date range must be between 0 and 30 days',
+  path: ['dateRange']
 });
 
 // Lister les permissions disponibles
@@ -1420,20 +1432,60 @@ adminRouter.get(
 const securityActionPrefixes = ['security:', 'admin:gdpr:', 'admin:allowed-ips', 'admin:user:', 'admin:report:'];
 const securityActionsExact = ['admin:permissions:update', 'admin:role:apply'];
 
+const securityEventsSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(1000).default(100),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional()
+}).refine((data) => {
+  // If both dates provided, validate range is not more than 30 days
+  if (data.startDate && data.endDate) {
+    const diffMs = data.endDate.getTime() - data.startDate.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays <= 30 && diffDays >= 0;
+  }
+  // If only one date provided, reject
+  if (data.startDate || data.endDate) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Both startDate and endDate are required, and range must be between 0 and 30 days',
+  path: ['dateRange']
+});
+
 adminRouter.get(
   '/security/events',
   requirePermissions('system.configure'),
   audit('admin:security:events', () => 'admin:security:events'),
   async (req, res) => {
     try {
-      const limit = Math.min(parseInt((req.query.limit as string) || '100', 10), 200);
+      const validation = securityEventsSchema.safeParse(req.query);
+      if (!validation.success) {
+        return res.status(400).json({
+          error: 'Invalid query parameters',
+          message: 'If filtering by date, both startDate and endDate are required (max 30 days range)',
+          details: validation.error.errors
+        });
+      }
+
+      const { limit, startDate, endDate } = validation.data;
+
+      const where: Prisma.AuditLogWhereInput = {
+        OR: [
+          ...securityActionPrefixes.map(prefix => ({ action: { startsWith: prefix } })),
+          { action: { in: securityActionsExact } }
+        ]
+      };
+
+      if (startDate && endDate) {
+        where.createdAt = {
+          gte: startDate,
+          lte: endDate
+        };
+      }
+
       const events = await prisma.auditLog.findMany({
-        where: {
-          OR: [
-            ...securityActionPrefixes.map(prefix => ({ action: { startsWith: prefix } })),
-            { action: { in: securityActionsExact } }
-          ]
-        },
+        where,
         include: {
           user: {
             select: { id: true, email: true, role: true }
@@ -1445,6 +1497,11 @@ adminRouter.get(
 
       return res.json({ events });
     } catch (error) {
+      // Don't log validation errors (400) - they are expected client errors
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input' });
+      }
+      // Only log actual server errors (500)
       secureLogger.error('Admin security events error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
@@ -1847,9 +1904,24 @@ adminRouter.get(
   audit('admin:audit:list', () => 'admin:audit'),
   async (req, res) => {
   try {
-    const { page, limit, action, userId, resource, startDate, endDate } = auditQuerySchema.parse(req.query);
+    const validation = auditQuerySchema.safeParse(req.query);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid query parameters',
+        message: 'Date range is required (startDate and endDate) and must not exceed 30 days',
+        details: validation.error.errors
+      });
+    }
 
-    const where: Prisma.AuditLogWhereInput = {};
+    const { page, limit, action, userId, resource, startDate, endDate } = validation.data;
+
+    const where: Prisma.AuditLogWhereInput = {
+      createdAt: {
+        gte: startDate,
+        lte: endDate
+      }
+    };
+
     if (action) {
       where.action = { contains: action, mode: 'insensitive' };
     }
@@ -1859,28 +1931,32 @@ adminRouter.get(
     if (resource) {
       where.resource = { contains: resource, mode: 'insensitive' };
     }
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = startDate;
-      if (endDate) where.createdAt.lte = endDate;
-    }
 
     const skip = (page - 1) * limit;
 
-    const [items, total] = await Promise.all([
-      prisma.auditLog.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          user: {
-            select: { id: true, email: true, role: true }
-          }
+    // Count total but warn if over 10k limit
+    const total = await prisma.auditLog.count({ where });
+
+    if (total > 10000) {
+      return res.status(400).json({
+        error: 'Export limit exceeded',
+        message: 'Result set exceeds 10,000 records. Please narrow your date range or add filters.',
+        total,
+        maxAllowed: 10000
+      });
+    }
+
+    const items = await prisma.auditLog.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: { id: true, email: true, role: true }
         }
-      }),
-      prisma.auditLog.count({ where })
-    ]);
+      }
+    });
 
     return res.json({
       items,
@@ -1892,6 +1968,11 @@ adminRouter.get(
       }
     });
   } catch (error) {
+    // Don't log validation errors (400) - they are expected client errors
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input' });
+    }
+    // Only log actual server errors (500)
     secureLogger.error('Admin audit logs error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
