@@ -15,6 +15,7 @@ interface SocketError {
   code: string;
   message: string;
   retryAfter?: number;
+  details?: unknown;
 }
 
 interface UseSocketReturn {
@@ -51,6 +52,45 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
   const refreshAttemptedRef = useRef(false);
   const inFlightRefreshRef = useRef<Promise<boolean> | null>(null);
   const lastReconnectedTokenRef = useRef<string | null>(null);
+  const recentErrorsRef = useRef<Map<string, number>>(new Map());
+
+  /**
+   * Génère une signature stable pour déduplication d'erreurs
+   */
+  const getErrorSignature = (errorPayload: SocketError): string => {
+    const parts = [errorPayload.code, errorPayload.message];
+    if (errorPayload.details && typeof errorPayload.details === 'object') {
+      const details = errorPayload.details as Record<string, unknown>;
+      if (details.requestId) parts.push(String(details.requestId));
+      if (details.traceId) parts.push(String(details.traceId));
+    }
+    return parts.join('|');
+  };
+
+  /**
+   * Vérifie si une erreur est un doublon dans la fenêtre de déduplication (1000ms)
+   */
+  const isDuplicateError = (errorPayload: SocketError): boolean => {
+    const signature = getErrorSignature(errorPayload);
+    const now = Date.now();
+    const DEDUP_WINDOW_MS = 1000;
+
+    // Cleanup anciennes entrées (évite memory leak)
+    for (const [sig, timestamp] of recentErrorsRef.current.entries()) {
+      if (now - timestamp > DEDUP_WINDOW_MS) {
+        recentErrorsRef.current.delete(sig);
+      }
+    }
+
+    const lastSeen = recentErrorsRef.current.get(signature);
+    // P1 #2: !== undefined au lieu de && pour gérer timestamp = 0
+    if (lastSeen !== undefined && now - lastSeen < DEDUP_WINDOW_MS) {
+      return true; // Doublon détecté
+    }
+
+    recentErrorsRef.current.set(signature, now);
+    return false;
+  };
 
   // Initialiser le socket
   useEffect(() => {
@@ -137,14 +177,33 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
     };
 
     // ✅ E-REVIEW P0 #1: Gestion event serveur 'socket-error'
-    const handleSocketError = (errorPayload: SocketError) => {
+    // ✅ E-REVIEW P0 #1bis: Ajout fallback 'error' avec déduplication
+    const handleSocketError = (errorPayload: SocketError, source: 'socket-error' | 'error') => {
+      if (isDuplicateError(errorPayload)) {
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.debug(`[WebSocket] Duplicate error from '${source}' ignored`);
+        }
+        return;
+      }
+
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.warn(`[WebSocket] Error from '${source}':`, errorPayload.code);
+      }
+
       setLastSocketError(errorPayload);
     };
+
+    // P1 #1: Créer handlers stables avec références pour cleanup précis
+    const onSocketError = (payload: SocketError) => handleSocketError(payload, 'socket-error');
+    const onLegacyError = (payload: SocketError) => handleSocketError(payload, 'error');
 
     socketInstance.on('connect', handleConnect);
     socketInstance.on('disconnect', handleDisconnect);
     socketInstance.on('connect_error', handleConnectError);
-    socketInstance.on('socket-error', handleSocketError);
+    socketInstance.on('socket-error', onSocketError);
+    socketInstance.on('error', onLegacyError); // Fallback legacy
 
     // Connexion automatique si demandée
     if (autoConnect && !socketInstance.connected) {
@@ -153,10 +212,13 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
 
     // Cleanup à la destruction du composant
     return () => {
+      // P1 #1: off avec handler refs (pas off sans handler)
       socketInstance.off('connect', handleConnect);
       socketInstance.off('disconnect', handleDisconnect);
       socketInstance.off('connect_error', handleConnectError);
-      socketInstance.off('socket-error', handleSocketError);
+      socketInstance.off('socket-error', onSocketError);
+      socketInstance.off('error', onLegacyError);
+      recentErrorsRef.current.clear();
     };
   }, [token, autoConnect]);
 

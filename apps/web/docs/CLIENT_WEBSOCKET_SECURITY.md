@@ -12,6 +12,7 @@ Audit complet du client WebSocket (Next.js) pour identifier et corriger les vuln
 
 **PATCHES CRITIQUES (P0) appliqués:**
 - ✅ PATCH 1 (P0 #2): Refresh token WebSocket automatique (reconnexion après expiration)
+- ✅ PATCH 1bis (P1): Fallback 'error' event avec anti-doublon (2026-01-22)
 - ✅ PATCH 2 (P0 #3): Gestion d'erreurs structurée + ACK callbacks + socket-error event
 - ✅ PATCH 3 (P1 #4): Cooldown UI pour rate limiting
 - ⚠️ **P0 #1 NON RÉSOLU**: localStorage token XSS vulnerability (mitigation docs à ajouter)
@@ -20,7 +21,8 @@ Audit complet du client WebSocket (Next.js) pour identifier et corriger les vuln
 **Files modifiés (scope client only)**:
 - `apps/web/lib/socket.ts`
 - `apps/web/lib/apiClient.ts`
-- `apps/web/hooks/useSocket.ts`
+- `apps/web/hooks/useSocket.ts` (+ fallback 'error' 2026-01-22)
+- `apps/web/hooks/__tests__/useSocket.error-fallback.test.ts` (nouveau 2026-01-22)
 - `apps/web/hooks/useChat.ts`
 - `apps/web/app/messages/[id]/page-websocket.tsx`
 
@@ -64,6 +66,80 @@ const handleSocketError = (errorPayload: SocketError) => {
 };
 socketInstance.on('socket-error', handleSocketError);
 ```
+
+---
+
+### E-REVIEW #1bis: Fallback 'error' event avec anti-doublon ✅ APPLIQUÉ
+**Date**: 2026-01-22
+**Fichiers**: `apps/web/hooks/useSocket.ts:54-103, 197-207`
+
+**Contexte**:
+- Serveur émet toujours sur DEUX canaux: `socket-error` (canonique) + `error` (legacy compat)
+- Client n'écoutait que `socket-error` → risque de perte d'erreur si canal canonique échoue
+
+**Correction**:
+1. Ajout listener sur `'error'` comme fallback avec handlers stables (`onSocketError`, `onLegacyError`)
+2. Système anti-doublon basé signature (code + message + requestId/traceId si présent)
+3. Fenêtre de déduplication: 1000ms avec condition stricte `!== undefined` (edge case timestamp=0)
+4. Cleanup Map automatique pour éviter memory leak
+5. Cleanup strict avec références handlers (`off(event, handler)` au lieu de `off(event)`)
+
+**Code**:
+```typescript
+// apps/web/hooks/useSocket.ts:197-207
+// Handlers stables avec références
+const onSocketError = (payload: SocketError) => handleSocketError(payload, 'socket-error');
+const onLegacyError = (payload: SocketError) => handleSocketError(payload, 'error');
+
+socketInstance.on('socket-error', onSocketError);
+socketInstance.on('error', onLegacyError); // Fallback
+
+// Cleanup avec références (ne supprime QUE nos handlers)
+return () => {
+  socketInstance.off('socket-error', onSocketError);
+  socketInstance.off('error', onLegacyError);
+  recentErrorsRef.current.clear();
+};
+```
+
+**Déduplication**:
+```typescript
+// apps/web/hooks/useSocket.ts:71-91
+const isDuplicateError = (errorPayload: SocketError): boolean => {
+  const signature = getErrorSignature(errorPayload);
+  const now = Date.now();
+  const DEDUP_WINDOW_MS = 1000;
+
+  // Cleanup anciennes entrées
+  for (const [sig, timestamp] of recentErrorsRef.current.entries()) {
+    if (now - timestamp > DEDUP_WINDOW_MS) {
+      recentErrorsRef.current.delete(sig);
+    }
+  }
+
+  const lastSeen = recentErrorsRef.current.get(signature);
+  // P1 #2: !== undefined au lieu de && pour gérer timestamp = 0
+  if (lastSeen !== undefined && now - lastSeen < DEDUP_WINDOW_MS) {
+    return true; // Doublon détecté
+  }
+
+  recentErrorsRef.current.set(signature, now);
+  return false;
+};
+```
+
+**Tests**: `apps/web/hooks/__tests__/useSocket.error-fallback.test.ts` (6 cas prouvants)
+- Mock React.useState pour prouver qu'un doublon ne déclenche qu'un seul setState
+- Vérification références handlers dans cleanup (pas d'accumulation)
+- Edge case timestamp = 0
+- Signature avec requestId/traceId
+
+**Garanties**:
+- ✅ Aucune erreur perdue (fallback 'error' actif)
+- ✅ Pas de doublon UI (déduplication prouvée par tests)
+- ✅ Pas de memory leak (cleanup Map régulier)
+- ✅ Pas de multi-handlers au remount (cleanup avec références)
+- ✅ Pas d'interférence avec autres listeners potentiels (off avec handler ref)
 
 ---
 
