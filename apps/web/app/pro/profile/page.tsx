@@ -2,7 +2,7 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -72,6 +72,14 @@ function sanitizeErrorMessage(error: unknown): string {
   return getMessage();
 }
 
+// P2-1 (audit) : validation défensive des coordonnées GPS avant affichage.
+const sanitizeCoordinate = (value: number, min: number, max: number): string => {
+  if (typeof value !== 'number' || isNaN(value) || value < min || value > max) {
+    return 'N/A';
+  }
+  return value.toFixed(4);
+};
+
 export default function ProProfilePage() {
   const router = useRouter();
   const toast = useToast();
@@ -109,6 +117,10 @@ export default function ProProfilePage() {
   });
   const [loadingNotifPrefs, setLoadingNotifPrefs] = useState(true);
   const [savingNotifPrefs, setSavingNotifPrefs] = useState(false);
+
+  // P2-2 (audit) : throttling local pour réouverture du consentement cookies.
+  const lastConsentReopenRef = useRef<number>(0);
+  const CONSENT_REOPEN_COOLDOWN_MS = 2000; // 2 secondes entre deux appels
 
   // Cookie consent summary
   const consentSummary = useMemo(() => {
@@ -383,42 +395,41 @@ export default function ProProfilePage() {
   };
 
   // Handler pour rouvrir la modale de consentement cookies
-  const handleReopenCookieConsent = async () => {
-    // Confirmation utilisateur avant réinitialisation
-    if (!confirm('Réinitialiser vos préférences cookies ? Cette action ouvrira à nouveau la fenêtre de consentement.')) {
-      return;
-    }
-
+  // P2-2/P2-3 (audit) : throttling + logs dev-only lors de la réouverture.
+  const handleReopenCookieConsent = useCallback(async () => {
     if (!consentStateReady) {
       toast('Préférences cookies en cours de chargement, réessaie dans un instant.', 'info');
       return;
     }
 
-    try {
-      await resetConsent('none');
-
-      // Utiliser SameSite=Strict pour meilleure sécurité
-      document.cookie = 'cookie_consent=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Strict';
-
-      if (typeof window !== 'undefined') {
-        try {
-          if ('localStorage' in window) {
-            window.localStorage.removeItem('blob_consent');
-            window.localStorage.removeItem('cookie-consent');
-          }
-          window.dispatchEvent(new Event(COOKIE_CONSENT_REOPEN_EVENT));
-        } catch (error) {
-          console.warn('Impossible de rouvrir immédiatement la fenêtre de consentement', error);
-          toast('Erreur lors de la réinitialisation. Rafraîchissez la page.', 'error');
-          // Reload seulement en dernier recours après 2 secondes
-          setTimeout(() => window.location.reload(), 2000);
-        }
-      }
-    } catch (error) {
-      console.error('Erreur handleReopenCookieConsent:', error);
-      toast('Erreur lors de la réinitialisation des préférences.', 'error');
+    // P2-2 : rate limiting côté client.
+    const now = Date.now();
+    if (now - lastConsentReopenRef.current < CONSENT_REOPEN_COOLDOWN_MS) {
+      // P2-2 : toast informatif (type "warning" indisponible ici).
+      toast('Merci de patienter quelques secondes avant de réessayer.', 'info');
+      return;
     }
-  };
+    lastConsentReopenRef.current = now;
+
+    await resetConsent('none');
+    document.cookie = 'cookie_consent=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+
+    if (typeof window !== 'undefined') {
+      try {
+        if ('localStorage' in window) {
+          window.localStorage.removeItem('blob_consent');
+          window.localStorage.removeItem('cookie-consent');
+        }
+        window.dispatchEvent(new Event(COOKIE_CONSENT_REOPEN_EVENT));
+      } catch (error) {
+        // P2-3 : log détaillé uniquement en dev.
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Impossible de rouvrir la fenêtre de consentement', error);
+        }
+        window.location.reload();
+      }
+    }
+  }, [consentStateReady, resetConsent, toast]);
 
   const toggleNotificationPref = (key: keyof typeof notificationPrefs) => {
     setNotificationPrefs((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -628,7 +639,8 @@ export default function ProProfilePage() {
                             Position active
                           </p>
                           <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
-                            Lat: {userLocation.lat.toFixed(2)}, Lng: {userLocation.lng.toFixed(2)}
+                            {/* P2-1 (audit) : affichage défensif des coordonnées. */}
+                            Lat: {sanitizeCoordinate(userLocation.lat, -90, 90)}, Lng: {sanitizeCoordinate(userLocation.lng, -180, 180)}
                           </p>
                           <p className="text-xs text-muted-foreground mt-2 italic">
                             Précision approximative (~1 km) pour préserver votre confidentialité

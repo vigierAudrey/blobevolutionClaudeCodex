@@ -869,14 +869,22 @@ const createSystemAlertSchema = z.object({
   dedupeKey: z.string().optional()
 });
 
+// Rate limiter for admin broadcast (1 per hour per admin)
+const adminBroadcastRateLimit = createRateLimiter('ADMIN_BROADCAST');
+
 const conversationBroadcastSchema = z.object({
   message: z.string().min(5).max(2000),
   target: z.enum(['ALL', 'RIDERS', 'PROS', 'CUSTOM']).default('ALL'),
-  emails: z.array(z.string().email()).optional()
+  emails: z.array(z.string().email()).optional(),
+  confirm: z.literal(true, {
+    errorMap: () => ({ message: 'Explicit confirmation required: confirm must be true' })
+  }),
+  reason: z.string().min(10).max(500, 'Reason must be between 10 and 500 characters')
 });
 
 adminRouter.post(
   '/conversations/broadcast',
+  adminBroadcastRateLimit,
   requirePermissions('reports.moderate'),
   audit('admin:conversations:broadcast', () => 'admin:conversations:broadcast'),
   async (req, res) => {
@@ -884,7 +892,27 @@ adminRouter.post(
       const adminId = (req as any).user?.id as string | undefined;
       if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
 
-      const { message, target, emails } = conversationBroadcastSchema.parse(req.body ?? {});
+      // Validate with confirmation and reason
+      const validation = conversationBroadcastSchema.safeParse(req.body ?? {});
+      if (!validation.success) {
+        return res.status(400).json({
+          error: 'Confirmation required',
+          message: 'You must provide confirm: true and a reason to broadcast messages',
+          details: validation.error.errors
+        });
+      }
+
+      const { message, target, emails, reason } = validation.data;
+
+      // Basic content validation: detect URLs (flag in audit, don't block)
+      const containsURL = /https?:\/\/[^\s]+/i.test(message);
+      if (containsURL) {
+        secureLogger.warn('Broadcast message contains URL', {
+          adminId,
+          target,
+          hasURL: true
+        });
+      }
       let recipients: Array<{ id: string; email: string }> = [];
       const baseWhere: Prisma.UserWhereInput = {
         deletedAt: null
@@ -954,7 +982,10 @@ adminRouter.post(
       res.locals.auditMetadata = {
         target,
         sentCount,
-        missingEmails
+        missingEmails,
+        reason,
+        containsURL,
+        messageLength: message.length
       };
 
       if (missingEmails.length > 0) {
@@ -1694,28 +1725,82 @@ adminRouter.get(
 });
 
 // Exécution manuelle de la purge RGPD
+// Rate limiter for GDPR purge (1 per day per admin)
+const gdprPurgeRateLimit = createRateLimiter('GDPR_PURGE');
+
+// Schema for GDPR purge confirmation
+const gdprPurgeSchema = z.object({
+  confirm: z.literal('PURGE', {
+    errorMap: () => ({ message: 'Confirmation required: must be exactly "PURGE"' })
+  }),
+  reason: z.string().min(10).max(500, 'Reason must be between 10 and 500 characters')
+});
+
 adminRouter.post(
   '/gdpr/run-purge',
+  gdprPurgeRateLimit,
   requirePermissions('system.configure'),
   audit('admin:gdpr:run-purge', () => 'gdpr:purge'),
   async (req, res) => {
   try {
+    // Validate confirmation
+    const validation = gdprPurgeSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Confirmation required',
+        message: 'You must provide confirm: "PURGE" and a reason to execute this operation',
+        details: validation.error.errors
+      });
+    }
+
+    const { reason } = validation.data;
+    const adminId = (req as any).user?.id;
+    const adminEmail = (req as any).adminProfile?.email;
+
+    // Log the purge attempt with full context
+    secureLogger.warn('GDPR purge initiated', {
+      adminId,
+      adminEmail,
+      reason,
+      timestamp: new Date().toISOString()
+    });
+
     const startedAt = Date.now();
     const result = await gdprPurgeService.performFullPurge();
+    const durationMs = Date.now() - startedAt;
+
+    // Enrich audit metadata
+    res.locals.auditMetadata = {
+      reason,
+      durationMs,
+      recordsDeleted: result.summary
+    };
+
+    // TODO: Email notification to PRIMARY_ADMIN_EMAILS
+    // Requires email service to be configured
+    // await emailService.sendCriticalAlert({
+    //   to: process.env.PRIMARY_ADMIN_EMAILS?.split(','),
+    //   subject: 'GDPR Purge Executed',
+    //   body: `Admin ${adminEmail} executed GDPR purge. Reason: ${reason}`
+    // });
 
     return res.json({
       success: true,
       timestamp: new Date().toISOString(),
-      durationMs: Date.now() - startedAt,
+      durationMs,
       result,
       message: 'Purge RGPD exécutée avec succès'
     });
   } catch (error) {
+    // Don't log validation errors (400) - they are expected client errors
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input' });
+    }
+    // Only log actual server errors (500)
     secureLogger.error('Manual GDPR purge error', { error });
     return res.status(500).json({
       success: false,
-      error: 'Erreur lors de la purge RGPD',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Erreur lors de la purge RGPD'
     });
   }
 });

@@ -21,17 +21,17 @@ beforeAll(async () => {
     if (APP_ENV === 'production' || CI_PROD === 'true') {
       throw new Error(
         '❌ BLOCKED: Cannot run db:push in production context.\n' +
-        `   APP_ENV=${APP_ENV}, CI_PROD=${CI_PROD}\n` +
+        '   Detected via: APP_ENV or CI_PROD flags.\n' +
         '   This is a CRITICAL security violation.'
       );
     }
 
-    // Verify test context
+    // Verify test context (WHITELIST: only explicit test environments)
     if (NODE_ENV !== 'test' && APP_ENV !== 'test') {
       throw new Error(
-        '❌ BLOCKED: db:push requires test environment.\n' +
-        `   Current NODE_ENV=${NODE_ENV}, APP_ENV=${APP_ENV}\n` +
-        '   Set NODE_ENV=test or APP_ENV=test to proceed.'
+        '❌ BLOCKED: db:push requires explicit test environment.\n' +
+        '   Required: NODE_ENV=test or APP_ENV=test.\n' +
+        '   All other environments are DENIED by default.'
       );
     }
 

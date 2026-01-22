@@ -1,7 +1,7 @@
 # Politique de Divulgation Responsable - Blobinfini
 # Conforme RFC 9116 (https://www.rfc-editor.org/rfc/rfc9116.html)
 
-Contact: mailto:METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com
+Contact: mailto:security@blobinfini.com
 Expires: 2026-12-31T23:59:59.000Z
 Preferred-Languages: fr, en
 Canonical: https://blobinfini.fr/.well-known/security.txt
@@ -50,7 +50,7 @@ Acknowledgments: https://blobinfini.fr/security-hall-of-fame
 # - Session de coaching surf gratuit par la créatrice du site (si disponible)
 
 ## Contact
-# Merci de reporter les vulnérabilités à : METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com
+# Merci de reporter les vulnérabilités à : security@blobinfini.com
 # Temps de réponse initial : < 48h
 # Temps de correction P0/P1 : < 7 jours
 
@@ -61,7 +61,7 @@ Acknowledgments: https://blobinfini.fr/security-hall-of-fame
 # les tests de sécurité dans le cadre du scope défini ci-dessus.
 
 # RGPD : Ne pas exfiltrer ou divulguer de données personnelles.
-# En cas de découverte accidentelle, contacter immédiatement METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com
+# En cas de découverte accidentelle, contacter immédiatement security@blobinfini.com
 
 ## PGP Key (optionnel)
 # Encryption: https://keys.openpgp.org/vks/v1/by-fingerprint/FINGERPRINT_HERE

@@ -36,6 +36,7 @@
     "db:reseed": "npm run reseed --workspace @blobinfini/database",
     "purge:consent-ip": "tsx apps/api/src/jobs/purgeConsent.ts",
     "test:security": "bash scripts/no-raw-ip-check.sh",
+    "guard:accept-data-loss": "node scripts/check-accept-data-loss.mjs",
     "migrate:ip-to-hash": "tsx scripts/migrate-ip-to-hash-v2.ts --execute",
     "migrate:ip-to-hash:dry-run": "tsx scripts/migrate-ip-to-hash-v2.ts --dry-run",
     "test": "npm run test --workspace @blobinfini/api",

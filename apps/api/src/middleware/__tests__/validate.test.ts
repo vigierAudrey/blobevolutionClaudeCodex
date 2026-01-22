@@ -1,6 +1,7 @@
 import { validate } from '../validate';
-import { z } from 'zod';
+import { z, type ZodTypeAny } from 'zod';
 import type { Request, Response, NextFunction } from 'express';
+import { secureLogger } from '../../utils/secure-logger';
 
 describe('validate middleware', () => {
   let mockRequest: Partial<Request>;
@@ -10,6 +11,9 @@ describe('validate middleware', () => {
   beforeEach(() => {
     mockRequest = {
       body: {},
+      // Sécurité : préparer query/params pour la validation étendue.
+      query: {},
+      params: {},
       path: '/test',
     };
     mockResponse = {
@@ -158,7 +162,7 @@ describe('validate middleware', () => {
         parse: () => {
           throw new Error('Unexpected error');
         },
-      } as any;
+      } as unknown as ZodTypeAny;
 
       const middleware = validate(schema);
       middleware(mockRequest as Request, mockResponse as Response, nextFunction);
@@ -168,6 +172,43 @@ describe('validate middleware', () => {
         error: 'Invalid input',
       });
       expect(nextFunction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('production logging', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    beforeEach(() => {
+      process.env.NODE_ENV = 'production';
+    });
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalNodeEnv;
+      jest.restoreAllMocks();
+    });
+
+    it('should log code + type without message in production', () => {
+      const longMessage = 'x'.repeat(200);
+      const schema = {
+        parse: () => {
+          throw new Error(longMessage);
+        },
+      } as unknown as ZodTypeAny;
+
+      const errorSpy = jest.spyOn(secureLogger, 'error').mockImplementation(() => undefined);
+
+      const middleware = validate(schema);
+      middleware(mockRequest as Request, mockResponse as Response, nextFunction);
+
+      const payload = (errorSpy.mock.calls[0]?.[1] ?? {}) as {
+        errorCode?: string;
+        errorType?: string;
+        errorMessage?: string;
+      };
+
+      expect(payload.errorCode).toBe('VALIDATION_UNKNOWN');
+      expect(payload.errorType).toBe('Error');
+      expect(payload.errorMessage).toBeUndefined();
     });
   });
 
@@ -229,6 +270,46 @@ describe('validate middleware', () => {
       expect(nextFunction).toHaveBeenCalled();
       // Zod strips extra fields by default
       expect(mockRequest.body).toEqual({ name: 'John' });
+    });
+  });
+
+  // Sécurité : garde-fou sur query/params (régression).
+  describe('query & params validation', () => {
+    it('should parse query and params when schemas are provided', () => {
+      const schema = {
+        query: z.object({ page: z.coerce.number().int().min(1) }),
+        params: z.object({ id: z.string().uuid() }),
+      };
+
+      mockRequest.query = { page: '2' };
+      mockRequest.params = { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301' };
+
+      const middleware = validate(schema);
+      middleware(mockRequest as Request, mockResponse as Response, nextFunction);
+
+      expect(mockRequest.query).toEqual({ page: 2 });
+      expect(mockRequest.params).toEqual({ id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301' });
+      expect(nextFunction).toHaveBeenCalled();
+    });
+
+    it('should return 400 when query validation fails', () => {
+      const schema = {
+        query: z.object({ page: z.coerce.number().int().min(1) }),
+      };
+
+      mockRequest.query = { page: '0' };
+
+      const middleware = validate(schema);
+      middleware(mockRequest as Request, mockResponse as Response, nextFunction);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Invalid input',
+          details: expect.any(Array),
+        })
+      );
+      expect(nextFunction).not.toHaveBeenCalled();
     });
   });
 });

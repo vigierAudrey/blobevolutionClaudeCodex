@@ -201,39 +201,42 @@
   - Créer les endpoints réels pour les sections “Conversations bloquées”, “Tentatives de connexion suspectes” et “Logs de sécurité” (`apps/web/app/admin/dashboard/page.tsx` marque encore “Bientôt”).  
   - Documenter ces APIs dans `openapi.yaml` + ajouter tests Jest/Playwright dédiés.
 
-### Checklist Pré-Déploiement Production
+### Checklist Pré-Déploiement Production (BLOQUANTE)
 
-**Configuration (30 min)**
-- [ ] Générer secrets forts. _(Actuel : `.env` et `.env.example` gardent `please-change-in-dev`; exécuter `./scripts/generate-secrets.sh` et injecter les valeurs en prod.)_
-- [ ] Configurer `ALLOWED_ORIGINS`. _(Actuel : aucune valeur définie ; en prod l'API planterait, mais prévoir la liste CSV des domaines front.)_
-- [ ] Configurer `TRUSTED_PROXY_IPS`. _(Actuel : variable absente ; à compléter avec les IP/CIDR du reverse proxy avant mise en prod.)_
-- [ ] `DATABASE_URL` avec `sslmode=require`. _(Actuel : chaînes locales sans `sslmode`; forcer `?sslmode=require` côté env prod.)_
-- [ ] `REDIS_URL` avec mot de passe fort. _(Actuel : `change-me-strong`; générer un secret robuste et mettre à jour l'URL.)_
-- [ ] `TWO_FACTOR_SECRET` avec valeur aléatoire forte (32+ caractères). _(Nouveau : requis pour hash codes 2FA, API refuse de démarrer si valeur par défaut en prod.)_
-- [x] `AUTH_REQUIRE_VERIFIED=true`. _(Depuis cette mise à jour, la prod force la vérification email riders/pro + middleware `requireVerifiedEmail` sur les modules critiques.)_
-- [ ] `NODE_ENV=production`. _(Actuel : dév local en `development`; vérifier que le déploiement exporte `NODE_ENV=production`.)_
+> 🚫 **Déploiement refusé** si un item **BLOCKER** est manquant.  
+> Les variables d’environnement critiques doivent provoquer un **refus de démarrage** en production.
 
-**Tests Sécurité (1h)**
-- [ ] `/security/health` → 200. _(Voir `SECURITY.md#Surveillance-securityhealth` pour le script de check admin et la configuration des variables.)_
+**Configuration (BLOCKER – 30 min)**
+- [ ] **BLOCKER** — Générer secrets forts. _(Code : `ensureProductionSecrets` + `validateProductionEnv` refuse les valeurs par défaut.)_
+- [ ] **BLOCKER** — Configurer `ALLOWED_ORIGINS`. _(Code : `validateProductionEnv` + `apps/api/src/index.ts` bloquent au démarrage si vide.)_
+- [ ] **BLOCKER** — Configurer `TRUSTED_PROXY_IPS`. _(Code : `validateProductionEnv` bloque au démarrage si vide.)_
+- [ ] **BLOCKER** — `DATABASE_URL` avec `sslmode=require`. _(Code : `validateProductionEnv` bloque au démarrage.)_
+- [ ] **BLOCKER** — `REDIS_URL` + `REDIS_PASSWORD` non par défaut. _(Code : `validateProductionEnv` bloque au démarrage.)_
+- [ ] **BLOCKER** — `TWO_FACTOR_SECRET` ≥ 32 caractères et non par défaut. _(Code : `validateProductionEnv` bloque au démarrage.)_
+- [x] **BLOCKER** — `AUTH_REQUIRE_VERIFIED=true`. _(Process : vérifier via `/security/health` + tests e2e existants.)_
+- [ ] **BLOCKER** — `NODE_ENV=production`. _(Process : vérification manuelle avant déploiement.)_
+
+**Tests Sécurité (BLOCKER – 1h)**
+- [ ] **BLOCKER** — `/security/health` → 200. _(Déploiement refusé si le check échoue.)_
   - [x] **Test automatisé** : `apps/api/src/index.security.test.ts` (supertest) couvre 401, 403 et 200 + payload côté admin.
-- [ ] CORS bloque domaines externes. _(Non vérifié : prévoir `curl -H "Origin: https://evil.com"` → 403 une fois la whitelist définie.)_
-- [ ] Rate limiting (429 sur `/auth/login`). _(Non vérifié : lancer scénario 6 tentatives rapides pour confirmer `AUTH` profile.)_
+- [ ] **BLOCKER** — CORS bloque domaines externes. _(Refus de déploiement si la whitelist n’est pas vérifiée.)_
+- [ ] **BLOCKER** — Rate limiting (429 sur `/auth/login`). _(Refus de déploiement si non vérifié.)_
   - [x] **Test automatisé** : scénario e2e `apps/api/src/modules/auth/__tests__/auth.e2e.test.ts` (6 logins rapides → 429).
-- [ ] CSRF bloque requêtes sans token. _(Couverture Jest existante, mais pas retesté manuellement post-refonte 2FA.)_
+- [ ] **BLOCKER** — CSRF bloque requêtes sans token. _(Refus de déploiement si non vérifié.)_
   - [x] **Test automatisé** : `apps/api/src/middleware/__tests__/csrf.test.ts` (requête cross-site sans cookie → `CSRF_NO_SECRET`).
-- [ ] JWT invalide → 401. _(Non vérifié : appeler `/profile/me` avec token altéré pour confirmer rejet.)_
+- [ ] **BLOCKER** — JWT invalide → 401. _(Refus de déploiement si non vérifié.)_
   - [x] **Test automatisé** : `auth.e2e.test.ts` (appel `/auth/me` avec token corrompu → 401).
-- [ ] Endpoints admin accessibles uniquement par admin. _(Tests E2E présents, prévoir exécution `npm test -w @blobinfini/api` avant go-live.)_
+- [ ] **BLOCKER** — Endpoints admin accessibles uniquement par admin. _(Refus de déploiement si non vérifié.)_
   - [x] **Test Playwright** : `apps/web/tests/e2e/admin-access.spec.ts` (non connecté → /login, rider → /dashboard, admin → succès).
-- [ ] Consentement pubs ↔ AdSense. _(Nouvelle exigence CNIL : bannière doit bloquer AdSense tant que pas d'opt-in.)_
+- [ ] **BLOCKER** — Consentement pubs ↔ AdSense. _(Refus de déploiement si non vérifié.)_
   - [x] **Test Playwright** : `apps/web/tests/e2e/ads-consent.spec.ts` (mode basique → placeholder, opt-in personnalisé → `<ins.adsbygoogle>`).
 
-**Tests Redis & 2FA (30 min)**
-- [ ] Vérifier REDIS_PASSWORD non par défaut. _(Exécuter : `curl localhost:4000/security/health` → ne doit PAS lister "REDIS_PASSWORD".)_
-- [ ] Vérifier TWO_FACTOR_SECRET configuré. _(L'API refuse de démarrer en prod si valeur par défaut "change-me-2fa-secret-production".)_
-- [ ] Tester 2FA rate limiting : 6 codes invalides → blocage 5 min. _(Manuel : POST /auth/verify-2fa avec mauvais codes.)_
-- [ ] Vérifier aucun code 2FA en clair dans Redis. _(Exécuter : `redis-cli --scan --pattern "2fa:*" | xargs redis-cli MGET` → doit afficher des hash SHA-256, pas de codes 6 chiffres.)_
-- [ ] Vérifier invalidation cache sans KEYS(). _(Logs Redis : `redis-cli monitor | grep KEYS` pendant 1 min sur l'API → doit être vide.)_
+**Tests Redis & 2FA (BLOCKER – 30 min)**
+- [ ] **BLOCKER** — Vérifier REDIS_PASSWORD non par défaut. _(Refus de déploiement si valeur par défaut.)_
+- [ ] **BLOCKER** — Vérifier TWO_FACTOR_SECRET configuré. _(Refus de déploiement si valeur par défaut.)_
+- [ ] **BLOCKER** — Tester 2FA rate limiting : 6 codes invalides → blocage 5 min. _(Refus de déploiement si non vérifié.)_
+- [ ] **BLOCKER** — Vérifier aucun code 2FA en clair dans Redis. _(Refus de déploiement si non vérifié.)_
+- [ ] **BLOCKER** — Vérifier invalidation cache sans KEYS(). _(Refus de déploiement si non vérifié.)_
 
 **Monitoring (30 min)**
 - [ ] Alertes 5xx via logs provider (Clever Cloud ou autre).
@@ -249,7 +252,47 @@
 - [x] `DEPLOYMENT.md` checklist env vars.
 - [ ] Procédure incident sécurité.
 - [ ] Contacts équipe sécurité.
-- [ ] **Mettre à jour `apps/web/public/.well-known/security.txt`** : Remplacer `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobinfini.com` (3 occurrences : lignes 4, 53, 64). _Ce fichier est accessible publiquement via `https://votredomaine.com/.well-known/security.txt` selon le standard RFC 9116 pour permettre aux chercheurs en sécurité de signaler des vulnérabilités._
+- [x] **Mettre à jour `apps/web/public/.well-known/security.txt`** : Remplacer `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobinfini.com` (3 occurrences : lignes 4, 53, 64). _Ce fichier est accessible publiquement via `https://votredomaine.com/.well-known/security.txt` selon le standard RFC 9116 pour permettre aux chercheurs en sécurité de signaler des vulnérabilités._
+
+### SECURITY DONE
+
+**Garanties apportées**
+- Patchs P2 appliqués sur le profil PRO (coordonnées défensives, throttling consentement, logs dev-only).
+- Validation Zod étendue à `query`/`params` disponible côté middleware + tests associés.
+- Guard production au démarrage (`validateProductionEnv`) avec erreurs bloquantes sur variables critiques.
+- Logging `validate` en production sans message brut (code + type uniquement).
+- `security.txt` aligné sur l’email réel.
+- Tests de non-régression ajoutés (UI profil PRO + middleware validate).
+
+**Risques résiduels acceptés**
+- Adoption progressive de la validation `query`/`params` dans les routes existantes (non modifiées ici).
+
+**Limites connues**
+- Pas d’ajout de jobs CI / scripts de déploiement dans ce périmètre restreint.
+
+**Volontairement NON traité**
+- Modifications fonctionnelles du système de notifications (hors périmètre autorisé).
+
+### À TRAITER PLUS TARD — File d’attente sécurité (ROADMAP UNIQUEMENT)
+
+**P2 — CORS hardening (processus + tests à ajouter)**
+- Valider strictement les origins (schéma, trailing slash, `Origin: null`).
+- Refuser explicitement `*` lorsque `credentials` est activé.
+- Ajouter des tests d’abus : `Origin: null`, `file://`, `https://evil.com`.
+
+**P2 — TRUSTED_PROXY_IPS hardening**
+- Vérification usage réel anti-spoofing de `X-Forwarded-For`.
+- Tests d’attaque spoof IP avec listes `TRUSTED_PROXY_IPS` partielles.
+- Validation complète CIDR / IPv6 en prod (déjà supporté, tests d’abus à compléter).
+
+**P3 — Logging production**
+- Supprimer totalement les messages d’erreur utilisateur en production.
+- Corrélation uniquement via `requestId` (pas de contenu d’erreur).
+
+**P3 — CI / Build guards**
+- Étape bloquante `npm run type-check`.
+- Étape bloquante `npm run build`.
+- Échec CI si env BLOCKER manquante ou valeurs par défaut détectées.
 
 **Estimation temps total :** ~9h (Phase 1 : 2h, Phase 2 : 3h, Phase 3 : 2h, Tests+Deploy : 2h).  
 **Score cible post-fix :** CORS, secrets, validation, headers → 9.3/10 global.

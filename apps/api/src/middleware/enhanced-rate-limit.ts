@@ -155,6 +155,32 @@ export const RATE_LIMIT_PROFILES = {
     }
   },
 
+  // GDPR purge - extremely strict (P0 security)
+  GDPR_PURGE: {
+    windowMs: 24 * 60 * 60 * 1000, // 24 hours
+    max: 1, // Only 1 purge per day per admin
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'GDPR_PURGE_RATE_LIMIT_EXCEEDED',
+      message: 'GDPR purge can only be executed once per day. Please try again tomorrow.',
+      retryAfter: '24 hours'
+    }
+  },
+
+  // Admin broadcast - strict limit (P1 security)
+  ADMIN_BROADCAST: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 1, // Only 1 broadcast per hour per admin
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'ADMIN_BROADCAST_RATE_LIMIT_EXCEEDED',
+      message: 'Broadcast can only be sent once per hour. Please try again later.',
+      retryAfter: '1 hour'
+    }
+  },
+
   // Global API protection - catch-all
   GLOBAL: {
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -254,6 +280,19 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
 
       const ip = req.ip || req.socket?.remoteAddress;
       return ip ? ipKeyGenerator(ip) : 'anonymous';
+    };
+  }
+
+  // Rate limit by userId for admin-specific actions (GDPR purge, broadcast)
+  if (!customOptions?.keyGenerator && (profile === 'GDPR_PURGE' || profile === 'ADMIN_BROADCAST')) {
+    options.keyGenerator = (req: Request) => {
+      const userId = (req as any).user?.id;
+      if (userId) {
+        return `admin:${profile}:${userId}`;
+      }
+      // Fallback to IP if no user (shouldn't happen after auth middleware)
+      const ip = req.ip || req.socket?.remoteAddress;
+      return ip ? `admin:${profile}:${ipKeyGenerator(ip)}` : 'anonymous';
     };
   }
 
