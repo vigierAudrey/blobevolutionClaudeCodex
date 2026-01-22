@@ -137,17 +137,10 @@ export default function AdminDashboard() {
     try {
       await apiClient.logoutAll();
       apiClient.clearTokens();
-      // Clear admin gating cookie
-      if (typeof document !== 'undefined') {
-        document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
-      }
       router.push('/');
     } catch (error) {
       console.error('Logout error:', error);
       apiClient.clearTokens();
-      if (typeof document !== 'undefined') {
-        document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
-      }
       router.push('/');
     }
   };

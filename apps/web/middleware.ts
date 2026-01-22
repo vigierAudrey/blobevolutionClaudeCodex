@@ -1,26 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Guard all /admin routes at the edge: if no admin session cookie, redirect to /login
+// SECURITY NOTE: This middleware is intentionally minimal.
+// Real authentication happens server-side via JWT tokens in API calls.
+// We no longer use client-side cookies for admin gating as they are insecure.
+// Each admin page must verify authentication by calling the API with JWT tokens.
+
 export function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
+  const { pathname } = req.nextUrl;
 
   // Only process /admin paths (matcher also restricts, but keep a defensive check)
   if (!pathname.startsWith('/admin')) {
     return NextResponse.next();
   }
 
-  const adminCookie = req.cookies.get('admin_session');
-
-  if (adminCookie?.value === '1') {
-    return NextResponse.next();
-  }
-
-  // Build a safe next param (path + search only)
-  const next = `${pathname}${search ?? ''}`;
-  const url = req.nextUrl.clone();
-  url.pathname = '/login';
-  url.search = `?next=${encodeURIComponent(next)}`;
-  return NextResponse.redirect(url);
+  // Let all /admin requests through - authentication will be verified by:
+  // 1. Client-side: pages will call API with JWT Bearer tokens
+  // 2. Server-side: API endpoints require requireAuth + requireAdmin middlewares
+  // This middleware serves only as a routing matcher, not a security boundary.
+  return NextResponse.next();
 }
 
 export const config = {
