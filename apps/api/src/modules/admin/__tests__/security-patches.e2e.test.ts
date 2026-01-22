@@ -7,8 +7,10 @@
  */
 
 import request from 'supertest';
-import { app } from '../../../app';
+import { createApp } from '../../../index';
 import { clientPrisma as prisma } from '@blobinfini/database';
+
+const app = createApp();
 
 describe('Security Patches E2E', () => {
   let adminToken: string;
