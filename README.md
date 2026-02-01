@@ -329,6 +329,48 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 
 **Documentation complète :** Voir [SECURITY_ALERT_SYSTEM.md](./SECURITY_ALERT_SYSTEM.md) pour l'architecture détaillée, les workflows de réponse aux incidents, et les procédures de maintenance.
 
+## ⚡ Performance & Temps Réel
+
+### Politique Polling Multi-Onglets (Dashboard)
+
+**Objectif**: Économie serveur + Fiabilité + Coordination multi-onglets.
+
+**Principe**: Au lieu que 3 onglets ouverts fassent 3 polls indépendants (3x coût API), un seul onglet "leader" poll pour tous → **économie 66% requêtes**.
+
+**Règles d'or**:
+- ✅ Onglet visible (`visibilityState === 'visible'`) → 1 leader poll toutes les 60s
+- ✅ Onglet hidden → stop net (pas de leader, pas de poll)
+- ✅ Focus/visibilitychange → refresh immédiat (1 call) puis reprise 60s
+
+**Mécanisme**:
+- Leader election via "lease" localStorage (TTL 3s, renouvellement 1.5s)
+- `tabId` sessionStorage + `instanceNonce` runtime pour éviter duplicate tab
+- Validation stricte JSON + auto-réparation si storage corrompu
+- AbortController réel (timeout 10s annule HTTP, pas juste flag)
+- Convergence < 2s garantie (checks 500ms au startup)
+
+**Tests**:
+- Playwright: convergence 1 seul leader (expect.poll CI-safe)
+- Playwright: abort timeout + preuve `setUnreadTotal` skip
+- Unit: safe storage wrappers (QuotaExceeded graceful)
+
+**Documentation complète**: Voir [docs/POLLING_MULTITABS.md](./docs/POLLING_MULTITABS.md)
+
+**Fichiers clés**:
+- `apps/web/app/dashboard/page.tsx` (lignes 103-420)
+- `apps/web/lib/storage.ts` (safe wrappers)
+- `apps/web/tests/e2e/dashboard-polling-convergence.spec.ts`
+
+### Quand Utiliser Quoi
+
+| Feature | Mode Recommandé |
+|---------|-----------------|
+| Dashboard unread count | Polling leader (60s) |
+| Messages temps réel | WebSocket (`apps/web/lib/socket.ts`) |
+| Bookings status | Polling visible (5min) + Push/Email |
+| Map/Search | Fetch à l'interaction |
+| Notifications badge | Push FCM (`apps/web/lib/firebase.ts`) |
+
 ## 📊 Fonctionnalités par Phase
 
 ### ✅ Phase 1 - MVP (Complétée en grande partie)
@@ -1121,6 +1163,7 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 - [Tests E2E & CI](./README_TESTS.md)
 - [Migration Prisma 6](./docs/migration-prisma6.md)
 - [Troubleshooting Prisma](./docs/troubleshooting-prisma.md) ⚠️ **Problèmes courants et solutions**
+- [Architecture Polling Dashboard](./docs/ARCHITECTURE_POLLING_DASHBOARD.md) 🔄 **Économie serveur multi-onglets**
 
 ## 🤝 Contribution IA
 
