@@ -361,6 +361,35 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 - `apps/web/lib/storage.ts` (safe wrappers)
 - `apps/web/tests/e2e/dashboard-polling-convergence.spec.ts`
 
+### Stratégie Temps Réel (WebSocket)
+
+**Principe**: Temps réel **uniquement** quand utilisateur regarde activement l'information. Pas de WebSocket global permanent.
+
+**Règles strictes**:
+- ✅ WebSocket **page-scoped** (connexion au mount, déconnexion au unmount)
+- ✅ Temps réel seulement si < 5s latence critique (messagerie)
+- ❌ Jamais de polling < 10s pour simuler temps réel
+- ❌ Jamais de WebSocket ouvert "au cas où"
+- ❌ Jamais de broadcast global serveur (`io.emit()` interdit, utiliser `io.to(room)`)
+
+**Architecture actuelle**:
+- **Messagerie**: WebSocket page-scoped (`apps/web/app/messages/[id]/page-websocket.tsx`)
+  - Connexion uniquement si page conversation ouverte
+  - Auth JWT obligatoire à la connexion
+  - Rooms par conversation (isolation broadcast)
+  - Fallback HTTP si WS fail
+- **Dashboard**: Polling optimisé 60s (voir ci-dessus)
+- **Réservations**: Fetch + push notification (pas de WS permanent)
+- **Blobomap**: Fetch on interaction (pas de temps réel)
+
+**Documentation complète**: Voir [docs/ARCHITECTURE_REALTIME.md](./docs/ARCHITECTURE_REALTIME.md)
+
+**Fichiers clés**:
+- `apps/web/lib/socket.ts` (client Socket.io singleton)
+- `apps/web/hooks/useSocket.ts` (hook connexion WS)
+- `apps/web/hooks/useChat.ts` (hook messagerie + fallback HTTP)
+- `apps/api/src/lib/socket.ts` (serveur Socket.io + auth)
+
 ### Quand Utiliser Quoi
 
 | Feature | Mode Recommandé |
@@ -1164,6 +1193,7 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 - [Migration Prisma 6](./docs/migration-prisma6.md)
 - [Troubleshooting Prisma](./docs/troubleshooting-prisma.md) ⚠️ **Problèmes courants et solutions**
 - [Architecture Polling Dashboard](./docs/ARCHITECTURE_POLLING_DASHBOARD.md) 🔄 **Économie serveur multi-onglets**
+- [Architecture Temps Réel](./docs/ARCHITECTURE_REALTIME.md) ⚡ **WebSocket page-scoped, pas de WS global**
 
 ## 🤝 Contribution IA
 
