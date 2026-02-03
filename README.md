@@ -76,7 +76,7 @@ Infrastructure:
   - PostGIS activé (image `postgis/postgis:15-3.4` pour dev & CI)
 ```
 
-### 🆓 Hébergement Backend - Alternatives Gratuites (Phase MVP)
+### 🆓 Hébergement Backend - Alternatives Gratuites (Phase MVP - exemple)
 
 Pour la phase MVP, plusieurs options d'hébergement backend gratuites sont disponibles :
 
@@ -108,7 +108,7 @@ Pour la phase MVP, plusieurs options d'hébergement backend gratuites sont dispo
 
 **Note** : Pour le frontend Next.js, Vercel reste gratuit et illimité (voir section déploiement ci-dessous).
 
-### Structure Monorepo - Phase MVP (Recommandé pour démarrer)
+### Structure Monorepo - Phase MVP (exemple, recommandé pour démarrer)
 
 ```
 blobevolutionClaudeCodex/
@@ -150,7 +150,7 @@ blobevolutionClaudeCodex/
 └── claude.md                   # Guide IA
 ```
 
-### Structure Services Découplés - Phase Scale (Évolution future)
+### Structure Services Découplés - Phase Scale (exemple, évolution future)
 
 ```
 blobevolutionClaudeCodex/
@@ -163,7 +163,7 @@ blobevolutionClaudeCodex/
 
 ## 🔐 Architecture Authentification
 
-### Phase MVP - Module Auth Intégré
+### Phase MVP (exemple) - Module Auth Intégré
 
 L'authentification est un **module dans l'API principale** pour simplifier le développement :
 
@@ -189,7 +189,7 @@ L'authentification est un **module dans l'API principale** pour simplifier le d�
 - ✅ **Logout avec invalidation tokens** (implémenté)
 - ✅ **RGPD: consentement, export, suppression** (implémenté)
 - ✅ **2FA obligatoire pour pros** (implémenté - activation via email + code 2FA)
-- ⏳ **Social login** (Google, Facebook) (Phase 2)
+- ⏳ **Social login** (Google, Facebook) (Phase 2 - exemple)
 
 ### Schéma Base de Données
 
@@ -329,9 +329,80 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 
 **Documentation complète :** Voir [SECURITY_ALERT_SYSTEM.md](./SECURITY_ALERT_SYSTEM.md) pour l'architecture détaillée, les workflows de réponse aux incidents, et les procédures de maintenance.
 
-## 📊 Fonctionnalités par Phase
+## ⚡ Performance & Temps Réel
 
-### ✅ Phase 1 - MVP (Complétée en grande partie)
+### Politique Polling Multi-Onglets (Dashboard)
+
+**Objectif**: Économie serveur + Fiabilité + Coordination multi-onglets.
+
+**Principe**: Au lieu que 3 onglets ouverts fassent 3 polls indépendants (3x coût API), un seul onglet "leader" poll pour tous → **économie 66% requêtes**.
+
+**Règles d'or**:
+- ✅ Onglet visible (`visibilityState === 'visible'`) → 1 leader poll toutes les 60s
+- ✅ Onglet hidden → stop net (pas de leader, pas de poll)
+- ✅ Focus/visibilitychange → refresh immédiat (1 call) puis reprise 60s
+
+**Mécanisme**:
+- Leader election via "lease" localStorage (TTL 3s, renouvellement 1.5s)
+- `tabId` sessionStorage + `instanceNonce` runtime pour éviter duplicate tab
+- Validation stricte JSON + auto-réparation si storage corrompu
+- AbortController réel (timeout 10s annule HTTP, pas juste flag)
+- Convergence < 2s garantie (checks 500ms au startup)
+
+**Tests**:
+- Playwright: convergence 1 seul leader (expect.poll CI-safe)
+- Playwright: abort timeout + preuve `setUnreadTotal` skip
+- Unit: safe storage wrappers (QuotaExceeded graceful)
+
+**Documentation complète**: Voir [docs/POLLING_MULTITABS.md](./docs/POLLING_MULTITABS.md)
+
+**Fichiers clés**:
+- `apps/web/app/dashboard/page.tsx` (section « Politique Polling Multi-Onglets » de ce document)
+- `apps/web/lib/storage.ts` (safe wrappers)
+- `apps/web/tests/e2e/dashboard-polling-convergence.spec.ts`
+
+### Stratégie Temps Réel (WebSocket)
+
+**Principe**: Temps réel **uniquement** quand utilisateur regarde activement l'information. Pas de WebSocket global permanent.
+
+**Règles strictes**:
+- ✅ WebSocket **page-scoped** (connexion au mount, déconnexion au unmount)
+- ✅ Temps réel seulement si < 5s latence critique (messagerie)
+- ❌ Jamais de polling < 10s pour simuler temps réel
+- ❌ Jamais de WebSocket ouvert "au cas où"
+- ❌ Jamais de broadcast global serveur (`io.emit()` interdit, utiliser `io.to(room)`)
+
+**Architecture actuelle**:
+- **Messagerie**: WebSocket page-scoped (`apps/web/app/messages/[id]/page-websocket.tsx`)
+  - Connexion uniquement si page conversation ouverte
+  - Auth JWT obligatoire à la connexion
+  - Rooms par conversation (isolation broadcast)
+  - Fallback HTTP si WS fail
+- **Dashboard**: Polling optimisé 60s (voir ci-dessus)
+- **Réservations**: Fetch + push notification (pas de WS permanent)
+- **Blobomap**: Fetch on interaction (pas de temps réel)
+
+**Documentation complète**: Voir [docs/ARCHITECTURE_REALTIME.md](./docs/ARCHITECTURE_REALTIME.md)
+
+**Fichiers clés**:
+- `apps/web/lib/socket.ts` (client Socket.io singleton)
+- `apps/web/hooks/useSocket.ts` (hook connexion WS)
+- `apps/web/hooks/useChat.ts` (hook messagerie + fallback HTTP)
+- `apps/api/src/lib/socket.ts` (serveur Socket.io + auth)
+
+### Quand Utiliser Quoi
+
+| Feature | Mode Recommandé |
+|---------|-----------------|
+| Dashboard unread count | Polling leader (60s) |
+| Messages temps réel | WebSocket (`apps/web/lib/socket.ts`) |
+| Bookings status | Polling visible (5min) + Push/Email |
+| Map/Search | Fetch à l'interaction |
+| Notifications badge | Push FCM (`apps/web/lib/firebase.ts`) |
+
+## 📊 Fonctionnalités par Phase (exemple)
+
+### ✅ Phase 1 (exemple) - MVP (statut historique, à confirmer)
 
 - ✅ **Auth Module complet** : inscription, connexion, JWT, reset password, RGPD
 - ✅ **Matching & Géolocalisation** : algorithme intelligent PostGIS
@@ -344,7 +415,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 - ⏳ **Blobosphère MVP** : CMS éditorial (en cours)
 
 
-### 🚀 Phase 2 - Croissance (Prochaines priorités)
+### 🚀 Phase 2 (exemple) - Croissance (priorités à confirmer)
 
 - 🔥 **Système paiement complet** : Stripe Connect + facturation automatique (replanifié)
 - 🔥 **Tests unitaires** : couverture 80%+ pour stabilité production
@@ -354,7 +425,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 - 🤖 **Matching ML** multi-critères intelligent
 - 🏆 **Système réputation** (notes/avis post-session)
 
-### Phase 3 - Scale (12 mois)
+### Phase 3 (exemple) - Scale (12 mois, estimation)
 
 - [ ] **Migration auth vers service dédié**
 - [ ] Multi-sports (windsurf, paddle)
@@ -815,7 +886,7 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID=blobinfini-prod
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ```
 
-#### Fonctionnalités implémentées (Phase 1)
+#### Fonctionnalités implémentées (Phase 1 - exemple)
 
 - ✅ **Service Worker** sophistiqué avec gestion offline
 - ✅ **PWA Manifest** pour installation app-like
@@ -1121,6 +1192,8 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 - [Tests E2E & CI](./README_TESTS.md)
 - [Migration Prisma 6](./docs/migration-prisma6.md)
 - [Troubleshooting Prisma](./docs/troubleshooting-prisma.md) ⚠️ **Problèmes courants et solutions**
+- [Architecture Polling Dashboard](./docs/ARCHITECTURE_POLLING_DASHBOARD.md) 🔄 **Économie serveur multi-onglets**
+- [Architecture Temps Réel](./docs/ARCHITECTURE_REALTIME.md) ⚡ **WebSocket page-scoped, pas de WS global**
 
 ## 🤝 Contribution IA
 

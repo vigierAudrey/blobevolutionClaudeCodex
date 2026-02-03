@@ -27,11 +27,13 @@
 
 ---
 
-## 📊 Indicateurs Actuels
+## 📊 Indicateurs (historiques / exemple)
 
-- **Score Santé global :** 9.0/10 ⬆️ (+0.5) – Stack 100% gratuite.
+_Note : valeurs indicatives, non garanties comme etat actuel._
+
+- **Score Santé global (exemple historique) :** 9.0/10 ⬆️ (+0.5) – Stack 100% gratuite.
 - **Tests :** 498 tests (17 fichiers) – Couverture ~75%.
-- **Sécurité :** 7.0/10 ⚠️ à renforcer (CORS, secrets, logs, validation).
+- **Sécurité (exemple historique) :** 7.0/10 ⚠️ à renforcer (CORS, secrets, logs, validation).
 - **Performance :** Optimisations majeures complétées ✅.
 - **PWA :** Push notifications + Service Worker + Offline ✅.
 - **Monitoring :** Logs backend (Clever Cloud ou alternative) + standards (0€) ✅.
@@ -42,7 +44,7 @@
 
 **Note :** Le module Auth est maintenant ✅ **COMPLÉTÉ** avec 100% des fonctionnalités prévues (register, login, 2FA, reset, CSRF, rate limiting, tests).
 
-1. **🔒 Sécurité Production-Ready (Phase 3 monitoring & audits)** - BLOCKER PROD
+1. **🔒 Sécurité Production-Ready (Phase 3 - exemple monitoring & audits)** - BLOCKER PROD
    Corriger CORS, secrets, logs sensibles, validation Zod, renforcer Helmet/SSL/trust proxy. Voir section « Sécurité & Conformité ».
 2. **🧪 Tests & Qualité**
    Finaliser tests UI (composants de base + matching), nettoyer données Playwright, fiabiliser flux CSRF. Voir section « Tests & Qualité ».
@@ -57,9 +59,9 @@
 
 ## 🔒 Sécurité & Conformité
 
-### État actuel
+### État actuel (historique / exemple)
 
-- **Score Sécurité :** 7.0/10 | **Objectif :** 9.5/10 avant production.
+- **Score Sécurité (exemple historique) :** 7.0/10 | **Objectif (exemple) :** 9.5/10 avant production.
 - **Protections existantes :**
   - [x] CSRF protection complète sur tous les endpoints mutants.
   - [x] Rate limiting Redis (Auth 5/15min, Registration 3/h, API 100/15min, Search 30/min, Upload 10/10min, Messaging 10/min).
@@ -68,7 +70,7 @@
   - [x] Bcrypt coût 12 pour les mots de passe.
   - [x] Helmet.js basique.
 
-### Vulnérabilités critiques — Phase 1 (Blockers Production – 2h)
+### Vulnérabilités critiques — Phase 1 (exemple, estimation 2h)
 
 - [x] **CORS wildcard (*)** `apps/api/src/index.ts`  
   ```typescript
@@ -152,15 +154,15 @@
   Impact : SQL injection, XSS, corruption données.
   Test : payload malformé → 400 + détails.
 
-### Renforcement — Phase 2 (3h)
+### Renforcement — Phase 2 (exemple, estimation 3h)
 
-- [x] **Helmet.js configuré strictement** `apps/api/src/index.ts:103`  
+- [x] **Helmet.js configuré strictement** `apps/api/src/index.ts` (section « Renforcement — Phase 2 »)  
   CSP à nonce, HSTS, referrerPolicy deny + frameguard actifs depuis la refonte du middleware `createHelmetMiddleware`.  
   Test : `apps/api/src/index.security.test.ts` vérifie la présence des headers clés.
-- [x] **Trust proxy sécurisé** `apps/api/src/index.ts:236`  
+- [x] **Trust proxy sécurisé** `apps/api/src/index.ts` (section « Renforcement — Phase 2 »)  
   Production : crash si `TRUSTED_PROXY_IPS` est vide, sinon liste blanche IP/CIDR du reverse proxy (Clever Cloud ou autre) ; en dev seuls les réseaux privés sont autorisés.  
   Test : démarrage API sans variable → throw attendu.
-- [x] **Database SSL obligatoire** `packages/database/src/client.ts:6`  
+- [x] **Database SSL obligatoire** `packages/database/src/client.ts` (section « Renforcement — Phase 2 »)  
   `?sslmode=require|verify-full` exigé en production, sinon démarrage bloqué (tests unitaires `packages/database/src/__tests__/client.test.ts`).  
   Test : `npm test -- packages/database` (cases sslmode=require/verify-full/prefer).
 - [x] **Script génération secrets** `scripts/generate-secrets.sh`  
@@ -174,66 +176,71 @@
   echo "JWT_REFRESH_SECRET=$(generate_secret)"
   ```
   Test : exécution → secrets forts (>=64 chars) pour `.env`.
+- [x] **Visibilité PRO verrouillée** : `ProProfile.status` = source de vérité. Profils non `APPROVED` invisibles/inbookables (nearby, search, booking, créneaux).
 
-### Monitoring & Traçabilité — Phase 3 (2h)
+### Monitoring & Traçabilité — Phase 3 (exemple, estimation 2h)
 
 - [x] **Endpoint `/security/health`** (admin only)  
-  Disponible via `apps/api/src/index.ts:348` + Supertest `apps/api/src/index.security.test.ts`. Les issues listent automatiquement CORS, secrets, proxies et mode trusté ; la doc `SECURITY.md#Surveillance-securityhealth` explique comment peupler `ALLOWED_ORIGINS`/`TRUSTED_PROXY_IPS` et brancher un check HTTP.
+  Disponible via `apps/api/src/index.ts` (section « Monitoring & Traçabilité ») + Supertest `apps/api/src/index.security.test.ts`. Les issues listent automatiquement CORS, secrets, proxies et mode trusté ; la doc `SECURITY.md#Surveillance-securityhealth` explique comment peupler `ALLOWED_ORIGINS`/`TRUSTED_PROXY_IPS` et brancher un check HTTP.
 - [x] **Audit logs actions sensibles**  
   `audit()` est désormais branché sur les presets de rôles admin, la modération des signalements et la purge RGPD (`apps/api/src/modules/admin/admin.controller.ts`). Les tests `admin.e2e.test.ts` vérifient la présence d'une trace (`admin:role:apply`, `admin:report:action`, `admin:gdpr:run-purge`) avant de considérer l'action réussie.
 - [x] **Cron `/security/health`**  
   Script `scripts/security-health-check.sh` + workflow planifié `.github/workflows/security-health-monitor.yml` surveillent l'endpoint toutes les 30 min et notifient via webhooks configurable.
 
-### Phase 4 — Gouvernance Admin & RGPD (en cours)
+### Phase 4 — Gouvernance Admin & RGPD (exemple, etat a confirmer)
 
 - [x] **RBAC admin basé sur les permissions (`adminProfile.permissions`)**  
-  Étendre `requireAdmin` ou ajouter `requirePermission` afin que chaque route `/admin/*` impose les scopes définis dans `AVAILABLE_PERMISSIONS` (`apps/api/src/modules/admin/admin.controller.ts:373`). À couvrir : suspension utilisateur (`users.suspend`), modération (`reports.moderate`), analytics (`analytics.view`), etc. Mettre à jour `openapi.yaml` + tests e2e (`admin.e2e.test.ts`) pour refléter la matrice CNIL.
+  Étendre `requireAdmin` ou ajouter `requirePermission` afin que chaque route `/admin/*` impose les scopes définis dans `AVAILABLE_PERMISSIONS` (`apps/api/src/modules/admin/admin.controller.ts`, section « Phase 4 — Gouvernance Admin & RGPD »). À couvrir : suspension utilisateur (`users.suspend`), modération (`reports.moderate`), analytics (`analytics.view`), etc. Mettre à jour `openapi.yaml` + tests e2e (`admin.e2e.test.ts`) pour refléter la matrice CNIL.
 - [x] **Journalisation des lectures de données personnelles**  
   Activer `audit()` (ou équivalent read-only) sur les endpoints de consultation massive (`GET /admin/users`, `/admin/users/:id`, `/admin/gdpr/*`, `/admin/stats`). Objectif : tracer qui lit quelles données sensibles, conformément aux exigences CNIL. Ajouter tests pour vérifier la création d’un `auditLog` lors d’une lecture admin.
 - [x] **Migration `legal_consent_archive` compatible PostgreSQL**  
-  Reprendre `packages/database/prisma/migrations/add_legal_consent_archive.sql` (dialecte MySQL) en migration Prisma/PostgreSQL + `ON CONFLICT`. Mettre à jour `gdprPurgeService` (`apps/api/src/services/gdpr-purge.service.ts:159`) et `GET /admin/gdpr/legal-archive/:userId` pour utiliser la nouvelle table. Ajouter tests Prisma e2e.
+  Reprendre `packages/database/prisma/migrations/add_legal_consent_archive.sql` (dialecte MySQL) en migration Prisma/PostgreSQL + `ON CONFLICT`. Mettre à jour `gdprPurgeService` (`apps/api/src/services/gdpr-purge.service.ts`, section « Phase 4 — Gouvernance Admin & RGPD ») et `GET /admin/gdpr/legal-archive/:userId` pour utiliser la nouvelle table. Ajouter tests Prisma e2e.
 - [x] **Finaliser purge RGPD & rotation des logs**  
   Implémenter la suppression des logs obsolètes (`oldLogsDeleted` TODO dans `gdprPurgeService`) + s’assurer que les jobs planifiés via `GDPR_PURGE_INTERVAL_HOURS`, `CONV_PURGE_INTERVAL_HOURS` et `GDPR_PURGE_RUN_ON_START` sont documentés/testés (`docs/deployment.md`, `SECURITY.md`). Ajouter un check `/admin/gdpr/compliance-report` qui échoue si les jobs ne tournent pas.
 - [x] **Redis obligatoire pour le 2FA admin**  
-  Supprimer le fallback `memoryStore` (`apps/api/src/services/two-factor.service.ts:4`) en production : la génération/validation des codes doit dépendre d’un Redis sécurisé (`REDIS_URL` + mot de passe). Ajout d’un health-check Redis + doc mise à jour (`SECURITY.md`, `docs/deployment.md`).
+  Supprimer le fallback `memoryStore` (`apps/api/src/services/two-factor.service.ts`, section « Phase 4 — Gouvernance Admin & RGPD ») en production : la génération/validation des codes doit dépendre d’un Redis sécurisé (`REDIS_URL` + mot de passe). Ajout d’un health-check Redis + doc mise à jour (`SECURITY.md`, `docs/deployment.md`).
 - [x] **Aligner le backend sur les vues Admin existantes**  
   - Exposer un client `apiClient.updateAllowedIPs()` + page UI pour `PATCH /admin/admins/:id/allowed-ips`.  
   - Créer les endpoints réels pour les sections “Conversations bloquées”, “Tentatives de connexion suspectes” et “Logs de sécurité” (`apps/web/app/admin/dashboard/page.tsx` marque encore “Bientôt”).  
   - Documenter ces APIs dans `openapi.yaml` + ajouter tests Jest/Playwright dédiés.
 
-### Checklist Pré-Déploiement Production
+### Checklist Pré-Déploiement Production (BLOQUANTE)
 
-**Configuration (30 min)**
-- [ ] Générer secrets forts. _(Actuel : `.env` et `.env.example` gardent `please-change-in-dev`; exécuter `./scripts/generate-secrets.sh` et injecter les valeurs en prod.)_
-- [ ] Configurer `ALLOWED_ORIGINS`. _(Actuel : aucune valeur définie ; en prod l'API planterait, mais prévoir la liste CSV des domaines front.)_
-- [ ] Configurer `TRUSTED_PROXY_IPS`. _(Actuel : variable absente ; à compléter avec les IP/CIDR du reverse proxy avant mise en prod.)_
-- [ ] `DATABASE_URL` avec `sslmode=require`. _(Actuel : chaînes locales sans `sslmode`; forcer `?sslmode=require` côté env prod.)_
-- [ ] `REDIS_URL` avec mot de passe fort. _(Actuel : `change-me-strong`; générer un secret robuste et mettre à jour l'URL.)_
-- [ ] `TWO_FACTOR_SECRET` avec valeur aléatoire forte (32+ caractères). _(Nouveau : requis pour hash codes 2FA, API refuse de démarrer si valeur par défaut en prod.)_
-- [x] `AUTH_REQUIRE_VERIFIED=true`. _(Depuis cette mise à jour, la prod force la vérification email riders/pro + middleware `requireVerifiedEmail` sur les modules critiques.)_
-- [ ] `NODE_ENV=production`. _(Actuel : dév local en `development`; vérifier que le déploiement exporte `NODE_ENV=production`.)_
+> 🚫 **Déploiement refusé** si un item **BLOCKER** est manquant.  
+> Les variables d’environnement critiques doivent provoquer un **refus de démarrage** en production.
 
-**Tests Sécurité (1h)**
-- [ ] `/security/health` → 200. _(Voir `SECURITY.md#Surveillance-securityhealth` pour le script de check admin et la configuration des variables.)_
+**Configuration (BLOCKER – 30 min)**
+- [ ] **BLOCKER** — Générer secrets forts. _(Code : `ensureProductionSecrets` + `validateProductionEnv` refuse les valeurs par défaut.)_
+- [ ] **BLOCKER** — Configurer `ALLOWED_ORIGINS`. _(Code : `validateProductionEnv` + `apps/api/src/index.ts` bloquent au démarrage si vide.)_
+- [ ] **BLOCKER** — Configurer `TRUSTED_PROXY_IPS`. _(Code : `validateProductionEnv` bloque au démarrage si vide.)_
+- [ ] **BLOCKER** — `DATABASE_URL` avec `sslmode=require`. _(Code : `validateProductionEnv` bloque au démarrage.)_
+- [ ] **BLOCKER** — `REDIS_URL` + `REDIS_PASSWORD` non par défaut. _(Code : `validateProductionEnv` bloque au démarrage.)_
+- [ ] **BLOCKER** — `TWO_FACTOR_SECRET` ≥ 32 caractères et non par défaut. _(Code : `validateProductionEnv` bloque au démarrage.)_
+- [x] **BLOCKER** — `AUTH_REQUIRE_VERIFIED=true`. _(Process : vérifier via `/security/health` + tests e2e existants.)_
+- [ ] **BLOCKER** — `NODE_ENV=production`. _(Process : vérification manuelle avant déploiement.)_
+
+**Tests Sécurité (BLOCKER – 1h)**
+- [ ] **BLOCKER** — `/security/health` → 200. _(Déploiement refusé si le check échoue.)_
   - [x] **Test automatisé** : `apps/api/src/index.security.test.ts` (supertest) couvre 401, 403 et 200 + payload côté admin.
-- [ ] CORS bloque domaines externes. _(Non vérifié : prévoir `curl -H "Origin: https://evil.com"` → 403 une fois la whitelist définie.)_
-- [ ] Rate limiting (429 sur `/auth/login`). _(Non vérifié : lancer scénario 6 tentatives rapides pour confirmer `AUTH` profile.)_
+- [ ] **BLOCKER** — CORS bloque domaines externes. _(Refus de déploiement si la whitelist n’est pas vérifiée.)_
+  - [x] Préflight: mode strict `PREFLIGHT_STRICT=1` pour empêcher le SKIP du P0 “allowed origin”.
+- [ ] **BLOCKER** — Rate limiting (429 sur `/auth/login`). _(Refus de déploiement si non vérifié.)_
   - [x] **Test automatisé** : scénario e2e `apps/api/src/modules/auth/__tests__/auth.e2e.test.ts` (6 logins rapides → 429).
-- [ ] CSRF bloque requêtes sans token. _(Couverture Jest existante, mais pas retesté manuellement post-refonte 2FA.)_
+- [ ] **BLOCKER** — CSRF bloque requêtes sans token. _(Refus de déploiement si non vérifié.)_
   - [x] **Test automatisé** : `apps/api/src/middleware/__tests__/csrf.test.ts` (requête cross-site sans cookie → `CSRF_NO_SECRET`).
-- [ ] JWT invalide → 401. _(Non vérifié : appeler `/profile/me` avec token altéré pour confirmer rejet.)_
+- [ ] **BLOCKER** — JWT invalide → 401. _(Refus de déploiement si non vérifié.)_
   - [x] **Test automatisé** : `auth.e2e.test.ts` (appel `/auth/me` avec token corrompu → 401).
-- [ ] Endpoints admin accessibles uniquement par admin. _(Tests E2E présents, prévoir exécution `npm test -w @blobinfini/api` avant go-live.)_
+- [ ] **BLOCKER** — Endpoints admin accessibles uniquement par admin. _(Refus de déploiement si non vérifié.)_
   - [x] **Test Playwright** : `apps/web/tests/e2e/admin-access.spec.ts` (non connecté → /login, rider → /dashboard, admin → succès).
-- [ ] Consentement pubs ↔ AdSense. _(Nouvelle exigence CNIL : bannière doit bloquer AdSense tant que pas d'opt-in.)_
+- [ ] **BLOCKER** — Consentement pubs ↔ AdSense. _(Refus de déploiement si non vérifié.)_
   - [x] **Test Playwright** : `apps/web/tests/e2e/ads-consent.spec.ts` (mode basique → placeholder, opt-in personnalisé → `<ins.adsbygoogle>`).
 
-**Tests Redis & 2FA (30 min)**
-- [ ] Vérifier REDIS_PASSWORD non par défaut. _(Exécuter : `curl localhost:4000/security/health` → ne doit PAS lister "REDIS_PASSWORD".)_
-- [ ] Vérifier TWO_FACTOR_SECRET configuré. _(L'API refuse de démarrer en prod si valeur par défaut "change-me-2fa-secret-production".)_
-- [ ] Tester 2FA rate limiting : 6 codes invalides → blocage 5 min. _(Manuel : POST /auth/verify-2fa avec mauvais codes.)_
-- [ ] Vérifier aucun code 2FA en clair dans Redis. _(Exécuter : `redis-cli --scan --pattern "2fa:*" | xargs redis-cli MGET` → doit afficher des hash SHA-256, pas de codes 6 chiffres.)_
-- [ ] Vérifier invalidation cache sans KEYS(). _(Logs Redis : `redis-cli monitor | grep KEYS` pendant 1 min sur l'API → doit être vide.)_
+**Tests Redis & 2FA (BLOCKER – 30 min)**
+- [ ] **BLOCKER** — Vérifier REDIS_PASSWORD non par défaut. _(Refus de déploiement si valeur par défaut.)_
+- [ ] **BLOCKER** — Vérifier TWO_FACTOR_SECRET configuré. _(Refus de déploiement si valeur par défaut.)_
+- [ ] **BLOCKER** — Tester 2FA rate limiting : 6 codes invalides → blocage 5 min. _(Refus de déploiement si non vérifié.)_
+- [ ] **BLOCKER** — Vérifier aucun code 2FA en clair dans Redis. _(Refus de déploiement si non vérifié.)_
+- [ ] **BLOCKER** — Vérifier invalidation cache sans KEYS(). _(Refus de déploiement si non vérifié.)_
 
 **Monitoring (30 min)**
 - [ ] Alertes 5xx via logs provider (Clever Cloud ou autre).
@@ -249,10 +256,50 @@
 - [x] `DEPLOYMENT.md` checklist env vars.
 - [ ] Procédure incident sécurité.
 - [ ] Contacts équipe sécurité.
-- [ ] **Mettre à jour `apps/web/public/.well-known/security.txt`** : Remplacer `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobinfini.com` (3 occurrences : lignes 4, 53, 64). _Ce fichier est accessible publiquement via `https://votredomaine.com/.well-known/security.txt` selon le standard RFC 9116 pour permettre aux chercheurs en sécurité de signaler des vulnérabilités._
+- [x] **Mettre à jour `apps/web/public/.well-known/security.txt`** : Remplacer `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobinfini.com` (3 occurrences, section « Documentation (30 min) »). _Ce fichier est accessible publiquement via `https://votredomaine.com/.well-known/security.txt` selon le standard RFC 9116 pour permettre aux chercheurs en sécurité de signaler des vulnérabilités._
 
-**Estimation temps total :** ~9h (Phase 1 : 2h, Phase 2 : 3h, Phase 3 : 2h, Tests+Deploy : 2h).  
-**Score cible post-fix :** CORS, secrets, validation, headers → 9.3/10 global.
+### SECURITY DONE
+
+**Garanties apportées**
+- Patchs P2 appliqués sur le profil PRO (coordonnées défensives, throttling consentement, logs dev-only).
+- Validation Zod étendue à `query`/`params` disponible côté middleware + tests associés.
+- Guard production au démarrage (`validateProductionEnv`) avec erreurs bloquantes sur variables critiques.
+- Logging `validate` en production sans message brut (code + type uniquement).
+- `security.txt` aligné sur l’email réel.
+- Tests de non-régression ajoutés (UI profil PRO + middleware validate).
+
+**Risques résiduels acceptés**
+- Adoption progressive de la validation `query`/`params` dans les routes existantes (non modifiées ici).
+
+**Limites connues**
+- Pas d’ajout de jobs CI / scripts de déploiement dans ce périmètre restreint.
+
+**Volontairement NON traité**
+- Modifications fonctionnelles du système de notifications (hors périmètre autorisé).
+
+### À TRAITER PLUS TARD — File d’attente sécurité (ROADMAP UNIQUEMENT)
+
+**P2 — CORS hardening (processus + tests à ajouter)**
+- Valider strictement les origins (schéma, trailing slash, `Origin: null`).
+- Refuser explicitement `*` lorsque `credentials` est activé.
+- Ajouter des tests d’abus : `Origin: null`, `file://`, `https://evil.com`.
+
+**P2 — TRUSTED_PROXY_IPS hardening**
+- Vérification usage réel anti-spoofing de `X-Forwarded-For`.
+- Tests d’attaque spoof IP avec listes `TRUSTED_PROXY_IPS` partielles.
+- Validation complète CIDR / IPv6 en prod (déjà supporté, tests d’abus à compléter).
+
+**P3 — Logging production**
+- Supprimer totalement les messages d’erreur utilisateur en production.
+- Corrélation uniquement via `requestId` (pas de contenu d’erreur).
+
+**P3 — CI / Build guards**
+- Étape bloquante `npm run type-check`.
+- Étape bloquante `npm run build`.
+- Échec CI si env BLOCKER manquante ou valeurs par défaut détectées.
+
+**Estimation temps total (exemple) :** ~9h (Phase 1 : 2h, Phase 2 : 3h, Phase 3 : 2h, Tests+Deploy : 2h).  
+**Score cible post-fix (exemple) :** CORS, secrets, validation, headers → 9.3/10 global.
 
 ---
 
@@ -272,13 +319,15 @@
 ### Priorités tests
 
 - [x] Stabiliser E2E API (agg analytics NULLs + setup DB `RUN_E2E=1` + horaires booking).
+- [x] Fiabiliser E2E admin security-patches (JWT direct, Prisma aligné, rate-limit test env).
 - [ ] Tester composants UI manquants (Storybook + Jest/RTL).
 - [ ] Nettoyer données Playwright (`Playwright Spot …`) avant `npm run test:e2e`.
 - [ ] Gérer flux CSRF côté UI (cookie `connect.sid` avant `POST /booking/requests`).
+- [ ] Ticket P1: CSRF requis uniquement si auth cookie/session (`connect.sid`); skip CSRF si `Authorization: Bearer` et pas de cookie (CSRF protège les cookies; header Bearer non auto‑envoyé cross‑site).
 - [ ] Résoudre scénario E2E `Rider to pro booking flow – accept`.
 - [ ] Atteindre **80%+ de couverture** (actuel ~75%).
 - [ ] Ajouter tests de sécurité automatisés (CORS, CSRF, rate limit) dans la CI.
-- [ ] Ajouter tests sécurité dans pipeline (`ROADMAP.md:576`).
+- [ ] Ajouter tests sécurité dans pipeline (section « Logging & Observabilité Production »).
 - [ ] CI : installer navigateurs `npx playwright install` après chaque `npm install`.
 
 ### Documentation & Process
@@ -348,7 +397,7 @@
 
   **✅ Correctifs implémentés :**
 
-  1. **✅ Requête PostGIS redondante supprimée** (`matching.controller.ts:206-270`)
+  1. **✅ Requête PostGIS redondante supprimée** (`matching.controller.ts`, section « Optimisations Matching Module »)
      ```typescript
      // AVANT : 2 requêtes PostGIS (double charge DB)
      const rows = await prisma.$queryRaw`...LIMIT ${effectiveLimit}`;
@@ -390,7 +439,7 @@
   - Code simplifié : **-15 lignes** (paramètre gender inutilisé supprimé)
   - Pagination optimisée : Filtrage et slicing en JS (plus rapide que SQL)
 
-  **✅ Frontend mis à jour** (`apps/web/app/matching/cards/page.tsx:429-475`)
+  **✅ Frontend mis à jour** (`apps/web/app/matching/cards/page.tsx`, section « Optimisations Matching Module »)
     - ✅ Photo de profil affichée (64×64px, rounded-full avec fallback 👤)
     - ✅ Bio affichée dans un cadre stylisé (italic, bg-muted)
     - ✅ Layout amélioré avec flexbox pour photo + infos
@@ -402,7 +451,7 @@
 
   **✅ État Actuel (2025-12-30) :**
 
-  1. **✅ `/near/lessons` utilise DÉJÀ PostGIS correctement** (`pro.controller.ts:204-288`)
+  1. **✅ `/near/lessons` utilise DÉJÀ PostGIS correctement** (`pro.controller.ts`, section « Optimisations Module Offres Pro »)
      - Utilise `ST_DWithin` pour filtrer AVANT de charger les données
      - Calcul distance en **SQL avec PostGIS** (optimal)
      - CTE pour optimiser les comptages de matches actifs
@@ -425,13 +474,13 @@
      `;
      ```
 
-  2. **✅ Middleware `requireProRole` DÉJÀ créé** (`pro.guard.ts:10`)
+  2. **✅ Middleware `requireProRole` DÉJÀ créé** (`pro.guard.ts`, section « Optimisations Module Offres Pro »)
      - Middleware réutilisable déjà implémenté et utilisé
      - Appliqué sur tous les endpoints PRO
      - **Code actuel :** `proRouter.use(requireAuth, requireVerifiedEmail)` + `requireProRole` sur routes sensibles
 
   3. **✅ `/near/lessons` utilise CTE + LEFT JOIN (optimal)**
-     - CTE `match_counts` + LEFT JOIN déjà implémenté (lignes 229-233)
+     - CTE `match_counts` + LEFT JOIN déjà implémenté (section « Optimisations Module Offres Pro »)
      - Pas de sous-requêtes N+1, optimisation déjà faite
 
   **📝 Note sur l'architecture actuelle :**
@@ -441,7 +490,7 @@
     - `/booking/requests` - Rider fait une demande de cours (lesson-request)
     - `/booking/requests/inbox` - PRO reçoit les demandes
     - `/booking/pros/nearby` - Recherche géolocalisée de PROs
-  - ℹ️ Le modèle `ProOffer` (schema.prisma:421) est **legacy** et reste pour compatibilité GDPR export uniquement
+  - ℹ️ Le modèle `ProOffer` (`schema.prisma`, section « Optimisations Module Offres Pro ») est **legacy** et reste pour compatibilité GDPR export uniquement
 
   **📊 Résultat :**
   - ✅ Toutes les optimisations PostGIS déjà en place
@@ -450,7 +499,7 @@
   - ℹ️ Module PRO déjà optimal, aucune action requise
 
 - [x] Lazy loading données non critiques (AdBanner, CookieConsent en `next/dynamic`).
-- [x] **Compression Gzip/Brotli** ✅ (`apps/api/src/index.ts:218-231`)
+- [x] **Compression Gzip/Brotli** ✅ (`apps/api/src/index.ts`, section « Performance & UX »)
   - Compression middleware déjà activé avec niveau 6 (bon équilibre)
   - Filtre personnalisé pour contrôle granulaire
   - Supporte header `x-no-compression` pour désactivation si nécessaire
@@ -459,7 +508,7 @@
   - **Optimisation appliquée :** `.env.example` + `deployment.md` documentés
   - Configuration recommandée : `?connection_limit=20&pool_timeout=20&connect_timeout=10`
   - **Impact :** Gère ~2000 req/min au lieu de ~600 req/min sans pooling
-  - **À faire en prod :** Copier la configuration depuis `.env.example` (ligne 17)
+  - **À faire en prod :** Copier la configuration depuis `.env.example` (section « Performance & UX »)
 - [ ] Pré-calcul distances populaires (materialized views).
 - [ ] **CDN Cloudflare gratuit** 💰 **PRIORITÉ PROD** ⚠️ Attendre nom de domaine
 
@@ -520,7 +569,7 @@
 - [x] Monitoring performance gratuit (Clever Cloud ou alternative).
 - [x] Docs Storybook (`docs/storybook.md`).
 - [ ] Analytics dashboard métriques techniques (open source).
-- [ ] Endpoint `/security/health` (Phase 3 sécurité).
+- [ ] Endpoint `/security/health` (Phase 3 - exemple sécurité).
 - [ ] Audit logs actions sensibles.
 - [ ] Compression/déploiement automatisé.
 
@@ -624,11 +673,11 @@
   - Utile pour debug UX complexes
   - Overkill pour MVP, à considérer post-lancement
 
-**Recommandation startup :**
+**Recommandation startup (exemple) :**
 ```
-Phase 1 (MVP) : Logs fichiers + Sentry Free (0-26€/mois)
-Phase 2 (Croissance) : Grafana Loki self-hosted (0€)
-Phase 3 (Scale) : Datadog si budget permet (50-150€/mois)
+Phase 1 (exemple, MVP) : Logs fichiers + Sentry Free (0-26€/mois)
+Phase 2 (exemple, Croissance) : Grafana Loki self-hosted (0€)
+Phase 3 (exemple, Scale) : Datadog si budget permet (50-150€/mois)
 ```
 
 ### Priorités recommandées
@@ -737,9 +786,9 @@ Phase 3 (Scale) : Datadog si budget permet (50-150€/mois)
 
 **📁 Fichiers modifiés/créés :**
 - `apps/api/src/services/gdpr-export.service.ts` (nouveau - 548 lignes)
-- `apps/api/src/modules/profile/profile.controller.ts` (lignes 240-460)
-- `apps/api/src/modules/pro/pro.controller.ts` (lignes 471-663)
-- `apps/api/src/modules/admin/admin.controller.ts` (lignes 1678-1894)
+- `apps/api/src/modules/profile/profile.controller.ts` (section « Système RGPD Complet »)
+- `apps/api/src/modules/pro/pro.controller.ts` (section « Système RGPD Complet »)
+- `apps/api/src/modules/admin/admin.controller.ts` (section « Système RGPD Complet »)
 - `apps/web/app/profile/page.tsx` (export + suppression UI)
 - `apps/web/app/pro/profile/page.tsx` (export + suppression UI)
 - `apps/web/app/admin/gdpr-exports/page.tsx` (nouveau - dashboard monitoring)
@@ -798,7 +847,7 @@ apps/api/
 
   **📋 Intégration RGPD Complète : Section Privacy dans `/profile`**
 
-  **Fichier :** `apps/web/app/profile/page.tsx` (lignes 279-383)
+  **Fichier :** `apps/web/app/profile/page.tsx` (section « Intégration RGPD Complète »)
 
   **Fonctionnalités ajoutées :**
 
@@ -900,14 +949,14 @@ apps/api/
 
 ### Sécurité (1-2 jours, 0€) – Priorité absolue
 
-- Phase 1 (2h) : CORS, secrets, logs, validation – ✅ livré (nov 2025).
-- Phase 2 (3h) : Helmet, trust proxy, DB SSL, script secrets – ✅ livré (nov 2025).
-- Phase 3 (2h) : `/security/health`, audit logs, alerting – ✅ livré (script + doc monitoring).
-- Tests (2h) : Checklist sécurité complète – 🔄 à rejouer avant déploiement.
+- Historique (nov 2025, tel qu'indiqué ici) : Phase 1 (2h, exemple) : CORS, secrets, logs, validation – ✅ livré.
+- Historique (nov 2025, tel qu'indiqué ici) : Phase 2 (3h, exemple) : Helmet, trust proxy, DB SSL, script secrets – ✅ livré.
+- Historique (nov 2025, tel qu'indiqué ici) : Phase 3 (2h, exemple) : `/security/health`, audit logs, alerting – ✅ livré (script + doc monitoring).
+- Tests (2h, exemple) : Checklist sécurité complète – 🔄 à rejouer avant déploiement.
 
 ### Claude (Backend/Performance)
 
-- URGENT : Sécurité Phase 3 (checklists + observabilité).
+- URGENT : Sécurité Phase 3 (exemple) (checklists + observabilité).
 - En cours : Optimisations DB, compression.
 - Suivant : CDN + monitoring production.
 
@@ -936,10 +985,10 @@ apps/api/
 | ~~Tests Services Core~~ | ~~3j~~ | ~~🛡️ Qualité~~ | ~~🛡️ Stabilité~~ | ✅ Terminé | 0€ |
 | ~~Monitoring Gratuit (Clever Cloud ou autre)~~ | ~~0.5j~~ | ~~🛡️ Production~~ | ~~🛡️ Stabilité~~ | ✅ Terminé | **300€/an** |
 | **Sécurité Production-Ready** | **1-2j** | **🔥 BLOCKER PROD** | **🔥 Critique** | 🚨 URGENT | **0€** |
-| ├─ Phase 1 : CORS + Secrets + Validation | 2h | 🔥 Critique | 🔥 Critique | ✅ Terminé | 0€ |
-| ├─ Phase 2 : Helmet + SSL + Scripts | 3h | 🛡️ Important | 🛡️ Important | ✅ Terminé | 0€ |
-| ├─ Phase 3 : Monitoring + Audit Logs | 2h | 📊 Important | 📊 Important | 🚨 Focus (alerting) | 0€ |
-| └─ Tests + Checklist Déploiement | 2h | ✅ Validation | ✅ Validation | 🚨 Final | 0€ |
+| ├─ Phase 1 (exemple) : CORS + Secrets + Validation | 2h | 🔥 Critique | 🔥 Critique | ✅ Terminé | 0€ |
+| ├─ Phase 2 (exemple) : Helmet + SSL + Scripts | 3h | 🛡️ Important | 🛡️ Important | ✅ Terminé | 0€ |
+| ├─ Phase 3 (exemple) : Monitoring + Audit Logs | 2h | 📊 Important | 📊 Important | 🚨 Focus (alerting) | 0€ |
+| └─ Tests + Checklist Déploiement (exemple) | 2h | ✅ Validation | ✅ Validation | 🚨 Final | 0€ |
 | Optimisations Performance Gratuites | 1j | ⚡ Performance | 🛡️ Stabilité | 🔥 En cours | 0€ |
 | ~~Storybook Fix + OpenAPI~~ | ~~1j~~ | ~~📚 DevExp~~ | ~~🛠️ Infrastructure~~ | ✅ Terminé | 0€ |
 | Déploiement AdSense | 5min | 💰 Revenus 50-300€/mois | 🎯 Business | ⚡ Quick Win | 0€ |
@@ -973,19 +1022,19 @@ apps/api/
 
 ### Sécurité Production-Ready (Claude & Codex)
 
-**Claude #1 – Phase 1 (2h)**
+**Claude #1 – Phase 1 (exemple, 2h)**
 - [x] Fix CORS wildcard.
 - [x] Validation secrets production.
 - [x] Supprimer logs tokens.
 - [x] Middleware validation Zod.
 
-**Claude #2 – Phase 2 (3h)**
+**Claude #2 – Phase 2 (exemple, 3h)**
 - [x] Helmet renforcé (CSP, HSTS).
 - [x] Trust proxy provider (Clever Cloud ou autre).
 - [x] DB SSL obligatoire.
 - [x] Script génération secrets.
 
-**Codex #1 – Phase 3 (2h)**
+**Codex #1 – Phase 3 (exemple, 2h)**
 - [x] Endpoint `/security/health`.
 - [x] Schema + middleware audit logs.
 - [x] Mettre à jour `SECURITY.md`.
