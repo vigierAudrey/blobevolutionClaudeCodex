@@ -4,6 +4,11 @@ Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement d
 
 > **Note :** ce document remplace l'ancien `CLAUDE.md`. Tous les liens internes doivent désormais pointer vers `claude.md`.
 
+## ⚠️ Gouvernance IA (source de vérité)
+
+- La source de vérité IA est `ai/README.md` et `ai/policies/*`.
+- Ce fichier ne doit pas introduire de règles critiques nouvelles; elles migrent vers `ai/policies/*`.
+
 ---
 
 ## 🏷️ Naming produit (IMPORTANT)
@@ -86,11 +91,71 @@ Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement d
 - Toujours citer les fichiers/références du repo utilisés comme source lorsqu’on argumente.
 - Vérifier la présence réelle d’une dépendance/outil (package.json, docs) avant de l’évoquer.
 - Limiter la portée des modifications et expliciter toute hypothèse ou inconnue dans la PR.
-- Escalader vers l’humain quand une consigne est ambiguë/contradictoire.
+- Escalader vers l'humain quand une consigne est ambiguë/contradictoire.
 
 ---
 
-## 🧯 Anti “code pansement” (STRICT)
+## 🚫 ANTI-HALLUCINATION (SECURITY GATE)
+
+**Périmètre** : Sécurité, déploiement, runbooks exécutables, CI/CD, audits conformité.
+
+### Taggage obligatoire : FAIT / HYPOTHÈSE / INCONNU
+
+Toute affirmation technique DOIT être préfixée :
+
+- **FAIT** (source: `<fichier>` ou `output <commande>`) : information vérifiée
+- **HYPOTHÈSE** (à vérifier via `<commande>`) : supposition nécessitant validation
+- **INCONNU** (raison: `<blocage>`) : information non accessible
+
+Exemples :
+```
+✅ FAIT (package.json) : dépendance X version <x.y.z>
+✅ HYPOTHÈSE (à vérifier via npm test) : les tests passent après modification
+✅ INCONNU (nécessite env prod) : valeur config actuelle
+
+❌ "Le projet utilise X" (pas de source)
+❌ "Les tests devraient passer" (pas de vérification)
+```
+
+### Interdictions strictes
+
+- ❌ Présenter une hypothèse comme un fait (sans taggage explicite)
+- ❌ Inventer valeurs prod (URLs, secrets, tokens, configs distantes)
+- ❌ Affaiblir une protection (Zod, RBAC, CSP) pour "faire passer"
+- ❌ Contourner un échec (commenter test, modifier assertion, créer bypass)
+
+### Méthode de vérification obligatoire
+
+Format pour affirmations critiques :
+```
+Affirmation: <description>
+Vérifiable via: <commande> ou <fichier>
+Statut: ✅ VÉRIFIÉ | ⏳ À VÉRIFIER | ❌ NON VÉRIFIABLE
+```
+
+Un FAIT doit citer soit un fichier, soit un output de commande (preuve copiable).
+
+### Échec de runbook/script
+
+Si échec critique → **INTERDICTION** de continuer sans correction.
+
+Format :
+```
+⚠️ ÉCHEC - ARRÊT REQUIS
+Script: <commande>
+Output: <extrait stderr>
+Diagnostic: <cause>
+Next steps: <correction vérifiable>
+⚠️ Aucun bypass proposé
+```
+
+### Mode strict preflight (staging/prod)
+
+**RÈGLE ABSOLUE** : Aucun check P0 ne peut rester SKIP en staging/prod. Échec P0 = BLOCAGE déploiement.
+
+---
+
+## 🧯 Anti "code pansement" (STRICT)
 
 ### Interdiction `any` (obligation projet)
 
@@ -224,7 +289,8 @@ npm run db:studio
 
 - Ce monorepo (`blobevolutionClaudeCodex`) est la **source unique de vérité**.
 - **Ne consultez plus** l'ancien projet `/blobevolution` (archivé pour référence historique uniquement).
-- Les documents de référence IA sont **README.md**, **AGENTS.md** et **claude.md** ; tout écart avec le code doit être signalé par une PR doc.
+- La source de vérité IA est **ai/** (README + policies). En cas de conflit documentaire, **ai/** prime. En cas d’ambiguïté, STOP et demande de preuves.
+- Les règles normatives présentes ici sont en migration vers `ai/policies/*`.
 - Pour le contexte historique : `ai/context/migration_from_blobevolution.md` sans en déduire de code.
 - 🎯 Focus visibilité : la Blobosphère est notre vitrine éditoriale pour attirer du trafic et des inscriptions.
 
