@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, it, expect, jest, beforeAll, afterAll } from '@jest/globals';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { AuthService } from '../auth.service';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 

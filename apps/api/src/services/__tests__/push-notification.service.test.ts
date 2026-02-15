@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, jest } from '@je
 import { PushNotificationService, type PushNotificationData } from '../push-notification.service';
 import { secureLogger } from '../../utils/secure-logger';
 import { clientPrisma as prisma } from '@blobinfini/database';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 // --- Firebase admin mock ----------------------------------------------------
 var adminMock: any;

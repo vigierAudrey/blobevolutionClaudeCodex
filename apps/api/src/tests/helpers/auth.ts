@@ -1,5 +1,5 @@
 import request, { SuperAgentTest, Test as SupertestRequest } from 'supertest';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { clientPrisma as prisma, Role, User } from '@blobinfini/database';
 import { jest } from '@jest/globals';
 import { AVAILABLE_PERMISSIONS } from '../../modules/admin/permissions';

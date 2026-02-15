@@ -1,5 +1,5 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
