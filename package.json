@@ -42,7 +42,7 @@
     "test": "pnpm --filter @blobinfini/api test",
     "test:e2e": "node scripts/run-e2e.mjs",
     "postinstall": "patch-package",
-    "prepare": "(cd packages/database && npx prisma generate) && (pnpm --filter @blobinfini/database build || true)",
+    "prepare": "pnpm --filter @blobinfini/database generate && (pnpm --filter @blobinfini/database build || true)",
     "lint": "pnpm --filter @blobinfini/web lint",
     "lint:strict": "pnpm --filter @blobinfini/web lint:strict",
     "openapi:lint": "redocly lint docs/openapi/openapi.yaml",
