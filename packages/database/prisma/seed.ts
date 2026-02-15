@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { resolve } from 'path';
 import { PrismaClient, Role, Sex, Level, Sport, DecisionKind, MatchStatus, BookingRequestStatus } from '@prisma/client';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 // Ensure env is loaded from repo root .env (fallback prisma/.env)
 try {
