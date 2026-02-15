@@ -151,6 +151,9 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
+      '@jest/globals':
+        specifier: ^30.2.0
+        version: 30.2.0
       '@types/bcrypt':
         specifier: ^5.0.2
         version: 5.0.2
