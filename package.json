@@ -1,6 +1,7 @@
 {
   "name": "blobevolution-claude-codex",
   "private": true,
+  "packageManager": "pnpm@10.28.2",
   "workspaces": [
     "apps/*",
     "packages/*"
