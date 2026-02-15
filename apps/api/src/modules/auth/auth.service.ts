@@ -13,6 +13,24 @@ const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
 const EMAIL_VERIFY_TTL_HOURS = 24;
 const MIN_SECRET_LENGTH = 64;
 
+// bcrypt cost factor: balance between security and performance
+// Min: 10 (fast, minimum secure), Max: 14 (slow, very secure)
+// Default: 12 (recommended for 2025)
+const BCRYPT_COST_MIN = 10;
+const BCRYPT_COST_MAX = 14;
+const BCRYPT_COST_DEFAULT = 12;
+const BCRYPT_COST = (() => {
+  const raw = process.env.BCRYPT_COST ? parseInt(process.env.BCRYPT_COST, 10) : BCRYPT_COST_DEFAULT;
+  const clamped = Math.max(BCRYPT_COST_MIN, Math.min(BCRYPT_COST_MAX, raw));
+  if (clamped !== raw) {
+    secureLogger.warn('BCRYPT_COST_CLAMPED', { requested: raw, clamped, min: BCRYPT_COST_MIN, max: BCRYPT_COST_MAX });
+  }
+  return clamped;
+})();
+
+// Token hashing: lower cost (10) acceptable for ephemeral tokens
+const BCRYPT_TOKEN_COST = 10;
+
 function ensureStrongSecret(key: 'JWT_SECRET' | 'JWT_REFRESH_SECRET') {
   const value = process.env[key];
   if (!value) {
@@ -44,7 +62,7 @@ export class AuthService {
     opts?: { consentIp?: string },
   ) {
     try {
-      const hashed = await bcrypt.hash(data.password, 12);
+      const hashed = await bcrypt.hash(data.password, BCRYPT_COST);
       const user = await prisma.user.create({
         data: {
           email: data.email,
@@ -271,7 +289,7 @@ export class AuthService {
     if (!user) return generic;
 
     const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = await bcrypt.hash(rawToken, 10);
+    const tokenHash = await bcrypt.hash(rawToken, BCRYPT_TOKEN_COST);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1h
     await prisma.passwordResetToken.create({
       data: { userId: user.id, tokenHash, expiresAt },
@@ -314,7 +332,7 @@ export class AuthService {
     }
     if (!match) throw { code: 'UNAUTHORIZED', message: 'Invalid or expired token' };
 
-    const hashed = await bcrypt.hash(newPassword, 12);
+    const hashed = await bcrypt.hash(newPassword, BCRYPT_COST);
 
     await prisma.$transaction([
       prisma.user.update({ where: { id: match.userId }, data: { password: hashed } }),
@@ -340,7 +358,7 @@ export class AuthService {
       throw { code: 'UNAUTHORIZED', message: 'Invalid current password' };
     }
 
-    const hashed = await bcrypt.hash(newPassword, 12);
+    const hashed = await bcrypt.hash(newPassword, BCRYPT_COST);
     await prisma.$transaction([
       prisma.user.update({ where: { id: userId }, data: { password: hashed } }),
       prisma.refreshToken.updateMany({
