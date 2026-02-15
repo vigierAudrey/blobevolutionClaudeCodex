@@ -8,6 +8,38 @@ const shouldLogCache = process.env.NODE_ENV !== 'test' || process.env.ENABLE_TES
 const logInfo = (...args: Parameters<typeof console.log>) => { if (shouldLogCache) console.log(...args); };
 const logWarn = (...args: Parameters<typeof console.warn>) => { if (shouldLogCache) console.warn(...args); };
 const logError = (...args: Parameters<typeof console.error>) => console.error(...args);
+const isDevelopment = process.env.NODE_ENV === 'development';
+const REDIS_DEV_HINT_THROTTLE_MS = 30000;
+
+type RedisDevHintState = {
+  nextLogAtMs: number;
+};
+
+function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
+  if (!isDevelopment) {
+    return false;
+  }
+
+  const globals = globalThis as typeof globalThis & {
+    __blobinfiniRedisDevHintState__?: RedisDevHintState;
+  };
+
+  if (!globals.__blobinfiniRedisDevHintState__) {
+    globals.__blobinfiniRedisDevHintState__ = { nextLogAtMs: 0 };
+  }
+
+  const now = Date.now();
+  const state = globals.__blobinfiniRedisDevHintState__;
+
+  if (now >= state.nextLogAtMs) {
+    state.nextLogAtMs = now + REDIS_DEV_HINT_THROTTLE_MS;
+    logWarn(
+      `⚠️ Redis non démarré (localhost:6379): ${errorMessage}. Lance "pnpm run dev:infra". Les retries continuent silencieusement.`
+    );
+  }
+
+  return true;
+}
 
 // Initialize Redis cache client
 export async function initializeCache(): Promise<any> {
@@ -32,6 +64,9 @@ export async function initializeCache(): Promise<any> {
     });
 
     client.on('error', (error: Error) => {
+      if (shouldSuppressRedisErrorLogInDev(error.message)) {
+        return;
+      }
       logError('❌ Redis error:', error.message);
     });
 
@@ -40,6 +75,9 @@ export async function initializeCache(): Promise<any> {
     logInfo('✅ Redis cache connected');
     return client;
   } catch (error) {
+    if (shouldSuppressRedisErrorLogInDev(error instanceof Error ? error.message : String(error))) {
+      return null;
+    }
     logError('❌ Redis cache connection failed:', error);
     return null;
   }

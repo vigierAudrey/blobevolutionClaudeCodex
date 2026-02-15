@@ -35,6 +35,24 @@ pnpm --filter @blobinfini/database generate
 pnpm --filter @blobinfini/database build
 ```
 
+## Development Workflows
+
+### Local development (API + Web on host)
+
+```bash
+pnpm run dev:infra
+pnpm run dev
+```
+
+`pnpm run dev` now performs a non-blocking Redis check on `localhost:6379`.
+If Redis is not running, it prints a clear hint and continues startup.
+
+### Full Docker development
+
+```bash
+pnpm run dev:all:docker
+```
+
 ## Build Scripts Security
 
 pnpm blocks build scripts by default for supply-chain security. Only specific packages are allowed to run build scripts.

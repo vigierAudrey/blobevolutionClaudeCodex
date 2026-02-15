@@ -9,6 +9,38 @@ type RedisClientType = ReturnType<typeof createClient>;
 
 // Redis client (will be initialized based on environment)
 let redisClient: RedisClientType | null = null;
+const isDevelopment = process.env.NODE_ENV === 'development';
+const REDIS_DEV_HINT_THROTTLE_MS = 30000;
+
+type RedisDevHintState = {
+  nextLogAtMs: number;
+};
+
+function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
+  if (!isDevelopment) {
+    return false;
+  }
+
+  const globals = globalThis as typeof globalThis & {
+    __blobinfiniRedisDevHintState__?: RedisDevHintState;
+  };
+
+  if (!globals.__blobinfiniRedisDevHintState__) {
+    globals.__blobinfiniRedisDevHintState__ = { nextLogAtMs: 0 };
+  }
+
+  const now = Date.now();
+  const state = globals.__blobinfiniRedisDevHintState__;
+
+  if (now >= state.nextLogAtMs) {
+    state.nextLogAtMs = now + REDIS_DEV_HINT_THROTTLE_MS;
+    console.warn(
+      `⚠️ Redis non démarré (localhost:6379): ${errorMessage}. Lance "pnpm run dev:infra". Les retries continuent silencieusement.`
+    );
+  }
+
+  return true;
+}
 
 // Initialize Redis client for production
 async function initializeRedis(): Promise<RedisClientType | null> {
@@ -29,6 +61,9 @@ async function initializeRedis(): Promise<RedisClientType | null> {
     });
 
     client.on('error', (error) => {
+      if (shouldSuppressRedisErrorLogInDev(error.message)) {
+        return;
+      }
       console.error('❌ Redis error:', error.message);
     });
 
@@ -37,6 +72,9 @@ async function initializeRedis(): Promise<RedisClientType | null> {
     console.log('✅ Redis connected for rate limiting');
     return client;
   } catch (error) {
+    if (shouldSuppressRedisErrorLogInDev(error instanceof Error ? error.message : String(error))) {
+      return null;
+    }
     console.error('❌ Redis connection failed, falling back to memory store:', error);
     return null;
   }
