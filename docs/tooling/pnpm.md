@@ -143,6 +143,22 @@ pnpm blocks build scripts by default. This is expected and secure. If you need t
 2. Or ensure it's not in the ignored list (if build needed)
 3. For native dependencies, prefer pure JavaScript alternatives (e.g., bcryptjs instead of bcrypt)
 
+### "EADDRINUSE :::3002" while `kill-port` says no process
+
+Use kernel-level diagnostics first (more reliable than `kill-port` for IPv6 listeners):
+
+```bash
+ss -lntp | rg ':(3002|4000)'
+# fallback if ss is unavailable:
+lsof -nP -iTCP:3002 -sTCP:LISTEN
+```
+
+For local dev scripts, use the repo helper that combines `ss`/`lsof` PID lookup with graceful then forced kill:
+
+```bash
+bash scripts/free-port.sh 3002
+```
+
 ## Migration from npm
 
 This project was migrated from npm workspaces to pnpm. Key changes:

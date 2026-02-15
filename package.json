@@ -9,11 +9,11 @@
   "scripts": {
     "dev": "pnpm run dev:start",
     "dev:start": "pnpm run dev:all",
-    "dev:kill-ports": "(npx kill-port 4000 || true) && (npx kill-port 3002 || true) && (npx kill-port 3010 || true) && (npx kill-port 3011 || true) && (npx kill-port 3020 || true)",
+    "dev:kill-ports": "bash scripts/free-port.sh 4000 3002 3010 3011 3020",
     "dev:api:start": "pnpm --filter @blobinfini/database build && pnpm --filter @blobinfini/api dev",
     "dev:web:start": "pnpm --filter @blobinfini/web dev",
     "dev:api": "npx kill-port 4000 || true && pnpm run dev:api:start",
-    "dev:web": "npx kill-port 3002 || true && pnpm run dev:web:start",
+    "dev:web": "bash scripts/free-port.sh 3002 && pnpm run dev:web:start",
     "dev:all": "pnpm run dev:kill-ports && npm-run-all -p dev:api:start dev:web:start",
     "dev:web:port": "node scripts/dev-web-port.mjs",
     "dev:web:nokill": "cd apps/web && cross-env-shell \"NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000} PORT=${PORT:-3010} npx next dev -p ${PORT:-3010}\"",
