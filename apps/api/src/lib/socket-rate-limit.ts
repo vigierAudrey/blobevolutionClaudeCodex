@@ -21,26 +21,36 @@ import { secureLogger } from '../utils/secure-logger';
 /**
  * Feature flag pour activer/désactiver le rate limiting
  *
- * SÉCURITÉ:
- * - OFF par défaut (dev/staging)
- * - ON uniquement si NODE_ENV=production ET flag explicite
+ * SÉCURITÉ P0:
+ * - ON par défaut en production (fail-fast si flag explicitement désactivé)
+ * - OFF uniquement si NODE_ENV !== production OU flag explicite = 'false'
  */
 const isProduction = process.env.NODE_ENV === 'production';
-const flagEnabled = process.env.ENABLE_WEBSOCKET_RATE_LIMIT === 'true';
+const flagValue = process.env.ENABLE_WEBSOCKET_RATE_LIMIT;
 
-export const RATE_LIMIT_ENABLED = isProduction && flagEnabled;
+// P0 FIX: Fail-fast en production si rate limiting explicitement désactivé
+if (isProduction && flagValue === 'false') {
+  throw new Error(
+    'FATAL: ENABLE_WEBSOCKET_RATE_LIMIT=false is NOT allowed in production. ' +
+    'Remove the flag to enable rate limiting (default ON in production).'
+  );
+}
+
+// P0 FIX: ON par défaut en production (sauf si flag = 'false')
+export const RATE_LIMIT_ENABLED = isProduction || flagValue === 'true';
 
 // Log du statut au démarrage
 if (RATE_LIMIT_ENABLED) {
   secureLogger.info('RATE_LIMIT_ENABLED', {
     env: process.env.NODE_ENV,
-    flag: process.env.ENABLE_WEBSOCKET_RATE_LIMIT
+    flag: flagValue,
+    mode: isProduction ? 'production (default ON)' : 'dev (explicit true)'
   });
 } else {
   secureLogger.warn('RATE_LIMIT_DISABLED', {
     env: process.env.NODE_ENV,
-    flag: process.env.ENABLE_WEBSOCKET_RATE_LIMIT,
-    reason: !isProduction ? 'not production' : 'flag not set'
+    flag: flagValue,
+    reason: 'development environment'
   });
 }
 

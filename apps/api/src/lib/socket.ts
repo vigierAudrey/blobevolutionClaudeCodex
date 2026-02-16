@@ -7,6 +7,9 @@ import { notifyNewMessage } from '../modules/push/push.controller';
 import { ackErrorSchema, ackSuccessSchema, ackSuccessSchemaRequired, createAckOnce, type AckResult } from './socket-ack';
 import { ERROR_CODES } from '../utils/error-codes';
 import { z } from 'zod';
+import { checkConnectionAllowed, trackConnection, untrackConnection } from './socket-connection-guard';
+import { checkReconnectionAllowed } from './socket-reconnection-guard';
+import { getCachedAuth, setCachedAuth } from './socket-auth-cache';
 import {
   joinConversationSchema,
   leaveConversationSchema,
@@ -98,6 +101,21 @@ const emitSocketError = (
 /**
  * Middleware d'authentification Socket.io
  * Vérifie le JWT avant d'autoriser la connexion
+ *
+ * P0 SECURITY (Step 2):
+ * - Vérifie rate limit reconnection AVANT query DB (étape 2)
+ * - Vérifie limites connexions AVANT query DB (étape 1)
+ * - Cache auth en mémoire TTL 30s (réduit charge DB, étape 2)
+ * - Cleanup garanti sur erreur
+ * - Erreurs publiques neutres
+ *
+ * ORDRE D'EXÉCUTION:
+ * 1. Vérifier JWT (décodage token)
+ * 2. Vérifier rate limit reconnection (Storm guard Step 2)
+ * 3. Vérifier limites connexions simultanées (Step 1)
+ * 4. Vérifier cache auth (Step 2)
+ * 5. Query DB si cache miss (fallback)
+ * 6. Mettre en cache (Step 2)
  */
 async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Error) => void) {
   try {
@@ -107,25 +125,90 @@ async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Erro
       return next(new Error('Authentication required'));
     }
 
-    // Vérifier le JWT
+    // P0 STEP 2.1: Garde token size (évite DoS jwt.verify avec token énorme)
+    const MAX_TOKEN_SIZE = 4096; // 4KB max (JWT normal ~200-500 bytes)
+    if (token.length > MAX_TOKEN_SIZE) {
+      secureLogger.warn('SOCKET_AUTH_TOKEN_TOO_LARGE', {
+        tokenLength: token.length,
+        maxAllowed: MAX_TOKEN_SIZE
+      });
+      return next(new Error('Authentication failed'));
+    }
+
+    // Étape 1: Vérifier le JWT (pas de query DB encore)
     const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as { sub: string; role: string };
+    const userId = decoded.sub;
 
-    // Vérifier que l'utilisateur existe
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.sub },
-      select: { id: true, role: true }
-    });
+    // P0 STEP 2: Vérifier rate limit reconnection AVANT toute query DB
+    const reconnectBlockReason = await checkReconnectionAllowed(userId);
+    if (reconnectBlockReason) {
+      // Erreur publique neutre
+      return next(new Error(reconnectBlockReason));
+    }
 
-    if (!user) {
-      return next(new Error('User not found'));
+    // P0 STEP 1: Vérifier limites connexions simultanées AVANT query DB
+    const connectionBlockReason = checkConnectionAllowed(userId, socket);
+    if (connectionBlockReason) {
+      // Erreur publique neutre
+      return next(new Error(connectionBlockReason));
+    }
+
+    // P0 STEP 2: Vérifier cache auth (évite query DB si hit)
+    const cachedAuth = getCachedAuth(userId);
+
+    let userExists: boolean;
+    let userRole: string;
+
+    if (cachedAuth) {
+      // Cache HIT → pas de query DB
+      if (!cachedAuth.exists) {
+        return next(new Error('User not found'));
+      }
+      userExists = true;
+      userRole = cachedAuth.role!;
+    } else {
+      // Cache MISS → query DB
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          role: true,
+          deletedAt: true // P0 STEP 2.1: Vérifier soft delete
+        }
+      });
+
+      // P0 STEP 2.1: User soft-deleted = inexistant
+      if (!user || user.deletedAt) {
+        // Mettre en cache l'absence (évite query DB répétées)
+        setCachedAuth(userId, false);
+
+        if (user?.deletedAt) {
+          secureLogger.info('SOCKET_AUTH_DELETED_USER_BLOCKED', {
+            userId,
+            deletedAt: user.deletedAt.toISOString()
+          });
+        }
+
+        return next(new Error('User not found'));
+      }
+
+      userExists = true;
+      userRole = user.role;
+
+      // P0 STEP 2: Mettre en cache le user
+      setCachedAuth(userId, true, userRole);
     }
 
     // Attacher l'utilisateur au socket
-    socket.user = { id: user.id, role: user.role };
+    socket.user = { id: userId, role: userRole };
     next();
   } catch (error) {
-    secureLogger.warn('SOCKET_AUTH_FAILED', { error: error instanceof Error ? error.message : 'Unknown' });
-    next(new Error('Invalid token'));
+    // Pas de log du token (sécurité PII)
+    secureLogger.warn('SOCKET_AUTH_FAILED', {
+      error: error instanceof Error ? error.message : 'Unknown',
+      errorType: error instanceof Error ? error.constructor.name : 'Unknown'
+    });
+    next(new Error('Authentication failed'));
   }
 }
 
@@ -154,7 +237,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
     },
     transports: ['websocket', 'polling'], // WebSocket en priorité, polling en fallback
     pingTimeout: 60000, // 60 secondes avant timeout
-    pingInterval: 25000 // Ping toutes les 25 secondes
+    pingInterval: 25000, // Ping toutes les 25 secondes
+    // P0 Security: Limite taille payload (évite DoS CPU via JSON.parse de payload énorme)
+    maxHttpBufferSize: 1e6, // 1MB max (Socket.IO default = 1MB, on rend explicite)
+    perMessageDeflate: false // Désactiver compression (économie CPU, payload déjà limité)
   });
 
   // Appliquer l'authentification à toutes les connexions
@@ -168,6 +254,9 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
       socket.disconnect();
       return;
     }
+
+    // P0 FIX: Tracker la connexion (après auth réussie)
+    trackConnection(userId, socket);
 
     console.log(`[WebSocket] User ${userId} connected (${socket.id})`);
 
@@ -536,6 +625,8 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
 
     // Déconnexion
     socket.on('disconnect', () => {
+      // P0 FIX: Cleanup tracking garanti
+      untrackConnection(socket.id);
       console.log(`[WebSocket] User ${userId} disconnected (${socket.id})`);
     });
 
