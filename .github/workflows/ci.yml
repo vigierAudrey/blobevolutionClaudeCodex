@@ -43,7 +43,7 @@ jobs:
 
           # Check workflow files for accidental ALLOW_ACCEPT_DATA_LOSS=true assignments
           # (YAML env assignment or shell export only; ignore security guard comparisons)
-          FORBIDDEN_PATTERN="^[[:space:]]*(ALLOW_ACCEPT_DATA_LOSS[[:space:]]*:[[:space:]]*(\"true\"|'true'|true)|export[[:space:]]+ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*(\"true\"|'true'|true))[[:space:]]*$"
+          FORBIDDEN_PATTERN='^[[:space:]]*(ALLOW_ACCEPT_DATA_LOSS[[:space:]]*:[[:space:]]*("true"|'\'true\''|true)\b|export[[:space:]]+ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'\'true\''|true)\b|ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'\'true\''|true)\b)'
           if grep -rEn "$FORBIDDEN_PATTERN" .github/workflows/*.yml 2>/dev/null; then
             echo "❌ SECURITY VIOLATION: Found ALLOW_ACCEPT_DATA_LOSS=true in workflow files!"
             echo ""
