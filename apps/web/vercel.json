@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "buildCommand": "cd ../.. && npm run build:web",
-  "devCommand": "npm run dev",
-  "installCommand": "cd ../.. && npm install",
+  "buildCommand": "cd ../.. && pnpm run build:web",
+  "devCommand": "pnpm run dev",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "framework": "nextjs",
   "cleanUrls": true,
   "trailingSlash": false,

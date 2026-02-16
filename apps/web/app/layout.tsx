@@ -4,7 +4,6 @@ import Script from 'next/script';
 import './globals.css';
 import ClientProvider from '@/components/ui/ClientProvider';
 import { ThemeScript } from '@/components/theme/ThemeScript';
-import { LanguageSelector } from '@/components/i18n/LanguageSelector';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 
@@ -56,9 +55,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-background text-foreground">
         <NextIntlClientProvider locale={locale} messages={messages}>
           <ClientProvider>
-            <div className="container-responsive pt-4 flex justify-end">
-              <LanguageSelector />
-            </div>
             <main className="container-responsive py-6 sm:py-10">{children}</main>
             <CookieConsent />
           </ClientProvider>

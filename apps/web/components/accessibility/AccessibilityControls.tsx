@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Accessibility, ScanText, SunMoon, Type, Waves } from 'lucide-react';
 
 import { Button } from '../ui/button';
+import { LanguageSelector } from '@/components/i18n/LanguageSelector';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import type { AccessibilityPreferenceKey } from './AccessibilityProvider';
 import { useAccessibility } from './AccessibilityProvider';
@@ -79,6 +80,7 @@ export function AccessibilityControls() {
     <div className="fixed bottom-6 right-4 z-40 flex flex-col items-end gap-2 sm:right-6">
       {/* Theme toggle always visible */}
       <ThemeToggle floating />
+      <LanguageSelector />
 
       <Button
         variant="secondary"
