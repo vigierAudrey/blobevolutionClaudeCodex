@@ -3,7 +3,7 @@
 > Guide pratique pour livrer l’API + le front Blobinfini en environnement production/staging et valider les garde-fous sécurité (Phase 3 roadmap).
 
 ## 1. Prérequis
-- Node.js 20+, npm 10+.
+- Node.js 20+, pnpm 10+ (via Corepack).
 - PostgreSQL + Redis accessibles via réseau privé/SSL (`sslmode=require` obligatoires).
 - Reverse proxy (Clever Cloud/Nginx) qui propage `X-Forwarded-*` et termine le TLS.
 - Secrets générés avec `./scripts/generate-secrets.sh` (openssl ≥1.1).
@@ -52,24 +52,30 @@
 ## 4. Procédure de déploiement
 ```bash
 # 1. Installer les dépendances
-npm install
+pnpm install --frozen-lockfile
 
 # 2. Construire et tester l’API
-npm run build --workspace @blobinfini/api
-npm test --workspace @blobinfini/api
+pnpm --filter @blobinfini/api build
+pnpm --filter @blobinfini/api test
 
 # 3. Construire le package web
-npm run build --workspace @blobinfini/web
+pnpm -w run build:web
 
 # 4. Appliquer les migrations (DB déjà accessible SSL)
 npx prisma migrate deploy --schema packages/database/prisma/schema.prisma
 
 # 5. Démarrer les services
 NODE_ENV=production node apps/api/dist/index.js
-npm run start --workspace @blobinfini/web
+pnpm --filter @blobinfini/web start
 ```
 
 **Reverse proxy** : activer `proxy_set_header X-Forwarded-For`/`Proto`; côté Clever Cloud, ajouter les IPs officielles dans `TRUSTED_PROXY_IPS`.
+
+### Vercel (monorepo)
+- Root Directory: `apps/web`
+- Install Command: `pnpm install --frozen-lockfile`
+- Build Command: `pnpm -w run build:web`
+- Si un `npm install` apparaît encore dans les logs, supprimer l’override manuel dans Vercel Project Settings > Build and Development Settings (il écrase la config repo).
 
 ## 5. Vérifications post-déploiement
 
