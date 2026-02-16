@@ -856,6 +856,7 @@ const openConversationDataSchema = z
     created: z.boolean().optional(),
   })
   .strict();
+type OpenConversationData = z.infer<typeof openConversationDataSchema>;
 
 const createBookingAvailabilityPayloadSchema = z.object({
   sport: z.enum(['surf', 'kitesurf']),
@@ -989,13 +990,17 @@ export const apiClient = {
   matchDecisions: (list: Array<{ targetProfileId: string; decision: 'ACCEPT' | 'REFUSE' }>) =>
     postMatchDecisions(list),
 
-  openConversation: (targetUserId: string) =>
-    (async () => {
+  openConversation: (targetUserId: string): Promise<OpenConversationData> =>
+    (async (): Promise<OpenConversationData> => {
       const parsed = openConversationPayloadSchema.parse({ targetUserId });
 
       const headers = await buildStrictHeaders(true);
 
-      return requestStrict('/conversations/open', { method: 'POST', headers, body: JSON.stringify(parsed) }, openConversationDataSchema);
+      return requestStrict<OpenConversationData>(
+        '/conversations/open',
+        { method: 'POST', headers, body: JSON.stringify(parsed) },
+        openConversationDataSchema,
+      );
     })(),
 
   reportProfile: (body: { targetProfileId: string; reason?: string }) =>

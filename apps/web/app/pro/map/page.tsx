@@ -425,7 +425,17 @@ export default function ProMapPage() {
                 onContactClick={async (userId: string) => {
                   try {
                     const r = await apiClient.openConversation(userId);
-                    router.push(`/messages/${r.id}`);
+                    const conversationId =
+                      typeof r === 'object' &&
+                      r !== null &&
+                      'id' in r &&
+                      typeof r.id === 'string'
+                        ? r.id
+                        : null;
+                    if (!conversationId) {
+                      throw new Error('Réponse invalide: conversation sans identifiant');
+                    }
+                    router.push(`/messages/${conversationId}`);
                   } catch (error) {
                     console.error('Erreur lors de l’ouverture de la conversation :', error);
                   }
