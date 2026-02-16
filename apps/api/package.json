@@ -11,7 +11,7 @@
     "dev": "tsx watch src/index.ts",
     "clean": "rimraf dist",
     "type-check": "tsc -p tsconfig.typecheck.json --noEmit",
-    "test": "NODE_ENV=test jest --config jest.config.ts",
+    "test": "NODE_ENV=test jest",
     "gdpr:report": "tsx src/scripts/gdpr-purge-cli.ts report",
     "gdpr:purge": "tsx src/scripts/gdpr-purge-cli.ts purge",
     "gdpr:archive": "tsx src/scripts/gdpr-purge-cli.ts archive",

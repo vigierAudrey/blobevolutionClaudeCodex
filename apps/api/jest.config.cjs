@@ -1,9 +1,10 @@
-import type { Config } from 'jest';
-
-const config: Config = {
+/** @type {import('jest').Config} */
+const config = {
   preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
+  // Global setup: DB schema prepared ONCE per Jest run
+  globalSetup: '<rootDir>/jest.global-setup.cjs',
   transform: {
     '^.+\\.(ts|tsx)$': [
       'ts-jest',
@@ -51,4 +52,4 @@ const config: Config = {
   coverageDirectory: '<rootDir>/coverage',
 };
 
-export default config;
+module.exports = config;
