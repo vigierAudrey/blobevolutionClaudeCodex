@@ -11,13 +11,16 @@ Le schéma DB est préparé **UNE SEULE FOIS** par run Jest au lieu d'avant chaq
 **Étapes du Global Setup:**
 
 1. **[1/4] Generate Prisma Client** (`npm run generate`)
-2. **[2/4] Push schema to DB** (`npm run db:push` via `safe-db-push.mjs`)
+2. **[2/4] Prepare schema DB**
+   - **CI (`CI=true`)**: `npm run migrate:deploy` (sans `ALLOW_ACCEPT_DATA_LOSS`)
+   - **Local test**: `npm run db:push` via `safe-db-push.mjs`
 3. **[3/4] Verify Postgres connection** (query test)
 4. **[4/4] Seed minimal test users** (2 users: admin + rider)
 
 **Gardes de sécurité:**
 - ✅ Requiert `NODE_ENV=test` ou `APP_ENV=test`
-- ✅ Requiert `ALLOW_ACCEPT_DATA_LOSS=true`
+- ✅ En local `db:push`, requiert `ALLOW_ACCEPT_DATA_LOSS=true`
+- ✅ En CI, n'utilise pas `ALLOW_ACCEPT_DATA_LOSS` (migration uniquement)
 - ❌ BLOCKED si `APP_ENV=production` ou `CI_PROD=true`
 
 **Performance:**

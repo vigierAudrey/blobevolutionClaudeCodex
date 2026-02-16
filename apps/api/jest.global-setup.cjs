@@ -4,13 +4,14 @@
  * RESPONSABILITÉS:
  * 1. Vérifier contexte test (sécurité)
  * 2. Générer Prisma Client (1 fois)
- * 3. Pousser schéma DB via safe-db-push (1 fois)
+ * 3. Préparer schéma DB (CI: migrate deploy / local: safe-db-push)
  * 4. Vérifier connexion Postgres
  * 5. Seed minimal (2 users test)
  *
  * SÉCURITÉ:
  * - Gardes identiques à jest.setup.db.ts
- * - Passe par safe-db-push.mjs (porte unique)
+ * - Local: passe par safe-db-push.mjs (porte unique)
+ * - CI: n'utilise jamais ALLOW_ACCEPT_DATA_LOSS
  */
 
 const { execSync } = require('child_process');
@@ -27,6 +28,7 @@ module.exports = async function globalSetup() {
   const APP_ENV = process.env.APP_ENV;
   const CI_PROD = process.env.CI_PROD;
   const NODE_ENV = process.env.NODE_ENV;
+  const CI = process.env.CI;
 
   // Hard deny if production environment
   if (APP_ENV === 'production' || CI_PROD === 'true') {
@@ -40,7 +42,7 @@ module.exports = async function globalSetup() {
   // Verify test context
   if (NODE_ENV !== 'test' && APP_ENV !== 'test') {
     throw new Error(
-      '❌ BLOCKED: db:push requires test environment.\n' +
+      '❌ BLOCKED: Database schema setup requires test environment.\n' +
       `   Current NODE_ENV=${NODE_ENV}, APP_ENV=${APP_ENV}\n` +
       '   Set NODE_ENV=test or APP_ENV=test to proceed.'
     );
@@ -57,20 +59,36 @@ module.exports = async function globalSetup() {
     });
 
     // ============================================================================
-    // STEP 2: Push schema to DB via safe-db-push (1 fois)
+    // STEP 2: Prepare schema (CI: migrate deploy / local: safe-db-push)
     // ============================================================================
-    console.log('\n🗃️  [2/4] Pushing schema to test DB...');
-    execSync('npm run db:push --workspace @blobinfini/database', {
-      stdio: 'inherit',
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        DATABASE_URL: process.env.DATABASE_URL,
-        SHADOW_DATABASE_URL: process.env.SHADOW_DATABASE_URL,
-        ALLOW_ACCEPT_DATA_LOSS: 'true', // Explicit unlock for test setup
-        NODE_ENV: 'test' // Ensure test context
-      }
-    });
+    const setupEnv = {
+      ...process.env,
+      DATABASE_URL: process.env.DATABASE_URL,
+      SHADOW_DATABASE_URL: process.env.SHADOW_DATABASE_URL,
+      NODE_ENV: 'test' // Ensure test context
+    };
+
+    // CI must never rely on ALLOW_ACCEPT_DATA_LOSS.
+    delete setupEnv.ALLOW_ACCEPT_DATA_LOSS;
+
+    if (CI === 'true') {
+      console.log('\n🗃️  [2/4] CI=true detected: applying schema via migrate deploy...');
+      execSync('npm run migrate:deploy --workspace @blobinfini/database', {
+        stdio: 'inherit',
+        cwd: repoRoot,
+        env: setupEnv
+      });
+    } else {
+      console.log('\n🗃️  [2/4] Local test mode: pushing schema to test DB...');
+      execSync('npm run db:push --workspace @blobinfini/database', {
+        stdio: 'inherit',
+        cwd: repoRoot,
+        env: {
+          ...setupEnv,
+          ALLOW_ACCEPT_DATA_LOSS: 'true' // Explicit unlock for local test setup
+        }
+      });
+    }
 
     // ============================================================================
     // STEP 3: Verify Postgres connection

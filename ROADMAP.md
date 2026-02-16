@@ -297,6 +297,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
 - Étape bloquante `npm run type-check`.
 - Étape bloquante `npm run build`.
 - Échec CI si env BLOCKER manquante ou valeurs par défaut détectées.
+  - [x] CI DB setup durci: `apps/api/jest.global-setup.cjs` bascule automatiquement sur `prisma migrate deploy` quand `CI=true` (aucun `ALLOW_ACCEPT_DATA_LOSS` en CI), tout en conservant `safe-db-push.mjs` en local test.
 
 **Estimation temps total (exemple) :** ~9h (Phase 1 : 2h, Phase 2 : 3h, Phase 3 : 2h, Tests+Deploy : 2h).  
 **Score cible post-fix (exemple) :** CORS, secrets, validation, headers → 9.3/10 global.

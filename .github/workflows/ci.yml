@@ -41,12 +41,14 @@ jobs:
             exit 1
           fi
 
-          # Check workflow files for accidental ALLOW_ACCEPT_DATA_LOSS usage
-          if grep -r "ALLOW_ACCEPT_DATA_LOSS.*true" .github/workflows/*.yml 2>/dev/null; then
+          # Check workflow files for accidental ALLOW_ACCEPT_DATA_LOSS=true assignments
+          # (YAML env assignment or shell export only; ignore security guard comparisons)
+          FORBIDDEN_PATTERN="^[[:space:]]*(ALLOW_ACCEPT_DATA_LOSS[[:space:]]*:[[:space:]]*(\"true\"|'true'|true)|export[[:space:]]+ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*(\"true\"|'true'|true))[[:space:]]*$"
+          if grep -rEn "$FORBIDDEN_PATTERN" .github/workflows/*.yml 2>/dev/null; then
             echo "❌ SECURITY VIOLATION: Found ALLOW_ACCEPT_DATA_LOSS=true in workflow files!"
             echo ""
             echo "   Detected in:"
-            grep -rn "ALLOW_ACCEPT_DATA_LOSS.*true" .github/workflows/*.yml || true
+            grep -rEn "$FORBIDDEN_PATTERN" .github/workflows/*.yml || true
             echo ""
             echo "   This flag must NEVER be set in CI workflows."
             echo "   It is only permitted in local test environments."
@@ -202,7 +204,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run web tests
-        run: pnpm --filter @blobinfini/web test -- --detectOpenHandles
+        run: pnpm --filter @blobinfini/web test --detectOpenHandles
 
   contracts:
     name: API Contracts
