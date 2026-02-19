@@ -24,11 +24,29 @@ import {
   newMatchingCardOutboundSchema
 } from './socket-schemas';
 import {
+  RATE_LIMIT_ENABLED,
   getSendMessageLimiter,
+  getSendMessageGlobalLimiter,
   getTypingLimiter,
   getJoinLimiter,
-  checkRateLimit
+  checkRateLimit,
+  isRateLimitRedisReady
 } from './socket-rate-limit';
+import { getClientIpFromIncomingRequest, getTrustProxyMode } from './client-ip';
+import { checkPreAuthIpRateLimit, getPreAuthRateLimitMetrics } from './socket-preauth-rate-limit';
+import {
+  attachSlowConsumerGuard,
+  getSlowConsumerMetrics,
+  isSocketCongested,
+  registerTypingDrop
+} from './socket-slow-consumer-guard';
+import { checkBurstLimit, getBurstMetrics } from './socket-burst-limit';
+import {
+  enqueuePushTask,
+  getFanoutMetrics,
+  selectPushTargets,
+  touchConversationCoalesced
+} from './socket-fanout-control';
 
 let io: SocketIOServer | null = null;
 
@@ -82,6 +100,49 @@ const sanitizeRateLimitDetails = (details: unknown) => {
   if (typeof d.windowMs === 'number') safe.windowMs = d.windowMs;
   return Object.keys(safe).length > 0 ? safe : undefined;
 };
+
+const shortId = (value: string | undefined | null): string =>
+  typeof value === 'string' && value.length > 8 ? `${value.slice(0, 8)}...` : String(value ?? '');
+
+async function assertConversationMember(userId: string, conversationId: string): Promise<boolean> {
+  const member = await prisma.conversationMember.findUnique({
+    where: {
+      conversationId_userId: {
+        conversationId,
+        userId
+      } as any
+    },
+    select: { id: true }
+  });
+  return !!member;
+}
+
+// Typing membership cache: short-lived positive cache to reduce DB load on normal typing bursts.
+// Security remains server-side enforced; cache is used only with room-membership gate + very short TTL.
+const TYPING_MEMBERSHIP_TTL_MS = 3000;
+const typingMembershipCache = new Map<string, number>();
+
+function isTypingMembershipCached(userId: string, conversationId: string, nowMs: number): boolean {
+  const cacheKey = `${userId}:${conversationId}`;
+  const expiresAt = typingMembershipCache.get(cacheKey);
+  if (!expiresAt) return false;
+  if (expiresAt <= nowMs) {
+    typingMembershipCache.delete(cacheKey);
+    return false;
+  }
+  return true;
+}
+
+function cacheTypingMembership(userId: string, conversationId: string, nowMs: number): void {
+  typingMembershipCache.set(`${userId}:${conversationId}`, nowMs + TYPING_MEMBERSHIP_TTL_MS);
+}
+
+function sweepTypingMembershipCache(nowMs: number): void {
+  if (typingMembershipCache.size < 256) return;
+  for (const [key, expiresAt] of typingMembershipCache.entries()) {
+    if (expiresAt <= nowMs) typingMembershipCache.delete(key);
+  }
+}
 
 const emitSocketError = (
   socket: Socket,
@@ -184,7 +245,7 @@ async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Erro
 
         if (user?.deletedAt) {
           secureLogger.info('SOCKET_AUTH_DELETED_USER_BLOCKED', {
-            userId,
+            userId: shortId(userId),
             deletedAt: user.deletedAt.toISOString()
           });
         }
@@ -229,11 +290,95 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
   ];
 
   const origins = allowedOrigins.length > 0 ? allowedOrigins : devOrigins;
+  const originsSet = new Set(origins);
+  const isProduction = process.env.NODE_ENV === 'production';
+  const replicas = Number(process.env.REPLICAS || '1');
+  const hasRedisAdapter = String(process.env.WS_ADAPTER_REDIS || '').toLowerCase() === 'true';
+  const trustProxyMode = getTrustProxyMode();
+
+  const preAuthCfg = getPreAuthRateLimitMetrics();
+  const slowConsumerCfg = getSlowConsumerMetrics();
+  const burstCfg = getBurstMetrics();
+  const fanoutCfg = getFanoutMetrics();
+
+  secureLogger.info('CONFIG_WS', {
+    env: process.env.NODE_ENV || 'development',
+    trustProxyMode,
+    trustedProxyIpsConfigured: Boolean(process.env.TRUSTED_PROXY_IPS?.trim()),
+    enableWebsocketRateLimitEnv: process.env.ENABLE_WEBSOCKET_RATE_LIMIT ?? '(unset)',
+    rateLimitEnabled: RATE_LIMIT_ENABLED,
+    replicas,
+    wsAdapterRedis: hasRedisAdapter,
+    maxHttpBufferSize: 1e6,
+    preAuthRateLimit: {
+      enabled: preAuthCfg.enabled,
+      points: preAuthCfg.points,
+      windowMs: preAuthCfg.windowMs,
+      baseBanMs: preAuthCfg.baseBanMs,
+      maxBanMs: preAuthCfg.maxBanMs
+    },
+    slowConsumerGuard: {
+      enabled: slowConsumerCfg.enabled,
+      checkIntervalMs: slowConsumerCfg.checkIntervalMs,
+      maxStreak: slowConsumerCfg.maxStreak,
+      maxBufferedPackets: slowConsumerCfg.maxBufferedPackets
+    },
+    burstControl: {
+      pointsPerSec: burstCfg.pointsPerSec,
+      capacity: burstCfg.capacity,
+      strictPointsPerSec: burstCfg.strictPointsPerSec,
+      strictCapacity: burstCfg.strictCapacity,
+      blockMs: burstCfg.blockMs
+    },
+    fanoutBudget: {
+      pushPerMessageMax: fanoutCfg.pushPerMessageMax,
+      queueMaxPending: fanoutCfg.queueMaxPending,
+      queueConcurrency: fanoutCfg.queueConcurrency,
+      conversationTouchMinIntervalMs: fanoutCfg.conversationTouchMinIntervalMs
+    }
+  });
+
+  if (Number.isFinite(replicas) && replicas > 1 && !hasRedisAdapter) {
+    secureLogger.warn('WS_MULTI_INSTANCE_WITHOUT_REDIS_ADAPTER', {
+      replicas,
+      wsAdapterRedis: false,
+      note: 'Sticky sessions are required until a shared Socket.IO adapter is enabled.',
+      risk: 'Room revocation is best-effort per node; cross-node post-revocation receive is possible.'
+    });
+  }
 
   io = new SocketIOServer(httpServer, {
     cors: {
       origin: origins,
-      credentials: true
+      // WS auth is bearer-token based; no cookie-based auth required.
+      credentials: false
+    },
+    allowRequest: (req, callback) => {
+      const clientIp = getClientIpFromIncomingRequest(req as any);
+      const preAuthRateLimit = checkPreAuthIpRateLimit(clientIp);
+      if (!preAuthRateLimit.allowed) {
+        secureLogger.warn('WS_PREAUTH_HANDSHAKE_REJECTED', {
+          retryAfterMs: preAuthRateLimit.retryAfterMs,
+          reason: preAuthRateLimit.reason
+        });
+        return callback('Connection temporarily unavailable', false);
+      }
+
+      const origin = req.headers.origin;
+
+      if (!origin) {
+        if (isProduction) {
+          return callback('Origin required', false);
+        }
+        return callback(null, true);
+      }
+
+      if (!originsSet.has(origin)) {
+        secureLogger.warn('WS_ORIGIN_BLOCKED', { origin });
+        return callback('Origin not allowed', false);
+      }
+
+      return callback(null, true);
     },
     transports: ['websocket', 'polling'], // WebSocket en priorité, polling en fallback
     pingTimeout: 60000, // 60 secondes avant timeout
@@ -257,8 +402,12 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
 
     // P0 FIX: Tracker la connexion (après auth réussie)
     trackConnection(userId, socket);
+    attachSlowConsumerGuard(socket);
 
-    console.log(`[WebSocket] User ${userId} connected (${socket.id})`);
+    secureLogger.info('WS_CONNECTED', {
+      userId: shortId(userId),
+      socketId: shortId(socket.id)
+    });
 
     // Rejoindre une room personnelle (pour les messages directs)
     socket.join(`user:${userId}`);
@@ -284,7 +433,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         const validation = validateSocketPayload(joinConversationSchema, rawData);
         if (!validation.success) {
           secureLogger.warn('SOCKET_VALIDATION_ERROR', {
-            userId,
+            userId: shortId(userId),
             event: 'join-conversation',
             error: validation.error
           });
@@ -303,12 +452,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         }
 
         // Vérifier que l'utilisateur est membre de cette conversation
-        const member = await prisma.conversationMember.findFirst({
-          where: {
-            conversationId,
-            userId
-          }
-        });
+        const member = await assertConversationMember(userId, conversationId);
 
         if (!member) {
           const errPayload = {
@@ -320,14 +464,20 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         }
 
         socket.join(`conversation:${conversationId}`);
-        console.log(`[WebSocket] User ${userId} joined conversation ${conversationId}`);
+        secureLogger.info('WS_JOIN_CONVERSATION', {
+          userId: shortId(userId),
+          conversationId: shortId(conversationId)
+        });
         ackSuccess(
           ack,
           { conversationId },
           ackSuccessSchemaRequired(z.object({ conversationId: z.string() }))
         );
       } catch (error) {
-        console.error('[WebSocket] Error joining conversation:', error);
+        secureLogger.error('WS_JOIN_CONVERSATION_FAILED', {
+          userId: shortId(userId),
+          error: error instanceof Error ? error.message : String(error)
+        });
         const payload = {
           code: SocketErrorCode.INTERNAL_ERROR,
           message: 'Failed to join conversation'
@@ -347,7 +497,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
 
       const { conversationId } = validation.data;
       socket.leave(`conversation:${conversationId}`);
-      console.log(`[WebSocket] User ${userId} left conversation ${conversationId}`);
+      secureLogger.debug('WS_LEAVE_CONVERSATION', {
+        userId: shortId(userId),
+        conversationId: shortId(conversationId)
+      });
     });
 
     // Envoyer un message
@@ -369,7 +522,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         const validation = validateSocketPayload(sendMessageSchema, rawData);
         if (!validation.success) {
           secureLogger.warn('SOCKET_VALIDATION_ERROR', {
-            userId,
+            userId: shortId(userId),
             event: 'send-message',
             error: validation.error
           });
@@ -378,6 +531,37 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         }
 
         const { conversationId, content, type, clientMsgId } = validation.data;
+
+        const strictBurstMode = !isRateLimitRedisReady();
+        const userBurst = checkBurstLimit(`send-message:${userId}`, { strict: strictBurstMode });
+        if (!userBurst.allowed) {
+          fail(
+            ERROR_CODES.RATE_LIMITED,
+            'Too many requests. Retry shortly.',
+            { retryAfterMs: userBurst.retryAfterMs, limit: 'burst-user' },
+            SocketErrorCode.RATE_LIMITED
+          );
+          return;
+        }
+
+        const conversationBurst = checkBurstLimit(`send-message:${userId}:${conversationId}`, { strict: strictBurstMode });
+        if (!conversationBurst.allowed) {
+          fail(
+            ERROR_CODES.RATE_LIMITED,
+            'Too many requests. Retry shortly.',
+            { retryAfterMs: conversationBurst.retryAfterMs, limit: 'burst-conversation' },
+            SocketErrorCode.RATE_LIMITED
+          );
+          return;
+        }
+
+        // Coarse per-user limiter to block random-conversation flood before DB lookups.
+        const globalRateCheck = await checkRateLimit(() => getSendMessageGlobalLimiter(), userId);
+        if (!globalRateCheck.allowed) {
+          const code = mapSocketErrorCode(globalRateCheck.error.code);
+          fail(code, globalRateCheck.error.message, { retryAfter: globalRateCheck.error.retryAfter }, globalRateCheck.error.code);
+          return;
+        }
 
         // ✅ PR2: Rate limiting (10 msg/min par user+conversation)
         const rateLimitKey = `${userId}:${conversationId}`;
@@ -389,9 +573,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         }
 
         // Vérifier que l'utilisateur est membre
-        const member = await prisma.conversationMember.findFirst({
-          where: { conversationId, userId }
-        });
+        const member = await assertConversationMember(userId, conversationId);
 
         if (!member) {
           const errPayload = {
@@ -515,14 +697,33 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           wasCreated = true;
         }
 
-        // Mettre à jour la date de la conversation
-        await prisma.conversation.update({
-          where: { id: conversationId },
-          data: { updatedAt: new Date() }
+        // Mettre à jour la date de la conversation (coalescé en cas de flood)
+        await touchConversationCoalesced(conversationId, async () => {
+          await prisma.conversation.update({
+            where: { id: conversationId },
+            data: { updatedAt: new Date() }
+          });
         });
 
         // Envoyer le message à tous les membres de la conversation via Socket.io
         // ✅ P1: Validate outbound payload with Zod before emit
+        const normalizedSender = {
+          id: message.sender.id,
+          role: message.sender.role,
+          riderProfile: message.sender.riderProfile
+            ? {
+                displayName: message.sender.riderProfile.displayName || 'Rider',
+                photoUrl: message.sender.riderProfile.photoUrl ?? null
+              }
+            : undefined,
+          proProfile: message.sender.proProfile
+            ? {
+                businessName: message.sender.proProfile.businessName || 'Professionnel',
+                photoUrl: message.sender.proProfile.photoUrl ?? null
+              }
+            : undefined
+        };
+
         const newMessagePayload = newMessageOutboundSchema.parse({
           id: message.id,
           conversationId: message.conversationId,
@@ -530,7 +731,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           type: message.type,
           content: message.content,
           createdAt: message.createdAt.toISOString(), // Convert Date to ISO string
-          sender: message.sender
+          sender: normalizedSender
         });
         io?.to(`conversation:${conversationId}`).emit('new-message', newMessagePayload);
 
@@ -540,7 +741,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           : message.sender.riderProfile?.displayName || 'Un rider';
 
         // Récupérer tous les membres sauf l'expéditeur
-        const otherMembers = await prisma.conversationMember.findMany({
+        const otherMembers: Array<{ userId: string }> = await prisma.conversationMember.findMany({
           where: {
             conversationId,
             userId: { not: userId }
@@ -548,19 +749,37 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           select: { userId: true }
         });
 
-        // Envoyer notification push à chaque membre (non-bloquant)
-        for (const member of otherMembers) {
-          notifyNewMessage(member.userId, {
-            senderName,
-            message: message.content,
-            conversationId
-          }).catch((error: unknown) => {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error(`[WebSocket] Failed to send push notification to ${member.userId}:`, errorMessage);
+        const { targets: pushTargets, droppedByBudget } = selectPushTargets(otherMembers.map((m: { userId: string }) => m.userId));
+        if (droppedByBudget > 0) {
+          secureLogger.warn('WS_PUSH_FANOUT_BUDGET_DROPPED', {
+            conversationId: shortId(conversationId),
+            droppedByBudget
           });
         }
 
-        console.log(`[WebSocket] Message ${wasCreated ? 'created' : 'replayed (idempotent)'} in conversation ${conversationId} by user ${userId}`);
+        // Envoyer notification push via queue bornée (non-bloquant)
+        for (const targetUserId of pushTargets) {
+          const enqueued = enqueuePushTask(async () => {
+            await notifyNewMessage(targetUserId, {
+              senderName,
+              message: message.content,
+              conversationId
+            });
+          });
+
+          if (!enqueued) {
+            secureLogger.warn('WS_PUSH_QUEUE_DROPPED', {
+              conversationId: shortId(conversationId),
+              targetUserId: shortId(targetUserId)
+            });
+          }
+        }
+
+        secureLogger.info('WS_SEND_MESSAGE_OK', {
+          userId: shortId(userId),
+          conversationId: shortId(conversationId),
+          created: wasCreated
+        });
         ackSuccess(
           ack,
           {
@@ -583,7 +802,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           )
         );
       } catch (error) {
-        console.error('[WebSocket] Error sending message:', error);
+        secureLogger.error('WS_SEND_MESSAGE_FAILED', {
+          userId: shortId(userId),
+          error: error instanceof Error ? error.message : String(error)
+        });
         const payload = {
           code: SocketErrorCode.INTERNAL_ERROR,
           message: 'Failed to send message'
@@ -603,12 +825,40 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         }
 
         const { conversationId, isTyping } = validation.data;
+        const roomName = `conversation:${conversationId}`;
+
+        // A socket must currently be in the room to emit typing for that room.
+        // Prevents abuse from arbitrary room IDs and helps immediate local revocation.
+        if (!socket.rooms.has(roomName)) {
+          return;
+        }
+
+        const nowMs = Date.now();
+        let isMember = isTypingMembershipCached(userId, conversationId, nowMs);
+        if (!isMember) {
+          isMember = await assertConversationMember(userId, conversationId);
+          if (isMember) {
+            cacheTypingMembership(userId, conversationId, nowMs);
+            sweepTypingMembershipCache(nowMs);
+          }
+        }
+        if (!isMember) {
+          return;
+        }
 
         // ✅ PR2: Rate limiting (30 events/min par user+conversation)
         const rateLimitKey = `${userId}:${conversationId}`;
-        const rateCheck = await checkRateLimit(() => getTypingLimiter(), rateLimitKey, { failOpen: true });
+        const rateCheck = await checkRateLimit(() => getTypingLimiter(), rateLimitKey, {
+          failOpen: false,
+          hardFailOnError: true
+        });
         if (!rateCheck.allowed) {
           // Silencieux (typing non critique, pas d'erreur émise au client)
+          return;
+        }
+
+        if (isSocketCongested(socket)) {
+          registerTypingDrop();
           return;
         }
 
@@ -617,7 +867,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           userId,
           isTyping
         });
-        socket.to(`conversation:${conversationId}`).emit('user-typing', userTypingPayload);
+        socket.to(roomName).volatile.emit('user-typing', userTypingPayload);
       } catch (error) {
         // Silencieux (typing non critique)
       }
@@ -627,12 +877,18 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
     socket.on('disconnect', () => {
       // P0 FIX: Cleanup tracking garanti
       untrackConnection(socket.id);
-      console.log(`[WebSocket] User ${userId} disconnected (${socket.id})`);
+      secureLogger.info('WS_DISCONNECTED', {
+        userId: shortId(userId),
+        socketId: shortId(socket.id)
+      });
     });
 
     // Gestion d'erreurs
     socket.on('error', (error) => {
-      console.error('[WebSocket] Socket error:', error);
+      secureLogger.error('WS_SOCKET_ERROR', {
+        userId: shortId(userId),
+        error: error instanceof Error ? error.message : String(error)
+      });
     });
   });
 
@@ -646,12 +902,21 @@ export function getSocketIO(): SocketIOServer | null {
   return io;
 }
 
+export function getSocketHardeningMetrics() {
+  return {
+    preAuthRateLimit: getPreAuthRateLimitMetrics(),
+    slowConsumer: getSlowConsumerMetrics(),
+    burst: getBurstMetrics(),
+    fanout: getFanoutMetrics()
+  };
+}
+
 /**
  * Envoie une notification à un utilisateur spécifique
  */
 export function notifyUser(userId: string, event: string, data: any) {
   if (!io) {
-    console.warn('[WebSocket] Socket.io not initialized');
+    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_USER', { event });
     return;
   }
 
@@ -663,7 +928,7 @@ export function notifyUser(userId: string, event: string, data: any) {
  */
 export function notifyConversation(conversationId: string, event: string, data: any) {
   if (!io) {
-    console.warn('[WebSocket] Socket.io not initialized');
+    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_CONVERSATION', { event });
     return;
   }
 
@@ -683,14 +948,14 @@ export function notifyNewMatch(userId: string, matchData: {
   };
 }) {
   if (!io) {
-    console.warn('[WebSocket] Socket.io not initialized');
+    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCH');
     return;
   }
 
   // ✅ P1: Validate outbound payload with Zod before emit
   const newMatchPayload = newMatchOutboundSchema.parse(matchData);
   io.to(`user:${userId}`).emit('new-match', newMatchPayload);
-  console.log(`[WebSocket] New match notification sent to user ${userId}`);
+  secureLogger.info('WS_NOTIFY_NEW_MATCH', { userId: shortId(userId) });
 }
 
 /**
@@ -705,7 +970,7 @@ export function notifyNewMatchingCard(criteria: {
   profileId: string;
 }) {
   if (!io) {
-    console.warn('[WebSocket] Socket.io not initialized');
+    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCHING_CARD');
     return;
   }
 
@@ -717,8 +982,7 @@ export function notifyNewMatchingCard(criteria: {
     profileId: criteria.profileId
   });
   io.emit('new-matching-card', newMatchingCardPayload);
-
-  console.log(`[WebSocket] New matching card broadcasted: ${criteria.profileId}`);
+  secureLogger.info('WS_NOTIFY_NEW_MATCHING_CARD', { profileId: shortId(criteria.profileId) });
 }
 
 /**
@@ -731,12 +995,15 @@ export function notifyMatchDecision(targetUserId: string, decision: {
   conversationId?: string;
 }) {
   if (!io) {
-    console.warn('[WebSocket] Socket.io not initialized');
+    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_MATCH_DECISION');
     return;
   }
 
   // ✅ P1: Validate outbound payload with Zod before emit
   const matchDecisionPayload = matchDecisionOutboundSchema.parse(decision);
   io.to(`user:${targetUserId}`).emit('match-decision', matchDecisionPayload);
-  console.log(`[WebSocket] Match decision sent to user ${targetUserId}: ${decision.decision}`);
+  secureLogger.info('WS_NOTIFY_MATCH_DECISION', {
+    targetUserId: shortId(targetUserId),
+    decision: decision.decision
+  });
 }

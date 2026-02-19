@@ -30,11 +30,15 @@ describe('WebSocket Auth Hardening (P0 Step 2.1)', () => {
   let clients: ClientSocket[] = [];
 
   beforeAll(async () => {
-    // Créer user fixture (sera soft-deleted dans un test)
     const password = await bcrypt.hash('Test1234!', 10);
     const user = await prisma.user.upsert({
       where: { email: TEST_EMAIL_DELETED },
-      update: {},
+      update: {
+        password,
+        role: 'RIDER',
+        emailVerified: true,
+        deletedAt: null
+      },
       create: {
         email: TEST_EMAIL_DELETED,
         password,
@@ -83,6 +87,25 @@ describe('WebSocket Auth Hardening (P0 Step 2.1)', () => {
 
     // Reset cache
     resetAuthCache();
+
+    // Ensure fixture exists and is active for next test
+    const password = await bcrypt.hash('Test1234!', 10);
+    const user = await prisma.user.upsert({
+      where: { email: TEST_EMAIL_DELETED },
+      update: {
+        password,
+        role: 'RIDER',
+        emailVerified: true,
+        deletedAt: null
+      },
+      create: {
+        email: TEST_EMAIL_DELETED,
+        password,
+        role: 'RIDER',
+        emailVerified: true
+      }
+    });
+    testUserId = user.id;
 
     await new Promise((resolve) => setTimeout(resolve, 300));
   });
