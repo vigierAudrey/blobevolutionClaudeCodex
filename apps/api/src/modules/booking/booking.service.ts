@@ -419,9 +419,10 @@ export class BookingService {
     const effectiveLimit = limit || pageSize;
 
     // Check cache first for availability search (cursor-aware)
+    // Legacy key MUST include page+pageSize: same sport/location with page=2 != page=1
     const cacheKey = useCursorPagination
-      ? `${CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25)}:cursor:${cursor || 'start'}`
-      : CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25);
+      ? `${CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25)}:cursor:${cursor || 'start'}:limit:${effectiveLimit}`
+      : `${CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25)}:p${page}:s${effectiveLimit}`;
 
     const cachedAvailabilities = await cacheService.getAvailabilities(cacheKey) as CachedAvailability[] | null;
     if (cachedAvailabilities && cacheService.isAvailable()) {

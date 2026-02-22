@@ -307,4 +307,27 @@ describe('Lessons chaos security P0 - Pro <-> Rider <-> Lessons', () => {
       expect(result).not.toHaveProperty('spotLng');
     }
   });
+
+  it('Cache-key: page2 returns different results than page1 (cache key includes page+pageSize)', async () => {
+    // Create 3 availabilities on different days so quota doesn't block
+    await createAvailability(proASession, proAToken, 0, { spotName: 'Spot A' });
+    await createAvailability(proBSession, proBToken, 1, { spotName: 'Spot B' });
+
+    const search = (page: number) =>
+      riderSession
+        .get('/booking/availability/search')
+        .set('Authorization', `Bearer ${riderToken}`)
+        .query({ sport: 'surf', level: 'beginner', lat: 43.5, lng: -1.5, radiusKm: 40, page, pageSize: 1 })
+        .expect(200);
+
+    const [page1, page2] = await Promise.all([search(1), search(2)]);
+
+    // Page 1 and page 2 must not return the same single item (cache key isolation)
+    const ids1 = (page1.body.results as Array<{ id: string }>).map((r) => r.id);
+    const ids2 = (page2.body.results as Array<{ id: string }>).map((r) => r.id);
+    // At least one ID must differ (or page2 is empty — both valid, but must not be identical non-empty pages)
+    if (ids1.length > 0 && ids2.length > 0) {
+      expect(ids1).not.toEqual(ids2);
+    }
+  });
 });
