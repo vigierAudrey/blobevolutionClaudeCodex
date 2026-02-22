@@ -800,6 +800,16 @@ export class BookingService {
           throw Object.assign(new Error('Availability not found'), { status: 404 });
         }
 
+        // Re-check request status after acquiring the lock (TOCTOU guard):
+        // concurrent accepts could both pass the initial PENDING check before either commits.
+        const freshRequest = await tx.bookingRequest.findUnique({
+          where: { id: requestId },
+          select: { status: true },
+        });
+        if (!freshRequest || freshRequest.status !== BookingRequestStatus.PENDING) {
+          throw Object.assign(new Error('Request already handled'), { status: 409 });
+        }
+
         const availability = availabilityRow[0];
         if (Number(availability.bookedCount) >= Number(availability.capacity)) {
           throw Object.assign(new Error('Availability capacity reached'), { status: 409 });

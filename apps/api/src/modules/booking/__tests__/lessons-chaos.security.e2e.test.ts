@@ -330,4 +330,36 @@ describe('Lessons chaos security P0 - Pro <-> Rider <-> Lessons', () => {
       expect(ids1).not.toEqual(ids2);
     }
   });
+
+  it('P0-C-TOCTOU: concurrent double-accept returns 409 not 500 (no duplicate Booking created)', async () => {
+    const availability = await createAvailability(proASession, proAToken, 0, { capacity: 3 });
+
+    const reqRes = await riderSession
+      .post('/booking/requests')
+      .set('Authorization', `Bearer ${riderToken}`)
+      .send({ availabilityId: availability.id, message: 'Race test' })
+      .expect(201);
+
+    const requestId = reqRes.body.id as string;
+
+    // Fire two concurrent accepts for the same request
+    const [r1, r2] = await Promise.all([
+      proASession
+        .post(`/booking/requests/${requestId}/decision`)
+        .set('Authorization', `Bearer ${proAToken}`)
+        .send({ decision: 'ACCEPT' }),
+      proASession
+        .post(`/booking/requests/${requestId}/decision`)
+        .set('Authorization', `Bearer ${proAToken}`)
+        .send({ decision: 'ACCEPT' }),
+    ]);
+
+    const statuses = [r1.status, r2.status].sort();
+    // Exactly one must succeed (200) and one must be idempotent (409)
+    expect(statuses).toEqual([200, 409]);
+
+    // Exactly one Booking must exist (no duplicate)
+    const bookings = await prisma.booking.findMany({ where: { availabilityId: availability.id } });
+    expect(bookings).toHaveLength(1);
+  });
 });
