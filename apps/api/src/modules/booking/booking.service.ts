@@ -96,13 +96,19 @@ export class BookingService {
     // Validate geographic coordinates
     this.validateGeoPoint(data.spotLat, data.spotLng);
 
-    // Validate only one offer per day
-    await this.validateOnlyOneOfferPerDay(proUserId, data.startAt);
+    // Advisory lock per proUserId prevents concurrent creates from bypassing the 1-per-day quota.
+    // hashtext(proUserId) maps the UUID string to a 32-bit int for pg_advisory_xact_lock.
+    const availability = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${proUserId}))`;
 
-    // Validate time overlap with existing availabilities
-    await this.validateTimeOverlap(proUserId, data.startAt, data.endAt);
+      // Validate only one offer per day (inside lock so concurrent requests can't both pass)
+      await this.validateOnlyOneOfferPerDay(proUserId, data.startAt, undefined, tx);
 
-    const availability = await bookingRepository.createAvailability({ ...data, proUserId });
+      // Validate time overlap with existing availabilities
+      await this.validateTimeOverlap(proUserId, data.startAt, data.endAt, tx);
+
+      return tx.proAvailability.create({ data: { ...data, proUserId } });
+    });
 
     // Invalidate availability caches near this location to keep search results fresh
     try {
@@ -125,7 +131,13 @@ export class BookingService {
     }
   }
 
-  private async validateOnlyOneOfferPerDay(proUserId: string, startAt: Date | string, excludeId?: string): Promise<void> {
+  private async validateOnlyOneOfferPerDay(
+    proUserId: string,
+    startAt: Date | string,
+    excludeId?: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const db = tx ?? prisma;
     const start = new Date(startAt);
 
     // Get start and end of the day (using local date)
@@ -136,7 +148,7 @@ export class BookingService {
     dayEnd.setHours(23, 59, 59, 999);
 
     // Check if there's already an availability for this calendar date
-    const existingAvailabilities = await prisma.proAvailability.findMany({
+    const existingAvailabilities = await db.proAvailability.findMany({
       where: {
         proUserId,
         ...(excludeId ? { id: { not: excludeId } } : {}),
@@ -156,7 +168,13 @@ export class BookingService {
     }
   }
 
-  private async validateTimeOverlap(proUserId: string, startAt: Date | string, endAt: Date | string): Promise<void> {
+  private async validateTimeOverlap(
+    proUserId: string,
+    startAt: Date | string,
+    endAt: Date | string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const db = tx ?? prisma;
     const start = new Date(startAt);
     const end = new Date(endAt);
 
@@ -165,7 +183,7 @@ export class BookingService {
     }
 
     // Check for overlapping availabilities
-    const overlappingAvailabilities = await prisma.proAvailability.findMany({
+    const overlappingAvailabilities = await db.proAvailability.findMany({
       where: {
         proUserId,
         OR: [

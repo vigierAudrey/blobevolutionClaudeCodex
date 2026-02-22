@@ -362,4 +362,48 @@ describe('Lessons chaos security P0 - Pro <-> Rider <-> Lessons', () => {
     const bookings = await prisma.booking.findMany({ where: { availabilityId: availability.id } });
     expect(bookings).toHaveLength(1);
   });
+
+  it('P0-D-Race: concurrent creates cannot bypass 1-offer-per-day quota (advisory lock)', async () => {
+    // Fire two concurrent availability creates on the same day for the same pro
+    const base = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const end1 = new Date(base.getTime() + 60 * 60 * 1000);
+    const start2 = new Date(base.getTime() + 2 * 60 * 60 * 1000);
+    const end2 = new Date(start2.getTime() + 60 * 60 * 1000);
+
+    const payload = (startAt: Date, endAt: Date) => ({
+      sport: 'surf',
+      levels: ['beginner'],
+      startAt: startAt.toISOString(),
+      endAt: endAt.toISOString(),
+      capacity: 3,
+      spotName: 'Race Spot',
+      spotLat: 43.5,
+      spotLng: -1.5,
+    });
+
+    const [r1, r2] = await Promise.all([
+      proASession
+        .post('/booking/availability')
+        .set('Authorization', `Bearer ${proAToken}`)
+        .send(payload(base, end1)),
+      proASession
+        .post('/booking/availability')
+        .set('Authorization', `Bearer ${proAToken}`)
+        .send(payload(start2, end2)),
+    ]);
+
+    const statuses = [r1.status, r2.status].sort();
+    // Exactly one must succeed (201) and one must be blocked (409)
+    expect(statuses).toEqual([201, 409]);
+
+    // Exactly one availability must exist for this pro today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    const created = await prisma.proAvailability.findMany({
+      where: { proUserId: proAUserId, startAt: { gte: todayStart, lte: todayEnd } },
+    });
+    expect(created).toHaveLength(1);
+  });
 });
