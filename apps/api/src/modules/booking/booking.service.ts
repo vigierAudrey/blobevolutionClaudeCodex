@@ -91,15 +91,28 @@ type RiderRequestRow = Prisma.BookingRequestGetPayload<{
 }>;
 
 export class BookingService {
+  private toUtcDayKey(dateInput: Date | string): string {
+    return new Date(dateInput).toISOString().slice(0, 10);
+  }
+
+  private getUtcDayRange(dateInput: Date | string): { dayStartUtc: Date; nextDayStartUtc: Date } {
+    const dayKey = this.toUtcDayKey(dateInput);
+    const dayStartUtc = new Date(`${dayKey}T00:00:00.000Z`);
+    const nextDayStartUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000);
+    return { dayStartUtc, nextDayStartUtc };
+  }
+
   async createAvailability(proUserId: string, data: CreateAvailabilityInput) {
     await this.assertProHasGeo(proUserId);
     // Validate geographic coordinates
     this.validateGeoPoint(data.spotLat, data.spotLng);
 
-    // Advisory lock per proUserId prevents concurrent creates from bypassing the 1-per-day quota.
-    // hashtext(proUserId) maps the UUID string to a 32-bit int for pg_advisory_xact_lock.
+    const dayKeyUtc = this.toUtcDayKey(data.startAt);
+
+    // Advisory lock per (proUserId, UTC day) prevents concurrent creates from bypassing
+    // the 1-per-day quota while avoiding unnecessary cross-day serialization.
     const availability = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${proUserId}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${proUserId}), hashtext(${dayKeyUtc}))`;
 
       // Validate only one offer per day (inside lock so concurrent requests can't both pass)
       await this.validateOnlyOneOfferPerDay(proUserId, data.startAt, undefined, tx);
@@ -138,14 +151,8 @@ export class BookingService {
     tx?: Prisma.TransactionClient,
   ): Promise<void> {
     const db = tx ?? prisma;
-    const start = new Date(startAt);
-
-    // Get start and end of the day (using local date)
-    const dayStart = new Date(start);
-    dayStart.setHours(0, 0, 0, 0);
-
-    const dayEnd = new Date(start);
-    dayEnd.setHours(23, 59, 59, 999);
+    const { dayStartUtc, nextDayStartUtc } = this.getUtcDayRange(startAt);
+    const dayKey = this.toUtcDayKey(startAt);
 
     // Check if there's already an availability for this calendar date
     const existingAvailabilities = await db.proAvailability.findMany({
@@ -153,16 +160,15 @@ export class BookingService {
         proUserId,
         ...(excludeId ? { id: { not: excludeId } } : {}),
         startAt: {
-          gte: dayStart,
-          lte: dayEnd
+          gte: dayStartUtc,
+          lt: nextDayStartUtc
         }
       }
     });
 
     if (existingAvailabilities.length > 0) {
-      const existingDate = existingAvailabilities[0].startAt.toLocaleDateString('fr-FR');
       throw Object.assign(
-        new Error(`Vous avez déjà publié une offre le ${existingDate}. Limite : une offre par jour.`),
+        new Error(`Vous avez déjà publié une offre le ${dayKey} (UTC). Limite : une offre par jour.`),
         { status: 409 }
       );
     }

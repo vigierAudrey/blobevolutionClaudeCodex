@@ -364,11 +364,11 @@ describe('Lessons chaos security P0 - Pro <-> Rider <-> Lessons', () => {
   });
 
   it('P0-D-Race: concurrent creates cannot bypass 1-offer-per-day quota (advisory lock)', async () => {
-    // Fire two concurrent availability creates on the same day for the same pro
-    const base = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    const end1 = new Date(base.getTime() + 60 * 60 * 1000);
-    const start2 = new Date(base.getTime() + 2 * 60 * 60 * 1000);
-    const end2 = new Date(start2.getTime() + 60 * 60 * 1000);
+    const tomorrowUtc = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const start1 = new Date(`${tomorrowUtc}T09:00:00.000Z`);
+    const end1 = new Date(`${tomorrowUtc}T10:00:00.000Z`);
+    const start2 = new Date(`${tomorrowUtc}T12:00:00.000Z`);
+    const end2 = new Date(`${tomorrowUtc}T13:00:00.000Z`);
 
     const payload = (startAt: Date, endAt: Date) => ({
       sport: 'surf',
@@ -385,7 +385,7 @@ describe('Lessons chaos security P0 - Pro <-> Rider <-> Lessons', () => {
       proASession
         .post('/booking/availability')
         .set('Authorization', `Bearer ${proAToken}`)
-        .send(payload(base, end1)),
+        .send(payload(start1, end1)),
       proASession
         .post('/booking/availability')
         .set('Authorization', `Bearer ${proAToken}`)
@@ -396,14 +396,44 @@ describe('Lessons chaos security P0 - Pro <-> Rider <-> Lessons', () => {
     // Exactly one must succeed (201) and one must be blocked (409)
     expect(statuses).toEqual([201, 409]);
 
-    // Exactly one availability must exist for this pro today
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
+    // Exactly one availability must exist for this pro on that UTC day
+    const dayStartUtc = new Date(`${tomorrowUtc}T00:00:00.000Z`);
+    const nextDayStartUtc = new Date(`${tomorrowUtc}T00:00:00.000Z`);
+    nextDayStartUtc.setUTCDate(nextDayStartUtc.getUTCDate() + 1);
     const created = await prisma.proAvailability.findMany({
-      where: { proUserId: proAUserId, startAt: { gte: todayStart, lte: todayEnd } },
+      where: { proUserId: proAUserId, startAt: { gte: dayStartUtc, lt: nextDayStartUtc } },
     });
     expect(created).toHaveLength(1);
+  });
+
+  it('P0-D-Race: same pro with different UTC days can create both slots', async () => {
+    const dayA = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dayB = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const payload = (day: string) => ({
+      sport: 'surf',
+      levels: ['beginner'],
+      startAt: `${day}T09:00:00.000Z`,
+      endAt: `${day}T10:00:00.000Z`,
+      capacity: 3,
+      spotName: `Race Spot ${day}`,
+      spotLat: 43.5,
+      spotLng: -1.5,
+    });
+
+    const [r1, r2] = await Promise.all([
+      proASession.post('/booking/availability').set('Authorization', `Bearer ${proAToken}`).send(payload(dayA)),
+      proASession.post('/booking/availability').set('Authorization', `Bearer ${proAToken}`).send(payload(dayB)),
+    ]);
+
+    expect([r1.status, r2.status].sort()).toEqual([201, 201]);
+
+    const created = await prisma.proAvailability.findMany({
+      where: {
+        proUserId: proAUserId,
+        startAt: { in: [new Date(`${dayA}T09:00:00.000Z`), new Date(`${dayB}T09:00:00.000Z`)] },
+      },
+    });
+    expect(created).toHaveLength(2);
   });
 });
