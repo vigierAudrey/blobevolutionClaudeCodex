@@ -103,14 +103,18 @@ export class BookingService {
   }
 
   private isBookingRequestUniqueViolation(error: unknown): boolean {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
       return false;
     }
-    const modelName = typeof error.meta?.modelName === 'string' ? error.meta.modelName : '';
+    const prismaError = error as Prisma.PrismaClientKnownRequestError;
+    if (prismaError.code !== 'P2002') {
+      return false;
+    }
+    const modelName = typeof prismaError.meta?.modelName === 'string' ? prismaError.meta.modelName : '';
     if (modelName === 'Booking') {
       return true;
     }
-    const rawTarget = error.meta?.target;
+    const rawTarget = prismaError.meta?.target;
     if (Array.isArray(rawTarget)) {
       const target = rawTarget.map((entry) => String(entry));
       return target.includes('bookingRequestId') || target.includes('Booking_bookingRequestId_key');
