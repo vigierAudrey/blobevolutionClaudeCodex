@@ -21,7 +21,6 @@ type CachedAvailability = { id: string };
 type BookingRiderRow = {
   availabilityId: string;
   riderId: string;
-  riderEmail: string;
   displayName: string | null;
   photoUrl: string | null;
 };
@@ -54,6 +53,41 @@ type AvailabilityInteraction = Prisma.ProAvailabilityInteractionGetPayload<{
 
 type AvailabilityStatsRow = Prisma.ProAvailabilityGetPayload<{
   select: typeof availabilityStatsSelect;
+}>;
+
+const riderRequestSelect = {
+  id: true,
+  riderUserId: true,
+  availabilityId: true,
+  message: true,
+  status: true,
+  respondedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  availability: {
+    select: {
+      id: true,
+      sport: true,
+      levels: true,
+      startAt: true,
+      endAt: true,
+      spotName: true,
+      pro: {
+        select: {
+          proProfile: {
+            select: {
+              id: true,
+              businessName: true,
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+type RiderRequestRow = Prisma.BookingRequestGetPayload<{
+  select: typeof riderRequestSelect;
 }>;
 
 export class BookingService {
@@ -415,23 +449,42 @@ export class BookingService {
       pageSize,
     }) as SearchAvailabilityRow[];
 
-    // Get booking data with a single optimized query instead of N+1
-    const availabilityIds = rows.map((row) => row.id);
-    const bookingsData = availabilityIds.length > 0
-      ? await prisma.$queryRaw<BookingRiderRow[]>`
-          SELECT
-            b."availabilityId",
-            ru."id" as "riderId",
-            ru."email" as "riderEmail",
-            rp."displayName",
-            rp."photoUrl"
-          FROM "Booking" b
-          JOIN "User" ru ON ru."id" = b."riderUserId"
-          LEFT JOIN "RiderProfile" rp ON rp."userId" = ru."id"
-          WHERE b."availabilityId" IN (${Prisma.join(availabilityIds)})
-          ORDER BY b."createdAt" DESC
-        `
+    // Level filter in JS: Prisma 6 cannot reliably parametrize text = ANY(text[]) in raw queries
+    const levelFilteredRows = rows.filter((row) =>
+      Array.isArray(row.levels) && row.levels.includes(filters.level)
+    );
+
+    // Get booking data via ORM to avoid Prisma 6 raw-query type coercion issues with IN clauses
+    const availabilityIds = levelFilteredRows.map((row) => row.id);
+    type BookingWithRider = {
+      availabilityId: string;
+      riderUserId: string;
+      createdAt: Date;
+      rider: { id: string; riderProfile: { displayName: string | null; photoUrl: string | null } | null };
+    };
+    const bookingOrmRows: BookingWithRider[] = availabilityIds.length > 0
+      ? await prisma.booking.findMany({
+          where: { availabilityId: { in: availabilityIds } },
+          select: {
+            availabilityId: true,
+            riderUserId: true,
+            createdAt: true,
+            rider: {
+              select: {
+                id: true,
+                riderProfile: { select: { displayName: true, photoUrl: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        })
       : [];
+    const bookingsData: BookingRiderRow[] = bookingOrmRows.map((b) => ({
+      availabilityId: b.availabilityId,
+      riderId: b.rider.id,
+      displayName: b.rider.riderProfile?.displayName ?? null,
+      photoUrl: b.rider.riderProfile?.photoUrl ?? null,
+    }));
 
     // Group bookings by availability for efficient lookup
     const ridersByAvailability = new Map<string, Array<{ id: string; displayName: string; avatarUrl: string | null }>>();
@@ -445,7 +498,7 @@ export class BookingService {
       ridersByAvailability.set(booking.availabilityId, collection.slice(0, 6));
     }
 
-    const formattedResults = rows.map((row) => ({
+    const formattedResults = levelFilteredRows.map((row) => ({
       id: row.id,
       pro: {
         userId: row.proUserId,
@@ -459,8 +512,7 @@ export class BookingService {
       bookedCount: Number(row.bookedCount),
       status: row.status,
       spotName: row.spotName,
-      spotLat: row.spotLat,
-      spotLng: row.spotLng,
+      // GPS précis délibérément absent: le rider voit spotName + distanceKm uniquement
       distanceKm: row.distance_m != null ? Number(row.distance_m) / 1000 : null,
       riders: ridersByAvailability.get(row.id) ?? [],
     }));
@@ -654,32 +706,22 @@ export class BookingService {
   }
 
   async listRiderRequests(riderUserId: string) {
-    return bookingRepository.listRequests({
+    const requests: RiderRequestRow[] = await prisma.bookingRequest.findMany({
       where: { riderUserId },
-      include: {
-        availability: {
-          select: {
-            id: true,
-            sport: true,
-            levels: true,
-            startAt: true,
-            endAt: true,
-            spotName: true,
-            pro: {
-              select: {
-                email: true,
-                proProfile: {
-                  select: {
-                    businessName: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      select: riderRequestSelect,
       orderBy: { createdAt: 'desc' },
     });
+
+    return requests.map((request) => ({
+      ...request,
+      availability: {
+        ...request.availability,
+        pro: {
+          proPublicId: request.availability.pro?.proProfile?.id ?? null,
+          businessName: request.availability.pro?.proProfile?.businessName ?? null,
+        },
+      },
+    }));
   }
 
   async listProRequests(proUserId: string) {
@@ -1103,7 +1145,7 @@ export class BookingService {
 
     return rows.map((row) => ({
       proId: row.proUserId,
-      email: row.email,
+      proPublicId: row.proPublicId,
       businessName: row.businessName,
       photoUrl: row.photoUrl,
       verified: row.verified,

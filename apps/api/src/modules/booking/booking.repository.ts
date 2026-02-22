@@ -14,13 +14,12 @@ export type SearchAvailabilityRow = {
   spotLng: number | null;
   status: 'OPEN' | 'CLOSED';
   businessName: string | null;
-  proEmail: string;
   distance_m: Prisma.Decimal | number | null;
 };
 
 export type NearbyProRow = {
   proUserId: string;
-  email: string;
+  proPublicId: string;
   businessName: string | null;
   photoUrl: string | null;
   verified: boolean;
@@ -88,16 +87,13 @@ export class BookingRepository {
           pa."spotLng",
           pa."status",
           pp."businessName",
-          u."email"              AS "proEmail",
           ST_Distance(
             ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
             ST_SetSRID(ST_MakePoint(pa."spotLng", pa."spotLat"), 4326)::geography
           ) AS distance_m
         FROM "ProAvailability" pa
-        JOIN "User" u ON u."id" = pa."proUserId"
         LEFT JOIN "ProProfile" pp ON pp."userId" = pa."proUserId"
         WHERE ${sportCondition}
-          AND ${level} = ANY(pa."levels")
           AND pa."status" = 'OPEN'
           AND pa."spotLat" IS NOT NULL
           AND pa."spotLng" IS NOT NULL
@@ -140,7 +136,7 @@ export class BookingRepository {
     return prisma.$queryRaw<NearbyProRow[]>(Prisma.sql`
       SELECT
         u."id" AS "proUserId",
-        u."email",
+        pp."id" AS "proPublicId",
         pp."businessName",
         pp."photoUrl",
         pp."verified",
