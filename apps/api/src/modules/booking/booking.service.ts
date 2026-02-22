@@ -102,6 +102,22 @@ export class BookingService {
     return { dayStartUtc, nextDayStartUtc };
   }
 
+  private isBookingRequestUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+      return false;
+    }
+    const modelName = typeof error.meta?.modelName === 'string' ? error.meta.modelName : '';
+    if (modelName === 'Booking') {
+      return true;
+    }
+    const rawTarget = error.meta?.target;
+    if (Array.isArray(rawTarget)) {
+      const target = rawTarget.map((entry) => String(entry));
+      return target.includes('bookingRequestId') || target.includes('Booking_bookingRequestId_key');
+    }
+    return typeof rawTarget === 'string' && rawTarget.includes('bookingRequestId');
+  }
+
   async createAvailability(proUserId: string, data: CreateAvailabilityInput) {
     await this.assertProHasGeo(proUserId);
     // Validate geographic coordinates
@@ -786,8 +802,15 @@ export class BookingService {
 
   async decideRequest(proUserId: string, requestId: string, action: 'accept' | 'reject') {
     // Execute the database transaction with retry logic for serialization failures
-    const result = await withTransactionRetry(async () => {
-      return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    let result: {
+      success: true;
+      action: 'accept' | 'reject';
+      requestData: any;
+      conversationId: string | undefined;
+    };
+    try {
+      result = await withTransactionRetry(async () => {
+        return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       let conversationId: string | undefined;
       const request = await tx.bookingRequest.findUnique({
         where: { id: requestId },
@@ -846,6 +869,7 @@ export class BookingService {
           data: {
             availabilityId: request.availabilityId,
             riderUserId: request.riderUserId,
+            bookingRequestId: request.id,
           },
         });
 
@@ -900,14 +924,20 @@ export class BookingService {
         });
       }
 
-      return {
-        success: true,
-        action,
-        requestData: request, // Return request data for notifications
-        conversationId
-      };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-    }, 7, 150);
+          return {
+            success: true,
+            action,
+            requestData: request, // Return request data for notifications
+            conversationId
+          };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+      }, 7, 150);
+    } catch (error) {
+      if (this.isBookingRequestUniqueViolation(error)) {
+        throw Object.assign(new Error('Request already handled'), { status: 409 });
+      }
+      throw error;
+    }
 
     // After successful transaction, send push notifications
     try {

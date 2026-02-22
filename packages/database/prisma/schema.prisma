@@ -318,6 +318,7 @@ model BookingRequest {
   updatedAt       DateTime            @updatedAt
   rider           User                @relation("BookingRequestOnUser", fields: [riderUserId], references: [id], onDelete: Cascade)
   availability    ProAvailability     @relation("BookingRequestOnAvailability", fields: [availabilityId], references: [id], onDelete: Cascade)
+  booking         Booking?
 
   @@index([riderUserId])
   @@index([availabilityId])
@@ -328,11 +329,13 @@ model Booking {
   id             String          @id @default(uuid())
   availabilityId String
   riderUserId    String
+  bookingRequestId String?       @unique
   status         BookingStatus   @default(CONFIRMED)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   availability   ProAvailability @relation("BookingOnAvailability", fields: [availabilityId], references: [id], onDelete: Cascade)
   rider          User            @relation("BookingOnUser", fields: [riderUserId], references: [id], onDelete: Cascade)
+  bookingRequest BookingRequest? @relation(fields: [bookingRequestId], references: [id], onDelete: SetNull)
 
   @@index([availabilityId])
   @@index([riderUserId])

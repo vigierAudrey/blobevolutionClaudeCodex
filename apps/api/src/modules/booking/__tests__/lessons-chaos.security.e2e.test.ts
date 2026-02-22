@@ -358,9 +358,9 @@ describe('Lessons chaos security P0 - Pro <-> Rider <-> Lessons', () => {
     // Exactly one must succeed (200) and one must be idempotent (409)
     expect(statuses).toEqual([200, 409]);
 
-    // Exactly one Booking must exist (no duplicate)
-    const bookings = await prisma.booking.findMany({ where: { availabilityId: availability.id } });
-    expect(bookings).toHaveLength(1);
+    // Exactly one Booking must exist for this BookingRequest (DB invariant)
+    const bookingsForRequest = await prisma.booking.count({ where: { bookingRequestId: requestId } });
+    expect(bookingsForRequest).toBe(1);
   });
 
   it('P0-D-Race: concurrent creates cannot bypass 1-offer-per-day quota (advisory lock)', async () => {
