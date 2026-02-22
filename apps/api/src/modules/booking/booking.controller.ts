@@ -12,14 +12,26 @@ import { prosNearbySchema } from './dto/prosNearby.dto';
 import { computeZoneLarge, recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 import { secureLogger } from '../../utils/secure-logger';
 
+const isBookingRequestRateLimitDisabled = () =>
+  String(process.env.RATE_LIMIT_DISABLED_FOR_BOOKING_REQUESTS ?? '').toLowerCase() === 'true';
+
+const shouldSkipBookingRequestRateLimit = () => {
+  if (process.env.NODE_ENV === 'test') {
+    return process.env.ENABLE_RATE_LIMIT_IN_TESTS !== 'true';
+  }
+  if (process.env.NODE_ENV !== 'production' && isBookingRequestRateLimitDisabled()) {
+    return true;
+  }
+  return false;
+};
+
 // Anti-spam: max 5 booking requests per 15-minute window per rider
 const bookingRequestLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () =>
-    process.env.NODE_ENV === 'test' && process.env.ENABLE_RATE_LIMIT_IN_TESTS !== 'true',
+  skip: shouldSkipBookingRequestRateLimit,
   keyGenerator: (req: Request) => {
     const userId = (req as { user?: { id: string } }).user?.id;
     return userId ? `rider:${userId}:booking_request` : ipKeyGenerator(req.ip ?? '');

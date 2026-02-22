@@ -53,6 +53,10 @@ export function validateProductionEnv(): void {
     console.warn('⚠️  WARNING: DATABASE_URL does not include sslmode=require (recommended in production)');
   }
 
+  if (String(process.env.RATE_LIMIT_DISABLED_FOR_BOOKING_REQUESTS ?? '').toLowerCase() === 'true') {
+    errors.push('RATE_LIMIT_DISABLED_FOR_BOOKING_REQUESTS=true is NOT allowed in production');
+  }
+
   // Validate trust proxy configuration
   const trustProxyMode = getTrustProxyMode();
   if (!isTrustProxyConfigSafe()) {
