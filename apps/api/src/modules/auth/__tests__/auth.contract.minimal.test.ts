@@ -36,6 +36,10 @@ async function getCsrf() {
   };
 }
 
+function findCookie(setCookies: string[], cookieName: string): string {
+  return setCookies.find((cookie) => cookie.startsWith(`${cookieName}=`)) || '';
+}
+
 async function createUser(email: string, password: string) {
   const hashed = await bcrypt.hash(password, 10);
   await prisma.user.create({
@@ -82,8 +86,12 @@ describe('Auth contract minimal', () => {
 
     expect(res.body).toEqual({ ok: true });
     const setCookies = (res.headers['set-cookie'] as unknown as string[]) ?? [];
-    expect(setCookies.some((c) => c.startsWith('accessToken='))).toBe(true);
-    expect(setCookies.some((c) => c.startsWith('refreshToken='))).toBe(true);
+    const accessCookie = findCookie(setCookies, 'accessToken');
+    const refreshCookie = findCookie(setCookies, 'refreshToken');
+
+    expect(accessCookie).toContain('HttpOnly');
+    expect(refreshCookie).toContain('HttpOnly');
+    expect(refreshCookie).toContain('Path=/auth/refresh');
   });
 
   it('/auth/refresh => { ok:true } + Set-Cookie', async () => {
@@ -110,6 +118,11 @@ describe('Auth contract minimal', () => {
 
     expect(refresh.body).toEqual({ ok: true });
     const setCookies = (refresh.headers['set-cookie'] as unknown as string[]) ?? [];
-    expect(setCookies.some((c) => c.startsWith('accessToken='))).toBe(true);
+    const accessCookie = findCookie(setCookies, 'accessToken');
+    const refreshCookie = findCookie(setCookies, 'refreshToken');
+
+    expect(accessCookie).toContain('HttpOnly');
+    expect(refreshCookie).toContain('HttpOnly');
+    expect(refreshCookie).toContain('Path=/auth/refresh');
   });
 });
