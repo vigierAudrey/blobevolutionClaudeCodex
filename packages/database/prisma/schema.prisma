@@ -22,6 +22,7 @@ model User {
   consentVersion          String?
   consentIp               String?
   consentIpHash           String?                  // HMAC-SHA256 hash of consentIp (RGPD compliant, 24 hex chars)
+  sessionVersion          Int                      @default(1)  // Incremented on logout to revoke all access tokens
   adminProfile            AdminProfile?
   conversationMembers     ConversationMember[]
   emailVerificationTokens EmailVerificationToken[]
@@ -50,6 +51,7 @@ model User {
   createdAlerts          SystemAlert[]            @relation("UserSystemAlerts")
   conversationInvitations ConversationInvitation[] @relation("InvitedToConversation")
   sentConversationInvitations ConversationInvitation[] @relation("ConversationInviter")
+  uploadJobs              UploadJob[]
 }
 
 model Session {
@@ -72,6 +74,7 @@ model RefreshToken {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([tokenHash]) // P2: lookup by hash on refresh (O(log n) vs O(n) full scan)
 }
 
 model PasswordResetToken {
@@ -101,7 +104,8 @@ model EmailVerificationToken {
 
 model LoginAttempt {
   id        String   @id @default(uuid())
-  email     String
+  email     String?
+  emailHash String?
   ip        String?
   ipHash    String?  // HMAC-SHA256 hash of ip (RGPD compliant, 24 hex chars)
   userAgent String?
@@ -112,6 +116,7 @@ model LoginAttempt {
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([email])
+  @@index([emailHash])
   @@index([ip])
   @@index([ipHash])
   @@index([createdAt])
@@ -264,6 +269,7 @@ model MatchDecision {
 
   @@unique([actorUserId, targetProfileId])
   @@index([actorUserId])
+  @@index([actorUserId, createdAt(sort: Desc)])
   @@index([targetProfileId])
 }
 
@@ -698,16 +704,20 @@ enum AnalyticsEventType {
 
 model UserConsent {
   id                 String         @id @default(uuid())
-  userHash           String         @unique
+  userHash           String         @unique  // HMAC-SHA256(rawToken, CONSENT_HMAC_SECRET) — jamais le token brut
   consentLevel       ConsentLevel
   ad_storage         ConsentSignal
   ad_user_data       ConsentSignal
   ad_personalization ConsentSignal
   cmpVersion         String?
+  // P2-C: token fort — expiration + one-time write
+  tokenExpiresAt     DateTime?      // null = pas de contrainte (legacy); mis à +30j à la création
+  tokenUsedAt        DateTime?      // positionné après un write; rejet si != null
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
   @@index([updatedAt])
+  @@index([tokenExpiresAt])
 }
 
 model AnalyticsEvent {
@@ -731,6 +741,30 @@ model AnalyticsEvent {
   @@index([contentId])
   @@index([sport])
   @@index([zoneLarge])
+}
+
+// ---------------------------------------------------------------------------
+// Upload idempotency (IDP-1 / IDP-2 / IDP-3)
+// ---------------------------------------------------------------------------
+
+enum UploadJobStatus {
+  PENDING
+  FINALIZED
+  FAILED
+}
+
+model UploadJob {
+  id            String          @id @default(uuid())
+  quarantineKey String          @unique  // quarantine S3 key — one job per upload attempt
+  userId        String
+  status        UploadJobStatus @default(PENDING)
+  publishedKey  String?         // set on successful finalization
+  attempts      Int             @default(0)
+  createdAt     DateTime        @default(now())
+  finalizedAt   DateTime?
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model AnalyticsDailyAgg {

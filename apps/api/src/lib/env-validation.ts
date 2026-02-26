@@ -83,6 +83,11 @@ export function validateProductionEnv(): void {
     errors.push('AUTH_REQUIRE_2FA=false is NOT allowed in production');
   }
 
+  const loginAttemptStorePlaintextEmail = String(process.env.LOGINATTEMPT_STORE_PLAINTEXT_EMAIL ?? '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(loginAttemptStorePlaintextEmail)) {
+    errors.push('LOGINATTEMPT_STORE_PLAINTEXT_EMAIL=true is NOT allowed in production');
+  }
+
   const truthyValues = new Set(['1', 'true', 'yes', 'on']);
   const testAdminProvisionFlags = Object.entries(process.env)
     .filter(([key]) => /test.*admin.*provision|admin.*test.*provision/i.test(key))
@@ -137,6 +142,17 @@ export function validateProductionEnv(): void {
       errors.push('ADMIN_REFRESH_TTL_HOURS must be a positive integer (hours)');
     } else if (ttlHours > 24) {
       errors.push('ADMIN_REFRESH_TTL_HOURS must be ≤24h in production (recommended: 8)');
+    }
+  }
+
+  // TRUSTED_IPS : interdire les wildcards qui désactivent tout rate limiting
+  if (process.env.TRUSTED_IPS) {
+    const trustedEntries = process.env.TRUSTED_IPS.split(',').map((e) => e.trim());
+    const wildcards = ['0.0.0.0', '0.0.0.0/0', '::', '::/0', '::0/0'];
+    for (const entry of trustedEntries) {
+      if (wildcards.includes(entry)) {
+        errors.push(`TRUSTED_IPS must not contain wildcard entry "${entry}" (disables all rate limiting)`);
+      }
     }
   }
 

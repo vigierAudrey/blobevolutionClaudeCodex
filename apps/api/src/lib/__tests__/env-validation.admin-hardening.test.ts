@@ -66,4 +66,16 @@ describe('validateProductionEnv admin hardening guards', () => {
     expect(() => validateProductionEnv()).toThrow('process.exit:1');
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
+
+  it('production + LOGINATTEMPT_STORE_PLAINTEXT_EMAIL=true => crash', () => {
+    setValidProductionEnv();
+    process.env.LOGINATTEMPT_STORE_PLAINTEXT_EMAIL = 'true';
+
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit:${String(code)}`);
+    }) as never);
+
+    expect(() => validateProductionEnv()).toThrow('process.exit:1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
 });
