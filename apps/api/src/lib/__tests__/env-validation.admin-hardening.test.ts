@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { validateProductionEnv } from '../env-validation';
 
-describe('validateProductionEnv booking request rate limit guard', () => {
+describe('validateProductionEnv admin hardening guards', () => {
   let originalEnv: NodeJS.ProcessEnv;
 
   const setValidProductionEnv = () => {
@@ -17,8 +17,9 @@ describe('validateProductionEnv booking request rate limit guard', () => {
     process.env.S3_BUCKET = 'my-bucket';
     process.env.S3_ACCESS_KEY_ID = 'prod-access-key';
     process.env.S3_SECRET_ACCESS_KEY = 'prod-secret-key';
-    process.env.PRIMARY_ADMIN_EMAILS = 'security-admin@blobconnect.com';
     process.env.TRUST_PROXY_MODE = 'disabled';
+    process.env.PRIMARY_ADMIN_EMAILS = 'security-admin@blobconnect.com';
+    delete process.env.AUTH_REQUIRE_2FA;
   };
 
   beforeEach(() => {
@@ -30,9 +31,9 @@ describe('validateProductionEnv booking request rate limit guard', () => {
     jest.restoreAllMocks();
   });
 
-  it('fails fast when booking request rate limiter is disabled in production', () => {
+  it('production + PRIMARY_ADMIN_EMAILS absent => crash', () => {
     setValidProductionEnv();
-    process.env.RATE_LIMIT_DISABLED_FOR_BOOKING_REQUESTS = 'true';
+    delete process.env.PRIMARY_ADMIN_EMAILS;
 
     const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit:${String(code)}`);
@@ -42,10 +43,9 @@ describe('validateProductionEnv booking request rate limit guard', () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
-  // P2-NEW-5: DATABASE_URL SSL must be a hard blocker in production
-  it('[P2-NEW-5] fails fast when DATABASE_URL lacks sslmode=require', () => {
+  it('production + PRIMARY_ADMIN_EMAILS contains dev+admin@test.com => crash', () => {
     setValidProductionEnv();
-    process.env.DATABASE_URL = 'postgresql://user:password@localhost:5432/blobinfini';
+    process.env.PRIMARY_ADMIN_EMAILS = 'security-admin@blobconnect.com, dev+admin@test.com';
 
     const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit:${String(code)}`);
@@ -55,26 +55,15 @@ describe('validateProductionEnv booking request rate limit guard', () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
-  it('[P2-NEW-5] accepts sslmode=verify-full as valid SSL mode', () => {
+  it('production + AUTH_REQUIRE_2FA=false => crash', () => {
     setValidProductionEnv();
-    process.env.DATABASE_URL = 'postgresql://user:password@host:5432/db?sslmode=verify-full';
+    process.env.AUTH_REQUIRE_2FA = 'false';
 
     const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit:${String(code)}`);
     }) as never);
 
-    expect(() => validateProductionEnv()).not.toThrow();
-    expect(exitSpy).not.toHaveBeenCalled();
-  });
-
-  it('[P2-NEW-5] passes when DATABASE_URL contains sslmode=require', () => {
-    setValidProductionEnv();
-    // sslmode=require already set by setValidProductionEnv, confirm no exit
-    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-      throw new Error(`process.exit:${String(code)}`);
-    }) as never);
-
-    expect(() => validateProductionEnv()).not.toThrow();
-    expect(exitSpy).not.toHaveBeenCalled();
+    expect(() => validateProductionEnv()).toThrow('process.exit:1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });
