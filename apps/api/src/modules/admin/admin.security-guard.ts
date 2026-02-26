@@ -185,11 +185,11 @@ export async function requireAdminStepUp(req: Request, res: Response, next: Next
 
     next();
   } catch (error) {
-    secureLogger.error('ADMIN_STEP_UP_CHECK_ERROR', {
+    secureLogger.security('CRITICAL_ADMIN_STEP_UP_CHECK_ERROR', {
       userId: user.id,
       path: req.path,
       error: error instanceof Error ? error.message : String(error),
     });
-    res.status(500).json({ error: 'Internal error' });
+    res.status(403).json({ error: 'Step-up authentication required' });
   }
 }
