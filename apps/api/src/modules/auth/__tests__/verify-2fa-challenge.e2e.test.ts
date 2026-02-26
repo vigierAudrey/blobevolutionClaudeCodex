@@ -249,6 +249,28 @@ describe('Auth verify-2fa challenge flow (P1)', () => {
     expect(statuses).toContain(401);
   });
 
+  it('6 mauvais codes sur le meme challenge => 429 (limite challengeId+ip)', async () => {
+    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'false';
+
+    const admin = await createAdmin();
+    const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.24');
+    const validCode = lastSentCode();
+    const wrongCode = validCode === '111111' ? '222222' : '111111';
+
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const res = await verify2FA(
+        app,
+        { challengeId: login.body.challengeId as string, code: wrongCode },
+        '203.0.113.24',
+      );
+      statuses.push(res.status);
+    }
+
+    expect(statuses.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
+    expect(statuses[5]).toBe(429);
+  });
+
   it('les reponses auth ne renvoient pas email brut', async () => {
     const admin = await createAdmin();
     const { cookies, csrfToken } = await getCsrf(app);

@@ -164,8 +164,13 @@ function categorizeUserAgent(userAgent: string | undefined): string | undefined 
 // Any IP change before /auth/verify-2fa is rejected with 403 and a SECURITY log.
 const AUTH_2FA_CHALLENGE_TTL_SECONDS = 5 * 60;
 const AUTH_2FA_CHALLENGE_KEY_PREFIX = 'auth:2fa:challenge:';
+const AUTH_2FA_VERIFY_ATTEMPTS_MAX = 5;
+const AUTH_2FA_VERIFY_ATTEMPTS_KEY_PREFIX = 'auth:2fa:verify-attempts:';
 const auth2faChallengeMemoryStore = !IS_PROD
   ? new Map<string, { challenge: Auth2FAChallenge; expiresAt: number }>()
+  : null;
+const auth2faVerifyAttemptsMemoryStore = !IS_PROD
+  ? new Map<string, { attempts: number; expiresAt: number }>()
   : null;
 
 type Auth2FAChallenge = {
@@ -176,6 +181,10 @@ type Auth2FAChallenge = {
 
 function auth2faChallengeKey(challengeId: string): string {
   return `${AUTH_2FA_CHALLENGE_KEY_PREFIX}${challengeId}`;
+}
+
+function auth2faVerifyAttemptsKey(challengeId: string, ipHash: string): string {
+  return `${AUTH_2FA_VERIFY_ATTEMPTS_KEY_PREFIX}${challengeId}:${ipHash}`;
 }
 
 async function setAuth2FAChallenge(challengeId: string, challenge: Auth2FAChallenge): Promise<boolean> {
@@ -224,6 +233,54 @@ async function deleteAuth2FAChallenge(challengeId: string): Promise<void> {
   const key = auth2faChallengeKey(challengeId);
   await cacheService.del(key);
   auth2faChallengeMemoryStore?.delete(challengeId);
+}
+
+async function getAuth2FAVerifyAttempts(challengeId: string, ipHash: string): Promise<number> {
+  const key = auth2faVerifyAttemptsKey(challengeId, ipHash);
+  const attempts = await cacheService.get<number>(key);
+  if (typeof attempts === 'number') {
+    return attempts;
+  }
+
+  if (!auth2faVerifyAttemptsMemoryStore) {
+    return 0;
+  }
+
+  const entry = auth2faVerifyAttemptsMemoryStore.get(key);
+  if (!entry) {
+    return 0;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    auth2faVerifyAttemptsMemoryStore.delete(key);
+    return 0;
+  }
+
+  return entry.attempts;
+}
+
+async function incrementAuth2FAVerifyAttempts(challengeId: string, ipHash: string): Promise<number> {
+  const key = auth2faVerifyAttemptsKey(challengeId, ipHash);
+  const nextAttempts = (await getAuth2FAVerifyAttempts(challengeId, ipHash)) + 1;
+  const saved = await cacheService.set(key, nextAttempts, AUTH_2FA_CHALLENGE_TTL_SECONDS);
+  if (saved) {
+    return nextAttempts;
+  }
+
+  if (auth2faVerifyAttemptsMemoryStore) {
+    auth2faVerifyAttemptsMemoryStore.set(key, {
+      attempts: nextAttempts,
+      expiresAt: Date.now() + AUTH_2FA_CHALLENGE_TTL_SECONDS * 1000,
+    });
+  }
+
+  return nextAttempts;
+}
+
+async function deleteAuth2FAVerifyAttempts(challengeId: string, ipHash: string): Promise<void> {
+  const key = auth2faVerifyAttemptsKey(challengeId, ipHash);
+  await cacheService.del(key);
+  auth2faVerifyAttemptsMemoryStore?.delete(key);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -389,8 +446,27 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
       });
     }
 
+    const currentAttempts = await getAuth2FAVerifyAttempts(challengeId, requestIpHash);
+    if (currentAttempts >= AUTH_2FA_VERIFY_ATTEMPTS_MAX) {
+      secureLogger.security('AUTH_2FA_CHALLENGE_RATE_LIMIT', {
+        challengeId,
+        ipHash: requestIpHash,
+        attempts: currentAttempts,
+      });
+      return res.status(429).json({ error: 'Too many 2FA attempts for this challenge' });
+    }
+
     const verification = await twoFactorService.verifyCode(challenge.userId, code, clientIp);
     if (!verification.valid) {
+      const attemptsAfterFailure = await incrementAuth2FAVerifyAttempts(challengeId, requestIpHash);
+      if (attemptsAfterFailure > AUTH_2FA_VERIFY_ATTEMPTS_MAX) {
+        secureLogger.security('AUTH_2FA_CHALLENGE_RATE_LIMIT', {
+          challengeId,
+          ipHash: requestIpHash,
+          attempts: attemptsAfterFailure,
+        });
+        return res.status(429).json({ error: 'Too many 2FA attempts for this challenge' });
+      }
       return res.status(401).json({ error: verification.message });
     }
 
@@ -419,6 +495,7 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
 
     const ip = clientIp || undefined;
     const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip });
+    await deleteAuth2FAVerifyAttempts(challengeId, requestIpHash);
     await deleteAuth2FAChallenge(challengeId);
 
     setAuthCookies(res, tokens);
