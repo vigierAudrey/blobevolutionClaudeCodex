@@ -92,7 +92,13 @@ export interface SecurityHealth {
   issues: string[];
 }
 
-export type LoginResponse = { accessToken: string; refreshToken: string };
+/**
+ * LoginResponse: tokens are now set as httpOnly cookies by the server.
+ * The body only carries the 2FA intermediate state or { ok: true }.
+ * Kept as union so callsites can distinguish both cases.
+ */
+export type TwoFactorChallengeResponse = { requires2FA: true; challengeId: string; message: string };
+export type LoginResponse = { ok: true } | TwoFactorChallengeResponse;
 
 export type AdminAnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
 
@@ -338,14 +344,16 @@ export interface AdminAvailabilityStatusResponse {
 
 export interface LoginAttempt {
   id: string;
-  email: string;
+  email: string | null;
+  emailHash: string;
   ip: string | null;
+  ipHash?: string | null;
   userAgent: string | null;
   success: boolean;
   reason: string | null;
   createdAt: string;
   userId: string | null;
-  user?: { id: string; email: string; role: string | null } | null;
+  user?: { id: string; role: string | null } | null;
 }
 
 export interface LoginAttemptsResponse {
@@ -477,7 +485,6 @@ export interface BookingAvailabilityResult {
   id: string;
   pro: {
     userId: string;
-    email: string;
     businessName: string | null;
   };
   sport: 'surf' | 'kitesurf';
@@ -496,12 +503,12 @@ export interface BookingAvailabilityResult {
 
 export interface NearbyProResult {
   proId: string;
-  email: string;
+  proPublicId: string;
   businessName: string | null;
   photoUrl: string | null;
   verified: boolean;
-  lat: number;
-  lng: number;
+  /** Gate B: no precise GPS. Use distanceBucket for display only. */
+  distanceBucket: '<5km' | '5-15km' | '15-30km' | '>30km';
   distanceKm: number;
   sports: Array<'surf' | 'kitesurf'>;
   openAvailabilityCount: number;
@@ -575,10 +582,8 @@ type BookingRequestMeApiItem = {
     startAt: string;
     endAt: string;
     pro: {
-      email: string;
-      proProfile?: {
-        businessName?: string | null;
-      } | null;
+      proPublicId: string | null;
+      businessName: string | null;
     };
   };
 };
@@ -625,23 +630,38 @@ async function ensureCsrfToken(): Promise<string | null> {
   return csrfTokenPromise;
 }
 
+/**
+ * Session hint key — a non-sensitive flag in localStorage.
+ *
+ * With cookie-based auth, the actual tokens are httpOnly and cannot be read by JS.
+ * This flag indicates "a session was established" so pages can skip the initial
+ * API call when the user is clearly not logged in (e.g. fresh browser tab after logout).
+ *
+ * It is NOT the token itself and carries no security value on its own.
+ * The server enforces auth via the httpOnly cookie on every request.
+ */
+const SESSION_HINT_KEY = 'blob_session_hint';
+
 function getTokens() {
   if (typeof window === 'undefined') return null;
-  const accessToken = localStorage.getItem('accessToken') || '';
-  const refreshToken = localStorage.getItem('refreshToken') || '';
-  return { accessToken, refreshToken };
+  // Return a truthy non-empty object when a session hint exists.
+  // Actual auth is enforced via httpOnly cookies, not these values.
+  const hint = localStorage.getItem(SESSION_HINT_KEY);
+  if (!hint) return null;
+  return { accessToken: 'cookie-auth', refreshToken: 'cookie-auth' };
 }
 
-function setTokens(access: string, refresh: string) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function setTokens(_access = '', _refresh = '') {
+  // Tokens are set as httpOnly cookies by the server — nothing to store in JS.
+  // We only update the local session hint to reflect that a session is active.
   if (typeof window === 'undefined') return;
-  localStorage.setItem('accessToken', access);
-  localStorage.setItem('refreshToken', refresh);
+  localStorage.setItem(SESSION_HINT_KEY, '1');
 }
 
 function clearTokens() {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem('accessToken');
-  localStorage.removeItem('refreshToken');
+  localStorage.removeItem(SESSION_HINT_KEY);
 }
 
 function getConsentHash() {
@@ -658,34 +678,34 @@ async function refreshAccessToken() {
     return refreshPromise;
   }
 
-  const tokens = getTokens();
-  const refreshToken = tokens?.refreshToken;
-  if (!refreshToken) {
-    return false;
-  }
+  // With cookie-based auth, the refresh token is in an httpOnly cookie scoped to
+  // /auth/refresh. We don't need to read it from localStorage.
+  // We DO need the CSRF token because POST /auth/refresh is a mutating endpoint.
 
   refreshPromise = (async () => {
     try {
+      const csrfToken = await ensureCsrfToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
+
       const response = await fetch(`${API_URL}/auth/refresh`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ refreshToken }),
+        headers,
+        credentials: 'include', // Browser sends refreshToken cookie (path=/auth/refresh)
       });
 
       if (!response || !response.ok) {
-        throw new Error('Unable to refresh session');
+        clearTokens();
+        return false;
       }
 
-      const payload = await response.json();
-      if (payload?.accessToken && payload?.refreshToken) {
-        setTokens(payload.accessToken, payload.refreshToken);
-        return true;
-      }
-
-      throw new Error('Invalid refresh payload');
+      // Server set new accessToken cookie — re-confirm session hint is active
+      setTokens();
+      return true;
     } catch (error) {
       if (process.env.NODE_ENV !== 'test') {
         console.warn('[apiClient] Refresh token failed', error);
@@ -723,10 +743,8 @@ async function request(
     }
   }
 
-  if (withAuth) {
-    const t = getTokens();
-    if (t?.accessToken) headers['Authorization'] = `Bearer ${t.accessToken}`;
-  }
+  // Auth is now via httpOnly cookie sent automatically with credentials: 'include'.
+  // No Authorization header needed — never exposes tokens in JS memory.
 
   const consentHash = getConsentHash();
   if (consentHash) {
@@ -814,7 +832,7 @@ const matchDecisionsDataSchema = z.object({
     .optional(),
 });
 
-async function buildStrictHeaders(withAuth = true) {
+async function buildStrictHeaders(_withAuth = true) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-API-ENVELOPE': '1',
@@ -823,8 +841,7 @@ async function buildStrictHeaders(withAuth = true) {
   const csrf = await ensureCsrfToken();
   if (csrf) headers['X-CSRF-Token'] = csrf;
 
-  const tokens = getTokens();
-  if (withAuth && tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+  // Auth is via httpOnly cookie (credentials: 'include') — no Authorization header.
 
   const consentHash = getConsentHash();
   if (consentHash) headers['X-Consent-Hash'] = consentHash;
@@ -955,11 +972,11 @@ export const apiClient = {
   send2FA: (email: string) =>
     request('/auth/2fa/send', { method: 'POST', body: JSON.stringify({ email }) }),
 
-  verify2FA: (userId: string, code: string, consentAccepted?: boolean) =>
-    request('/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ userId, code, consentAccepted }) }) as Promise<LoginResponse>,
+  verify2FA: (challengeId: string, code: string, consentAccepted?: boolean) =>
+    request('/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ challengeId, code, consentAccepted }) }) as Promise<{ ok: true }>,
 
   verifyPro2FA: (email: string, code: string) =>
-    request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<LoginResponse>,
+    request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<{ ok: true; message: string }>,
 
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
   updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
@@ -1350,18 +1367,22 @@ export const apiClient = {
           startAt: req.availability.startAt,
           endAt: req.availability.endAt,
           pro: {
-            email: req.availability.pro.email,
-            businessName: req.availability.pro.proProfile?.businessName ?? null,
+            proPublicId: req.availability.pro.proPublicId ?? null,
+            businessName: req.availability.pro.businessName,
           },
         },
       })),
     };
   },
 
+  /**
+   * saveTokens — Activates the local session hint flag.
+   * Tokens themselves are managed as httpOnly cookies by the server.
+   */
   saveTokens: setTokens,
   clearTokens: clearTokens,
   getTokens,
-  // ✅ PATCH 1 (P0 #2): Expose refresh pour WebSocket retry
+  // Expose refresh pour WebSocket retry
   refreshToken: refreshAccessToken,
   // Blobosphère admin
   adminBlobosphereList: () => request('/admin/blobosphere/posts', { method: 'GET' }, true) as Promise<{ items: Array<{ category: string; file: string; slug: string; title: string; status: string; publishedAt: string|null }> }>,

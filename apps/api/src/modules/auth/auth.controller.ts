@@ -9,10 +9,12 @@ import { validate } from '../../middleware/validate';
 import { passwordSchema } from '../../utils/password-validator';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
-import { createHash } from 'crypto';
+import { randomUUID } from 'crypto';
 import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmac } from '../../lib/hash-ip';
 import { securityEventAlertService } from '../../services/security-event-alert.service';
+import { cacheService } from '../../services/cache.service';
+import { buildLoginAttemptData, hashEmail } from './login-attempt.util';
 import {
   ADMIN_STEP_UP_TTL_SECONDS,
   grantAdminStepUp,
@@ -131,10 +133,10 @@ const verify2FAProSchema = z.object({
 });
 
 const verify2FASchema = z.object({
-  userId: z.string().uuid(),
+  challengeId: z.string().uuid(),
   code: z.string().length(6),
   consentAccepted: z.boolean().optional().default(false),
-});
+}).strict();
 
 const stepUpSchema = z.discriminatedUnion('intent', [
   z.object({
@@ -150,16 +152,78 @@ const stepUpSchema = z.discriminatedUnion('intent', [
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function hashEmail(email: string) {
-  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
-}
-
 function categorizeUserAgent(userAgent: string | undefined): string | undefined {
   if (!userAgent) return undefined;
   const ua = userAgent.toLowerCase();
   if (ua.includes('mobile') || ua.includes('iphone') || ua.includes('android')) return 'mobile';
   if (ua.includes('bot') || ua.includes('crawler') || ua.includes('spider')) return 'bot';
   return 'desktop';
+}
+
+// Binding policy (strict): challenge is bound to the originating ipHash.
+// Any IP change before /auth/verify-2fa is rejected with 403 and a SECURITY log.
+const AUTH_2FA_CHALLENGE_TTL_SECONDS = 5 * 60;
+const AUTH_2FA_CHALLENGE_KEY_PREFIX = 'auth:2fa:challenge:';
+const auth2faChallengeMemoryStore = !IS_PROD
+  ? new Map<string, { challenge: Auth2FAChallenge; expiresAt: number }>()
+  : null;
+
+type Auth2FAChallenge = {
+  userId: string;
+  ipHash: string;
+  createdAt: string;
+};
+
+function auth2faChallengeKey(challengeId: string): string {
+  return `${AUTH_2FA_CHALLENGE_KEY_PREFIX}${challengeId}`;
+}
+
+async function setAuth2FAChallenge(challengeId: string, challenge: Auth2FAChallenge): Promise<boolean> {
+  const key = auth2faChallengeKey(challengeId);
+  const savedInRedis = await cacheService.set(key, challenge, AUTH_2FA_CHALLENGE_TTL_SECONDS);
+  if (savedInRedis) {
+    return true;
+  }
+
+  if (auth2faChallengeMemoryStore) {
+    auth2faChallengeMemoryStore.set(challengeId, {
+      challenge,
+      expiresAt: Date.now() + AUTH_2FA_CHALLENGE_TTL_SECONDS * 1000,
+    });
+    return true;
+  }
+
+  return false;
+}
+
+async function getAuth2FAChallenge(challengeId: string): Promise<Auth2FAChallenge | null> {
+  const key = auth2faChallengeKey(challengeId);
+  const challenge = await cacheService.get<Auth2FAChallenge>(key);
+  if (challenge) {
+    return challenge;
+  }
+
+  if (!auth2faChallengeMemoryStore) {
+    return null;
+  }
+
+  const entry = auth2faChallengeMemoryStore.get(challengeId);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    auth2faChallengeMemoryStore.delete(challengeId);
+    return null;
+  }
+
+  return entry.challenge;
+}
+
+async function deleteAuth2FAChallenge(challengeId: string): Promise<void> {
+  const key = auth2faChallengeKey(challengeId);
+  await cacheService.del(key);
+  auth2faChallengeMemoryStore?.delete(challengeId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,6 +256,14 @@ authRouter.post('/register', validate(registerSchema), async (req, res) => {
 authRouter.post('/login', validate(loginSchema), async (req, res) => {
   const { email, password, consentAccepted } = req.body as z.infer<typeof loginSchema>;
   const ip = getClientIp(req);
+  const ipHash = (() => {
+    try {
+      return hashIpHmac(ip) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const emailHash = hashEmail(email);
   const userAgent = categorizeUserAgent(req.get('User-Agent'));
 
   try {
@@ -200,19 +272,19 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     // Log successful login
     const user = await prisma.user.findUnique({ where: { email } });
     await prisma.loginAttempt.create({
-      data: {
+      data: buildLoginAttemptData({
         email,
-        ipHash: hashIpHmac(ip) ?? undefined,
+        ipHash,
         userAgent,
         success: true,
         userId: user?.id,
-      },
+      }),
     }).catch(() => {});
 
-    if (user?.id && ip) {
+    if (user?.id && ipHash) {
       securityEventAlertService.reportSuccessAfterFailures(
-        email,
-        hashIpHmac(ip)!,
+        emailHash,
+        ipHash,
         user.id,
       ).catch(() => {});
     }
@@ -226,19 +298,19 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     if (err?.name === 'ZodError') {
       reason = 'Invalid input';
       await prisma.loginAttempt.create({
-        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason },
+        data: buildLoginAttemptData({ email, ipHash, userAgent, success: false, reason }),
       }).catch(() => {});
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
       reason = 'Invalid credentials';
       await prisma.loginAttempt.create({
-        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason },
+        data: buildLoginAttemptData({ email, ipHash, userAgent, success: false, reason }),
       }).catch(() => {});
-      if (ip) {
+      if (ipHash) {
         securityEventAlertService.detectAndReportLoginFailurePattern(
-          email,
-          hashIpHmac(ip)!,
+          emailHash,
+          ipHash,
         ).catch(() => {});
       }
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -249,22 +321,42 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     if (err?.code === 'EMAIL_NOT_VERIFIED') {
       reason = 'Email not verified';
       await prisma.loginAttempt.create({
-        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason },
+        data: buildLoginAttemptData({ email, ipHash, userAgent, success: false, reason }),
       }).catch(() => {});
       return res.status(403).json({ error: 'Email not verified' });
     }
     if (err?.code === '2FA_REQUIRED') {
-      await twoFactorService.sendCode(err.userId, err.email);
+      const sent = await twoFactorService.sendCode(err.userId, err.email);
+      if (!sent.success) {
+        return res.status(503).json({ error: '2FA service unavailable' });
+      }
+
+      const ipHash = hashIpHmac(ip);
+      if (!ipHash) {
+        return res.status(401).json({ error: 'Unable to bind challenge to client IP' });
+      }
+
+      const challengeId = randomUUID();
+      const challengeSaved = await setAuth2FAChallenge(challengeId, {
+        userId: err.userId,
+        ipHash,
+        createdAt: new Date().toISOString(),
+      });
+
+      if (!challengeSaved) {
+        return res.status(503).json({ error: '2FA challenge storage unavailable' });
+      }
+
       return res.status(200).json({
         requires2FA: true,
-        userId: err.userId,
+        challengeId,
         message: 'Code de vérification envoyé par email',
       });
     }
 
     reason = 'Internal server error';
     await prisma.loginAttempt.create({
-      data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason },
+      data: buildLoginAttemptData({ email, ipHash, userAgent, success: false, reason }),
     }).catch(() => {});
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -277,16 +369,33 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
  */
 authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
   try {
-    const { userId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
+    const { challengeId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
     const clientIp = getClientIp(req);
+    const challenge = await getAuth2FAChallenge(challengeId);
 
-    const verification = await twoFactorService.verifyCode(userId, code, clientIp);
+    if (!challenge) {
+      return res.status(401).json({ error: 'Invalid or expired 2FA challenge' });
+    }
+
+    const requestIpHash = hashIpHmac(clientIp);
+    if (!requestIpHash || requestIpHash !== challenge.ipHash) {
+      secureLogger.security('AUTH_2FA_CHALLENGE_IP_MISMATCH', {
+        challengeId,
+        expectedIpHash: challenge.ipHash,
+        receivedIpHash: requestIpHash,
+      });
+      return res.status(403).json({
+        error: '2FA challenge IP mismatch',
+      });
+    }
+
+    const verification = await twoFactorService.verifyCode(challenge.userId, code, clientIp);
     if (!verification.valid) {
       return res.status(401).json({ error: verification.message });
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: challenge.userId },
       include: { adminProfile: true },
     });
 
@@ -310,6 +419,7 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
 
     const ip = clientIp || undefined;
     const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip });
+    await deleteAuth2FAChallenge(challengeId);
 
     setAuthCookies(res, tokens);
     return res.json({ ok: true });
@@ -317,7 +427,7 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
     secureLogger.error('2FA_VERIFICATION_ERROR', {
       error: err?.message,
       name: err?.name,
-      userId: req.body?.userId,
+      challengeId: req.body?.challengeId,
     });
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
@@ -361,7 +471,7 @@ authRouter.post('/step-up', requireAuth, requireVerifiedEmail, validate(stepUpSc
       return res.status(401).json({ error: verification.message });
     }
 
-    const grant = await grantAdminStepUp(user.id);
+    const grant = await grantAdminStepUp(user.id, clientIp);
     if (!grant.ok) {
       secureLogger.security('CRITICAL_ADMIN_STEP_UP_GRANT_UNAVAILABLE', {
         userId: user.id,
