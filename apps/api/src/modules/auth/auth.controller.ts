@@ -347,7 +347,10 @@ authRouter.post('/step-up', requireAuth, requireVerifiedEmail, validate(stepUpSc
     if (payload.intent === 'send') {
       const sent = await twoFactorService.sendCode(user.id, user.email);
       if (!sent.success) {
-        return res.status(503).json({ error: 'Step-up code delivery unavailable' });
+        secureLogger.security('CRITICAL_ADMIN_STEP_UP_SEND_UNAVAILABLE', {
+          userId: user.id,
+        });
+        return res.status(403).json({ error: 'Step-up authentication required' });
       }
       return res.json({ ok: true, challengeSent: true });
     }
