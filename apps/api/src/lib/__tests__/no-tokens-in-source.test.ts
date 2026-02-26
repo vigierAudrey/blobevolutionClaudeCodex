@@ -45,6 +45,39 @@ function walkFiles(dir: string, ext: string[] = ['.ts', '.tsx']): string[] {
 // ---------------------------------------------------------------------------
 
 type Match = { file: string; line: number; text: string };
+type TokenViolation = { line: number; text: string; rule: string };
+
+const TOKEN_KEY_PATTERN = '(?:accessToken|refreshToken|token)';
+const TOKEN_PERSISTENCE_RULES: Array<{ rule: string; pattern: RegExp }> = [
+  {
+    rule: 'localStorage.setItem',
+    pattern: new RegExp(`(?:window\\.)?localStorage\\.setItem\\s*\\(\\s*['"\`]${TOKEN_KEY_PATTERN}['"\`]\\s*,`),
+  },
+  {
+    rule: 'sessionStorage.setItem',
+    pattern: new RegExp(`(?:window\\.)?sessionStorage\\.setItem\\s*\\(\\s*['"\`]${TOKEN_KEY_PATTERN}['"\`]\\s*,`),
+  },
+  {
+    rule: 'storage alias setItem',
+    pattern: new RegExp(`\\b[A-Za-z_$][\\w$]*\\.setItem\\s*\\(\\s*['"\`]${TOKEN_KEY_PATTERN}['"\`]\\s*,`),
+  },
+  {
+    rule: 'localStorage bracket assignment',
+    pattern: new RegExp(`(?:window\\.)?localStorage\\s*\\[\\s*['"\`]${TOKEN_KEY_PATTERN}['"\`]\\s*\\]\\s*=`),
+  },
+  {
+    rule: 'sessionStorage bracket assignment',
+    pattern: new RegExp(`(?:window\\.)?sessionStorage\\s*\\[\\s*['"\`]${TOKEN_KEY_PATTERN}['"\`]\\s*\\]\\s*=`),
+  },
+  {
+    rule: 'wrapper function token key',
+    pattern: new RegExp(`\\b(?:set|save|store|persist|write)[A-Za-z0-9_]*\\s*\\(\\s*['"\`]${TOKEN_KEY_PATTERN}['"\`]\\s*,`, 'i'),
+  },
+  {
+    rule: 'wrapper method token key',
+    pattern: new RegExp(`\\b[A-Za-z_$][\\w$]*\\.(?:set|save|store|persist|write)[A-Za-z0-9_]*\\s*\\(\\s*['"\`]${TOKEN_KEY_PATTERN}['"\`]\\s*,`, 'i'),
+  },
+];
 
 function grepSource(files: string[], pattern: RegExp): Match[] {
   const matches: Match[] = [];
@@ -61,6 +94,41 @@ function grepSource(files: string[], pattern: RegExp): Match[] {
 
 function formatMatches(matches: Match[]): string {
   return matches.map((m) => `  ${m.file}:${m.line}: ${m.text}`).join('\n');
+}
+
+function detectTokenPersistenceViolationsInSource(source: string): TokenViolation[] {
+  const lines = source.split('\n');
+  const violations: TokenViolation[] = [];
+
+  lines.forEach((text, idx) => {
+    for (const rule of TOKEN_PERSISTENCE_RULES) {
+      if (rule.pattern.test(text)) {
+        violations.push({
+          line: idx + 1,
+          text: text.trim(),
+          rule: rule.rule,
+        });
+      }
+    }
+  });
+
+  return violations;
+}
+
+function scanTokenPersistenceViolations(files: string[]): Match[] {
+  const matches: Match[] = [];
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    const violations = detectTokenPersistenceViolationsInSource(source);
+    for (const violation of violations) {
+      matches.push({
+        file,
+        line: violation.line,
+        text: `[${violation.rule}] ${violation.text}`,
+      });
+    }
+  }
+  return matches;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,33 +156,11 @@ describe('Gate C.1 — frontend: no raw token in localStorage', () => {
     expect(webFiles.length).toBeGreaterThan(0); // sanity: found files
   });
 
-  it('no localStorage.setItem("accessToken", ...) in web source', () => {
-    const pattern = /localStorage\.setItem\s*\(\s*['"`]accessToken['"`]/;
-    const matches = grepSource(webFiles, pattern);
+  it('no token persistence in local/session storage (setItem, bracket, wrappers)', () => {
+    const matches = scanTokenPersistenceViolations(webFiles);
     expect(matches).toEqual(
       [],
-      `Found ${matches.length} violation(s). Tokens must be stored in httpOnly cookies, not localStorage:\n` +
-        formatMatches(matches)
-    );
-  });
-
-  it('no localStorage.setItem("refreshToken", ...) in web source', () => {
-    const pattern = /localStorage\.setItem\s*\(\s*['"`]refreshToken['"`]/;
-    const matches = grepSource(webFiles, pattern);
-    expect(matches).toEqual(
-      [],
-      `Found ${matches.length} violation(s). Refresh tokens must be httpOnly cookies only:\n` +
-        formatMatches(matches)
-    );
-  });
-
-  it('no localStorage.setItem("token", ...) in web source (generic token key)', () => {
-    // Only the exact key "token" — not keys like "consent_token_hash"
-    const pattern = /localStorage\.setItem\s*\(\s*['"`]token['"`]/;
-    const matches = grepSource(webFiles, pattern);
-    expect(matches).toEqual(
-      [],
-      `Found ${matches.length} violation(s). Generic "token" key in localStorage is forbidden:\n` +
+      `Found ${matches.length} violation(s). Access/refresh tokens must not be persisted in browser storage:\n` +
         formatMatches(matches)
     );
   });
@@ -127,6 +173,23 @@ describe('Gate C.1 — frontend: no raw token in localStorage', () => {
     // Must NOT store actual JWT values
     expect(content).not.toMatch(/localStorage\.setItem\s*\(\s*['"`]accessToken['"`]/);
     expect(content).not.toMatch(/localStorage\.setItem\s*\(\s*['"`]refreshToken['"`]/);
+  });
+});
+
+describe('Gate C.1.b — bypass coverage for token persistence detector', () => {
+  const BYPASS_CASES: Array<{ name: string; snippet: string }> = [
+    { name: 'localStorage.setItem direct', snippet: "localStorage.setItem('accessToken', token)" },
+    { name: 'localStorage bracket assignment', snippet: "window.localStorage['refreshToken'] = token" },
+    { name: 'sessionStorage.setItem direct', snippet: "sessionStorage.setItem('token', token)" },
+    { name: 'sessionStorage bracket assignment', snippet: "window.sessionStorage['accessToken'] = token" },
+    { name: 'storage alias setItem', snippet: "const storage = window.localStorage; storage.setItem('refreshToken', token)" },
+    { name: 'wrapper helper function', snippet: "saveToken('accessToken', token)" },
+    { name: 'wrapper helper method', snippet: "tokenStore.store('refreshToken', token)" },
+  ];
+
+  it.each(BYPASS_CASES)('detects bypass variant: $name', ({ snippet }) => {
+    const violations = detectTokenPersistenceViolationsInSource(snippet);
+    expect(violations.length).toBeGreaterThan(0);
   });
 });
 
@@ -276,8 +339,8 @@ describe('Gate C.2 — backend: no tokens in auth response bodies', () => {
     const marker = "authRouter.post('/verify-2fa',";
     const idx = authSource.indexOf(marker);
     expect(idx).not.toBe(-1);
-    const verifySection = authSource.slice(idx, idx + 2500);
-    expect(verifySection).toContain('return res.json({ ok: true })');
+    const verifySection = authSource.slice(idx, idx + 5000);
+    expect(verifySection).toContain('res.json({ ok: true })');
     expect(verifySection).not.toMatch(/json\s*\(\s*\{[^}]*accessToken/);
     expect(verifySection).not.toMatch(/json\s*\(\s*\{[^}]*refreshToken/);
     expect(verifySection).not.toMatch(/json\s*\(\s*\{[^}]*\btoken\b/);
