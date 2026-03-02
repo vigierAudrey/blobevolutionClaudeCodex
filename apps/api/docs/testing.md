@@ -18,7 +18,7 @@ Le schéma DB est préparé **UNE SEULE FOIS** par run Jest au lieu d'avant chaq
 4. **[4/4] Seed minimal test users** (2 users: admin + rider)
 
 **Gardes de sécurité:**
-- ✅ Requiert `NODE_ENV=test` ou `APP_ENV=test`
+- ✅ `db push` n'est autorisé que si `NODE_ENV=test` ou `CI_TEST_DB=true`
 - ✅ En local `db:push`, requiert `ALLOW_ACCEPT_DATA_LOSS=true`
 - ✅ En CI, n'utilise pas `ALLOW_ACCEPT_DATA_LOSS` (migration uniquement)
 - ❌ BLOCKED si `APP_ENV=production` ou `CI_PROD=true`
@@ -117,7 +117,7 @@ TEST_DB_RESET_DEBUG=true pnpm test
 **Règles de sécurité (toutes obligatoires):**
 
 1. ✅ `ALLOW_ACCEPT_DATA_LOSS=true` (unlock explicite)
-2. ✅ Contexte test vérifié (`NODE_ENV=test` OR `APP_ENV=test` OR `CI_TEST=true`)
+2. ✅ Contexte test vérifié (`NODE_ENV=test` OR `CI_TEST_DB=true`)
 3. ❌ HARD DENY si `APP_ENV=production` OR `CI_PROD=true`
 
 **IMPORTANT**:
