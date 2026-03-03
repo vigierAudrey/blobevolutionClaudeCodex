@@ -548,7 +548,7 @@ authRouter.post('/step-up', requireAuth, requireVerifiedEmail, validate(stepUpSc
       return res.status(401).json({ error: verification.message });
     }
 
-    const grant = await grantAdminStepUp(user.id, clientIp);
+    const grant = await grantAdminStepUp(user.id);
     if (!grant.ok) {
       secureLogger.security('CRITICAL_ADMIN_STEP_UP_GRANT_UNAVAILABLE', {
         userId: user.id,

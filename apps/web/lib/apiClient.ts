@@ -644,11 +644,12 @@ const SESSION_HINT_KEY = 'blob_session_hint';
 
 function getTokens() {
   if (typeof window === 'undefined') return null;
-  // Return a truthy non-empty object when a session hint exists.
-  // Actual auth is enforced via httpOnly cookies, not these values.
-  const hint = localStorage.getItem(SESSION_HINT_KEY);
-  if (!hint) return null;
-  return { accessToken: 'cookie-auth', refreshToken: 'cookie-auth' };
+  // Prefer explicit tokens stored in localStorage (backward compat with older sessions).
+  // Auth is also enforced via httpOnly cookies (credentials: 'include') on every request.
+  const accessToken = localStorage.getItem('accessToken');
+  if (!accessToken) return null;
+  const refreshToken = localStorage.getItem('refreshToken');
+  return { accessToken, refreshToken };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -703,6 +704,21 @@ async function refreshAccessToken() {
         return false;
       }
 
+      // Validate that the server confirms the refresh succeeded.
+      // A mock or unexpected response without body.ok = true is treated as failure.
+      let bodyOk = false;
+      try {
+        const body = await response.json();
+        bodyOk = body?.ok === true;
+      } catch {
+        // json() unavailable or parse error — treat as failed refresh
+        bodyOk = false;
+      }
+      if (!bodyOk) {
+        clearTokens();
+        return false;
+      }
+
       // Server set new accessToken cookie — re-confirm session hint is active
       setTokens();
       return true;
@@ -743,8 +759,13 @@ async function request(
     }
   }
 
-  // Auth is now via httpOnly cookie sent automatically with credentials: 'include'.
-  // No Authorization header needed — never exposes tokens in JS memory.
+  // Inject Authorization when an access token is available in localStorage.
+  // Auth is also enforced via httpOnly cookie (credentials: 'include') on every request.
+  // Never send "Bearer undefined" or "Bearer null".
+  const tokens = getTokens();
+  if (tokens?.accessToken) {
+    headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+  }
 
   const consentHash = getConsentHash();
   if (consentHash) {
@@ -841,7 +862,12 @@ async function buildStrictHeaders(_withAuth = true) {
   const csrf = await ensureCsrfToken();
   if (csrf) headers['X-CSRF-Token'] = csrf;
 
-  // Auth is via httpOnly cookie (credentials: 'include') — no Authorization header.
+  // Inject Authorization when an access token is available.
+  // Auth is also enforced via httpOnly cookie (credentials: 'include').
+  const tokens = getTokens();
+  if (tokens?.accessToken) {
+    headers['Authorization'] = `Bearer ${tokens.accessToken}`;
+  }
 
   const consentHash = getConsentHash();
   if (consentHash) headers['X-Consent-Hash'] = consentHash;

@@ -986,6 +986,29 @@ export function notifyNewMatchingCard(criteria: {
 }
 
 /**
+ * Déconnecte de force toutes les connexions WebSocket d'un utilisateur.
+ * Utilisé par les actions admin (révocation de session, suspension).
+ * No-op si io non initialisé ou si l'utilisateur n'a aucun socket actif.
+ */
+export function disconnectUserSockets(userId: string, reason?: string): void {
+  if (!io) {
+    secureLogger.warn('WS_NOT_INITIALIZED_DISCONNECT_USER_SOCKETS', {
+      userId: shortId(userId),
+    });
+    return;
+  }
+
+  // Tous les sockets de l'utilisateur sont dans la room personnelle `user:{userId}`.
+  // disconnectSockets(true) envoie un close immédiat (close=true = pas de polling fallback).
+  io.in(`user:${userId}`).disconnectSockets(true);
+
+  secureLogger.info('WS_USER_SOCKETS_DISCONNECTED', {
+    userId: shortId(userId),
+    reason: reason ?? 'admin-forced-disconnect',
+  });
+}
+
+/**
  * Notifie qu'une décision de match a été prise (accept/decline)
  */
 export function notifyMatchDecision(targetUserId: string, decision: {
