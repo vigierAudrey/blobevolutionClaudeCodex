@@ -108,7 +108,57 @@ jobs:
           echo "✅ no-insecure-logs-check: no sensitive runtime log patterns detected."
 
       - name: No bare db push in CI paths (block)
-        run: bash scripts/ci-block-db-push.sh
+        run: |
+          set -euo pipefail
+          list_ci_files() {
+            if [ -d .github/workflows ]; then
+              find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0
+            fi
+            if [ -d .github/actions ]; then
+              find .github/actions -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) -print0
+            fi
+            if [ -d .gitlab ]; then
+              find .gitlab -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) -print0
+            fi
+            if [ -f .gitlab-ci.yml ]; then
+              printf '%s\0' .gitlab-ci.yml
+            fi
+          }
+
+          BLOCKED_SINGLE="$(
+            list_ci_files \
+              | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?(prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+exec[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|npx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|bash[[:space:]]+-lc[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|sh[[:space:]]+-c[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+dlx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+--filter[[:space:]]+@blobinfini/database[[:space:]]+db:push:unsafe)([[:space:];|&]|$)' \
+              || true
+          )"
+
+          BLOCKED_CONTINUATION_FILES="$(
+            list_ci_files \
+              | xargs -0 -r grep -I -l -E '^[[:space:]]*prisma[[:space:]]+db[[:space:]]*\\[[:space:]]*$' \
+              || true
+          )"
+          BLOCKED_CONTINUATION=""
+          if [ -n "$BLOCKED_CONTINUATION_FILES" ]; then
+            while IFS= read -r file; do
+              if grep -I -nE '^[[:space:]]*push([[:space:]]|$)' "$file" >/dev/null; then
+                BLOCKED_CONTINUATION="${BLOCKED_CONTINUATION}${file}"$'\n'
+              fi
+            done <<EOF
+$BLOCKED_CONTINUATION_FILES
+EOF
+          fi
+
+          if [ -n "$BLOCKED_SINGLE" ] || [ -n "$BLOCKED_CONTINUATION" ]; then
+            echo "❌ Forbidden Prisma db push invocation detected in CI paths."
+            if [ -n "$BLOCKED_SINGLE" ]; then
+              echo "$BLOCKED_SINGLE"
+            fi
+            if [ -n "$BLOCKED_CONTINUATION" ]; then
+              echo "$BLOCKED_CONTINUATION"
+            fi
+            exit 1
+          fi
+
+          echo "✅ ci-block-db-push: no forbidden db push invocation in CI paths."
 
       - name: Self-test ci-block-db-push (poison pill + variantes pnpm exec/npx/unsafe/continuation)
         # Prouve que le guard bloque les formes d'invocation de db push dans un workflow.
@@ -116,6 +166,48 @@ jobs:
         # un scénario réaliste: le guard doit bloquer même dans une structure YAML bien formée.
         run: |
           set -euo pipefail
+          guard_ci_db_push() {
+            list_ci_files() {
+              if [ -d .github/workflows ]; then
+                find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0
+              fi
+              if [ -d .github/actions ]; then
+                find .github/actions -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) -print0
+              fi
+              if [ -d .gitlab ]; then
+                find .gitlab -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) -print0
+              fi
+              if [ -f .gitlab-ci.yml ]; then
+                printf '%s\0' .gitlab-ci.yml
+              fi
+            }
+
+            local blocked_single blocked_continuation_files blocked_continuation
+            blocked_single="$(
+              list_ci_files \
+                | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?(prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+exec[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|npx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|bash[[:space:]]+-lc[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|sh[[:space:]]+-c[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+dlx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+--filter[[:space:]]+@blobinfini/database[[:space:]]+db:push:unsafe)([[:space:];|&]|$)' \
+                || true
+            )"
+            blocked_continuation_files="$(
+              list_ci_files \
+                | xargs -0 -r grep -I -l -E '^[[:space:]]*prisma[[:space:]]+db[[:space:]]*\\[[:space:]]*$' \
+                || true
+            )"
+            blocked_continuation=""
+            if [ -n "$blocked_continuation_files" ]; then
+              while IFS= read -r file; do
+                if grep -I -nE '^[[:space:]]*push([[:space:]]|$)' "$file" >/dev/null; then
+                  blocked_continuation="${blocked_continuation}${file}"$'\n'
+                fi
+              done <<EOF
+$blocked_continuation_files
+EOF
+            fi
+            if [ -n "$blocked_single" ] || [ -n "$blocked_continuation" ]; then
+              return 1
+            fi
+          }
+
           POISON=".github/workflows/_poison_test_$$.yml"
           trap 'rm -f "$POISON"' EXIT
           _poison_check() {
@@ -124,7 +216,7 @@ jobs:
             printf 'name: Poison Pill\non: [push]\njobs:\n  poison:\n    runs-on: ubuntu-22.04\n    steps:\n      - name: Sneaky step\n        run: %s\n' \
               "$run_cmd" > "$POISON"
             local code=0
-            bash scripts/ci-block-db-push.sh 2>&1 || code=$?
+            guard_ci_db_push || code=$?
             rm -f "$POISON"
             if [ "$code" -eq 0 ]; then
               echo "❌ POISON FAILED [${label}]: ci-block-db-push.sh n'a pas bloqué"
@@ -142,7 +234,7 @@ jobs:
           # Multi-line continuation bypass: guard must catch `prisma db \` at end of line
           printf 'name: Poison Pill\non: [push]\njobs:\n  poison:\n    runs-on: ubuntu-22.04\n    steps:\n      - name: Sneaky step\n        run: |\n          prisma db \\\n          push\n' \
             > "$POISON"
-          code=0; bash scripts/ci-block-db-push.sh 2>&1 || code=$?
+          code=0; guard_ci_db_push || code=$?
           rm -f "$POISON"
           if [ "$code" -eq 0 ]; then
             echo "❌ POISON FAILED [continuation]: multi-line db push not blocked"
@@ -151,7 +243,27 @@ jobs:
           echo "✅ POISON OK [continuation]"
 
       - name: Enforce DB push guardrails
-        run: bash scripts/no-unsafe-db-push-check.sh
+        run: |
+          set -euo pipefail
+          UNSAFE_HITS="$(
+            find . -type f \
+              \( -name '*.sh' -o -name '*.mjs' -o -name 'package.json' -o -name '*.yml' -o -name '*.yaml' \) \
+              ! -path './.git/*' \
+              ! -path './node_modules/*' \
+              ! -path './apps/web/.next/*' \
+              ! -path './apps/web/storybook-static/*' \
+              ! -path './packages/database/scripts/safe-db-push.mjs' \
+              ! -path './packages/database/package.json' \
+              -print0 \
+              | xargs -0 -r grep -I -nE 'accept-data-loss|db:push:unsafe' \
+              || true
+          )"
+          if [ -n "$UNSAFE_HITS" ]; then
+            echo "❌ Forbidden unsafe DB push guardrail bypass detected."
+            echo "$UNSAFE_HITS"
+            exit 1
+          fi
+          echo "✅ no-unsafe-db-push-check: no forbidden unsafe db push bypass outside approved local wrappers."
 
       - name: Verify Prisma supply-chain (single version in lockfile)
         # Checks pnpm-lock.yaml for unexpected prisma/@prisma/client versions.
@@ -223,7 +335,21 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Enforce network guardrails
-        run: bash scripts/no-raw-fetch-check.sh
+        run: |
+          set -euo pipefail
+          RAW_FETCH_HITS="$(
+            find .github/workflows .github/actions scripts -type f \
+              \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) \
+              -print0 2>/dev/null \
+              | xargs -0 -r grep -I -nE '((curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z)?sh\b|bash[[:space:]]+<\([[:space:]]*(curl|wget)|sh[[:space:]]+<\([[:space:]]*(curl|wget))' \
+              || true
+          )"
+          if [ -n "$RAW_FETCH_HITS" ]; then
+            echo "❌ Raw remote fetch piped to a shell is forbidden."
+            echo "$RAW_FETCH_HITS"
+            exit 1
+          fi
+          echo "✅ no-raw-fetch-check: no curl|bash or wget|sh pattern detected in CI/shell scripts."
 
       - name: No insecure logs / secrets (block)
         run: |
