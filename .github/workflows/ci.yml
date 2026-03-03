@@ -21,142 +21,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Ensure ripgrep is available
-        run: |
-          set -euo pipefail
-          if command -v rg >/dev/null 2>&1; then
-            echo "✅ ripgrep already available"
-            rg --version
-            exit 0
-          fi
-
-          if command -v apt-get >/dev/null 2>&1; then
-            if command -v sudo >/dev/null 2>&1; then
-              sudo apt-get update -y
-              sudo apt-get install -y -qq ripgrep
-            else
-              apt-get update -y
-              apt-get install -y -qq ripgrep
-            fi
-          else
-            VERSION="14.1.0"
-            TARGET="x86_64-unknown-linux-musl"
-            ARCHIVE="ripgrep-${VERSION}-${TARGET}.tar.gz"
-            URL="https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${ARCHIVE}"
-            TMPDIR="$(mktemp -d)"
-            trap 'rm -rf "$TMPDIR"' EXIT
-            mkdir -p "$HOME/.local/bin"
-            if command -v curl >/dev/null 2>&1; then
-              curl -fsSL "$URL" -o "$TMPDIR/$ARCHIVE"
-            elif command -v wget >/dev/null 2>&1; then
-              wget -qO "$TMPDIR/$ARCHIVE" "$URL"
-            else
-              echo "❌ Neither curl nor wget is available to install ripgrep." >&2
-              exit 1
-            fi
-            tar -xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
-            install -m 0755 "$TMPDIR/ripgrep-${VERSION}-${TARGET}/rg" "$HOME/.local/bin/rg"
-            export PATH="$HOME/.local/bin:$PATH"
-            if [ -n "${GITHUB_PATH:-}" ]; then
-              echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            fi
-          fi
-
-          rg --version
-
       - name: No skipped tests in critical API suites (block)
         run: bash scripts/no-skip-critical-check.sh
 
       - name: No insecure logs / secrets (block)
-        run: |
-          set -euo pipefail
-          scan_runtime_files() {
-            find apps/api/src apps/web -type f \
-              ! -path '*/__tests__/*' \
-              ! -path '*/test-utils/*' \
-              ! -path '*/scripts/*' \
-              ! -path '*/storybook-static/*' \
-              ! -path '*/.next/*' \
-              ! -path '*/node_modules/*' \
-              ! -name '*.test.*' \
-              ! -name '*.spec.*' \
-              -print0
-          }
-
-          CONSOLE_HITS="$(
-            scan_runtime_files \
-              | xargs -0 -r grep -I -nE 'console\.(log|warn|error).*((process\.env)|(req\.(headers|cookies))|(Authorization)|(Bearer[[:space:]])|(accessToken[^[:alnum:]_])|(refreshToken[^[:alnum:]_]))' \
-              || true
-          )"
-          LOGGER_HITS="$(
-            scan_runtime_files \
-              | xargs -0 -r grep -I -nE 'secureLogger\.(info|warn|error|security).*\{[^}]*\b(accessToken|refreshToken|authorization|password|token|secret)\s*:' \
-              || true
-          )"
-
-          if [ -n "$CONSOLE_HITS" ] || [ -n "$LOGGER_HITS" ]; then
-            echo "❌ Insecure logs / secrets detected in runtime source files."
-            if [ -n "$CONSOLE_HITS" ]; then
-              echo "$CONSOLE_HITS"
-            fi
-            if [ -n "$LOGGER_HITS" ]; then
-              echo "$LOGGER_HITS"
-            fi
-            exit 1
-          fi
-
-          echo "✅ no-insecure-logs-check: no sensitive runtime log patterns detected."
+        run: bash scripts/no-insecure-logs-check.sh
 
       - name: No bare db push in CI paths (block)
-        run: |
-          set -euo pipefail
-          list_ci_files() {
-            if [ -d .github/workflows ]; then
-              find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0
-            fi
-            if [ -d .github/actions ]; then
-              find .github/actions -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) -print0
-            fi
-            if [ -d .gitlab ]; then
-              find .gitlab -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) -print0
-            fi
-            if [ -f .gitlab-ci.yml ]; then
-              printf '%s\0' .gitlab-ci.yml
-            fi
-          }
-
-          BLOCKED_SINGLE="$(
-            list_ci_files \
-              | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?(prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+exec[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|npx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|bash[[:space:]]+-lc[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|sh[[:space:]]+-c[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+dlx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+--filter[[:space:]]+@blobinfini/database[[:space:]]+db:push:unsafe)(["'\''])?([[:space:];|&]|$)' \
-              || true
-          )"
-
-          BLOCKED_CONTINUATION_FILES="$(
-            list_ci_files \
-              | xargs -0 -r grep -I -l -E '^[[:space:]]*prisma[[:space:]]+db[[:space:]]*\\[[:space:]]*$' \
-              || true
-          )"
-          BLOCKED_CONTINUATION=""
-          if [ -n "$BLOCKED_CONTINUATION_FILES" ]; then
-            while IFS= read -r file; do
-              if grep -I -nE '^[[:space:]]*push([[:space:]]|$)' "$file" >/dev/null; then
-                BLOCKED_CONTINUATION="${BLOCKED_CONTINUATION}${file}"$'\n'
-              fi
-            done < <(printf '%s\n' "$BLOCKED_CONTINUATION_FILES")
-          fi
-
-          if [ -n "$BLOCKED_SINGLE" ] || [ -n "$BLOCKED_CONTINUATION" ]; then
-            echo "❌ Forbidden Prisma db push invocation detected in CI paths."
-            if [ -n "$BLOCKED_SINGLE" ]; then
-              echo "$BLOCKED_SINGLE"
-            fi
-            if [ -n "$BLOCKED_CONTINUATION" ]; then
-              echo "$BLOCKED_CONTINUATION"
-            fi
-            exit 1
-          fi
-
-          echo "✅ ci-block-db-push: no forbidden db push invocation in CI paths."
+        run: bash scripts/ci-block-db-push.sh
 
       - name: Self-test ci-block-db-push (poison pill + variantes pnpm exec/npx/unsafe/continuation)
         # Prouve que le guard bloque les formes d'invocation de db push dans un workflow.
@@ -164,46 +36,6 @@ jobs:
         # un scénario réaliste: le guard doit bloquer même dans une structure YAML bien formée.
         run: |
           set -euo pipefail
-          guard_ci_db_push() {
-            list_ci_files() {
-              if [ -d .github/workflows ]; then
-                find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0
-              fi
-              if [ -d .github/actions ]; then
-                find .github/actions -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) -print0
-              fi
-              if [ -d .gitlab ]; then
-                find .gitlab -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) -print0
-              fi
-              if [ -f .gitlab-ci.yml ]; then
-                printf '%s\0' .gitlab-ci.yml
-              fi
-            }
-
-            local blocked_single blocked_continuation_files blocked_continuation
-            blocked_single="$(
-              list_ci_files \
-                | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?(prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+exec[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|npx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|bash[[:space:]]+-lc[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|sh[[:space:]]+-c[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+dlx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+--filter[[:space:]]+@blobinfini/database[[:space:]]+db:push:unsafe)(["'\''])?([[:space:];|&]|$)' \
-                || true
-            )"
-            blocked_continuation_files="$(
-              list_ci_files \
-                | xargs -0 -r grep -I -l -E '^[[:space:]]*prisma[[:space:]]+db[[:space:]]*\\[[:space:]]*$' \
-                || true
-            )"
-            blocked_continuation=""
-            if [ -n "$blocked_continuation_files" ]; then
-              while IFS= read -r file; do
-                if grep -I -nE '^[[:space:]]*push([[:space:]]|$)' "$file" >/dev/null; then
-                  blocked_continuation="${blocked_continuation}${file}"$'\n'
-                fi
-              done < <(printf '%s\n' "$blocked_continuation_files")
-            fi
-            if [ -n "$blocked_single" ] || [ -n "$blocked_continuation" ]; then
-              return 1
-            fi
-          }
-
           POISON=".github/workflows/_poison_test_$$.yml"
           trap 'rm -f "$POISON"' EXIT
           _poison_check() {
@@ -212,7 +44,7 @@ jobs:
             printf 'name: Poison Pill\non: [push]\njobs:\n  poison:\n    runs-on: ubuntu-22.04\n    steps:\n      - name: Sneaky step\n        run: %s\n' \
               "$run_cmd" > "$POISON"
             local code=0
-            guard_ci_db_push || code=$?
+            bash scripts/ci-block-db-push.sh 2>&1 || code=$?
             rm -f "$POISON"
             if [ "$code" -eq 0 ]; then
               echo "❌ POISON FAILED [${label}]: ci-block-db-push.sh n'a pas bloqué"
@@ -230,7 +62,7 @@ jobs:
           # Multi-line continuation bypass: guard must catch `prisma db \` at end of line
           printf 'name: Poison Pill\non: [push]\njobs:\n  poison:\n    runs-on: ubuntu-22.04\n    steps:\n      - name: Sneaky step\n        run: |\n          prisma db \\\n          push\n' \
             > "$POISON"
-          code=0; guard_ci_db_push || code=$?
+          code=0; bash scripts/ci-block-db-push.sh 2>&1 || code=$?
           rm -f "$POISON"
           if [ "$code" -eq 0 ]; then
             echo "❌ POISON FAILED [continuation]: multi-line db push not blocked"
@@ -239,41 +71,17 @@ jobs:
           echo "✅ POISON OK [continuation]"
 
       - name: Enforce DB push guardrails
-        run: |
-          set -euo pipefail
-          UNSAFE_HITS="$(
-            find . -type f \
-              \( -name '*.sh' -o -name '*.mjs' -o -name 'package.json' -o -name '*.yml' -o -name '*.yaml' \) \
-              ! -path './.git/*' \
-              ! -path './.github/workflows/*' \
-              ! -path './.github/actions/*' \
-              ! -path './.gitlab-ci.yml' \
-              ! -path './.gitlab/*' \
-              ! -path './node_modules/*' \
-              ! -path './apps/web/.next/*' \
-              ! -path './apps/web/storybook-static/*' \
-              ! -path './packages/database/scripts/safe-db-push.mjs' \
-              ! -path './packages/database/package.json' \
-              -print0 \
-              | xargs -0 -r grep -I -nE 'accept-data-loss|db:push:unsafe' \
-              || true
-          )"
-          if [ -n "$UNSAFE_HITS" ]; then
-            echo "❌ Forbidden unsafe DB push guardrail bypass detected."
-            echo "$UNSAFE_HITS"
-            exit 1
-          fi
-          echo "✅ no-unsafe-db-push-check: no forbidden unsafe db push bypass outside approved local wrappers."
+        run: bash scripts/no-unsafe-db-push-check.sh
 
       - name: Verify Prisma supply-chain (single version in lockfile)
         # Checks pnpm-lock.yaml for unexpected prisma/@prisma/client versions.
-        # The lockfile currently resolves 6.19.2 everywhere for prisma/@prisma/*.
+        # pnpm.overrides in root package.json should enforce 6.19.2 everywhere.
         # Fails CI if any other version is resolved — no pnpm install required.
         run: |
           set -euo pipefail
           EXPECTED="6.19.2"
           BAD=$(grep -E "^\s*'?(prisma|@prisma/(client|config))@" pnpm-lock.yaml \
-            | sed -E "s/^[[:space:]]*'?(prisma|@prisma\/(client|config))@([0-9]+\.[0-9]+\.[0-9]+).*/\\3/" \
+            | sed -E "s/^[[:space:]]*'?(prisma|@prisma\/(client|config))@([0-9]+\.[0-9]+\.[0-9]+).*/\3/" \
             | sort -u \
             | grep -v "^${EXPECTED}$" || true)
           if [ -n "$BAD" ]; then
@@ -309,7 +117,7 @@ jobs:
           # (YAML env assignment or shell export only; ignore security guard comparisons)
           # Scans .github/workflows + .github/actions recursively via rg (--no-pcre2 = Rust regex,
           # supports \b word boundary and [[:space:]] POSIX classes; preferred over grep here).
-          FORBIDDEN_PATTERN='^[[:space:]]*(ALLOW_ACCEPT_DATA_LOSS[[:space:]]*:[[:space:]]*("true"|'\'true\''|true)\b|export[[:space:]]+ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'\'true\''|true)\b|ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'\'true\''|true)\b)'
+          FORBIDDEN_PATTERN='^[[:space:]]*(ALLOW_ACCEPT_DATA_LOSS[[:space:]]*:[[:space:]]*("true"|'"'"'true'"'"'|true)\b|export[[:space:]]+ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'"'"'true'"'"'|true)\b|ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'"'"'true'"'"'|true)\b)'
           ADLHITS="$(rg --no-pcre2 -rn --glob '*.yml' --glob '*.yaml' "$FORBIDDEN_PATTERN" .github/workflows .github/actions 2>/dev/null || true)"
           if [[ -n "$ADLHITS" ]]; then
             echo "❌ SECURITY VIOLATION: Found ALLOW_ACCEPT_DATA_LOSS=true in workflow files!"
@@ -335,61 +143,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Enforce network guardrails
-        run: |
-          set -euo pipefail
-          RAW_FETCH_HITS="$(
-            find .github/workflows .github/actions scripts -type f \
-              \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) \
-              -print0 2>/dev/null \
-              | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?((curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z)?sh\b|bash[[:space:]]+<\([[:space:]]*(curl|wget)|sh[[:space:]]+<\([[:space:]]*(curl|wget))([[:space:];]|$)' \
-              || true
-          )"
-          if [ -n "$RAW_FETCH_HITS" ]; then
-            echo "❌ Raw remote fetch piped to a shell is forbidden."
-            echo "$RAW_FETCH_HITS"
-            exit 1
-          fi
-          echo "✅ no-raw-fetch-check: no curl|bash or wget|sh pattern detected in CI/shell scripts."
+        run: bash scripts/no-raw-fetch-check.sh
 
       - name: No insecure logs / secrets (block)
-        run: |
-          set -euo pipefail
-          scan_runtime_files() {
-            find apps/api/src apps/web -type f \
-              ! -path '*/__tests__/*' \
-              ! -path '*/test-utils/*' \
-              ! -path '*/scripts/*' \
-              ! -path '*/storybook-static/*' \
-              ! -path '*/.next/*' \
-              ! -path '*/node_modules/*' \
-              ! -name '*.test.*' \
-              ! -name '*.spec.*' \
-              -print0
-          }
-
-          CONSOLE_HITS="$(
-            scan_runtime_files \
-              | xargs -0 -r grep -I -nE 'console\.(log|warn|error).*((process\.env)|(req\.(headers|cookies))|(Authorization)|(Bearer[[:space:]])|(accessToken[^[:alnum:]_])|(refreshToken[^[:alnum:]_]))' \
-              || true
-          )"
-          LOGGER_HITS="$(
-            scan_runtime_files \
-              | xargs -0 -r grep -I -nE 'secureLogger\.(info|warn|error|security).*\{[^}]*\b(accessToken|refreshToken|authorization|password|token|secret)\s*:' \
-              || true
-          )"
-
-          if [ -n "$CONSOLE_HITS" ] || [ -n "$LOGGER_HITS" ]; then
-            echo "❌ Insecure logs / secrets detected in runtime source files."
-            if [ -n "$CONSOLE_HITS" ]; then
-              echo "$CONSOLE_HITS"
-            fi
-            if [ -n "$LOGGER_HITS" ]; then
-              echo "$LOGGER_HITS"
-            fi
-            exit 1
-          fi
-
-          echo "✅ no-insecure-logs-check: no sensitive runtime log patterns detected."
+        run: bash scripts/no-insecure-logs-check.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -510,108 +267,6 @@ jobs:
         env:
           JEST_DB_PREPARED: 'true'
         run: pnpm --filter @blobinfini/api test
-
-  api-e2e-db-migrations:
-    name: "E2E DB Constraints (migrate deploy only)"
-    runs-on: ubuntu-22.04
-    needs: lint
-    # BLOQUANT — échoue si migrate deploy ne produit pas les contraintes attendues.
-    # Ce job prouve que les migrations 20260228200000 et 20260228200100
-    # (EXCLUSION CONSTRAINT anti-overlap + UNIQUE INDEX one-per-day Europe/Paris)
-    # sont appliquées via prisma migrate deploy et que btree_gist est disponible.
-    services:
-      postgres:
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: blobinfini_e2e_constraints
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      CI: 'true'
-      NODE_ENV: test
-      NODE_OPTIONS: --max-old-space-size=4096
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_e2e_constraints
-      # JEST_DB_PREPARED removed: replaced by jest.constraints.config.cjs which sets globalSetup: undefined statically.
-      JWT_SECRET: test-jwt-secret
-      JWT_REFRESH_SECRET: test-jwt-refresh-secret
-      WEB_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_API_URL: http://localhost:4000
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Wait for Postgres to be ready
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
-          deadline=$((SECONDS + 30))
-          until pg_isready -h localhost -U postgres -d blobinfini_e2e_constraints; do
-            if [ $SECONDS -ge $deadline ]; then
-              echo "❌ Postgres not ready after 30s — aborting." >&2
-              exit 1
-            fi
-            sleep 1
-          done
-          echo "✅ Postgres TCP ready."
-          psql "$DATABASE_URL" -c "select 1" > /dev/null
-          echo "✅ Postgres auth ready (DATABASE_URL)."
-
-      - name: "Preflight — ensure btree_gist is available and installable"
-        run: node scripts/check-btree-gist.mjs
-
-      - name: Generate Prisma Client
-        run: pnpm run db:generate
-
-      - name: "Run prisma migrate deploy on a fresh dedicated database"
-        # RÈGLE: utiliser UNIQUEMENT migrate deploy ici, jamais db push.
-        # La migration 20260228200000 installe btree_gist et crée l'EXCLUSION CONSTRAINT.
-        # La migration 20260228200100 crée le UNIQUE INDEX one-per-day Europe/Paris.
-        # Si ces contraintes étaient absentes (DB préparée par un autre moyen),
-        # le step --verify-constraints qui suit détecterait la régression silencieuse.
-        run: pnpm --filter @blobinfini/database exec prisma migrate deploy
-
-      - name: "Drift strict — SQL direct (stable, sans parsing texte)"
-        # Compare les dossiers prisma/migrations/ au contenu de _prisma_migrations via pg.
-        # Échoue si: table absente, migration FS sans row finished_at, ou row avec rolled_back_at.
-        # Indépendant du wording de la CLI Prisma — robuste aux upgrades de version.
-        run: node scripts/check-btree-gist.mjs --verify-migration-drift
-
-      - name: "Post-migration — vérifier EXCLUSION CONSTRAINT + UNIQUE INDEX présents"
-        run: node scripts/check-btree-gist.mjs --verify-constraints
-
-      - name: "Run booking.availability-constraints.e2e.test (DB constraints only)"
-        # Test ciblé: prouve que les contraintes bloquent les races conditions au niveau DB.
-        # Ces tests ÉCHOUENT si la DB a été préparée via db push au lieu de migrate deploy.
-        # jest.constraints.config.cjs: globalSetup absent (DB déjà prête via migrate deploy ci-dessus).
-        # --forceExit justifié: Prisma Client maintient des connexions internes qui bloquent sinon l'exit.
-        run: |
-          pnpm --filter @blobinfini/api exec jest \
-            --config jest.constraints.config.cjs \
-            --testPathPatterns booking.availability-constraints.e2e.test.ts \
-            --no-coverage \
-            --runInBand \
-            --forceExit
 
   migrate-test-derived:
     name: Advisory Derived Migration Replay
