@@ -245,6 +245,10 @@ jobs:
             find . -type f \
               \( -name '*.sh' -o -name '*.mjs' -o -name 'package.json' -o -name '*.yml' -o -name '*.yaml' \) \
               ! -path './.git/*' \
+              ! -path './.github/workflows/*' \
+              ! -path './.github/actions/*' \
+              ! -path './.gitlab-ci.yml' \
+              ! -path './.gitlab/*' \
               ! -path './node_modules/*' \
               ! -path './apps/web/.next/*' \
               ! -path './apps/web/storybook-static/*' \
