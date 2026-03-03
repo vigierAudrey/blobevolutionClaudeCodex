@@ -273,7 +273,7 @@ jobs:
           set -euo pipefail
           EXPECTED="6.19.2"
           BAD=$(grep -E "^\s*'?(prisma|@prisma/(client|config))@" pnpm-lock.yaml \
-            | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" \
+            | sed -E "s/^[[:space:]]*'?(prisma|@prisma\/(client|config))@([0-9]+\.[0-9]+\.[0-9]+).*/\\3/" \
             | sort -u \
             | grep -v "^${EXPECTED}$" || true)
           if [ -n "$BAD" ]; then
