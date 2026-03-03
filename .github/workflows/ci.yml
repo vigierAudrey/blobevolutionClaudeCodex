@@ -267,11 +267,11 @@ jobs:
 
       - name: Verify Prisma supply-chain (single version in lockfile)
         # Checks pnpm-lock.yaml for unexpected prisma/@prisma/client versions.
-        # pnpm.overrides in root package.json should enforce 6.19.0 everywhere.
+        # The lockfile currently resolves 6.19.2 everywhere for prisma/@prisma/*.
         # Fails CI if any other version is resolved — no pnpm install required.
         run: |
           set -euo pipefail
-          EXPECTED="6.19.0"
+          EXPECTED="6.19.2"
           BAD=$(grep -E "^\s*'?(prisma|@prisma/(client|config))@" pnpm-lock.yaml \
             | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" \
             | sort -u \
