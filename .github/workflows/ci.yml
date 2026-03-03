@@ -127,7 +127,7 @@ jobs:
 
           BLOCKED_SINGLE="$(
             list_ci_files \
-              | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?(prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+exec[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|npx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|bash[[:space:]]+-lc[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|sh[[:space:]]+-c[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+dlx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+--filter[[:space:]]+@blobinfini/database[[:space:]]+db:push:unsafe)([[:space:];|&]|$)' \
+              | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?(prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+exec[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|npx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|bash[[:space:]]+-lc[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|sh[[:space:]]+-c[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+dlx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+--filter[[:space:]]+@blobinfini/database[[:space:]]+db:push:unsafe)(["'\''])?([[:space:];|&]|$)' \
               || true
           )"
 
@@ -183,7 +183,7 @@ jobs:
             local blocked_single blocked_continuation_files blocked_continuation
             blocked_single="$(
               list_ci_files \
-                | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?(prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+exec[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|npx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|bash[[:space:]]+-lc[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|sh[[:space:]]+-c[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+dlx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+--filter[[:space:]]+@blobinfini/database[[:space:]]+db:push:unsafe)([[:space:];|&]|$)' \
+                | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?(prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+exec[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|npx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|bash[[:space:]]+-lc[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|sh[[:space:]]+-c[[:space:]]+["'\'']prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+dlx[[:space:]]+prisma[[:space:]]+db[[:space:]]+push|pnpm[[:space:]]+--filter[[:space:]]+@blobinfini/database[[:space:]]+db:push:unsafe)(["'\''])?([[:space:];|&]|$)' \
                 || true
             )"
             blocked_continuation_files="$(
