@@ -142,9 +142,7 @@ jobs:
               if grep -I -nE '^[[:space:]]*push([[:space:]]|$)' "$file" >/dev/null; then
                 BLOCKED_CONTINUATION="${BLOCKED_CONTINUATION}${file}"$'\n'
               fi
-            done <<EOF
-$BLOCKED_CONTINUATION_FILES
-EOF
+            done < <(printf '%s\n' "$BLOCKED_CONTINUATION_FILES")
           fi
 
           if [ -n "$BLOCKED_SINGLE" ] || [ -n "$BLOCKED_CONTINUATION" ]; then
@@ -199,9 +197,7 @@ EOF
                 if grep -I -nE '^[[:space:]]*push([[:space:]]|$)' "$file" >/dev/null; then
                   blocked_continuation="${blocked_continuation}${file}"$'\n'
                 fi
-              done <<EOF
-$blocked_continuation_files
-EOF
+              done < <(printf '%s\n' "$blocked_continuation_files")
             fi
             if [ -n "$blocked_single" ] || [ -n "$blocked_continuation" ]; then
               return 1
