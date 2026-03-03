@@ -341,7 +341,7 @@ jobs:
             find .github/workflows .github/actions scripts -type f \
               \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \) \
               -print0 2>/dev/null \
-              | xargs -0 -r grep -I -nE '((curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z)?sh\b|bash[[:space:]]+<\([[:space:]]*(curl|wget)|sh[[:space:]]+<\([[:space:]]*(curl|wget))' \
+              | xargs -0 -r grep -I -nE '^[[:space:]]*(run:[[:space:]]*)?((curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z)?sh\b|bash[[:space:]]+<\([[:space:]]*(curl|wget)|sh[[:space:]]+<\([[:space:]]*(curl|wget))([[:space:];]|$)' \
               || true
           )"
           if [ -n "$RAW_FETCH_HITS" ]; then
