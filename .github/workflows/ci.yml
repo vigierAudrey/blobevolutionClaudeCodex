@@ -21,6 +21,49 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Ensure ripgrep is available
+        run: |
+          set -euo pipefail
+          if command -v rg >/dev/null 2>&1; then
+            echo "✅ ripgrep already available"
+            rg --version
+            exit 0
+          fi
+
+          if command -v apt-get >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y -qq ripgrep
+            else
+              apt-get update -y
+              apt-get install -y -qq ripgrep
+            fi
+          else
+            VERSION="14.1.0"
+            TARGET="x86_64-unknown-linux-musl"
+            ARCHIVE="ripgrep-${VERSION}-${TARGET}.tar.gz"
+            URL="https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${ARCHIVE}"
+            TMPDIR="$(mktemp -d)"
+            trap 'rm -rf "$TMPDIR"' EXIT
+            mkdir -p "$HOME/.local/bin"
+            if command -v curl >/dev/null 2>&1; then
+              curl -fsSL "$URL" -o "$TMPDIR/$ARCHIVE"
+            elif command -v wget >/dev/null 2>&1; then
+              wget -qO "$TMPDIR/$ARCHIVE" "$URL"
+            else
+              echo "❌ Neither curl nor wget is available to install ripgrep." >&2
+              exit 1
+            fi
+            tar -xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
+            install -m 0755 "$TMPDIR/ripgrep-${VERSION}-${TARGET}/rg" "$HOME/.local/bin/rg"
+            export PATH="$HOME/.local/bin:$PATH"
+            if [ -n "${GITHUB_PATH:-}" ]; then
+              echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            fi
+          fi
+
+          rg --version
+
       - name: No skipped tests in critical API suites (block)
         run: bash scripts/no-skip-critical-check.sh
 
@@ -515,14 +558,17 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
+        # Port mapping requis : job sans container — le runner accède au service via localhost.
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
     env:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini
-      SHADOW_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini_shadow
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
       SESSION_SECRET: ci-session-secret
       JWT_SECRET: ci-jwt-secret
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret
@@ -550,21 +596,22 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
           export PGPASSWORD=postgres
-          deadline=$((SECONDS + 30))
-          until pg_isready -h postgres -U postgres; do
+          # Timeout augmenté à 60s : postgis/postgis:15-3.4 peut être lent à démarrer.
+          deadline=$((SECONDS + 60))
+          until pg_isready -h localhost -U postgres; do
             if [ $SECONDS -ge $deadline ]; then
-              echo "❌ Postgres not ready after 30s — aborting." >&2
+              echo "❌ Postgres not ready after 60s — aborting." >&2
               exit 1
             fi
             sleep 2
           done
           echo "✅ Postgres TCP ready."
-          psql "postgresql://postgres:postgres@postgres:5432/postgres" -c "select 1" > /dev/null
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "select 1" > /dev/null
           echo "✅ Postgres auth ready."
-          psql "postgresql://postgres:postgres@postgres:5432/postgres" -c "CREATE DATABASE blobinfini;"
-          psql "postgresql://postgres:postgres@postgres:5432/postgres" -c "CREATE DATABASE blobinfini_shadow;"
-          psql "postgresql://postgres:postgres@postgres:5432/blobinfini" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql "postgresql://postgres:postgres@postgres:5432/blobinfini_shadow" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini;"
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini_shadow;"
+          psql "postgresql://postgres:postgres@localhost:5432/blobinfini" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql "postgresql://postgres:postgres@localhost:5432/blobinfini_shadow" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 
       - name: Generate Prisma Client
         run: pnpm run db:generate
