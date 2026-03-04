@@ -4,15 +4,21 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if ! command -v rg >/dev/null 2>&1; then
-  echo "❌ [no-skip-critical-check] ripgrep (rg) required but not found — aborting." >&2
-  exit 1
-fi
-
 PATTERN='\b(?:it|test|describe)\.skip\s*\(|\bx(?:it|describe)\s*\('
 TARGETS=(
   "apps/api/src/modules"
   "apps/api/src/lib"
+)
+
+EXTS=(
+  '*.test.ts'
+  '*.test.tsx'
+  '*.test.js'
+  '*.test.jsx'
+  '*.spec.ts'
+  '*.spec.tsx'
+  '*.spec.js'
+  '*.spec.jsx'
 )
 
 hits=""
@@ -22,16 +28,13 @@ for target in "${TARGETS[@]}"; do
     continue
   fi
 
+  include_args=()
+  for ext in "${EXTS[@]}"; do
+    include_args+=("--include=$ext")
+  done
+
   target_hits="$(
-    rg -n --pcre2 "$PATTERN" "$target" \
-      --glob '**/__tests__/**/*.test.ts' \
-      --glob '**/__tests__/**/*.test.tsx' \
-      --glob '**/__tests__/**/*.test.js' \
-      --glob '**/__tests__/**/*.test.jsx' \
-      --glob '**/__tests__/**/*.spec.ts' \
-      --glob '**/__tests__/**/*.spec.tsx' \
-      --glob '**/__tests__/**/*.spec.js' \
-      --glob '**/__tests__/**/*.spec.jsx' || true
+    grep -rPn "${include_args[@]}" --exclude-dir=node_modules "$PATTERN" "$target" || true
   )"
 
   if [[ -n "$target_hits" ]]; then
