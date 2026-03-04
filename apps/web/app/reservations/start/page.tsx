@@ -145,7 +145,7 @@ export default function ReservationStartPage() {
 
     // NearbyProResult n'a pas de lat/lng (RGPD: toPublicGeo supprime les coordonnées précises)
     return availabilityMarkers;
-  }, [safeResults, nearbyPros]);
+  }, [safeResults]);
 
   const handleMapContactClick = useCallback(
     (itemId: string) => {
