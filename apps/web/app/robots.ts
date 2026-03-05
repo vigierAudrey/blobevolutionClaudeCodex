@@ -1,8 +1,26 @@
 import type { MetadataRoute } from 'next';
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://blobinfini.com').replace(/\/+$/, '');
+function normalizeSiteUrl(value: string): string {
+  const parsed = new URL(value.trim());
+  return `${parsed.protocol}//${parsed.host}`;
+}
+
+function getSiteUrl(): string {
+  const fromEnv = process.env.SITE_URL?.trim() || process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (fromEnv) {
+    return normalizeSiteUrl(fromEnv);
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://blobinfini.com';
+  }
+
+  return 'http://localhost:3000';
+}
 
 export default function robots(): MetadataRoute.Robots {
+  const siteUrl = getSiteUrl();
+
   return {
     rules: [
       {
@@ -11,6 +29,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: '/admin',
       },
     ],
-    sitemap: `${SITE_URL}/sitemap.xml`,
+    sitemap: `${siteUrl}/sitemap.xml`,
   };
 }

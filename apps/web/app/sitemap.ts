@@ -1,23 +1,44 @@
 import type { MetadataRoute } from 'next';
 import { loadBlobosphereSitemapEntries } from '@/lib/blobosphere/loadBlobosphereSitemapEntries';
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://blobinfini.com').replace(/\/+$/, '');
+function normalizeSiteUrl(value: string): string {
+  const parsed = new URL(value.trim());
+  return `${parsed.protocol}//${parsed.host}`;
+}
 
-function getBlobosphereArticleUrl(slug: string): string {
-  return `${SITE_URL}/blobosphere/${encodeURIComponent(slug)}`;
+function getSiteUrl(): string {
+  const fromEnv = process.env.SITE_URL?.trim() || process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (fromEnv) {
+    return normalizeSiteUrl(fromEnv);
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://blobinfini.com';
+  }
+
+  return 'http://localhost:3000';
+}
+
+function getBlobosphereArticleUrl(siteUrl: string, slug: string): string {
+  return `${siteUrl}/blobosphere/${encodeURIComponent(slug)}`;
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const articles = await loadBlobosphereSitemapEntries();
+  const siteUrl = getSiteUrl();
+  const articles = (await loadBlobosphereSitemapEntries()).sort((a, b) => {
+    const timeDiff = new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    return a.slug.localeCompare(b.slug);
+  });
   const blobosphereLastModified = articles[0]?.lastModified;
 
   return [
     {
-      url: `${SITE_URL}/blobosphere`,
+      url: `${siteUrl}/blobosphere`,
       lastModified: blobosphereLastModified,
     },
     ...articles.map((article) => ({
-      url: getBlobosphereArticleUrl(article.slug),
+      url: getBlobosphereArticleUrl(siteUrl, article.slug),
       lastModified: article.lastModified,
     })),
   ];
