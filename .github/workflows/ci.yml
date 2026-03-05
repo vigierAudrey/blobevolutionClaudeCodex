@@ -349,6 +349,9 @@ jobs:
       - name: Type check API
         run: pnpm --filter @blobinfini/api type-check
 
+      - name: Build Web (prepare .next/types)
+        run: pnpm --filter @blobinfini/web build
+
       - name: Type check Web
         continue-on-error: true
         run: pnpm --filter @blobinfini/web type-check
