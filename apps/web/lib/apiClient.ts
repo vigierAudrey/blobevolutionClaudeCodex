@@ -1410,13 +1410,6 @@ export const apiClient = {
   getTokens,
   // Expose refresh pour WebSocket retry
   refreshToken: refreshAccessToken,
-  // Blobosphère admin
-  adminBlobosphereList: () => request('/admin/blobosphere/posts', { method: 'GET' }, true) as Promise<{ items: Array<{ category: string; file: string; slug: string; title: string; status: string; publishedAt: string|null }> }>,
-  adminBlobosphereGet: (category: 'surf'|'kitesurf'|'communaute'|'impact', slug: string) => request(`/admin/blobosphere/posts/${category}/${slug}`, { method: 'GET' }, true) as Promise<{ raw: string }>,
-  adminBlobosphereCreate: (body: { title: string; slug: string; category: 'surf'|'kitesurf'|'communaute'|'impact'; tags?: string[]; excerpt?: string; status?: 'draft'|'published'; publishedAt?: string; updatedAt?: string|null; coverImage?: string|null; readingTime?: number|null; language?: 'fr'; body?: string; }) =>
-    request('/admin/blobosphere/posts', { method: 'POST', body: JSON.stringify(body) }, true) as Promise<{ success: true; path: string }>,
-  adminBlobosphereUpdate: (category: 'surf'|'kitesurf'|'communaute'|'impact', slug: string, body: Partial<{ title: string; slug: string; category: 'surf'|'kitesurf'|'communaute'|'impact'; tags: string[]; excerpt: string; status: 'draft'|'published'; publishedAt: string; updatedAt: string|null; coverImage: string|null; readingTime: number|null; language: 'fr'; body: string; newSlug: string; newCategory: 'surf'|'kitesurf'|'communaute'|'impact'; }>) =>
-    request(`/admin/blobosphere/posts/${category}/${slug}`, { method: 'PUT', body: JSON.stringify(body) }, true) as Promise<{ success: true; path: string }>,
 };
 
 export const __testUtils = {

@@ -66,7 +66,8 @@ export interface RiderBookingRequest {
     startAt: string;
     endAt: string;
     pro: {
-      email: string;
+      proPublicId?: string | null;
+      email?: string | null;
       businessName: string | null;
     };
   };
