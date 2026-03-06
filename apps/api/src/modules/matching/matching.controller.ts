@@ -3,13 +3,14 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
-import { cacheService, CacheKeys } from '../../services/cache.service';
+import { CacheKeys } from '../../services/cache.service';
 import { recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 import { mapErrorToApiError, sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
 import { ERROR_CODES } from '../../utils/error-codes';
 import { secureLogger } from '../../utils/secure-logger';
 import * as matchingMetrics from '../../lib/matching-metrics';
 import { checkDecisionsQuota, refundDecisionsQuota } from '../../lib/matching-quota';
+import { createGeoEndpointLimiter } from '../../middleware/enhanced-rate-limit';
 
 export const matchingRouter = Router();
 matchingRouter.use(requireAuth, requireVerifiedEmail);
@@ -23,6 +24,10 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const POST_COMMIT_MIN_LIMIT_PROD = 5;
 /** Default post-commit pair limit when env var is absent. */
 const POST_COMMIT_DEFAULT_LIMIT = 50;
+const MATCHING_CURSOR_VERSION = 1;
+
+const matchingSearchBurstLimiter = createGeoEndpointLimiter('matching_search', 'GEO_HEAVY_BURST');
+const matchingSearchMinuteLimiter = createGeoEndpointLimiter('matching_search', 'GEO_HEAVY_MINUTE');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Enums & schemas
@@ -50,8 +55,8 @@ const searchSchema = z.object({
   location: z
     .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })
     .optional(),
-  // Cursor-based pagination
-  cursor: z.string().optional(), // Profile ID to start after
+  // Cursor-based pagination (opaque keyset token)
+  cursor: z.string().optional(),
   limit: z.number().int().min(1).max(100).optional().default(50),
   // Legacy pagination support (deprecated)
   page: z.number().int().min(1).optional(),
@@ -85,6 +90,8 @@ type GeospatialMatchRow = {
   wantsLesson: boolean;
   lessonSport: string | null;
   dist_m: number | null;
+  name_null_rank: number;
+  name_sort: string;
 };
 
 type MatchingResponseItem = {
@@ -115,6 +122,60 @@ export function buildMatchingCacheKey(
   sortBy: string,
 ): string {
   return `${CacheKeys.matching(sport, level, lat, lng, radius)}:date:${date}:sort:${sortBy}`;
+}
+
+type DistanceCursorPayload = {
+  v: number;
+  s: 'distance';
+  d: number;
+  i: string;
+};
+
+type NameCursorPayload = {
+  v: number;
+  s: 'name';
+  n: string;
+  k: 0 | 1;
+  i: string;
+};
+
+type MatchingCursorPayload = DistanceCursorPayload | NameCursorPayload;
+
+function encodeCursor(payload: MatchingCursorPayload): string {
+  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+}
+
+function decodeCursor(cursor: string | undefined, sortBy: 'distance' | 'name'): MatchingCursorPayload | null {
+  if (!cursor) return null;
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+  } catch {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  if (!decoded || typeof decoded !== 'object') {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  const raw = decoded as Record<string, unknown>;
+  if (raw.v !== MATCHING_CURSOR_VERSION || raw.s !== sortBy || typeof raw.i !== 'string' || !UUID_REGEX.test(raw.i)) {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  if (sortBy === 'distance') {
+    if (typeof raw.d !== 'number' || !Number.isFinite(raw.d)) {
+      throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+    }
+    return { v: MATCHING_CURSOR_VERSION, s: 'distance', d: raw.d, i: raw.i };
+  }
+
+  if (typeof raw.n !== 'string' || (raw.k !== 0 && raw.k !== 1)) {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  return { v: MATCHING_CURSOR_VERSION, s: 'name', n: raw.n, k: raw.k, i: raw.i };
 }
 
 const matchingResultSchema = z.object({
@@ -275,7 +336,7 @@ async function processMutualPair(userId: string, targetUserId: string): Promise<
 // POST /matching/search
 // ─────────────────────────────────────────────────────────────────────────────
 
-matchingRouter.post('/search', async (req, res) => {
+matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteLimiter, async (req, res) => {
   const envelope = wantsEnvelope(req);
   const _searchStart = Date.now();
   matchingMetrics.incSearchRequest();
@@ -350,6 +411,12 @@ matchingRouter.post('/search', async (req, res) => {
       },
     });
 
+    const effectiveLimit = limit || pageSize || 50;
+    if ((page ?? 1) > 1 && !cursor) {
+      throw Object.assign(new Error('Page-based pagination beyond page=1 is no longer supported. Use nextCursor.'), { status: 400 });
+    }
+    const decodedCursor = decodeCursor(cursor, sortBy);
+
     // If no location provided, return empty results
     if (!criteria.location) {
       const payload = {
@@ -357,97 +424,28 @@ matchingRouter.post('/search', async (req, res) => {
         results: [],
         hasMore: false,
         nextCursor: null,
-        total: 0,
-        page: page || 1,
-        pageSize: pageSize || limit,
+        page: 1,
+        pageSize: effectiveLimit,
       };
       const parsedPayload = matchingSearchResponseSchema.parse(payload);
       return envelope ? sendOk(res, 200, parsedPayload) : res.json(payload);
     }
 
-    // Determine pagination method (cursor-based preferred, fallback to offset)
-    const useCursorPagination = cursor !== undefined || !page;
-    const effectiveLimit = limit || pageSize || 50;
-
-    // P1 fix: cache key is canonical (sport/level/geo/dist/date/sortBy).
-    // cursor is NOT included — it is used only to slice cached results in memory.
-    // This prevents cursor-amplification attacks that would create N Redis entries
-    // per search (one per cursor value).
-    const cacheKey = buildMatchingCacheKey(
-      sport,
-      level,
-      criteria.location.lat,
-      criteria.location.lng,
-      criteria.maxDistanceKm ?? 50,
-      date,
-      sortBy,
-    );
-
-    const cachedResults = await cacheService.getMatchingResults(cacheKey);
-    if (cachedResults && cacheService.isAvailable()) {
-      matchingMetrics.incSearchCacheHit();
-      const myProfileId = profile?.id ?? null;
-      // P1 fix: use validated excludeIds (not req.body raw)
-      const excludeIdsSet = new Set<string>(excludeIds);
-      if (myProfileId) {
-        excludeIdsSet.add(myProfileId);
-      }
-
-      const candidateIds = cachedResults.map((result) => result.id);
-      let actedSet = new Set<string>();
-      if (candidateIds.length > 0) {
-        const actedDecisions: Array<{ targetProfileId: string }> = await prisma.matchDecision.findMany({
-          where: { actorUserId: userId, targetProfileId: { in: candidateIds } },
-          select: { targetProfileId: true },
-        });
-        actedSet = new Set(actedDecisions.map((decision) => decision.targetProfileId));
-      }
-
-      // Apply exclusions to cached results
-      const filtered = cachedResults.filter((result) => {
-        if (excludeIdsSet.has(result.id)) return false;
-        if (actedSet.has(result.id)) return false;
-        return true;
-      });
-
-      if (useCursorPagination) {
-        const startIndex = cursor ? filtered.findIndex((r) => r.id === cursor) + 1 : 0;
-        const endIndex = Math.min(startIndex + effectiveLimit, filtered.length);
-        const paginatedResults = filtered.slice(startIndex, endIndex);
-        const nextCursor = endIndex < filtered.length ? filtered[endIndex - 1].id : null;
-
-        return res.json({
-          criteria,
-          results: paginatedResults,
-          hasMore: endIndex < filtered.length,
-          nextCursor,
-          cached: true,
-        });
-      } else {
-        const offset = ((page || 1) - 1) * effectiveLimit;
-        const paginatedResults = filtered.slice(offset, offset + effectiveLimit);
-
-        return res.json({
-          criteria,
-          results: paginatedResults,
-          total: filtered.length,
-          page: page || 1,
-          pageSize: effectiveLimit,
-          hasMore: offset + effectiveLimit < filtered.length,
-          cached: true,
-        });
-      }
-    }
-
-    // Cache miss — query PostGIS
+    // Query PostGIS
     matchingMetrics.incSearchCacheMiss();
 
     // PostGIS geospatial query
     let results: MatchingResponseItem[] = [];
-    let total = 0;
     let hasMore = false;
     let nextCursor: string | null = null;
     if (criteria.location) {
+      const distanceExpr = Prisma.sql`
+        ST_Distance(
+          ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
+          ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
+        )
+      `;
+
       const radiusCond = criteria.maxDistanceKm
         ? Prisma.sql`
             AND ST_DWithin(
@@ -460,8 +458,8 @@ matchingRouter.post('/search', async (req, res) => {
 
       const orderBy =
         sortBy === 'distance'
-          ? Prisma.sql`ORDER BY dist_m ASC, rp."id" ASC`
-          : Prisma.sql`ORDER BY rp."displayName" ASC NULLS LAST, rp."id" ASC`;
+          ? Prisma.sql`ORDER BY base.dist_m ASC, base."id" ASC`
+          : Prisma.sql`ORDER BY base.name_null_rank ASC, base.name_sort ASC, base."id" ASC`;
 
       // P1 fix: use validated excludeIds (not req.body raw) in SQL
       const excludeCond =
@@ -484,11 +482,30 @@ matchingRouter.post('/search', async (req, res) => {
           : Prisma.sql`
             AND ls."date" = ${new Date(date + 'T00:00:00Z')}
           `;
+      const queryLimit = effectiveLimit + 1;
+      const keysetCond =
+        decodedCursor == null
+          ? Prisma.empty
+          : decodedCursor.s === 'distance'
+            ? Prisma.sql`AND (base.dist_m, base."id") > (${decodedCursor.d}, ${decodedCursor.i})`
+            : Prisma.sql`AND (base.name_null_rank, base.name_sort, base."id") > (${decodedCursor.k}, ${decodedCursor.n}, ${decodedCursor.i})`;
 
-      if (!useCursorPagination) {
-        const countRows = await prisma.$queryRaw<Array<{ count: number }>>(
-          Prisma.sql`
-            SELECT COUNT(*)::int AS count
+      const rows = await prisma.$queryRaw<GeospatialMatchRow[]>(
+        Prisma.sql`
+          WITH base AS (
+            SELECT
+              rp."id",
+              rp."displayName",
+              rp."sex",
+              rp."photoUrl",
+              rp."bio",
+              rd."sport",
+              rd."level",
+              rp."wantsLesson",
+              rp."lessonSport",
+              ${distanceExpr} AS dist_m,
+              CASE WHEN rp."displayName" IS NULL THEN 1 ELSE 0 END AS name_null_rank,
+              COALESCE(rp."displayName", '') AS name_sort
             FROM "RiderProfile" rp
             JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport}${levelCond}
             LEFT JOIN "LastSearch" ls ON ls."userId" = rp."userId"
@@ -497,46 +514,33 @@ matchingRouter.post('/search', async (req, res) => {
             ${excludeCond}
             ${notAlreadyActedCond}
             ${dateCond}
-          `,
-        );
-        total = (countRows?.[0]?.count ?? 0) as number;
-      }
-
-      const rows = await prisma.$queryRaw<GeospatialMatchRow[]>(
-        Prisma.sql`
+          )
           SELECT
-            rp."id",
-            rp."displayName",
-            rp."sex",
-            rp."photoUrl",
-            rp."bio",
-            rd."sport",
-            rd."level",
-            rp."wantsLesson",
-            rp."lessonSport",
-            CASE
-              WHEN rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL THEN ST_Distance(
-                ST_MakePoint(${criteria.location.lng}, ${criteria.location.lat})::geography,
-                ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
-              )
-              ELSE NULL
-            END AS dist_m
-          FROM "RiderProfile" rp
-          JOIN "RiderDiscipline" rd ON rd."profileId" = rp."id" AND rd."sport" = ${sport}${levelCond}
-          LEFT JOIN "LastSearch" ls ON ls."userId" = rp."userId"
-          WHERE rp."lat" IS NOT NULL AND rp."lng" IS NOT NULL AND rp."userId" <> ${userId}
-          ${radiusCond}
-          ${excludeCond}
-          ${notAlreadyActedCond}
-          ${dateCond}
+            base."id",
+            base."displayName",
+            base."sex",
+            base."photoUrl",
+            base."bio",
+            base."sport",
+            base."level",
+            base."wantsLesson",
+            base."lessonSport",
+            base.dist_m,
+            base.name_null_rank,
+            base.name_sort
+          FROM base
+          WHERE 1 = 1
+          ${keysetCond}
           ${orderBy}
-          LIMIT 200
+          LIMIT ${queryLimit}
         `,
       );
 
-      const allResults: MatchingResponseItem[] = rows
+      const stableRows = rows
         .filter((r: GeospatialMatchRow) => r.dist_m == null || isFinite(r.dist_m))
-        .map((r: GeospatialMatchRow) => ({
+        .slice(0, effectiveLimit);
+
+      results = stableRows.map((r: GeospatialMatchRow) => ({
           id: r.id,
           displayName: r.displayName ?? 'Profil',
           gender: r.sex,
@@ -549,63 +553,38 @@ matchingRouter.post('/search', async (req, res) => {
           distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
         }));
 
-      // P1 fix: use validated excludeIds for client-side filter
-      const excludeSet = new Set<string>(excludeIds);
-      const filteredResults = allResults.filter((r: MatchingResponseItem) => !excludeSet.has(r.id));
-
-      let actualResults = filteredResults;
-
-      if (useCursorPagination) {
-        const startIndex = cursor
-          ? filteredResults.findIndex((r: MatchingResponseItem) => r.id === cursor) + 1
-          : 0;
-        const endIndex = Math.min(startIndex + effectiveLimit, filteredResults.length);
-        actualResults = filteredResults.slice(startIndex, endIndex);
-        hasMore = endIndex < filteredResults.length;
-        nextCursor =
-          hasMore && actualResults.length > 0 ? actualResults[actualResults.length - 1].id : null;
-      } else {
-        const offset = ((page || 1) - 1) * effectiveLimit;
-        actualResults = filteredResults.slice(offset, offset + effectiveLimit);
-        hasMore = offset + effectiveLimit < filteredResults.length;
-        total = filteredResults.length;
-      }
-
-      results = actualResults;
-
-      if (allResults.length > 0 && cacheService.isAvailable()) {
-        await cacheService.setMatchingResults(cacheKey, allResults, 300);
+      hasMore = rows.length > effectiveLimit;
+      if (hasMore && stableRows.length > 0) {
+        const lastRow = stableRows[stableRows.length - 1];
+        if (sortBy === 'distance') {
+          nextCursor = encodeCursor({
+            v: MATCHING_CURSOR_VERSION,
+            s: 'distance',
+            d: Number(lastRow.dist_m ?? 0),
+            i: lastRow.id,
+          });
+        } else {
+          nextCursor = encodeCursor({
+            v: MATCHING_CURSOR_VERSION,
+            s: 'name',
+            n: lastRow.name_sort,
+            k: lastRow.name_null_rank === 1 ? 1 : 0,
+            i: lastRow.id,
+          });
+        }
       }
     }
 
-    const responseNextCursor =
-      nextCursor || (results.length > 0 ? results[results.length - 1].id : null);
-
-    if (useCursorPagination) {
-      const payload = {
-        criteria,
-        results,
-        hasMore,
-        nextCursor: responseNextCursor,
-        total: total || results.length,
-        page: 1,
-        pageSize: effectiveLimit,
-      };
-      const parsedPayload = matchingSearchResponseSchema.parse(payload);
-      return envelope ? sendOk(res, 200, parsedPayload) : res.json(payload);
-    } else {
-      const payload = {
-        criteria,
-        results,
-        total,
-        page: page || 1,
-        pageSize: effectiveLimit,
-        hasMore,
-        nextCursor: responseNextCursor,
-      };
-      const parsedPayload = matchingSearchResponseSchema.parse(payload);
-      return envelope ? sendOk(res, 200, parsedPayload) : res.json(payload);
-    }
+    const payload = {
+      criteria,
+      results,
+      hasMore,
+      nextCursor,
+      page: 1,
+      pageSize: effectiveLimit,
+    };
+    const parsedPayload = matchingSearchResponseSchema.parse(payload);
+    return envelope ? sendOk(res, 200, parsedPayload) : res.json(payload);
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return envelope

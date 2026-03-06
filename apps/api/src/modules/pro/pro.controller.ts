@@ -6,10 +6,11 @@ import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
 import crypto from 'crypto';
 import { gdprExportService } from '../../services/gdpr-export.service';
 import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { ipKeyGenerator } from 'express-rate-limit';
 import { requireProRole } from './pro.guard';
 import { secureLogger } from '../../utils/secure-logger';
 import { computeZoneLarge, recordServerAnalyticsEvent } from '../../services/analytics/events.service';
+import { createGeoEndpointLimiter, createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 
 export const proRouter = Router();
 proRouter.use(requireAuth, requireVerifiedEmail);
@@ -20,13 +21,13 @@ const getConsentHash = (req: Request) => {
 };
 
 // GDPR Export rate limiter: max 3 exports per hour per user
-const exportRateLimiter = rateLimit({
+const exportRateLimiter = createLazyCustomRateLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3,
   message: 'Trop de demandes d\'export. Veuillez réessayer dans une heure.',
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
+  keyGenerator: (req: any) => {
     // Rate limit per authenticated user
     const userId = (req as any).user?.id;
     if (userId) {
@@ -35,16 +36,16 @@ const exportRateLimiter = rateLimit({
     const ip = req.ip || req.socket?.remoteAddress;
     return ip ? ipKeyGenerator(ip) : 'anonymous';
   },
-});
+}, 'pro_export');
 
 // Profile update rate limiter: max 10 updates per 15 minutes per user
-const profileUpdateLimiter = rateLimit({
+const profileUpdateLimiter = createLazyCustomRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10, // Maximum 10 updates par fenêtre
   message: 'Trop de mises à jour de profil. Veuillez réessayer dans 15 minutes.',
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
+  keyGenerator: (req: any) => {
     const userId = (req as any).user?.id;
     if (userId) {
       return `user:${userId}:profile_update`;
@@ -52,7 +53,7 @@ const profileUpdateLimiter = rateLimit({
     const ip = req.ip || req.socket?.remoteAddress;
     return ip ? ipKeyGenerator(ip) : 'anonymous';
   },
-  handler: (req, res) => {
+  handler: (req: any, res: any) => {
     const userId = (req as any).user?.id;
     secureLogger.security('Rate limit exceeded for profile update', { userId, ip: req.ip });
 
@@ -65,7 +66,7 @@ const profileUpdateLimiter = rateLimit({
       retryAfter,
     });
   },
-});
+}, 'pro_profile_update');
 
 const notificationPreferencesSchema = z.object({
   notifyForSurf: z.boolean().optional(),
@@ -85,13 +86,13 @@ const upsertSchema = z.object({
   notificationPreferences: notificationPreferencesSchema,
 });
 
+const nearLessonsBurstLimiter = createGeoEndpointLimiter('pro_near_lessons', 'GEO_HEAVY_BURST');
+const nearLessonsMinuteLimiter = createGeoEndpointLimiter('pro_near_lessons', 'GEO_HEAVY_MINUTE');
+
 type LessonCandidateRow = {
   id: string;
-  userId: string;
   displayName: string | null;
   bio: string | null;
-  lat: number;
-  lng: number;
   lessonSport: string | null;
   lessonLevel: string | null;
   lessonDate: Date | null;
@@ -99,6 +100,13 @@ type LessonCandidateRow = {
   lessonStudentCount: number | null;
   distanceKm: number;
   activeMatchCount: number;
+};
+
+const toDistanceBucket = (distanceKm: number): '<5km' | '5-15km' | '15-30km' | '>30km' => {
+  if (distanceKm < 5) return '<5km';
+  if (distanceKm < 15) return '5-15km';
+  if (distanceKm < 30) return '15-30km';
+  return '>30km';
 };
 
 proRouter.get('/me', requireProRole, async (req, res) => {
@@ -216,7 +224,7 @@ proRouter.post('/photo/upload-url', requireProRole, async (req, res) => {
 });
 
 // List riders wanting lessons (variant B: visible to all pros in radius)
-proRouter.get('/near/lessons', requireProRole, async (req, res) => {
+proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLessonsMinuteLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -248,11 +256,8 @@ proRouter.get('/near/lessons', requireProRole, async (req, res) => {
       )
           SELECT
             rp."id",
-            rp."userId",
             rp."displayName",
             rp."bio",
-            rp."lat",
-            rp."lng",
             rp."lessonSport",
             rp."lessonLevel",
             rp."lessonDate",
@@ -281,17 +286,14 @@ proRouter.get('/near/lessons', requireProRole, async (req, res) => {
     // No more JavaScript filtering needed - everything is done in SQL!
     const items = candidates.map((c: LessonCandidateRow) => ({
       id: c.id,
-      userId: c.userId,
       displayName: c.displayName,
       bio: c.bio,
-      lat: c.lat,
-      lng: c.lng,
       lessonSport: c.lessonSport,
       lessonLevel: c.lessonLevel,
       lessonDate: c.lessonDate,
       lessonPlace: c.lessonPlace,
       lessonStudentCount: c.lessonStudentCount,
-      distanceKm: Math.round(c.distanceKm * 10) / 10  // Already calculé en SQL
+      distanceBucket: toDistanceBucket(c.distanceKm),
     }))
       .slice(0, 500);
 
