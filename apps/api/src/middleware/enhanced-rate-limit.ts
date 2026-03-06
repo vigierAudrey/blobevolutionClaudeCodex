@@ -6,9 +6,12 @@ import { resolveRedisUrl } from '../lib/redisConfig';
 import { createHash } from 'crypto';
 
 type RedisClientType = ReturnType<typeof createClient>;
+type RateLimitStoreMode = 'memory' | 'redis';
+type RateLimitMiddleware = (req: Request, res: Response, next: NextFunction) => void;
 
 // Redis client (will be initialized based on environment)
 let redisClient: RedisClientType | null = null;
+let redisInitSettled = process.env.NODE_ENV === 'test';
 const isDevelopment = process.env.NODE_ENV === 'development';
 const REDIS_DEV_HINT_THROTTLE_MS = 30000;
 
@@ -42,11 +45,23 @@ function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
   return true;
 }
 
-// Initialize Redis client for production
+// Initialize Redis client.
+// - dev: fallback to memory store if Redis is unavailable (documented, acceptable locally).
+// - production: fail-fast with process.exit(1) if Redis is unreachable.
+//   Rationale: memory store resets on restart (no cross-restart consistency) and is not
+//   shared across instances (no multi-instance rate-limit integrity). Silent fallback in
+//   production is a security regression, not a graceful degradation.
+//
+// IMPORTANT: initializeRedis resolves the promise stored in `redisInitPromise`.
+// The server MUST await redisInitPromise before calling httpServer.listen() so that:
+//   1. All rate limiters are rebuilt with the Redis store (not memory store).
+//   2. The startup is deterministic: either Redis is ready or process.exit(1) fires.
 async function initializeRedis(): Promise<RedisClientType | null> {
   const redisUrl = resolveRedisUrl();
 
-  console.log('🔗 Connecting to Redis at:', redisUrl);
+  // Redact credentials from log (redis://:password@host → redis://***@host)
+  const redactedUrl = redisUrl.replace(/\/\/:([^@]+)@/, '//***@');
+  console.log('🔗 Connecting to Redis at:', redactedUrl);
 
   try {
     const client = createClient({
@@ -73,17 +88,75 @@ async function initializeRedis(): Promise<RedisClientType | null> {
     return client;
   } catch (error) {
     if (shouldSuppressRedisErrorLogInDev(error instanceof Error ? error.message : String(error))) {
+      // dev: throttled log, memory store fallback is acceptable and documented.
       return null;
     }
-    console.error('❌ Redis connection failed, falling back to memory store:', error);
+
+    if (process.env.NODE_ENV === 'production') {
+      // production: memory store fallback is NOT acceptable.
+      // - Restarts reset all counters (window integrity lost).
+      // - Multiple instances have isolated stores (rate-limit bypass via load distribution).
+      // Fail-fast so the issue is surfaced immediately rather than degrading silently.
+      console.error('❌ FATAL: Redis connection failed in production. Cannot start with memory-only rate-limiting.');
+      console.error('   Memory store fallback would break cross-restart and multi-instance rate-limit consistency.');
+      console.error('   Fix REDIS_URL and REDIS_PASSWORD, ensure Redis is reachable, then restart.');
+      console.error('   Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+
+    // Non-production, non-development (e.g. staging without Redis): log and use memory store.
+    console.error('❌ Redis connection failed, falling back to memory store (non-production):', error);
     return null;
   }
 }
 
+// Build the full set of rate limiters using the current redisClient.
+// Called once at module load (redisClient=null → memory store) and again
+// after Redis connects (redisClient set → Redis store).
+// The second call uses Object.assign to mutate the exported object in place,
+// so that all in-flight references (smartRateLimit, controllers) see Redis store.
+function buildRateLimiters() {
+  return {
+    auth: createRateLimiter('AUTH'),
+    registration: createRateLimiter('REGISTRATION'),
+    apiStandard: createRateLimiter('API_STANDARD'),
+    search: createRateLimiter('SEARCH'),
+    geoHeavyBurst: createRateLimiter('GEO_HEAVY_BURST'),
+    geoHeavyMinute: createRateLimiter('GEO_HEAVY_MINUTE'),
+    upload: createRateLimiter('UPLOAD'),
+    admin: createRateLimiter('ADMIN'),
+    messaging: createRateLimiter('MESSAGING'),
+    global: createRateLimiter('GLOBAL'),
+  };
+}
+
+/**
+ * Promise that resolves once Redis initialization completes (or resolves immediately in test).
+ * The server MUST await this before calling httpServer.listen() to guarantee:
+ *   - rate limiters use Redis store (not memory store) from the first request
+ *   - startup is deterministic: Redis ready OR process.exit(1)
+ * @public
+ */
+export let redisInitPromise: Promise<void> = Promise.resolve();
+
 // Initialize Redis on module load (not in test mode)
 if (process.env.NODE_ENV !== 'test') {
-  initializeRedis().then(client => {
+  redisInitPromise = initializeRedis().then(client => {
     redisClient = client;
+    if (client) {
+      // Rebuild rate limiters with the now-connected Redis store.
+      // Object.assign mutates the exported `rateLimiters` object in place so
+      // smartRateLimit and any other reference sees the Redis-backed limiters
+      // without requiring a module reload.
+      Object.assign(rateLimiters, buildRateLimiters());
+      console.log('✅ Rate limiters rebuilt with Redis store');
+    }
+  }).catch(err => {
+    // In production: initializeRedis() already called process.exit(1).
+    // This catch handles non-production/non-development environments.
+    console.error('❌ Redis init failed (non-production), keeping memory store:', err instanceof Error ? err.message : String(err));
+  }).finally(() => {
+    redisInitSettled = true;
   });
 }
 
@@ -137,6 +210,31 @@ export const RATE_LIMIT_PROFILES = {
     message: {
       error: 'SEARCH_RATE_LIMIT_EXCEEDED',
       message: 'Too many search requests. Please wait a moment.',
+      retryAfter: '1 minute'
+    }
+  },
+
+  // Heavy geospatial endpoints (PostGIS distance + radius filters)
+  GEO_HEAVY_BURST: {
+    windowMs: 10 * 1000, // 10 seconds
+    max: 4, // burst budget
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'GEO_HEAVY_BURST_RATE_LIMIT_EXCEEDED',
+      message: 'Too many geospatial requests in a short period. Please slow down.',
+      retryAfter: '10 seconds'
+    }
+  },
+
+  GEO_HEAVY_MINUTE: {
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // sustained budget
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'GEO_HEAVY_MINUTE_RATE_LIMIT_EXCEEDED',
+      message: 'Too many geospatial requests. Please try again shortly.',
       retryAfter: '1 minute'
     }
   },
@@ -210,14 +308,14 @@ export const RATE_LIMIT_PROFILES = {
 // Create rate limiter with appropriate store
 export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, customOptions: any = {}) {
   const config = RATE_LIMIT_PROFILES[profile];
+  const defaultStore = redisClient ? new RedisStore({
+    sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
+  }) : undefined;
 
   const options: any = {
     ...config,
+    store: defaultStore,
     ...customOptions,
-    // Use Redis store if available, otherwise memory store
-    store: redisClient ? new RedisStore({
-      sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
-    }) : undefined,
 
     // Use default key generator with proper IPv6 handling
     // The library handles IP normalization automatically
@@ -298,17 +396,173 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
   return rateLimit(options);
 }
 
-// Pre-configured rate limiters for common use cases (created once at startup)
-export const rateLimiters = {
-  auth: createRateLimiter('AUTH'),
-  registration: createRateLimiter('REGISTRATION'),
-  apiStandard: createRateLimiter('API_STANDARD'),
-  search: createRateLimiter('SEARCH'),
-  upload: createRateLimiter('UPLOAD'),
-  admin: createRateLimiter('ADMIN'),
-  messaging: createRateLimiter('MESSAGING'),
-  global: createRateLimiter('GLOBAL')
-};
+function getStoreMode(): RateLimitStoreMode {
+  return redisClient ? 'redis' : 'memory';
+}
+
+type GeoRateLimitProfile = 'GEO_HEAVY_BURST' | 'GEO_HEAVY_MINUTE';
+
+/**
+ * Create endpoint-specific geospatial limiters keyed by endpoint + user + IP.
+ * This blocks simple bucket-rotation attacks and limits denial-of-wallet scans.
+ */
+export function createGeoEndpointLimiter(endpointKey: string, profile: GeoRateLimitProfile) {
+  const normalizedEndpoint = endpointKey.toLowerCase().replace(/[^a-z0-9:_-]/g, '_');
+  const keyGenerator = (req: Request) => {
+    const userId = (req as Request & { user?: { id?: string } }).user?.id ?? 'anonymous';
+    const ip = req.ip || req.socket?.remoteAddress;
+    const ipToken = ip ? ipKeyGenerator(ip) : 'ip:unknown';
+    return `geo:${normalizedEndpoint}:u:${userId}:ip:${ipToken}`;
+  };
+
+  const memoryLimiter = createRateLimiter(profile, { keyGenerator, store: undefined });
+  let redisLimiter: RateLimitMiddleware | null = null;
+
+  const buildRedisLimiter = () => {
+    if (!redisClient || redisLimiter) {
+      return;
+    }
+    redisLimiter = createRateLimiter(profile, {
+      keyGenerator,
+      store: new RedisStore({
+        sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
+      }),
+    });
+  };
+
+  if (process.env.NODE_ENV !== 'test') {
+    void redisInitPromise.then(() => {
+      buildRedisLimiter();
+    }).catch(() => undefined);
+  } else {
+    buildRedisLimiter();
+  }
+
+  const executeLimiter = (req: Request, res: Response, next: NextFunction) => {
+    const limiter = getStoreMode() === 'redis' && redisLimiter ? redisLimiter : memoryLimiter;
+    return limiter(req, res, next);
+  };
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (process.env.NODE_ENV === 'test' || redisInitSettled) {
+      return executeLimiter(req, res, next);
+    }
+
+    void redisInitPromise
+      .catch(() => undefined)
+      .then(() => executeLimiter(req, res, next));
+  };
+}
+
+// ─── Architecture Rule: Lazy Rate-Limiter Factories ──────────────────────────
+//
+// NEVER call rateLimit({}) or createRateLimiter() at module top-level (controller imports).
+// These functions resolve `redisClient` at call-time. If called before Redis bootstrap
+// (always true for synchronously-imported controller modules), the store is permanently
+// memory — breaking cross-restart consistency and multi-instance rate-limit sharing.
+//
+// MANDATORY alternatives for controller-level limiters:
+//   createLazyRateLimiter(profile, options?)     — profile-based limiters
+//   createLazyCustomRateLimiter(options, prefix)  — custom rateLimit({}) configs
+//   createGeoEndpointLimiter(key, profile)        — geo/user-keyed (already lazy)
+//
+// All three resolve the store at REQUEST TIME, after redisInitSettled=true,
+// ensuring Redis store is used from the first real request in production.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Profile-based lazy rate limiter.
+ * Drop-in replacement for createRateLimiter() at module top-level.
+ * Creates the underlying limiter on first request, after Redis bootstrap.
+ * Each mode (memory / redis) gets its own limiter instance (cached per closure).
+ *
+ * @example
+ *   // Instead of: const myLimiter = createRateLimiter('AUTH');
+ *   const myLimiter = createLazyRateLimiter('AUTH');
+ */
+export function createLazyRateLimiter(
+  profile: keyof typeof RATE_LIMIT_PROFILES,
+  customOptions: any = {},
+): (req: Request, res: Response, next: NextFunction) => void {
+  let memoryLimiter: ReturnType<typeof rateLimit> | null = null;
+  let redisLimiter: ReturnType<typeof rateLimit> | null = null;
+
+  const run = (req: Request, res: Response, next: NextFunction) => {
+    if (redisClient) {
+      if (!redisLimiter) {
+        redisLimiter = createRateLimiter(profile, customOptions);
+      }
+      return redisLimiter(req, res, next);
+    }
+    if (!memoryLimiter) {
+      memoryLimiter = createRateLimiter(profile, customOptions);
+    }
+    return memoryLimiter(req, res, next);
+  };
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (process.env.NODE_ENV === 'test' || redisInitSettled) {
+      return run(req, res, next);
+    }
+    void redisInitPromise.catch(() => undefined).then(() => run(req, res, next));
+  };
+}
+
+/**
+ * Custom-options lazy rate limiter.
+ * Drop-in replacement for rateLimit({...}) at module top-level.
+ * Accepts the same options as rateLimit() but lazily attaches Redis store
+ * when Redis is available, falling back to memory store otherwise.
+ *
+ * @param options    - Same options as express-rate-limit rateLimit(). Do NOT include `store`.
+ * @param storePrefix - Unique Redis key prefix for this limiter (e.g. 'booking_request').
+ *                      Must be unique across all createLazyCustomRateLimiter calls to avoid
+ *                      inadvertent counter sharing between unrelated limiters.
+ *
+ * @example
+ *   // Instead of: const myLimiter = rateLimit({ windowMs: 60_000, max: 5, ... });
+ *   const myLimiter = createLazyCustomRateLimiter({ windowMs: 60_000, max: 5, ... }, 'my_limiter');
+ */
+export function createLazyCustomRateLimiter(
+  options: any,
+  storePrefix: string,
+): (req: Request, res: Response, next: NextFunction) => void {
+  let memoryLimiter: ReturnType<typeof rateLimit> | null = null;
+  let redisLimiter: ReturnType<typeof rateLimit> | null = null;
+
+  const run = (req: Request, res: Response, next: NextFunction) => {
+    if (redisClient) {
+      if (!redisLimiter) {
+        redisLimiter = rateLimit({
+          ...options,
+          store: new RedisStore({
+            sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
+            prefix: `rl:${storePrefix}:`,
+          }),
+        });
+      }
+      return redisLimiter(req, res, next);
+    }
+    if (!memoryLimiter) {
+      memoryLimiter = rateLimit(options);
+    }
+    return memoryLimiter(req, res, next);
+  };
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (process.env.NODE_ENV === 'test' || redisInitSettled) {
+      return run(req, res, next);
+    }
+    void redisInitPromise.catch(() => undefined).then(() => run(req, res, next));
+  };
+}
+
+// Pre-configured rate limiters for the global smartRateLimit middleware.
+// Initially built with memory store (redisClient=null at module-load time).
+// After Redis connects, buildRateLimiters() rebuilds them in-place via Object.assign.
+// All controller-level limiters use createLazyRateLimiter / createLazyCustomRateLimiter
+// (defined above) — no limiter remains frozen on memory store after bootstrap.
+export const rateLimiters = buildRateLimiters();
 
 // Middleware to apply appropriate rate limiting based on endpoint
 export function smartRateLimit(req: Request, res: Response, next: NextFunction) {
