@@ -6,6 +6,7 @@ dist/
 build/
 .next/
 *.tsbuildinfo
+.claude/worktrees/
 playwright-report/
 test-results/
 apps/web/storybook-static/
