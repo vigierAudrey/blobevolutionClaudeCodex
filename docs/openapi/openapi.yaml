@@ -76,6 +76,8 @@ paths:
         Collecte strictement RGPD-safe : whitelist d'événements, consentement analytics requis,
         payload limité et champs inconnus refusés. Les données personnelles (IP, URL complète, lat/lng)
         sont rejetées ou ignorées.
+        Si la requête est authentifiée, `consentHash` doit être strictement égal à
+        `hashIdentifier(user.id)` (hash canonique côté serveur). En cas de mismatch: `403 CONSENT_HASH_MISMATCH`.
       operationId: analyticsEventIngest
       security: []
       requestBody:
@@ -659,6 +661,110 @@ paths:
                   retryAfter:
                     type: integer
                     description: Nombre de secondes avant de pouvoir réessayer
+
+  /pro/step-up:
+    post:
+      tags: [Pros]
+      summary: Accorde une preuve fraîche one-shot liée à la session avant suppression de compte pro
+      operationId: proDeleteAccountStepUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteAccountStepUpRequest'
+      responses:
+        '200':
+          description: Step-up accordé pour la suppression de compte pro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteAccountStepUpResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          description: Trop de tentatives de step-up
+        '503':
+          description: Stockage step-up indisponible, refus fail-closed
+
+  /pro/delete-account:
+    post:
+      tags: [Pros]
+      summary: Programme la suppression du compte pro après un step-up valide
+      operationId: proDeleteAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteAccountRequest'
+      responses:
+        '200':
+          description: Suppression programmée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionStatusResponse'
+        '400':
+          description: Confirmation manquante ou compte déjà programmé pour suppression
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Preuve de step-up absente, invalide ou déjà consommée
+        '409':
+          description: Suppression déjà traitée en course
+        '429':
+          description: Trop de cycles delete/cancel sur la fenêtre
+        '503':
+          description: Stockage step-up indisponible, refus fail-closed
+
+  /pro/cancel-deletion:
+    post:
+      tags: [Pros]
+      summary: Annule une suppression programmée sans step-up supplémentaire
+      operationId: proCancelDeletion
+      responses:
+        '200':
+          description: Suppression annulée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  cancelledAt:
+                    type: string
+                    format: date-time
+        '400':
+          description: Aucune suppression programmée ou période de grâce expirée
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          description: Trop de cycles delete/cancel sur la fenêtre
+
+  /pro/deletion-status:
+    get:
+      tags: [Pros]
+      summary: Lit le statut de suppression du compte pro sans step-up supplémentaire
+      operationId: proDeletionStatus
+      responses:
+        '200':
+          description: Statut courant de suppression
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /pro/photo/upload-url:
     post:
@@ -1653,6 +1759,21 @@ paths:
       tags: [Contact]
       summary: Liste les demandes destinées au pro
       operationId: contactListPro
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+            format: uuid
+          description: Curseur de pagination (id du dernier item reçu)
+        - in: query
+          name: take
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Taille de page demandée (cap serveur 200)
       responses:
         '200':
           description: Demandes en cours
@@ -1666,6 +1787,10 @@ paths:
                     items:
                       type: object
                       additionalProperties: true
+                  nextCursor:
+                    type: string
+                    format: uuid
+                    nullable: true
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1675,6 +1800,21 @@ paths:
       tags: [Contact]
       summary: Liste les demandes en attente pour le rider
       operationId: contactPending
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+            format: uuid
+          description: Curseur de pagination (id du dernier item reçu)
+        - in: query
+          name: take
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Taille de page demandée (cap serveur 200)
       responses:
         '200':
           description: Demandes à traiter
@@ -1688,6 +1828,10 @@ paths:
                     items:
                       type: object
                       additionalProperties: true
+                  nextCursor:
+                    type: string
+                    format: uuid
+                    nullable: true
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -2344,7 +2488,7 @@ paths:
   /admin/gdpr/run-purge:
     post:
       tags: [Admin]
-      summary: Lance le job de purge RGPD
+      summary: Lance le job de purge RGPD (step-up admin requis)
       operationId: adminGdprRunPurge
       responses:
         '200':
@@ -2384,7 +2528,7 @@ paths:
   /admin/conversations/{conversationId}/block:
     post:
       tags: [Admin]
-      summary: Force le blocage ou déblocage d'une conversation
+      summary: Force le blocage ou déblocage d'une conversation (step-up admin requis)
       operationId: adminConversationBlock
       parameters:
         - name: conversationId
@@ -2413,7 +2557,7 @@ paths:
   /admin/conversations/broadcast:
     post:
       tags: [Admin]
-      summary: Diffuse un message admin vers les messageries utilisateurs
+      summary: Diffuse un message admin vers les messageries utilisateurs (step-up admin requis)
       operationId: adminConversationsBroadcast
       requestBody:
         required: true
@@ -2435,7 +2579,7 @@ paths:
   /admin/conversations/unblock-all:
     post:
       tags: [Admin]
-      summary: Débloque toutes les conversations actuellement verrouillées
+      summary: Débloque toutes les conversations actuellement verrouillées (step-up admin requis)
       operationId: adminConversationsUnblockAll
       responses:
         '200':
@@ -2961,6 +3105,9 @@ components:
         consentHash:
           type: string
           pattern: '^[a-f0-9]{64}$'
+          description: >
+            Hash de consentement (64 hex). Requête authentifiée: doit égaler
+            `hashIdentifier(user.id)` fourni par `GET /auth/me` (`analyticsConsentHash`).
         contentId:
           type: string
           pattern: '^[a-z0-9-]{1,80}$'
@@ -2975,6 +3122,9 @@ components:
         consentHash:
           type: string
           pattern: '^[a-f0-9]{64}$'
+          description: >
+            Hash de consentement (64 hex). Requête authentifiée: doit égaler
+            `hashIdentifier(user.id)` fourni par `GET /auth/me` (`analyticsConsentHash`).
         contentId:
           type: string
           pattern: '^[a-z0-9-]{1,80}$'
@@ -2995,6 +3145,9 @@ components:
         consentHash:
           type: string
           pattern: '^[a-f0-9]{64}$'
+          description: >
+            Hash de consentement (64 hex). Requête authentifiée: doit égaler
+            `hashIdentifier(user.id)` fourni par `GET /auth/me` (`analyticsConsentHash`).
         contentId:
           type: string
           pattern: '^[a-z0-9-]{1,80}$'
@@ -3009,6 +3162,9 @@ components:
         consentHash:
           type: string
           pattern: '^[a-f0-9]{64}$'
+          description: >
+            Hash de consentement (64 hex). Requête authentifiée: doit égaler
+            `hashIdentifier(user.id)` fourni par `GET /auth/me` (`analyticsConsentHash`).
     AnalyticsPublicEventRequest:
       oneOf:
         - $ref: '#/components/schemas/AnalyticsEventBlobosphereView'
@@ -3541,6 +3697,46 @@ components:
           type: string
         newPassword:
           type: string
+    DeleteAccountStepUpRequest:
+      type: object
+      required: [currentPassword]
+      properties:
+        currentPassword:
+          type: string
+          minLength: 8
+    DeleteAccountStepUpResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        stepUpUntil:
+          type: number
+    DeleteAccountRequest:
+      type: object
+      required: [confirm]
+      properties:
+        confirm:
+          type: boolean
+          enum: [true]
+    AccountDeletionStatusResponse:
+      type: object
+      required: [isScheduled]
+      properties:
+        isScheduled:
+          type: boolean
+        message:
+          type: string
+        deletedAt:
+          type: string
+          format: date-time
+        deletionDate:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+        daysRemaining:
+          type: integer
     TwoFactorSendRequest:
       type: object
       required: [email]
@@ -3602,6 +3798,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        analyticsConsentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: Hash canonique analytics pour le compte connecté (`hashIdentifier(user.id)`).
         riderProfile:
           $ref: '#/components/schemas/Profile'
         proProfile:
