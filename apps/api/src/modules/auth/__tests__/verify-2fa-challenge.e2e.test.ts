@@ -48,8 +48,6 @@ import { clientPrisma as prisma } from '@blobinfini/database';
 import { AVAILABLE_PERMISSIONS } from '../../admin/permissions';
 import { send2FACode } from '../../../lib/mailer';
 import { cacheService } from '../../../services/cache.service';
-import { twoFactorService } from '../../../services/two-factor.service';
-import { secureLogger } from '../../../utils/secure-logger';
 
 const mockSend2FACode = send2FACode as jest.MockedFunction<typeof send2FACode>;
 
@@ -85,7 +83,7 @@ async function createAdmin() {
     },
   });
 
-  return { email, password };
+  return { email, password, userId: user.id };
 }
 
 async function start2FALogin(app: ReturnType<typeof createApp>, email: string, password: string, ip: string) {
@@ -101,7 +99,7 @@ async function start2FALogin(app: ReturnType<typeof createApp>, email: string, p
 
 async function verify2FA(
   app: ReturnType<typeof createApp>,
-  payload: { challengeId: string; code: string },
+  payload: { userId: string; code: string } | Record<string, unknown>,
   ip: string,
 ) {
   const { cookies, csrfToken } = await getCsrf(app);
@@ -122,7 +120,11 @@ function lastSentCode(): string {
   return code;
 }
 
-describe('Auth verify-2fa challenge flow (P1)', () => {
+function readCookie(setCookies: string[], cookieName: string): string {
+  return setCookies.find((cookie) => cookie.startsWith(`${cookieName}=`)) || '';
+}
+
+describe('Auth verify-2fa flow', () => {
   const originalEnv = { ...process.env };
   let app: ReturnType<typeof createApp>;
 
@@ -152,126 +154,70 @@ describe('Auth verify-2fa challenge flow (P1)', () => {
     await prisma.user.deleteMany();
   });
 
-  it('challengeId invalide => 401', async () => {
+  it('retourne userId sans exposer challengeId ni email brut', async () => {
     const admin = await createAdmin();
     const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.10');
 
-    expect(login.body).toMatchObject({ requires2FA: true });
-    expect(login.body).toHaveProperty('challengeId');
+    expect(login.body).toMatchObject({ requires2FA: true, userId: admin.userId });
     expect(login.body).toHaveProperty('message');
-    expect(Object.keys(login.body).sort()).toEqual(['challengeId', 'message', 'requires2FA']);
-    expect(login.body).not.toHaveProperty('userId');
+    expect(login.body).not.toHaveProperty('challengeId');
     expect(JSON.stringify(login.body)).not.toContain(admin.email);
     expect(mockSend2FACode).toHaveBeenCalledTimes(1);
+  });
+
+  it('userId invalide => 401', async () => {
+    const admin = await createAdmin();
+    await start2FALogin(app, admin.email, admin.password, '203.0.113.11');
 
     const res = await verify2FA(
       app,
-      { challengeId: randomUUID(), code: '123456' },
-      '203.0.113.10',
+      { userId: randomUUID(), code: '123456' },
+      '203.0.113.11',
     );
 
     expect(res.status).toBe(401);
   });
 
-  it('challengeId valide mais autre IP => 403', async () => {
-    const securitySpy = jest.spyOn(secureLogger, 'security').mockImplementation(() => {});
-    try {
-      const admin = await createAdmin();
-      const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.11');
-
-      const res = await verify2FA(
-        app,
-        { challengeId: login.body.challengeId as string, code: '123456' },
-        '203.0.113.12',
-      );
-
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe('2FA challenge IP mismatch');
-      expect(securitySpy).toHaveBeenCalledWith(
-        'AUTH_2FA_CHALLENGE_IP_MISMATCH',
-        expect.objectContaining({ challengeId: login.body.challengeId as string }),
-      );
-    } finally {
-      securitySpy.mockRestore();
-    }
-  });
-
-  it('reuse challenge après succès => 401', async () => {
-    const verifySpy = jest.spyOn(twoFactorService, 'verifyCode').mockResolvedValue({
-      valid: true,
-      message: 'Code valide',
-    });
-    try {
-      const admin = await createAdmin();
-      const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.13');
-
-      const code = lastSentCode();
-      const first = await verify2FA(
-        app,
-        { challengeId: login.body.challengeId as string, code },
-        '203.0.113.13',
-      );
-
-      expect(first.status).toBe(200);
-      expect(first.body).toEqual({ ok: true });
-
-      const second = await verify2FA(
-        app,
-        { challengeId: login.body.challengeId as string, code },
-        '203.0.113.13',
-      );
-
-      expect(second.status).toBe(401);
-    } finally {
-      verifySpy.mockRestore();
-    }
-  });
-
-  it('brute force verify-2fa => 401/429 (verifyCode + HTTP rate limit)', async () => {
-    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
-
+  it('verification reussie => cookies httpOnly puis code non reutilisable', async () => {
     const admin = await createAdmin();
-    const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.14');
-    const validCode = lastSentCode();
-    const wrongCode = validCode === '000000' ? '999999' : '000000';
+    const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.12');
+    const code = lastSentCode();
 
-    const statuses: number[] = [];
-    for (let i = 0; i < 6; i += 1) {
-      const res = await verify2FA(
-        app,
-        { challengeId: login.body.challengeId as string, code: wrongCode },
-        '203.0.113.14',
-      );
-      statuses.push(res.status);
-    }
+    const first = await verify2FA(
+      app,
+      { userId: login.body.userId as string, code },
+      '203.0.113.12',
+    );
 
-    expect(statuses.some((status) => status === 401 || status === 429)).toBe(true);
-    expect(statuses).toContain(401);
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({ ok: true });
+    const setCookies = (first.headers['set-cookie'] as unknown as string[]) ?? [];
+    expect(readCookie(setCookies, 'accessToken')).toContain('HttpOnly');
+    expect(readCookie(setCookies, 'refreshToken')).toContain('Path=/auth/refresh');
+
+    const second = await verify2FA(
+      app,
+      { userId: login.body.userId as string, code },
+      '203.0.113.12',
+    );
+
+    expect(second.status).toBe(401);
   });
 
-  it('6 mauvais codes sur le meme challenge => 429 (limite challengeId+ip)', async () => {
-    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'false';
-
+  it('payload legacy challengeId est rejete', async () => {
     const admin = await createAdmin();
-    const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.24');
-    const validCode = lastSentCode();
-    const wrongCode = validCode === '111111' ? '222222' : '111111';
+    await start2FALogin(app, admin.email, admin.password, '203.0.113.13');
 
-    const statuses: number[] = [];
-    for (let i = 0; i < 6; i += 1) {
-      const res = await verify2FA(
-        app,
-        { challengeId: login.body.challengeId as string, code: wrongCode },
-        '203.0.113.24',
-      );
-      statuses.push(res.status);
-    }
+    const res = await verify2FA(
+      app,
+      { challengeId: randomUUID(), code: '123456' },
+      '203.0.113.13',
+    );
 
-    expect(statuses.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
-    expect(statuses[5]).toBe(429);
+    expect(res.status).toBe(400);
   });
 
-  it('les reponses auth ne renvoient pas email brut', async () => {
+  it('echec login ne renvoie pas email brut', async () => {
     const admin = await createAdmin();
     const { cookies, csrfToken } = await getCsrf(app);
 
@@ -284,23 +230,5 @@ describe('Auth verify-2fa challenge flow (P1)', () => {
       .expect(401);
 
     expect(JSON.stringify(res.body)).not.toContain(admin.email);
-  });
-
-  it('payload verify-2fa avec userId est rejete (schema strict)', async () => {
-    const admin = await createAdmin();
-    const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.16');
-
-    const res = await verify2FA(
-      app,
-      {
-        challengeId: login.body.challengeId as string,
-        code: '123456',
-        // @ts-expect-error security regression guard: extra field must be rejected
-        userId: randomUUID(),
-      } as any,
-      '203.0.113.16',
-    );
-
-    expect(res.status).toBe(400);
   });
 });

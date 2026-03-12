@@ -28,8 +28,8 @@ import { clientPrisma as prisma } from '@blobinfini/database';
 
 const app = createApp();
 
-async function getCsrf() {
-  const res = await request(app).get('/csrf-token').expect(200);
+async function getCsrf(client: ReturnType<typeof request.agent> = request.agent(app)) {
+  const res = await client.get('/csrf-token').expect(200);
   return {
     cookies: (res.headers['set-cookie'] as unknown as string[]) ?? [],
     csrfToken: res.body.csrfToken as string,
@@ -98,22 +98,24 @@ describe('Auth contract minimal', () => {
     const email = `contract-refresh-${Date.now()}@example.com`;
     const password = 'Passw0rd!';
     await createUser(email, password);
+    const agent = request.agent(app);
 
-    const csrf1 = await getCsrf();
-    const login = await request(app)
+    const csrf1 = await getCsrf(agent);
+    const login = await agent
       .post('/auth/login')
-      .set('Cookie', csrf1.cookies)
       .set('X-CSRF-Token', csrf1.csrfToken)
       .send({ email, password })
       .expect(200);
 
     const authCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
-    const csrf2 = await getCsrf();
+    const refreshToken = decodeURIComponent(
+      (findCookie(authCookies, 'refreshToken').split(';')[0]?.split('=')[1] ?? '')
+    );
 
-    const refresh = await request(app)
+    const refresh = await agent
       .post('/auth/refresh')
-      .set('Cookie', [...authCookies, ...csrf2.cookies])
-      .set('X-CSRF-Token', csrf2.csrfToken)
+      .set('X-CSRF-Token', csrf1.csrfToken)
+      .send({ refreshToken })
       .expect(200);
 
     expect(refresh.body).toEqual({ ok: true });

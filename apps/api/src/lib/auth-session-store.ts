@@ -25,6 +25,7 @@ function sessionCacheKey(userId: string): string {
 
 export interface SessionData {
   version: number;
+  credentialsVersion: number;
   deletedAt: Date | string | null;
 }
 
@@ -41,13 +42,14 @@ export async function getSessionData(userId: string): Promise<SessionData | null
   // DB fallback
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { sessionVersion: true, deletedAt: true },
+    select: { sessionVersion: true, credentialsVersion: true, deletedAt: true },
   });
 
   if (!user) return null;
 
   const data: SessionData = {
     version: user.sessionVersion,
+    credentialsVersion: user.credentialsVersion,
     deletedAt: user.deletedAt,
   };
 

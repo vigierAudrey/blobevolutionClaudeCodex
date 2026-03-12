@@ -323,9 +323,7 @@ export class TwoFactorService {
       let storedHash: string | null = null;
       let usingMemoryStore = false;
 
-      if (redisClient) {
-        storedHash = await cacheService.get<string>(cacheKey);
-      }
+      storedHash = await cacheService.get<string>(cacheKey);
 
       if (!storedHash && memoryStore) {
         const memoryEntry = memoryStore.get(cacheKey);
@@ -346,7 +344,7 @@ export class TwoFactorService {
       // Valid code - cleanup
       if (usingMemoryStore && memoryStore) {
         memoryStore.delete(cacheKey);
-      } else if (redisClient) {
+      } else {
         await cacheService.del(cacheKey);
       }
 

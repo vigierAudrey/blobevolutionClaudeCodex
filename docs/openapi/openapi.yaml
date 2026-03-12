@@ -129,7 +129,7 @@ paths:
   /auth/login:
     post:
       tags: [Auth]
-      summary: Authentifie un utilisateur et retourne les jetons
+      summary: Authentifie un utilisateur et établit les cookies de session
       operationId: authLogin
       security: []
       requestBody:
@@ -140,7 +140,7 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: Jetons d'accès ou étape 2FA requise
+          description: Session créée via cookies `HttpOnly`, ou étape 2FA admin requise
           content:
             application/json:
               schema:
@@ -160,25 +160,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /auth/refresh:
+  /auth/verify-2fa:
     post:
       tags: [Auth]
-      summary: Rafraîchit l'access token à partir du refresh token
-      operationId: authRefresh
+      summary: Valide le code 2FA admin et établit les cookies de session
+      operationId: authVerifyAdmin2fa
       security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RefreshRequest'
+              $ref: '#/components/schemas/AdminTwoFactorVerifyRequest'
       responses:
         '200':
-          description: Nouveaux jetons d'accès
+          description: Authentification admin complète via cookies `HttpOnly`
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthTokens'
+                $ref: '#/components/schemas/CookieSessionOkResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: IP admin non autorisée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Trop de challenges 2FA en attente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service 2FA indisponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Fait tourner la session à partir du refresh token body ou cookie
+      operationId: authRefresh
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Session rafraîchie via nouveaux cookies `HttpOnly`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CookieSessionOkResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -383,7 +425,7 @@ paths:
   /auth/2fa/verify:
     post:
       tags: [Auth]
-      summary: Valide un code 2FA et délivre les jetons
+      summary: Valide un code 2FA PRO et établit les cookies de session
       operationId: authVerify2fa
       security: []
       requestBody:
@@ -394,11 +436,11 @@ paths:
               $ref: '#/components/schemas/TwoFactorVerifyRequest'
       responses:
         '200':
-          description: Authentification complète
+          description: Authentification PRO complète via cookies `HttpOnly`
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthTokens'
+                $ref: '#/components/schemas/TwoFactorVerifyResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -3427,21 +3469,31 @@ components:
         consentAccepted:
           type: boolean
           description: Confirmation de la charte RGPD
+    CookieSessionOkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+      required: [ok]
+    AdminTwoFactorChallengeResponse:
+      type: object
+      properties:
+        requires2FA:
+          type: boolean
+          enum: [true]
+        userId:
+          type: string
+          format: uuid
+        message:
+          type: string
+      required: [requires2FA, userId, message]
     LoginResponse:
       oneOf:
-        - $ref: '#/components/schemas/AuthTokens'
-        - type: object
-          properties:
-            requiresTwoFactor:
-              type: boolean
-              enum: [true]
-            twoFactorDelivery:
-              type: string
-              enum: [EMAIL]
-          required: [requiresTwoFactor, twoFactorDelivery]
+        - $ref: '#/components/schemas/CookieSessionOkResponse'
+        - $ref: '#/components/schemas/AdminTwoFactorChallengeResponse'
     RefreshRequest:
       type: object
-      required: [refreshToken]
       properties:
         refreshToken:
           type: string
@@ -3507,6 +3559,30 @@ components:
           type: string
           minLength: 6
           maxLength: 6
+        consentAccepted:
+          type: boolean
+    AdminTwoFactorVerifyRequest:
+      type: object
+      required: [userId, code]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+        consentAccepted:
+          type: boolean
+    TwoFactorVerifyResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+      required: [ok, message]
     AuthUser:
       type: object
       properties:

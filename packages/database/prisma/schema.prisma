@@ -22,6 +22,7 @@ model User {
   consentVersion          String?
   consentIp               String?
   consentIpHash           String?                  // HMAC-SHA256 hash of consentIp (RGPD compliant, 24 hex chars)
+  credentialsVersion      Int                      @default(1)  // Incremented on password change/reset to invalidate stale step-up proofs
   sessionVersion          Int                      @default(1)  // Incremented on logout to revoke all access tokens
   adminProfile            AdminProfile?
   conversationMembers     ConversationMember[]

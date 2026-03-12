@@ -7,6 +7,8 @@ import { sendPasswordResetEmail, sendVerificationEmail } from '../../lib/mailer'
 import { secureLogger } from '../../utils/secure-logger';
 import { AVAILABLE_PERMISSIONS } from '../admin/permissions';
 import { hashIpHmac } from '../../lib/hash-ip';
+import type { AuthenticatedSessionContext } from './auth-session-context';
+import { invalidateSessionCache } from '../../lib/auth-session-store';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
@@ -34,6 +36,7 @@ const BCRYPT_TOKEN_COST = 10;
 function ensureStrongSecret(key: 'JWT_SECRET' | 'JWT_REFRESH_SECRET') {
   const value = process.env[key];
   if (!value) {
+    // system.fatal : secret manquant = processus inutilisable, throw immédiat
     secureLogger.error('MISSING_SECRET', { key });
     throw new Error(`${key} must be set (see scripts/generate-secrets.sh)`);
   }
@@ -41,6 +44,7 @@ function ensureStrongSecret(key: 'JWT_SECRET' | 'JWT_REFRESH_SECRET') {
   // ✅ CORRIGÉ : En développement, accepter les secrets faibles mais logger un warning
   if (value.length < MIN_SECRET_LENGTH) {
     if (process.env.NODE_ENV === 'production') {
+      // system.fatal : rejet dur en production
       secureLogger.error('WEAK_SECRET_REJECTED', { key });
       throw new Error(`${key} must be at least ${MIN_SECRET_LENGTH} characters long`);
     } else {
@@ -56,6 +60,81 @@ export class AuthService {
     return createHash('sha256').update(raw).digest('hex');
   }
   private static readonly CONSENT_VERSION = 'v1.0.0';
+
+  private buildAccessToken(
+    user: { id: string; role: string; sessionVersion: number; credentialsVersion: number },
+    authContext?: AuthenticatedSessionContext,
+  ) {
+    const tokenContext = authContext ?? {
+      sessionId: crypto.randomUUID(),
+      authContextId: crypto.randomUUID(),
+    };
+
+    return jwt.sign(
+      {
+        sub: user.id,
+        role: user.role,
+        jti: crypto.randomUUID(),
+        sid: tokenContext.sessionId,
+        ctx: tokenContext.authContextId,
+        sv: user.sessionVersion,
+        cv: user.credentialsVersion,
+      },
+      ensureStrongSecret('JWT_SECRET'),
+      { expiresIn: ACCESS_TTL },
+    );
+  }
+
+  public issueAccessToken(
+    user: { id: string; role: string; sessionVersion: number; credentialsVersion: number },
+    authContext?: AuthenticatedSessionContext,
+  ) {
+    return this.buildAccessToken(user, authContext);
+  }
+
+  async authenticateLogin(
+    email: string,
+    password: string,
+  ) {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) throw { code: 'UNAUTHORIZED' };
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) throw { code: 'UNAUTHORIZED' };
+
+    const defaultRequireVerified = process.env.NODE_ENV === 'production' ? 'true' : 'false';
+    const requireVerified = String(process.env.AUTH_REQUIRE_VERIFIED ?? defaultRequireVerified).toLowerCase() === 'true';
+    if (requireVerified && !user.emailVerified) {
+      throw { code: 'EMAIL_NOT_VERIFIED' };
+    }
+
+    if (process.env.NODE_ENV === 'test' && user.role === 'ADMIN') {
+      try {
+        await prisma.adminProfile.upsert({
+          where: { userId: user.id },
+          create: { userId: user.id, permissions: [...AVAILABLE_PERMISSIONS] },
+          update: { permissions: [...AVAILABLE_PERMISSIONS] },
+        });
+      } catch (error) {
+        secureLogger.error('ADMIN_PROFILE_PROVISION_FAILED', {
+          userId: user.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    }
+
+    const enforce2FA = String(process.env.AUTH_REQUIRE_2FA ?? (process.env.NODE_ENV === 'production' ? 'true' : 'false'))
+      .toLowerCase() === 'true';
+    if (enforce2FA && user.role === 'ADMIN') {
+      throw {
+        code: '2FA_REQUIRED',
+        userId: user.id,
+        email: user.email
+      };
+    }
+
+    return user;
+  }
 
   async register(
     data: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted?: boolean },
@@ -100,7 +179,11 @@ export class AuthService {
     }
   }
 
-  async generateTokens(user: any, opts?: { consentAccepted?: boolean; consentIp?: string }) {
+  async generateTokens(
+    user: any,
+    opts?: { consentAccepted?: boolean; consentIp?: string },
+    authContext?: AuthenticatedSessionContext,
+  ) {
     // Exiger la dernière version du consentement pour les comptes existants
     const needsConsent = !user.consentedAt || user.consentVersion !== AuthService.CONSENT_VERSION;
     if (needsConsent) {
@@ -114,11 +197,7 @@ export class AuthService {
       }
     }
 
-    const accessToken = jwt.sign(
-      { sub: user.id, role: user.role },
-      ensureStrongSecret('JWT_SECRET'),
-      { expiresIn: ACCESS_TTL },
-    );
+    const accessToken = this.buildAccessToken(user, authContext);
 
     const refreshPayload = { sub: user.id, jti: crypto.randomUUID() } as const;
     const refreshToken = jwt.sign(refreshPayload, ensureStrongSecret('JWT_REFRESH_SECRET'), {
@@ -136,50 +215,11 @@ export class AuthService {
   }
 
   async login(email: string, password: string, opts?: { consentAccepted?: boolean; consentIp?: string }) {
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw { code: 'UNAUTHORIZED' };
-    const ok = await bcrypt.compare(password, user.password);
-    if (!ok) throw { code: 'UNAUTHORIZED' };
-
-    // Optionnel: bloquer la connexion si l'email n'est pas vérifié (obligatoire par défaut en production)
-    const defaultRequireVerified = process.env.NODE_ENV === 'production' ? 'true' : 'false';
-    const requireVerified = String(process.env.AUTH_REQUIRE_VERIFIED ?? defaultRequireVerified).toLowerCase() === 'true';
-    if (requireVerified && !user.emailVerified) {
-      throw { code: 'EMAIL_NOT_VERIFIED' };
-    }
-
-    // In tests, ensure admin has an AdminProfile with permissive defaults to satisfy integration tests
-    if (process.env.NODE_ENV === 'test' && user.role === 'ADMIN') {
-      try {
-        await prisma.adminProfile.upsert({
-          where: { userId: user.id },
-          create: { userId: user.id, permissions: [...AVAILABLE_PERMISSIONS] },
-          update: { permissions: [...AVAILABLE_PERMISSIONS] },
-        });
-      } catch (error) {
-        secureLogger.error('ADMIN_PROFILE_PROVISION_FAILED', {
-          userId: user.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
-      }
-    }
-
-    // 2FA admin: enabled in production by default, configurable via AUTH_REQUIRE_2FA
-    const enforce2FA = String(process.env.AUTH_REQUIRE_2FA ?? (process.env.NODE_ENV === 'production' ? 'true' : 'false'))
-      .toLowerCase() === 'true';
-    if (enforce2FA && user.role === 'ADMIN') {
-      throw {
-        code: '2FA_REQUIRED',
-        userId: user.id,
-        email: user.email
-      };
-    }
-
+    const user = await this.authenticateLogin(email, password);
     return this.generateTokens(user, opts);
   }
 
-  async refresh(refreshToken: string) {
+  async rotateRefreshToken(refreshToken: string) {
     // Vérifier la signature du JWT refresh
     let decoded: any;
     try {
@@ -247,18 +287,31 @@ export class AuthService {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw { code: 'UNAUTHORIZED' };
 
-    const accessToken = jwt.sign({ sub: user.id, role: user.role }, ensureStrongSecret('JWT_SECRET'), {
-      expiresIn: ACCESS_TTL,
-    });
+    return { user, refreshToken: newRefresh };
+  }
 
-    return { accessToken, refreshToken: newRefresh };
+  async refresh(refreshToken: string, authContext?: AuthenticatedSessionContext) {
+    const rotated = await this.rotateRefreshToken(refreshToken);
+    const accessToken = this.buildAccessToken(rotated.user, authContext);
+
+    return { accessToken, refreshToken: rotated.refreshToken };
   }
 
   async logoutAll(userId: string) {
-    await prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
+    const now = new Date();
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: {
+          sessionVersion: { increment: 1 },
+        },
+      }),
+      prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
+    await invalidateSessionCache(userId);
     return { message: 'Logged out from all devices' };
   }
 
@@ -333,17 +386,25 @@ export class AuthService {
     if (!match) throw { code: 'UNAUTHORIZED', message: 'Invalid or expired token' };
 
     const hashed = await bcrypt.hash(newPassword, BCRYPT_COST);
+    const now = new Date();
 
     await prisma.$transaction([
-      prisma.user.update({ where: { id: match.userId }, data: { password: hashed } }),
-      prisma.passwordResetToken.update({ where: { id: match.id }, data: { usedAt: new Date() } }),
+      prisma.user.update({
+        where: { id: match.userId },
+        data: {
+          password: hashed,
+          credentialsVersion: { increment: 1 },
+          sessionVersion: { increment: 1 },
+        },
+      }),
+      prisma.passwordResetToken.update({ where: { id: match.id }, data: { usedAt: now } }),
       // Optionnel: révoquer tous les refresh tokens existants
       prisma.refreshToken.updateMany({
         where: { userId: match.userId, revokedAt: null },
-        data: { revokedAt: new Date() },
+        data: { revokedAt: now },
       }),
     ]);
-
+    await invalidateSessionCache(match.userId);
     secureLogger.info('PASSWORD_RESET_SUCCESS', { userId: match.userId, via: 'token' });
     return { message: 'Password updated' };
   }
@@ -359,14 +420,22 @@ export class AuthService {
     }
 
     const hashed = await bcrypt.hash(newPassword, BCRYPT_COST);
+    const now = new Date();
     await prisma.$transaction([
-      prisma.user.update({ where: { id: userId }, data: { password: hashed } }),
+      prisma.user.update({
+        where: { id: userId },
+        data: {
+          password: hashed,
+          credentialsVersion: { increment: 1 },
+          sessionVersion: { increment: 1 },
+        },
+      }),
       prisma.refreshToken.updateMany({
         where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
+        data: { revokedAt: now },
       }),
     ]);
-
+    await invalidateSessionCache(userId);
     secureLogger.info('PASSWORD_CHANGE_SUCCESS', { userId });
     return { message: 'Password updated' };
   }

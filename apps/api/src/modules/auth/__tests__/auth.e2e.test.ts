@@ -19,6 +19,14 @@ const wipeAuthTables = async () => {
   await prisma.user.deleteMany();
 };
 
+const readCookieValue = (setCookies: string[], cookieName: string) => {
+  const cookie = setCookies.find((entry) => entry.startsWith(`${cookieName}=`));
+  if (!cookie) {
+    throw new Error(`Missing ${cookieName} cookie`);
+  }
+  return decodeURIComponent(cookie.slice(cookieName.length + 1).split(';', 1)[0] ?? '');
+};
+
 describe('Auth E2E', () => {
   const app = createApp();
   let session: TestSession;
@@ -62,32 +70,35 @@ describe('Auth E2E', () => {
     expect(res.body).toHaveProperty('userId');
   });
 
-  it('logs in and returns access + refresh tokens', async () => {
+  it('logs in and sets auth cookies', async () => {
     await registerUser();
     const res = await session
       .post('/auth/login')
       .send({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD })
       .expect(200);
-    expect(res.body).toHaveProperty('accessToken');
-    expect(res.body).toHaveProperty('refreshToken');
+    expect(res.body).toEqual({ ok: true });
+    const setCookies = (res.headers['set-cookie'] as unknown as string[]) ?? [];
+    expect(readCookieValue(setCookies, 'accessToken')).toBeTruthy();
+    expect(readCookieValue(setCookies, 'refreshToken')).toBeTruthy();
   });
 
-  it('refresh rotates refresh token and returns a new access token', async () => {
+  it('refresh rotates refresh token and sets new cookies', async () => {
     await registerUser();
     const login = await session
       .post('/auth/login')
       .send({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD })
       .expect(200);
-    const oldRefresh = login.body.refreshToken as string;
+    const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+    const oldRefresh = readCookieValue(loginCookies, 'refreshToken');
 
     const refreshRes = await session
       .post('/auth/refresh')
       .send({ refreshToken: oldRefresh })
       .expect(200);
 
-    expect(refreshRes.body).toHaveProperty('accessToken');
-    expect(refreshRes.body).toHaveProperty('refreshToken');
-    const newRefresh = refreshRes.body.refreshToken as string;
+    expect(refreshRes.body).toEqual({ ok: true });
+    const refreshCookies = (refreshRes.headers['set-cookie'] as unknown as string[]) ?? [];
+    const newRefresh = readCookieValue(refreshCookies, 'refreshToken');
 
     await session.post('/auth/refresh').send({ refreshToken: oldRefresh }).expect(401);
     await session.post('/auth/refresh').send({ refreshToken: newRefresh }).expect(200);
@@ -99,8 +110,9 @@ describe('Auth E2E', () => {
       .post('/auth/login')
       .send({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD })
       .expect(200);
-    const access = login.body.accessToken as string;
-    const refresh = login.body.refreshToken as string;
+    const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+    const access = readCookieValue(loginCookies, 'accessToken');
+    const refresh = readCookieValue(loginCookies, 'refreshToken');
 
     await session.post('/auth/logout').set('Authorization', `Bearer ${access}`).send({}).expect(200);
     await session.post('/auth/refresh').send({ refreshToken: refresh }).expect(401);
@@ -112,8 +124,9 @@ describe('Auth E2E', () => {
       .post('/auth/login')
       .send({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD })
       .expect(200);
-    const access = login.body.accessToken as string;
-    const refresh = login.body.refreshToken as string;
+    const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+    const access = readCookieValue(loginCookies, 'accessToken');
+    const refresh = readCookieValue(loginCookies, 'refreshToken');
 
     await session
       .post('/auth/logout')
@@ -140,8 +153,10 @@ describe('Auth E2E', () => {
       .post('/auth/login')
       .send({ email: DEFAULT_EMAIL, password: 'NewPassw0rd!' })
       .expect(200);
-    expect(loginNew.body).toHaveProperty('accessToken');
-    expect(loginNew.body).toHaveProperty('refreshToken');
+    expect(loginNew.body).toEqual({ ok: true });
+    const setCookies = (loginNew.headers['set-cookie'] as unknown as string[]) ?? [];
+    expect(readCookieValue(setCookies, 'accessToken')).toBeTruthy();
+    expect(readCookieValue(setCookies, 'refreshToken')).toBeTruthy();
   });
 
   it('change-password updates password for authenticated users', async () => {
@@ -150,7 +165,8 @@ describe('Auth E2E', () => {
       .post('/auth/login')
       .send({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD })
       .expect(200);
-    const access = login.body.accessToken as string;
+    const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+    const access = readCookieValue(loginCookies, 'accessToken');
 
     await session
       .post('/auth/change-password')
@@ -174,7 +190,8 @@ describe('Auth E2E', () => {
     await session.post('/auth/verify-email').send({ token }).expect(200);
 
     const login = await session.post('/auth/login').send({ email: 'verify@test.com', password: DEFAULT_PASSWORD }).expect(200);
-    const access = login.body.accessToken as string;
+    const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+    const access = readCookieValue(loginCookies, 'accessToken');
 
     const me = await session.get('/auth/me').set('Authorization', `Bearer ${access}`).expect(200);
 
@@ -204,8 +221,10 @@ describe('Auth E2E', () => {
       await session.post('/auth/verify-email').send({ token }).expect(200);
 
       const loginOk = await session.post('/auth/login').send({ email: 'blocked@test.com', password: DEFAULT_PASSWORD }).expect(200);
-      expect(loginOk.body).toHaveProperty('accessToken');
-      expect(loginOk.body).toHaveProperty('refreshToken');
+      expect(loginOk.body).toEqual({ ok: true });
+      const setCookies = (loginOk.headers['set-cookie'] as unknown as string[]) ?? [];
+      expect(readCookieValue(setCookies, 'accessToken')).toBeTruthy();
+      expect(readCookieValue(setCookies, 'refreshToken')).toBeTruthy();
     } finally {
       if (prev === undefined) delete process.env.AUTH_REQUIRE_VERIFIED;
       else process.env.AUTH_REQUIRE_VERIFIED = prev;
@@ -245,7 +264,8 @@ describe('Auth E2E', () => {
 
     const login = await session.post('/auth/login').send({ email: 'verify@test.com', password: DEFAULT_PASSWORD }).expect(200);
 
-    const validToken = login.body.accessToken as string;
+    const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+    const validToken = readCookieValue(loginCookies, 'accessToken');
     const invalidToken = `${validToken.slice(0, -1)}x`;
 
     await session.get('/auth/me').set('Authorization', `Bearer ${invalidToken}`).expect(401);
@@ -263,7 +283,8 @@ describe('Auth E2E', () => {
       const token = reg.body.verificationToken as string;
 
       const login = await session.post('/auth/login').send({ email: 'routeblock@test.com', password: DEFAULT_PASSWORD }).expect(200);
-      const access = login.body.accessToken as string;
+      const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+      const access = readCookieValue(loginCookies, 'accessToken');
 
       await session.get('/auth/verified-only').set('Authorization', `Bearer ${access}`).expect(403);
 
@@ -285,7 +306,8 @@ describe('Auth E2E', () => {
       await getOrCreateUserByEmail({ email, role: Role.RIDER, emailVerified: false });
 
       const login = await session.post('/auth/login').send({ email, password: TEST_PASSWORD }).expect(200);
-      const access = login.body.accessToken as string;
+      const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+      const access = readCookieValue(loginCookies, 'accessToken');
 
       const res = await session.get('/booking/requests/me').set('Authorization', `Bearer ${access}`).expect(403);
       expect(res.body).toHaveProperty('error', 'Email not verified');

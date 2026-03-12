@@ -84,7 +84,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   // ✅ NOUVEAU : États pour 2FA admin
   const [requires2FA, setRequires2FA] = useState(false);
-  const [twoFAChallengeId, setTwoFAChallengeId] = useState<string | null>(null);
+  const [twoFAUserId, setTwoFAUserId] = useState<string | null>(null);
   const [twoFACode, setTwoFACode] = useState('');
 
   useEffect(() => {
@@ -176,9 +176,9 @@ export function AuthForm({ mode }: AuthFormProps) {
       });
 
       // Vérifier si 2FA est requis
-      if ('requires2FA' in response && response.requires2FA && 'challengeId' in response) {
+      if ('requires2FA' in response && response.requires2FA && 'userId' in response) {
         setRequires2FA(true);
-        setTwoFAChallengeId(response.challengeId as string);
+        setTwoFAUserId(response.userId as string);
         setInfo('Un code de vérification a été envoyé à votre adresse email');
         setLoading(false);
         return;
@@ -261,7 +261,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   // ✅ NOUVEAU : Soumettre le code 2FA
   const submit2FA = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!twoFAChallengeId || !twoFACode) return;
+    if (!twoFAUserId || !twoFACode) return;
 
     setLoading(true);
     setError(null);
@@ -269,7 +269,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
     try {
       await apiClient.verify2FA(
-        twoFAChallengeId,
+        twoFAUserId,
         twoFACode,
         loginConsentNeeded ? loginConsentAccepted : undefined
       );
@@ -305,7 +305,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   };
 
   // ✅ NOUVEAU : Si 2FA est requis, afficher le formulaire 2FA
-  if (requires2FA && twoFAChallengeId) {
+  if (requires2FA && twoFAUserId) {
     return (
       <Card className="border-2 border-transparent hover:border-emerald-300 transition-all">
         <CardHeader className="bg-gradient-to-br from-emerald-50/80 to-transparent dark:from-emerald-950/30 dark:to-transparent">
@@ -373,7 +373,7 @@ export function AuthForm({ mode }: AuthFormProps) {
               className="w-full"
               onClick={() => {
                 setRequires2FA(false);
-                setTwoFAChallengeId(null);
+                setTwoFAUserId(null);
                 setTwoFACode('');
                 setError(null);
                 setInfo(null);

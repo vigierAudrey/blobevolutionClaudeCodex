@@ -97,7 +97,7 @@ export interface SecurityHealth {
  * The body only carries the 2FA intermediate state or { ok: true }.
  * Kept as union so callsites can distinguish both cases.
  */
-export type TwoFactorChallengeResponse = { requires2FA: true; challengeId: string; message: string };
+export type TwoFactorChallengeResponse = { requires2FA: true; userId: string; message: string };
 export type LoginResponse = { ok: true } | TwoFactorChallengeResponse;
 
 export type AdminAnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
@@ -998,8 +998,8 @@ export const apiClient = {
   send2FA: (email: string) =>
     request('/auth/2fa/send', { method: 'POST', body: JSON.stringify({ email }) }),
 
-  verify2FA: (challengeId: string, code: string, consentAccepted?: boolean) =>
-    request('/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ challengeId, code, consentAccepted }) }) as Promise<{ ok: true }>,
+  verify2FA: (userId: string, code: string, consentAccepted?: boolean) =>
+    request('/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ userId, code, consentAccepted }) }) as Promise<{ ok: true }>,
 
   verifyPro2FA: (email: string, code: string) =>
     request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<{ ok: true; message: string }>,

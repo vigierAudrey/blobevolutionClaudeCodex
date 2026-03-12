@@ -170,6 +170,9 @@ describe('AuthService', () => {
       const decoded = jwt.verify(tokens.accessToken, process.env.JWT_SECRET!) as any;
       expect(decoded.sub).toBe(testUserId);
       expect(decoded.role).toBe('RIDER');
+      expect(typeof decoded.jti).toBe('string');
+      expect(typeof decoded.sid).toBe('string');
+      expect(typeof decoded.ctx).toBe('string');
 
       // Verify refresh token was stored in database
       const refreshTokens = await prisma.refreshToken.findMany({
@@ -270,6 +273,9 @@ describe('AuthService', () => {
       // Verify new access token
       const decoded = jwt.verify(newTokens.accessToken, process.env.JWT_SECRET!) as any;
       expect(decoded.sub).toBe(testUserId);
+      expect(typeof decoded.jti).toBe('string');
+      expect(typeof decoded.sid).toBe('string');
+      expect(typeof decoded.ctx).toBe('string');
 
       // Verify old refresh token was revoked
       const revokedTokens = await prisma.refreshToken.findMany({
