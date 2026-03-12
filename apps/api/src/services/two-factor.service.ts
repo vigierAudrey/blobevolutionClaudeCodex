@@ -167,7 +167,10 @@ export class TwoFactorService {
    * @param email - User email address
    * @returns Success status and message
    */
-  async sendCode(userId: string, email: string): Promise<{ success: boolean; message: string }> {
+  async sendCode(
+    userId: string,
+    email: string,
+  ): Promise<{ success: boolean; message: string; tooManyChallenges?: boolean }> {
     try {
       const code = this.generateCode();
       const codeHash = this.hashCode(code, userId);

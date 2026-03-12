@@ -1,6 +1,6 @@
-import { Router, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { requireAuth, requireVerifiedEmail, verifyAccessToken } from './auth.guard';
+import { requireAdmin, requireAuth, requireAuthSensitive, requireVerifiedEmail, verifyAccessToken } from './auth.guard';
 import { AuthService } from './auth.service';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { twoFactorService } from '../../services/two-factor.service';
@@ -13,6 +13,7 @@ import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmac } from '../../lib/hash-ip';
 import { securityEventAlertService } from '../../services/security-event-alert.service';
 import { bindAuthenticatedSessionUser, rotateAuthenticatedSession } from './auth-session-context';
+import { enforceAdminAllowedIp, grantAdminStepUp, revalidateAdminRole, resolveAdminStepUpBinding } from '../admin/admin.security-guard';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -90,9 +91,27 @@ const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
+const adminStepUpSchema = z.discriminatedUnion('intent', [
+  z.object({
+    intent: z.literal('send'),
+  }),
+  z.object({
+    intent: z.literal('verify'),
+    code: z.string().trim().length(6),
+  }),
+]);
+
 function hashEmail(email: string) {
   return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 }
+
+const stepUpLimiter = createRateLimiter('AUTH', {
+  keyGenerator: (req: Request & { user?: { id?: string }; canonicalIp?: string }): string => {
+    const userId = req.user?.id;
+    const ip = req.canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+    return userId ? `step_up:${userId}` : ip;
+  },
+});
 
 const verifyEmailSchema = z.object({
   token: z.string().min(10),
@@ -478,6 +497,86 @@ authRouter.post('/change-password', requireAuth, async (req, res) => {
     return res.status(500).json({ error: 'Internal error' });
   }
 });
+
+authRouter.post(
+  '/step-up',
+  requireAuth,
+  requireVerifiedEmail,
+  requireAuthSensitive(),
+  requireAdmin,
+  revalidateAdminRole,
+  enforceAdminAllowedIp,
+  stepUpLimiter,
+  async (req, res) => {
+    try {
+      const user = (req as Request & { user?: { id: string; role: string } }).user;
+      if (!user?.id || user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin role required' });
+      }
+
+      const currentUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          deletedAt: true,
+        },
+      });
+
+      if (!currentUser || currentUser.role !== 'ADMIN' || currentUser.deletedAt) {
+        return res.status(403).json({ error: 'Admin role required' });
+      }
+
+      const body = adminStepUpSchema.parse(req.body ?? {});
+
+      if (body.intent === 'send') {
+        const sendResult = await twoFactorService.sendCode(currentUser.id, currentUser.email);
+        if (!sendResult.success) {
+          if (sendResult.tooManyChallenges) {
+            return res.status(429).json({
+              error: 'ADMIN_STEP_UP_CHALLENGE_RATE_LIMITED',
+              message: sendResult.message,
+            });
+          }
+
+          return res.status(503).json({ error: 'Admin step-up unavailable' });
+        }
+
+        return res.json({ message: sendResult.message });
+      }
+
+      const clientIp = getClientIp(req);
+      const verification = await twoFactorService.verifyCode(currentUser.id, body.code, clientIp);
+      if (!verification.valid) {
+        return res.status(401).json({ error: verification.message });
+      }
+
+      const result = await grantAdminStepUp(currentUser.id, resolveAdminStepUpBinding(req));
+      if (!result.ok) {
+        if (result.reason === 'STORAGE_UNAVAILABLE') {
+          return res.status(503).json({ error: 'Admin step-up unavailable' });
+        }
+
+        return res.status(401).json({ error: 'Reauthentication required' });
+      }
+
+      return res.json({
+        message: 'Admin step-up granted',
+        stepUpUntil: result.stepUpUntil,
+      });
+    } catch (err: any) {
+      if (err?.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid input', details: err.errors });
+      }
+
+      secureLogger.error('ADMIN_STEP_UP_ERROR', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
 
 // 2FA Routes
 authRouter.post('/2fa/send', async (req, res) => {
