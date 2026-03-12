@@ -268,6 +268,9 @@ jobs:
           JEST_DB_PREPARED: 'true'
         run: pnpm --filter @blobinfini/api test
 
+      - name: Fail on ERL runtime regression signature in logs
+        run: bash scripts/check-no-erl-runtime-log.sh
+
   migrate-test-derived:
     name: Advisory Derived Migration Replay
     runs-on: ubuntu-22.04
@@ -353,9 +356,7 @@ jobs:
         run: pnpm --filter @blobinfini/web build
 
       - name: Type check Web
-        continue-on-error: true
         run: pnpm --filter @blobinfini/web type-check
-        # TODO: Fix web type-check (missing deps: zod, @storybook/*, unified, mdx)
 
   web-tests:
     name: Web Tests
