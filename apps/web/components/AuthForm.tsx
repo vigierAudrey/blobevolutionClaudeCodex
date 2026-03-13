@@ -373,7 +373,7 @@ export function AuthForm({ mode }: AuthFormProps) {
               className="w-full"
               onClick={() => {
                 setRequires2FA(false);
-                setTwoFAUserId(null);
+                setTwoFAChallengeId(null);
                 setTwoFACode('');
                 setError(null);
                 setInfo(null);

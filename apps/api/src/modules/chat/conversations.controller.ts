@@ -120,7 +120,7 @@ conversationsRouter.get('/', async (req, res) => {
             FROM "Message" m
             INNER JOIN "ConversationMember" cm ON cm."conversationId" = m."conversationId"
             WHERE
-              m."conversationId" = ANY(${conversationIds}::uuid[])
+              m."conversationId" = ANY(${conversationIds}::text[])
               AND m."senderId" != ${userId}
               AND cm."userId" = ${userId}
               AND (cm."lastReadAt" IS NULL OR m."createdAt" > cm."lastReadAt")

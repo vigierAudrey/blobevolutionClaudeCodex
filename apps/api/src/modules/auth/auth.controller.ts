@@ -338,7 +338,7 @@ authRouter.post('/refresh', validate(refreshSchema), async (req, res) => {
     const { refreshToken: bodyRefreshToken } = req.body as z.infer<typeof refreshSchema>;
     const refreshToken = bodyRefreshToken ?? req.cookies?.refreshToken;
     if (typeof refreshToken !== 'string' || refreshToken.trim().length < 10) {
-      return res.status(401).json({ error: 'Invalid refresh token' });
+      return res.status(401).json({ error: 'Invalid refresh credential' });
     }
     const authContext = await rotateAuthenticatedSession(req);
     const result = await service.refresh(refreshToken, authContext);
@@ -354,7 +354,7 @@ authRouter.post('/refresh', validate(refreshSchema), async (req, res) => {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
-      return res.status(401).json({ error: 'Invalid refresh token' });
+      return res.status(401).json({ error: 'Invalid refresh credential' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }

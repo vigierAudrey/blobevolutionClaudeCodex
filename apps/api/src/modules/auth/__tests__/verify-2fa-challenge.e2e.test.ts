@@ -99,7 +99,7 @@ async function start2FALogin(app: ReturnType<typeof createApp>, email: string, p
 
 async function verify2FA(
   app: ReturnType<typeof createApp>,
-  payload: { userId: string; code: string } | Record<string, unknown>,
+  payload: { challengeId: string; code: string } | Record<string, unknown>,
   ip: string,
 ) {
   const { cookies, csrfToken } = await getCsrf(app);
@@ -154,24 +154,24 @@ describe('Auth verify-2fa flow', () => {
     await prisma.user.deleteMany();
   });
 
-  it('retourne userId sans exposer challengeId ni email brut', async () => {
+  it('retourne challengeId sans exposer userId ni email brut', async () => {
     const admin = await createAdmin();
     const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.10');
 
-    expect(login.body).toMatchObject({ requires2FA: true, userId: admin.userId });
+    expect(login.body).toMatchObject({ requires2FA: true, challengeId: expect.any(String) });
     expect(login.body).toHaveProperty('message');
-    expect(login.body).not.toHaveProperty('challengeId');
+    expect(login.body).not.toHaveProperty('userId');
     expect(JSON.stringify(login.body)).not.toContain(admin.email);
     expect(mockSend2FACode).toHaveBeenCalledTimes(1);
   });
 
-  it('userId invalide => 401', async () => {
+  it('challengeId invalide => 401', async () => {
     const admin = await createAdmin();
     await start2FALogin(app, admin.email, admin.password, '203.0.113.11');
 
     const res = await verify2FA(
       app,
-      { userId: randomUUID(), code: '123456' },
+      { challengeId: randomUUID(), code: '123456' },
       '203.0.113.11',
     );
 
@@ -185,7 +185,7 @@ describe('Auth verify-2fa flow', () => {
 
     const first = await verify2FA(
       app,
-      { userId: login.body.userId as string, code },
+      { challengeId: login.body.challengeId as string, code },
       '203.0.113.12',
     );
 
@@ -197,20 +197,20 @@ describe('Auth verify-2fa flow', () => {
 
     const second = await verify2FA(
       app,
-      { userId: login.body.userId as string, code },
+      { challengeId: login.body.challengeId as string, code },
       '203.0.113.12',
     );
 
     expect(second.status).toBe(401);
   });
 
-  it('payload legacy challengeId est rejete', async () => {
+  it('payload avec userId direct est rejete (Gate C.3)', async () => {
     const admin = await createAdmin();
     await start2FALogin(app, admin.email, admin.password, '203.0.113.13');
 
     const res = await verify2FA(
       app,
-      { challengeId: randomUUID(), code: '123456' },
+      { userId: admin.userId, code: '123456' },
       '203.0.113.13',
     );
 
