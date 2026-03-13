@@ -117,7 +117,18 @@ export class CacheService {
 
     try {
       const value = await this.client.get(key);
-      return value ? JSON.parse(value) : null;
+      if (!value) {
+        return null;
+      }
+
+      const normalizedValue =
+        typeof value === 'string'
+          ? value
+          : value instanceof Uint8Array
+            ? Buffer.from(value).toString('utf8')
+            : null;
+
+      return normalizedValue ? JSON.parse(normalizedValue) : null;
     } catch (error) {
       logError(`Cache get error for key ${key}:`, error);
       return null;

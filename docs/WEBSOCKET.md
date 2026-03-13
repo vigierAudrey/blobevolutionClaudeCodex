@@ -304,6 +304,81 @@ Clever Cloud supporte WebSocket nativement :
 ```bash
 # Production uniquement
 ALLOWED_ORIGINS=https://blobinfini.vercel.app
+
+# Trust proxy sûr (IP réelle pour protections pre-auth / per-IP)
+TRUST_PROXY_MODE=ips
+TRUSTED_PROXY_IPS=10.2.0.0/16,172.31.0.0/16
+
+# Rate limiting handshake pre-auth (avant jwt.verify)
+WS_PREAUTH_RL_ENABLED=true
+WS_PREAUTH_RL_POINTS=30
+WS_PREAUTH_RL_WINDOW_MS=10000
+WS_PREAUTH_RL_BASE_BAN_MS=60000
+WS_PREAUTH_RL_MAX_BAN_MS=600000
+
+# Slow consumer guard (feature flag)
+WS_SLOW_CONSUMER_GUARD=on
+WS_SLOW_CONSUMER_CHECK_INTERVAL_MS=1000
+WS_SLOW_CONSUMER_MAX_STREAK=5
+WS_SLOW_CONSUMER_MAX_BUFFERED_PACKETS=128
+
+# Burst amortization (local per-second)
+WS_BURST_POINTS_PER_SEC=10
+WS_BURST_CAPACITY=20
+WS_BURST_STRICT_POINTS_PER_SEC=4
+WS_BURST_STRICT_CAPACITY=8
+WS_BURST_BLOCK_MS=1000
+
+# Fanout budget
+WS_PUSH_PER_MESSAGE_MAX=50
+WS_PUSH_QUEUE_MAX_PENDING=500
+WS_PUSH_QUEUE_CONCURRENCY=20
+WS_CONVERSATION_TOUCH_MIN_INTERVAL_MS=1000
+```
+
+### Seuils par défaut (backend) et personnalisation
+
+Les valeurs suivantes sont les **defaults effectifs** quand la variable n'est pas définie.
+Pour les changer : définir la variable dans l'environnement de déploiement puis redémarrer l'API.
+
+| Variable | Défaut | Rôle |
+|----------|--------|------|
+| `WS_PREAUTH_RL_ENABLED` | `true` (sauf `false` explicite) | Active le rate-limit pre-auth handshake |
+| `WS_PREAUTH_RL_POINTS` | `30` | Requêtes handshake/IP par fenêtre |
+| `WS_PREAUTH_RL_WINDOW_MS` | `10000` | Fenêtre de comptage (ms) |
+| `WS_PREAUTH_RL_BASE_BAN_MS` | `60000` | Ban initial (ms) |
+| `WS_PREAUTH_RL_MAX_BAN_MS` | `600000` | Ban max progressif (ms) |
+| `WS_SLOW_CONSUMER_GUARD` | `off` | Active la protection slow-consumer (`on`/`off`) |
+| `WS_SLOW_CONSUMER_CHECK_INTERVAL_MS` | `1000` | Fréquence de contrôle congestion (ms) |
+| `WS_SLOW_CONSUMER_MAX_STREAK` | `5` | Nombre de checks congestifs avant disconnect |
+| `WS_SLOW_CONSUMER_MAX_BUFFERED_PACKETS` | `128` | Seuil de buffer write |
+| `WS_BURST_POINTS_PER_SEC` | `10` | Refill token bucket local (normal) |
+| `WS_BURST_CAPACITY` | `20` | Capacité burst locale (normal) |
+| `WS_BURST_STRICT_POINTS_PER_SEC` | `4` | Refill bucket strict (fallback Redis down) |
+| `WS_BURST_STRICT_CAPACITY` | `8` | Capacité burst stricte |
+| `WS_BURST_BLOCK_MS` | `1000` | Durée de blocage après burst |
+| `WS_PUSH_PER_MESSAGE_MAX` | `50` | Budget max fanout push/message |
+| `WS_PUSH_QUEUE_MAX_PENDING` | `500` | File max push en attente |
+| `WS_PUSH_QUEUE_CONCURRENCY` | `20` | Concurrence d'exécution des push |
+| `WS_CONVERSATION_TOUCH_MIN_INTERVAL_MS` | `1000` | Coalescing min des updates conversation |
+
+### Lancer les tests WebSocket
+
+```bash
+# Suite WS hardening (P0/P1)
+npm run test --workspace=@blobinfini/api -- --runInBand \
+  src/lib/__tests__/socket-preauth-rate-limit.test.ts \
+  src/lib/__tests__/socket-slow-consumer-guard.test.ts \
+  src/lib/__tests__/socket-sendmessage-burst-rl.test.ts \
+  src/lib/__tests__/socket-fanout-budget.test.ts \
+  src/lib/__tests__/socket-sendmessage-global-rl.test.ts \
+  src/lib/__tests__/socket-typing-flood.test.ts \
+  src/lib/__tests__/socket-origin-authz.test.ts \
+  src/lib/__tests__/socket-connection-limits.test.ts \
+  src/lib/__tests__/socket-reconnection-storm.test.ts \
+  src/lib/__tests__/socket-membership-revocation.test.ts \
+  src/lib/__tests__/socket-auth-hardening.test.ts \
+  src/lib/__tests__/socket-authz-typing.test.ts
 ```
 
 ## 💰 Coûts

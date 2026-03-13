@@ -87,10 +87,10 @@ describe('TwoFactorService', () => {
       expect(emailCalls).toHaveLength(2);
       expect(emailCalls[0][1]).not.toBe(emailCalls[1][1]); // Different codes
 
-      // Check that different hashes were stored
+      // Check that different hashes were stored (code caches are calls 1 and 3; calls 2 and 4 are challengeId)
       const cacheCalls = mockCacheService.set.mock.calls;
-      expect(cacheCalls).toHaveLength(2);
-      expect(cacheCalls[0][1]).not.toBe(cacheCalls[1][1]); // Different hashes
+      expect(cacheCalls).toHaveLength(4);
+      expect(cacheCalls[0][1]).not.toBe(cacheCalls[2][1]); // Different hashes
     });
   });
 
@@ -116,8 +116,9 @@ describe('TwoFactorService', () => {
       expect(mockCacheService.set).toHaveBeenNthCalledWith(
         1, '2fa:user1', expect.any(String), 300
       );
+      // call 2 is challengeId for user1
       expect(mockCacheService.set).toHaveBeenNthCalledWith(
-        2, '2fa:user2', expect.any(String), 300
+        3, '2fa:user2', expect.any(String), 300
       );
     });
   });
@@ -451,8 +452,10 @@ describe('TwoFactorService', () => {
         '2fa:user3', expect.any(String), 300
       );
 
-      // All codes should be different
-      const codes = mockCacheService.set.mock.calls.map(call => call[1]);
+      // All code hashes should be different (filter out challengeId entries)
+      const codes = mockCacheService.set.mock.calls
+        .filter(call => !String(call[0]).startsWith('2fa:challenge:'))
+        .map(call => call[1]);
       expect(new Set(codes).size).toBe(3); // All unique
     });
 
@@ -474,8 +477,8 @@ describe('TwoFactorService', () => {
         expect(result.success).toBe(true);
       });
 
-      // Multiple codes should have been generated
-      expect(mockCacheService.set).toHaveBeenCalledTimes(3);
+      // Multiple codes should have been generated (2 cache entries per sendCode: code + challengeId)
+      expect(mockCacheService.set).toHaveBeenCalledTimes(6);
     });
   });
 

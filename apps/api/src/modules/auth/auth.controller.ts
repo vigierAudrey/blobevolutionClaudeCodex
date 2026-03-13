@@ -1,9 +1,9 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { requireAuth, requireVerifiedEmail } from './auth.guard';
+import { requireAdmin, requireAuth, requireAuthSensitive, requireVerifiedEmail, verifyAccessToken } from './auth.guard';
 import { AuthService } from './auth.service';
 import { clientPrisma as prisma } from '@blobinfini/database';
-import { twoFactorService } from '../../services/two-factor.service';
+import { twoFactorService, verifyChallengeAndCode } from '../../services/two-factor.service';
 import { validate } from '../../middleware/validate';
 import { passwordSchema } from '../../utils/password-validator';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
@@ -12,9 +12,46 @@ import { createHash } from 'crypto';
 import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmac } from '../../lib/hash-ip';
 import { securityEventAlertService } from '../../services/security-event-alert.service';
+import { bindAuthenticatedSessionUser, rotateAuthenticatedSession } from './auth-session-context';
+import { enforceAdminAllowedIp, grantAdminStepUp, revalidateAdminRole, resolveAdminStepUpBinding } from '../admin/admin.security-guard';
 
 export const authRouter = Router();
 const service = new AuthService();
+
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+const ACCESS_COOKIE_BASE = {
+  httpOnly: true,
+  secure: IS_PROD,
+  sameSite: 'lax' as const,
+  path: '/',
+} as const;
+
+const REFRESH_COOKIE_BASE = {
+  httpOnly: true,
+  secure: IS_PROD,
+  sameSite: 'lax' as const,
+  path: '/auth/refresh',
+} as const;
+
+function setAuthCookies(
+  res: Response,
+  tokens: { accessToken: string; refreshToken: string; refreshMaxAgeMs?: number },
+): void {
+  res.cookie('accessToken', tokens.accessToken, {
+    ...ACCESS_COOKIE_BASE,
+    maxAge: 15 * 60 * 1000,
+  });
+  res.cookie('refreshToken', tokens.refreshToken, {
+    ...REFRESH_COOKIE_BASE,
+    maxAge: tokens.refreshMaxAgeMs ?? 30 * 24 * 60 * 60 * 1000,
+  });
+}
+
+function clearAuthCookies(res: Response): void {
+  res.clearCookie('accessToken', ACCESS_COOKIE_BASE);
+  res.clearCookie('refreshToken', REFRESH_COOKIE_BASE);
+}
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -32,7 +69,7 @@ const loginSchema = z.object({
 });
 
 const refreshSchema = z.object({
-  refreshToken: z.string().min(10),
+  refreshToken: z.string().min(10).optional(),
 });
 
 const logoutSchema = z.object({
@@ -54,9 +91,27 @@ const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
+const adminStepUpSchema = z.discriminatedUnion('intent', [
+  z.object({
+    intent: z.literal('send'),
+  }),
+  z.object({
+    intent: z.literal('verify'),
+    code: z.string().trim().length(6),
+  }),
+]);
+
 function hashEmail(email: string) {
   return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 }
+
+const stepUpLimiter = createRateLimiter('AUTH', {
+  keyGenerator: (req: Request & { user?: { id?: string }; canonicalIp?: string }): string => {
+    const userId = req.user?.id;
+    const ip = req.canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+    return userId ? `step_up:${userId}` : ip;
+  },
+});
 
 const verifyEmailSchema = z.object({
   token: z.string().min(10),
@@ -74,7 +129,8 @@ const send2FASchema = z.object({
 const verify2FAProSchema = z.object({
   email: z.string().email(),
   code: z.string().length(6, 'Code must be 6 digits'),
-});
+  consentAccepted: z.boolean().optional().default(false),
+}).strict();
 
 authRouter.post('/register', validate(registerSchema), async (req, res) => {
   try {
@@ -117,30 +173,33 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
   const userAgent = categorizeUserAgent(req.get('User-Agent'));
 
   try {
-    const result = await service.login(email, password, { consentAccepted, consentIp: ip });
+    const user = await service.authenticateLogin(email, password);
+    const authContext = await rotateAuthenticatedSession(req, user.id);
+    const result = await service.generateTokens(user, { consentAccepted, consentIp: ip }, authContext);
 
     // Log successful login attempt
-    const user = await prisma.user.findUnique({ where: { email } });
+    const storedUser = await prisma.user.findUnique({ where: { email } });
     await prisma.loginAttempt.create({
       data: {
         email,
         ipHash: hashIpHmac(ip) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
         userAgent,
         success: true,
-        userId: user?.id
+        userId: storedUser?.id
       }
     }).catch(() => {}); // Ignore logging errors
 
     // Check for suspicious pattern: successful login after multiple failures (possible brute-force success)
-    if (user?.id && ip) {
+    if (storedUser?.id && ip) {
       securityEventAlertService.reportSuccessAfterFailures(
         email,
         hashIpHmac(ip)!,
-        user.id
+        storedUser.id
       ).catch(() => {}); // Fire-and-forget, never fail login flow
     }
 
-    res.json(result);
+    setAuthCookies(res, result);
+    return res.json({ ok: true });
   } catch (err: any) {
     // Log failed login attempt
     let reason = 'Unknown error';
@@ -181,10 +240,16 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
     // ✅ NOUVEAU : Gestion 2FA admin
     if (err?.code === '2FA_REQUIRED') {
       // Envoyer le code 2FA par email
-      await twoFactorService.sendCode(err.userId, err.email);
+      const sendResult = await twoFactorService.sendCode(err.userId, err.email);
+      if (!sendResult.success) {
+        if (sendResult.tooManyChallenges) {
+          return res.status(429).json({ error: sendResult.message });
+        }
+        return res.status(503).json({ error: '2FA service unavailable' });
+      }
       return res.status(200).json({
         requires2FA: true,
-        userId: err.userId,
+        challengeId: sendResult.challengeId,
         message: 'Code de vérification envoyé par email'
       });
     }
@@ -198,26 +263,28 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
   }
 });
 
-// ✅ NOUVEAU : Endpoint pour vérifier le code 2FA admin
+// ✅ Endpoint pour vérifier le code 2FA admin — userId résolu côté serveur via challengeId
 const verify2FASchema = z.object({
-  userId: z.string().uuid(),
+  challengeId: z.string().uuid(),
   code: z.string().length(6),
   consentAccepted: z.boolean().optional().default(false),
-});
+}).strict();
 
 authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
   try {
-    const { userId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
+    const { challengeId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
 
     // Extract client IP for rate limiting (secure extraction)
     const clientIp = getClientIp(req);
 
-    // Vérifier le code 2FA avec rate limiting
-    const verification = await twoFactorService.verifyCode(userId, code, clientIp);
+    // Resolve challengeId → userId and verify code (userId never comes from client body)
+    const verification = await verifyChallengeAndCode(challengeId, code, clientIp);
 
-    if (!verification.valid) {
+    if (!verification.valid || !verification.userId) {
       return res.status(401).json({ error: verification.message });
     }
+
+    const userId = verification.userId;
 
     // Code valide - récupérer l'utilisateur et générer les tokens
     const user = await prisma.user.findUnique({
@@ -247,14 +314,17 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
 
     // Générer les tokens
     const ip = clientIp || undefined;
-    const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip });
+    const authContext = await rotateAuthenticatedSession(req, user.id);
+    const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip }, authContext);
 
-    return res.json(tokens);
+    setAuthCookies(res, tokens);
+    return res.json({ ok: true });
   } catch (err: any) {
+    // system.error : erreur inattendue dans le flow 2FA — pas de code ni token dans les data
     secureLogger.error('2FA_VERIFICATION_ERROR', {
       error: err?.message,
       name: err?.name,
-      userId: req.body?.userId
+      userId: req.body?.userId,
     });
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
@@ -265,15 +335,26 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
 
 authRouter.post('/refresh', validate(refreshSchema), async (req, res) => {
   try {
-    const { refreshToken } = req.body as z.infer<typeof refreshSchema>;
-    const result = await service.refresh(refreshToken);
-    res.json(result);
+    const { refreshToken: bodyRefreshToken } = req.body as z.infer<typeof refreshSchema>;
+    const refreshToken = bodyRefreshToken ?? req.cookies?.refreshToken;
+    if (typeof refreshToken !== 'string' || refreshToken.trim().length < 10) {
+      return res.status(401).json({ error: 'Invalid refresh credential' });
+    }
+    const authContext = await rotateAuthenticatedSession(req);
+    const result = await service.refresh(refreshToken, authContext);
+    const accessTokenPayload = verifyAccessToken(result.accessToken);
+    if (!accessTokenPayload?.sub) {
+      return res.status(503).json({ error: 'Session binding unavailable' });
+    }
+    await bindAuthenticatedSessionUser(req, accessTokenPayload.sub);
+    setAuthCookies(res, result);
+    res.json({ ok: true });
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
-      return res.status(401).json({ error: 'Invalid refresh token' });
+      return res.status(401).json({ error: 'Invalid refresh credential' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -281,15 +362,20 @@ authRouter.post('/refresh', validate(refreshSchema), async (req, res) => {
 
 authRouter.post('/logout', requireAuth, async (req, res) => {
   try {
-    const { allDevices, refreshToken } = logoutSchema.parse(req.body ?? {});
+    const { allDevices, refreshToken: bodyRefreshToken } = logoutSchema.parse(req.body ?? {});
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const refreshToken = bodyRefreshToken ?? req.cookies?.refreshToken;
 
     if (allDevices || !refreshToken) {
       const result = await service.logoutAll(userId);
+      await rotateAuthenticatedSession(req);
+      clearAuthCookies(res);
       return res.json(result);
     }
     const result = await service.logoutSingle(userId, refreshToken);
+    await rotateAuthenticatedSession(req);
+    clearAuthCookies(res);
     return res.json(result);
   } catch (err: any) {
     if (err?.name === 'ZodError') {
@@ -309,7 +395,7 @@ authRouter.post('/verify-email', async (req, res) => {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+      return res.status(401).json({ error: 'Invalid or expired link' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -323,6 +409,7 @@ authRouter.post(
   async (req, res) => {
     try {
       const { email } = resendVerifySchema.parse(req.body);
+      // audit.info : déclenchement d'un email transactionnel — trace légère, emailHash safe
       secureLogger.info('AUTH_RESEND_VERIFICATION_REQUEST', { emailHash: hashEmail(email) });
       const result = await service.resendEmailVerification(email);
       res.json(result);
@@ -364,6 +451,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
 authRouter.post('/forgot-password', async (req, res) => {
   try {
     const { email } = forgotSchema.parse(req.body);
+    // audit.info : demande de reset — emailHash safe (SHA-256), pas d'email brut
     secureLogger.info('AUTH_FORGOT_PASSWORD_REQUEST', { emailHash: hashEmail(email) });
     const result = await service.forgotPassword(email);
     res.json(result);
@@ -379,13 +467,14 @@ authRouter.post('/reset-password', async (req, res) => {
   try {
     const { token, password } = resetSchema.parse(req.body);
     const result = await service.resetPassword(token, password);
+    clearAuthCookies(res);
     res.json(result);
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+      return res.status(401).json({ error: 'Invalid or expired link' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -397,6 +486,8 @@ authRouter.post('/change-password', requireAuth, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
     const result = await service.changePassword(userId, currentPassword, newPassword);
+    await rotateAuthenticatedSession(req);
+    clearAuthCookies(res);
     res.json(result);
   } catch (err: any) {
     if (err?.name === 'ZodError') {
@@ -408,6 +499,86 @@ authRouter.post('/change-password', requireAuth, async (req, res) => {
     return res.status(500).json({ error: 'Internal error' });
   }
 });
+
+authRouter.post(
+  '/step-up',
+  requireAuth,
+  requireVerifiedEmail,
+  requireAuthSensitive(),
+  requireAdmin,
+  revalidateAdminRole,
+  enforceAdminAllowedIp,
+  stepUpLimiter,
+  async (req, res) => {
+    try {
+      const user = (req as Request & { user?: { id: string; role: string } }).user;
+      if (!user?.id || user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin role required' });
+      }
+
+      const currentUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          deletedAt: true,
+        },
+      });
+
+      if (!currentUser || currentUser.role !== 'ADMIN' || currentUser.deletedAt) {
+        return res.status(403).json({ error: 'Admin role required' });
+      }
+
+      const body = adminStepUpSchema.parse(req.body ?? {});
+
+      if (body.intent === 'send') {
+        const sendResult = await twoFactorService.sendCode(currentUser.id, currentUser.email);
+        if (!sendResult.success) {
+          if (sendResult.tooManyChallenges) {
+            return res.status(429).json({
+              error: 'ADMIN_STEP_UP_CHALLENGE_RATE_LIMITED',
+              message: sendResult.message,
+            });
+          }
+
+          return res.status(503).json({ error: 'Admin step-up unavailable' });
+        }
+
+        return res.json({ message: sendResult.message });
+      }
+
+      const clientIp = getClientIp(req);
+      const verification = await twoFactorService.verifyCode(currentUser.id, body.code, clientIp);
+      if (!verification.valid) {
+        return res.status(401).json({ error: verification.message });
+      }
+
+      const result = await grantAdminStepUp(currentUser.id, resolveAdminStepUpBinding(req));
+      if (!result.ok) {
+        if (result.reason === 'STORAGE_UNAVAILABLE') {
+          return res.status(503).json({ error: 'Admin step-up unavailable' });
+        }
+
+        return res.status(401).json({ error: 'Reauthentication required' });
+      }
+
+      return res.json({
+        message: 'Admin step-up granted',
+        stepUpUntil: result.stepUpUntil,
+      });
+    } catch (err: any) {
+      if (err?.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid input', details: err.errors });
+      }
+
+      secureLogger.error('ADMIN_STEP_UP_ERROR', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
 
 // 2FA Routes
 authRouter.post('/2fa/send', async (req, res) => {
@@ -445,7 +616,7 @@ authRouter.post('/2fa/send', async (req, res) => {
 
 authRouter.post('/2fa/verify', async (req, res) => {
   try {
-    const { email, code } = verify2FAProSchema.parse(req.body);
+    const { email, code, consentAccepted } = verify2FAProSchema.parse(req.body);
 
     // Vérifier que l'utilisateur existe et est PRO
     const user = await prisma.user.findUnique({
@@ -470,12 +641,14 @@ authRouter.post('/2fa/verify', async (req, res) => {
       // Code valide - générer les tokens JWT comme pour un login normal
       const ip = clientIp || undefined;
 
-      // Utiliser le service de login avec des données simulées (pas besoin de re-vérifier password)
-      const tokens = await service.generateTokens(user, { consentAccepted: true, consentIp: ip });
-
+      // Utiliser le service de login avec les données de consentement fournies par le client.
+      // consentAccepted ne doit pas être hardcodé à true — on lit la valeur du body.
+      const authContext = await rotateAuthenticatedSession(req, user.id);
+      const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip }, authContext);
+      setAuthCookies(res, tokens);
       res.json({
         message: 'Authentification 2FA réussie',
-        ...tokens
+        ok: true,
       });
     } else {
       res.status(401).json({ error: verification.message });

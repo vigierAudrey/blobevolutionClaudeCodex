@@ -8,3 +8,15 @@ export const prosNearbySchema = z.object({
 });
 
 export type ProsNearbyInput = z.infer<typeof prosNearbySchema>;
+
+export const nearbyProSchema = z.object({
+  proPublicId: z.string().uuid(),
+  businessName: z.string().nullable(),
+  photoUrl: z.string().nullable(),
+  verified: z.boolean(),
+  distanceBucket: z.enum(['<5km', '5-15km', '15-30km', '>30km']),
+  sports: z.array(z.enum(['surf', 'kitesurf'])),
+  openAvailabilityCount: z.number().int().nonnegative(),
+});
+
+export type NearbyProOutput = z.infer<typeof nearbyProSchema>;

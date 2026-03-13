@@ -112,19 +112,21 @@ conversationsRouter.get('/', async (req, res) => {
     // Step 6: Batch load unread counts with a single query (1 query)
     const conversationIds = filteredConvs.map((cm: ConversationMemberWithRelations) => cm.conversation.id);
     const unreadCountsRaw = conversationIds.length > 0
-      ? await prisma.$queryRaw<Array<{ conversationId: string; count: bigint }>>`
-          SELECT
-            m."conversationId",
-            COUNT(*) as count
-          FROM "Message" m
-          INNER JOIN "ConversationMember" cm ON cm."conversationId" = m."conversationId"
-          WHERE
-            m."conversationId" IN (${Prisma.join(conversationIds)})
-            AND m."senderId" != ${userId}
-            AND cm."userId" = ${userId}
-            AND (cm."lastReadAt" IS NULL OR m."createdAt" > cm."lastReadAt")
-          GROUP BY m."conversationId"
-        `
+      ? await prisma.$queryRaw<Array<{ conversationId: string; count: bigint }>>(
+          Prisma.sql`
+            SELECT
+              m."conversationId",
+              COUNT(*) as count
+            FROM "Message" m
+            INNER JOIN "ConversationMember" cm ON cm."conversationId" = m."conversationId"
+            WHERE
+              m."conversationId" = ANY(${conversationIds}::text[])
+              AND m."senderId" != ${userId}
+              AND cm."userId" = ${userId}
+              AND (cm."lastReadAt" IS NULL OR m."createdAt" > cm."lastReadAt")
+            GROUP BY m."conversationId"
+          `
+        )
       : [];
 
     // Step 7: Create lookup maps for O(1) access

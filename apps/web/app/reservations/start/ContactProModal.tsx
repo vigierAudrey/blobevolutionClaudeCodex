@@ -146,7 +146,7 @@ export function ContactProModal({ pro, onClose, onSubmitted }: ContactProModalPr
         {pro && (
           <form onSubmit={submit} className="space-y-4">
             <DialogHeader>
-              <DialogTitle>Contacter {pro.businessName || pro.email}</DialogTitle>
+              <DialogTitle>Contacter {pro.businessName ?? 'le pro'}</DialogTitle>
               <DialogDescription>
                 Tu peux demander un cours ou te présenter, même sans créneau publié
               </DialogDescription>

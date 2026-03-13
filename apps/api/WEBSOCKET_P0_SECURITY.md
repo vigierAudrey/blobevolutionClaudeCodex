@@ -50,6 +50,14 @@ if (isProduction && flagValue === 'false') {
 - Tracking en mémoire = limite **par instance**
 - Si 3 instances → limite effective = 10 × 3 = 30 connexions/user (global)
 - **Solution P1**: Redis pour tracking global (documenté ligne 263-276)
+- **Mode sûr immédiat**: si `replicas > 1` et pas d'adapter Redis Socket.IO, activer des **sticky sessions**.
+  - Risque sans sticky + sans adapter partagé: `socketsLeave` reste best-effort local,
+    donc une socket sur un autre nœud peut encore recevoir brièvement après révocation.
+
+**Guardrail runtime (boot)**:
+- Le serveur WS loggue `WS_MULTI_INSTANCE_WITHOUT_REDIS_ADAPTER` si:
+  - `REPLICAS > 1`
+  - `WS_ADAPTER_REDIS` absent ou différent de `true`
 
 **Choix design**:
 - Redis non ajouté car nouvelle dépendance (contrainte utilisateur)

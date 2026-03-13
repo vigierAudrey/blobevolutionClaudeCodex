@@ -13,12 +13,14 @@ type AdminGuardRequest = Request & {
   };
 };
 
-const primaryAdminEmails = new Set(
-  (process.env.PRIMARY_ADMIN_EMAILS || 'dev+admin@test.com')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean)
-);
+function getPrimaryAdminEmailsFromEnv(): Set<string> {
+  return new Set(
+    String(process.env.PRIMARY_ADMIN_EMAILS ?? '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
 
 async function loadAdminProfile(req: AdminGuardRequest) {
   if (req.adminProfile) {
@@ -43,6 +45,7 @@ async function loadAdminProfile(req: AdminGuardRequest) {
   });
 
   const email = dbUser?.email ?? null;
+  const primaryAdminEmails = getPrimaryAdminEmailsFromEnv();
   const isPrimary = email ? primaryAdminEmails.has(email.toLowerCase()) : false;
 
   let permissions: Permission[] = (dbUser?.adminProfile?.permissions ?? []) as Permission[];

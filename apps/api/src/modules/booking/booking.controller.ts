@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
@@ -9,6 +10,41 @@ import { decideBookingRequestSchema } from './dto/decideRequest.dto';
 import { searchAvailabilitySchema } from './dto/searchAvailability.dto';
 import { prosNearbySchema } from './dto/prosNearby.dto';
 import { computeZoneLarge, recordServerAnalyticsEvent } from '../../services/analytics/events.service';
+import { secureLogger } from '../../utils/secure-logger';
+
+const isBookingRequestRateLimitDisabled = () =>
+  String(process.env.RATE_LIMIT_DISABLED_FOR_BOOKING_REQUESTS ?? '').toLowerCase() === 'true';
+
+const shouldSkipBookingRequestRateLimit = () => {
+  if (process.env.NODE_ENV === 'test') {
+    return process.env.ENABLE_RATE_LIMIT_IN_TESTS !== 'true';
+  }
+  if (process.env.NODE_ENV !== 'production' && isBookingRequestRateLimitDisabled()) {
+    return true;
+  }
+  return false;
+};
+
+// Anti-spam: max 5 booking requests per 15-minute window per rider
+const bookingRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: shouldSkipBookingRequestRateLimit,
+  keyGenerator: (req: Request) => {
+    const userId = (req as { user?: { id: string } }).user?.id;
+    return userId ? `rider:${userId}:booking_request` : ipKeyGenerator(req.ip ?? '');
+  },
+  handler: (req: Request, res: Response) => {
+    const userId = (req as { user?: { id: string } }).user?.id;
+    secureLogger.security('Rate limit exceeded: POST /booking/requests', { userId, ip: req.ip });
+    const retryAfter = Math.ceil(
+      (((req as { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime?.getTime() ?? Date.now() + 900_000) - Date.now()) / 1000
+    );
+    return res.status(429).json({ error: 'RATE_LIMIT_EXCEEDED', retryAfter });
+  },
+});
 
 export const bookingRouter = Router();
 
@@ -244,7 +280,7 @@ bookingRouter.get('/pros/nearby', ensureRole('RIDER'), async (req: Authenticated
   }
 });
 
-bookingRouter.post('/requests', ensureRole('RIDER'), async (req: AuthenticatedRequest, res: Response) => {
+bookingRouter.post('/requests', ensureRole('RIDER'), bookingRequestLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const body = createBookingRequestSchema.parse(req.body);
     const current = req.user;

@@ -8,10 +8,14 @@ import { systemAlertService } from '../../services/system-alert.service';
 import { audit } from '../../middleware/audit';
 import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
 import { requirePermissions } from './admin.guard';
+import { enforceAdminAllowedIp, requireAdminStepUp } from './admin.security-guard';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
+import { invalidateSessionCache } from '../../lib/auth-session-store';
+import { disconnectUserSockets } from '../../lib/socket';
 import { analyticsReportService } from '../../services/analytics/reports.service';
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
+import { capAdminLimit } from '../../utils/admin-list-cap';
 
 type ConversationMemberWithUser = Prisma.ConversationMemberGetPayload<{
   include: {
@@ -30,7 +34,6 @@ type LoginAttemptWithUser = Prisma.LoginAttemptGetPayload<{
     user: {
       select: {
         id: true;
-        email: true;
         role: true;
       };
     };
@@ -91,6 +94,7 @@ export const adminRouter = Router();
 // Toutes les routes admin nécessitent une authentification, un email vérifié et le rôle admin
 adminRouter.use(requireAuth, requireVerifiedEmail);
 adminRouter.use(requireAdmin);
+adminRouter.use(enforceAdminAllowedIp);
 
 // Statistiques principales
 adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:stats:view', () => 'admin:stats'), async (req, res) => {
@@ -217,7 +221,7 @@ adminRouter.get(
   async (req, res) => {
   try {
     const page = parseInt(req.query.page as string || '1');
-    const limit = parseInt(req.query.limit as string || '20');
+    const limit = capAdminLimit(req.query.limit); // Gate D: hard cap = 100
     const role = req.query.role as string;
     const skip = (page - 1) * limit;
 
@@ -281,6 +285,7 @@ adminRouter.get(
 adminRouter.patch(
   '/users/:id/suspend',
   requirePermissions('users.suspend'),
+  requireAdminStepUp,
   audit('admin:user:suspend', (req) => `user:${req.params.id}`),
   async (req, res) => {
   try {
@@ -314,6 +319,15 @@ adminRouter.patch(
         deletedAt: true
       }
     });
+
+    // Invalidate Redis session cache so requireAuth reads the updated deletedAt from DB
+    // on the very next request — no waiting for the 20-min TTL to expire.
+    await invalidateSessionCache(userId);
+
+    // P0 GAP3 FIX: Disconnect active WebSocket sessions immediately on suspension
+    if (suspended) {
+      disconnectUserSockets(userId);
+    }
 
     return res.json(updatedUser);
   } catch (error) {
@@ -443,6 +457,7 @@ adminRouter.get(
 adminRouter.patch(
   '/pros/:id/verify',
   requirePermissions('pros.verify'),
+  requireAdminStepUp,
   audit('admin:pro:verify', (req) => `pro:${req.params.id}`),
   async (req, res) => {
   try {
@@ -499,7 +514,7 @@ adminRouter.get(
   async (req, res) => {
   try {
     const page = parseInt(req.query.page as string || '1');
-    const limit = parseInt(req.query.limit as string || '20');
+    const limit = capAdminLimit(req.query.limit); // Gate D: hard cap = 100
     const skip = (page - 1) * limit;
 
     const [reports, total] = await Promise.all([
@@ -618,6 +633,7 @@ adminRouter.get(
 adminRouter.patch(
   '/admins/:id/permissions',
   requirePermissions('permissions.manage'),
+  requireAdminStepUp,
   audit('admin:permissions:update', (req) => `admin:${req.params.id}`),
   async (req, res) => {
   try {
@@ -684,6 +700,7 @@ adminRouter.patch(
 adminRouter.patch(
   '/admins/:id/role',
   requirePermissions('permissions.manage'),
+  requireAdminStepUp,
   audit('admin:role:apply', (req) => `admin:${req.params.id}`),
   async (req, res) => {
   try {
@@ -746,6 +763,7 @@ adminRouter.patch(
 adminRouter.patch(
   '/admins/:id/allowed-ips',
   requirePermissions('permissions.manage'),
+  requireAdminStepUp,
   audit('admin:allowed-ips:update', (req) => `admin:${req.params.id}`),
   async (req, res) => {
   try {
@@ -878,6 +896,7 @@ const conversationBroadcastSchema = z.object({
 adminRouter.post(
   '/conversations/broadcast',
   requirePermissions('reports.moderate'),
+  requireAdminStepUp,
   audit('admin:conversations:broadcast', () => 'admin:conversations:broadcast'),
   async (req, res) => {
     try {
@@ -987,6 +1006,7 @@ adminRouter.post(
 adminRouter.post(
   '/reports/:id/action',
   requirePermissions('reports.moderate'),
+  requireAdminStepUp,
   audit('admin:report:action', (req) => `report:${req.params.id}`),
   async (req, res) => {
   try {
@@ -1047,6 +1067,12 @@ adminRouter.post(
       await tx.profileReport.delete({ where: { id: reportId } });
     });
 
+    // P0 GAP4 FIX: Invalidate session cache and disconnect WS for banned users
+    if (action === 'ban' && targetUser) {
+      await invalidateSessionCache(targetUser.id);
+      disconnectUserSockets(targetUser.id);
+    }
+
     return res.json({
       success: true,
       action,
@@ -1073,7 +1099,7 @@ adminRouter.get(
       const status = req.query.status as 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | undefined;
       const severity = req.query.severity as 'INFO' | 'WARNING' | 'CRITICAL' | undefined;
       const page = parseInt(req.query.page as string || '1');
-      const limit = parseInt(req.query.limit as string || '20');
+      const limit = capAdminLimit(req.query.limit); // Gate D: hard cap = 100
 
       const result = await systemAlertService.list({ status, severity, page, limit });
       return res.json(result);
@@ -1526,10 +1552,10 @@ adminRouter.get(
         where.success = false;
       }
 
-      // Suspicious criteria: multiple failed attempts from same IP or email
+      // Suspicious criteria: multiple failed attempts from same IP hash or email hash
       let attempts: LoginAttemptWithUser[];
       if (suspiciousOnly) {
-        // Get IPs and emails with multiple failed attempts in the last 24 hours
+        // Get IP hashes and email hashes with multiple failed attempts in the last 24 hours
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
         const failedAttempts = await prisma.loginAttempt.findMany({
@@ -1540,31 +1566,33 @@ adminRouter.get(
           orderBy: { createdAt: 'desc' }
         });
 
-        // Group by ipHash and email to find suspicious patterns (RGPD v2: use ipHash)
+        // Group by ipHash and emailHash to find suspicious patterns (RGPD v2)
         const ipHashCounts = new Map<string, number>();
-        const emailCounts = new Map<string, number>();
+        const emailHashCounts = new Map<string, number>();
 
         for (const attempt of failedAttempts) {
           if (attempt.ipHash) {
             ipHashCounts.set(attempt.ipHash, (ipHashCounts.get(attempt.ipHash) || 0) + 1);
           }
-          emailCounts.set(attempt.email, (emailCounts.get(attempt.email) || 0) + 1);
+          if (attempt.emailHash) {
+            emailHashCounts.set(attempt.emailHash, (emailHashCounts.get(attempt.emailHash) || 0) + 1);
+          }
         }
 
-        // Filter suspicious ipHashes (3+ failed attempts) and emails (5+ failed attempts)
+        // Filter suspicious ipHashes (3+ failed attempts) and emailHashes (5+ failed attempts)
         const suspiciousIpHashes = Array.from(ipHashCounts.entries())
           .filter(([, count]) => count >= 3)
           .map(([ipHash]) => ipHash);
-        const suspiciousEmails = Array.from(emailCounts.entries())
+        const suspiciousEmailHashes = Array.from(emailHashCounts.entries())
           .filter(([, count]) => count >= 5)
-          .map(([email]) => email);
+          .map(([emailHash]) => emailHash);
 
-        if (suspiciousIpHashes.length > 0 || suspiciousEmails.length > 0) {
+        if (suspiciousIpHashes.length > 0 || suspiciousEmailHashes.length > 0) {
           await systemAlertService.ensureAlert({
             type: 'security:suspicious-login',
             message: 'Tentatives de connexion suspectes détectées',
             severity: 'WARNING',
-            metadata: { suspiciousIpHashes, suspiciousEmails }
+            metadata: { suspiciousIpHashes, suspiciousEmailHashes }
           });
         }
 
@@ -1572,12 +1600,12 @@ adminRouter.get(
           where: {
             OR: [
               { ipHash: { in: suspiciousIpHashes } },
-              { email: { in: suspiciousEmails } }
+              { emailHash: { in: suspiciousEmailHashes } }
             ]
           },
           include: {
             user: {
-              select: { id: true, email: true, role: true }
+              select: { id: true, role: true }
             }
           },
           orderBy: { createdAt: 'desc' },
@@ -1588,7 +1616,7 @@ adminRouter.get(
           where,
           include: {
             user: {
-              select: { id: true, email: true, role: true }
+              select: { id: true, role: true }
             }
           },
           orderBy: { createdAt: 'desc' },
@@ -1605,8 +1633,9 @@ adminRouter.get(
       // Remove raw IP field from response (privacy-by-design)
       const sanitizedAttempts = attempts.map((attempt: LoginAttemptWithUser) => ({
         ...attempt,
+        email: null, // Never expose raw login-attempt email in API responses
         ip: undefined, // Exclude raw IP (should be null after migration anyway)
-        ipHash: attempt.ipHash // Already HMAC-SHA256 hashed
+        ipHash: attempt.ipHash, // Already HMAC-SHA256 hashed
       }));
 
       return res.json({
@@ -1697,6 +1726,7 @@ adminRouter.get(
 adminRouter.post(
   '/gdpr/run-purge',
   requirePermissions('system.configure'),
+  requireAdminStepUp,
   audit('admin:gdpr:run-purge', () => 'gdpr:purge'),
   async (req, res) => {
   try {
@@ -1828,7 +1858,7 @@ adminRouter.get(
     } = req.query;
 
     const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    const limitNum = capAdminLimit(limit); // Gate D: hard cap = 100
     const skip = (pageNum - 1) * limitNum;
 
     // Build filters

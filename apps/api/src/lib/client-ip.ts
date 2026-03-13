@@ -15,6 +15,7 @@
  */
 
 import { Request } from 'express';
+import type { IncomingHttpHeaders, IncomingMessage } from 'http';
 import * as ipaddr from 'ipaddr.js';
 
 export type TrustProxyMode = 'disabled' | 'loopback' | 'ips' | 'true';
@@ -192,7 +193,10 @@ export function normalizeIp(ip: string | undefined): string | undefined {
  * @param req - Express request object
  * @returns Socket IP address or undefined
  */
-function getSocketIp(req: Request): string | undefined {
+function getSocketIpFromLike(req: {
+  socket?: { remoteAddress?: string | undefined } | undefined;
+  connection?: { remoteAddress?: string | undefined } | undefined;
+}): string | undefined {
   // Try req.socket.remoteAddress first (modern Express)
   const socketIp = req.socket?.remoteAddress;
   if (socketIp) {
@@ -206,6 +210,25 @@ function getSocketIp(req: Request): string | undefined {
   }
 
   return undefined;
+}
+
+function getSocketIp(req: Request): string | undefined {
+  return getSocketIpFromLike(req as unknown as {
+    socket?: { remoteAddress?: string | undefined };
+    connection?: { remoteAddress?: string | undefined };
+  });
+}
+
+function getFirstForwardedFor(headers: IncomingHttpHeaders | undefined): string | undefined {
+  if (!headers) return undefined;
+  const raw = headers['x-forwarded-for'];
+  if (!raw) return undefined;
+
+  const first = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof first !== 'string') return undefined;
+
+  const firstIp = first.split(',').map((part) => part.trim()).filter(Boolean)[0];
+  return normalizeIp(firstIp);
 }
 
 /**
@@ -313,6 +336,43 @@ export function getClientIp(req: Request): string | undefined {
 
     default:
       // Should never happen due to getTrustProxyMode validation
+      return socketIp;
+  }
+}
+
+type SocketReqLike = Pick<IncomingMessage, 'socket' | 'headers'> & {
+  connection?: { remoteAddress?: string | undefined } | undefined;
+};
+
+/**
+ * Extract client IP from a raw Node request (Engine.IO / Socket.IO handshake).
+ * Applies the same TRUST_PROXY_MODE security policy as getClientIp().
+ */
+export function getClientIpFromIncomingRequest(req: SocketReqLike): string | undefined {
+  const mode = getTrustProxyMode();
+  const socketIp = getSocketIpFromLike(req);
+  const forwardedFor = getFirstForwardedFor(req.headers);
+
+  switch (mode) {
+    case 'disabled':
+      return socketIp;
+
+    case 'loopback':
+      return isLoopbackIp(socketIp) ? (forwardedFor || socketIp) : socketIp;
+
+    case 'ips': {
+      const trustedConfig = parseTrustedProxies();
+      if (!trustedConfig) {
+        console.warn('⚠️  TRUST_PROXY_MODE=ips but TRUSTED_PROXY_IPS is empty/invalid. Using socket IP.');
+        return socketIp;
+      }
+      return isIpTrusted(socketIp, trustedConfig) ? (forwardedFor || socketIp) : socketIp;
+    }
+
+    case 'true':
+      return forwardedFor || socketIp;
+
+    default:
       return socketIp;
   }
 }

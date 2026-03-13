@@ -14,6 +14,10 @@ ensureSecretLength('SESSION_SECRET');
 ensureSecretLength('JWT_SECRET');
 ensureSecretLength('JWT_REFRESH_SECRET');
 
+if (!process.env.IP_HASH_SECRET || process.env.IP_HASH_SECRET.length < 32) {
+  process.env.IP_HASH_SECRET = 'i'.repeat(64);
+}
+
 if (!process.env.CSRF_SECRET) {
   process.env.CSRF_SECRET = 'csrf-test-secret'.padEnd(32, 'x');
 }

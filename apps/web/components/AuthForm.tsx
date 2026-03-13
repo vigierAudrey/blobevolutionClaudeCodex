@@ -84,7 +84,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   // ✅ NOUVEAU : États pour 2FA admin
   const [requires2FA, setRequires2FA] = useState(false);
-  const [twoFAUserId, setTwoFAUserId] = useState<string | null>(null);
+  const [twoFAChallengeId, setTwoFAChallengeId] = useState<string | null>(null);
   const [twoFACode, setTwoFACode] = useState('');
 
   useEffect(() => {
@@ -175,16 +175,17 @@ export function AuthForm({ mode }: AuthFormProps) {
         consentAccepted: loginConsentNeeded ? loginConsentAccepted : undefined,
       });
 
-      // ✅ NOUVEAU : Vérifier si 2FA est requis
-      if ('requires2FA' in response && response.requires2FA && 'userId' in response) {
+      // Vérifier si 2FA est requis
+      if ('requires2FA' in response && response.requires2FA && 'challengeId' in response) {
         setRequires2FA(true);
-        setTwoFAUserId(response.userId as string);
+        setTwoFAChallengeId(response.challengeId as string);
         setInfo('Un code de vérification a été envoyé à votre adresse email');
         setLoading(false);
         return;
       }
 
-      apiClient.saveTokens(response.accessToken, response.refreshToken);
+      // Tokens are now httpOnly cookies set by server — activate local session hint
+      apiClient.saveTokens();
 
       try {
         const user = (await apiClient.me()) as DashboardUser;
@@ -260,20 +261,21 @@ export function AuthForm({ mode }: AuthFormProps) {
   // ✅ NOUVEAU : Soumettre le code 2FA
   const submit2FA = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!twoFAUserId || !twoFACode) return;
+    if (!twoFAChallengeId || !twoFACode) return;
 
     setLoading(true);
     setError(null);
     setInfo(null);
 
     try {
-      const response = await apiClient.verify2FA(
-        twoFAUserId,
+      await apiClient.verify2FA(
+        twoFAChallengeId,
         twoFACode,
         loginConsentNeeded ? loginConsentAccepted : undefined
       );
 
-      apiClient.saveTokens(response.accessToken, response.refreshToken);
+      // Tokens set as httpOnly cookies by server — activate local session hint
+      apiClient.saveTokens();
 
       try {
         const user = (await apiClient.me()) as DashboardUser;
@@ -303,7 +305,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   };
 
   // ✅ NOUVEAU : Si 2FA est requis, afficher le formulaire 2FA
-  if (requires2FA && twoFAUserId) {
+  if (requires2FA && twoFAChallengeId) {
     return (
       <Card className="border-2 border-transparent hover:border-emerald-300 transition-all">
         <CardHeader className="bg-gradient-to-br from-emerald-50/80 to-transparent dark:from-emerald-950/30 dark:to-transparent">
@@ -371,7 +373,7 @@ export function AuthForm({ mode }: AuthFormProps) {
               className="w-full"
               onClick={() => {
                 setRequires2FA(false);
-                setTwoFAUserId(null);
+                setTwoFAChallengeId(null);
                 setTwoFACode('');
                 setError(null);
                 setInfo(null);

@@ -30,6 +30,8 @@
     "db:generate": "pnpm --filter @blobinfini/database generate",
     "db:migrate": "pnpm --filter @blobinfini/database migrate",
     "db:migrate:deploy": "pnpm --filter @blobinfini/database migrate:deploy",
+    "db:preflight": "pnpm --filter @blobinfini/database exec prisma migrate status",
+    "db:preflight:allow-pending": "pnpm --filter @blobinfini/database exec prisma migrate status || true",
     "db:migrate:nolock": "PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 pnpm --filter @blobinfini/database migrate",
     "db:studio": "pnpm --filter @blobinfini/database studio",
     "db:seed": "pnpm --filter @blobinfini/database seed",

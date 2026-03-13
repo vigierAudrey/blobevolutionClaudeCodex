@@ -67,7 +67,16 @@ describe('GET /booking/pros/nearby', () => {
       });
     }
 
-    return auth.userId;
+    const profile = await prisma.proProfile.findUnique({
+      where: { userId: auth.userId },
+      select: { id: true },
+    });
+
+    if (!profile?.id) {
+      throw new Error('Pro profile not found after creation');
+    }
+
+    return profile.id;
   };
 
   beforeEach(async () => {
@@ -98,14 +107,16 @@ describe('GET /booking/pros/nearby', () => {
 
     expect(res.body.pros).toHaveLength(1);
     expect(res.body.pros[0]).toMatchObject({
-      proId: expect.any(String),
-      lat: 43.5,
-      lng: -1.5,
+      proPublicId: expect.any(String),
+      distanceBucket: expect.any(String),
     });
+    expect(res.body.pros[0]).not.toHaveProperty('lat');
+    expect(res.body.pros[0]).not.toHaveProperty('lng');
+    expect(res.body.pros[0]).not.toHaveProperty('proId');
   });
 
   it('sorts pros by distance', async () => {
-    const nearId = await createPro({ email: testEmails.proA, lat: 43.5, lng: -1.5 });
+    const nearPublicId = await createPro({ email: testEmails.proA, lat: 43.5, lng: -1.5 });
     await createPro({ email: testEmails.proB, lat: 44.0, lng: -1.2 });
 
     const res = await riderSession
@@ -115,8 +126,11 @@ describe('GET /booking/pros/nearby', () => {
       .expect(200);
 
     expect(res.body.pros).toHaveLength(2);
-    expect(res.body.pros[0].proId).toBe(nearId);
-    expect(res.body.pros[0].distanceKm).toBeLessThanOrEqual(res.body.pros[1].distanceKm);
+    expect(res.body.pros[0].proPublicId).toBe(nearPublicId);
+    expect(res.body.pros[0].distanceBucket).toBeDefined();
+    expect(res.body.pros[1].distanceBucket).toBeDefined();
+    expect(res.body.pros[0]).not.toHaveProperty('distanceKm');
+    expect(res.body.pros[1]).not.toHaveProperty('distanceKm');
   });
 
   it('filters by sport when available but still returns pros without slots', async () => {
@@ -130,10 +144,42 @@ describe('GET /booking/pros/nearby', () => {
       .query({ lat: 43.5, lng: -1.5, radiusKm: 50, sport: 'surf' })
       .expect(200);
 
-    const ids = res.body.pros.map((p: { proId: string }) => p.proId);
+    const ids = res.body.pros.map((p: { proPublicId: string }) => p.proPublicId);
     expect(ids).toContain(surfId);
     expect(ids).toContain(noSlotId);
     expect(ids).not.toContain(kiteId);
     expect(res.body.pros.every((p: { sports: string[] }) => p.sports?.includes('surf') || (p.sports ?? []).length === 0)).toBe(true);
+  });
+
+  it('privacy: no precise distance leak across repeated nearby probes', async () => {
+    await createPro({ email: testEmails.proA, lat: 43.5, lng: -1.5, sport: 'surf' });
+
+    const first = await riderSession
+      .get('/booking/pros/nearby')
+      .set('Authorization', `Bearer ${riderToken}`)
+      .query({ lat: 43.5, lng: -1.5, radiusKm: 30 })
+      .expect(200);
+
+    const second = await riderSession
+      .get('/booking/pros/nearby')
+      .set('Authorization', `Bearer ${riderToken}`)
+      .query({ lat: 43.5006, lng: -1.5006, radiusKm: 30 })
+      .expect(200);
+
+    expect(first.body.pros).toHaveLength(1);
+    expect(second.body.pros).toHaveLength(1);
+
+    const firstPro = first.body.pros[0];
+    const secondPro = second.body.pros[0];
+
+    expect(firstPro.proPublicId).toBe(secondPro.proPublicId);
+    expect(firstPro.distanceBucket).toBeDefined();
+    expect(secondPro.distanceBucket).toBeDefined();
+    expect(firstPro).not.toHaveProperty('distanceKm');
+    expect(secondPro).not.toHaveProperty('distanceKm');
+    expect(firstPro).not.toHaveProperty('lat');
+    expect(firstPro).not.toHaveProperty('lng');
+    expect(secondPro).not.toHaveProperty('lat');
+    expect(secondPro).not.toHaveProperty('lng');
   });
 });

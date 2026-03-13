@@ -104,11 +104,11 @@ class SecurityEventAlertService {
    * - 10+ failed attempts in last hour from same IP → CRITICAL (brute-force attack)
    * - 5+ failed attempts for same email in last hour → WARNING (account targeted)
    *
-   * @param email - Email being targeted
+   * @param emailHash - Hashed email being targeted (SHA-256)
    * @param ipHash - Hashed IP address (HMAC-SHA256)
    */
   async detectAndReportLoginFailurePattern(
-    email: string,
+    emailHash: string,
     ipHash: string
   ): Promise<void> {
     try {
@@ -126,7 +126,7 @@ class SecurityEventAlertService {
       // Check for account-targeted attack (same email, multiple IPs)
       const emailFailures = await prisma.loginAttempt.count({
         where: {
-          email,
+          emailHash,
           success: false,
           createdAt: { gte: oneHourAgo }
         }
@@ -148,7 +148,7 @@ class SecurityEventAlertService {
             failureCount: ipFailures,
             timeWindow: '1h',
             timestamp: new Date().toISOString(),
-            latestEmail: email // Last targeted email
+            latestEmailHash: emailHash // Last targeted account hash
           },
           createdById: null,
           dedupeKey
@@ -163,15 +163,15 @@ class SecurityEventAlertService {
 
       // WARNING: Account being targeted (credential stuffing or targeted attack)
       if (emailFailures >= 5) {
-        const dedupeKey = `LOGIN_TARGETED_ACCOUNT:${email}:${dateKey}`;
+        const dedupeKey = `LOGIN_TARGETED_ACCOUNT:${emailHash}:${dateKey}`;
 
         await systemAlertService.ensureAlert({
           type: 'LOGIN_TARGETED_ACCOUNT',
-          message: `Compte ciblé: ${emailFailures} tentatives échouées en 1h pour ${email}`,
+          message: `Compte ciblé: ${emailFailures} tentatives échouées en 1h`,
           severity: 'WARNING',
           link: `${this.WEB_BASE_URL}/admin/security-alerts`,
           metadata: {
-            email,
+            emailHash,
             failureCount: emailFailures,
             timeWindow: '1h',
             timestamp: new Date().toISOString(),
@@ -182,7 +182,7 @@ class SecurityEventAlertService {
         });
 
         secureLogger.warn('SECURITY_ALERT_LOGIN_TARGETED_ACCOUNT_DETECTED', {
-          email,
+          emailHash,
           failureCount: emailFailures,
           dedupeKey
         });
@@ -190,7 +190,7 @@ class SecurityEventAlertService {
     } catch (error) {
       // Never fail the login flow if pattern detection fails
       secureLogger.error('SECURITY_ALERT_LOGIN_PATTERN_DETECTION_FAILED', {
-        email,
+        emailHash,
         error: error instanceof Error ? error.message : String(error)
       });
     }
@@ -202,12 +202,12 @@ class SecurityEventAlertService {
    * This can indicate a successful brute-force attack that should be investigated.
    * Only creates alert if there were 5+ failed attempts before success.
    *
-   * @param email - Email that successfully logged in
+   * @param emailHash - Hashed email that successfully logged in
    * @param ipHash - Hashed IP address (HMAC-SHA256)
    * @param userId - User ID that logged in
    */
   async reportSuccessAfterFailures(
-    email: string,
+    emailHash: string,
     ipHash: string,
     userId: string
   ): Promise<void> {
@@ -217,7 +217,7 @@ class SecurityEventAlertService {
       // Count recent failures for this email
       const recentFailures = await prisma.loginAttempt.count({
         where: {
-          email,
+          emailHash,
           success: false,
           createdAt: { gte: oneHourAgo }
         }
@@ -235,7 +235,7 @@ class SecurityEventAlertService {
           link: `${this.WEB_BASE_URL}/admin/security-alerts`,
           metadata: {
             userId,
-            email,
+            emailHash,
             ipHash,
             recentFailures,
             timeWindow: '1h',
@@ -247,7 +247,7 @@ class SecurityEventAlertService {
 
         secureLogger.warn('SECURITY_ALERT_LOGIN_SUCCESS_AFTER_FAILURES', {
           userId,
-          email,
+          emailHash,
           recentFailures,
           dedupeKey
         });
@@ -255,7 +255,7 @@ class SecurityEventAlertService {
     } catch (error) {
       // Never fail the login flow if alert creation fails
       secureLogger.error('SECURITY_ALERT_SUCCESS_AFTER_FAILURES_FAILED', {
-        email,
+        emailHash,
         error: error instanceof Error ? error.message : String(error)
       });
     }

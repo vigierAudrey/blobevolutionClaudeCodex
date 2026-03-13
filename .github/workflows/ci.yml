@@ -21,6 +21,78 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: No skipped tests in critical API suites (block)
+        run: bash scripts/no-skip-critical-check.sh
+
+      - name: No insecure logs / secrets (block)
+        run: bash scripts/no-insecure-logs-check.sh
+
+      - name: No bare db push in CI paths (block)
+        run: bash scripts/ci-block-db-push.sh
+
+      - name: Self-test ci-block-db-push (poison pill + variantes pnpm exec/npx/unsafe/continuation)
+        # Prouve que le guard bloque les formes d'invocation de db push dans un workflow.
+        # Chaque fichier poison est un workflow YAML valide (name/on/jobs/steps) pour tester
+        # un scénario réaliste: le guard doit bloquer même dans une structure YAML bien formée.
+        run: |
+          set -euo pipefail
+          POISON=".github/workflows/_poison_test_$$.yml"
+          trap 'rm -f "$POISON"' EXIT
+          _poison_check() {
+            local run_cmd="$1" label="$2"
+            # Génère un workflow YAML valide contenant la commande interdite.
+            printf 'name: Poison Pill\non: [push]\njobs:\n  poison:\n    runs-on: ubuntu-22.04\n    steps:\n      - name: Sneaky step\n        run: %s\n' \
+              "$run_cmd" > "$POISON"
+            local code=0
+            bash scripts/ci-block-db-push.sh 2>&1 || code=$?
+            rm -f "$POISON"
+            if [ "$code" -eq 0 ]; then
+              echo "❌ POISON FAILED [${label}]: ci-block-db-push.sh n'a pas bloqué"
+              exit 1
+            fi
+            echo "✅ POISON OK [${label}]"
+          }
+          _poison_check "prisma db push"                                "naked"
+          _poison_check "pnpm exec prisma db push"                      "pnpm-exec"
+          _poison_check "npx prisma db push"                            "npx"
+          _poison_check 'bash -lc "prisma db push"'                     "bash-lc"
+          _poison_check 'sh -c "prisma db push"'                        "sh-c"
+          _poison_check "pnpm dlx prisma db push"                       "pnpm-dlx"
+          _poison_check "pnpm --filter @blobinfini/database db:push:unsafe" "db:push:unsafe"
+          # Multi-line continuation bypass: guard must catch `prisma db \` at end of line
+          printf 'name: Poison Pill\non: [push]\njobs:\n  poison:\n    runs-on: ubuntu-22.04\n    steps:\n      - name: Sneaky step\n        run: |\n          prisma db \\\n          push\n' \
+            > "$POISON"
+          code=0; bash scripts/ci-block-db-push.sh 2>&1 || code=$?
+          rm -f "$POISON"
+          if [ "$code" -eq 0 ]; then
+            echo "❌ POISON FAILED [continuation]: multi-line db push not blocked"
+            exit 1
+          fi
+          echo "✅ POISON OK [continuation]"
+
+      - name: Enforce DB push guardrails
+        run: bash scripts/no-unsafe-db-push-check.sh
+
+      - name: Verify Prisma supply-chain (single version in lockfile)
+        # Checks pnpm-lock.yaml for unexpected prisma/@prisma/client versions.
+        # pnpm.overrides in root package.json should enforce 6.19.2 everywhere.
+        # Fails CI if any other version is resolved — no pnpm install required.
+        run: |
+          set -euo pipefail
+          EXPECTED="6.19.2"
+          BAD=$(grep -E "^\s*'?(prisma|@prisma/(client|config))@" pnpm-lock.yaml \
+            | sed -E "s/^[[:space:]]*'?(prisma|@prisma\/(client|config))@([0-9]+\.[0-9]+\.[0-9]+).*/\3/" \
+            | sort -u \
+            | grep -v "^${EXPECTED}$" || true)
+          if [ -n "$BAD" ]; then
+            echo "❌ Unexpected Prisma version(s) in pnpm-lock.yaml:"
+            echo "$BAD"
+            echo "   Expected exclusively: ${EXPECTED}"
+            echo "   Check pnpm.overrides in root package.json."
+            exit 1
+          fi
+          echo "✅ Prisma supply-chain: unique version ${EXPECTED} confirmed in pnpm-lock.yaml."
+
       - name: Verify ALLOW_ACCEPT_DATA_LOSS is not set in CI
         run: |
           echo "🔒 Checking CI environment for forbidden flags..."
@@ -41,14 +113,17 @@ jobs:
             exit 1
           fi
 
-          # Check workflow files for accidental ALLOW_ACCEPT_DATA_LOSS=true assignments
+          # Check workflow/action files for accidental ALLOW_ACCEPT_DATA_LOSS=true assignments
           # (YAML env assignment or shell export only; ignore security guard comparisons)
-          FORBIDDEN_PATTERN='^[[:space:]]*(ALLOW_ACCEPT_DATA_LOSS[[:space:]]*:[[:space:]]*("true"|'\'true\''|true)\b|export[[:space:]]+ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'\'true\''|true)\b|ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'\'true\''|true)\b)'
-          if grep -rEn "$FORBIDDEN_PATTERN" .github/workflows/*.yml 2>/dev/null; then
+          # Scans .github/workflows + .github/actions recursively via rg (--no-pcre2 = Rust regex,
+          # supports \b word boundary and [[:space:]] POSIX classes; preferred over grep here).
+          FORBIDDEN_PATTERN='^[[:space:]]*(ALLOW_ACCEPT_DATA_LOSS[[:space:]]*:[[:space:]]*("true"|'"'"'true'"'"'|true)\b|export[[:space:]]+ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'"'"'true'"'"'|true)\b|ALLOW_ACCEPT_DATA_LOSS[[:space:]]*=[[:space:]]*("true"|'"'"'true'"'"'|true)\b)'
+          ADLHITS="$(rg --no-pcre2 -rn --glob '*.yml' --glob '*.yaml' "$FORBIDDEN_PATTERN" .github/workflows .github/actions 2>/dev/null || true)"
+          if [[ -n "$ADLHITS" ]]; then
             echo "❌ SECURITY VIOLATION: Found ALLOW_ACCEPT_DATA_LOSS=true in workflow files!"
             echo ""
             echo "   Detected in:"
-            grep -rEn "$FORBIDDEN_PATTERN" .github/workflows/*.yml || true
+            echo "$ADLHITS"
             echo ""
             echo "   This flag must NEVER be set in CI workflows."
             echo "   It is only permitted in local test environments."
@@ -66,6 +141,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Enforce network guardrails
+        run: bash scripts/no-raw-fetch-check.sh
+
+      - name: No insecure logs / secrets (block)
+        run: bash scripts/no-insecure-logs-check.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -109,6 +190,7 @@ jobs:
       SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
       JWT_SECRET: test-jwt-secret
       JWT_REFRESH_SECRET: test-jwt-refresh-secret
+      IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
       WEB_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
@@ -129,11 +211,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Wait for PostgreSQL
-        run: pnpm exec wait-on tcp:localhost:5432
+      - name: Wait for Postgres to be ready
+        # Boucle explicite pg_isready (30s timeout) — ne pas supposer que le healthcheck
+        # du service container suffit: il certifie l'état du conteneur, pas la disponibilité
+        # TCP du port ni la capacité à accepter des requêtes applicatives.
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          deadline=$((SECONDS + 30))
+          until pg_isready -h localhost -U postgres -d blobinfini; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "❌ Postgres not ready after 30s — aborting." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "✅ Postgres TCP ready."
+          # Verify applicative readiness: auth + correct DB via DATABASE_URL.
+          # pg_isready only certifies TCP; this proves the credentials work.
+          psql "$DATABASE_URL" -c "select 1" > /dev/null
+          echo "✅ Postgres auth ready (DATABASE_URL)."
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Canary DB clean replay
+        run: pnpm --filter @blobinfini/database migrate:test:clean
 
       - name: Enable PostGIS
         env:
@@ -144,14 +244,90 @@ jobs:
       - name: Generate Prisma Client
         run: pnpm run db:generate
 
+      - name: Preflight DB migration state (allow pending before deploy)
+        run: pnpm run db:preflight:allow-pending
+
       - name: Run DB migrations
         run: pnpm run db:migrate:deploy
+
+      - name: Preflight DB schema lockstep (strict after deploy)
+        run: pnpm run db:preflight
+
+      - name: Verify DB constraints (EXCLUSION CONSTRAINT + UNIQUE INDEX)
+        # Proves that migrate deploy produced the business-critical constraints
+        # (not just that migrations ran — but that the actual schema objects exist).
+        # Also activates the Jest globalSetup CI guard via JEST_DB_PREPARED=true below.
+        run: node scripts/check-btree-gist.mjs --verify-constraints
 
       - name: Run build
         run: pnpm run build
 
       - name: Run API tests
+        # JEST_DB_PREPARED=true: DB already migrated above — skip globalSetup migrate step
+        # and activate the pg_constraint + pg_indexes guard in jest.global-setup.cjs.
+        env:
+          JEST_DB_PREPARED: 'true'
         run: pnpm --filter @blobinfini/api test
+
+      - name: Fail on ERL runtime regression signature in logs
+        run: bash scripts/check-no-erl-runtime-log.sh
+
+  migrate-test-derived:
+    name: Advisory Derived Migration Replay
+    runs-on: ubuntu-22.04
+    needs: lint
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blobinfini
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for Postgres to be ready
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          deadline=$((SECONDS + 30))
+          until pg_isready -h localhost -U postgres -d blobinfini; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "❌ Postgres not ready after 30s — aborting." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "✅ Postgres ready."
+
+      - name: Run advisory derived migration replay
+        run: pnpm --filter @blobinfini/database migrate:test:derived
 
   type-check:
     name: Type Check
@@ -177,10 +353,11 @@ jobs:
       - name: Type check API
         run: pnpm --filter @blobinfini/api type-check
 
+      - name: Build Web (prepare .next/types)
+        run: pnpm --filter @blobinfini/web build
+
       - name: Type check Web
-        continue-on-error: true
         run: pnpm --filter @blobinfini/web type-check
-        # TODO: Fix web type-check (missing deps: zod, @storybook/*, unified, mdx)
 
   web-tests:
     name: Web Tests
@@ -241,17 +418,21 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
+        # Port mapping requis : job sans container — le runner accède au service via localhost.
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
     env:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini
-      SHADOW_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/blobinfini_shadow
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
       SESSION_SECRET: ci-session-secret
       JWT_SECRET: ci-jwt-secret
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret
+      IP_HASH_SECRET: ci-ip-hash-secret-for-e2e-only-min-32-chars
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
       WEB_BASE_URL: http://127.0.0.1:3002
     steps:
@@ -276,11 +457,22 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
           export PGPASSWORD=postgres
-          until pg_isready -h postgres -U postgres; do sleep 2; done
-          psql "postgresql://postgres:postgres@postgres:5432/postgres" -c "CREATE DATABASE blobinfini;"
-          psql "postgresql://postgres:postgres@postgres:5432/postgres" -c "CREATE DATABASE blobinfini_shadow;"
-          psql "postgresql://postgres:postgres@postgres:5432/blobinfini" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql "postgresql://postgres:postgres@postgres:5432/blobinfini_shadow" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          # Timeout augmenté à 60s : postgis/postgis:15-3.4 peut être lent à démarrer.
+          deadline=$((SECONDS + 60))
+          until pg_isready -h localhost -U postgres; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "❌ Postgres not ready after 60s — aborting." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "✅ Postgres TCP ready."
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "select 1" > /dev/null
+          echo "✅ Postgres auth ready."
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini;"
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini_shadow;"
+          psql "postgresql://postgres:postgres@localhost:5432/blobinfini" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql "postgresql://postgres:postgres@localhost:5432/blobinfini_shadow" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 
       - name: Generate Prisma Client
         run: pnpm run db:generate

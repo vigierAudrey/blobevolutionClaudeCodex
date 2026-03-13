@@ -134,7 +134,7 @@ export default function ReservationStartPage() {
           id: slot.id,
           lat: slot.spotLat as number,
           lng: slot.spotLng as number,
-          displayName: slot.spotName || slot.pro.businessName || slot.pro.email,
+          displayName: slot.spotName || slot.pro.businessName || 'Spot à définir',
           distanceKm: slot.distanceKm ?? undefined,
           userId: slot.id,
           type: 'availability' as const,
@@ -143,20 +143,9 @@ export default function ReservationStartPage() {
         };
       });
 
-    const proMarkers = nearbyPros.map((pro) => ({
-      id: `pro-${pro.proId}`,
-      lat: pro.lat,
-      lng: pro.lng,
-      displayName: pro.businessName || pro.email,
-      distanceKm: pro.distanceKm,
-      userId: pro.proId,
-      type: 'default' as const,
-      isDisabled: false,
-      disabledReason: pro.openAvailabilityCount === 0 ? 'Pas de créneau publié' : undefined,
-    }));
-
-    return [...availabilityMarkers, ...proMarkers];
-  }, [safeResults, nearbyPros]);
+    // NearbyProResult n'a pas de lat/lng (RGPD: toPublicGeo supprime les coordonnées précises)
+    return availabilityMarkers;
+  }, [safeResults]);
 
   const handleMapContactClick = useCallback(
     (itemId: string) => {
@@ -183,7 +172,7 @@ export default function ReservationStartPage() {
   }, []);
 
   const handleContactSubmitted = useCallback((pro: NearbyProResult) => {
-    setContactSuccess(pro.businessName ?? pro.email);
+    setContactSuccess(pro.businessName ?? 'ce pro');
   }, []);
 
   const closeContactModal = useCallback(() => {
@@ -663,7 +652,7 @@ export default function ReservationStartPage() {
                           <div className="flex items-center justify-between gap-3 pt-2 border-t">
                             <div className="flex items-center gap-3">
                               <div className="text-sm font-medium">
-                                {slot.pro.businessName || slot.pro.email}
+                                {slot.pro.businessName ?? 'Pro'}
                               </div>
                               <RiderMiniaturesStrip riders={slot.riders} />
                             </div>
@@ -741,7 +730,7 @@ export default function ReservationStartPage() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <CardTitle className="text-lg mb-2 flex items-center gap-2 flex-wrap">
-                                  <span className="truncate">{pro.businessName || pro.email}</span>
+                                  <span className="truncate">{pro.businessName ?? 'Pro'}</span>
                                   {pro.verified && (
                                     <Badge variant="default" className="bg-green-500 hover:bg-green-600 shadow-sm">
                                       ✓ Vérifié

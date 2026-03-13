@@ -159,105 +159,13 @@ describe('BookingService Validation', () => {
         .resolves.not.toThrow();
     });
 
-    it.skip('should reject overlapping availabilities (complete overlap) - OBSOLETE: blocked by one-offer-per-day rule', async () => {
-      // Create first availability
-      const firstAvailability = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-01T10:00:00Z'),
-        endAt: new Date('2024-12-01T12:00:00Z'),
-        capacity: 1
-      };
+    it.todo('reject overlapping availabilities (complete overlap) if the one-offer-per-day guard is ever relaxed');
 
-      await bookingService.createAvailability(testProUserId, firstAvailability);
+    it.todo('reject overlapping availabilities (partial overlap at start) if the one-offer-per-day guard is ever relaxed');
 
-      // Try to create overlapping availability
-      const overlappingAvailability = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-01T10:00:00Z'),
-        endAt: new Date('2024-12-01T12:00:00Z'),
-        capacity: 1
-      };
+    it.todo('reject overlapping availabilities (partial overlap at end) if the one-offer-per-day guard is ever relaxed');
 
-      await expect(bookingService.createAvailability(testProUserId, overlappingAvailability))
-        .rejects.toThrow('Time overlap detected');
-    });
-
-    it.skip('should reject overlapping availabilities (partial overlap - start) - OBSOLETE: blocked by one-offer-per-day rule', async () => {
-      // Create first availability
-      const firstAvailability = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-01T10:00:00Z'),
-        endAt: new Date('2024-12-01T12:00:00Z'),
-        capacity: 1
-      };
-
-      await bookingService.createAvailability(testProUserId, firstAvailability);
-
-      // Try to create overlapping availability (starts before, ends during)
-      const overlappingAvailability = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-01T09:00:00Z'),
-        endAt: new Date('2024-12-01T11:00:00Z'),
-        capacity: 1
-      };
-
-      await expect(bookingService.createAvailability(testProUserId, overlappingAvailability))
-        .rejects.toThrow('Time overlap detected');
-    });
-
-    it.skip('should reject overlapping availabilities (partial overlap - end) - OBSOLETE: blocked by one-offer-per-day rule', async () => {
-      // Create first availability
-      const firstAvailability = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-01T10:00:00Z'),
-        endAt: new Date('2024-12-01T12:00:00Z'),
-        capacity: 1
-      };
-
-      await bookingService.createAvailability(testProUserId, firstAvailability);
-
-      // Try to create overlapping availability (starts during, ends after)
-      const overlappingAvailability = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-01T11:00:00Z'),
-        endAt: new Date('2024-12-01T13:00:00Z'),
-        capacity: 1
-      };
-
-      await expect(bookingService.createAvailability(testProUserId, overlappingAvailability))
-        .rejects.toThrow('Time overlap detected');
-    });
-
-    it.skip('should reject overlapping availabilities (containing overlap) - OBSOLETE: blocked by one-offer-per-day rule', async () => {
-      // Create first availability
-      const firstAvailability = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-01T10:30:00Z'),
-        endAt: new Date('2024-12-01T11:30:00Z'),
-        capacity: 1
-      };
-
-      await bookingService.createAvailability(testProUserId, firstAvailability);
-
-      // Try to create containing availability
-      const containingAvailability = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-01T10:00:00Z'),
-        endAt: new Date('2024-12-01T12:00:00Z'),
-        capacity: 1
-      };
-
-      await expect(bookingService.createAvailability(testProUserId, containingAvailability))
-        .rejects.toThrow('Time overlap detected');
-    });
+    it.todo('reject overlapping availabilities (containing overlap) if the one-offer-per-day guard is ever relaxed');
 
     it('should reject if start time is after end time', async () => {
       const invalidTimeData = {
@@ -324,38 +232,7 @@ describe('BookingService Validation', () => {
         .resolves.not.toThrow();
     });
 
-    it.skip('should reject update that creates time overlap - OBSOLETE: blocked by one-offer-per-day rule', async () => {
-      // Create first availability
-      const firstData = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-01T10:00:00Z'),
-        endAt: new Date('2024-12-01T12:00:00Z'),
-        capacity: 1
-      };
-
-      const firstAvailability = await bookingService.createAvailability(testProUserId, firstData);
-
-      // Create second availability on a different day
-      const secondData = {
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date('2024-12-02T14:00:00Z'),
-        endAt: new Date('2024-12-02T16:00:00Z'),
-        capacity: 1
-      };
-
-      await bookingService.createAvailability(testProUserId, secondData);
-
-      // Try to update first to overlap with second (move to same day and overlap)
-      const conflictingUpdate = {
-        startAt: new Date('2024-12-02T13:00:00Z'),
-        endAt: new Date('2024-12-02T15:00:00Z')
-      };
-
-      await expect(bookingService.updateAvailability(testProUserId, firstAvailability.id, conflictingUpdate))
-        .rejects.toThrow('Time overlap detected');
-    });
+    it.todo('reject updates that create a time overlap if the one-offer-per-day guard is ever relaxed');
 
     it('should reject update with invalid coordinates', async () => {
       // Create initial availability

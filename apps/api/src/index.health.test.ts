@@ -44,7 +44,12 @@ describe('Health & core endpoints', () => {
       .post('/auth/login')
       .send({ email: riderEmail, password: TEST_PASSWORD, consentAccepted: true })
       .expect(200);
-    expect(loginRes.body).toHaveProperty('accessToken');
+    expect(loginRes.body).toEqual({ ok: true });
+    const setCookieHeader = loginRes.headers['set-cookie'];
+    const cookies: string[] = Array.isArray(setCookieHeader) ? setCookieHeader : [];
+    expect(cookies).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^accessToken=/), expect.stringMatching(/^refreshToken=/)])
+    );
 
     const adminEmail = `health-admin-${Date.now()}@test.local`;
     trackedEmails.push(adminEmail);

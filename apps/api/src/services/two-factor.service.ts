@@ -167,7 +167,10 @@ export class TwoFactorService {
    * @param email - User email address
    * @returns Success status and message
    */
-  async sendCode(userId: string, email: string): Promise<{ success: boolean; message: string }> {
+  async sendCode(
+    userId: string,
+    email: string,
+  ): Promise<{ success: boolean; message: string; tooManyChallenges?: boolean; challengeId?: string }> {
     try {
       const code = this.generateCode();
       const codeHash = this.hashCode(code, userId);
@@ -201,8 +204,13 @@ export class TwoFactorService {
         secureLogger.info('TWO_FACTOR_EMAIL_SKIPPED', { userId, cacheKey });
       }
 
+      // Generate a challengeId for the admin 2FA flow (one-time token, 600s TTL)
+      const challengeId = require('crypto').randomUUID() as string;
+      await cacheService.set(`2fa:challenge:${challengeId}`, userId, 600);
+
       return {
         success: true,
+        challengeId,
         message: 'Code envoyé par email'
       };
     } catch (error) {
@@ -323,9 +331,7 @@ export class TwoFactorService {
       let storedHash: string | null = null;
       let usingMemoryStore = false;
 
-      if (redisClient) {
-        storedHash = await cacheService.get<string>(cacheKey);
-      }
+      storedHash = await cacheService.get<string>(cacheKey);
 
       if (!storedHash && memoryStore) {
         const memoryEntry = memoryStore.get(cacheKey);
@@ -346,7 +352,7 @@ export class TwoFactorService {
       // Valid code - cleanup
       if (usingMemoryStore && memoryStore) {
         memoryStore.delete(cacheKey);
-      } else if (redisClient) {
+      } else {
         await cacheService.del(cacheKey);
       }
 
@@ -405,6 +411,26 @@ export class TwoFactorService {
 }
 
 export const twoFactorService = new TwoFactorService();
+
+/**
+ * Resolve a challengeId to its userId and verify the 2FA code.
+ * Used by the admin /verify-2fa endpoint to avoid accepting userId from client body.
+ */
+export async function verifyChallengeAndCode(
+  challengeId: string,
+  code: string,
+  clientIp?: string | null,
+): Promise<{ valid: boolean; userId?: string; message: string }> {
+  const userId = await cacheService.get<string>(`2fa:challenge:${challengeId}`);
+  if (!userId) {
+    return { valid: false, message: 'Challenge invalide ou expiré' };
+  }
+  // Consume the challenge (one-time use)
+  await cacheService.del(`2fa:challenge:${challengeId}`);
+  const result = await twoFactorService.verifyCode(userId, code, clientIp ?? undefined);
+  if (!result.valid) return { valid: false, message: result.message };
+  return { valid: true, userId, message: result.message };
+}
 
 /**
  * Load 2FA Lua script into Redis at application startup.

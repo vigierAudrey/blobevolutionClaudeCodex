@@ -96,6 +96,15 @@ type AccessTokenOptions = GetOrCreateUserOptions & {
   session?: TestSession;
 };
 
+export function readCookieValue(setCookies: string[], cookieName: string): string {
+  const cookie = setCookies.find((entry) => entry.startsWith(`${cookieName}=`));
+  if (!cookie) {
+    throw new Error(`Missing ${cookieName} cookie`);
+  }
+
+  return decodeURIComponent(cookie.slice(cookieName.length + 1).split(';')[0] ?? '');
+}
+
 export async function getAccessToken({
   app,
   session: providedSession,
@@ -111,10 +120,11 @@ export async function getAccessToken({
     .post('/auth/login')
     .send({ email, password, consentAccepted: true })
     .expect(200);
+  const setCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
 
   return {
-    accessToken: login.body.accessToken as string,
-    refreshToken: login.body.refreshToken as string,
+    accessToken: readCookieValue(setCookies, 'accessToken'),
+    refreshToken: readCookieValue(setCookies, 'refreshToken'),
     session,
     userId: user?.id as string,
   };

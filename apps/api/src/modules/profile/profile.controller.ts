@@ -11,6 +11,7 @@ import { cacheService, CacheKeys } from '../../services/cache.service';
 import { gdprExportService } from '../../services/gdpr-export.service';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { securityAlertService } from '../../services/security-alert.service';
+import { secureLogger } from '../../utils/secure-logger';
 
 export const profileRouter = Router();
 profileRouter.use(requireAuth, requireVerifiedEmail);
@@ -87,7 +88,7 @@ profileRouter.get('/me', async (req, res) => {
         userAgent
       );
 
-      console.warn(`🚨 Security: PRO user ${userId} attempted to access RIDER profile endpoint`);
+      secureLogger.warn('PROFILE_PRO_ACCESS_RIDER_DENIED', { userId });
       return res.status(403).json({
         error: 'Accès refusé : Les comptes PRO ne peuvent pas accéder aux profils RIDER. Utilisez /pro/me à la place.',
         message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
@@ -108,7 +109,7 @@ profileRouter.get('/me', async (req, res) => {
       if (cachedProfile && cacheService.isAvailable()) {
         if (process.env.NODE_ENV !== 'production') {
           // eslint-disable-next-line no-console
-          console.log('🚀 Cache hit for rider profile');
+          secureLogger.debug('PROFILE_CACHE_HIT', { userId });
         }
         return res.json(cachedProfile);
       }
@@ -126,7 +127,7 @@ profileRouter.get('/me', async (req, res) => {
         await cacheService.setProfile(userId, rp, 600); // 10 minutes cache
         if (process.env.NODE_ENV !== 'production') {
           // eslint-disable-next-line no-console
-          console.log('💾 Cached rider profile');
+          secureLogger.debug('PROFILE_CACHE_SET', { userId });
         }
       }
 
@@ -134,7 +135,7 @@ profileRouter.get('/me', async (req, res) => {
     }
 
     // Invalid role
-    console.warn(`🚨 Security: User ${userId} with invalid role attempted to access profile endpoint`);
+    secureLogger.warn('PROFILE_INVALID_ROLE_ACCESS_DENIED', { userId });
     return res.status(403).json({
       error: 'Accès refusé : Rôle invalide pour cet endpoint.',
       message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
@@ -152,7 +153,7 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
     // Log incoming request (dev only)
     if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
-      console.log('📥 PUT /profile/me - Raw body:', JSON.stringify(req.body, null, 2));
+      secureLogger.debug('PROFILE_UPDATE_REQUEST', { fields: Object.keys(req.body ?? {}) });
     }
 
     // Récupérer le rôle et l'email de l'utilisateur
@@ -180,7 +181,7 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
         userAgent
       );
 
-      console.warn(`🚨 Security: PRO user ${userId} attempted to modify RIDER profile`);
+      secureLogger.warn('PROFILE_PRO_MODIFY_RIDER_DENIED', { userId });
       return res.status(403).json({
         error: 'Accès refusé : Les comptes PRO ne peuvent pas modifier les profils RIDER. Utilisez /pro/me à la place.',
         message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
@@ -191,7 +192,7 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
       const body = adminUpsertSchema.parse(req.body); // already validated but keeping existing parse for transformations
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
-        console.log('Updating admin profile for user:', userId, 'with data:', body);
+        secureLogger.debug('PROFILE_ADMIN_UPDATE_REQUEST', { userId, fields: Object.keys(body) });
       }
       const ap = await prisma.adminProfile.upsert({
         where: { userId },
@@ -200,7 +201,7 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
       });
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
-        console.log('Admin profile updated:', ap);
+        secureLogger.debug('PROFILE_ADMIN_UPDATED', { userId, profileId: ap.id });
       }
       return res.json(ap);
     }
@@ -211,7 +212,7 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
       const body = req.body;
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
-        console.log('✅ Using validated body:', JSON.stringify(body, null, 2));
+        secureLogger.debug('PROFILE_RIDER_UPDATE_REQUEST', { userId, fields: Object.keys(body ?? {}) });
       }
       const rp = await prisma.riderProfile.upsert({
         where: { userId },
@@ -228,26 +229,31 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
         }
         if (process.env.NODE_ENV !== 'production') {
           // eslint-disable-next-line no-console
-          console.log('🗑️ Invalidated profile cache after update');
+          secureLogger.debug('PROFILE_CACHE_INVALIDATED', {
+            userId,
+            invalidatedMatching: Boolean(body.lat || body.lng),
+          });
         }
       }
 
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
-        console.log('Profile updated:', rp);
+        secureLogger.debug('PROFILE_RIDER_UPDATED', { userId, profileId: rp.id });
       }
       return res.json(rp);
     }
 
     // Invalid role
-    console.warn(`🚨 Security: User ${userId} with invalid role attempted to modify profile`);
+    secureLogger.warn('PROFILE_INVALID_ROLE_MODIFY_DENIED', { userId });
     return res.status(403).json({
       error: 'Accès refusé : Rôle invalide pour cet endpoint.',
       message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
     });
   } catch (err: any) {
     // eslint-disable-next-line no-console
-    console.error('profile update error', err);
+    secureLogger.error('PROFILE_UPDATE_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
@@ -326,7 +332,7 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
         userAgent
       );
 
-      console.warn(`🚨 Security: PRO user ${userId} attempted to upload photo to RIDER bucket`);
+      secureLogger.warn('PROFILE_PRO_UPLOAD_RIDER_PHOTO_DENIED', { userId });
       return res.status(403).json({
         error: 'Accès refusé : Les comptes PRO ne peuvent pas uploader de photos RIDER. Utilisez /pro/photo/upload-url à la place.',
         message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
@@ -343,7 +349,7 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
         userAgent
       );
 
-      console.warn(`🚨 Security: ADMIN user ${userId} attempted to upload photo to RIDER bucket - Potential compromised account!`);
+      secureLogger.warn('PROFILE_ADMIN_UPLOAD_RIDER_PHOTO_DENIED', { userId });
       return res.status(403).json({
         error: 'Accès refusé : Les comptes ADMIN ne peuvent pas uploader de photos RIDER directement.',
         message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
@@ -361,7 +367,7 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
         userAgent
       );
 
-      console.warn(`🚨 Security: User ${userId} with invalid role '${user.role}' attempted to upload photo`);
+      secureLogger.warn('PROFILE_INVALID_ROLE_UPLOAD_PHOTO_DENIED', { userId, role: user.role });
       return res.status(403).json({
         error: 'Accès refusé : Rôle invalide pour cet endpoint.',
         message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
@@ -377,10 +383,10 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
 
     // Debug basic env state for S3
     // eslint-disable-next-line no-console
-    console.log('S3 env check', {
+    secureLogger.debug('PROFILE_UPLOAD_URL_S3_CONFIG', {
       endpoint: process.env.S3_ENDPOINT,
       bucket: process.env.S3_BUCKET,
-      hasKey: !!process.env.S3_ACCESS_KEY_ID,
+      hasKey: Boolean(process.env.S3_ACCESS_KEY_ID),
     });
     await ensureBucket();
     const ext = mimeExtension(contentType) || 'bin';
@@ -391,7 +397,9 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
     return res.json({ uploadUrl, key, fileUrl });
   } catch (err: any) {
     // eslint-disable-next-line no-console
-    console.error('upload-url error', err);
+    secureLogger.error('PROFILE_UPLOAD_URL_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
@@ -424,7 +432,9 @@ profileRouter.get('/export', exportRateLimiter, async (req, res) => {
     return res.json(exportData);
   } catch (err: any) {
     // eslint-disable-next-line no-console
-    console.error('GDPR export error', err);
+    secureLogger.error('PROFILE_GDPR_EXPORT_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return res.status(500).json({ error: 'Erreur lors de l\'export de vos données' });
   }
 });
@@ -486,7 +496,9 @@ profileRouter.post('/delete-account', async (req, res) => {
       daysRemaining: 30,
     });
   } catch (err: any) {
-    console.error('Account deletion error', err);
+    secureLogger.error('PROFILE_ACCOUNT_DELETION_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return res.status(500).json({ error: 'Erreur lors de la demande de suppression' });
   }
 });
@@ -548,7 +560,9 @@ profileRouter.post('/cancel-deletion', async (req, res) => {
       cancelledAt: now,
     });
   } catch (err: any) {
-    console.error('Cancel deletion error', err);
+    secureLogger.error('PROFILE_CANCEL_DELETION_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return res.status(500).json({ error: 'Erreur lors de l\'annulation' });
   }
 });
@@ -584,7 +598,9 @@ profileRouter.get('/deletion-status', async (req, res) => {
       canCancel: daysRemaining > 0,
     });
   } catch (err: any) {
-    console.error('Deletion status error', err);
+    secureLogger.error('PROFILE_DELETION_STATUS_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return res.status(500).json({ error: 'Erreur lors de la récupération du statut' });
   }
 });
@@ -666,7 +682,9 @@ profileRouter.get('/notifications', async (req, res) => {
       },
     });
   } catch (err: any) {
-    console.error('Get notification preferences error', err);
+    secureLogger.error('PROFILE_GET_NOTIFICATION_PREFERENCES_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return res.status(500).json({ error: 'Erreur lors de la récupération des préférences' });
   }
 });
@@ -752,7 +770,9 @@ profileRouter.put('/notifications', validate(notificationPreferencesSchema), asy
       },
     });
   } catch (err: any) {
-    console.error('Update notification preferences error', err);
+    secureLogger.error('PROFILE_UPDATE_NOTIFICATION_PREFERENCES_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }

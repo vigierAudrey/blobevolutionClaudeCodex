@@ -129,7 +129,7 @@ paths:
   /auth/login:
     post:
       tags: [Auth]
-      summary: Authentifie un utilisateur et retourne les jetons
+      summary: Authentifie un utilisateur et établit les cookies de session
       operationId: authLogin
       security: []
       requestBody:
@@ -140,7 +140,7 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: Jetons d'accès ou étape 2FA requise
+          description: Session créée via cookies `HttpOnly`, ou étape 2FA admin requise
           content:
             application/json:
               schema:
@@ -160,25 +160,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /auth/refresh:
+  /auth/verify-2fa:
     post:
       tags: [Auth]
-      summary: Rafraîchit l'access token à partir du refresh token
-      operationId: authRefresh
+      summary: Valide le code 2FA admin et établit les cookies de session
+      operationId: authVerifyAdmin2fa
       security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RefreshRequest'
+              $ref: '#/components/schemas/AdminTwoFactorVerifyRequest'
       responses:
         '200':
-          description: Nouveaux jetons d'accès
+          description: Authentification admin complète via cookies `HttpOnly`
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthTokens'
+                $ref: '#/components/schemas/CookieSessionOkResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: IP admin non autorisée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Trop de challenges 2FA en attente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service 2FA indisponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Fait tourner la session à partir du refresh token body ou cookie
+      operationId: authRefresh
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Session rafraîchie via nouveaux cookies `HttpOnly`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CookieSessionOkResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -383,7 +425,7 @@ paths:
   /auth/2fa/verify:
     post:
       tags: [Auth]
-      summary: Valide un code 2FA et délivre les jetons
+      summary: Valide un code 2FA PRO et établit les cookies de session
       operationId: authVerify2fa
       security: []
       requestBody:
@@ -394,11 +436,11 @@ paths:
               $ref: '#/components/schemas/TwoFactorVerifyRequest'
       responses:
         '200':
-          description: Authentification complète
+          description: Authentification PRO complète via cookies `HttpOnly`
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthTokens'
+                $ref: '#/components/schemas/TwoFactorVerifyResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -617,6 +659,79 @@ paths:
                   retryAfter:
                     type: integer
                     description: Nombre de secondes avant de pouvoir réessayer
+
+  /pro/delete-account:
+    post:
+      tags: [Pros]
+      summary: Programme la suppression du compte pro avec confirmation explicite
+      operationId: proDeleteAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteAccountRequest'
+      responses:
+        '200':
+          description: Suppression programmée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionScheduledResponse'
+        '400':
+          description: Confirmation manquante ou compte déjà programmé pour suppression
+        '404':
+          description: Compte introuvable
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /pro/cancel-deletion:
+    post:
+      tags: [Pros]
+      summary: Annule une suppression programmée sans step-up supplémentaire
+      operationId: proCancelDeletion
+      responses:
+        '200':
+          description: Suppression annulée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  cancelledAt:
+                    type: string
+                    format: date-time
+        '400':
+          description: Aucune suppression programmée ou période de grâce expirée
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Compte introuvable
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /pro/deletion-status:
+    get:
+      tags: [Pros]
+      summary: Lit le statut courant de suppression du compte pro
+      operationId: proDeletionStatus
+      responses:
+        '200':
+          description: Statut courant de suppression
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProDeletionStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Compte introuvable
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /pro/photo/upload-url:
     post:
@@ -1611,6 +1726,21 @@ paths:
       tags: [Contact]
       summary: Liste les demandes destinées au pro
       operationId: contactListPro
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+            format: uuid
+          description: Curseur de pagination (id du dernier item reçu)
+        - in: query
+          name: take
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Taille de page demandée (cap serveur 200)
       responses:
         '200':
           description: Demandes en cours
@@ -1624,6 +1754,10 @@ paths:
                     items:
                       type: object
                       additionalProperties: true
+                  nextCursor:
+                    type: string
+                    format: uuid
+                    nullable: true
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1633,6 +1767,21 @@ paths:
       tags: [Contact]
       summary: Liste les demandes en attente pour le rider
       operationId: contactPending
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+            format: uuid
+          description: Curseur de pagination (id du dernier item reçu)
+        - in: query
+          name: take
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Taille de page demandée (cap serveur 200)
       responses:
         '200':
           description: Demandes à traiter
@@ -1646,6 +1795,10 @@ paths:
                     items:
                       type: object
                       additionalProperties: true
+                  nextCursor:
+                    type: string
+                    format: uuid
+                    nullable: true
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -2302,7 +2455,7 @@ paths:
   /admin/gdpr/run-purge:
     post:
       tags: [Admin]
-      summary: Lance le job de purge RGPD
+      summary: Lance le job de purge RGPD (step-up admin requis)
       operationId: adminGdprRunPurge
       responses:
         '200':
@@ -2342,7 +2495,7 @@ paths:
   /admin/conversations/{conversationId}/block:
     post:
       tags: [Admin]
-      summary: Force le blocage ou déblocage d'une conversation
+      summary: Force le blocage ou déblocage d'une conversation (step-up admin requis)
       operationId: adminConversationBlock
       parameters:
         - name: conversationId
@@ -2371,7 +2524,7 @@ paths:
   /admin/conversations/broadcast:
     post:
       tags: [Admin]
-      summary: Diffuse un message admin vers les messageries utilisateurs
+      summary: Diffuse un message admin vers les messageries utilisateurs (step-up admin requis)
       operationId: adminConversationsBroadcast
       requestBody:
         required: true
@@ -2393,7 +2546,7 @@ paths:
   /admin/conversations/unblock-all:
     post:
       tags: [Admin]
-      summary: Débloque toutes les conversations actuellement verrouillées
+      summary: Débloque toutes les conversations actuellement verrouillées (step-up admin requis)
       operationId: adminConversationsUnblockAll
       responses:
         '200':
@@ -3427,21 +3580,31 @@ components:
         consentAccepted:
           type: boolean
           description: Confirmation de la charte RGPD
+    CookieSessionOkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+      required: [ok]
+    AdminTwoFactorChallengeResponse:
+      type: object
+      properties:
+        requires2FA:
+          type: boolean
+          enum: [true]
+        userId:
+          type: string
+          format: uuid
+        message:
+          type: string
+      required: [requires2FA, userId, message]
     LoginResponse:
       oneOf:
-        - $ref: '#/components/schemas/AuthTokens'
-        - type: object
-          properties:
-            requiresTwoFactor:
-              type: boolean
-              enum: [true]
-            twoFactorDelivery:
-              type: string
-              enum: [EMAIL]
-          required: [requiresTwoFactor, twoFactorDelivery]
+        - $ref: '#/components/schemas/CookieSessionOkResponse'
+        - $ref: '#/components/schemas/AdminTwoFactorChallengeResponse'
     RefreshRequest:
       type: object
-      required: [refreshToken]
       properties:
         refreshToken:
           type: string
@@ -3489,6 +3652,41 @@ components:
           type: string
         newPassword:
           type: string
+    DeleteAccountRequest:
+      type: object
+      required: [confirm]
+      properties:
+        confirm:
+          type: boolean
+          enum: [true]
+    AccountDeletionScheduledResponse:
+      type: object
+      required: [message, deletedAt, deletionDate, daysRemaining]
+      properties:
+        message:
+          type: string
+        deletedAt:
+          type: string
+          format: date-time
+        deletionDate:
+          type: string
+          format: date-time
+        daysRemaining:
+          type: integer
+    ProDeletionStatusResponse:
+      type: object
+      required: [isScheduled]
+      properties:
+        isScheduled:
+          type: boolean
+        deletedAt:
+          type: string
+          format: date-time
+        deletionDate:
+          type: string
+          format: date-time
+        daysRemaining:
+          type: integer
     TwoFactorSendRequest:
       type: object
       required: [email]
@@ -3507,6 +3705,30 @@ components:
           type: string
           minLength: 6
           maxLength: 6
+        consentAccepted:
+          type: boolean
+    AdminTwoFactorVerifyRequest:
+      type: object
+      required: [userId, code]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+        consentAccepted:
+          type: boolean
+    TwoFactorVerifyResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+      required: [ok, message]
     AuthUser:
       type: object
       properties:
@@ -3520,16 +3742,21 @@ components:
           type: string
         emailVerified:
           type: boolean
+        twoFactorEnabled:
+          type: boolean
+        consentedAt:
+          type: string
+          format: date-time
+          nullable: true
+        consentVersion:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-        riderProfile:
-          $ref: '#/components/schemas/Profile'
-        proProfile:
-          $ref: '#/components/schemas/ProProfile'
     Profile:
       type: object
       properties:
@@ -3702,18 +3929,13 @@ components:
       properties:
         id:
           type: string
-        userId:
-          type: string
         displayName:
           type: string
         bio:
           type: string
-        lat:
-          type: number
-        lng:
-          type: number
-        distanceKm:
-          type: number
+        distanceBucket:
+          type: string
+          enum: ['<5km', '5-15km', '15-30km', '>30km']
         lessonSport:
           type: string
           enum: [surf, kitesurf]
@@ -3733,6 +3955,7 @@ components:
           type: integer
           minimum: 1
           nullable: true
+      additionalProperties: false
     ProOffer:
       type: object
       properties:
@@ -3875,35 +4098,48 @@ components:
           enum: [surf, kitesurf]
         level:
           type: string
-          enum: [beginner, intermediate, advanced]
+          enum: [beginner, intermediate, advanced, anytime]
         date:
           type: string
           description: Date au format YYYY-MM-DD ou "anytime"
         distanceKm:
           type: integer
+          minimum: 1
+          maximum: 500
         location:
           type: object
           properties:
             lat:
               type: number
+              minimum: -90
+              maximum: 90
             lng:
               type: number
+              minimum: -180
+              maximum: 180
         cursor:
           type: string
-          description: ID de profil pour pagination
+          description: Cursor opaque de pagination keyset (token base64url versionné)
         limit:
           type: integer
+          minimum: 1
+          maximum: 100
         page:
           type: integer
+          minimum: 1
         pageSize:
           type: integer
+          minimum: 1
+          maximum: 50
         sortBy:
           type: string
           enum: [distance, name]
         excludeIds:
           type: array
+          maxItems: 200
           items:
             type: string
+            format: uuid
     MatchingSearchResponse:
       type: object
       properties:
@@ -3920,6 +4156,14 @@ components:
           type: boolean
         nextCursor:
           type: string
+          nullable: true
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 100
     MatchingResult:
       type: object
       properties:
@@ -3952,7 +4196,7 @@ components:
         items:
           type: array
           minItems: 1
-          maxItems: 100
+          maxItems: 50
           items:
             $ref: '#/components/schemas/MatchingDecision'
     CreatedConversation:
@@ -4026,12 +4270,9 @@ components:
     NearbyPro:
       type: object
       properties:
-        proId:
+        proPublicId:
           type: string
           format: uuid
-        email:
-          type: string
-          format: email
         businessName:
           type: string
           nullable: true
@@ -4040,12 +4281,9 @@ components:
           nullable: true
         verified:
           type: boolean
-        lat:
-          type: number
-        lng:
-          type: number
-        distanceKm:
-          type: number
+        distanceBucket:
+          type: string
+          enum: ['<5km', '5-15km', '15-30km', '>30km']
         sports:
           type: array
           items:
@@ -4053,7 +4291,7 @@ components:
             enum: [surf, kitesurf]
         openAvailabilityCount:
           type: integer
-      additionalProperties: true
+      additionalProperties: false
     AvailabilityBookedCountInput:
       type: object
       properties:

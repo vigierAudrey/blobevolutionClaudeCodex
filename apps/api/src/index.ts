@@ -486,6 +486,19 @@ export function createApp() {
   app.use('/push', pushRouter);
 
 
+  // Internal metrics endpoint — token auth, never logs the provided value
+  app.get('/internal/metrics', (req: Request, res: Response) => {
+    const expected = process.env.METRICS_INTERNAL_TOKEN;
+    const provided = req.headers['x-internal-token'] as string | undefined;
+    const clientIp = (req as any).canonicalIp ?? req.socket?.remoteAddress;
+    if (!expected || !provided || provided !== expected) {
+      secureLogger.warn('METRICS_INTERNAL_TOKEN_REJECTED', { ip: clientIp });
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    secureLogger.info('METRICS_INTERNAL_TOKEN_ACCESS', { ip: clientIp });
+    return res.json({ ok: true, ts: Date.now() });
+  });
+
   // Global error handler
   app.use((err: any, _req: any, res: any, _next: any) => {
     console.error('Global error handler:', err);

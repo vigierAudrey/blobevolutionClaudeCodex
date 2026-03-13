@@ -122,6 +122,11 @@ if (RATE_LIMIT_ENABLED) {
  * Limiters en mémoire (fallback si Redis non prêt)
  */
 const memoryLimiters = {
+  sendMessageGlobal: new RateLimiterMemory({
+    points: 30,
+    duration: 60,
+    blockDuration: 60
+  }),
   sendMessage: new RateLimiterMemory({
     points: 10,
     duration: 60,
@@ -153,10 +158,37 @@ const panicLimiter = new RateLimiterMemory({
  * Cache des limiters Redis (créés à la demande)
  */
 let redisLimiters: {
+  sendMessageGlobal?: RateLimiterRedis;
   sendMessage?: RateLimiterRedis;
   typing?: RateLimiterRedis;
   join?: RateLimiterRedis;
 } = {};
+
+export function isRateLimitRedisReady(): boolean {
+  return redisReady && !!rateLimitRedisClient;
+}
+
+export function getSendMessageGlobalLimiter(): RateLimiterRedis | RateLimiterMemory {
+  if (!RATE_LIMIT_ENABLED) {
+    return memoryLimiters.sendMessageGlobal;
+  }
+
+  if (redisReady && rateLimitRedisClient) {
+    if (!redisLimiters.sendMessageGlobal) {
+      redisLimiters.sendMessageGlobal = new RateLimiterRedis({
+        storeClient: rateLimitRedisClient,
+        keyPrefix: 'ws-rate:send-message-global',
+        points: 30,
+        duration: 60,
+        blockDuration: 60,
+        insuranceLimiter: memoryLimiters.sendMessageGlobal
+      });
+    }
+    return redisLimiters.sendMessageGlobal;
+  }
+
+  return memoryLimiters.sendMessageGlobal;
+}
 
 /**
  * Getter pour send-message limiter
@@ -255,6 +287,18 @@ interface RateLimitOptions {
    * Default: false
    */
   failOpen?: boolean;
+  /**
+   * Si true, toute erreur interne du limiter devient un rejet immédiat (fail-closed).
+   * Utilisé sur les événements non critiques (typing) pour éviter un fanout massif.
+   */
+  hardFailOnError?: boolean;
+}
+
+function sanitizeRateLimitLogKey(key: string): string {
+  return key
+    .split(':')
+    .map((part) => (part.length > 8 ? `${part.slice(0, 8)}...` : part))
+    .join(':');
 }
 
 /**
@@ -278,7 +322,7 @@ export async function checkRateLimit(
   key: string,
   opts: RateLimitOptions = {}
 ): Promise<{ allowed: true } | { allowed: false; error: SocketError }> {
-  const { failOpen = false } = opts;
+  const { failOpen = false, hardFailOnError = false } = opts;
 
   // ✅ Si feature flag désactivé, autoriser
   if (!RATE_LIMIT_ENABLED) {
@@ -298,7 +342,7 @@ export async function checkRateLimit(
 
       // ✅ PR2: Log observable (debug level, pas warn)
       secureLogger.debug('RATE_LIMIT_EXCEEDED', {
-        key,
+        key: sanitizeRateLimitLogKey(key),
         retryAfter,
         remainingPoints: error.remainingPoints
       });
@@ -320,10 +364,10 @@ export async function checkRateLimit(
     // ✅ Throttle: 1 log toutes les 10 secondes par limiter
     if (now - lastLog > BYPASS_LOG_THROTTLE_MS) {
       secureLogger.error('RATE_LIMIT_ERROR_BYPASS', {
-        key,
+        key: sanitizeRateLimitLogKey(key),
         error: error instanceof Error ? error.message : String(error),
         errorName: error instanceof Error ? error.name : 'Unknown',
-        action: failOpen ? 'bypassed (fail-open)' : 'panic limiter applied',
+        action: failOpen ? 'bypassed (fail-open)' : hardFailOnError ? 'blocked (hard-fail)' : 'panic limiter applied',
         throttleNote: 'Similar errors throttled for 10s'
       });
       bypassLogThrottle.set(limiter!, now);
@@ -332,6 +376,17 @@ export async function checkRateLimit(
     // Si fail-open activé (typing), autoriser
     if (failOpen) {
       return { allowed: true };
+    }
+
+    if (hardFailOnError) {
+      return {
+        allowed: false,
+        error: {
+          code: SocketErrorCode.RATE_LIMITED,
+          message: 'Service temporarily limited. Retry shortly.',
+          retryAfter: 1
+        }
+      };
     }
 
     // Sinon, appliquer panic limiter (1 req/sec garde-fou)
@@ -375,7 +430,7 @@ export async function resetRateLimit(
     await limiter.delete(key);
   } catch (error) {
     secureLogger.warn('RATE_LIMIT_RESET_FAILED', {
-      key,
+      key: sanitizeRateLimitLogKey(key),
       error: error instanceof Error ? error.message : String(error)
     });
   }

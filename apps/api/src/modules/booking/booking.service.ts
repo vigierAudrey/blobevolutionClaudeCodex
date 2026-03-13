@@ -1,4 +1,4 @@
-import { clientPrisma as prisma, Prisma, BookingRequestStatus } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma, BookingRequestStatus, BookingStatus } from '@blobinfini/database';
 import type { ProAvailability } from '@blobinfini/database';
 import { bookingRepository, type SearchAvailabilityRow } from './booking.repository';
 import { cacheService, CacheKeys } from '../../services/cache.service';
@@ -21,9 +21,21 @@ type CachedAvailability = { id: string };
 type BookingRiderRow = {
   availabilityId: string;
   riderId: string;
-  riderEmail: string;
   displayName: string | null;
   photoUrl: string | null;
+};
+
+type NearbyProSearchRow = {
+  proUserId: string;
+  proPublicId: string;
+  businessName: string | null;
+  photoUrl: string | null;
+  verified: boolean;
+  distance_m: Prisma.Decimal | number;
+  sports: Array<'surf' | 'kitesurf'> | null;
+  openAvailabilityCount: Prisma.Decimal | number | bigint | null;
+  totalAvailabilityCount: Prisma.Decimal | number | bigint | null;
+  hasRequestedSport: boolean | null;
 };
 
 type ManualBookingInput = {
@@ -56,19 +68,155 @@ type AvailabilityStatsRow = Prisma.ProAvailabilityGetPayload<{
   select: typeof availabilityStatsSelect;
 }>;
 
+const riderRequestSelect = {
+  id: true,
+  riderUserId: true,
+  availabilityId: true,
+  message: true,
+  status: true,
+  respondedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  availability: {
+    select: {
+      id: true,
+      sport: true,
+      levels: true,
+      startAt: true,
+      endAt: true,
+      spotName: true,
+      pro: {
+        select: {
+          proProfile: {
+            select: {
+              id: true,
+              businessName: true,
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+type RiderRequestRow = Prisma.BookingRequestGetPayload<{
+  select: typeof riderRequestSelect;
+}>;
+
+type LockedAvailabilityRow = {
+  id: string;
+  proUserId: string;
+  bookedCount: number;
+  capacity: number;
+  status: 'OPEN' | 'CLOSED';
+};
+
 export class BookingService {
+  private toUtcDayKey(dateInput: Date | string): string {
+    return new Date(dateInput).toISOString().slice(0, 10);
+  }
+
+  private getUtcDayRange(dateInput: Date | string): { dayStartUtc: Date; nextDayStartUtc: Date } {
+    const dayKey = this.toUtcDayKey(dateInput);
+    const dayStartUtc = new Date(`${dayKey}T00:00:00.000Z`);
+    const nextDayStartUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000);
+    return { dayStartUtc, nextDayStartUtc };
+  }
+
+  private isBookingRequestUniqueViolation(error: unknown): boolean {
+    const maybeError = error as {
+      code?: string;
+      meta?: { modelName?: unknown; target?: unknown };
+    } | null;
+
+    if (!maybeError || maybeError.code !== 'P2002') {
+      return false;
+    }
+    const modelName = typeof maybeError.meta?.modelName === 'string' ? maybeError.meta.modelName : '';
+    if (modelName === 'Booking') {
+      return true;
+    }
+    const rawTarget = maybeError.meta?.target;
+    if (Array.isArray(rawTarget)) {
+      const target = rawTarget.map((entry) => String(entry));
+      return target.includes('bookingRequestId') || target.includes('Booking_bookingRequestId_key');
+    }
+    return typeof rawTarget === 'string' && rawTarget.includes('bookingRequestId');
+  }
+
+  private assertTransactionalClient(tx: Prisma.TransactionClient): void {
+    if ((tx as unknown) === (prisma as unknown)) {
+      throw new Error('Transaction client required for booking critical section');
+    }
+  }
+
+  private async lockAvailabilityForBooking(
+    tx: Prisma.TransactionClient,
+    availabilityId: string
+  ): Promise<LockedAvailabilityRow | null> {
+    this.assertTransactionalClient(tx);
+    const rows = await tx.$queryRaw<LockedAvailabilityRow[]>`
+      SELECT "id", "proUserId", "bookedCount", "capacity", "status"
+      FROM "ProAvailability"
+      WHERE "id" = ${availabilityId}
+      FOR UPDATE
+    `;
+
+    return rows[0] ?? null;
+  }
+
+  private async getConfirmedBookingCount(tx: Prisma.TransactionClient, availabilityId: string): Promise<number> {
+    this.assertTransactionalClient(tx);
+    return tx.booking.count({
+      where: {
+        availabilityId,
+        status: BookingStatus.CONFIRMED,
+      },
+    });
+  }
+
+  private async computeNextCapacityState(
+    tx: Prisma.TransactionClient,
+    availability: LockedAvailabilityRow
+  ): Promise<{ nextBookedCount: number; nextStatus: 'OPEN' | 'CLOSED' }> {
+    this.assertTransactionalClient(tx);
+    if (availability.status !== 'OPEN') {
+      throw Object.assign(new Error('Availability is closed'), { status: 409 });
+    }
+
+    const confirmedBookings = await this.getConfirmedBookingCount(tx, availability.id);
+    const effectiveBookedCount = Math.max(Number(availability.bookedCount), confirmedBookings);
+
+    if (effectiveBookedCount >= Number(availability.capacity)) {
+      throw Object.assign(new Error('Availability capacity reached'), { status: 409 });
+    }
+
+    const nextBookedCount = effectiveBookedCount + 1;
+    const nextStatus = nextBookedCount >= Number(availability.capacity) ? 'CLOSED' : 'OPEN';
+
+    return { nextBookedCount, nextStatus };
+  }
+
   async createAvailability(proUserId: string, data: CreateAvailabilityInput) {
     await this.assertProHasGeo(proUserId);
     // Validate geographic coordinates
     this.validateGeoPoint(data.spotLat, data.spotLng);
 
-    // Validate only one offer per day
-    await this.validateOnlyOneOfferPerDay(proUserId, data.startAt);
+    const dayKeyUtc = this.toUtcDayKey(data.startAt);
 
-    // Validate time overlap with existing availabilities
-    await this.validateTimeOverlap(proUserId, data.startAt, data.endAt);
+    // Advisory lock per (proUserId, UTC day) prevents concurrent creates from bypassing
+    // the 1-per-day quota while avoiding unnecessary cross-day serialization.
+    const availability = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${proUserId}), hashtext(${dayKeyUtc}))`;
 
-    const availability = await bookingRepository.createAvailability({ ...data, proUserId });
+      // Validate only one offer per day (inside lock so concurrent requests can't both pass)
+      await this.validateOnlyOneOfferPerDay(proUserId, data.startAt, undefined, tx);
+
+      // Validate time overlap with existing availabilities
+      await this.validateTimeOverlap(proUserId, data.startAt, data.endAt, tx);
+
+      return tx.proAvailability.create({ data: { ...data, proUserId } });
+    });
 
     // Invalidate availability caches near this location to keep search results fresh
     try {
@@ -91,38 +239,50 @@ export class BookingService {
     }
   }
 
-  private async validateOnlyOneOfferPerDay(proUserId: string, startAt: Date | string, excludeId?: string): Promise<void> {
-    const start = new Date(startAt);
+  private toDistanceBucket(distanceKm: number): '<5km' | '5-15km' | '15-30km' | '>30km' {
+    if (distanceKm < 5) return '<5km';
+    if (distanceKm < 15) return '5-15km';
+    if (distanceKm < 30) return '15-30km';
+    return '>30km';
+  }
 
-    // Get start and end of the day (using local date)
-    const dayStart = new Date(start);
-    dayStart.setHours(0, 0, 0, 0);
-
-    const dayEnd = new Date(start);
-    dayEnd.setHours(23, 59, 59, 999);
+  private async validateOnlyOneOfferPerDay(
+    proUserId: string,
+    startAt: Date | string,
+    excludeId?: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const db = tx ?? prisma;
+    const { dayStartUtc, nextDayStartUtc } = this.getUtcDayRange(startAt);
+    const dayKey = this.toUtcDayKey(startAt);
 
     // Check if there's already an availability for this calendar date
-    const existingAvailabilities = await prisma.proAvailability.findMany({
+    const existingAvailabilities = await db.proAvailability.findMany({
       where: {
         proUserId,
         ...(excludeId ? { id: { not: excludeId } } : {}),
         startAt: {
-          gte: dayStart,
-          lte: dayEnd
+          gte: dayStartUtc,
+          lt: nextDayStartUtc
         }
       }
     });
 
     if (existingAvailabilities.length > 0) {
-      const existingDate = existingAvailabilities[0].startAt.toLocaleDateString('fr-FR');
       throw Object.assign(
-        new Error(`Vous avez déjà publié une offre le ${existingDate}. Limite : une offre par jour.`),
+        new Error(`Vous avez déjà publié une offre le ${dayKey} (UTC). Limite : une offre par jour.`),
         { status: 409 }
       );
     }
   }
 
-  private async validateTimeOverlap(proUserId: string, startAt: Date | string, endAt: Date | string): Promise<void> {
+  private async validateTimeOverlap(
+    proUserId: string,
+    startAt: Date | string,
+    endAt: Date | string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const db = tx ?? prisma;
     const start = new Date(startAt);
     const end = new Date(endAt);
 
@@ -131,7 +291,7 @@ export class BookingService {
     }
 
     // Check for overlapping availabilities
-    const overlappingAvailabilities = await prisma.proAvailability.findMany({
+    const overlappingAvailabilities = await db.proAvailability.findMany({
       where: {
         proUserId,
         OR: [
@@ -385,9 +545,10 @@ export class BookingService {
     const effectiveLimit = limit || pageSize;
 
     // Check cache first for availability search (cursor-aware)
+    // Legacy key MUST include page+pageSize: same sport/location with page=2 != page=1
     const cacheKey = useCursorPagination
-      ? `${CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25)}:cursor:${cursor || 'start'}`
-      : CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25);
+      ? `${CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25)}:cursor:${cursor || 'start'}:limit:${effectiveLimit}`
+      : `${CacheKeys.availabilities(filters.sport, filters.level, filters.lat, filters.lng, filters.radiusKm || 25)}:p${page}:s${effectiveLimit}`;
 
     const cachedAvailabilities = await cacheService.getAvailabilities(cacheKey) as CachedAvailability[] | null;
     if (cachedAvailabilities && cacheService.isAvailable()) {
@@ -415,23 +576,42 @@ export class BookingService {
       pageSize,
     }) as SearchAvailabilityRow[];
 
-    // Get booking data with a single optimized query instead of N+1
-    const availabilityIds = rows.map((row) => row.id);
-    const bookingsData = availabilityIds.length > 0
-      ? await prisma.$queryRaw<BookingRiderRow[]>`
-          SELECT
-            b."availabilityId",
-            ru."id" as "riderId",
-            ru."email" as "riderEmail",
-            rp."displayName",
-            rp."photoUrl"
-          FROM "Booking" b
-          JOIN "User" ru ON ru."id" = b."riderUserId"
-          LEFT JOIN "RiderProfile" rp ON rp."userId" = ru."id"
-          WHERE b."availabilityId" IN (${Prisma.join(availabilityIds)})
-          ORDER BY b."createdAt" DESC
-        `
+    // Level filter in JS: Prisma 6 cannot reliably parametrize text = ANY(text[]) in raw queries
+    const levelFilteredRows = rows.filter((row) =>
+      Array.isArray(row.levels) && row.levels.includes(filters.level)
+    );
+
+    // Get booking data via ORM to avoid Prisma 6 raw-query type coercion issues with IN clauses
+    const availabilityIds = levelFilteredRows.map((row) => row.id);
+    type BookingWithRider = {
+      availabilityId: string;
+      riderUserId: string;
+      createdAt: Date;
+      rider: { id: string; riderProfile: { displayName: string | null; photoUrl: string | null } | null };
+    };
+    const bookingOrmRows: BookingWithRider[] = availabilityIds.length > 0
+      ? await prisma.booking.findMany({
+          where: { availabilityId: { in: availabilityIds } },
+          select: {
+            availabilityId: true,
+            riderUserId: true,
+            createdAt: true,
+            rider: {
+              select: {
+                id: true,
+                riderProfile: { select: { displayName: true, photoUrl: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        })
       : [];
+    const bookingsData: BookingRiderRow[] = bookingOrmRows.map((b) => ({
+      availabilityId: b.availabilityId,
+      riderId: b.rider.id,
+      displayName: b.rider.riderProfile?.displayName ?? null,
+      photoUrl: b.rider.riderProfile?.photoUrl ?? null,
+    }));
 
     // Group bookings by availability for efficient lookup
     const ridersByAvailability = new Map<string, Array<{ id: string; displayName: string; avatarUrl: string | null }>>();
@@ -445,7 +625,7 @@ export class BookingService {
       ridersByAvailability.set(booking.availabilityId, collection.slice(0, 6));
     }
 
-    const formattedResults = rows.map((row) => ({
+    const formattedResults = levelFilteredRows.map((row) => ({
       id: row.id,
       pro: {
         userId: row.proUserId,
@@ -459,8 +639,7 @@ export class BookingService {
       bookedCount: Number(row.bookedCount),
       status: row.status,
       spotName: row.spotName,
-      spotLat: row.spotLat,
-      spotLng: row.spotLng,
+      // GPS précis délibérément absent: le rider voit spotName + distanceKm uniquement
       distanceKm: row.distance_m != null ? Number(row.distance_m) / 1000 : null,
       riders: ridersByAvailability.get(row.id) ?? [],
     }));
@@ -654,32 +833,22 @@ export class BookingService {
   }
 
   async listRiderRequests(riderUserId: string) {
-    return bookingRepository.listRequests({
+    const requests: RiderRequestRow[] = await prisma.bookingRequest.findMany({
       where: { riderUserId },
-      include: {
-        availability: {
-          select: {
-            id: true,
-            sport: true,
-            levels: true,
-            startAt: true,
-            endAt: true,
-            spotName: true,
-            pro: {
-              select: {
-                email: true,
-                proProfile: {
-                  select: {
-                    businessName: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      select: riderRequestSelect,
       orderBy: { createdAt: 'desc' },
     });
+
+    return requests.map((request) => ({
+      ...request,
+      availability: {
+        ...request.availability,
+        pro: {
+          proPublicId: request.availability.pro?.proProfile?.id ?? null,
+          businessName: request.availability.pro?.proProfile?.businessName ?? null,
+        },
+      },
+    }));
   }
 
   async listProRequests(proUserId: string) {
@@ -719,8 +888,15 @@ export class BookingService {
 
   async decideRequest(proUserId: string, requestId: string, action: 'accept' | 'reject') {
     // Execute the database transaction with retry logic for serialization failures
-    const result = await withTransactionRetry(async () => {
-      return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    let result: {
+      success: true;
+      action: 'accept' | 'reject';
+      requestData: any;
+      conversationId: string | undefined;
+    };
+    try {
+      result = await withTransactionRetry(async () => {
+        return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       let conversationId: string | undefined;
       const request = await tx.bookingRequest.findUnique({
         where: { id: requestId },
@@ -746,39 +922,37 @@ export class BookingService {
       }
 
       if (action === 'accept') {
-        const availabilityRow = await tx.$queryRaw<Array<{ bookedCount: number; capacity: number; status: 'OPEN' | 'CLOSED' }>>`
-          SELECT "bookedCount", "capacity", "status"
-          FROM "ProAvailability"
-          WHERE "id" = ${request.availabilityId}
-          FOR UPDATE
-        `;
+        const availability = await this.lockAvailabilityForBooking(tx, request.availabilityId);
 
-        if (!availabilityRow.length) {
+        if (!availability) {
           throw Object.assign(new Error('Availability not found'), { status: 404 });
         }
 
-        const availability = availabilityRow[0];
-        if (Number(availability.bookedCount) >= Number(availability.capacity)) {
-          throw Object.assign(new Error('Availability capacity reached'), { status: 409 });
+        // Re-check request status after acquiring the lock (TOCTOU guard):
+        // concurrent accepts could both pass the initial PENDING check before either commits.
+        const freshRequest = await tx.bookingRequest.findUnique({
+          where: { id: requestId },
+          select: { status: true },
+        });
+        if (!freshRequest || freshRequest.status !== BookingRequestStatus.PENDING) {
+          throw Object.assign(new Error('Request already handled'), { status: 409 });
         }
-        if (availability.status !== 'OPEN') {
-          throw Object.assign(new Error('Availability is closed'), { status: 409 });
-        }
+
+        const { nextBookedCount, nextStatus } = await this.computeNextCapacityState(tx, availability);
 
         await tx.booking.create({
           data: {
             availabilityId: request.availabilityId,
             riderUserId: request.riderUserId,
+            bookingRequestId: request.id,
           },
         });
 
         await tx.proAvailability.update({
           where: { id: request.availabilityId },
           data: {
-            bookedCount: { increment: 1 },
-            ...(Number(availability.bookedCount) + 1 >= Number(availability.capacity)
-              ? { status: 'CLOSED' as const }
-              : {}),
+            bookedCount: nextBookedCount,
+            status: nextStatus,
           },
         });
 
@@ -823,14 +997,20 @@ export class BookingService {
         });
       }
 
-      return {
-        success: true,
-        action,
-        requestData: request, // Return request data for notifications
-        conversationId
-      };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-    }, 7, 150);
+          return {
+            success: true,
+            action,
+            requestData: request, // Return request data for notifications
+            conversationId
+          };
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+      }, 7, 150);
+    } catch (error) {
+      if (this.isBookingRequestUniqueViolation(error)) {
+        throw Object.assign(new Error('Request already handled'), { status: 409 });
+      }
+      throw error;
+    }
 
     // After successful transaction, send push notifications
     try {
@@ -859,35 +1039,41 @@ export class BookingService {
   }
 
   async addManualBooking(proUserId: string, data: ManualBookingInput) {
-    return await withTransactionRetry(async () => {
-      return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const availability = await tx.proAvailability.findUnique({
-          where: { id: data.availabilityId }
-        });
+    try {
+      return await withTransactionRetry(async () => {
+        return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+          const availability = await this.lockAvailabilityForBooking(tx, data.availabilityId);
 
-        if (!availability || availability.proUserId !== proUserId) {
-          throw Object.assign(new Error('Availability not found'), { status: 404 });
-        }
+          if (!availability || availability.proUserId !== proUserId) {
+            throw Object.assign(new Error('Availability not found'), { status: 404 });
+          }
 
-        const booking = await tx.booking.create({
-          data: {
-            availabilityId: data.availabilityId,
-            riderUserId: data.riderUserId,
-          },
-        });
+          const { nextBookedCount, nextStatus } = await this.computeNextCapacityState(tx, availability);
 
-        const nextBookedCount = availability.bookedCount + 1;
-        await tx.proAvailability.update({
-          where: { id: data.availabilityId },
-          data: {
-            bookedCount: { increment: 1 },
-            ...(nextBookedCount >= availability.capacity ? { status: 'CLOSED' as const } : {}),
-          },
-        });
+          const booking = await tx.booking.create({
+            data: {
+              availabilityId: data.availabilityId,
+              riderUserId: data.riderUserId,
+            },
+          });
 
-        return booking;
-      });
-    }, 7, 150);
+          await tx.proAvailability.update({
+            where: { id: data.availabilityId },
+            data: {
+              bookedCount: nextBookedCount,
+              status: nextStatus,
+            },
+          });
+
+          return booking;
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+      }, 7, 150);
+    } catch (error) {
+      if (this.isBookingRequestUniqueViolation(error)) {
+        throw Object.assign(new Error('Booking already exists'), { status: 409 });
+      }
+      throw error;
+    }
   }
 
   async listProBookings(proUserId: string) {
@@ -1099,20 +1285,79 @@ export class BookingService {
 
   async listNearbyPros(params: ProsNearbyInput) {
     this.validateGeoPoint(params.lat, params.lng);
-    const rows = await bookingRepository.findNearbyPros(params);
+    const { lat, lng, radiusKm, sport } = params;
 
-    return rows.map((row) => ({
-      proId: row.proUserId,
-      email: row.email,
-      businessName: row.businessName,
-      photoUrl: row.photoUrl,
-      verified: row.verified,
-      lat: row.lat,
-      lng: row.lng,
-      distanceKm: Number(row.distance_m) / 1000,
-      sports: row.sports ?? [],
-      openAvailabilityCount: Number(row.openAvailabilityCount ?? 0),
-    }));
+    const sportFilterSql = sport
+      ? Prisma.sql`
+        AND (
+          COALESCE(av."totalAvailabilityCount", 0) = 0
+          OR COALESCE(av."hasRequestedSport", false)
+        )
+      `
+      : Prisma.empty;
+
+    const rows = await prisma.$queryRaw<NearbyProSearchRow[]>(Prisma.sql`
+      WITH nearby AS (
+        SELECT
+          pp."userId" AS "proUserId",
+          pp."id" AS "proPublicId",
+          pp."businessName",
+          pp."photoUrl",
+          pp."verified",
+          ST_Distance(
+            ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(pp."lng", pp."lat"), 4326)::geography
+          ) AS distance_m
+        FROM "ProProfile" pp
+        WHERE pp."lat" IS NOT NULL
+          AND pp."lng" IS NOT NULL
+          AND pp."verified" = true
+          AND ST_DWithin(
+            ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(pp."lng", pp."lat"), 4326)::geography,
+            ${radiusKm * 1000}
+          )
+      )
+      SELECT
+        n."proUserId",
+        n."proPublicId",
+        n."businessName",
+        n."photoUrl",
+        n."verified",
+        n.distance_m,
+        COALESCE(av."openAvailabilityCount", 0) AS "openAvailabilityCount",
+        COALESCE(av.sports, ARRAY[]::"Sport"[]) AS sports,
+        COALESCE(av."totalAvailabilityCount", 0) AS "totalAvailabilityCount",
+        COALESCE(av."hasRequestedSport", false) AS "hasRequestedSport"
+      FROM nearby n
+      JOIN "User" u ON u."id" = n."proUserId"
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) FILTER (WHERE pa."status" = 'OPEN' AND pa."endAt" > NOW()) AS "openAvailabilityCount",
+          ARRAY_AGG(DISTINCT pa."sport") FILTER (WHERE pa."sport" IS NOT NULL) AS sports,
+          COUNT(*) AS "totalAvailabilityCount",
+          BOOL_OR(pa."sport" = CAST(${sport ?? 'surf'} AS "Sport")) AS "hasRequestedSport"
+        FROM "ProAvailability" pa
+        WHERE pa."proUserId" = n."proUserId"
+      ) av ON TRUE
+      WHERE u."role" = 'PRO'
+        AND u."deletedAt" IS NULL
+        ${sportFilterSql}
+      ORDER BY n.distance_m ASC
+    `);
+
+    return rows.map((row: NearbyProSearchRow) => {
+      const distanceKm = Number(row.distance_m) / 1000;
+      return {
+        proPublicId: row.proPublicId,
+        businessName: row.businessName,
+        photoUrl: row.photoUrl,
+        verified: row.verified,
+        distanceBucket: this.toDistanceBucket(distanceKm),
+        sports: row.sports ?? [],
+        openAvailabilityCount: Number(row.openAvailabilityCount ?? 0),
+      };
+    });
   }
 }
 
