@@ -170,7 +170,7 @@ export class TwoFactorService {
   async sendCode(
     userId: string,
     email: string,
-  ): Promise<{ success: boolean; message: string; tooManyChallenges?: boolean }> {
+  ): Promise<{ success: boolean; message: string; tooManyChallenges?: boolean; challengeId?: string }> {
     try {
       const code = this.generateCode();
       const codeHash = this.hashCode(code, userId);

@@ -490,11 +490,12 @@ export function createApp() {
   app.get('/internal/metrics', (req: Request, res: Response) => {
     const expected = process.env.METRICS_INTERNAL_TOKEN;
     const provided = req.headers['x-internal-token'] as string | undefined;
+    const clientIp = (req as any).canonicalIp ?? req.socket?.remoteAddress;
     if (!expected || !provided || provided !== expected) {
-      secureLogger.warn('METRICS_INTERNAL_TOKEN_REJECTED', { ip: req.canonicalIp ?? req.socket?.remoteAddress });
+      secureLogger.warn('METRICS_INTERNAL_TOKEN_REJECTED', { ip: clientIp });
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    secureLogger.info('METRICS_INTERNAL_TOKEN_ACCESS', { ip: req.canonicalIp ?? req.socket?.remoteAddress });
+    secureLogger.info('METRICS_INTERNAL_TOKEN_ACCESS', { ip: clientIp });
     return res.json({ ok: true, ts: Date.now() });
   });
 
