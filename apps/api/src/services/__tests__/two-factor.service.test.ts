@@ -452,8 +452,10 @@ describe('TwoFactorService', () => {
         '2fa:user3', expect.any(String), 300
       );
 
-      // All codes should be different
-      const codes = mockCacheService.set.mock.calls.map(call => call[1]);
+      // All code hashes should be different (filter out challengeId entries)
+      const codes = mockCacheService.set.mock.calls
+        .filter(call => !String(call[0]).startsWith('2fa:challenge:'))
+        .map(call => call[1]);
       expect(new Set(codes).size).toBe(3); // All unique
     });
 
@@ -475,8 +477,8 @@ describe('TwoFactorService', () => {
         expect(result.success).toBe(true);
       });
 
-      // Multiple codes should have been generated
-      expect(mockCacheService.set).toHaveBeenCalledTimes(3);
+      // Multiple codes should have been generated (2 cache entries per sendCode: code + challengeId)
+      expect(mockCacheService.set).toHaveBeenCalledTimes(6);
     });
   });
 

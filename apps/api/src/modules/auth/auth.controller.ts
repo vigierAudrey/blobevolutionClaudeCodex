@@ -395,7 +395,7 @@ authRouter.post('/verify-email', async (req, res) => {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+      return res.status(401).json({ error: 'Invalid or expired link' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -474,7 +474,7 @@ authRouter.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+      return res.status(401).json({ error: 'Invalid or expired link' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
