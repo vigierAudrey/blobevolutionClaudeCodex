@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireAdmin, requireAuth, requireAuthSensitive, requireVerifiedEmail, verifyAccessToken } from './auth.guard';
 import { AuthService } from './auth.service';
 import { clientPrisma as prisma } from '@blobinfini/database';
-import { twoFactorService } from '../../services/two-factor.service';
+import { twoFactorService, verifyChallengeAndCode } from '../../services/two-factor.service';
 import { validate } from '../../middleware/validate';
 import { passwordSchema } from '../../utils/password-validator';
 import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
@@ -249,7 +249,7 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
       }
       return res.status(200).json({
         requires2FA: true,
-        userId: err.userId,
+        challengeId: sendResult.challengeId,
         message: 'Code de vérification envoyé par email'
       });
     }
@@ -263,26 +263,28 @@ authRouter.post('/login', validate(loginSchema), async (req, res) => {
   }
 });
 
-// ✅ NOUVEAU : Endpoint pour vérifier le code 2FA admin
+// ✅ Endpoint pour vérifier le code 2FA admin — userId résolu côté serveur via challengeId
 const verify2FASchema = z.object({
-  userId: z.string().uuid(),
+  challengeId: z.string().uuid(),
   code: z.string().length(6),
   consentAccepted: z.boolean().optional().default(false),
 }).strict();
 
 authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
   try {
-    const { userId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
+    const { challengeId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
 
     // Extract client IP for rate limiting (secure extraction)
     const clientIp = getClientIp(req);
 
-    // Vérifier le code 2FA avec rate limiting
-    const verification = await twoFactorService.verifyCode(userId, code, clientIp);
+    // Resolve challengeId → userId and verify code (userId never comes from client body)
+    const verification = await verifyChallengeAndCode(challengeId, code, clientIp);
 
-    if (!verification.valid) {
+    if (!verification.valid || !verification.userId) {
       return res.status(401).json({ error: verification.message });
     }
+
+    const userId = verification.userId;
 
     // Code valide - récupérer l'utilisateur et générer les tokens
     const user = await prisma.user.findUnique({

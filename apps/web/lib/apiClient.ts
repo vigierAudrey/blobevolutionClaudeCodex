@@ -998,8 +998,8 @@ export const apiClient = {
   send2FA: (email: string) =>
     request('/auth/2fa/send', { method: 'POST', body: JSON.stringify({ email }) }),
 
-  verify2FA: (userId: string, code: string, consentAccepted?: boolean) =>
-    request('/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ userId, code, consentAccepted }) }) as Promise<{ ok: true }>,
+  verify2FA: (challengeId: string, code: string, consentAccepted?: boolean) =>
+    request('/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ challengeId, code, consentAccepted }) }) as Promise<{ ok: true }>,
 
   verifyPro2FA: (email: string, code: string) =>
     request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<{ ok: true; message: string }>,
