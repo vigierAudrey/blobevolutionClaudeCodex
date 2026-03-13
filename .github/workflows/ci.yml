@@ -190,6 +190,7 @@ jobs:
       SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
       JWT_SECRET: test-jwt-secret
       JWT_REFRESH_SECRET: test-jwt-refresh-secret
+      IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
       WEB_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
@@ -431,6 +432,7 @@ jobs:
       SESSION_SECRET: ci-session-secret
       JWT_SECRET: ci-jwt-secret
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret
+      IP_HASH_SECRET: ci-ip-hash-secret-for-e2e-only-min-32-chars
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
       WEB_BASE_URL: http://127.0.0.1:3002
     steps:
