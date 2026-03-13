@@ -45,7 +45,9 @@ describe('Health & core endpoints', () => {
       .send({ email: riderEmail, password: TEST_PASSWORD, consentAccepted: true })
       .expect(200);
     expect(loginRes.body).toEqual({ ok: true });
-    expect((loginRes.headers['set-cookie'] as string[] | undefined) ?? []).toEqual(
+    const setCookieHeader = loginRes.headers['set-cookie'];
+    const cookies: string[] = Array.isArray(setCookieHeader) ? setCookieHeader : [];
+    expect(cookies).toEqual(
       expect.arrayContaining([expect.stringMatching(/^accessToken=/), expect.stringMatching(/^refreshToken=/)])
     );
 
