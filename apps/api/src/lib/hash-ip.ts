@@ -119,6 +119,21 @@ export function hashIpHmac(rawIp: string | undefined | null): string | null {
 }
 
 /**
+ * Safe wrapper for log/audit contexts.
+ *
+ * Logging must never fail closed because a privacy secret is absent in local/dev
+ * environments. We keep forensic correlation when possible, and drop the hash
+ * instead of breaking the request path when hashing is unavailable.
+ */
+export function hashIpHmacSafe(rawIp: string | undefined | null): string | undefined {
+  try {
+    return hashIpHmac(rawIp) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Legacy SHA-256 hash function (for backward compatibility only).
  *
  * ⚠️ DEPRECATED: Use hashIpHmac() instead for new code.

@@ -12,6 +12,8 @@ import { gdprExportService } from '../../services/gdpr-export.service';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { securityAlertService } from '../../services/security-alert.service';
 import { secureLogger } from '../../utils/secure-logger';
+import { getClientIp } from '../../lib/client-ip';
+import { hashIpHmacSafe } from '../../lib/hash-ip';
 
 export const profileRouter = Router();
 profileRouter.use(requireAuth, requireVerifiedEmail);
@@ -75,8 +77,7 @@ profileRouter.get('/me', async (req, res) => {
     // Block PRO users from accessing RIDER profiles
     if (user.role === 'PRO') {
       // Extract IP and User-Agent for security audit
-      const ips = (req as any).ips as string[] | undefined;
-      const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+      const clientIp = getClientIp(req) ?? undefined;
       const userAgent = req.get('user-agent');
 
       // Report security violation to admin
@@ -84,7 +85,7 @@ profileRouter.get('/me', async (req, res) => {
         userId,
         'GET /profile/me',
         user.email,
-        ip,
+        clientIp,
         userAgent
       );
 
@@ -168,8 +169,7 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
     // Block PRO users from modifying RIDER profiles
     if (user.role === 'PRO') {
       // Extract IP and User-Agent for security audit
-      const ips = (req as any).ips as string[] | undefined;
-      const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+      const clientIp = getClientIp(req) ?? undefined;
       const userAgent = req.get('user-agent');
 
       // Report security violation to admin
@@ -177,7 +177,7 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
         userId,
         'PUT /profile/me',
         user.email,
-        ip,
+        clientIp,
         userAgent
       );
 
@@ -318,8 +318,7 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     // Extract IP and User-Agent for security audit
-    const ips = (req as any).ips as string[] | undefined;
-    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+    const clientIp = getClientIp(req) ?? undefined;
     const userAgent = req.get('user-agent');
 
     if (user.role === 'PRO') {
@@ -328,7 +327,7 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
         userId,
         'POST /profile/photo/upload-url',
         user.email,
-        ip,
+        clientIp,
         userAgent
       );
 
@@ -345,7 +344,7 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
         userId,
         'POST /profile/photo/upload-url',
         user.email,
-        ip,
+        clientIp,
         userAgent
       );
 
@@ -363,7 +362,7 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
         user.role || 'UNKNOWN',
         'POST /profile/photo/upload-url',
         user.email,
-        ip,
+        clientIp,
         userAgent
       );
 
@@ -414,8 +413,7 @@ profileRouter.get('/export', exportRateLimiter, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     // Extract IP for audit logging
-    const ips = (req as any).ips as string[] | undefined;
-    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+    const ip = getClientIp(req) ?? undefined;
 
     // Generate export data
     const exportData = await gdprExportService.exportUserData(userId, ip);
@@ -483,7 +481,7 @@ profileRouter.post('/delete-account', async (req, res) => {
           scheduledDeletionDate: deletionDate.toISOString(),
           email: user.email,
         },
-        ip: (req as any).ip || 'unknown',
+        ip: hashIpHmacSafe(getClientIp(req)),
       },
     });
 
@@ -549,7 +547,7 @@ profileRouter.post('/cancel-deletion', async (req, res) => {
           originalDeletionRequest: user.deletedAt.toISOString(),
           daysBeforeCancellation: daysSinceDeletion,
         },
-        ip: (req as any).ip || 'unknown',
+        ip: hashIpHmacSafe(getClientIp(req)),
       },
     });
 

@@ -1,6 +1,7 @@
 import { clientPrisma as prisma } from '@blobinfini/database';
 import type { NextFunction, Request, Response } from 'express';
 import { securityAlertService } from '../../services/security-alert.service';
+import { getClientIp } from '../../lib/client-ip';
 
 /**
  * Vérifie que l'utilisateur authentifié possède bien le rôle PRO.
@@ -30,8 +31,7 @@ export const requireProRole = async (req: Request, res: Response, next: NextFunc
 
     if (dbUser?.role !== 'PRO') {
       // Extract IP and User-Agent for security audit
-      const ips = (req as any).ips as string[] | undefined;
-      const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+      const clientIp = getClientIp(req) ?? undefined;
       const userAgent = req.get('user-agent');
       // Use req.baseUrl + req.path to get full endpoint path
       const endpoint = `${req.method} ${req.baseUrl}${req.path}`;
@@ -42,7 +42,7 @@ export const requireProRole = async (req: Request, res: Response, next: NextFunc
           user.id,
           endpoint,
           dbUser.email,
-          ip,
+          clientIp,
           userAgent
         );
         console.warn(`🚨 Security: RIDER user ${user.id} attempted to access PRO endpoint ${endpoint}`);
@@ -52,7 +52,7 @@ export const requireProRole = async (req: Request, res: Response, next: NextFunc
           user.id,
           endpoint,
           dbUser.email,
-          ip,
+          clientIp,
           userAgent
         );
         console.warn(`🚨 Security: ADMIN user ${user.id} attempted to access PRO endpoint ${endpoint} - Potential compromised account!`);
@@ -63,7 +63,7 @@ export const requireProRole = async (req: Request, res: Response, next: NextFunc
           dbUser?.role || 'UNKNOWN',
           endpoint,
           dbUser?.email,
-          ip,
+          clientIp,
           userAgent
         );
         console.warn(`🚨 Security: User ${user.id} with invalid role '${dbUser?.role || 'UNKNOWN'}' attempted to access PRO endpoint ${endpoint}`);

@@ -11,6 +11,8 @@ import { requireProRole } from './pro.guard';
 import { secureLogger } from '../../utils/secure-logger';
 import { computeZoneLarge, recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 import { createGeoEndpointLimiter, createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { getClientIp } from '../../lib/client-ip';
+import { hashIpHmacSafe } from '../../lib/hash-ip';
 
 export const proRouter = Router();
 proRouter.use(requireAuth, requireVerifiedEmail);
@@ -55,7 +57,10 @@ const profileUpdateLimiter = createLazyCustomRateLimiter({
   },
   handler: (req: any, res: any) => {
     const userId = (req as any).user?.id;
-    secureLogger.security('Rate limit exceeded for profile update', { userId, ip: req.ip });
+    secureLogger.security('Rate limit exceeded for profile update', {
+      userId,
+      ipHash: hashIpHmacSafe(getClientIp(req)),
+    });
 
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfter = resetTime ? Math.ceil((resetTime.getTime() - Date.now()) / 1000) : 900;
@@ -311,8 +316,7 @@ proRouter.get('/export', exportRateLimiter, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     // Extract IP for audit logging
-    const ips = (req as any).ips as string[] | undefined;
-    const ip = (ips && ips.length > 0 ? ips[0] : undefined) || req.ip || (req as any).socket?.remoteAddress || undefined;
+    const ip = getClientIp(req) ?? undefined;
 
     // Generate export data
     const exportData = await gdprExportService.exportUserData(userId, ip);
@@ -381,7 +385,7 @@ proRouter.post('/delete-account', async (req, res) => {
           email: user.email,
           userRole: 'PRO',
         },
-        ip: (req as any).ip || 'unknown',
+        ip: hashIpHmacSafe(getClientIp(req)),
       },
     });
 
@@ -449,7 +453,7 @@ proRouter.post('/cancel-deletion', async (req, res) => {
           email: user.email,
           userRole: 'PRO',
         },
-        ip: (req as any).ip || 'unknown',
+        ip: hashIpHmacSafe(getClientIp(req)),
       },
     });
 

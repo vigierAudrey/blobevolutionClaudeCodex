@@ -21,6 +21,8 @@ import YAML from 'js-yaml';
 import helmet from 'helmet';
 import type { Request, Response, NextFunction } from 'express';
 import { secureLogger } from './utils/secure-logger';
+import { getClientIp } from './lib/client-ip';
+import { hashIpHmacSafe } from './lib/hash-ip';
 
 const RAW_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -77,6 +79,10 @@ function ensureProductionSecrets() {
 }
 
 ensureProductionSecrets();
+
+function getRequestIpHash(req: Request): string | undefined {
+  return hashIpHmacSafe(getClientIp(req) ?? req.socket?.remoteAddress);
+}
 
 const cspConnectSrc = new Set(["'self'"]);
 if (allowedOriginsSet.size > 0) {
@@ -373,7 +379,7 @@ export function createApp() {
     // P2-6: Logger qui accède à cet endpoint sensible
     secureLogger.security('SECURITY_HEALTH_CHECK_ACCESSED', {
       adminId: (req as any).user?.id,
-      ip: req.ip
+      ipHash: getRequestIpHash(req)
     });
 
     const issues: string[] = [];
@@ -490,12 +496,12 @@ export function createApp() {
   app.get('/internal/metrics', (req: Request, res: Response) => {
     const expected = process.env.METRICS_INTERNAL_TOKEN;
     const provided = req.headers['x-internal-token'] as string | undefined;
-    const clientIp = (req as any).canonicalIp ?? req.socket?.remoteAddress;
+    const ipHash = getRequestIpHash(req);
     if (!expected || !provided || provided !== expected) {
-      secureLogger.warn('METRICS_INTERNAL_TOKEN_REJECTED', { ip: clientIp });
+      secureLogger.warn('METRICS_INTERNAL_TOKEN_REJECTED', { ipHash });
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    secureLogger.info('METRICS_INTERNAL_TOKEN_ACCESS', { ip: clientIp });
+    secureLogger.info('METRICS_INTERNAL_TOKEN_ACCESS', { ipHash });
     return res.json({ ok: true, ts: Date.now() });
   });
 
