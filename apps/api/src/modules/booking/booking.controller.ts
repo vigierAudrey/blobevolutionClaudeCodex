@@ -10,6 +10,8 @@ import { decideBookingRequestSchema } from './dto/decideRequest.dto';
 import { searchAvailabilitySchema } from './dto/searchAvailability.dto';
 import { prosNearbySchema } from './dto/prosNearby.dto';
 import { computeZoneLarge, recordServerAnalyticsEvent } from '../../services/analytics/events.service';
+import { getClientIp } from '../../lib/client-ip';
+import { hashIpHmacSafe } from '../../lib/hash-ip';
 import { secureLogger } from '../../utils/secure-logger';
 
 const isBookingRequestRateLimitDisabled = () =>
@@ -38,7 +40,10 @@ const bookingRequestLimiter = rateLimit({
   },
   handler: (req: Request, res: Response) => {
     const userId = (req as { user?: { id: string } }).user?.id;
-    secureLogger.security('Rate limit exceeded: POST /booking/requests', { userId, ip: req.ip });
+    secureLogger.security('Rate limit exceeded: POST /booking/requests', {
+      userId,
+      ipHash: hashIpHmacSafe(getClientIp(req)),
+    });
     const retryAfter = Math.ceil(
       (((req as { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime?.getTime() ?? Date.now() + 900_000) - Date.now()) / 1000
     );

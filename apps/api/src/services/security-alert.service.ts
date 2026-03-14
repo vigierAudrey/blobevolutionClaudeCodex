@@ -13,6 +13,7 @@
 import { systemAlertService } from './system-alert.service';
 import { sendMail } from '../lib/mailer';
 import { hashIpHmac } from '../lib/hash-ip';
+import { hashEmail } from '../modules/auth/login-attempt.util';
 import { secureLogger } from '../utils/secure-logger';
 
 interface SecurityViolation {
@@ -81,7 +82,9 @@ class SecurityAlertService {
     // 3. Envoyer notification email à l'admin
     try {
       await this.sendAdminNotificationEmail(violation);
-      console.log(`📧 Security notification email sent to admin (${this.ADMIN_EMAIL})`);
+      console.log('📧 Security notification email sent to admin', {
+        adminEmailHash: hashEmail(this.ADMIN_EMAIL)
+      });
     } catch (error) {
       console.error('❌ Failed to send admin notification email:', error);
       // Ne pas bloquer si l'email échoue

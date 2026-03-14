@@ -29,7 +29,14 @@ CONSOLE_HITS="$(
   scan_runtime_files \
     | xargs -0 -r grep -I -nE \
       'console\.(log|warn|error).*((process\.env)|(req\.(headers|cookies))|(Authorization)|(Bearer[[:space:]])|(accessToken[^[:alnum:]_])|(refreshToken[^[:alnum:]_]))' \
-    || true
+      || true
+)"
+
+CONSOLE_EMAIL_HITS="$(
+  scan_runtime_files \
+    | xargs -0 -r grep -I -nE \
+      'console\.(log|warn|error|info).*((mail\.to)|(userEmail[^[:alnum:]_])|(ADMIN_EMAIL)|(this\.ADMIN_EMAIL))' \
+      || true
 )"
 
 LOGGER_HITS="$(
@@ -39,10 +46,13 @@ LOGGER_HITS="$(
     || true
 )"
 
-if [ -n "$CONSOLE_HITS" ] || [ -n "$LOGGER_HITS" ]; then
+if [ -n "$CONSOLE_HITS" ] || [ -n "$CONSOLE_EMAIL_HITS" ] || [ -n "$LOGGER_HITS" ]; then
   echo "❌ Insecure logs / secrets detected in runtime source files."
   if [ -n "$CONSOLE_HITS" ]; then
     echo "$CONSOLE_HITS"
+  fi
+  if [ -n "$CONSOLE_EMAIL_HITS" ]; then
+    echo "$CONSOLE_EMAIL_HITS"
   fi
   if [ -n "$LOGGER_HITS" ]; then
     echo "$LOGGER_HITS"

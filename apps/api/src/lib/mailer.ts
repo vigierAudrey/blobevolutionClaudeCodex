@@ -3,6 +3,7 @@
  */
 import dotenv from 'dotenv';
 import { resolve } from 'path';
+import { hashEmail } from '../modules/auth/login-attempt.util';
 
 // Ensure env is loaded when used standalone (tests or jobs)
 dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env') });
@@ -53,9 +54,10 @@ async function getTransport() {
 
 export async function sendMail(mail: Mail) {
   const t = await getTransport();
+  const emailHash = hashEmail(mail.to);
   if (!t) {
     // eslint-disable-next-line no-console
-    console.info('[mailer] SMTP not configured. Skipping send to %s with subject "%s"', mail.to, mail.subject);
+    console.info('[mailer] SMTP not configured. Skipping send', { emailHash, subject: mail.subject });
     return { skipped: true } as const;
   }
   try {
@@ -63,7 +65,7 @@ export async function sendMail(mail: Mail) {
     return { sent: true } as const;
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.error('[mailer] Failed to send mail to %s: %s', mail.to, (e as any)?.message || e);
+    console.error('[mailer] Failed to send mail', { emailHash, error: (e as any)?.message || e });
     return { sent: false } as const;
   }
 }

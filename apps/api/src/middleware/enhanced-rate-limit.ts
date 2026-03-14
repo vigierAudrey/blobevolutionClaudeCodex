@@ -3,6 +3,8 @@ import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { Request, Response, NextFunction } from 'express';
 import { resolveRedisUrl } from '../lib/redisConfig';
+import { getClientIp } from '../lib/client-ip';
+import { hashIpHmacSafe } from '../lib/hash-ip';
 import { createHash } from 'crypto';
 
 type RedisClientType = ReturnType<typeof createClient>;
@@ -358,10 +360,11 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
     // Enhanced handler for rate limit exceeded
     handler: (req: Request, res: Response) => {
       const retryAfter = res.get('Retry-After');
+      const ipHash = hashIpHmacSafe(getClientIp(req));
 
       // Log rate limit violations for security monitoring
       console.warn(`Rate limit exceeded: ${profile}`, {
-        ip: req.ip,
+        ipHash,
         userAgent: req.get('User-Agent'),
         path: req.path,
         method: req.method,
