@@ -5,6 +5,7 @@ import {
   getConsent,
   type ConsentPayload,
 } from '../../services/consent.service';
+import { secureLogger } from '../../utils/secure-logger';
 
 export const consentRouter = Router();
 
@@ -30,7 +31,7 @@ consentRouter.get('/:hash', async (req, res) => {
 
     return res.json({ consent });
   } catch (error) {
-    console.error('Error fetching consent:', error);
+    secureLogger.error('CONSENT_FETCH_FAILED', { error });
     return res.status(400).json({ error: 'Unable to fetch consent' });
   }
 });
@@ -52,12 +53,12 @@ consentRouter.post('/:hash', async (req, res) => {
     const record = await createOrUpdateConsent(payload);
 
     return res.status(201).json({ consent: record });
-  } catch (error: any) {
-    if (error?.name === 'ZodError') {
+  } catch (error: unknown) {
+    if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid consent payload', details: error.errors });
     }
 
-    console.error('Error updating consent:', error);
+    secureLogger.error('CONSENT_UPDATE_FAILED', { error });
     return res.status(400).json({ error: 'Unable to update consent' });
   }
 });

@@ -675,7 +675,13 @@ npm test -- --watch auth.test.ts
 
 - Postgres : index, EXPLAIN, VACUUM/ANALYZE, transactions, verrous
 - Prisma : index, pagination, N+1, batching
-- Observabilité : logs structurés + metrics + traces (OpenTelemetry) + Sentry
+- Observabilité : socle serveur honnête (logs structurés, métriques ciblées, audit). OpenTelemetry/Sentry/Datadog restent hors scope par défaut.
+
+### Logging serveur sécurisé — clôture du chantier
+
+- Wording de référence : `socle serveur minimal d’observabilité / logging sécurisé`.
+- À ne pas requalifier en full-stack observability, distributed tracing complet, OpenTelemetry complet, ou migration exhaustive de tous les logs du repo.
+- Dette P2 ouverte : décorréler la pseudonymisation des logs des conventions de clés.
 
 ### RGPD & Sécurité 🇫🇷
 

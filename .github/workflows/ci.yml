@@ -27,6 +27,12 @@ jobs:
       - name: No insecure logs / secrets (block)
         run: bash scripts/no-insecure-logs-check.sh
 
+      - name: Enforce canonical security routes
+        run: node scripts/check-security-routes.mjs
+
+      - name: Forbid runtime console calls in API
+        run: node scripts/check-api-runtime-console.mjs
+
       - name: No bare db push in CI paths (block)
         run: bash scripts/ci-block-db-push.sh
 
@@ -191,6 +197,7 @@ jobs:
       JWT_SECRET: test-jwt-secret
       JWT_REFRESH_SECRET: test-jwt-refresh-secret
       IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: test-log-actor-secret-for-ci-only-min-32-chars
       WEB_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
@@ -433,6 +440,7 @@ jobs:
       JWT_SECRET: ci-jwt-secret
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret
       IP_HASH_SECRET: ci-ip-hash-secret-for-e2e-only-min-32-chars
+      LOG_ACTOR_SECRET: ci-log-actor-secret-for-e2e-only-min-32-chars
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
       WEB_BASE_URL: http://127.0.0.1:3002
     steps:

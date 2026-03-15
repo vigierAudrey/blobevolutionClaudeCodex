@@ -192,7 +192,7 @@ conversationsRouter.get('/', async (req, res) => {
 
     return res.json({ items: results });
   } catch (e) {
-    console.error('Conversations list error:', e);
+    secureLogger.error('CONVERSATIONS_LIST_FAILED', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -272,7 +272,7 @@ conversationsRouter.get('/:id/messages', async (req, res) => {
     await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId: id, userId } as any }, data: { lastReadAt: new Date() } });
     return res.json({ items: messagesWithSenders.reverse(), nextCursor: msgs.length === limit ? msgs[msgs.length - 1].createdAt : null });
   } catch (e) {
-    console.error('Fetch messages error:', e);
+    secureLogger.error('CONVERSATIONS_MESSAGES_FETCH_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -490,7 +490,7 @@ conversationsRouter.post('/empty-trash', async (req, res) => {
 
     return res.json({ ok: true, count: result.count });
   } catch (e) {
-    console.error('Empty trash error:', e);
+    secureLogger.error('CONVERSATIONS_EMPTY_TRASH_FAILED', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -731,7 +731,7 @@ conversationsRouter.get('/:id/members', async (req, res) => {
 
     return res.json({ items: results });
   } catch (e) {
-    console.error('Get members error:', e);
+    secureLogger.error('CONVERSATIONS_MEMBERS_FETCH_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -793,7 +793,7 @@ conversationsRouter.get('/users/search', async (req, res) => {
 
     return res.json({ items: results });
   } catch (e) {
-    console.error('User search error:', e);
+    secureLogger.error('CONVERSATIONS_USER_SEARCH_FAILED', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -931,7 +931,7 @@ conversationsRouter.post('/:id/members', async (req, res) => {
     return res.status(201).json({ ok: true, message: 'Invitation envoyée' });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
-    console.error('Send invitation error:', e);
+    secureLogger.error('CONVERSATIONS_INVITATION_SEND_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -1015,18 +1015,18 @@ conversationsRouter.get('/invitations/pending', async (req, res) => {
 
     return res.json({ items: results });
   } catch (e) {
-    console.error('Get pending invitations error:', e);
+    secureLogger.error('CONVERSATIONS_PENDING_INVITATIONS_FAILED', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
 
 // Accept or reject a conversation invitation
 conversationsRouter.post('/invitations/:invitationId/respond', async (req, res) => {
+  const invitationId = req.params.invitationId;
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const invitationId = req.params.invitationId;
     const body = z.object({ action: z.enum(['ACCEPT', 'REJECT']) }).parse(req.body);
 
     // Get the invitation
@@ -1113,7 +1113,7 @@ conversationsRouter.post('/invitations/:invitationId/respond', async (req, res) 
     });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
-    console.error('Respond to invitation error:', e);
+    secureLogger.error('CONVERSATIONS_INVITATION_RESPONSE_FAILED', { error: e, invitationId });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -1210,7 +1210,7 @@ conversationsRouter.delete('/:id/members/:targetUserId', async (req, res) => {
 
     return res.json({ ok: true });
   } catch (e) {
-    console.error('Remove member error:', e);
+    secureLogger.error('CONVERSATIONS_MEMBER_REMOVE_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
   }
 });

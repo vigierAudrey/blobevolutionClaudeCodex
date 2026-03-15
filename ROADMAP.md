@@ -185,7 +185,9 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
 - [x] **Audit logs actions sensibles**  
   `audit()` est désormais branché sur les presets de rôles admin, la modération des signalements et la purge RGPD (`apps/api/src/modules/admin/admin.controller.ts`). Les tests `admin.e2e.test.ts` vérifient la présence d'une trace (`admin:role:apply`, `admin:report:action`, `admin:gdpr:run-purge`) avant de considérer l'action réussie.
 - [x] **Cron `/security/health`**  
-  Script `scripts/security-health-check.sh` + workflow planifié `.github/workflows/security-health-monitor.yml` surveillent l'endpoint toutes les 30 min et notifient via webhooks configurable.
+  Script `scripts/security-health-check.sh` + workflow planifié `.github/workflows/security-health-monitor.yml` surveillent l'endpoint toutes les 30 min via `X-Security-Monitor-Token` dédié. Le vieux pattern JWT admin jetable n’est plus accepté.
+  - [x] 2026-03-14: contrat `/security/health` unifié, alias `/api/security` supprimé, workflow réactivé, UI/OpenAPI réalignés.
+  - [x] 2026-03-14: ajout de `/security/observability` branché sur les vraies métriques du transport de logs.
 
 ### Phase 4 — Gouvernance Admin & RGPD (exemple, etat a confirmer)
 
@@ -695,7 +697,7 @@ Phase 3 (exemple, Scale) : Datadog si budget permet (50-150€/mois)
 - [ ] Dashboard métriques logs (volume, taux erreur)
 
 **💰 LONG TERME (si croissance)**
-- [ ] Datadog full-stack observability
+- [ ] Datadog full-stack observability. Hors scope du socle serveur minimal actuel.
 - [ ] Alerting avancé sur patterns d'abus
 
 ### Coûts estimés
@@ -713,6 +715,35 @@ Phase 3 (exemple, Scale) : Datadog si budget permet (50-150€/mois)
 - Démarrer avec **logs fichiers + Sentry Free** (0€)
 - Migrer vers **Grafana Loki** si besoin recherche avancée (0€)
 - Passer à **Datadog** seulement si croissance forte et budget dispo
+
+### Logging serveur sécurisé — clôture du chantier
+
+- [x] Le macro-chantier est fermé sur son vrai scope: `socle serveur minimal d’observabilité / logging sécurisé`.
+- [x] Livré: logs runtime structurés, transport asynchrone borné avec métriques et breaker, endpoints canoniques `/security/health` et `/security/observability`, audit logs des actions admin sensibles, scripts de supervision et gardes CI.
+- [x] Exclu explicitement du scope: full-stack observability, distributed tracing complet, OpenTelemetry complet, migration exhaustive de tous les logs du repo.
+- [x] DONE honnêtement: le scope serveur minimal annoncé est implémenté, documenté et vérifié par des tests ciblés.
+
+### Portée réelle du chantier
+
+Le chantier livre uniquement :
+
+`socle serveur minimal d’observabilité / logging sécurisé`
+
+Il ne livre pas :
+- full-stack observability
+- distributed tracing complet
+- OpenTelemetry complet
+- migration exhaustive de tous les logs du repo
+
+Toute description future du chantier doit utiliser ce wording.
+
+### Ticket P2 — hardening futur
+
+- [ ] Décorréler la pseudonymisation des logs des conventions de clés
+  Contexte : aujourd’hui la pseudonymisation dépend en partie des noms de clés (`userId`, `proUserId`, etc.) dans `apps/api/src/observability/log-serializer.ts`.
+  Risque : une donnée sensible loggée sous une clé non prévue peut ne pas être pseudonymisée.
+  Action minimale : introduire un mécanisme explicite de marquage de champs sensibles indépendant du nom de clé.
+  Critères de done : un mécanisme explicite de pseudonymisation existe ; un test prouve qu’une clé non conventionnelle marquée est bien pseudonymisée ; une règle d’usage est documentée près du logger.
 
 ---
 
@@ -952,7 +983,7 @@ apps/api/
 
 - Historique (nov 2025, tel qu'indiqué ici) : Phase 1 (2h, exemple) : CORS, secrets, logs, validation – ✅ livré.
 - Historique (nov 2025, tel qu'indiqué ici) : Phase 2 (3h, exemple) : Helmet, trust proxy, DB SSL, script secrets – ✅ livré.
-- Historique (nov 2025, tel qu'indiqué ici) : Phase 3 (2h, exemple) : `/security/health`, audit logs, alerting – ✅ livré (script + doc monitoring).
+- Historique (nov 2025, tel qu'indiqué ici) : Phase 3 (2h, exemple) : `/security/health`, audit logs, alerting – révisé le 2026-03-14 pour supprimer les faux claims et ajouter `/security/observability`.
 - Tests (2h, exemple) : Checklist sécurité complète – 🔄 à rejouer avant déploiement.
 
 ### Claude (Backend/Performance)

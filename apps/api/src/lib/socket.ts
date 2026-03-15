@@ -47,6 +47,7 @@ import {
   selectPushTargets,
   touchConversationCoalesced
 } from './socket-fanout-control';
+import { runWithWsLogContext } from '../observability/log-context';
 
 let io: SocketIOServer | null = null;
 
@@ -103,6 +104,13 @@ const sanitizeRateLimitDetails = (details: unknown) => {
 
 const shortId = (value: string | undefined | null): string =>
   typeof value === 'string' && value.length > 8 ? `${value.slice(0, 8)}...` : String(value ?? '');
+
+const withSocketEventContext = <TArgs extends unknown[]>(
+  socket: AuthenticatedSocket,
+  routeOrJob: string,
+  handler: (...args: TArgs) => void | Promise<void>,
+) => (...args: TArgs) =>
+  runWithWsLogContext(routeOrJob, socket.user?.id, () => handler(...args));
 
 async function assertConversationMember(userId: string, conversationId: string): Promise<boolean> {
   const member = await prisma.conversationMember.findUnique({
@@ -199,70 +207,72 @@ async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Erro
     // Étape 1: Vérifier le JWT (pas de query DB encore)
     const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as { sub: string; role: string };
     const userId = decoded.sub;
-
-    // P0 STEP 2: Vérifier rate limit reconnection AVANT toute query DB
-    const reconnectBlockReason = await checkReconnectionAllowed(userId);
-    if (reconnectBlockReason) {
-      // Erreur publique neutre
-      return next(new Error(reconnectBlockReason));
-    }
-
-    // P0 STEP 1: Vérifier limites connexions simultanées AVANT query DB
-    const connectionBlockReason = checkConnectionAllowed(userId, socket);
-    if (connectionBlockReason) {
-      // Erreur publique neutre
-      return next(new Error(connectionBlockReason));
-    }
-
-    // P0 STEP 2: Vérifier cache auth (évite query DB si hit)
-    const cachedAuth = getCachedAuth(userId);
-
-    let userExists: boolean;
-    let userRole: string;
-
-    if (cachedAuth) {
-      // Cache HIT → pas de query DB
-      if (!cachedAuth.exists) {
-        return next(new Error('User not found'));
-      }
-      userExists = true;
-      userRole = cachedAuth.role!;
-    } else {
-      // Cache MISS → query DB
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          role: true,
-          deletedAt: true // P0 STEP 2.1: Vérifier soft delete
-        }
-      });
-
-      // P0 STEP 2.1: User soft-deleted = inexistant
-      if (!user || user.deletedAt) {
-        // Mettre en cache l'absence (évite query DB répétées)
-        setCachedAuth(userId, false);
-
-        if (user?.deletedAt) {
-          secureLogger.info('SOCKET_AUTH_DELETED_USER_BLOCKED', {
-            userId: shortId(userId),
-            deletedAt: user.deletedAt.toISOString()
-          });
-        }
-
-        return next(new Error('User not found'));
+    await runWithWsLogContext('ws:authenticate', userId, async () => {
+      // P0 STEP 2: Vérifier rate limit reconnection AVANT toute query DB
+      const reconnectBlockReason = await checkReconnectionAllowed(userId);
+      if (reconnectBlockReason) {
+        // Erreur publique neutre
+        next(new Error(reconnectBlockReason));
+        return;
       }
 
-      userExists = true;
-      userRole = user.role;
+      // P0 STEP 1: Vérifier limites connexions simultanées AVANT query DB
+      const connectionBlockReason = checkConnectionAllowed(userId, socket);
+      if (connectionBlockReason) {
+        // Erreur publique neutre
+        next(new Error(connectionBlockReason));
+        return;
+      }
 
-      // P0 STEP 2: Mettre en cache le user
-      setCachedAuth(userId, true, userRole);
-    }
+      // P0 STEP 2: Vérifier cache auth (évite query DB si hit)
+      const cachedAuth = getCachedAuth(userId);
 
-    // Attacher l'utilisateur au socket
-    socket.user = { id: userId, role: userRole };
-    next();
+      let userRole: string;
+
+      if (cachedAuth) {
+        // Cache HIT → pas de query DB
+        if (!cachedAuth.exists) {
+          next(new Error('User not found'));
+          return;
+        }
+        userRole = cachedAuth.role!;
+      } else {
+        // Cache MISS → query DB
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true,
+            role: true,
+            deletedAt: true // P0 STEP 2.1: Vérifier soft delete
+          }
+        });
+
+        // P0 STEP 2.1: User soft-deleted = inexistant
+        if (!user || user.deletedAt) {
+          // Mettre en cache l'absence (évite query DB répétées)
+          setCachedAuth(userId, false);
+
+          if (user?.deletedAt) {
+            secureLogger.info('SOCKET_AUTH_DELETED_USER_BLOCKED', {
+              userId: shortId(userId),
+              deletedAt: user.deletedAt.toISOString()
+            });
+          }
+
+          next(new Error('User not found'));
+          return;
+        }
+
+        userRole = user.role;
+
+        // P0 STEP 2: Mettre en cache le user
+        setCachedAuth(userId, true, userRole);
+      }
+
+      // Attacher l'utilisateur au socket
+      socket.user = { id: userId, role: userRole };
+      next();
+    });
   } catch (error) {
     // Pas de log du token (sécurité PII)
     secureLogger.warn('SOCKET_AUTH_FAILED', {
@@ -354,31 +364,37 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
       credentials: false
     },
     allowRequest: (req, callback) => {
-      const clientIp = getClientIpFromIncomingRequest(req as any);
-      const preAuthRateLimit = checkPreAuthIpRateLimit(clientIp);
-      if (!preAuthRateLimit.allowed) {
-        secureLogger.warn('WS_PREAUTH_HANDSHAKE_REJECTED', {
-          retryAfterMs: preAuthRateLimit.retryAfterMs,
-          reason: preAuthRateLimit.reason
-        });
-        return callback('Connection temporarily unavailable', false);
-      }
-
-      const origin = req.headers.origin;
-
-      if (!origin) {
-        if (isProduction) {
-          return callback('Origin required', false);
+      return runWithWsLogContext('ws:allow-request', undefined, () => {
+        const clientIp = getClientIpFromIncomingRequest(req as any);
+        const preAuthRateLimit = checkPreAuthIpRateLimit(clientIp);
+        if (!preAuthRateLimit.allowed) {
+          secureLogger.warn('WS_PREAUTH_HANDSHAKE_REJECTED', {
+            retryAfterMs: preAuthRateLimit.retryAfterMs,
+            reason: preAuthRateLimit.reason
+          });
+          callback('Connection temporarily unavailable', false);
+          return;
         }
-        return callback(null, true);
-      }
 
-      if (!originsSet.has(origin)) {
-        secureLogger.warn('WS_ORIGIN_BLOCKED', { origin });
-        return callback('Origin not allowed', false);
-      }
+        const origin = req.headers.origin;
 
-      return callback(null, true);
+        if (!origin) {
+          if (isProduction) {
+            callback('Origin required', false);
+            return;
+          }
+          callback(null, true);
+          return;
+        }
+
+        if (!originsSet.has(origin)) {
+          secureLogger.warn('WS_ORIGIN_BLOCKED', { origin });
+          callback('Origin not allowed', false);
+          return;
+        }
+
+        callback(null, true);
+      });
     },
     transports: ['websocket', 'polling'], // WebSocket en priorité, polling en fallback
     pingTimeout: 60000, // 60 secondes avant timeout
@@ -403,17 +419,18 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
     // P0 FIX: Tracker la connexion (après auth réussie)
     trackConnection(userId, socket);
     attachSlowConsumerGuard(socket);
-
-    secureLogger.info('WS_CONNECTED', {
-      userId: shortId(userId),
-      socketId: shortId(socket.id)
+    runWithWsLogContext('ws:connection', userId, () => {
+      secureLogger.info('WS_CONNECTED', {
+        userId: shortId(userId),
+        socketId: shortId(socket.id)
+      });
     });
 
     // Rejoindre une room personnelle (pour les messages directs)
     socket.join(`user:${userId}`);
 
     // Rejoindre une conversation
-    socket.on('join-conversation', async (rawData: unknown, ackCb?: unknown) => {
+    socket.on('join-conversation', withSocketEventContext(socket, 'ws:join-conversation', async (rawData: unknown, ackCb?: unknown) => {
       const ack = createAckOnce(ensureAck(ackCb));
       const fail = (
         code: (typeof ERROR_CODES)[keyof typeof ERROR_CODES],
@@ -484,10 +501,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         };
         fail(ERROR_CODES.INTERNAL_ERROR, payload.message, payload, payload.code);
       }
-    });
+    }));
 
     // Quitter une conversation
-    socket.on('leave-conversation', (rawData: unknown) => {
+    socket.on('leave-conversation', withSocketEventContext(socket, 'ws:leave-conversation', (rawData: unknown) => {
       // ✅ PR1: Validation permissive (string non vide, pas UUID strict)
       const validation = validateSocketPayload(leaveConversationSchema, rawData);
       if (!validation.success) {
@@ -501,10 +518,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         userId: shortId(userId),
         conversationId: shortId(conversationId)
       });
-    });
+    }));
 
     // Envoyer un message
-    socket.on('send-message', async (rawData: unknown, ackCb?: unknown) => {
+    socket.on('send-message', withSocketEventContext(socket, 'ws:send-message', async (rawData: unknown, ackCb?: unknown) => {
       const ack = createAckOnce(ensureAck(ackCb));
       const fail = (
         code: (typeof ERROR_CODES)[keyof typeof ERROR_CODES],
@@ -812,10 +829,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         };
         fail(ERROR_CODES.INTERNAL_ERROR, payload.message, payload, payload.code);
       }
-    });
+    }));
 
     // Indicateur de frappe (typing)
-    socket.on('typing', async (rawData: unknown) => {
+    socket.on('typing', withSocketEventContext(socket, 'ws:typing', async (rawData: unknown) => {
       try {
         // ✅ PR1: Validation Zod (silencieuse, typing non critique)
         const validation = validateSocketPayload(typingSchema, rawData);
@@ -871,25 +888,25 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
       } catch (error) {
         // Silencieux (typing non critique)
       }
-    });
+    }));
 
     // Déconnexion
-    socket.on('disconnect', () => {
+    socket.on('disconnect', withSocketEventContext(socket, 'ws:disconnect', () => {
       // P0 FIX: Cleanup tracking garanti
       untrackConnection(socket.id);
       secureLogger.info('WS_DISCONNECTED', {
         userId: shortId(userId),
         socketId: shortId(socket.id)
       });
-    });
+    }));
 
     // Gestion d'erreurs
-    socket.on('error', (error) => {
+    socket.on('error', withSocketEventContext(socket, 'ws:error', (error) => {
       secureLogger.error('WS_SOCKET_ERROR', {
         userId: shortId(userId),
         error: error instanceof Error ? error.message : String(error)
       });
-    });
+    }));
   });
 
   return io;
@@ -915,24 +932,28 @@ export function getSocketHardeningMetrics() {
  * Envoie une notification à un utilisateur spécifique
  */
 export function notifyUser(userId: string, event: string, data: any) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_USER', { event });
-    return;
-  }
+  runWithWsLogContext('ws:notify-user', userId, () => {
+    if (!io) {
+      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_USER', { event });
+      return;
+    }
 
-  io.to(`user:${userId}`).emit(event, data);
+    io.to(`user:${userId}`).emit(event, data);
+  });
 }
 
 /**
  * Envoie une notification à tous les membres d'une conversation
  */
 export function notifyConversation(conversationId: string, event: string, data: any) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_CONVERSATION', { event });
-    return;
-  }
+  runWithWsLogContext('ws:notify-conversation', undefined, () => {
+    if (!io) {
+      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_CONVERSATION', { event });
+      return;
+    }
 
-  io.to(`conversation:${conversationId}`).emit(event, data);
+    io.to(`conversation:${conversationId}`).emit(event, data);
+  });
 }
 
 /**
@@ -947,15 +968,17 @@ export function notifyNewMatch(userId: string, matchData: {
     photoUrl?: string | null;
   };
 }) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCH');
-    return;
-  }
+  runWithWsLogContext('ws:notify-new-match', userId, () => {
+    if (!io) {
+      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCH');
+      return;
+    }
 
-  // ✅ P1: Validate outbound payload with Zod before emit
-  const newMatchPayload = newMatchOutboundSchema.parse(matchData);
-  io.to(`user:${userId}`).emit('new-match', newMatchPayload);
-  secureLogger.info('WS_NOTIFY_NEW_MATCH', { userId: shortId(userId) });
+    // ✅ P1: Validate outbound payload with Zod before emit
+    const newMatchPayload = newMatchOutboundSchema.parse(matchData);
+    io.to(`user:${userId}`).emit('new-match', newMatchPayload);
+    secureLogger.info('WS_NOTIFY_NEW_MATCH', { userId: shortId(userId) });
+  });
 }
 
 /**
@@ -969,20 +992,22 @@ export function notifyNewMatchingCard(criteria: {
   distanceKm?: number;
   profileId: string;
 }) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCHING_CARD');
-    return;
-  }
+  runWithWsLogContext('ws:notify-new-matching-card', undefined, () => {
+    if (!io) {
+      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCHING_CARD');
+      return;
+    }
 
-  // Broadcast à tous les utilisateurs connectés (ils filtreront côté client)
-  // ✅ P1: Validate outbound payload with Zod before emit
-  const newMatchingCardPayload = newMatchingCardOutboundSchema.parse({
-    sport: criteria.sport,
-    level: criteria.level,
-    profileId: criteria.profileId
+    // Broadcast à tous les utilisateurs connectés (ils filtreront côté client)
+    // ✅ P1: Validate outbound payload with Zod before emit
+    const newMatchingCardPayload = newMatchingCardOutboundSchema.parse({
+      sport: criteria.sport,
+      level: criteria.level,
+      profileId: criteria.profileId
+    });
+    io.emit('new-matching-card', newMatchingCardPayload);
+    secureLogger.info('WS_NOTIFY_NEW_MATCHING_CARD', { profileId: shortId(criteria.profileId) });
   });
-  io.emit('new-matching-card', newMatchingCardPayload);
-  secureLogger.info('WS_NOTIFY_NEW_MATCHING_CARD', { profileId: shortId(criteria.profileId) });
 }
 
 /**
@@ -991,20 +1016,22 @@ export function notifyNewMatchingCard(criteria: {
  * No-op si io non initialisé ou si l'utilisateur n'a aucun socket actif.
  */
 export function disconnectUserSockets(userId: string, reason?: string): void {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_DISCONNECT_USER_SOCKETS', {
+  runWithWsLogContext('ws:disconnect-user-sockets', userId, () => {
+    if (!io) {
+      secureLogger.warn('WS_NOT_INITIALIZED_DISCONNECT_USER_SOCKETS', {
+        userId: shortId(userId),
+      });
+      return;
+    }
+
+    // Tous les sockets de l'utilisateur sont dans la room personnelle `user:{userId}`.
+    // disconnectSockets(true) envoie un close immédiat (close=true = pas de polling fallback).
+    io.in(`user:${userId}`).disconnectSockets(true);
+
+    secureLogger.info('WS_USER_SOCKETS_DISCONNECTED', {
       userId: shortId(userId),
+      reason: reason ?? 'admin-forced-disconnect',
     });
-    return;
-  }
-
-  // Tous les sockets de l'utilisateur sont dans la room personnelle `user:{userId}`.
-  // disconnectSockets(true) envoie un close immédiat (close=true = pas de polling fallback).
-  io.in(`user:${userId}`).disconnectSockets(true);
-
-  secureLogger.info('WS_USER_SOCKETS_DISCONNECTED', {
-    userId: shortId(userId),
-    reason: reason ?? 'admin-forced-disconnect',
   });
 }
 
@@ -1017,16 +1044,18 @@ export function notifyMatchDecision(targetUserId: string, decision: {
   mutualMatch: boolean;
   conversationId?: string;
 }) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_MATCH_DECISION');
-    return;
-  }
+  runWithWsLogContext('ws:notify-match-decision', targetUserId, () => {
+    if (!io) {
+      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_MATCH_DECISION');
+      return;
+    }
 
-  // ✅ P1: Validate outbound payload with Zod before emit
-  const matchDecisionPayload = matchDecisionOutboundSchema.parse(decision);
-  io.to(`user:${targetUserId}`).emit('match-decision', matchDecisionPayload);
-  secureLogger.info('WS_NOTIFY_MATCH_DECISION', {
-    targetUserId: shortId(targetUserId),
-    decision: decision.decision
+    // ✅ P1: Validate outbound payload with Zod before emit
+    const matchDecisionPayload = matchDecisionOutboundSchema.parse(decision);
+    io.to(`user:${targetUserId}`).emit('match-decision', matchDecisionPayload);
+    secureLogger.info('WS_NOTIFY_MATCH_DECISION', {
+      targetUserId: shortId(targetUserId),
+      decision: decision.decision
+    });
   });
 }

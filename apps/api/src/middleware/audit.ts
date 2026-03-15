@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { getClientIp } from '../lib/client-ip';
 import { hashIpHmac } from '../lib/hash-ip';
+import { secureLogger } from '../utils/secure-logger';
 
 export type AuditResourceResolver = (req: Request, res: Response) => string;
 
@@ -36,7 +37,7 @@ export const audit = (action: string, resolveResource?: AuditResourceResolver) =
           ip: ipHash ?? undefined,
         }
       }).catch((error: unknown) => {
-        console.error('Audit log error:', error);
+        secureLogger.error('AUDIT_LOG_WRITE_FAILED', { error, action });
       });
     });
 

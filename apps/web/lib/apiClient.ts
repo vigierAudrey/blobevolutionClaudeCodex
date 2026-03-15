@@ -84,12 +84,26 @@ export interface GDPRPurgeResponse {
 }
 
 export interface SecurityHealth {
-  status: 'SECURE' | 'VULNERABLE';
-  helmet: boolean;
-  csrf: boolean;
-  rateLimit: boolean;
-  corsWhitelist: string[];
-  issues: string[];
+  status: 'SECURE' | 'DEGRADED' | 'UNSAFE';
+  timestamp: string;
+  checks: {
+    config: 'ok' | 'fail';
+    env: 'ok' | 'fail';
+    db: 'ok' | 'fail';
+    redis: 'ok' | 'fail';
+  };
+}
+
+export interface SecurityObservability {
+  status: 'healthy' | 'degraded' | 'failing';
+  timestamp: string;
+  pipeline: {
+    queued: number;
+    sent: number;
+    dropped: number;
+    failed: number;
+    breakerState: 'closed' | 'open' | 'half-open';
+  };
 }
 
 /**
@@ -1143,6 +1157,8 @@ export const apiClient = {
 
   // Admin
   getSecurityHealth: () => request('/security/health', { method: 'GET' }, true) as Promise<SecurityHealth>,
+  getSecurityObservability: () =>
+    request('/security/observability', { method: 'GET' }, true) as Promise<SecurityObservability>,
   getGDPRReport: () => request('/admin/gdpr/compliance-report', { method: 'GET' }, true) as Promise<GDPRReport>,
   runGDPRPurge: () => request('/admin/gdpr/run-purge', { method: 'POST' }, true) as Promise<GDPRPurgeResponse>,
   searchLegalArchive: (userId: string) => request(`/admin/gdpr/legal-archive/${userId}`, { method: 'GET' }, true),

@@ -2,6 +2,7 @@ import { clientPrisma as prisma } from '@blobinfini/database';
 import type { NextFunction, Request, Response } from 'express';
 import { securityAlertService } from '../../services/security-alert.service';
 import { getClientIp } from '../../lib/client-ip';
+import { secureLogger } from '../../utils/secure-logger';
 
 /**
  * Vérifie que l'utilisateur authentifié possède bien le rôle PRO.
@@ -45,7 +46,7 @@ export const requireProRole = async (req: Request, res: Response, next: NextFunc
           clientIp,
           userAgent
         );
-        console.warn(`🚨 Security: RIDER user ${user.id} attempted to access PRO endpoint ${endpoint}`);
+        secureLogger.security('PRO_ROLE_VIOLATION_RIDER', { userId: user.id, endpoint });
       } else if (dbUser?.role === 'ADMIN') {
         // ⚠️ CRITICAL: Even ADMIN should trigger alert (potential compromised account)
         await securityAlertService.reportAdminToProViolation(
@@ -55,7 +56,7 @@ export const requireProRole = async (req: Request, res: Response, next: NextFunc
           clientIp,
           userAgent
         );
-        console.warn(`🚨 Security: ADMIN user ${user.id} attempted to access PRO endpoint ${endpoint} - Potential compromised account!`);
+        secureLogger.security('PRO_ROLE_VIOLATION_ADMIN', { userId: user.id, endpoint });
       } else {
         // Invalid or unknown role
         await securityAlertService.reportInvalidRoleViolation(
@@ -66,7 +67,11 @@ export const requireProRole = async (req: Request, res: Response, next: NextFunc
           clientIp,
           userAgent
         );
-        console.warn(`🚨 Security: User ${user.id} with invalid role '${dbUser?.role || 'UNKNOWN'}' attempted to access PRO endpoint ${endpoint}`);
+        secureLogger.security('PRO_ROLE_VIOLATION_INVALID_ROLE', {
+          userId: user.id,
+          endpoint,
+          role: dbUser?.role || 'UNKNOWN'
+        });
       }
 
       return res.status(403).json({
@@ -78,7 +83,7 @@ export const requireProRole = async (req: Request, res: Response, next: NextFunc
     (req as any).user.role = 'PRO';
     return next();
   } catch (error) {
-    console.error('requireProRole error:', error);
+    secureLogger.error('PRO_ROLE_GUARD_FAILED', { error });
     return res.status(500).json({ error: 'Internal error' });
   }
 };

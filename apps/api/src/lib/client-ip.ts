@@ -17,6 +17,7 @@
 import { Request } from 'express';
 import type { IncomingHttpHeaders, IncomingMessage } from 'http';
 import * as ipaddr from 'ipaddr.js';
+import { secureLogger } from '../utils/secure-logger';
 
 export type TrustProxyMode = 'disabled' | 'loopback' | 'ips' | 'true';
 
@@ -61,7 +62,7 @@ export function getTrustProxyMode(): TrustProxyMode {
     return 'true';
   }
 
-  console.warn(`⚠️  Unknown TRUST_PROXY_MODE="${mode}", defaulting to "disabled"`);
+  secureLogger.warn('TRUST_PROXY_MODE_UNKNOWN', { mode });
   return 'disabled';
 }
 
@@ -98,7 +99,7 @@ export function parseTrustedProxies(): TrustedProxyConfig | null {
         const prefix = parseInt(prefixStr, 10);
 
         if (isNaN(prefix)) {
-          console.error(`❌ Invalid CIDR prefix in TRUSTED_PROXY_IPS: "${entry}"`);
+          secureLogger.error('TRUSTED_PROXY_CIDR_INVALID', { entry });
           continue;
         }
 
@@ -110,12 +111,12 @@ export function parseTrustedProxies(): TrustedProxyConfig | null {
         singleIps.push(parsed.toString()); // Normalize format
       }
     } catch (error) {
-      console.error(`❌ Invalid IP/CIDR in TRUSTED_PROXY_IPS: "${entry}"`, error);
+      secureLogger.error('TRUSTED_PROXY_ENTRY_INVALID', { entry, error });
     }
   }
 
   if (singleIps.length === 0 && cidrRanges.length === 0) {
-    console.error('❌ TRUSTED_PROXY_IPS contains no valid entries');
+    secureLogger.error('TRUSTED_PROXY_LIST_EMPTY');
     cachedTrustedProxies = null;
     return null;
   }
@@ -306,7 +307,7 @@ export function getClientIp(req: Request): string | undefined {
 
       if (!trustedConfig) {
         // No valid trusted proxies configured - fall back to socket IP
-        console.warn('⚠️  TRUST_PROXY_MODE=ips but TRUSTED_PROXY_IPS is empty/invalid. Using socket IP.');
+        secureLogger.warn('TRUSTED_PROXY_IPS_INVALID_SOCKET_FALLBACK');
         return socketIp;
       }
 
@@ -363,7 +364,7 @@ export function getClientIpFromIncomingRequest(req: SocketReqLike): string | und
     case 'ips': {
       const trustedConfig = parseTrustedProxies();
       if (!trustedConfig) {
-        console.warn('⚠️  TRUST_PROXY_MODE=ips but TRUSTED_PROXY_IPS is empty/invalid. Using socket IP.');
+        secureLogger.warn('TRUSTED_PROXY_IPS_INVALID_SOCKET_FALLBACK');
         return socketIp;
       }
       return isIpTrusted(socketIp, trustedConfig) ? (forwardedFor || socketIp) : socketIp;

@@ -7,7 +7,7 @@
  * Fonctionnalités :
  * - Enregistrement dans systemAlert (base de données)
  * - Notification email à l'administrateur
- * - Console logs pour traçabilité immédiate
+ * - Logs runtime sécurisés pour traçabilité immédiate
  */
 
 import { systemAlertService } from './system-alert.service';
@@ -47,8 +47,14 @@ class SecurityAlertService {
     } = violation;
     const ipHash = this.resolveIpHash(clientIp);
 
-    // 1. Console log immédiat pour traçabilité
-    console.warn(`🚨 SECURITY VIOLATION: ${userRole} user ${userId} attempted ${action} on ${endpoint}`);
+    secureLogger.security('SECURITY_VIOLATION_REPORTED', {
+      userId,
+      userRole,
+      action,
+      endpoint,
+      attemptedAction,
+      ipHash,
+    });
 
     // 2. Créer une alerte système en base de données
     try {
@@ -73,20 +79,20 @@ class SecurityAlertService {
         dedupeKey: null // Pas de déduplication pour les violations de sécurité
       });
 
-      console.log(`✅ Security alert created in database for user ${userId}`);
+      secureLogger.info('SECURITY_ALERT_CREATED', { userId, endpoint });
     } catch (error) {
-      console.error('❌ Failed to create security alert in database:', error);
+      secureLogger.error('SECURITY_ALERT_CREATE_FAILED', { error, endpoint });
       // Ne pas bloquer si l'alerte DB échoue
     }
 
     // 3. Envoyer notification email à l'admin
     try {
       await this.sendAdminNotificationEmail(violation);
-      console.log('📧 Security notification email sent to admin', {
+      secureLogger.info('SECURITY_ALERT_EMAIL_SENT', {
         adminEmailHash: hashEmail(this.ADMIN_EMAIL)
       });
     } catch (error) {
-      console.error('❌ Failed to send admin notification email:', error);
+      secureLogger.error('SECURITY_ALERT_EMAIL_FAILED', { error });
       // Ne pas bloquer si l'email échoue
     }
   }

@@ -1,13 +1,18 @@
 import { createClient } from 'redis';
 import { resolveRedisUrl } from '../lib/redisConfig';
 import { gridCell, DEFAULT_GRID_CELL_KM } from '../lib/geoGrid';
+import { secureLogger } from '../utils/secure-logger';
 
 // Redis client for caching (separate from rate limiting)
 let cacheClient: any = null;
 const shouldLogCache = process.env.NODE_ENV !== 'test' || process.env.ENABLE_TEST_LOGS === 'true';
-const logInfo = (...args: Parameters<typeof console.log>) => { if (shouldLogCache) console.log(...args); };
-const logWarn = (...args: Parameters<typeof console.warn>) => { if (shouldLogCache) console.warn(...args); };
-const logError = (...args: Parameters<typeof console.error>) => console.error(...args);
+const logInfo = (event: string, context?: Record<string, unknown>) => {
+  if (shouldLogCache) secureLogger.info(event, context);
+};
+const logWarn = (event: string, context?: Record<string, unknown>) => {
+  if (shouldLogCache) secureLogger.warn(event, context);
+};
+const logError = (event: string, context?: Record<string, unknown>) => secureLogger.error(event, context);
 const isDevelopment = process.env.NODE_ENV === 'development';
 const REDIS_DEV_HINT_THROTTLE_MS = 30000;
 
@@ -33,9 +38,7 @@ function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
 
   if (now >= state.nextLogAtMs) {
     state.nextLogAtMs = now + REDIS_DEV_HINT_THROTTLE_MS;
-    logWarn(
-      `⚠️ Redis non démarré (localhost:6379): ${errorMessage}. Lance "pnpm run dev:infra". Les retries continuent silencieusement.`
-    );
+    logWarn('CACHE_REDIS_DEV_HINT', { error: errorMessage });
   }
 
   return true;
@@ -47,11 +50,11 @@ export async function initializeCache(): Promise<any> {
   const redisUrl = resolveRedisUrl();
 
   if (redisUrl == null) {
-    logWarn('⚠️ Redis URL not provided, cache disabled');
+    logWarn('CACHE_REDIS_URL_MISSING');
     return null;
   }
 
-  logInfo('🔗 Connecting to Redis at:', redisUrl);
+  logInfo('CACHE_REDIS_CONNECTING', { redisUrl });
 
   try {
     const client = createClient({
@@ -67,18 +70,18 @@ export async function initializeCache(): Promise<any> {
       if (shouldSuppressRedisErrorLogInDev(error.message)) {
         return;
       }
-      logError('❌ Redis error:', error.message);
+      logError('CACHE_REDIS_ERROR', { error: error.message });
     });
 
     await client.connect();
     await client.ping();
-    logInfo('✅ Redis cache connected');
+    logInfo('CACHE_REDIS_CONNECTED');
     return client;
   } catch (error) {
     if (shouldSuppressRedisErrorLogInDev(error instanceof Error ? error.message : String(error))) {
       return null;
     }
-    logError('❌ Redis cache connection failed:', error);
+    logError('CACHE_REDIS_CONNECT_FAILED', { error });
     return null;
   }
 }
@@ -130,7 +133,7 @@ export class CacheService {
 
       return normalizedValue ? JSON.parse(normalizedValue) : null;
     } catch (error) {
-      logError(`Cache get error for key ${key}:`, error);
+      logError('CACHE_GET_FAILED', { cacheKey: key, error });
       return null;
     }
   }
@@ -142,7 +145,7 @@ export class CacheService {
       await this.client.setEx(key, ttlSeconds, JSON.stringify(value));
       return true;
     } catch (error) {
-      logError(`Cache set error for key ${key}:`, error);
+      logError('CACHE_SET_FAILED', { cacheKey: key, error });
       return false;
     }
   }
@@ -154,7 +157,7 @@ export class CacheService {
       await this.client.del(key);
       return true;
     } catch (error) {
-      logError(`Cache delete error for key ${key}:`, error);
+      logError('CACHE_DELETE_FAILED', { cacheKey: key, error });
       return false;
     }
   }
@@ -174,7 +177,7 @@ export class CacheService {
       const version = await this.client.get(versionKey);
       return version ? parseInt(version, 10) : 1;
     } catch (error) {
-      logError(`Cache version get error for namespace ${namespace}:`, error);
+      logError('CACHE_VERSION_GET_FAILED', { namespace, error });
       return 1;
     }
   }
@@ -195,10 +198,10 @@ export class CacheService {
     try {
       const versionKey = `cache:version:${namespace}`;
       const newVersion = await this.client.incr(versionKey);
-      logInfo(`🔄 Incremented ${namespace} cache version to ${newVersion}`);
+      logInfo('CACHE_VERSION_INCREMENTED', { namespace, newVersion });
       return newVersion;
     } catch (error) {
-      logError(`Cache version increment error for namespace ${namespace}:`, error);
+      logError('CACHE_VERSION_INCREMENT_FAILED', { namespace, error });
       return 1;
     }
   }
@@ -221,7 +224,7 @@ export class CacheService {
       // Set TTL on tag to auto-cleanup (slightly longer than cache TTL)
       await this.client.expire(tagKey, ttlSeconds + 60);
     } catch (error) {
-      logError(`Failed to add ${cacheKey} to tag ${tagKey}:`, error);
+      logError('CACHE_TAG_ADD_FAILED', { cacheKey, tagKey, error });
     }
   }
 
@@ -251,10 +254,10 @@ export class CacheService {
       // Remove tag itself
       await this.client.del(tagKey);
 
-      logInfo(`🗑️ Invalidated ${keys.length} keys via tag ${tagKey}`);
+      logInfo('CACHE_TAG_INVALIDATED', { tagKey, count: keys.length });
       return keys.length;
     } catch (error) {
-      logError(`Failed to invalidate tag ${tagKey}:`, error);
+      logError('CACHE_TAG_INVALIDATE_FAILED', { tagKey, error });
       return 0;
     }
   }
@@ -335,9 +338,9 @@ export class CacheService {
     try {
       // O(1) global invalidation via version increment
       const newVersion = await this.incrementVersion('matching');
-      logInfo(`🔄 Invalidated all matching caches (version ${newVersion})`);
+      logInfo('CACHE_MATCHING_INVALIDATED', { version: newVersion });
     } catch (error) {
-      logError('Cache invalidation error:', error);
+      logError('CACHE_INVALIDATION_FAILED', { error, namespace: 'matching' });
     }
   }
 
@@ -363,16 +366,16 @@ export class CacheService {
         const count = await this.invalidateByTag(tagKey);
 
         if (count > 0) {
-          logInfo(`🗑️ Invalidated ${count} availability caches near ${cell.cellId}`);
+          logInfo('CACHE_AVAILABILITIES_INVALIDATED_TARGETED', { cellId: cell.cellId, count });
         }
       } else {
         // Global invalidation fallback (rare case, e.g., admin bulk update)
         // Use SCAN instead of KEYS for safety
-        logInfo('⚠️ Global availability invalidation (no coordinates provided)');
+        logWarn('CACHE_AVAILABILITIES_INVALIDATED_GLOBAL');
         await this.scanAndDelete('availabilities:*');
       }
     } catch (error) {
-      logError('Cache invalidation error:', error);
+      logError('CACHE_INVALIDATION_FAILED', { error, namespace: 'availabilities' });
     }
   }
 
@@ -408,12 +411,12 @@ export class CacheService {
       } while (cursor !== 0);
 
       if (totalDeleted > 0) {
-        logInfo(`🗑️ Scanned and deleted ${totalDeleted} keys matching ${pattern}`);
+        logInfo('CACHE_SCAN_DELETE_COMPLETED', { pattern, totalDeleted });
       }
 
       return totalDeleted;
     } catch (error) {
-      logError(`Failed to scan and delete pattern ${pattern}:`, error);
+      logError('CACHE_SCAN_DELETE_FAILED', { pattern, error });
       return 0;
     }
   }
@@ -438,7 +441,7 @@ export class CacheService {
   public async close(): Promise<void> {
     if (this.client) {
       await this.client.quit();
-      logInfo('✅ Redis cache client closed');
+      logInfo('CACHE_REDIS_CLIENT_CLOSED');
     }
   }
 }
@@ -448,7 +451,9 @@ export const cacheService = CacheService.getInstance();
 
 // Initialize cache on module load (except in tests)
 if (process.env.NODE_ENV !== 'test') {
-  cacheService.initialize().catch(console.error);
+  cacheService.initialize().catch((error) => {
+    secureLogger.error('CACHE_SERVICE_INIT_FAILED', { error });
+  });
 }
 
 // Helper functions for cache key generation (using geographic grid for stability)

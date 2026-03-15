@@ -19,10 +19,12 @@ import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'js-yaml';
 import helmet from 'helmet';
-import type { Request, Response, NextFunction } from 'express';
+import type { ErrorRequestHandler, Request, Response, NextFunction } from 'express';
 import { secureLogger } from './utils/secure-logger';
 import { getClientIp } from './lib/client-ip';
 import { hashIpHmacSafe } from './lib/hash-ip';
+import { runJobWithLogContext, withHttpLogContext } from './observability/log-context';
+import { registerLogTransportShutdownHandlers } from './observability/log-transport';
 
 const RAW_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -206,25 +208,37 @@ import { blobospherePublicRouter } from './modules/blobosphere/blobosphere.publi
 import { contactRouter } from './modules/contact/contact.controller';
 import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
-import { requireAuth, requireAdmin, requireVerifiedEmail } from './modules/auth/auth.guard';
 import { consentRouter } from './modules/consent/consent.controller';
 import { analyticsRouter } from './modules/analytics/analytics.controller';
 
 
-const OPENAPI_SPEC_PATH = resolve(process.cwd(), 'docs/openapi/openapi.yaml');
+const OPENAPI_SPEC_CANDIDATES = [
+  resolve(process.cwd(), 'docs/openapi/openapi.yaml'),
+  resolve(process.cwd(), '../../docs/openapi/openapi.yaml'),
+  resolve(__dirname, '../docs/openapi/openapi.yaml'),
+  resolve(__dirname, '../../../docs/openapi/openapi.yaml'),
+];
+
+const resolveOpenApiSpecPath = (): string | null =>
+  OPENAPI_SPEC_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? null;
 
 const loadOpenApiDocument = () => {
   try {
-    const raw = fs.readFileSync(OPENAPI_SPEC_PATH, 'utf-8');
+    const specPath = resolveOpenApiSpecPath();
+    if (!specPath) {
+      throw new Error(`OpenAPI spec not found in candidates: ${OPENAPI_SPEC_CANDIDATES.join(', ')}`);
+    }
+    const raw = fs.readFileSync(specPath, 'utf-8');
     return YAML.load(raw) as object;
   } catch (error) {
-    console.warn('⚠️  Impossible de charger docs/openapi/openapi.yaml', error);
+    secureLogger.warn('OPENAPI_LOAD_FAILED', { error });
     return null;
   }
 };
 
 export function createApp() {
   const app = express();
+  app.use(withHttpLogContext);
 
   // Production-grade compression (gzip/brotli)
   app.use(compression({
@@ -264,7 +278,7 @@ export function createApp() {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('SESSION_SECRET must be set in production');
     }
-    console.warn('⚠️  WARNING: Using development SESSION_SECRET - DO NOT USE IN PRODUCTION');
+    secureLogger.warn('DEV_SESSION_SECRET_FALLBACK_USED');
     return 'blobinfini-dev-secret-change-in-production';
   })();
 
@@ -301,32 +315,35 @@ export function createApp() {
   const convPurgeHours = Number(process.env.CONV_PURGE_INTERVAL_HOURS || '0');
   const convTrashDays = Number(process.env.CONV_TRASH_RETENTION_DAYS || '30');
   async function purgeOnce() {
-    try {
-      const threshold = new Date(Date.now() - purgeDays * 24 * 60 * 60 * 1000);
-      const { clientPrisma: prisma } = await import('@blobinfini/database');
-      // Purge raw consentIp (legacy)
-      await prisma.user.updateMany({
-        where: { consentIp: { not: null }, consentedAt: { lt: threshold } },
-        data: { consentIp: null },
-      });
-      // Purge consentIpHash (HMAC v2) - RGPD data minimization
-      await prisma.user.updateMany({
-        where: { consentIpHash: { not: null }, consentedAt: { lt: threshold } },
-        data: { consentIpHash: null },
-      });
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('Consent purge failed', e);
-    }
+    await runJobWithLogContext('consent-purge', async () => {
+      try {
+        const threshold = new Date(Date.now() - purgeDays * 24 * 60 * 60 * 1000);
+        const { clientPrisma: prisma } = await import('@blobinfini/database');
+        // Purge raw consentIp (legacy)
+        await prisma.user.updateMany({
+          where: { consentIp: { not: null }, consentedAt: { lt: threshold } },
+          data: { consentIp: null },
+        });
+        // Purge consentIpHash (HMAC v2) - RGPD data minimization
+        await prisma.user.updateMany({
+          where: { consentIpHash: { not: null }, consentedAt: { lt: threshold } },
+          data: { consentIpHash: null },
+        });
+      } catch (e) {
+        secureLogger.error('CONSENT_PURGE_FAILED', { error: e });
+      }
+    });
   }
   // Enhanced GDPR purge system
   async function performGDPRPurge() {
-    try {
-      const { gdprPurgeService } = await import('./services/gdpr-purge.service.js');
-      await gdprPurgeService.performFullPurge();
-    } catch (e) {
-      console.error('GDPR purge failed', e);
-    }
+    await runJobWithLogContext('gdpr-purge', async () => {
+      try {
+        const { gdprPurgeService } = await import('./services/gdpr-purge.service.js');
+        await gdprPurgeService.performFullPurge();
+      } catch (e) {
+        secureLogger.error('GDPR_PURGE_FAILED', { error: e });
+      }
+    });
   }
 
   // Only start background jobs in production/development, not in tests
@@ -355,17 +372,18 @@ export function createApp() {
 
   // Background auto-deletion of trashed conversations (per member)
   async function purgeTrashedConversations() {
-    try {
-      const cutoff = new Date(Date.now() - convTrashDays * 24 * 60 * 60 * 1000);
-      const { clientPrisma: prisma } = await import('@blobinfini/database');
-      // Remove memberships older than cutoff
-      await prisma.conversationMember.deleteMany({ where: { trashedAt: { not: null, lt: cutoff } } });
-      // Remove orphan conversations (no members)
-      await prisma.conversation.deleteMany({ where: { members: { none: {} } } });
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('Conversation purge failed', e);
-    }
+    await runJobWithLogContext('conversation-trash-purge', async () => {
+      try {
+        const cutoff = new Date(Date.now() - convTrashDays * 24 * 60 * 60 * 1000);
+        const { clientPrisma: prisma } = await import('@blobinfini/database');
+        // Remove memberships older than cutoff
+        await prisma.conversationMember.deleteMany({ where: { trashedAt: { not: null, lt: cutoff } } });
+        // Remove orphan conversations (no members)
+        await prisma.conversation.deleteMany({ where: { members: { none: {} } } });
+      } catch (e) {
+        secureLogger.error('CONVERSATION_PURGE_FAILED', { error: e });
+      }
+    });
   }
 
   app.get('/health', (_req, res) => {
@@ -375,60 +393,16 @@ export function createApp() {
   // CSRF token endpoint (GET requests are not protected)
   app.get('/csrf-token', getCSRFToken);
 
-  app.get('/security/health', requireAuth, requireVerifiedEmail, requireAdmin, (req, res) => {
-    // P2-6: Logger qui accède à cet endpoint sensible
-    secureLogger.security('SECURITY_HEALTH_CHECK_ACCESSED', {
-      adminId: (req as any).user?.id,
-      ipHash: getRequestIpHash(req)
-    });
-
-    const issues: string[] = [];
-    const isProd = process.env.NODE_ENV === 'production';
-
-    const proxies = process.env.TRUSTED_PROXY_IPS?.split(',').map(v => v.trim()).filter(Boolean) || [];
-
-    if (isProd) {
-      if (allowedOriginsSet.size === 0) {
-        issues.push('ALLOWED_ORIGINS is empty');
-      }
-      if (proxies.length === 0) {
-        issues.push('TRUSTED_PROXY_IPS missing');
-      }
-    }
-
-    const authRequireVerified = String(
-      process.env.AUTH_REQUIRE_VERIFIED ?? (isProd ? 'true' : 'false')
-    ).toLowerCase() === 'true';
-
-    if (isProd && !authRequireVerified) {
-      issues.push('AUTH_REQUIRE_VERIFIED is not true in production');
-    }
-
-    // P2-6: Mode verbose pour détails (seulement si SECURITY_HEALTH_VERBOSE=true)
-    const verbose = process.env.SECURITY_HEALTH_VERBOSE === 'true';
-
-    const result = {
-      status: issues.length ? 'VULNERABLE' : 'SECURE',
-      helmet: true,
-      csrf: true,
-      rateLimit: true,
-      corsWhitelist: verbose ? Array.from(allowedOriginsSet) : allowedOriginsSet.size, // P2-6: Ne pas exposer les origins en mode normal
-      authRequireVerified,
-      issuesCount: issues.length,
-      issues: verbose ? issues : undefined, // P2-6: Détails uniquement en mode verbose
-      checks: {
-        corsConfigured: allowedOriginsSet.size > 0,
-        trustedProxyConfigured: proxies.length > 0,
-        authRequireVerified: authRequireVerified || !isProd
-      }
-    };
-
-    res.status(issues.length ? 503 : 200).json(result);
-  });
-
   // OpenAPI specification & Swagger UI
   app.get('/openapi.yaml', (_req, res) => {
-    res.sendFile(OPENAPI_SPEC_PATH);
+    const specPath = resolveOpenApiSpecPath();
+    if (!specPath) {
+      secureLogger.warn('OPENAPI_LOAD_FAILED', {
+        error: `OpenAPI spec not found in candidates: ${OPENAPI_SPEC_CANDIDATES.join(', ')}`,
+      });
+      return res.status(500).json({ error: 'OpenAPI specification unavailable' });
+    }
+    res.sendFile(specPath);
   });
 
   app.get('/openapi.json', (_req, res) => {
@@ -485,8 +459,6 @@ export function createApp() {
   app.use('/admin', adminRouter);
   app.use('/admin/blobosphere', blobosphereAdminRouter);
   app.use('/security', securityRouter);
-  // Back-compat alias for tests and clients using '/api/security/*'
-  app.use('/api/security', securityRouter);
   app.use('/contact', contactRouter);
   app.use('/booking', bookingRouter);
   app.use('/push', pushRouter);
@@ -506,17 +478,24 @@ export function createApp() {
   });
 
   // Global error handler
-  app.use((err: any, _req: any, res: any, _next: any) => {
-    console.error('Global error handler:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  });
+  app.use(globalErrorHandler);
 
   return app;
 }
 
+export const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
+  secureLogger.error('GLOBAL_ERROR_HANDLER_TRIGGERED', {
+    error: err,
+    method: req?.method,
+    path: req?.path,
+  });
+  res.status(500).json({ error: 'Internal server error' });
+};
+
 const app = createApp();
 
 if (process.env.NODE_ENV !== 'test') {
+  registerLogTransportShutdownHandlers();
   const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
   // Create HTTP server for both Express and Socket.io
@@ -541,10 +520,11 @@ if (process.env.NODE_ENV !== 'test') {
   });
 
   httpServer.listen(port, () => {
-    // eslint-disable-next-line no-console
-    console.info(`[API] Server ready on http://localhost:${port} (env=${process.env.NODE_ENV ?? 'development'})`);
-    // eslint-disable-next-line no-console
-    console.info(`[WebSocket] Socket.io ready on ws://localhost:${port}`);
+    secureLogger.info('API_SERVER_READY', {
+      port,
+      env: process.env.NODE_ENV ?? 'development',
+    });
+    secureLogger.info('WEBSOCKET_SERVER_READY', { port });
   });
 }
 

@@ -179,21 +179,21 @@ export class TwoFactorService {
       const redisSuccess = await cacheService.set(cacheKey, codeHash, 300);
       if (!redisSuccess) {
         if (!memoryStore) {
-          secureLogger.error('TWO_FACTOR_CACHE_UNAVAILABLE', { userId, cacheKey });
+          secureLogger.error('TWO_FACTOR_CACHE_UNAVAILABLE', { userId, cacheNamespace: '2fa' });
           return {
             success: false,
             message: 'Service 2FA indisponible (cache)'
           };
         }
         memoryStore.set(cacheKey, { hash: codeHash, expiresAt: Date.now() + 300000 });
-        secureLogger.warn('TWO_FACTOR_MEMORY_FALLBACK_USED', { userId, cacheKey });
+        secureLogger.warn('TWO_FACTOR_MEMORY_FALLBACK_USED', { userId, cacheNamespace: '2fa' });
       }
 
       // Send email
       const emailResult = await send2FACode(email, code);
 
       if (emailResult.sent === false) {
-        secureLogger.warn('TWO_FACTOR_EMAIL_FAILED', { userId, cacheKey });
+        secureLogger.warn('TWO_FACTOR_EMAIL_FAILED', { userId, cacheNamespace: '2fa' });
         return {
           success: false,
           message: 'Erreur lors de l\'envoi de l\'email'
@@ -201,7 +201,7 @@ export class TwoFactorService {
       }
 
       if (emailResult.skipped) {
-        secureLogger.info('TWO_FACTOR_EMAIL_SKIPPED', { userId, cacheKey });
+        secureLogger.info('TWO_FACTOR_EMAIL_SKIPPED', { userId, cacheNamespace: '2fa' });
       }
 
       // Generate a challengeId for the admin 2FA flow (one-time token, 600s TTL)

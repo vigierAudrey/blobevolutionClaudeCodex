@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { getSessionData } from '../../lib/auth-session-store';
 import { secureLogger } from '../../utils/secure-logger';
+import { setActorRefForUser } from '../../observability/log-context';
 
 export type VerifiedAccessTokenPayload = {
   sub: string;
@@ -110,6 +111,7 @@ function setAuthenticatedContext(req: Request, payload: VerifiedAccessTokenPaylo
     role: payload.role,
   };
   (req as Request & { user?: AuthenticatedUser; auth?: VerifiedAccessTokenPayload }).auth = payload;
+  setActorRefForUser(payload.sub);
 }
 
 function resolveAuthenticatedPayload(req: Request): AuthenticatedPayloadResolution {

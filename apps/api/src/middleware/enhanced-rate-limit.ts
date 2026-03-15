@@ -6,6 +6,7 @@ import { resolveRedisUrl } from '../lib/redisConfig';
 import { getClientIp } from '../lib/client-ip';
 import { hashIpHmacSafe } from '../lib/hash-ip';
 import { createHash } from 'crypto';
+import { secureLogger } from '../utils/secure-logger';
 
 type RedisClientType = ReturnType<typeof createClient>;
 type RateLimitStoreMode = 'memory' | 'redis';
@@ -39,9 +40,7 @@ function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
 
   if (now >= state.nextLogAtMs) {
     state.nextLogAtMs = now + REDIS_DEV_HINT_THROTTLE_MS;
-    console.warn(
-      `⚠️ Redis non démarré (localhost:6379): ${errorMessage}. Lance "pnpm run dev:infra". Les retries continuent silencieusement.`
-    );
+    secureLogger.warn('RATE_LIMIT_REDIS_DEV_HINT', { error: errorMessage });
   }
 
   return true;
@@ -63,7 +62,7 @@ async function initializeRedis(): Promise<RedisClientType | null> {
 
   // Redact credentials from log (redis://:password@host → redis://***@host)
   const redactedUrl = redisUrl.replace(/\/\/:([^@]+)@/, '//***@');
-  console.log('🔗 Connecting to Redis at:', redactedUrl);
+  secureLogger.info('RATE_LIMIT_REDIS_CONNECTING', { redisUrl: redactedUrl });
 
   try {
     const client = createClient({
@@ -81,12 +80,12 @@ async function initializeRedis(): Promise<RedisClientType | null> {
       if (shouldSuppressRedisErrorLogInDev(error.message)) {
         return;
       }
-      console.error('❌ Redis error:', error.message);
+      secureLogger.error('RATE_LIMIT_REDIS_ERROR', { error: error.message });
     });
 
     await client.connect();
     await client.ping();
-    console.log('✅ Redis connected for rate limiting');
+    secureLogger.info('RATE_LIMIT_REDIS_CONNECTED');
     return client;
   } catch (error) {
     if (shouldSuppressRedisErrorLogInDev(error instanceof Error ? error.message : String(error))) {
@@ -99,15 +98,14 @@ async function initializeRedis(): Promise<RedisClientType | null> {
       // - Restarts reset all counters (window integrity lost).
       // - Multiple instances have isolated stores (rate-limit bypass via load distribution).
       // Fail-fast so the issue is surfaced immediately rather than degrading silently.
-      console.error('❌ FATAL: Redis connection failed in production. Cannot start with memory-only rate-limiting.');
-      console.error('   Memory store fallback would break cross-restart and multi-instance rate-limit consistency.');
-      console.error('   Fix REDIS_URL and REDIS_PASSWORD, ensure Redis is reachable, then restart.');
-      console.error('   Error:', error instanceof Error ? error.message : String(error));
+      secureLogger.error('RATE_LIMIT_REDIS_FATAL', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       process.exit(1);
     }
 
     // Non-production, non-development (e.g. staging without Redis): log and use memory store.
-    console.error('❌ Redis connection failed, falling back to memory store (non-production):', error);
+    secureLogger.error('RATE_LIMIT_REDIS_FALLBACK_MEMORY', { error });
     return null;
   }
 }
@@ -151,12 +149,14 @@ if (process.env.NODE_ENV !== 'test') {
       // smartRateLimit and any other reference sees the Redis-backed limiters
       // without requiring a module reload.
       Object.assign(rateLimiters, buildRateLimiters());
-      console.log('✅ Rate limiters rebuilt with Redis store');
+      secureLogger.info('RATE_LIMITERS_REBUILT_WITH_REDIS');
     }
   }).catch(err => {
     // In production: initializeRedis() already called process.exit(1).
     // This catch handles non-production/non-development environments.
-    console.error('❌ Redis init failed (non-production), keeping memory store:', err instanceof Error ? err.message : String(err));
+    secureLogger.error('RATE_LIMIT_REDIS_INIT_FAILED', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }).finally(() => {
     redisInitSettled = true;
   });
@@ -363,7 +363,8 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
       const ipHash = hashIpHmacSafe(getClientIp(req));
 
       // Log rate limit violations for security monitoring
-      console.warn(`Rate limit exceeded: ${profile}`, {
+      secureLogger.warn('RATE_LIMIT_EXCEEDED', {
+        profile,
         ipHash,
         userAgent: req.get('User-Agent'),
         path: req.path,
@@ -610,6 +611,6 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
 export async function closeRateLimitStore(): Promise<void> {
   if (redisClient) {
     await redisClient.quit();
-    console.log('✅ Redis rate limit store closed');
+    secureLogger.info('RATE_LIMIT_REDIS_CLIENT_CLOSED');
   }
 }

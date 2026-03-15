@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
+import { secureLogger } from '../utils/secure-logger';
 
 const projectRoot = path.resolve(__dirname, '../../../../');
 const candidates = process.env.NODE_ENV === 'test' ? ['.env.test', '.env'] : ['.env'];
@@ -11,7 +12,7 @@ const loadedPath = candidates
 
 if (loadedPath) {
   dotenv.config({ path: loadedPath });
-  console.log('✅ .env loaded from', loadedPath);
+  secureLogger.info('ENV_FILE_LOADED', { loadedPath });
 } else {
-  console.warn('⚠️ No .env file found for', candidates.join(' / '));
+  secureLogger.warn('ENV_FILE_MISSING', { candidates });
 }

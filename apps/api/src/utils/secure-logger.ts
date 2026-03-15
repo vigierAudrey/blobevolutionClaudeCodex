@@ -1,55 +1,6 @@
-type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'security';
-
-const REDACTION_PATTERNS: ReadonlyArray<[RegExp, string]> = [
-  [/(Bearer\s+)([^\s]+)/gi, '$1[REDACTED]'],
-  [/((?:^|[\s"'`])token(?:Id)?(?:=|:)\s*)([^\s"'`&,]+)/gi, '$1[REDACTED]'],
-  [/((?:^|[\s"'`])(access[_-]?token|refresh[_-]?token)(?:=|:)\s*)([^\s"'`&,]+)/gi, '$1[REDACTED]'],
-  [/((?:^|[\s"'`])authorization(?:=|:)\s*)([^\s"'`&,]+)/gi, '$1[REDACTED]'],
-  [/((?:^|[\s"'`])email(?:=|:)\s*)([^\s"'`&,]+)/gi, '$1[REDACTED]']
-];
-
-const SENSITIVE_KEYS = new Set([
-  'token',
-  'access_token',
-  'refresh_token',
-  'accesstoken',
-  'refreshtoken',
-  'authorization',
-  'password',
-  'email',
-  'verificationtoken',
-  'resettoken'
-]);
-
-function sanitizeString(value: string): string {
-  let sanitized = value;
-  for (const [pattern, replacement] of REDACTION_PATTERNS) {
-    sanitized = sanitized.replace(pattern, replacement);
-  }
-  return sanitized;
-}
-
-function sanitizeValue<T>(value: T): T {
-  if (typeof value === 'string') {
-    return sanitizeString(value) as T;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map(item => sanitizeValue(item)) as T;
-  }
-
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string | symbol, unknown>).map(([key, val]) => {
-      if (typeof key === 'string' && SENSITIVE_KEYS.has(key.toLowerCase())) {
-        return [key, '[REDACTED]'];
-      }
-      return [key, sanitizeValue(val)];
-    });
-    return Object.fromEntries(entries) as T;
-  }
-
-  return value;
-}
+import { getLogContext } from '../observability/log-context';
+import { sanitizeLogString, serializeLogValue } from '../observability/log-serializer';
+import { enqueueLogEntry, type LogLevel } from '../observability/log-transport';
 
 function log(level: LogLevel, event: string, context?: Record<string, unknown>) {
   const isTestEnv = process.env.NODE_ENV === 'test';
@@ -62,24 +13,21 @@ function log(level: LogLevel, event: string, context?: Record<string, unknown>) 
     level === 'security';
   if (!shouldLog) return;
 
-  const timestamp = new Date().toISOString();
-  const sanitizedEvent = sanitizeString(event);
-  const sanitizedContext = context ? sanitizeValue(context) : undefined;
-
-  const consoleMethod =
-    level === 'error'
-      ? console.error
-      : level === 'warn'
-        ? console.warn
-        : level === 'debug'
-          ? console.debug
-          : console.info;
-
-  if (sanitizedContext) {
-    consoleMethod(`[${timestamp}] ${level.toUpperCase()} ${sanitizedEvent}`, sanitizedContext);
-  } else {
-    consoleMethod(`[${timestamp}] ${level.toUpperCase()} ${sanitizedEvent}`);
-  }
+  const sanitizedEvent = sanitizeLogString(event);
+  const sanitizedContext = context ? serializeLogValue(context) as Record<string, unknown> : undefined;
+  const logContext = getLogContext();
+  enqueueLogEntry({
+    timestamp: new Date().toISOString(),
+    level,
+    event: sanitizedEvent,
+    requestId: logContext.requestId,
+    actorRef: logContext.actorRef,
+    source: logContext.source,
+    ...(logContext.routeOrJob ? { routeOrJob: logContext.routeOrJob } : {}),
+    ...(sanitizedContext && Object.keys(sanitizedContext).length > 0
+      ? { context: sanitizedContext }
+      : {}),
+  });
 }
 
 export const secureLogger = {
@@ -101,5 +49,5 @@ export const secureLogger = {
 };
 
 export function redactSensitive<T>(value: T): T {
-  return sanitizeValue(value);
+  return serializeLogValue(value) as T;
 }

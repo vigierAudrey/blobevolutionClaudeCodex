@@ -1,5 +1,6 @@
 import { clientPrisma as prisma } from '@blobinfini/database';
 import crypto from 'crypto';
+import { secureLogger } from '../utils/secure-logger';
 
 export interface GDPRTechnicalStats {
   sessionsDeleted: number;
@@ -107,7 +108,12 @@ export class GDPRPurgeService {
       analyticsDailyAggDeleted = analyticsAggResult.count;
     }
 
-    console.log(`✅ GDPR: Purged ${sessionsResult.count} sessions, ${tokensDeleted} expired tokens, ${loginAttemptsDeleted} login attempts, ${analyticsEventsDeleted} analytics events`);
+    secureLogger.info('GDPR_PURGE_TECHNICAL_COMPLETED', {
+      sessionsDeleted: sessionsResult.count,
+      tokensDeleted,
+      loginAttemptsDeleted,
+      analyticsEventsDeleted,
+    });
 
     return {
       sessionsDeleted: sessionsResult.count,
@@ -134,11 +140,14 @@ export class GDPRPurgeService {
       }
     });
 
-    console.log(`✅ GDPR: Purged ${result.count} login attempts older than ${retentionDays} days`);
+    secureLogger.info('GDPR_PURGE_LOGIN_ATTEMPTS_COMPLETED', {
+      count: result.count,
+      retentionDays,
+    });
 
     // Alerte si nombre anormal (possible attaque)
     if (result.count > 100000) {
-      console.error(`⚠️  ALERT: Abnormal number of login attempts purged: ${result.count}`);
+      secureLogger.error('GDPR_PURGE_LOGIN_ATTEMPTS_ABNORMAL', { count: result.count });
     }
 
     return result.count;
@@ -268,7 +277,11 @@ export class GDPRPurgeService {
       phase3Count++;
     }
 
-    console.log(`✅ GDPR: Phase1=${phase1Count}, Phase2=${phase2Count}, Phase3=${phase3Count} users processed`);
+    secureLogger.info('GDPR_USER_ANONYMIZATION_COMPLETED', {
+      phase1Count,
+      phase2Count,
+      phase3Count,
+    });
 
     return {
       phase1Anonymized: phase1Count,
@@ -319,7 +332,11 @@ export class GDPRPurgeService {
       }
     });
 
-    console.log(`✅ GDPR: Conversations=${orphanConversations.count}, Matches=${orphanMatches.count}, Searches=${oldSearches.count} deleted`);
+    secureLogger.info('GDPR_PURGE_RELATIONAL_COMPLETED', {
+      conversationsDeleted: orphanConversations.count,
+      matchesDeleted: orphanMatches.count,
+      oldSearchesDeleted: oldSearches.count,
+    });
 
     return {
       conversationsDeleted: orphanConversations.count,
@@ -332,7 +349,7 @@ export class GDPRPurgeService {
    * Purge complète - À exécuter quotidiennement via CRON
    */
   async performFullPurge(): Promise<GDPRPurgeResult> {
-    console.log('🧹 Starting GDPR purge...');
+    secureLogger.info('GDPR_PURGE_STARTED');
 
     const technicalData = await this.purgeExpiredTechnicalData();
     const userAnonymization = await this.anonymizeDeletedUsers();
@@ -340,7 +357,7 @@ export class GDPRPurgeService {
 
     const summary = `GDPR Purge completed: ${technicalData.sessionsDeleted + technicalData.tokensDeleted} technical items, ${userAnonymization.phase1Anonymized + userAnonymization.phase2Anonymized + userAnonymization.phase3Purged} users processed, ${relationalData.conversationsDeleted + relationalData.matchesDeleted + relationalData.oldSearchesDeleted} relational items deleted`;
 
-    console.log(`✅ ${summary}`);
+    secureLogger.info('GDPR_PURGE_COMPLETED', { summary });
 
     return {
       technicalData,

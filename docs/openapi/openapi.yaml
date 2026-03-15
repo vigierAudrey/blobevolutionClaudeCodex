@@ -68,6 +68,57 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
+  /security/health:
+    get:
+      tags: [Health]
+      summary: Retourne la posture sécurité canonique
+      description: |
+        Endpoint canonique de posture sécurité. Il expose uniquement l'état de configuration
+        et des dépendances critiques de sécurité. Il n'expose pas l'état détaillé du pipeline
+        de logs, qui relève de `/security/observability`.
+      operationId: securityHealth
+      security:
+        - bearerAuth: []
+        - securityMonitorToken: []
+      responses:
+        '200':
+          description: Posture sécurité courante
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityHealthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /security/observability:
+    get:
+      tags: [Health]
+      summary: Retourne l'état du pipeline de logs
+      description: |
+        Expose les métriques réelles du transport de logs serveur: queue courante,
+        événements envoyés, pertes mesurées, échecs et état du circuit breaker.
+      operationId: securityObservability
+      security:
+        - bearerAuth: []
+        - securityMonitorToken: []
+      responses:
+        '200':
+          description: État courant du pipeline de logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityObservabilityResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /analytics/events:
     post:
       tags: [Analytics]
@@ -2960,6 +3011,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    securityMonitorToken:
+      type: apiKey
+      in: header
+      name: X-Security-Monitor-Token
   responses:
     Unauthorized:
       description: Authentification requise
@@ -3004,6 +3059,70 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    SecurityHealthCheckState:
+      type: string
+      enum: [ok, fail]
+    SecurityHealthStatus:
+      type: string
+      enum: [SECURE, DEGRADED, UNSAFE]
+    SecurityHealthChecks:
+      type: object
+      required: [config, env, db, redis]
+      properties:
+        config:
+          $ref: '#/components/schemas/SecurityHealthCheckState'
+        env:
+          $ref: '#/components/schemas/SecurityHealthCheckState'
+        db:
+          $ref: '#/components/schemas/SecurityHealthCheckState'
+        redis:
+          $ref: '#/components/schemas/SecurityHealthCheckState'
+    SecurityHealthResponse:
+      type: object
+      required: [status, timestamp, checks]
+      properties:
+        status:
+          $ref: '#/components/schemas/SecurityHealthStatus'
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          $ref: '#/components/schemas/SecurityHealthChecks'
+    SecurityObservabilityStatus:
+      type: string
+      enum: [healthy, degraded, failing]
+    SecurityBreakerState:
+      type: string
+      enum: [closed, open, half-open]
+    SecurityObservabilityPipeline:
+      type: object
+      required: [queued, sent, dropped, failed, breakerState]
+      properties:
+        queued:
+          type: integer
+          minimum: 0
+        sent:
+          type: integer
+          minimum: 0
+        dropped:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        breakerState:
+          $ref: '#/components/schemas/SecurityBreakerState'
+    SecurityObservabilityResponse:
+      type: object
+      required: [status, timestamp, pipeline]
+      properties:
+        status:
+          $ref: '#/components/schemas/SecurityObservabilityStatus'
+        timestamp:
+          type: string
+          format: date-time
+        pipeline:
+          $ref: '#/components/schemas/SecurityObservabilityPipeline'
     BlobospherePost:
       type: object
       properties:

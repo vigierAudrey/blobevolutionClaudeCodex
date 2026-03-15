@@ -742,7 +742,7 @@ export class BookingService {
       if (nearbyPros.length === 0) {
         secureLogger.info('No nearby PROs found for lesson request notification', {
           requestId,
-          location: { lat: availability.spotLat, lng: availability.spotLng }
+          searchAreaProvided: true,
         });
         return;
       }
