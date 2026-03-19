@@ -6,7 +6,7 @@ import { clientPrisma as prisma } from '@blobinfini/database';
 import { twoFactorService, verifyChallengeAndCode } from '../../services/two-factor.service';
 import { validate } from '../../middleware/validate';
 import { passwordSchema } from '../../utils/password-validator';
-import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { createLazyCustomRateLimiter, createLazyRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
 import { createHash } from 'crypto';
 import { getClientIp } from '../../lib/client-ip';
@@ -14,6 +14,7 @@ import { hashIpHmac } from '../../lib/hash-ip';
 import { securityEventAlertService } from '../../services/security-event-alert.service';
 import { bindAuthenticatedSessionUser, rotateAuthenticatedSession } from './auth-session-context';
 import { enforceAdminAllowedIp, grantAdminStepUp, revalidateAdminRole, resolveAdminStepUpBinding } from '../admin/admin.security-guard';
+import { ipKeyGenerator } from 'express-rate-limit';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -105,11 +106,88 @@ function hashEmail(email: string) {
   return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 }
 
-const stepUpLimiter = createRateLimiter('AUTH', {
+function extractLoginEmail(req: Request) {
+  return typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+}
+
+const loginIpLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    // skipSuccessfulRequests intentionally omitted: a successful login must consume the counter
+    // so that an attacker cannot reset their budget by interleaving valid credentials.
+    keyGenerator: (req: Request) => {
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `auth_login:ip:${ipKeyGenerator(ip)}`;
+    },
+    handler: (req: Request, res: Response) => {
+      const retryAfter = res.get('Retry-After');
+      secureLogger.warn('RATE_LIMIT_EXCEEDED', {
+        profile: 'AUTH_LOGIN_IP',
+        ipHash: hashIpHmac(getClientIp(req)) ?? undefined,
+        userAgent: req.get('User-Agent'),
+        path: req.path,
+        method: req.method,
+        emailHash: extractLoginEmail(req) ? hashEmail(extractLoginEmail(req)) : undefined,
+        retryAfter,
+      });
+      res.status(429).json({
+        error: 'AUTH_RATE_LIMIT_EXCEEDED',
+        message: 'Too many authentication attempts from this network. Please try again later.',
+        retryAfter: '15 minutes',
+        timestamp: new Date().toISOString(),
+        endpoint: '/login',
+        retryAfterSeconds: retryAfter,
+      });
+    },
+  },
+  'auth_login_ip',
+);
+
+const loginAccountIpLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    // skipSuccessfulRequests intentionally omitted: same rationale as loginIpLimiter.
+    keyGenerator: (req: Request) => {
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      const ipToken = ipKeyGenerator(ip);
+      const email = extractLoginEmail(req);
+      return email ? `auth_login:email:${hashEmail(email)}:ip:${ipToken}` : `auth_login:ip:${ipToken}`;
+    },
+    handler: (req: Request, res: Response) => {
+      const retryAfter = res.get('Retry-After');
+      secureLogger.warn('RATE_LIMIT_EXCEEDED', {
+        profile: 'AUTH_LOGIN_ACCOUNT_IP',
+        ipHash: hashIpHmac(getClientIp(req)) ?? undefined,
+        userAgent: req.get('User-Agent'),
+        path: req.path,
+        method: req.method,
+        emailHash: extractLoginEmail(req) ? hashEmail(extractLoginEmail(req)) : undefined,
+        retryAfter,
+      });
+      res.status(429).json({
+        error: 'AUTH_RATE_LIMIT_EXCEEDED',
+        message: 'Too many authentication attempts for this account from this network. Please try again later.',
+        retryAfter: '15 minutes',
+        timestamp: new Date().toISOString(),
+        endpoint: '/login',
+        retryAfterSeconds: retryAfter,
+      });
+    },
+  },
+  'auth_login_account_ip',
+);
+
+const stepUpLimiter = createLazyRateLimiter('AUTH', {
   keyGenerator: (req: Request & { user?: { id?: string }; canonicalIp?: string }): string => {
     const userId = req.user?.id;
     const ip = req.canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
-    return userId ? `step_up:${userId}` : ip;
+    return userId ? `step_up:${userId}` : `step_up:ip:${ipKeyGenerator(ip)}`;
   },
 });
 
@@ -167,7 +245,7 @@ function categorizeUserAgent(userAgent: string | undefined): string | undefined 
   return 'desktop';
 }
 
-authRouter.post('/login', validate(loginSchema), async (req, res) => {
+authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginSchema), async (req, res) => {
   const { email, password, consentAccepted } = req.body as z.infer<typeof loginSchema>;
   const ip = getClientIp(req);
   const userAgent = categorizeUserAgent(req.get('User-Agent'));
@@ -405,7 +483,7 @@ authRouter.post('/verify-email', async (req, res) => {
 // P2-5: Rate limiting to prevent email spam (3 attempts/hour per email)
 authRouter.post(
   '/resend-verification',
-  createRateLimiter('EMAIL_VERIFICATION'),
+  createLazyRateLimiter('EMAIL_VERIFICATION'),
   async (req, res) => {
     try {
       const { email } = resendVerifySchema.parse(req.body);
@@ -580,32 +658,59 @@ authRouter.post(
   },
 );
 
+// Rate limit for 2FA send — prevents mail flooding and user enumeration via timing/status divergence
+const twoFaSendLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 10 * 60 * 1000, // 10 minutes
+    max: 3,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      // Key on email hash so each account has its own budget, regardless of IP rotation
+      const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+      if (email) {
+        return `2fa_send:email:${createHash('sha256').update(email).digest('hex')}`;
+      }
+      const ip = getClientIp(req) ?? req.ip ?? req.socket?.remoteAddress ?? '';
+      return `2fa_send:ip:${ipKeyGenerator(ip)}`;
+    },
+    handler: (_req: Request, res: Response) => {
+      res.status(429).json({
+        error: 'TOO_MANY_2FA_REQUESTS',
+        message: 'Trop de demandes de code. Réessaie dans quelques minutes.',
+        retryAfter: '10 minutes',
+      });
+    },
+  },
+  '2fa_send',
+);
+
 // 2FA Routes
-authRouter.post('/2fa/send', async (req, res) => {
+authRouter.post('/2fa/send', twoFaSendLimiter, async (req, res) => {
   try {
     const { email } = send2FASchema.parse(req.body);
 
-    // Vérifier que l'utilisateur existe et est PRO
+    // Look up user — return generic 200 in all non-PRO cases to avoid user enumeration.
+    // An attacker must not be able to distinguish "no account" from "account with wrong role"
+    // via HTTP status codes.
     const user = await prisma.user.findUnique({
       where: { email },
       select: { id: true, role: true, email: true }
     });
 
-    if (!user) {
-      return res.status(404).json({ error: 'Utilisateur non trouvé' });
-    }
-
-    if (user.role !== 'PRO') {
-      return res.status(403).json({ error: '2FA disponible uniquement pour les pros' });
+    if (!user || user.role !== 'PRO') {
+      // Generic response: same status and body regardless of whether the user exists
+      return res.json({ message: 'Si un compte PRO correspondant existe, un code a été envoyé.' });
     }
 
     const result = await twoFactorService.sendCode(user.id, user.email);
 
-    if (result.success) {
-      res.json({ message: result.message });
-    } else {
-      res.status(500).json({ error: result.message });
+    if (result.success || result.tooManyChallenges) {
+      // Réponse générique dans les deux cas : un attaquant ne peut pas distinguer
+      // "code envoyé" de "trop de challenges actifs" pour énumérer les comptes PRO.
+      return res.json({ message: 'Si un compte PRO correspondant existe, un code a été envoyé.' });
     }
+    res.status(500).json({ error: '2FA service unavailable' });
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
@@ -614,48 +719,48 @@ authRouter.post('/2fa/send', async (req, res) => {
   }
 });
 
+// Réponse générique réutilisée pour les cas non-PRO : empêche l'énumération d'emails.
+// Un attaquant ne peut pas distinguer "compte inexistant" de "mauvais code"
+// car les deux retournent 401 { error: '2FA_INVALID' }.
+const VERIFY_2FA_INVALID_RESPONSE = { error: '2FA_INVALID', message: 'Code invalide ou expiré.' } as const;
+
 authRouter.post('/2fa/verify', async (req, res) => {
   try {
     const { email, code, consentAccepted } = verify2FAProSchema.parse(req.body);
 
-    // Vérifier que l'utilisateur existe et est PRO
+    const clientIp = getClientIp(req);
+
+    // Lookup user — anti-énumération : on ne révèle jamais si l'email existe ou le rôle.
+    // Si user inexistant ou non-PRO : même 401 que mauvais code.
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { id: true, role: true, email: true, password: true }
+      select: { id: true, role: true, email: true, password: true, sessionVersion: true, credentialsVersion: true, consentedAt: true, consentVersion: true }
     });
 
-    if (!user) {
-      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    if (!user || user.role !== 'PRO') {
+      return res.status(401).json(VERIFY_2FA_INVALID_RESPONSE);
     }
-
-    if (user.role !== 'PRO') {
-      return res.status(403).json({ error: '2FA disponible uniquement pour les pros' });
-    }
-
-    // Extract client IP for rate limiting (secure extraction)
-    const clientIp = getClientIp(req);
 
     const verification = await twoFactorService.verifyCode(user.id, code, clientIp);
 
     if (verification.valid) {
-      // Code valide - générer les tokens JWT comme pour un login normal
       const ip = clientIp || undefined;
-
-      // Utiliser le service de login avec les données de consentement fournies par le client.
-      // consentAccepted ne doit pas être hardcodé à true — on lit la valeur du body.
       const authContext = await rotateAuthenticatedSession(req, user.id);
       const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip }, authContext);
       setAuthCookies(res, tokens);
-      res.json({
+      return res.json({
         message: 'Authentification 2FA réussie',
         ok: true,
       });
-    } else {
-      res.status(401).json({ error: verification.message });
     }
+
+    return res.status(401).json(VERIFY_2FA_INVALID_RESPONSE);
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    if (err?.code === 'CONSENT_REQUIRED') {
+      return res.status(403).json({ error: 'Consent required', code: 'CONSENT_REQUIRED', consentVersion: 'v1.0.0' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }

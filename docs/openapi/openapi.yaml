@@ -1417,6 +1417,18 @@ paths:
           schema:
             type: string
             enum: [RIDER_TO_RIDER, RIDER_TO_PRO, PRO_TO_PRO]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Curseur opaque de pagination basé sur `updatedAt` + `conversationId`
       responses:
         '200':
           description: Conversations et métadonnées
@@ -1429,8 +1441,15 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ConversationSummary'
+                  hasMore:
+                    type: boolean
+                  nextCursor:
+                    type: string
+                    nullable: true
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/ValidationError'
   /conversations/{conversationId}/messages:
     get:
       tags: [Conversations]

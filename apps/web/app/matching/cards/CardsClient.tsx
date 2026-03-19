@@ -59,12 +59,6 @@ export function CardsClient() {
       try {
         const perf = measureApiPerformance('User Initialization');
 
-        const tokens = optimizedApiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-
         // Use optimized parallel initialization
         const { user, profile, disciplines } = await optimizedApiClient.initializeUser();
 

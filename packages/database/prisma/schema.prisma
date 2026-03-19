@@ -417,6 +417,7 @@ model Conversation {
   invitations    ConversationInvitation[]
 
   @@index([type])
+  @@index([updatedAt(sort: Desc), id(sort: Desc)])
 }
 
 model ConversationMember {
@@ -432,6 +433,7 @@ model ConversationMember {
 
   @@unique([conversationId, userId])
   @@index([userId])
+  @@index([userId, trashedAt, conversationId])
 }
 
 model ConversationInvitation {
@@ -466,6 +468,7 @@ model Message {
 
   @@unique([conversationId, clientMsgId], name: "conversation_client_msg_unique")
   @@index([conversationId, createdAt])
+  @@index([conversationId, senderId, createdAt(sort: Desc)])
 }
 
 model ProOffer {

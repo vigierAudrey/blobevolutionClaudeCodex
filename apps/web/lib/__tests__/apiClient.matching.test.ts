@@ -881,6 +881,81 @@ describe('API Client - Matching Integration', () => {
       expect(result).toEqual(mockConversationsResponse);
     });
 
+    it('devrait propager limit et cursor sur la pagination conversations', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({
+          items: [],
+          hasMore: false,
+          nextCursor: null,
+        }),
+      });
+
+      await apiClient.listConversations({ limit: 25, cursor: 'cursor-123', includeTrashed: true, type: 'RIDER_TO_PRO' });
+
+      expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/conversations?includeTrashed=true&type=RIDER_TO_PRO&limit=25&cursor=cursor-123`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer fake-access-token',
+        },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+    });
+
+    it('devrait agréger toutes les pages de conversations', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({
+            items: [{ id: 'conv-1', unread: 1 }],
+            hasMore: true,
+            nextCursor: 'cursor-1',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({
+            items: [{ id: 'conv-2', unread: 3 }],
+            hasMore: false,
+            nextCursor: null,
+          }),
+        });
+
+      const result = await apiClient.listAllConversations();
+
+      expect(result.items).toEqual([{ id: 'conv-1', unread: 1 }, { id: 'conv-2', unread: 3 }]);
+      expect(result.hasMore).toBe(false);
+      expect(result.nextCursor).toBeNull();
+      expect(fetchMock).toHaveBeenNthCalledWith(1, `${API_BASE_URL}/conversations?limit=100`, expect.any(Object));
+      expect(fetchMock).toHaveBeenNthCalledWith(2, `${API_BASE_URL}/conversations?limit=100&cursor=cursor-1`, expect.any(Object));
+    });
+
+    it('devrait retrouver une conversation au-delà de la première page', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({
+            items: [{ id: 'conv-1', unread: 1 }],
+            hasMore: true,
+            nextCursor: 'cursor-1',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({
+            items: [{ id: 'conv-target', unread: 0 }],
+            hasMore: false,
+            nextCursor: null,
+          }),
+        });
+
+      const result = await apiClient.findConversationById('conv-target');
+
+      expect(result).toEqual({ id: 'conv-target', unread: 0 });
+    });
+
     it('devrait calculer correctement le total des messages non lus', async () => {
       fetchMock.mockResolvedValueOnce({
         ok: true,

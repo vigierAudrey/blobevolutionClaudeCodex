@@ -9,6 +9,8 @@ import { notifyGroupInvitation, notifyNewMessage } from '../push/push.controller
 import { notifyUser } from '../../lib/socket';
 import { sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
 import { ERROR_CODES } from '../../utils/error-codes';
+import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { getClientIp } from '../../lib/client-ip';
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth, requireVerifiedEmail);
@@ -53,24 +55,218 @@ type RiderProfileSummary = Prisma.RiderProfileGetPayload<{
   select: { userId: true; displayName: true; photoUrl: true };
 }>;
 
+const CONVERSATIONS_DEFAULT_LIMIT = 50;
+const CONVERSATIONS_MAX_LIMIT = 100;
+const MESSAGE_COOLDOWN_MS = 30_000;
+const MESSAGE_RATE_LIMIT_WINDOW_MS = 60_000;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type ConversationListCursorPayload = {
+  updatedAt: string;
+  conversationId: string;
+};
+
+const conversationsListQuerySchema = z.object({
+  includeTrashed: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((value) => String(value ?? 'false').toLowerCase() === 'true'),
+  type: z.enum(['RIDER_TO_RIDER', 'RIDER_TO_PRO', 'PRO_TO_PRO']).optional(),
+  limit: z.coerce.number().int().min(1).max(CONVERSATIONS_MAX_LIMIT).optional().default(CONVERSATIONS_DEFAULT_LIMIT),
+  cursor: z.string().optional(),
+});
+
+function encodeConversationCursor(updatedAt: Date, conversationId: string): string {
+  return Buffer.from(
+    JSON.stringify({
+      updatedAt: updatedAt.toISOString(),
+      conversationId,
+    } satisfies ConversationListCursorPayload),
+    'utf8',
+  ).toString('base64url');
+}
+
+function decodeConversationCursor(cursor: string | undefined): { updatedAt: Date; conversationId: string } | null {
+  if (!cursor) {
+    return null;
+  }
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+  } catch {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  if (!decoded || typeof decoded !== 'object') {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  const raw = decoded as Partial<ConversationListCursorPayload>;
+  if (typeof raw.updatedAt !== 'string' || typeof raw.conversationId !== 'string' || !UUID_REGEX.test(raw.conversationId)) {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  const updatedAt = new Date(raw.updatedAt);
+  if (Number.isNaN(updatedAt.getTime())) {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  return { updatedAt, conversationId: raw.conversationId };
+}
+
+function buildEnvelopeAwareRateLimitHandler(message: string, code: string, reason: string) {
+  return (req: Request, res: Response) => {
+    const rateLimitInfo = (req as { rateLimit?: { resetTime?: Date } }).rateLimit;
+    const retryAfterSeconds =
+      typeof rateLimitInfo?.resetTime?.getTime === 'function'
+        ? Math.max(1, Math.ceil((rateLimitInfo.resetTime.getTime() - Date.now()) / 1000))
+        : Math.ceil(MESSAGE_RATE_LIMIT_WINDOW_MS / 1000);
+    res.setHeader('Retry-After', retryAfterSeconds.toString());
+
+    if (wantsEnvelope(req)) {
+      return sendError(res, 429, ERROR_CODES.RATE_LIMITED, message, {
+        reason,
+        retryAfterSeconds,
+      });
+    }
+
+    return res.status(429).json({
+      code,
+      error: code,
+      message,
+      retryAfterSeconds,
+    });
+  };
+}
+
+const conversationsListLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60_000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      const ipToken = ipKeyGenerator(canonicalIp);
+      return userId ? `conversation_list:user:${userId}` : `conversation_list:ip:${ipToken}`;
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Trop de rafraîchissements de conversations. Réessaie dans quelques instants.',
+      'CONVERSATIONS_LIST_RATE_LIMITED',
+      'CONVERSATIONS_LIST_RATE_LIMIT',
+    ),
+  },
+  'conversation_list',
+);
+
+const conversationMessagesReadLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60_000,
+    max: 90,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      const conversationId = req.params.id ?? 'unknown';
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      const ipToken = ipKeyGenerator(canonicalIp);
+      return userId
+        ? `conversation_messages_read:user:${userId}:conversation:${conversationId}`
+        : `conversation_messages_read:ip:${ipToken}:conversation:${conversationId}`;
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Trop de lectures de messages en peu de temps. Réessaie dans quelques instants.',
+      'CONVERSATION_MESSAGES_READ_RATE_LIMITED',
+      'CONVERSATION_MESSAGES_READ_RATE_LIMIT',
+    ),
+  },
+  'conversation_messages_read',
+);
+
+const conversationMessagesGlobalLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: MESSAGE_RATE_LIMIT_WINDOW_MS,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      const ipToken = ipKeyGenerator(canonicalIp);
+      return userId ? `conversation_messages_global:user:${userId}` : `conversation_messages_global:ip:${ipToken}`;
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Trop de messages envoyés en peu de temps. Réessaie dans quelques instants.',
+      'CONVERSATION_MESSAGES_GLOBAL_RATE_LIMITED',
+      'CONVERSATION_MESSAGES_GLOBAL_RATE_LIMIT',
+    ),
+  },
+  'conversation_messages_global',
+);
+
+const conversationMessagesPerConversationLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: MESSAGE_RATE_LIMIT_WINDOW_MS,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      const conversationId = req.params.id ?? 'unknown';
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      const ipToken = ipKeyGenerator(canonicalIp);
+      return userId
+        ? `conversation_messages:user:${userId}:conversation:${conversationId}`
+        : `conversation_messages:ip:${ipToken}:conversation:${conversationId}`;
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Trop de messages envoyés dans cette conversation. Réessaie dans quelques instants.',
+      'CONVERSATION_MESSAGES_RATE_LIMITED',
+      'CONVERSATION_MESSAGES_RATE_LIMIT',
+    ),
+  },
+  'conversation_messages',
+);
+
 // List conversations with last message + unread count (excludes trashed by default)
-conversationsRouter.get('/', async (req, res) => {
+conversationsRouter.get('/', conversationsListLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const includeTrashed = String(req.query.includeTrashed || 'false').toLowerCase() === 'true';
-    const convType = req.query.type as string | undefined; // 'RIDER_TO_RIDER' | 'RIDER_TO_PRO'
+    const { includeTrashed, type: convType, limit, cursor } = conversationsListQuerySchema.parse(req.query);
+    const decodedCursor = decodeConversationCursor(cursor);
+
+    const conversationFilters: Prisma.ConversationWhereInput = {};
+    if (convType) {
+      conversationFilters.type = convType as any;
+    }
+    if (decodedCursor) {
+      conversationFilters.OR = [
+        { updatedAt: { lt: decodedCursor.updatedAt } },
+        {
+          AND: [
+            { updatedAt: decodedCursor.updatedAt },
+            { id: { lt: decodedCursor.conversationId } },
+          ],
+        },
+      ];
+    }
 
     const convs: ConversationMemberWithRelations[] = await prisma.conversationMember.findMany({
-      where: { userId, ...(includeTrashed ? {} : { trashedAt: null }) },
+      where: {
+        userId,
+        ...(includeTrashed ? {} : { trashedAt: null }),
+        ...(Object.keys(conversationFilters).length > 0 ? { conversation: { is: conversationFilters } } : {}),
+      },
       select: conversationMemberSelect,
-      orderBy: { conversation: { updatedAt: 'desc' } },
+      orderBy: [{ conversation: { updatedAt: 'desc' } }, { conversationId: 'desc' }],
+      take: limit + 1,
     });
 
-    // Filter by conversation type if specified
-    const filteredConvs: ConversationMemberWithRelations[] = convType
-      ? convs.filter((cm: ConversationMemberWithRelations) => cm.conversation.type === convType)
-      : convs;
+    const hasMore = convs.length > limit;
+    const filteredConvs: ConversationMemberWithRelations[] = convs.slice(0, limit);
 
     // === QUERY BATCHING: Load all data in 4 queries instead of N×4 ===
 
@@ -190,27 +386,88 @@ conversationsRouter.get('/', async (req, res) => {
       };
     });
 
-    return res.json({ items: results });
+    const lastConversation = filteredConvs[filteredConvs.length - 1]?.conversation;
+    const nextCursor = hasMore && lastConversation
+      ? encodeConversationCursor(lastConversation.updatedAt, lastConversation.id)
+      : null;
+
+    return res.json({ items: results, hasMore, nextCursor });
   } catch (e) {
+    if ((e as { status?: number })?.status === 400) {
+      return res.status(400).json({ error: 'Invalid cursor' });
+    }
     secureLogger.error('CONVERSATIONS_LIST_FAILED', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
 
-// Fetch messages (paginated by createdAt)
-conversationsRouter.get('/:id/messages', async (req, res) => {
+// ── Cursor composite pour messages ─────────────────────────────────────────────
+// Cursor = base64url({ createdAt: ISO, messageId: UUID })
+// Ordre stable : (createdAt DESC, id DESC) → résistant aux collisions de timestamp.
+// Rétrocompatibilité : si le cursor est un ISO datetime brut (ancienne API),
+// on le parse comme cursor "createdAt seulement" avec messageId vide.
+// ───────────────────────────────────────────────────────────────────────────────
+
+type MessageCursor = { createdAt: Date; messageId: string };
+
+function encodeMessageCursor(createdAt: Date, messageId: string): string {
+  return Buffer.from(
+    JSON.stringify({ createdAt: createdAt.toISOString(), messageId }),
+    'utf8',
+  ).toString('base64url');
+}
+
+function decodeMessageCursor(raw: string): MessageCursor | null {
+  // Essayer d'abord le format composite base64url
+  try {
+    const decoded = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    if (decoded && typeof decoded.createdAt === 'string' && typeof decoded.messageId === 'string') {
+      const createdAt = new Date(decoded.createdAt);
+      if (!Number.isNaN(createdAt.getTime()) && UUID_REGEX.test(decoded.messageId)) {
+        return { createdAt, messageId: decoded.messageId };
+      }
+    }
+  } catch {
+    // pas du JSON base64url — continuer
+  }
+
+  // Rétrocompatibilité : ancien cursor = ISO datetime brut
+  const asDate = new Date(raw);
+  if (!Number.isNaN(asDate.getTime())) {
+    // messageId vide → la condition (id < '') sera toujours false → équivalent à (createdAt < cursor) only
+    return { createdAt: asDate, messageId: '' };
+  }
+
+  return null;
+}
+
+// Fetch messages (paginated by composite cursor createdAt+messageId — stable sur collisions de timestamp)
+conversationsRouter.get('/:id/messages', conversationMessagesReadLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     const id = req.params.id;
-    const cursor = req.query.cursor ? new Date(String(req.query.cursor)) : null;
     const limit = Math.min(Number(req.query.limit || 50), 100);
     const member = await prisma.conversationMember.findFirst({ where: { conversationId: id, userId } });
     if (!member) return res.status(404).json({ error: 'Not found' });
 
+    const cursor = req.query.cursor ? decodeMessageCursor(String(req.query.cursor)) : null;
+
+    // Filtre keyset composite : (createdAt < cur) OU (createdAt = cur AND id < cur.messageId)
+    const cursorWhere: Prisma.MessageWhereInput | undefined = cursor
+      ? {
+          OR: [
+            { createdAt: { lt: cursor.createdAt } },
+            ...(cursor.messageId
+              ? [{ AND: [{ createdAt: cursor.createdAt }, { id: { lt: cursor.messageId } }] }]
+              : []),
+          ],
+        }
+      : undefined;
+
     const msgs = await prisma.message.findMany({
-      where: { conversationId: id, createdAt: cursor ? { lt: cursor } : undefined },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
+      where: { conversationId: id, ...cursorWhere },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1, // +1 to detect whether a next page exists without a COUNT query
       select: {
         id: true,
         senderId: true,
@@ -270,7 +527,15 @@ conversationsRouter.get('/:id/messages', async (req, res) => {
 
     // mark read
     await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId: id, userId } as any }, data: { lastReadAt: new Date() } });
-    return res.json({ items: messagesWithSenders.reverse(), nextCursor: msgs.length === limit ? msgs[msgs.length - 1].createdAt : null });
+
+    const hasMore = msgs.length > limit;
+    const pageItems = hasMore ? msgs.slice(0, limit) : msgs;
+    const lastMsg = pageItems[pageItems.length - 1];
+    const nextCursor = hasMore && lastMsg
+      ? encodeMessageCursor(lastMsg.createdAt, lastMsg.id)
+      : null;
+
+    return res.json({ items: messagesWithSenders.slice(0, limit).reverse(), nextCursor });
   } catch (e) {
     secureLogger.error('CONVERSATIONS_MESSAGES_FETCH_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
@@ -278,7 +543,7 @@ conversationsRouter.get('/:id/messages', async (req, res) => {
 });
 
 // Send message
-conversationsRouter.post('/:id/messages', async (req, res) => {
+conversationsRouter.post('/:id/messages', conversationMessagesGlobalLimiter, conversationMessagesPerConversationLimiter, async (req, res) => {
   const envelope = wantsEnvelope(req);
   try {
     const userId = (req as any).user?.id as string | undefined;
@@ -496,41 +761,24 @@ conversationsRouter.post('/empty-trash', async (req, res) => {
 });
 
 // Ensure a direct conversation exists with target user and return its id
-const MESSAGE_COOLDOWN_MS = 30_000;
-const openConversationLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests', message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.' },
-  keyGenerator: (req, res) => {
-    const userId = (req as any).user?.id as string | undefined;
-    return userId ? `user:${userId}` : ipKeyGenerator(req.ip ?? '');
+const openConversationLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60_000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      return userId ? `conversation_open:user:${userId}` : ipKeyGenerator(req.ip ?? '');
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
+      'RATE_LIMIT',
+      'RATE_LIMIT',
+    ),
   },
-  handler: (req, res) => {
-    const rateLimitInfo = (req as { rateLimit?: { resetTime?: Date } }).rateLimit;
-    const retryAfterSeconds =
-      typeof rateLimitInfo?.resetTime?.getTime === 'function'
-        ? Math.max(1, Math.ceil((rateLimitInfo.resetTime.getTime() - Date.now()) / 1000))
-        : 60;
-    res.setHeader('Retry-After', retryAfterSeconds.toString());
-    const envelope = wantsEnvelope(req as Request);
-    if (envelope) {
-      return sendError(
-        res,
-        429,
-        ERROR_CODES.RATE_LIMITED,
-        'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
-        { reason: 'RATE_LIMIT', retryAfterSeconds }
-      );
-    }
-    return res.status(429).json({
-      code: 'RATE_LIMIT',
-      message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
-      retryAfterSeconds,
-    });
-  },
-});
+  'conversation_open',
+);
 
 conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
   const envelope = wantsEnvelope(req);
@@ -579,12 +827,8 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
 
     const existingForCooldown = await prisma.conversation.findFirst({
       where: {
+        directKey,
         type: conversationType as any,
-        AND: [
-          { members: { some: { userId: meId } } },
-          { members: { some: { userId: body.targetUserId } } },
-          { members: { every: { userId: { in: [meId, body.targetUserId] } } } },
-        ],
       },
       select: { id: true },
     });
@@ -615,12 +859,8 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
     const conv = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.conversation.findFirst({
         where: {
+          directKey,
           type: conversationType as any,
-          AND: [
-            { members: { some: { userId: meId } } },
-            { members: { some: { userId: body.targetUserId } } },
-            { members: { every: { userId: { in: [meId, body.targetUserId] } } } },
-          ],
         },
         select: { id: true },
       });
@@ -647,6 +887,24 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
       });
 
       return { id: created.id, isNew: true };
+    }).catch(async (error: any) => {
+      if (error?.code !== 'P2002') {
+        throw error;
+      }
+
+      const existingAfterRace = await prisma.conversation.findFirst({
+        where: {
+          directKey,
+          type: conversationType as any,
+        },
+        select: { id: true },
+      });
+
+      if (existingAfterRace) {
+        return { id: existingAfterRace.id, isNew: false };
+      }
+
+      throw error;
     });
 
     return envelope

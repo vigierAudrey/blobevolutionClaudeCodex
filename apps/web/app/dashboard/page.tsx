@@ -107,7 +107,7 @@ export default function DashboardPage() {
 
     const loadUnread = async () => {
       try {
-        const data = await apiClient.listConversations();
+        const data = await apiClient.listAllConversations();
         if (!active) return;
         const response = data as { items?: Array<{ unread?: number }> };
         const total = (response.items ?? []).reduce((acc, it) => acc + Number(it.unread ?? 0), 0);

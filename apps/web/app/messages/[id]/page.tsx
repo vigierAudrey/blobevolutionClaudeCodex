@@ -15,7 +15,6 @@ import type {
   Message,
   MessageListResponse,
   SendMessagePayload,
-  ThreadListResponse,
   ThreadSummary,
 } from '@/types/messages';
 
@@ -89,8 +88,7 @@ export default function ConversationPage() {
 
   const refreshConversationInfo = useCallback(async () => {
     try {
-      const conversations = await apiClient.listConversations() as ThreadListResponse;
-      const convInfo = (conversations.items ?? []).find((c: ThreadSummary) => c.id === id) ?? null;
+      const convInfo = await apiClient.findConversationById(id);
       setConversationInfo(convInfo);
     } catch (err) {
       console.error('Error loading conversation info:', err);

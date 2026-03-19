@@ -1073,8 +1073,67 @@ export const apiClient = {
     const params = new URLSearchParams();
     if (opts?.includeTrashed) params.append('includeTrashed', 'true');
     if (opts?.type) params.append('type', opts.type);
+    if (typeof opts?.limit === 'number') params.append('limit', String(opts.limit));
+    if (opts?.cursor) params.append('cursor', opts.cursor);
     const query = params.toString();
     return request(`/conversations${query ? `?${query}` : ''}`, { method: 'GET' }, true) as Promise<ThreadListResponse>;
+  },
+  listAllConversations: async (
+    opts?: Omit<ThreadListQuery, 'cursor'> & { maxPages?: number }
+  ): Promise<ThreadListResponse> => {
+    const limit = typeof opts?.limit === 'number' ? Math.min(opts.limit, 100) : 100;
+    const maxPages = Math.max(1, opts?.maxPages ?? 10);
+    const items: ThreadListResponse['items'] = [];
+    let cursor: string | undefined;
+    let pageCount = 0;
+    let hasMore = false;
+    let nextCursor: string | null | undefined = null;
+
+    do {
+      const page = await apiClient.listConversations({
+        ...opts,
+        limit,
+        cursor,
+      });
+
+      items.push(...(page.items ?? []));
+      hasMore = Boolean(page.hasMore);
+      nextCursor = page.nextCursor ?? null;
+      cursor = page.nextCursor ?? undefined;
+      pageCount += 1;
+    } while (cursor && pageCount < maxPages);
+
+    return {
+      items,
+      hasMore: Boolean(cursor && pageCount >= maxPages) || hasMore,
+      nextCursor: cursor ?? nextCursor ?? null,
+    };
+  },
+  findConversationById: async (
+    conversationId: string,
+    opts?: Omit<ThreadListQuery, 'cursor'> & { maxPages?: number }
+  ) => {
+    const limit = typeof opts?.limit === 'number' ? Math.min(opts.limit, 100) : 100;
+    const maxPages = Math.max(1, opts?.maxPages ?? 10);
+    let cursor: string | undefined;
+    let pageCount = 0;
+
+    do {
+      const page = await apiClient.listConversations({
+        ...opts,
+        limit,
+        cursor,
+      });
+      const match = (page.items ?? []).find((item) => item.id === conversationId);
+      if (match) {
+        return match;
+      }
+
+      cursor = page.nextCursor ?? undefined;
+      pageCount += 1;
+    } while (cursor && pageCount < maxPages);
+
+    return null;
   },
   getMessages: (id: string, cursor?: string, limit: number = 50) =>
     request(

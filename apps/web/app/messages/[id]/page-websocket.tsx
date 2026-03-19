@@ -6,7 +6,6 @@ import type {
   Message,
   MessageListResponse,
   MessageMeta,
-  ThreadListResponse,
   ThreadSummary
 } from '@/types/messages';
 import { MoreVertical, Shield, ShieldOff, Wifi, WifiOff } from 'lucide-react';
@@ -197,8 +196,7 @@ export default function ConversationPage() {
 
   const refreshConversationInfo = useCallback(async () => {
     try {
-      const conversations = await apiClient.listConversations() as ThreadListResponse;
-      const convInfo = (conversations.items ?? []).find((c: ThreadSummary) => c.id === id) ?? null;
+      const convInfo = await apiClient.findConversationById(id);
       setConversationInfo(convInfo);
     } catch (err) {
       // ✅ E-REVIEW P0 #4: Pas de console.error, erreur silencieuse ou UI

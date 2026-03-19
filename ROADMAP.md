@@ -48,6 +48,8 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
    Corriger CORS, secrets, logs sensibles, validation Zod, renforcer Helmet/SSL/trust proxy. Voir section « Sécurité & Conformité ».
 2. **🧪 Tests & Qualité**
    Finaliser tests UI (composants de base + matching), nettoyer données Playwright, fiabiliser flux CSRF. Voir section « Tests & Qualité ».
+   - [x] 2026-03-15: Seed locale `active-tests`, scénario Playwright A/B matching→messages, régressions authZ conversation/socket et script `k6` HTTP local.
+   - [x] 2026-03-15: Rééquilibrage load BlobConnect avec réutilisation cookie+CSRF, pagination `GET /conversations`, limitation post-auth plus fine sur matching/chat, et `login` hybride `email+IP` + plafond réseau pour réduire les collisions NAT sans ouvrir la porte aux brute-force.
 3. **📢 Publicité / Monétisation initiale**
    Finaliser déploiement AdSense, bannière RGPD et analytics revenus. Voir section « Monétisation (Publicité) ».
 4. **⚙️ Performance & DX rapides**

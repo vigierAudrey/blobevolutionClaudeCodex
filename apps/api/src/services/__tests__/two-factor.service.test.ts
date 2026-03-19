@@ -17,7 +17,19 @@ jest.mock('../cache.service', () => ({
   }
 }));
 
+// Mock secureLogger — the service logs via secureLogger, not console.*
+jest.mock('../../utils/secure-logger', () => ({
+  secureLogger: {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    security: jest.fn(),
+  }
+}));
+
 import { send2FACode } from '../../lib/mailer';
+import { secureLogger } from '../../utils/secure-logger';
 
 const mockSend2FACode = send2FACode as jest.MockedFunction<typeof send2FACode>;
 const mockCacheService = {
@@ -25,6 +37,10 @@ const mockCacheService = {
   get: cacheService.get as jest.MockedFunction<typeof cacheService.get>,
   del: cacheService.del as jest.MockedFunction<typeof cacheService.del>,
   getClient: cacheService.getClient as jest.MockedFunction<typeof cacheService.getClient>
+};
+
+const mockSecureLogger = secureLogger as {
+  [K in keyof typeof secureLogger]: jest.MockedFunction<typeof secureLogger[K]>
 };
 
 describe('TwoFactorService', () => {
@@ -186,16 +202,15 @@ describe('TwoFactorService', () => {
     it('should handle exceptions gracefully', async () => {
       mockSend2FACode.mockRejectedValue(new Error('Network error'));
 
-      // Mock console.error to verify error logging
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
       const result = await twoFactorServiceInstance.sendCode('user123', 'test@example.com');
 
       expect(result.success).toBe(false);
       expect(result.message).toBe('Erreur interne');
-      expect(consoleSpy).toHaveBeenCalled();
-
-      consoleSpy.mockRestore();
+      // Service logs via secureLogger.error('TWO_FACTOR_SEND_ERROR', ...)
+      expect(mockSecureLogger.error).toHaveBeenCalledWith(
+        'TWO_FACTOR_SEND_ERROR',
+        expect.objectContaining({ error: 'Network error' })
+      );
     });
 
     it('should set correct TTL for code expiration', async () => {
@@ -312,15 +327,11 @@ describe('TwoFactorService', () => {
       // Corrupt the memory store to cause an error
       twoFactorMemoryStore?.set(`2fa:${userId}`, null as any);
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
       const result = await twoFactorServiceInstance.verifyCode(userId, sentCode);
 
       // Even with errors, should return graceful error message
       expect(result.valid).toBe(false);
-      expect(result.message).toMatch(/Code|Erreur/); // Either "Code expiré" or "Erreur interne"
-
-      consoleSpy.mockRestore();
+      expect(result.message).toMatch(/Code|Erreur/); // Either "Code invalide ou expiré" or "Erreur interne"
     });
 
     it('should delete code from memory store after successful verification', async () => {
@@ -360,14 +371,14 @@ describe('TwoFactorService', () => {
     it('should return false when cache service errors', async () => {
       mockCacheService.get.mockRejectedValue(new Error('Cache error'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
       const result = await twoFactorServiceInstance.hasPendingCode('user123');
 
       expect(result).toBe(false);
-      expect(consoleSpy).toHaveBeenCalled();
-
-      consoleSpy.mockRestore();
+      // Service logs via secureLogger.error('TWO_FACTOR_PENDING_CHECK_ERROR', ...)
+      expect(mockSecureLogger.error).toHaveBeenCalledWith(
+        'TWO_FACTOR_PENDING_CHECK_ERROR',
+        expect.objectContaining({ error: 'Cache error' })
+      );
     });
   });
 
@@ -381,13 +392,13 @@ describe('TwoFactorService', () => {
     it('should handle cache service errors silently', async () => {
       mockCacheService.del.mockRejectedValue(new Error('Cache error'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
       // Should not throw
       await expect(twoFactorServiceInstance.cancelPendingCode('user123')).resolves.not.toThrow();
-      expect(consoleSpy).toHaveBeenCalled();
-
-      consoleSpy.mockRestore();
+      // Service logs via secureLogger.error('TWO_FACTOR_CANCEL_ERROR', ...)
+      expect(mockSecureLogger.error).toHaveBeenCalledWith(
+        'TWO_FACTOR_CANCEL_ERROR',
+        expect.objectContaining({ error: 'Cache error' })
+      );
     });
   });
 
@@ -515,8 +526,6 @@ describe('TwoFactorService', () => {
       mockCacheService.get.mockRejectedValue(new Error('Cache unavailable'));
       mockCacheService.del.mockRejectedValue(new Error('Cache unavailable'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
       // hasPendingCode should return false on error (graceful degradation)
       const pendingResult = await twoFactorServiceInstance.hasPendingCode('user123');
       expect(pendingResult).toBe(false);
@@ -524,9 +533,16 @@ describe('TwoFactorService', () => {
       // cancelPendingCode should not throw (graceful error handling)
       await expect(twoFactorServiceInstance.cancelPendingCode('user123')).resolves.not.toThrow();
 
-      // Errors should be logged
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      // Errors should be logged via secureLogger (hasPendingCode + cancelPendingCode each log once)
+      expect(mockSecureLogger.error).toHaveBeenCalledTimes(2);
+      expect(mockSecureLogger.error).toHaveBeenCalledWith(
+        'TWO_FACTOR_PENDING_CHECK_ERROR',
+        expect.objectContaining({ error: 'Cache unavailable' })
+      );
+      expect(mockSecureLogger.error).toHaveBeenCalledWith(
+        'TWO_FACTOR_CANCEL_ERROR',
+        expect.objectContaining({ error: 'Cache unavailable' })
+      );
     });
   });
 });

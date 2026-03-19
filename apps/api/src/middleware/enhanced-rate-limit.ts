@@ -492,14 +492,20 @@ export function createLazyRateLimiter(
   let redisLimiter: ReturnType<typeof rateLimit> | null = null;
 
   const run = (req: Request, res: Response, next: NextFunction) => {
+    const validate = {
+      creationStack: false,
+      keyGeneratorIpFallback: false,
+      ...(customOptions?.validate ?? {}),
+    };
+
     if (redisClient) {
       if (!redisLimiter) {
-        redisLimiter = createRateLimiter(profile, customOptions);
+        redisLimiter = createRateLimiter(profile, { ...customOptions, validate });
       }
       return redisLimiter(req, res, next);
     }
     if (!memoryLimiter) {
-      memoryLimiter = createRateLimiter(profile, customOptions);
+      memoryLimiter = createRateLimiter(profile, { ...customOptions, validate });
     }
     return memoryLimiter(req, res, next);
   };
@@ -535,10 +541,17 @@ export function createLazyCustomRateLimiter(
   let redisLimiter: ReturnType<typeof rateLimit> | null = null;
 
   const run = (req: Request, res: Response, next: NextFunction) => {
+    const validate = {
+      creationStack: false,
+      keyGeneratorIpFallback: false,
+      ...(options?.validate ?? {}),
+    };
+
     if (redisClient) {
       if (!redisLimiter) {
         redisLimiter = rateLimit({
           ...options,
+          validate,
           store: new RedisStore({
             sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
             prefix: `rl:${storePrefix}:`,
@@ -548,7 +561,10 @@ export function createLazyCustomRateLimiter(
       return redisLimiter(req, res, next);
     }
     if (!memoryLimiter) {
-      memoryLimiter = rateLimit(options);
+      memoryLimiter = rateLimit({
+        ...options,
+        validate,
+      });
     }
     return memoryLimiter(req, res, next);
   };
@@ -572,6 +588,29 @@ export const rateLimiters = buildRateLimiters();
 export function smartRateLimit(req: Request, res: Response, next: NextFunction) {
   const path = req.path;
   const method = req.method;
+  const isConversationMessagesRoute = /^\/conversations\/[^/]+\/messages$/.test(path);
+
+  // Some authenticated routes already enforce narrower, post-auth rate limits.
+  // Keeping the global pre-auth IP bucket here would mostly measure NAT collisions.
+  if (path.startsWith('/matching/')) {
+    return next();
+  }
+  if (path === '/auth/login' && method === 'POST') {
+    return next();
+  }
+  // /auth/2fa/send has its own per-email twoFaSendLimiter — exclude from generic IP bucket
+  if (path === '/auth/2fa/send' && method === 'POST') {
+    return next();
+  }
+  if (path === '/conversations' && method === 'GET') {
+    return next();
+  }
+  if (path === '/conversations/open' && method === 'POST') {
+    return next();
+  }
+  if (isConversationMessagesRoute && ['GET', 'POST'].includes(method)) {
+    return next();
+  }
 
   // Determine appropriate rate limiter based on path and method
   let limiter;

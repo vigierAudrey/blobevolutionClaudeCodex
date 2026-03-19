@@ -150,7 +150,7 @@ export const optimizedApiClient = {
     opts?: Parameters<typeof apiClient.listConversations>[0]
   ) => cachedRequest(
     `${CacheKeys.conversations()}:${JSON.stringify(opts || {})}`,
-    () => apiClient.listConversations(opts),
+    () => apiClient.listAllConversations(opts),
     CacheTTL.CONVERSATIONS
   ),
 
@@ -305,7 +305,7 @@ apiClient.updateProfile = async (...args) => {
 };
 
 // Development helpers
-if (process.env.NODE_ENV === 'development') {
+if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
   // Expose cache for debugging
   type DebugCacheWindow = typeof window & {
     debugCache?: {

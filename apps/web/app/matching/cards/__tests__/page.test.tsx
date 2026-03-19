@@ -217,8 +217,8 @@ describe('Matching Cards Component', () => {
   });
 
   describe('Authentication and Authorization', () => {
-    it('should redirect to login if no token', async () => {
-      mockApiClient.getTokens.mockReturnValue(null);
+    it('should redirect to login if session bootstrap fails', async () => {
+      mockApiClient.me.mockRejectedValue(new Error('Session expirée'));
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
