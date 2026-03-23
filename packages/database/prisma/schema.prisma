@@ -275,16 +275,21 @@ model MatchDecision {
 }
 
 model ProfileReport {
-  id                String       @id @default(uuid())
-  reporterUserId    String
-  reportedProfileId String
-  reason            String?
-  createdAt         DateTime     @default(now())
-  reportedProfile   RiderProfile @relation("ProfileAsReported", fields: [reportedProfileId], references: [id], onDelete: Cascade)
-  reporter          User         @relation("UserAsReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
+  id                  String       @id @default(uuid())
+  reporterUserId      String
+  reportedProfileId   String
+  reason              String?
+  createdAt           DateTime     @default(now())
+  // F07 — Review fields: set on moderation action instead of deleting the record
+  reviewedAt          DateTime?
+  reviewedByAdminId   String?
+  reviewedAction      String?      // 'approve' | 'dismiss' | 'ban'
+  reportedProfile     RiderProfile @relation("ProfileAsReported", fields: [reportedProfileId], references: [id], onDelete: Cascade)
+  reporter            User         @relation("UserAsReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
 
   @@index([reporterUserId])
   @@index([reportedProfileId])
+  @@index([reviewedAt])
 }
 
 model ProAvailability {
@@ -561,19 +566,22 @@ model AuditLog {
 }
 
 model SystemAlert {
-  id             String        @id @default(uuid())
-  type           String
-  message        String
-  severity       AlertSeverity @default(INFO)
-  status         AlertStatus   @default(OPEN)
-  link           String?
-  dedupeKey      String?
-  metadata       Json?
-  createdById    String?
-  acknowledgedAt DateTime?
-  resolvedAt     DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id              String        @id @default(uuid())
+  type            String
+  message         String
+  severity        AlertSeverity @default(INFO)
+  status          AlertStatus   @default(OPEN)
+  link            String?
+  dedupeKey       String?
+  metadata        Json?
+  createdById     String?
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  occurrenceCount Int           @default(1)
+  firstSeenAt     DateTime      @default(now())
+  lastSeenAt      DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   createdBy User? @relation("UserSystemAlerts", fields: [createdById], references: [id], onDelete: SetNull)
 
@@ -595,6 +603,40 @@ model LegalConsentArchive {
   @@unique([originalUserId, deletedAt])
   @@index([originalUserId])
   @@index([consentedAt])
+  @@index([archivedAt])
+}
+
+/// Archive légale minimale d'un booking — sans FK vers User/Pro/Availability.
+/// Survit aux cascades. Conservée 10 ans à partir de l'archivage.
+/// PII directes exclues : riderHash / proHash sont des SHA-256 pseudonymisés.
+model BookingLegalArchive {
+  id           String   @id @default(uuid())
+  /// UUID du booking source (sans FK active — survit à la cascade)
+  bookingId    String   @unique
+  /// SHA-256(riderUserId + ':' + ANONYMIZATION_SALT) — non réversible
+  riderHash    String
+  /// SHA-256(proUserId + ':' + ANONYMIZATION_SALT) — non réversible
+  proHash      String
+  /// Sport de la disponibilité (enum stable, pas de PII)
+  sport        Sport
+  /// Date/heure de début de la prestation (ProAvailability.startAt)
+  bookedAt     DateTime
+  /// Date de création du booking original
+  createdAt    DateTime
+  /// Moment où l'archive a été scellée (clôture ou pré-suppression compte)
+  closedAt     DateTime
+  /// Statut final du booking au moment de l'archivage
+  finalStatus  String
+  /// Prix de la disponibilité au moment de l'archive (ProAvailability.price — nullable)
+  priceDecimal Decimal? @db.Decimal(8, 2)
+  /// Horodatage de création de l'archive
+  archivedAt   DateTime @default(now())
+  /// Date de purge automatique (archivedAt + 10 ans)
+  purgeAt      DateTime
+
+  @@index([riderHash])
+  @@index([proHash])
+  @@index([purgeAt])
   @@index([archivedAt])
 }
 

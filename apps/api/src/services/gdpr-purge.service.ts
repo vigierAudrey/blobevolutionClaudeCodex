@@ -1,6 +1,7 @@
 import { clientPrisma as prisma } from '@blobinfini/database';
 import crypto from 'crypto';
 import { secureLogger } from '../utils/secure-logger';
+import { archiveBookingsBulk } from '../lib/booking-archive';
 
 export interface GDPRTechnicalStats {
   sessionsDeleted: number;
@@ -269,6 +270,39 @@ export class GDPRPurgeService {
         }
       });
 
+      // Archiver les bookings AVANT la cascade de suppression.
+      // Booking.onDelete = Cascade depuis User ET depuis ProAvailability →
+      // tout sera détruit par user.delete() ci-dessous.
+      // On collecte : bookings en tant que rider + bookings en tant que pro
+      // (via les slots de disponibilité de ce pro).
+      const bookingsToArchive = await prisma.booking.findMany({
+        where: {
+          OR: [
+            { riderUserId: user.id },
+            { availability: { proUserId: user.id } },
+          ],
+        },
+        include: {
+          availability: {
+            select: { proUserId: true, sport: true, startAt: true, price: true },
+          },
+        },
+      });
+
+      if (bookingsToArchive.length > 0) {
+        const archiveResult = await archiveBookingsBulk(
+          bookingsToArchive,
+          new Date(), // closedAt = maintenant (pré-suppression)
+          `gdpr-phase3:${user.id}`
+        );
+        secureLogger.info('GDPR_PHASE3_BOOKINGS_ARCHIVED', {
+          userId: '[redacted]',
+          created: archiveResult.created,
+          skipped: archiveResult.skipped,
+          errors:  archiveResult.errors,
+        });
+      }
+
       // Supprimer définitivement l'utilisateur et ses données
       await prisma.user.delete({
         where: { id: user.id }
@@ -297,8 +331,9 @@ export class GDPRPurgeService {
   async purgeRelationalData(): Promise<GDPRRelationalStats> {
     const now = new Date();
 
-    // Supprimer les conversations trasher depuis > 30 jours
-    const convThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    // Supprimer les conversations trashées depuis > 90 jours
+    // (porté de 30j à 90j — RGPD Phase 1, meilleure couverture litiges court-terme)
+    const convThreshold = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
     // D'abord supprimer les membres de conversations trashées
     await prisma.conversationMember.deleteMany({
@@ -406,7 +441,7 @@ export class GDPRPurgeService {
       }
     });
 
-    const convThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const convThreshold = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     const oldTrashedConversations = await prisma.conversationMember.count({
       where: {
         trashedAt: { not: null, lt: convThreshold }

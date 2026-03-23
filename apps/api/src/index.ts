@@ -313,7 +313,8 @@ export function createApp() {
   const legacyPurgeHours = Number(process.env.CONSENT_PURGE_INTERVAL_HOURS || '0'); // Legacy system
   const purgeDays = Number(process.env.CONSENT_PURGE_RETENTION_DAYS || '730');
   const convPurgeHours = Number(process.env.CONV_PURGE_INTERVAL_HOURS || '0');
-  const convTrashDays = Number(process.env.CONV_TRASH_RETENTION_DAYS || '30');
+  // 90j aligné sur gdpr-purge.service.ts purgeRelationalData() — RGPD Phase 1
+  const convTrashDays = Number(process.env.CONV_TRASH_RETENTION_DAYS || '90');
   async function purgeOnce() {
     await runJobWithLogContext('consent-purge', async () => {
       try {
@@ -346,6 +347,24 @@ export function createApp() {
     });
   }
 
+  // Booking archive job — domaine légal de rétention, séparé du RGPD.
+  // Archive les bookings dont availability.endAt < now - BOOKING_ARCHIVE_GRACE_DAYS.
+  // Désactivable indépendamment via BOOKING_ARCHIVE_INTERVAL_HOURS=0.
+  const bookingArchiveHours = Number(process.env.BOOKING_ARCHIVE_INTERVAL_HOURS || '24');
+  const bookingArchiveGraceDays = Number(process.env.BOOKING_ARCHIVE_GRACE_DAYS || '14');
+  async function runBookingArchive() {
+    await runJobWithLogContext('booking-archive', async () => {
+      secureLogger.info('BOOKING_ARCHIVE_JOB_STARTED', { graceDays: bookingArchiveGraceDays });
+      try {
+        const { bookingArchiveService } = await import('./services/booking-archive.service.js');
+        const result = await bookingArchiveService.archiveClosedBookings(bookingArchiveGraceDays);
+        secureLogger.info('BOOKING_ARCHIVE_JOB_COMPLETED', { ...result });
+      } catch (e) {
+        secureLogger.error('BOOKING_ARCHIVE_JOB_ERROR', { error: e });
+      }
+    });
+  }
+
   // Only start background jobs in production/development, not in tests
   if (process.env.NODE_ENV !== 'test') {
     if (gdprPurgeHours > 0) {
@@ -360,6 +379,14 @@ export function createApp() {
       setInterval(purgeOnce, legacyPurgeHours * 60 * 60 * 1000);
       if (String(process.env.CONSENT_PURGE_RUN_ON_START || 'true').toLowerCase() === 'true') {
         purgeOnce();
+      }
+    }
+
+    // Booking archive job (séparé du GDPR — désactivable indépendamment)
+    if (bookingArchiveHours > 0) {
+      setInterval(runBookingArchive, bookingArchiveHours * 60 * 60 * 1000);
+      if (String(process.env.BOOKING_ARCHIVE_RUN_ON_START || 'false').toLowerCase() === 'true') {
+        runBookingArchive();
       }
     }
 
