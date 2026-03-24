@@ -338,16 +338,17 @@ model BookingRequest {
 }
 
 model Booking {
-  id             String          @id @default(uuid())
-  availabilityId String
-  riderUserId    String
-  bookingRequestId String?       @unique
-  status         BookingStatus   @default(CONFIRMED)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  availability   ProAvailability @relation("BookingOnAvailability", fields: [availabilityId], references: [id], onDelete: Cascade)
-  rider          User            @relation("BookingOnUser", fields: [riderUserId], references: [id], onDelete: Cascade)
-  bookingRequest BookingRequest? @relation(fields: [bookingRequestId], references: [id], onDelete: SetNull)
+  id               String          @id @default(uuid())
+  availabilityId   String
+  riderUserId      String
+  bookingRequestId String?         @unique
+  status           BookingStatus   @default(CONFIRMED)
+  cancelledAt      DateTime?       // audit/traçabilité : date effective d'annulation (≠ source de décision fenêtre métier)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  availability     ProAvailability @relation("BookingOnAvailability", fields: [availabilityId], references: [id], onDelete: Cascade)
+  rider            User            @relation("BookingOnUser", fields: [riderUserId], references: [id], onDelete: Cascade)
+  bookingRequest   BookingRequest? @relation(fields: [bookingRequestId], references: [id], onDelete: SetNull)
 
   @@index([availabilityId])
   @@index([riderUserId])

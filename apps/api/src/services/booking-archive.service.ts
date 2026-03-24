@@ -10,19 +10,18 @@
  * │  `closedAt` représente la FIN DE LA FENÊTRE PLANIFIÉE du booking,       │
  * │  et NON la preuve que la prestation a été exécutée.                     │
  * │                                                                         │
- * │  Un no-show, une annulation IRL, ou un report verbal sont archivés      │
- * │  avec finalStatus = CONFIRMED et closedAt = endAt car aucun mécanisme   │
- * │  d'annulation n'existe dans l'application à ce stade.                   │
+ * │  Un no-show ou un report verbal sans annulation en app sont archivés    │
+ * │  avec finalStatus = CONFIRMED et closedAt = endAt.                      │
+ * │  Les bookings annulés via POST /bookings/:id/cancel sont archivés       │
+ * │  avec finalStatus = CANCELLED_RIDER ou CANCELLED_PRO (statut réel en   │
+ * │  base au moment où le job s'exécute).                                   │
  * │                                                                         │
  * │  L'archive prouve l'existence d'un engagement commercial,               │
  * │  pas son exécution, ni la présence des parties.                         │
  * └─────────────────────────────────────────────────────────────────────────┘
  *
- * TODO (dette explicite) :
- *   Quand les endpoints CANCELLED_RIDER / CANCELLED_PRO seront implémentés,
- *   appeler archiveBookingIfNotExists() dans la transaction de cancel (avant
- *   le changement de statut) afin que finalStatus soit correct dans l'archive.
- *   Ticket : https://github.com/.../issues/XXX (à remplir avant déploiement prod)
+ * Ce job est l'unique producteur de BookingLegalArchive.
+ * Aucune archive immédiate n'est déclenchée depuis les endpoints d'annulation.
  */
 
 import { clientPrisma as prisma } from '@blobinfini/database';

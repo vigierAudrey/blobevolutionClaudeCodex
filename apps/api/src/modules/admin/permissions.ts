@@ -8,7 +8,12 @@ export const AVAILABLE_PERMISSIONS = [
   'reports.moderate',
   'analytics.view',
   'permissions.manage',
-  'system.configure'
+  // F05 — system.monitor: read-only observability (alerts list, security summary, GDPR compliance report, exports dashboard)
+  // system.configure: write/destructive ops + per-user PII endpoints (purge, legal archive, audit logs, security events)
+  'system.monitor',
+  'system.configure',
+  // bookings.manage: manual booking creation (ADMIN) + bookedCount adjustment — restricted to trusted admins only
+  'bookings.manage',
 ] as const;
 
 export type Permission = typeof AVAILABLE_PERMISSIONS[number];
@@ -21,7 +26,8 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'pros.verify',
     'reports.view',
     'reports.moderate',
-    'analytics.view'
+    'analytics.view',
+    'system.monitor'  // F05: moderators can read alerts + security summary
   ],
   ANALYTICS: [
     'users.view',

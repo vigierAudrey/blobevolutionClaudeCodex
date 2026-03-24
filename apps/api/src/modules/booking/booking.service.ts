@@ -380,32 +380,67 @@ export class BookingService {
 
   async updateAvailability(proUserId: string, availabilityId: string, data: Partial<CreateAvailabilityInput>) {
     await this.assertProHasGeo(proUserId);
-    const availability = await bookingRepository.findAvailabilityById(availabilityId);
-    if (!availability || availability.proUserId !== proUserId) {
-      throw Object.assign(new Error('Availability not found'), { status: 404 });
-    }
 
-    // Validate geographic coordinates if provided
-    if (data.spotLat !== undefined || data.spotLng !== undefined) {
-      this.validateGeoPoint(data.spotLat ?? availability.spotLat, data.spotLng ?? availability.spotLng);
-    }
+    const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // FOR UPDATE : évite les races entre update concurrent et decideRequest
+      const rows = await tx.$queryRaw<Array<{
+        id: string; proUserId: string; startAt: Date; endAt: Date;
+        capacity: number; bookedCount: number; spotLat: number | null; spotLng: number | null;
+      }>>`
+        SELECT "id","proUserId","startAt","endAt","capacity","bookedCount","spotLat","spotLng"
+        FROM "ProAvailability" WHERE "id" = ${availabilityId} FOR UPDATE
+      `;
+      const availability = rows[0];
+      if (!availability || availability.proUserId !== proUserId) {
+        throw Object.assign(new Error('Availability not found'), { status: 404 });
+      }
 
-    // Validate only one offer per day if date is being changed
-    if (data.startAt !== undefined) {
-      await this.validateOnlyOneOfferPerDay(proUserId, data.startAt, availabilityId);
-    }
+      // Interdire modification startAt/endAt si bookings CONFIRMED actifs
+      if (data.startAt !== undefined || data.endAt !== undefined) {
+        const confirmedCount = await tx.booking.count({
+          where: { availabilityId, status: BookingStatus.CONFIRMED },
+        });
+        if (confirmedCount > 0) {
+          throw Object.assign(
+            new Error('Cannot change schedule: confirmed bookings exist'),
+            { status: 409 }
+          );
+        }
+      }
 
-    // Validate time overlap if dates are being changed
-    if (data.startAt !== undefined || data.endAt !== undefined) {
-      await this.validateTimeOverlapForUpdate(
-        proUserId,
-        availabilityId,
-        data.startAt ?? availability.startAt,
-        data.endAt ?? availability.endAt
-      );
-    }
+      // Interdire réduction capacity sous confirmedCount
+      if (data.capacity !== undefined) {
+        const confirmedCount = await tx.booking.count({
+          where: { availabilityId, status: BookingStatus.CONFIRMED },
+        });
+        if (data.capacity < confirmedCount) {
+          throw Object.assign(
+            new Error('Cannot reduce capacity below confirmed bookings'),
+            { status: 409 }
+          );
+        }
+      }
 
-    const updated = await bookingRepository.updateAvailability(availabilityId, data);
+      if (data.spotLat !== undefined || data.spotLng !== undefined) {
+        this.validateGeoPoint(
+          data.spotLat ?? availability.spotLat ?? undefined,
+          data.spotLng ?? availability.spotLng ?? undefined
+        );
+      }
+      if (data.startAt !== undefined) {
+        await this.validateOnlyOneOfferPerDay(proUserId, data.startAt, availabilityId, tx);
+      }
+      if (data.startAt !== undefined || data.endAt !== undefined) {
+        await this.validateTimeOverlapForUpdate(
+          proUserId,
+          availabilityId,
+          data.startAt ?? availability.startAt,
+          data.endAt ?? availability.endAt
+        );
+      }
+
+      return tx.proAvailability.update({ where: { id: availabilityId }, data });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 
     try {
       await cacheService.invalidateAvailabilities(updated.spotLat ?? undefined, updated.spotLng ?? undefined);
@@ -416,7 +451,11 @@ export class BookingService {
     return updated;
   }
 
-  async adjustBookedCount(proUserId: string, availabilityId: string, delta: number) {
+  async adjustBookedCount(adminId: string, availabilityId: string, delta: number, reason: string) {
+    if (!reason || reason.trim().length < 10) {
+      throw Object.assign(new Error('Audit reason required (min 10 chars)'), { status: 400 });
+    }
+
     const updatedAvailability = await withTransactionRetry(async () => {
       return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const availabilityRow = await tx.$queryRaw<Array<{
@@ -435,12 +474,12 @@ export class BookingService {
 
         const availability = availabilityRow[0];
 
-        if (!availability || availability.proUserId !== proUserId) {
+        if (!availability) {
           throw Object.assign(new Error('Availability not found'), { status: 404 });
         }
 
         const confirmedBookings = await tx.booking.count({
-          where: { availabilityId }
+          where: { availabilityId, status: BookingStatus.CONFIRMED }
         });
 
         const nextBookedCount = availability.bookedCount + delta;
@@ -464,6 +503,16 @@ export class BookingService {
         }
 
         const nextStatus = nextBookedCount >= availability.capacity ? 'CLOSED' as const : 'OPEN' as const;
+
+        secureLogger.info('ADMIN_ADJUST_BOOKED_COUNT', {
+          adminId,
+          availabilityId,
+          delta,
+          reason: reason.trim(),
+          previousCount: availability.bookedCount,
+          nextBookedCount,
+          nextStatus,
+        });
 
         return tx.proAvailability.update({
           where: { id: availabilityId },
@@ -653,7 +702,23 @@ export class BookingService {
   }
 
   async createRequest(riderUserId: string, data: CreateBookingRequestInput) {
-    const request = await bookingRepository.createRequest({ ...data, riderUserId });
+    // Check + create atomiques : évite les BookingRequest PENDING sur slot CLOSED
+    const request = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const availability = await tx.proAvailability.findUnique({
+        where: { id: data.availabilityId },
+        select: { id: true, status: true, proUserId: true },
+      });
+      if (!availability) {
+        throw Object.assign(new Error('Availability not found'), { status: 404 });
+      }
+      if (availability.status !== 'OPEN') {
+        throw Object.assign(new Error('Availability is not open'), { status: 409 });
+      }
+      if (availability.proUserId === riderUserId) {
+        throw Object.assign(new Error('Cannot book your own availability'), { status: 400 });
+      }
+      return tx.bookingRequest.create({ data: { ...data, riderUserId } });
+    });
 
     // Notify nearby PROs about the new lesson request (non-blocking)
     this.notifyNearbyProsAboutRequest(riderUserId, request.id, data.availabilityId).catch((error) => {
@@ -1038,13 +1103,22 @@ export class BookingService {
     return { success: true, action };
   }
 
-  async addManualBooking(proUserId: string, data: ManualBookingInput) {
+  async addManualBooking(adminId: string, data: ManualBookingInput) {
+    // Vérification rider : le riderUserId doit être un RIDER existant
+    const rider = await prisma.user.findUnique({
+      where: { id: data.riderUserId },
+      select: { id: true, role: true },
+    });
+    if (!rider || rider.role !== 'RIDER') {
+      throw Object.assign(new Error('Target user is not an active rider'), { status: 422 });
+    }
+
     try {
       return await withTransactionRetry(async () => {
         return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
           const availability = await this.lockAvailabilityForBooking(tx, data.availabilityId);
 
-          if (!availability || availability.proUserId !== proUserId) {
+          if (!availability) {
             throw Object.assign(new Error('Availability not found'), { status: 404 });
           }
 
@@ -1281,6 +1355,169 @@ export class BookingService {
     if (!profile || profile.lat == null || profile.lng == null) {
       throw Object.assign(new Error('Localisation obligatoire pour publier des créneaux. Ajoutez votre géolocalisation dans votre profil.'), { status: 400 });
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ANNULATION — point d'écriture unique vers CANCELLED_*
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private async cancelBookingInTx(
+    tx: Prisma.TransactionClient,
+    bookingId: string,
+    callerId: string,
+    callerRole: 'RIDER' | 'PRO',
+    now: Date,
+  ): Promise<{
+    bookingId: string;
+    newStatus: 'CANCELLED_RIDER' | 'CANCELLED_PRO';
+    cancelledAt: Date;
+    availabilityId: string;
+    spotLat: number | null;
+    spotLng: number | null;
+  }> {
+    this.assertTransactionalClient(tx);
+
+    // Lock booking + availability en une seule requête
+    const rows = await tx.$queryRaw<Array<{
+      bookingId:            string;
+      bookingStatus:        string;
+      riderUserId:          string;
+      availabilityId:       string;
+      proUserId:            string;
+      availabilityStartAt:  Date;
+      availabilityCapacity: number;
+      availabilitySpotLat:  number | null;
+      availabilitySpotLng:  number | null;
+    }>>`
+      SELECT
+        b."id"           AS "bookingId",
+        b."status"       AS "bookingStatus",
+        b."riderUserId",
+        b."availabilityId",
+        a."proUserId",
+        a."startAt"      AS "availabilityStartAt",
+        a."capacity"     AS "availabilityCapacity",
+        a."spotLat"      AS "availabilitySpotLat",
+        a."spotLng"      AS "availabilitySpotLng"
+      FROM "Booking" b
+      JOIN "ProAvailability" a ON a."id" = b."availabilityId"
+      WHERE b."id" = ${bookingId}
+      FOR UPDATE
+    `;
+
+    const row = rows[0];
+    if (!row) {
+      throw Object.assign(new Error('Booking not found'), { status: 404 });
+    }
+
+    // AuthZ server-side — ownership depuis la DB, jamais depuis le body
+    if (callerRole === 'RIDER' && row.riderUserId !== callerId) {
+      throw Object.assign(new Error('Forbidden'), { status: 403 });
+    }
+    if (callerRole === 'PRO' && row.proUserId !== callerId) {
+      throw Object.assign(new Error('Forbidden'), { status: 403 });
+    }
+
+    // Seul CONFIRMED est annulable
+    if (row.bookingStatus !== BookingStatus.CONFIRMED) {
+      throw Object.assign(new Error('Booking is not cancellable'), { status: 409 });
+    }
+
+    // Fenêtre temporelle (RIDER uniquement) — décision via now vs startAt, pas via cancelledAt
+    if (callerRole === 'RIDER') {
+      const cutoffHours = Number(process.env.BOOKING_RIDER_CANCEL_CUTOFF_HOURS ?? '2');
+      const cutoff = new Date(row.availabilityStartAt.getTime() - cutoffHours * 3_600_000);
+      if (now >= cutoff) {
+        throw Object.assign(
+          new Error(`Cancellation window closed (cutoff: ${cutoffHours}h before lesson)`),
+          { status: 409 }
+        );
+      }
+    }
+
+    const newStatus = callerRole === 'RIDER'
+      ? BookingStatus.CANCELLED_RIDER
+      : BookingStatus.CANCELLED_PRO;
+
+    // Mutation statut — cancelledAt = traçabilité/audit, pas source de décision
+    await tx.booking.update({
+      where: { id: bookingId },
+      data: { status: newStatus, cancelledAt: now },
+    });
+
+    // Recompute autoritaire APRÈS l'update (le booking annulé est exclu du COUNT)
+    const confirmedCount = await tx.booking.count({
+      where: {
+        availabilityId: row.availabilityId,
+        status: BookingStatus.CONFIRMED,
+      },
+    });
+
+    const nextAvailStatus: 'OPEN' | 'CLOSED' =
+      confirmedCount >= Number(row.availabilityCapacity) ? 'CLOSED' : 'OPEN';
+
+    await tx.proAvailability.update({
+      where: { id: row.availabilityId },
+      data: {
+        bookedCount: confirmedCount,
+        status: nextAvailStatus,
+      },
+    });
+
+    // Log applicatif — non transactionnel, best-effort, pas de valeur probatoire légale
+    secureLogger.info('BOOKING_CANCELLED', {
+      bookingId,
+      callerId,
+      callerRole,
+      cancelledAt: now.toISOString(),
+      newStatus,
+      availabilityId: row.availabilityId,
+      confirmedCountAfter: confirmedCount,
+      availabilityStatusAfter: nextAvailStatus,
+    });
+
+    return {
+      bookingId,
+      newStatus: newStatus as 'CANCELLED_RIDER' | 'CANCELLED_PRO',
+      cancelledAt: now,
+      availabilityId: row.availabilityId,
+      spotLat: row.availabilitySpotLat,
+      spotLng: row.availabilitySpotLng,
+    };
+  }
+
+  async cancelBooking(
+    callerId: string,
+    callerRole: 'RIDER' | 'PRO',
+    bookingId: string,
+  ): Promise<{ success: true; bookingId: string; status: string; cancelledAt: string }> {
+    const now = new Date();
+
+    type CancelResult = Awaited<ReturnType<typeof this.cancelBookingInTx>>;
+    const result: CancelResult = await withTransactionRetry(async () => {
+      return await prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => this.cancelBookingInTx(tx, bookingId, callerId, callerRole, now),
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+      ) as CancelResult;
+    }, 3, 100);
+
+    // Archive : uniquement via le job quotidien (archiveClosedBookings).
+    // Un seul producteur de BookingLegalArchive — pas d'archive immédiate ici.
+
+    // Cache invalidation — best-effort, non bloquant
+    try {
+      await cacheService.invalidateAvailabilities(
+        result.spotLat ?? undefined,
+        result.spotLng ?? undefined,
+      );
+    } catch { /* non bloquant */ }
+
+    return {
+      success: true,
+      bookingId: result.bookingId,
+      status: result.newStatus,
+      cancelledAt: result.cancelledAt.toISOString(),
+    };
   }
 
   async listNearbyPros(params: ProsNearbyInput) {

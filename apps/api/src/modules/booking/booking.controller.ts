@@ -2,7 +2,8 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { clientPrisma as prisma } from '@blobinfini/database';
-import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
+import { requireAuth, requireVerifiedEmail, requireAdmin } from '../auth/auth.guard';
+import { requirePermissions } from '../admin/admin.guard';
 import { bookingService } from './booking.service';
 import { createAvailabilitySchema } from './dto/createAvailability.dto';
 import { createBookingRequestSchema } from './dto/createRequest.dto';
@@ -166,26 +167,32 @@ bookingRouter.patch('/availability/:id', ensureRole('PRO'), async (req: Authenti
   }
 });
 
-bookingRouter.patch('/availability/:id/adjust-booked', ensureRole('PRO'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const schema = z.object({
-      delta: z.number().int().min(-10).max(10),
-    });
-    const { delta } = schema.parse(req.body);
-    const current = req.user;
-    if (!current) {
-      return res.status(401).json({ error: 'Unauthorized' });
+bookingRouter.patch(
+  '/availability/:id/adjust-booked',
+  requireAdmin,
+  requirePermissions('bookings.manage'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const schema = z.object({
+        delta:  z.number().int().min(-10).max(10),
+        reason: z.string().min(10).max(500),
+      });
+      const { delta, reason } = schema.parse(req.body);
+      const current = req.user;
+      if (!current) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const availability = await bookingService.adjustBookedCount(current.id, req.params.id, delta, reason);
+      return res.json(availability);
+    } catch (error: unknown) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      const status = getErrorStatus(error);
+      return res.status(status).json({ error: getErrorMessage(error) });
     }
-    const availability = await bookingService.adjustBookedCount(current.id, req.params.id, delta);
-    return res.json(availability);
-  } catch (error: unknown) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
-    }
-    const status = getErrorStatus(error);
-    return res.status(status).json({ error: getErrorMessage(error) });
   }
-});
+);
 
 bookingRouter.delete('/availability/:id', ensureRole('PRO'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -383,27 +390,32 @@ bookingRouter.post('/requests/:id/decision', ensureRole('PRO'), async (req: Auth
   }
 });
 
-bookingRouter.post('/bookings/manual', ensureRole('PRO'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const schema = z.object({
-      availabilityId: z.string().uuid(),
-      riderUserId: z.string().uuid(),
-    });
-    const body = schema.parse(req.body);
-    const current = req.user;
-    if (!current) {
-      return res.status(401).json({ error: 'Unauthorized' });
+bookingRouter.post(
+  '/bookings/manual',
+  requireAdmin,
+  requirePermissions('bookings.manage'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const schema = z.object({
+        availabilityId: z.string().uuid(),
+        riderUserId:    z.string().uuid(),
+      });
+      const body = schema.parse(req.body);
+      const current = req.user;
+      if (!current) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const booking = await bookingService.addManualBooking(current.id, body);
+      return res.status(201).json(booking);
+    } catch (error: unknown) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      const status = getErrorStatus(error);
+      return res.status(status).json({ error: getErrorMessage(error) });
     }
-    const booking = await bookingService.addManualBooking(current.id, body);
-    return res.status(201).json(booking);
-  } catch (error: unknown) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
-    }
-    const status = getErrorStatus(error);
-    return res.status(status).json({ error: getErrorMessage(error) });
   }
-});
+);
 
 bookingRouter.get('/bookings/me', ensureRole('PRO'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -427,6 +439,30 @@ bookingRouter.get('/bookings/rider/me', ensureRole('RIDER'), async (req: Authent
     }
     const bookings = await bookingService.listRiderBookings(current.id);
     return res.json({ bookings });
+  } catch (error: unknown) {
+    const status = getErrorStatus(error);
+    return res.status(status).json({ error: getErrorMessage(error) });
+  }
+});
+
+// Annulation d'un booking — RIDER ou PRO, acteur déduit du JWT, authz dans la transaction
+// POST (et non DELETE) : on ne supprime pas la ressource, on effectue une transition de statut
+bookingRouter.post('/bookings/:id/cancel', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const current = req.user;
+    if (!current) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const callerRole = current.role;
+    if (callerRole !== 'RIDER' && callerRole !== 'PRO') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const bookingId = req.params.id;
+    if (!/^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(bookingId)) {
+      return res.status(400).json({ error: 'Invalid booking id' });
+    }
+    const result = await bookingService.cancelBooking(current.id, callerRole as 'RIDER' | 'PRO', bookingId);
+    return res.json(result);
   } catch (error: unknown) {
     const status = getErrorStatus(error);
     return res.status(status).json({ error: getErrorMessage(error) });
