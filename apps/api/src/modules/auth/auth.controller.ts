@@ -35,9 +35,22 @@ const REFRESH_COOKIE_BASE = {
   path: '/auth/refresh',
 } as const;
 
+// Cookie de gate UX pour le middleware Next.js (/admin/*).
+// IMPORTANT : ce cookie n'est PAS la sécurité réelle — la vraie protection
+// est l'accessToken httpOnly validé par l'API à chaque requête.
+// Ce cookie empêche un non-admin de voir les pages admin UI (elles seraient vides).
+// Il est posé httpOnly pour ne pas être lisible/falsifiable via JS ou XSS.
+const ADMIN_SESSION_COOKIE_BASE = {
+  httpOnly: true,
+  secure: IS_PROD,
+  sameSite: 'lax' as const,
+  path: '/',
+} as const;
+
 function setAuthCookies(
   res: Response,
   tokens: { accessToken: string; refreshToken: string; refreshMaxAgeMs?: number },
+  role?: string,
 ): void {
   res.cookie('accessToken', tokens.accessToken, {
     ...ACCESS_COOKIE_BASE,
@@ -47,11 +60,18 @@ function setAuthCookies(
     ...REFRESH_COOKIE_BASE,
     maxAge: tokens.refreshMaxAgeMs ?? 30 * 24 * 60 * 60 * 1000,
   });
+  if (role === 'ADMIN') {
+    res.cookie('admin_session', '1', {
+      ...ADMIN_SESSION_COOKIE_BASE,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+  }
 }
 
 function clearAuthCookies(res: Response): void {
   res.clearCookie('accessToken', ACCESS_COOKIE_BASE);
   res.clearCookie('refreshToken', REFRESH_COOKIE_BASE);
+  res.clearCookie('admin_session', ADMIN_SESSION_COOKIE_BASE);
 }
 
 const registerSchema = z.object({
@@ -276,7 +296,7 @@ authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginS
       ).catch(() => {}); // Fire-and-forget, never fail login flow
     }
 
-    setAuthCookies(res, result);
+    setAuthCookies(res, result, user.role);
     return res.json({ ok: true });
   } catch (err: any) {
     // Log failed login attempt
@@ -395,7 +415,7 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
     const authContext = await rotateAuthenticatedSession(req, user.id);
     const tokens = await service.generateTokens(user, { consentAccepted, consentIp: ip }, authContext);
 
-    setAuthCookies(res, tokens);
+    setAuthCookies(res, tokens, user.role);
     return res.json({ ok: true });
   } catch (err: any) {
     // system.error : erreur inattendue dans le flow 2FA — pas de code ni token dans les data
@@ -425,13 +445,15 @@ authRouter.post('/refresh', validate(refreshSchema), async (req, res) => {
       return res.status(503).json({ error: 'Session binding unavailable' });
     }
     await bindAuthenticatedSessionUser(req, accessTokenPayload.sub);
-    setAuthCookies(res, result);
+    setAuthCookies(res, result, accessTokenPayload.role);
     res.json({ ok: true });
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
+      // Clear stale cookies so they don't linger on the client after a failed refresh.
+      clearAuthCookies(res);
       return res.status(401).json({ error: 'Invalid refresh credential' });
     }
     return res.status(500).json({ error: 'Internal error' });

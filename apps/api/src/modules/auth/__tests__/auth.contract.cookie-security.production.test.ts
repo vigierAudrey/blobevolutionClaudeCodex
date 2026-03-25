@@ -3,6 +3,25 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 
+// Prevent enhanced-rate-limit from triggering real Redis init (initializeRedis)
+// when NODE_ENV=production is set before jest.isolateModules loads auth.controller.
+jest.mock('../../../middleware/enhanced-rate-limit', () => {
+  const passthrough = () => (_req: unknown, _res: unknown, next: () => void) => next();
+  return {
+    createLazyRateLimiter: () => passthrough(),
+    createLazyCustomRateLimiter: () => passthrough(),
+    getRedisClient: () => null,
+    smartRateLimit: (_req: unknown, _res: unknown, next: () => void) => next(),
+    rateLimiters: {},
+  };
+});
+
+// rotateAuthenticatedSession needs req.session (no session middleware in test app).
+jest.mock('../auth-session-context', () => ({
+  rotateAuthenticatedSession: jest.fn().mockResolvedValue({ sessionId: 'test-sid', authContextId: 'test-acid' }),
+  bindAuthenticatedSessionUser: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../../lib/mailer', () => ({
   sendPasswordResetEmail: jest.fn(),
   sendVerificationEmail: jest.fn().mockResolvedValue(undefined),
