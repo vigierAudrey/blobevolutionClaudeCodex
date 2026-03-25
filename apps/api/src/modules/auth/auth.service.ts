@@ -457,6 +457,7 @@ export class AuthService {
     const tok = await prisma.emailVerificationToken.findFirst({
       where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
+      include: { user: { select: { role: true } } },
     });
     if (!tok) throw { code: 'UNAUTHORIZED', message: 'Invalid or expired token' };
 
@@ -470,7 +471,7 @@ export class AuthService {
       }),
     ]);
 
-    return { message: 'Email verified' };
+    return { message: 'Email verified', role: tok.user.role };
   }
 
   async resendEmailVerification(email: string) {

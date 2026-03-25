@@ -5,20 +5,18 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { BackBar } from '@/components/BackBar';
 
 function VerifyInner() {
   const search = useSearchParams();
-  const [token, setToken] = useState<string>('');
+  const router = useRouter();
   const [status, setStatus] = useState<'idle' | 'success' | 'error' | 'loading'>('idle');
   const [message, setMessage] = useState<string>('');
+  const [redirectTo, setRedirectTo] = useState<string>('/login');
 
   useEffect(() => {
     const t = search.get('token');
     if (t) {
-      setToken(t);
       void verify(t);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -28,66 +26,67 @@ function VerifyInner() {
     setStatus('loading');
     setMessage('');
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/auth/verify-email`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/auth/verify-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: t }),
       });
+      if (!res.ok) {
+        setStatus('error');
+        setMessage('Lien invalide ou expiré. Demande un nouveau lien de vérification.');
+        return;
+      }
+      const data = (await res.json()) as { message?: string; role?: string };
+      const destination = data.role === 'PRO' ? '/login-pro' : '/login';
+      setRedirectTo(destination);
       setStatus('success');
       setMessage('Email vérifié avec succès. Redirection…');
-    } catch (err: unknown) {
+    } catch {
       setStatus('error');
-      const errorMessage = err instanceof Error ? err.message : null;
-      setMessage(errorMessage || 'Impossible de vérifier le token');
+      setMessage('Une erreur est survenue. Réessaie ou demande un nouveau lien.');
     }
   };
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token) return;
-    await verify(token);
-  };
+  useEffect(() => {
+    if (status === 'success') {
+      const id = setTimeout(() => router.replace(redirectTo), 2000);
+      return () => clearTimeout(id);
+    }
+  }, [status, redirectTo, router]);
 
   return (
     <div className="max-w-md mx-auto">
-      <BackBar fallbackHref="/login" />
+      <BackBar fallbackHref="/" />
       <Card>
         <CardHeader>
-          <CardTitle>Vérification de l’email</CardTitle>
+          <CardTitle>Vérification de l'email</CardTitle>
           <CardDescription>Cette page confirme la validation de ton compte.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={onSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="token">Token</Label>
-              <Input id="token" value={token} onChange={(e) => setToken(e.target.value)} placeholder="colle le token ici si besoin" />
-            </div>
-            <Button type="submit" disabled={!token || status === 'loading'} className="w-full">
-              {status === 'loading' ? 'Vérification…' : 'Vérifier'}
-            </Button>
+          <div className="space-y-4">
+            {status === 'idle' && (
+              <p className="text-sm text-muted-foreground">Vérification en cours…</p>
+            )}
+            {status === 'loading' && (
+              <p className="text-sm text-muted-foreground">Vérification en cours…</p>
+            )}
             {message && (
               <p className={`text-sm ${status === 'success' ? 'text-green-600' : status === 'error' ? 'text-red-600' : 'text-muted-foreground'}`}>{message}</p>
             )}
             {status === 'success' && (
-              <AutoRedirect to="/login" delayMs={2000} />
+              <Button type="button" className="w-full" onClick={() => router.replace(redirectTo)}>
+                Aller à la connexion maintenant
+              </Button>
             )}
-          </form>
+            {status === 'error' && (
+              <Button type="button" variant="outline" className="w-full" onClick={() => router.replace('/login')}>
+                Retour à la connexion
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function AutoRedirect({ to, delayMs = 2000 }: { to: string; delayMs?: number }) {
-  const router = useRouter();
-  useEffect(() => {
-    const id = setTimeout(() => router.replace(to), delayMs);
-    return () => clearTimeout(id);
-  }, [router, to, delayMs]);
-  return (
-    <Button type="button" className="w-full" onClick={() => router.replace(to)}>
-      Aller à la connexion maintenant
-    </Button>
   );
 }
 
