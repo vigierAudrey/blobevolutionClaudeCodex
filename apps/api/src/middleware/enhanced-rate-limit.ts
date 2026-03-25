@@ -540,6 +540,14 @@ export function createLazyCustomRateLimiter(
   let memoryLimiter: ReturnType<typeof rateLimit> | null = null;
   let redisLimiter: ReturnType<typeof rateLimit> | null = null;
 
+  // Wrap skip to add consistent skip-in-tests logic (same pattern as createLazyRateLimiter)
+  const callerSkip = options?.skip;
+  const skipFn = (req: Request): boolean => {
+    const enableInTests = String(process.env.ENABLE_RATE_LIMIT_IN_TESTS ?? '').toLowerCase() === 'true';
+    if (process.env.NODE_ENV === 'test' && !enableInTests) return true;
+    return callerSkip ? (callerSkip as (r: Request) => boolean)(req) : false;
+  };
+
   const run = (req: Request, res: Response, next: NextFunction) => {
     const validate = {
       creationStack: false,
@@ -552,6 +560,7 @@ export function createLazyCustomRateLimiter(
         redisLimiter = rateLimit({
           ...options,
           validate,
+          skip: skipFn,
           store: new RedisStore({
             sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
             prefix: `rl:${storePrefix}:`,
@@ -564,6 +573,7 @@ export function createLazyCustomRateLimiter(
       memoryLimiter = rateLimit({
         ...options,
         validate,
+        skip: skipFn,
       });
     }
     return memoryLimiter(req, res, next);
