@@ -127,6 +127,12 @@ return "VALID"
  * Using EVALSHA reduces latency by ~30% (no script parsing on every request).
  */
 let luaScriptSha: string | null = null;
+const TWO_FACTOR_LOG_CONTEXT = { cacheNamespace: '2fa' } as const;
+
+type StoredHashResolution =
+  | { status: 'hit'; hash: string; source: 'cache' | 'memory' }
+  | { status: 'miss' }
+  | { status: 'cache_unavailable'; reason: 'client_unavailable' | 'read_error' | 'invalid_identifier' };
 
 export class TwoFactorService {
   /**
@@ -165,6 +171,92 @@ export class TwoFactorService {
     return `2fa:${userId}`;
   }
 
+  private getValidMemoryEntry(cacheKey: string) {
+    if (!memoryStore) return null;
+
+    const entry = memoryStore.get(cacheKey);
+    if (!entry) return null;
+
+    if (entry.expiresAt <= Date.now()) {
+      memoryStore.delete(cacheKey);
+      return null;
+    }
+
+    return entry;
+  }
+
+  private decrementChallengeCounterMemory(userId: string) {
+    const cur = challengeCounter.get(userId) ?? 0;
+    if (cur > 1) challengeCounter.set(userId, cur - 1);
+    else challengeCounter.delete(userId);
+  }
+
+  private async decrementChallengeCounterRedis(userId: string, redisClient: any) {
+    const decrVal = await redisClient.decr(`2fa:challenges:${userId}`);
+    if (decrVal <= 0) {
+      await redisClient.del(`2fa:challenges:${userId}`);
+    }
+  }
+
+  private async resolveStoredHash(userId: string): Promise<StoredHashResolution> {
+    const cacheKey = this.getCacheKey(userId);
+    const cacheRead = await cacheService.getTwoFactorCodeHash(userId);
+
+    if (cacheRead.ok && cacheRead.found) {
+      return {
+        status: 'hit',
+        hash: cacheRead.value,
+        source: 'cache',
+      };
+    }
+
+    const memoryEntry = this.getValidMemoryEntry(cacheKey);
+    if (memoryEntry) {
+      return {
+        status: 'hit',
+        hash: memoryEntry.hash,
+        source: 'memory',
+      };
+    }
+
+    if (!cacheRead.ok) {
+      secureLogger.warn('TWO_FACTOR_CACHE_READ_UNAVAILABLE', {
+        ...TWO_FACTOR_LOG_CONTEXT,
+        reason: cacheRead.reason,
+      });
+      return {
+        status: 'cache_unavailable',
+        reason: cacheRead.reason,
+      };
+    }
+
+    return { status: 'miss' };
+  }
+
+  private async tryVerifyMemoryFallback(userId: string, providedHash: string, redisClient: any | null) {
+    const cacheKey = this.getCacheKey(userId);
+    const memoryEntry = this.getValidMemoryEntry(cacheKey);
+    if (!memoryEntry) {
+      return { usedFallback: false, valid: false } as const;
+    }
+
+    if (memoryEntry.hash !== providedHash) {
+      return { usedFallback: true, valid: false } as const;
+    }
+
+    memoryStore?.delete(cacheKey);
+    if (redisClient) {
+      await this.decrementChallengeCounterRedis(userId, redisClient);
+    } else {
+      this.decrementChallengeCounterMemory(userId);
+    }
+
+    secureLogger.info('TWO_FACTOR_VERIFIED', {
+      ...TWO_FACTOR_LOG_CONTEXT,
+    });
+    return { usedFallback: true, valid: true } as const;
+  }
+
   /**
    * Send a 2FA code by email and store it securely.
    *
@@ -195,42 +287,51 @@ export class TwoFactorService {
           await sendRedisClient.del(challengeCounterKey);
         }
         const raw = await sendRedisClient.get(challengeCounterKey);
-        activeCount = raw ? parseInt(String(raw), 10) : 0;
+        const parsed = raw ? parseInt(String(raw), 10) : 0;
+        activeCount = Number.isFinite(parsed) ? parsed : 0;
       } else {
-        // Memory fallback: reset stale counter if no active code in memoryStore/cache
-        const memCodeExists = !!(await cacheService.get(codeKey)) || !!(memoryStore?.has(codeKey));
-        if (!memCodeExists) {
+        // Memory fallback is explicit outside production when Redis is unavailable.
+        const memoryEntry = this.getValidMemoryEntry(codeKey);
+        if (!memoryEntry) {
           challengeCounter.delete(userId);
         }
         activeCount = challengeCounter.get(userId) ?? 0;
       }
 
       if (activeCount >= MAX_CONCURRENT_CHALLENGES) {
-        secureLogger.warn('TWO_FACTOR_TOO_MANY_CHALLENGES', { userId });
+        secureLogger.warn('TWO_FACTOR_TOO_MANY_CHALLENGES', TWO_FACTOR_LOG_CONTEXT);
         return { success: false, tooManyChallenges: true, message: 'Too many active challenges' };
       }
 
       const code = this.generateCode();
       const codeHash = this.hashCode(code, userId);
 
-      const redisSuccess = await cacheService.set(codeKey, codeHash, 300);
-      if (!redisSuccess) {
-        if (!memoryStore) {
-          secureLogger.error('TWO_FACTOR_CACHE_UNAVAILABLE', { userId, cacheNamespace: '2fa' });
+      // IMPORTANT: the 2FA hash must be stored raw (not JSON) because Lua compares
+      // the Redis value byte-for-byte during verification.
+      const cacheWrite = await cacheService.setTwoFactorCodeHash(userId, codeHash, 300);
+      if (!cacheWrite.ok) {
+        if (!memoryStore || cacheWrite.reason !== 'client_unavailable') {
+          secureLogger.error('TWO_FACTOR_CACHE_UNAVAILABLE', {
+            ...TWO_FACTOR_LOG_CONTEXT,
+            reason: cacheWrite.reason,
+          });
           return {
             success: false,
             message: 'Service 2FA indisponible (cache)'
           };
         }
         memoryStore.set(codeKey, { hash: codeHash, expiresAt: Date.now() + 300000 });
-        secureLogger.warn('TWO_FACTOR_MEMORY_FALLBACK_USED', { userId, cacheNamespace: '2fa' });
+        secureLogger.warn('TWO_FACTOR_MEMORY_FALLBACK_USED', {
+          ...TWO_FACTOR_LOG_CONTEXT,
+          reason: cacheWrite.reason,
+        });
       }
 
       // Send email
       const emailResult = await send2FACode(email, code);
 
       if (emailResult.sent === false) {
-        secureLogger.warn('TWO_FACTOR_EMAIL_FAILED', { userId, cacheNamespace: '2fa' });
+        secureLogger.warn('TWO_FACTOR_EMAIL_FAILED', TWO_FACTOR_LOG_CONTEXT);
         return {
           success: false,
           message: 'Erreur lors de l\'envoi de l\'email'
@@ -238,7 +339,7 @@ export class TwoFactorService {
       }
 
       if (emailResult.skipped) {
-        secureLogger.info('TWO_FACTOR_EMAIL_SKIPPED', { userId, cacheNamespace: '2fa' });
+        secureLogger.info('TWO_FACTOR_EMAIL_SKIPPED', TWO_FACTOR_LOG_CONTEXT);
       }
 
       // Generate a challengeId for the admin 2FA flow (one-time token, 600s TTL)
@@ -321,7 +422,7 @@ export class TwoFactorService {
           } catch (error) {
             // If NOSCRIPT error (script flushed), fallback to EVAL and reload script
             if (error instanceof Error && error.message.includes('NOSCRIPT')) {
-              secureLogger.warn('TWO_FACTOR_LUA_SCRIPT_NOSCRIPT_FALLBACK', { userId });
+              secureLogger.warn('TWO_FACTOR_LUA_SCRIPT_NOSCRIPT_FALLBACK', TWO_FACTOR_LOG_CONTEXT);
 
               // Reload script for future requests (async, don't wait)
               loadLuaScript().catch(() => {}); // Ignore errors
@@ -345,19 +446,18 @@ export class TwoFactorService {
 
         switch (result) {
           case 'VALID': {
-            secureLogger.info('TWO_FACTOR_VERIFIED', { userId });
-            // Decrement challenge counter — Redis path (distributed-safe)
-            const decrVal = await redisClient.decr(`2fa:challenges:${userId}`);
-            if (decrVal <= 0) {
-              await redisClient.del(`2fa:challenges:${userId}`);
-            }
+            secureLogger.info('TWO_FACTOR_VERIFIED', TWO_FACTOR_LOG_CONTEXT);
+            await this.decrementChallengeCounterRedis(userId, redisClient);
             return { valid: true, message: 'Code valide' };
           }
 
           case 'BLOCKED_USER':
           case 'BLOCKED_IP':
           case 'BLOCKED_USER_IP':
-            secureLogger.warn('TWO_FACTOR_RATE_LIMITED', { userId, reason: result, ipHash: hashIpHmac(clientIp) });
+            secureLogger.warn('TWO_FACTOR_RATE_LIMITED', {
+              ...TWO_FACTOR_LOG_CONTEXT,
+              reason: result,
+            });
 
             // Create SystemAlert for 2FA rate limiting (fire-and-forget, never fails 2FA flow)
             securityEventAlertService.reportTwoFactorRateLimit(
@@ -368,31 +468,32 @@ export class TwoFactorService {
 
             return { valid: false, message: 'Trop de tentatives. Veuillez réessayer dans 5 minutes.' };
 
-          case 'NO_CODE':
+          case 'NO_CODE': {
+            // Explicit memory fallback path: if Redis couldn't store the hash earlier,
+            // keep dev/test usable without pretending Redis "miss" means "invalid" by accident.
+            const fallback = await this.tryVerifyMemoryFallback(userId, providedHash, redisClient);
+            if (fallback.valid) {
+              return { valid: true, message: 'Code valide' };
+            }
+            if (fallback.usedFallback) {
+              secureLogger.warn('TWO_FACTOR_VERIFICATION_FAILED', TWO_FACTOR_LOG_CONTEXT);
+              return { valid: false, message: 'Code invalide ou expiré' };
+            }
+            secureLogger.warn('TWO_FACTOR_VERIFICATION_FAILED', TWO_FACTOR_LOG_CONTEXT);
+            return { valid: false, message: 'Code invalide ou expiré' };
+          }
+
           case 'INVALID':
           default:
             // Anti-oracle: unify NO_CODE and INVALID messages to prevent user enumeration
             // This prevents attackers from distinguishing whether a 2FA code exists or not
-            secureLogger.warn('TWO_FACTOR_VERIFICATION_FAILED', { userId });
+            secureLogger.warn('TWO_FACTOR_VERIFICATION_FAILED', TWO_FACTOR_LOG_CONTEXT);
             return { valid: false, message: 'Code invalide ou expiré' };
         }
       }
 
-      // Fallback: Memory store or basic Redis (dev/test only)
-      let storedHash: string | null = null;
-      let usingMemoryStore = false;
-
-      storedHash = await cacheService.get<string>(cacheKey);
-
-      if (!storedHash && memoryStore) {
-        const memoryEntry = memoryStore.get(cacheKey);
-        if (memoryEntry && memoryEntry.expiresAt > Date.now()) {
-          storedHash = memoryEntry.hash;
-          usingMemoryStore = true;
-        }
-      }
-
-      if (!storedHash || storedHash !== providedHash) {
+      const storedHash = await this.resolveStoredHash(userId);
+      if (storedHash.status !== 'hit' || storedHash.hash !== providedHash) {
         // Anti-oracle: same generic message whether code is missing or invalid
         return {
           valid: false,
@@ -401,16 +502,22 @@ export class TwoFactorService {
       }
 
       // Valid code - cleanup
-      if (usingMemoryStore && memoryStore) {
+      if (storedHash.source === 'memory' && memoryStore) {
         memoryStore.delete(cacheKey);
       } else {
         await cacheService.del(cacheKey);
       }
 
       // Decrement concurrent challenge counter
-      const cur = challengeCounter.get(userId) ?? 0;
-      if (cur > 1) challengeCounter.set(userId, cur - 1);
-      else challengeCounter.delete(userId);
+      if (redisClient) {
+        await this.decrementChallengeCounterRedis(userId, redisClient);
+      } else {
+        this.decrementChallengeCounterMemory(userId);
+      }
+
+      secureLogger.info('TWO_FACTOR_VERIFIED', {
+        ...TWO_FACTOR_LOG_CONTEXT,
+      });
 
       return {
         valid: true,
@@ -432,14 +539,8 @@ export class TwoFactorService {
    */
   async hasPendingCode(userId: string): Promise<boolean> {
     try {
-      const cacheKey = this.getCacheKey(userId);
-      const storedCode = await cacheService.get(cacheKey);
-      if (storedCode) return true;
-      if (memoryStore?.has(cacheKey)) {
-        const entry = memoryStore.get(cacheKey)!;
-        return entry.expiresAt > Date.now();
-      }
-      return false;
+      const storedHash = await this.resolveStoredHash(userId);
+      return storedHash.status === 'hit';
     } catch (error) {
       secureLogger.error('TWO_FACTOR_PENDING_CHECK_ERROR', {
         error: error instanceof Error ? error.message : String(error),
@@ -456,7 +557,8 @@ export class TwoFactorService {
       const cacheKey = this.getCacheKey(userId);
       // Detect whether a code exists (in either backend) before deleting,
       // so we only decrement the counter when a real challenge is cancelled.
-      const hadCode = !!(await cacheService.get(cacheKey)) || !!(memoryStore?.has(cacheKey));
+      const storedHash = await this.resolveStoredHash(userId);
+      const hadCode = storedHash.status === 'hit';
       await cacheService.del(cacheKey);
       if (memoryStore) {
         memoryStore.delete(cacheKey);
@@ -469,9 +571,7 @@ export class TwoFactorService {
             await cancelRedisClient.del(`2fa:challenges:${userId}`);
           }
         } else {
-          const cur = challengeCounter.get(userId) ?? 0;
-          if (cur > 1) challengeCounter.set(userId, cur - 1);
-          else challengeCounter.delete(userId);
+          this.decrementChallengeCounterMemory(userId);
         }
       }
     } catch (error) {

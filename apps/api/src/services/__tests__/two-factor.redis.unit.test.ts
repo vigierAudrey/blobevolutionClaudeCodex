@@ -25,6 +25,8 @@ jest.mock('../cache.service', () => ({
   cacheService: {
     set: jest.fn(),
     get: jest.fn(),
+    setTwoFactorCodeHash: jest.fn(),
+    getTwoFactorCodeHash: jest.fn(),
     del: jest.fn(),
     getClient: jest.fn(),
   },
@@ -46,9 +48,10 @@ import { send2FACode } from '../../lib/mailer';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const mockCacheGet = cacheService.get as jest.MockedFunction<typeof cacheService.get>;
+const mockCacheGetTwoFactorHash = cacheService.getTwoFactorCodeHash as unknown as jest.MockedFunction<any>;
 const mockCacheDel = cacheService.del as jest.MockedFunction<typeof cacheService.del>;
 const mockCacheSet = cacheService.set as jest.MockedFunction<typeof cacheService.set>;
+const mockCacheSetTwoFactorHash = cacheService.setTwoFactorCodeHash as unknown as jest.MockedFunction<any>;
 const mockGetClient = cacheService.getClient as jest.MockedFunction<typeof cacheService.getClient>;
 const mockSend2FACode = send2FACode as jest.MockedFunction<typeof send2FACode>;
 
@@ -86,7 +89,8 @@ describe('TwoFactorService — chemin Redis (unit)', () => {
     // Defaults mémoire (pas de Redis) — chaque test active Redis explicitement
     mockGetClient.mockReturnValue(null);
     mockCacheSet.mockResolvedValue(true);
-    mockCacheGet.mockResolvedValue(null);
+    mockCacheSetTwoFactorHash.mockResolvedValue({ ok: true });
+    mockCacheGetTwoFactorHash.mockResolvedValue({ ok: true, found: false });
     mockCacheDel.mockResolvedValue(true);
     mockSend2FACode.mockResolvedValue({ sent: true });
   });
@@ -321,7 +325,7 @@ describe('TwoFactorService — chemin Redis (unit)', () => {
       // Quand clientIp est absent, la condition (redisClient && clientIp) = false.
       // Le service bascule sur le chemin mémoire sans passer par Lua.
       mockGetClient.mockReturnValue(mockRedis as any);
-      mockCacheGet.mockResolvedValue(null); // pas de code en cache
+      mockCacheGetTwoFactorHash.mockResolvedValue({ ok: true, found: false }); // pas de code en cache
 
       const result = await service.verifyCode(USER_ID, '123456', undefined);
 
@@ -349,7 +353,7 @@ describe('TwoFactorService — chemin Redis (unit)', () => {
   describe('cancelPendingCode() — Redis branch', () => {
     it('DECR sans DEL quand counter > 0 après décrément (code existait)', async () => {
       mockGetClient.mockReturnValue(mockRedis as any);
-      mockCacheGet.mockResolvedValue('some-stored-hash'); // hadCode = true
+      mockCacheGetTwoFactorHash.mockResolvedValue({ ok: true, found: true, value: 'some-stored-hash' }); // hadCode = true
       mockCacheDel.mockResolvedValue(true);
       mockRedis.decr.mockResolvedValue(2); // counter reste positif
 
@@ -361,7 +365,7 @@ describe('TwoFactorService — chemin Redis (unit)', () => {
 
     it('DECR puis DEL quand counter tombe à 0 (dernier challenge annulé)', async () => {
       mockGetClient.mockReturnValue(mockRedis as any);
-      mockCacheGet.mockResolvedValue('some-stored-hash');
+      mockCacheGetTwoFactorHash.mockResolvedValue({ ok: true, found: true, value: 'some-stored-hash' });
       mockCacheDel.mockResolvedValue(true);
       mockRedis.decr.mockResolvedValue(0);
       mockRedis.del.mockResolvedValue(1);
@@ -376,7 +380,7 @@ describe('TwoFactorService — chemin Redis (unit)', () => {
       // Invariant critique : un cancel sans code ne doit pas faire dériver le counter
       // vers des valeurs négatives. Ce serait une fuite silencieuse dégradant la protection.
       mockGetClient.mockReturnValue(mockRedis as any);
-      mockCacheGet.mockResolvedValue(null);  // aucun code en cache
+      mockCacheGetTwoFactorHash.mockResolvedValue({ ok: true, found: false });  // aucun code en cache
       mockCacheDel.mockResolvedValue(true);
 
       await service.cancelPendingCode(USER_ID);
@@ -387,7 +391,7 @@ describe('TwoFactorService — chemin Redis (unit)', () => {
 
     it('DEL counter après DECR retournant valeur négative (counter incohérent)', async () => {
       mockGetClient.mockReturnValue(mockRedis as any);
-      mockCacheGet.mockResolvedValue('some-stored-hash');
+      mockCacheGetTwoFactorHash.mockResolvedValue({ ok: true, found: true, value: 'some-stored-hash' });
       mockCacheDel.mockResolvedValue(true);
       mockRedis.decr.mockResolvedValue(-2); // valeur Redis corrompue
       mockRedis.del.mockResolvedValue(1);
@@ -400,7 +404,7 @@ describe('TwoFactorService — chemin Redis (unit)', () => {
 
     it('codeKey supprimé de cacheService.del après cancel, indépendamment du counter', async () => {
       mockGetClient.mockReturnValue(mockRedis as any);
-      mockCacheGet.mockResolvedValue('hash-exists');
+      mockCacheGetTwoFactorHash.mockResolvedValue({ ok: true, found: true, value: 'hash-exists' });
       mockCacheDel.mockResolvedValue(true);
       mockRedis.decr.mockResolvedValue(1);
 

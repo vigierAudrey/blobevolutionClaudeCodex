@@ -3,6 +3,7 @@ import { CacheService, cacheService, CacheKeys, initializeCache } from '../cache
 
 import { createClient } from 'redis';
 import * as redisConfig from '../../lib/redisConfig';
+import { secureLogger } from '../../utils/secure-logger';
 
 const redisMock = (globalThis as any).__REDIS_MOCK__ as {
   instances: any[];
@@ -23,10 +24,10 @@ const prepareRedisClient = () => {
 
 describe('CacheService', () => {
   let cacheServiceInstance: CacheService;
-  let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
+  let loggerErrorSpy: jest.SpiedFunction<typeof secureLogger.error>;
 
   beforeAll(() => {
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    loggerErrorSpy = jest.spyOn(secureLogger, 'error').mockImplementation(() => undefined);
   });
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -50,7 +51,7 @@ describe('CacheService', () => {
   afterAll(async () => {
     // Final cleanup
     await cacheService.close();
-    consoleErrorSpy.mockRestore();
+    loggerErrorSpy.mockRestore();
   });
 
   describe('Singleton Pattern', () => {
@@ -171,9 +172,12 @@ describe('CacheService', () => {
         const result = await cacheServiceInstance.get('test:key');
 
         expect(result).toBeNull();
-        expect(consoleErrorSpy).toHaveBeenCalledWith(
-          'Cache get error for key test:key:',
-          expect.any(SyntaxError)
+        expect(loggerErrorSpy).toHaveBeenCalledWith(
+          'CACHE_GET_FAILED',
+          expect.objectContaining({
+            cacheNamespace: 'test',
+            errorType: 'SyntaxError',
+          })
         );
       });
 
@@ -183,9 +187,12 @@ describe('CacheService', () => {
         const result = await cacheServiceInstance.get('test:key');
 
         expect(result).toBeNull();
-        expect(consoleErrorSpy).toHaveBeenCalledWith(
-          'Cache get error for key test:key:',
-          expect.any(Error)
+        expect(loggerErrorSpy).toHaveBeenCalledWith(
+          'CACHE_GET_FAILED',
+          expect.objectContaining({
+            cacheNamespace: 'test',
+            errorType: 'Error',
+          })
         );
       });
     });
@@ -234,9 +241,12 @@ describe('CacheService', () => {
         const result = await cacheServiceInstance.set('test:key', { test: true });
 
         expect(result).toBe(false);
-        expect(consoleErrorSpy).toHaveBeenCalledWith(
-          'Cache set error for key test:key:',
-          expect.any(Error)
+        expect(loggerErrorSpy).toHaveBeenCalledWith(
+          'CACHE_SET_FAILED',
+          expect.objectContaining({
+            cacheNamespace: 'test',
+            errorType: 'Error',
+          })
         );
       });
     });
@@ -266,9 +276,12 @@ describe('CacheService', () => {
         const result = await cacheServiceInstance.del('test:key');
 
         expect(result).toBe(false);
-        expect(consoleErrorSpy).toHaveBeenCalledWith(
-          'Cache delete error for key test:key:',
-          expect.any(Error)
+        expect(loggerErrorSpy).toHaveBeenCalledWith(
+          'CACHE_DELETE_FAILED',
+          expect.objectContaining({
+            cacheNamespace: 'test',
+            errorType: 'Error',
+          })
         );
       });
     });
