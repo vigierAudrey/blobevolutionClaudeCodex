@@ -237,7 +237,9 @@ describe('Auth E2E', () => {
     const rateLimitedApp = createApp();
     try {
       const rateSession = await createTestSession(rateLimitedApp);
-      const email = 'ratelimit@test.com';
+      // Unique email per run → unique loginAccountIpLimiter key (email+ip hash).
+      // Prevents MemoryStore bleed across watch-mode re-runs within the 15-min window.
+      const email = `ratelimit-${Date.now()}@test.com`;
       await getOrCreateUserByEmail({ email, role: Role.RIDER, emailVerified: true });
 
       for (let i = 0; i < 5; i += 1) {
@@ -473,22 +475,38 @@ describe('Auth E2E', () => {
     it('should apply rate limiting on /resend-verification', async () => {
       const testEmail = `rate-limit-test-${Date.now()}@example.com`;
 
-      const originalEnv = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
       process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+      const rlApp = createApp();
+      const rlSession = await createTestSession(rlApp);
+
+      // EMAIL_VERIFICATION limiter uses the default IP key (req.ip).
+      // Use a unique X-Forwarded-For per run so the MemoryStore key is unique
+      // and counters from a previous watch-mode run don't bleed into this one.
+      // Trust proxy is enabled for 127.0.0.1 in createApp(), so this header is trusted.
+      const ts = Date.now();
+      const testRunIp = `10.${(ts >>> 16) & 0xFF}.${(ts >>> 8) & 0xFF}.${ts & 0xFF}`;
 
       try {
         for (let i = 0; i < 3; i++) {
-          const res = await session.post('/auth/resend-verification').send({ email: testEmail });
+          const res = await rlSession
+            .post('/auth/resend-verification')
+            .set('X-Forwarded-For', testRunIp)
+            .send({ email: testEmail });
           expect([200, 404]).toContain(res.status);
         }
 
-        const res = await session.post('/auth/resend-verification').send({ email: testEmail }).expect(429);
+        const res = await rlSession
+          .post('/auth/resend-verification')
+          .set('X-Forwarded-For', testRunIp)
+          .send({ email: testEmail })
+          .expect(429);
         expect(res.body.error).toContain('EMAIL_VERIFICATION_RATE_LIMIT_EXCEEDED');
       } finally {
-        if (originalEnv === undefined) {
+        if (previousFlag === undefined) {
           delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
         } else {
-          process.env.ENABLE_RATE_LIMIT_IN_TESTS = originalEnv;
+          process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
         }
       }
     });
