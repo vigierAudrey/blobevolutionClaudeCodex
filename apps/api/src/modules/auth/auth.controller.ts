@@ -492,7 +492,8 @@ authRouter.post('/verify-email', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     if (err?.name === 'ZodError') {
-      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+      // No `details` on this endpoint — token format must not be disclosed.
+      return res.status(400).json({ error: 'Invalid input' });
     }
     if (err?.code === 'UNAUTHORIZED') {
       return res.status(401).json({ error: 'Invalid or expired link' });

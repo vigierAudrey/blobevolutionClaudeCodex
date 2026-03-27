@@ -17,6 +17,9 @@ function VerifyInner() {
   useEffect(() => {
     const t = search.get('token');
     if (t) {
+      // Remove token from URL bar immediately after reading it — token must not
+      // linger in the address bar or browser history after submission.
+      window.history.replaceState(null, '', '/verify');
       void verify(t);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
