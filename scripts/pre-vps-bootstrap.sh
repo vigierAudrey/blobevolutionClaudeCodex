@@ -146,6 +146,14 @@ if [ "$NO_BUILD" = "false" ]; then
   log "  Build terminé"
 else
   log "6. Build Docker — skip (--no-build)"
+  # Vérifier que les images existent réellement — sans build, une image absente
+  # provoque une erreur trompeuse lors de 'DC run --rm api' (étapes 8 et 9).
+  API_IMAGE=$($DC config --images 2>/dev/null | grep api | head -1 || true)
+  if ! docker image inspect blobconnect-pre-vps-api >/dev/null 2>&1 \
+    && ! docker image inspect "${API_IMAGE:-__absent__}" >/dev/null 2>&1; then
+    die "--no-build spécifié mais aucune image API trouvée localement.
+       Lancer d'abord : ./scripts/pre-vps-bootstrap.sh (sans --no-build) pour builder les images."
+  fi
 fi
 
 # ─── 7. Démarrage infra (postgres, redis, minio, mailpit) ────────────────────

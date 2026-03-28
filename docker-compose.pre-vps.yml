@@ -19,6 +19,11 @@
 # Ou manuellement :
 #   docker compose -f docker-compose.pre-vps.yml --env-file .env.pre-vps up -d
 
+# Nom de projet explicite — évite la collision avec docker-compose.yml (dev)
+# Sans ceci, Docker dérive le project name du répertoire courant et les deux
+# compose files partagent le même préfixe → down -v peut tuer des containers dev.
+name: blobconnect-pre-vps
+
 services:
 
   # ─── Base de données ────────────────────────────────────────────────────────

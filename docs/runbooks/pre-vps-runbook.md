@@ -132,7 +132,7 @@ docker compose -f docker-compose.pre-vps.yml logs -f nginx
 
 ```bash
 docker compose -f docker-compose.pre-vps.yml run --rm \
-  -e DATABASE_URL="postgresql://blobinfini_pvps:$(grep POSTGRES_PASSWORD .env.pre-vps | cut -d= -f2)@postgres:5432/blobinfini_pvps" \
+  -e DATABASE_URL="postgresql://blobinfini_pvps:$(grep POSTGRES_PASSWORD .env.pre-vps | cut -d= -f2-)@postgres:5432/blobinfini_pvps" \
   -e APP_ENV=pre-vps \
   -e NODE_ENV=production \
   api \
