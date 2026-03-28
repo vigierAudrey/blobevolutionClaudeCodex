@@ -189,14 +189,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
       try {
         const user = (await apiClient.me()) as DashboardUser;
-        // Set a lightweight cookie for edge middleware gating on /admin
-        if (typeof document !== 'undefined') {
-          if (user.role === 'ADMIN') {
-            document.cookie = 'admin_session=1; Path=/; Max-Age=604800; SameSite=Lax';
-          } else {
-            document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
-          }
-        }
+        // admin_session est posé httpOnly par le serveur lors du login — pas de document.cookie ici.
 
         if (user.role === 'PRO') {
           router.push('/pro/onboarding');
@@ -279,13 +272,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
       try {
         const user = (await apiClient.me()) as DashboardUser;
-        if (typeof document !== 'undefined') {
-          if (user.role === 'ADMIN') {
-            document.cookie = 'admin_session=1; Path=/; Max-Age=604800; SameSite=Lax';
-          } else {
-            document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
-          }
-        }
+        // admin_session est posé httpOnly par le serveur lors du verify-2fa — pas de document.cookie ici.
         if (user.role === 'PRO') {
           router.push('/pro/onboarding');
         } else if (user.role === 'ADMIN') {
