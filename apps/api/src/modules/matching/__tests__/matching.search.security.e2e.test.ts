@@ -1,6 +1,6 @@
 import { createApp } from '../../../index';
 import { clientPrisma as prisma, Role } from '@blobinfini/database';
-import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
+import { createTestSession, getAccessToken, TestSession } from '../../../tests/helpers/auth';
 import { resetDb } from '../../../test-utils/resetDb';
 import fs from 'fs';
 import path from 'path';
@@ -11,11 +11,9 @@ describe('POST /matching/search security & safety', () => {
   const makeUuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
 
   let riderSession: TestSession;
-  let riderAccessToken = '';
   let riderUserId = '';
 
   let proSession: TestSession;
-  let proAccessToken = '';
 
   beforeEach(async () => {
     await resetDb();
@@ -23,32 +21,30 @@ describe('POST /matching/search security & safety', () => {
     const riderEmail = `matching-search-rider-${Date.now()}@test.com`;
     const proEmail = `matching-search-pro-${Date.now()}@test.com`;
 
-    const riderAuth = await getAccessToken({
-      app,
-      email: riderEmail,
-      role: Role.RIDER,
-    });
+    const riderAuth = await getAccessToken({ app, email: riderEmail, role: Role.RIDER });
     riderSession = riderAuth.session;
-    riderAccessToken = riderAuth.accessToken;
     riderUserId = riderAuth.userId;
 
-    const proAuth = await getAccessToken({
-      app,
-      email: proEmail,
-      role: Role.PRO,
-    });
+    const proAuth = await getAccessToken({ app, email: proEmail, role: Role.PRO });
     proSession = proAuth.session;
-    proAccessToken = proAuth.accessToken;
   });
 
   afterAll(async () => {
     await prisma.$disconnect();
   });
 
+  it('auth: rejects unauthenticated access', async () => {
+    const anonymousSession = await createTestSession(app);
+
+    await anonymousSession
+      .post('/matching/search')
+      .send({ sport: 'surf', level: 'beginner', date: '2025-09-04' })
+      .expect(401);
+  });
+
   it('happy: returns 200 and normalized matching payload for rider', async () => {
     const res = await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({ sport: 'surf', level: 'beginner', date: '2025-09-04', limit: 20 })
       .expect(200);
 
@@ -60,7 +56,6 @@ describe('POST /matching/search security & safety', () => {
   it('returns generic empty result when profile has no lat/lng (no existence oracle)', async () => {
     const res = await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({ sport: 'surf', level: 'beginner', date: '2025-09-04' })
       .expect(200);
 
@@ -85,7 +80,6 @@ describe('POST /matching/search security & safety', () => {
 
     const withStoredLocation = await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({ sport: 'surf', level: 'beginner', date: '2025-09-04' })
       .expect(200);
 
@@ -100,7 +94,6 @@ describe('POST /matching/search security & safety', () => {
 
     const withoutStoredLocation = await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({ sport: 'surf', level: 'beginner', date: '2025-09-04' })
       .expect(200);
 
@@ -115,7 +108,6 @@ describe('POST /matching/search security & safety', () => {
   it('abuse/IDOR: forbids PRO role on search endpoint', async () => {
     await proSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${proAccessToken}`)
       .send({ sport: 'surf', level: 'beginner', date: '2025-09-04' })
       .expect(403);
   });
@@ -125,13 +117,11 @@ describe('POST /matching/search security & safety', () => {
 
     await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send(payload)
       .expect(200);
 
     await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send(payload)
       .expect(200);
 
@@ -148,7 +138,6 @@ describe('POST /matching/search security & safety', () => {
   it('perf-safety: rejects limit > 100', async () => {
     await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({ sport: 'surf', level: 'beginner', date: '2025-09-04', limit: 101 })
       .expect(400);
   });
@@ -158,7 +147,6 @@ describe('POST /matching/search security & safety', () => {
 
     await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({
         sport: 'surf',
         level: 'beginner',
@@ -174,7 +162,6 @@ describe('POST /matching/search security & safety', () => {
 
     await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({
         sport: 'kitesurf',
         level: 'advanced',
@@ -196,7 +183,6 @@ describe('POST /matching/search security & safety', () => {
     const hugeExcludeIds = Array.from({ length: 1000 }, (_, i) => makeUuid(i + 1));
     const res = await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({
         sport: 'surf',
         level: 'beginner',
@@ -236,7 +222,6 @@ describe('POST /matching/search security & safety', () => {
     // Search near target's location; the target would appear if not excluded
     const res = await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({
         sport: 'surf',
         level: 'beginner',
@@ -315,8 +300,7 @@ describe('POST /matching/search security & safety', () => {
 
       const res = await riderSession
         .post('/matching/search')
-        .set('Authorization', `Bearer ${riderAccessToken}`)
-        .send(body)
+          .send(body)
         .expect(200);
 
       const pageIds = (res.body.results as Array<{ id: string }>).map((r) => r.id);
@@ -382,7 +366,6 @@ describe('POST /matching/search security & safety', () => {
 
     const pageOne = await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({
         sport: 'surf',
         level: 'beginner',
@@ -430,7 +413,6 @@ describe('POST /matching/search security & safety', () => {
 
     const pageTwo = await riderSession
       .post('/matching/search')
-      .set('Authorization', `Bearer ${riderAccessToken}`)
       .send({
         sport: 'surf',
         level: 'beginner',
