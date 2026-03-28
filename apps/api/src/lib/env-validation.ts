@@ -49,9 +49,13 @@ export function validateProductionEnv(): void {
   }
 
   // Check DATABASE_URL SSL in production
+  // Exception pré-VPS : réseau Docker interne, SSL entre containers non nécessaire.
+  // APP_ENV=pre-vps doit être défini explicitement — jamais en production réelle.
+  const isPreVps = process.env.APP_ENV === 'pre-vps';
   if (!process.env.DATABASE_URL) {
     errors.push('DATABASE_URL is not set');
   } else if (
+    !isPreVps &&
     !process.env.DATABASE_URL.includes('sslmode=require') &&
     !process.env.DATABASE_URL.includes('sslmode=verify-full')
   ) {
@@ -75,13 +79,15 @@ export function validateProductionEnv(): void {
       errors.push('PRIMARY_ADMIN_EMAILS must contain at least one valid email in production');
     }
 
-    if (primaryAdminEmails.includes('dev+admin@test.com')) {
+    // Exception pré-VPS : email admin local toléré.
+    if (!isPreVps && primaryAdminEmails.includes('dev+admin@test.com')) {
       errors.push('PRIMARY_ADMIN_EMAILS must not include dev+admin@test.com in production');
     }
   }
 
+  // Exception pré-VPS : 2FA désactivé pour permettre les tests de smoke sans TOTP.
   const authRequire2FA = String(process.env.AUTH_REQUIRE_2FA ?? '').trim().toLowerCase();
-  if (authRequire2FA === 'false' || authRequire2FA === '0') {
+  if (!isPreVps && (authRequire2FA === 'false' || authRequire2FA === '0')) {
     errors.push('AUTH_REQUIRE_2FA=false is NOT allowed in production');
   }
 
@@ -134,11 +140,11 @@ export function validateProductionEnv(): void {
       errors.push(`${key} is required in production but is not set or empty`);
     }
   }
-  // Forbid minioadmin default credentials in production
-  if (process.env.S3_ACCESS_KEY_ID === 'minioadmin') {
+  // Exception pré-VPS : MinIO avec credentials non-minioadmin mais non-prod autorisé.
+  if (!isPreVps && process.env.S3_ACCESS_KEY_ID === 'minioadmin') {
     errors.push('S3_ACCESS_KEY_ID must not use the default "minioadmin" value in production');
   }
-  if (process.env.S3_SECRET_ACCESS_KEY === 'minioadmin') {
+  if (!isPreVps && process.env.S3_SECRET_ACCESS_KEY === 'minioadmin') {
     errors.push('S3_SECRET_ACCESS_KEY must not use the default "minioadmin" value in production');
   }
 
@@ -150,6 +156,23 @@ export function validateProductionEnv(): void {
       errors.push('ADMIN_REFRESH_TTL_HOURS must be a positive integer (hours)');
     } else if (ttlHours > 24) {
       errors.push('ADMIN_REFRESH_TTL_HOURS must be ≤24h in production (recommended: 8)');
+    }
+  }
+
+  // COOKIE_DOMAIN requis en prod (fail-fast).
+  // Architecture : API (api.blobinfini.app) ≠ frontend Vercel (blobinfini.app).
+  // Sans COOKIE_DOMAIN=.blobinfini.app, le cookie admin_session posé par l'API
+  // est scopé à api.blobinfini.app et invisible du middleware Next.js → panne admin totale.
+  // Exception pré-VPS : tout tourne sur le même host via Docker nginx, même domaine.
+  if (!isPreVps) {
+    if (!process.env.COOKIE_DOMAIN) {
+      errors.push(
+        'COOKIE_DOMAIN is required in production (e.g. ".blobinfini.app"). ' +
+        'Without it, admin_session cookie is scoped to the API domain only and invisible to the Next.js middleware, ' +
+        'causing a complete admin login outage.'
+      );
+    } else if (!process.env.COOKIE_DOMAIN.startsWith('.')) {
+      errors.push('COOKIE_DOMAIN must start with "." to cover all subdomains (e.g. ".blobinfini.app")');
     }
   }
 
