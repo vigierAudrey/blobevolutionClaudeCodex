@@ -105,6 +105,23 @@ const sanitizeRateLimitDetails = (details: unknown) => {
 const shortId = (value: string | undefined | null): string =>
   typeof value === 'string' && value.length > 8 ? `${value.slice(0, 8)}...` : String(value ?? '');
 
+/**
+ * Extrait la valeur d'un cookie depuis un header Cookie brut.
+ * Utilisé pour lire le JWT dans le cookie httpOnly lors du handshake WebSocket.
+ * Pas de dépendance externe — parsing minimal suffisant.
+ */
+function extractCookieValue(cookieHeader: string, name: string): string | undefined {
+  for (const part of cookieHeader.split(';')) {
+    const eqIdx = part.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = part.slice(0, eqIdx).trim();
+    if (key === name) {
+      return decodeURIComponent(part.slice(eqIdx + 1).trim());
+    }
+  }
+  return undefined;
+}
+
 const withSocketEventContext = <TArgs extends unknown[]>(
   socket: AuthenticatedSocket,
   routeOrJob: string,
@@ -188,7 +205,15 @@ const emitSocketError = (
  */
 async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Error) => void) {
   try {
-    const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
+    // Auth sources (priority order):
+    // 1. handshake.auth.token  — Bearer token (tests, clients SDK non-browser)
+    // 2. Authorization header  — Bearer header fallback
+    // 3. Cookie httpOnly       — sessions navigateur cookie-only (mode normal)
+    const cookieHeader = socket.handshake.headers.cookie ?? '';
+    const cookieToken = extractCookieValue(cookieHeader, 'accessToken');
+    const rawHandshakeToken: unknown = socket.handshake.auth?.token;
+    const handshakeToken = typeof rawHandshakeToken === 'string' && rawHandshakeToken.length > 0 ? rawHandshakeToken : undefined;
+    const token = handshakeToken ?? socket.handshake.headers.authorization?.replace('Bearer ', '') ?? cookieToken;
 
     if (!token) {
       return next(new Error('Authentication required'));
@@ -360,8 +385,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: {
       origin: origins,
-      // WS auth is bearer-token based; no cookie-based auth required.
-      credentials: false
+      // Cookie-based session auth: le navigateur doit envoyer le cookie httpOnly accessToken
+      // sur le handshake WebSocket upgrade. credentials:true est requis à cet effet.
+      // Protection CSRF assurée par la validation d'Origin dans allowRequest().
+      credentials: true
     },
     allowRequest: (req, callback) => {
       return runWithWsLogContext('ws:allow-request', undefined, () => {

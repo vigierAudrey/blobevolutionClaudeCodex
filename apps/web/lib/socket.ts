@@ -1,59 +1,56 @@
 import { io, Socket } from 'socket.io-client';
 
 let socket: Socket | null = null;
-let currentToken: string | null = null;
 
 /**
- * Récupère ou crée l'instance Socket.io
+ * Récupère ou crée l'instance Socket.io.
+ *
+ * Auth mode cookie-only : le navigateur envoie automatiquement le cookie httpOnly
+ * `accessToken` lors du handshake WebSocket grâce à `withCredentials: true`.
+ * Aucun token JWT n'est transmis côté JS dans le handshake auth.
+ *
+ * Le paramètre _token est conservé pour compatibilité des appelants mais ignoré.
  */
-export function getSocket(token?: string): Socket {
+export function getSocket(_token?: string): Socket {
   if (socket && socket.connected) {
     return socket;
   }
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-  currentToken = token || '';
 
   socket = io(apiUrl, {
-    autoConnect: false, // Connexion manuelle
-    withCredentials: true,
-    auth: {
-      token: currentToken
-    },
+    autoConnect: false,
+    withCredentials: true, // Envoie le cookie httpOnly accessToken sur le handshake
     transports: ['websocket', 'polling'], // WebSocket en priorité
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionAttempts: 5
   });
 
-  // ✅ E-REVIEW P0 #4: Supprimer console.* (logs gérés dans useSocket)
-  // Pas de logs ici, gestion dans le hook React
-
   return socket;
 }
 
 /**
- * ✅ E-REVIEW P0 #3: Reconnexion fiable avec cycle disconnect/connect
- * Utilisé après refresh token pour éviter la perte de connexion
- *
- * Force un cycle complet disconnect → update auth → connect pour garantir
- * que Socket.IO utilise le nouveau token lors du handshake
+ * Force un cycle disconnect → connect pour renouveler le handshake.
+ * À appeler après un refresh de session (le serveur a mis à jour le cookie).
+ * Aucun token à passer — le cookie mis à jour est envoyé automatiquement.
  */
-export function reconnectSocketWithNewToken(newToken: string): void {
+export function reconnectSocket(): void {
   if (!socket) return;
 
-  currentToken = newToken;
-
-  // Mettre à jour le token d'authentification
-  socket.auth = { token: newToken };
-
-  // ✅ E-REVIEW P0 #3: Force disconnect puis reconnect pour refresh handshake
   if (socket.connected) {
     socket.disconnect();
   }
 
-  // Reconnexion avec nouveau token
   socket.connect();
+}
+
+/**
+ * @deprecated Utiliser reconnectSocket().
+ * Conservé pour compatibilité — le token passé est ignoré (cookie-only auth).
+ */
+export function reconnectSocketWithNewToken(_newToken: string): void {
+  reconnectSocket();
 }
 
 /**

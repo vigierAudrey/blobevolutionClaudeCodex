@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Socket } from 'socket.io-client';
-import { getSocket, disconnectSocket, isSocketConnected, reconnectSocketWithNewToken } from '../lib/socket';
+import { getSocket, disconnectSocket, isSocketConnected, reconnectSocket } from '../lib/socket';
 import { apiClient } from '../lib/apiClient';
 import { isAuthConnectError } from '../lib/socketUtils';
 
@@ -29,19 +29,17 @@ interface UseSocketReturn {
 }
 
 /**
- * Hook React pour gérer la connexion WebSocket
+ * Hook React pour gérer la connexion WebSocket.
+ *
+ * Auth mode cookie-only : aucun token JWT n'est manipulé côté JS.
+ * Le cookie httpOnly `accessToken` est envoyé automatiquement par le navigateur.
+ * Après un refresh de session, la reconnexion suffit (le cookie est mis à jour server-side).
  *
  * @example
  * const { socket, connected, emit, on } = useSocket({
- *   token: accessToken,
+ *   token: sessionHint, // utilisé comme gate "utilisateur connecté" uniquement
  *   autoConnect: true
  * });
- *
- * useEffect(() => {
- *   on('new-message', (message) => {
- *     console.log('New message:', message);
- *   });
- * }, [on]);
  */
 export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
   const { token, autoConnect = false } = options;
@@ -50,59 +48,45 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
   const [lastSocketError, setLastSocketError] = useState<SocketError | null>(null);
   const refreshAttemptedRef = useRef(false);
   const inFlightRefreshRef = useRef<Promise<boolean> | null>(null);
-  const lastReconnectedTokenRef = useRef<string | null>(null);
 
   // Initialiser le socket
   useEffect(() => {
+    // Gate : ne pas créer de socket si l'utilisateur n'est pas connecté
     if (!token) return;
 
     const socketInstance = getSocket(token);
     setSocket(socketInstance);
 
-    // Écouter les événements de connexion
     const handleConnect = () => {
       setConnected(true);
       setLastSocketError(null);
-      // Reset refresh flag, in-flight Promise & reconnected token on successful connection
+      // Reset des guards refresh à chaque connexion réussie
       refreshAttemptedRef.current = false;
       inFlightRefreshRef.current = null;
-      lastReconnectedTokenRef.current = null;
     };
 
     const handleDisconnect = () => setConnected(false);
 
-    // ✅ E-REVIEW P0 #2: Gestion connect_error robuste avec isAuthConnectError()
     const handleConnectError = async (error: Error) => {
-      // ✅ E-REVIEW P0 #4: Ne jamais logger error brut
-      // Log structuré sans détails sensibles
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
         console.warn('[WebSocket] Connection error (type only):', error.constructor.name);
       }
 
-      // ✅ E-REVIEW P0 #2: Détection robuste avec heuristiques
       if (isAuthConnectError(error)) {
-        // Anti-concurrent refresh: si déjà un refresh en vol, attendre celui-ci
+        // Anti-concurrent refresh : attendre le refresh en vol
         if (inFlightRefreshRef.current) {
           const refreshed = await inFlightRefreshRef.current;
-          if (refreshed) {
-            const newTokens = apiClient.getTokens();
-            if (newTokens?.accessToken) {
-              // Guard: ne reconnect que si (1) socket déconnecté ET (2) token différent
-              if (!socketInstance.connected && lastReconnectedTokenRef.current !== newTokens.accessToken) {
-                lastReconnectedTokenRef.current = newTokens.accessToken;
-                reconnectSocketWithNewToken(newTokens.accessToken);
-              }
-            }
+          if (refreshed && !socketInstance.connected) {
+            // Cookie mis à jour server-side — reconnexion suffit
+            reconnectSocket();
           }
           return;
         }
 
-        // Premier refresh: vérifier flag
         if (!refreshAttemptedRef.current) {
           refreshAttemptedRef.current = true;
 
-          // Lancer refresh et tracker Promise
           const refreshPromise = apiClient.refreshToken();
           inFlightRefreshRef.current = refreshPromise;
 
@@ -110,25 +94,21 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
           inFlightRefreshRef.current = null;
 
           if (refreshed) {
-            const newTokens = apiClient.getTokens();
-            if (newTokens?.accessToken) {
-              // ✅ E-REVIEW P0 #3: Reconnexion fiable + guard double reconnect
-              lastReconnectedTokenRef.current = newTokens.accessToken;
-              reconnectSocketWithNewToken(newTokens.accessToken);
-              return; // Retry connexion avec nouveau token
+            if (!socketInstance.connected) {
+              // Cookie rafraîchi server-side — le handshake enverra le nouveau cookie
+              reconnectSocket();
             }
+            return;
           }
 
-          // Refresh failed → clear & redirect
+          // Refresh échoué → déconnexion propre
           apiClient.clearTokens();
           setLastSocketError({
             code: 'AUTH_FAILED',
             message: 'Session expired, please login again'
           });
-          // User sera redirigé vers login par le composant parent
         }
       } else {
-        // Erreur non-auth
         setLastSocketError({
           code: 'CONNECT_ERROR',
           message: 'Connection failed'
@@ -136,7 +116,6 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
       }
     };
 
-    // ✅ E-REVIEW P0 #1: Gestion event serveur 'socket-error'
     const handleSocketError = (errorPayload: SocketError) => {
       setLastSocketError(errorPayload);
     };
@@ -146,12 +125,10 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
     socketInstance.on('connect_error', handleConnectError);
     socketInstance.on('socket-error', handleSocketError);
 
-    // Connexion automatique si demandée
     if (autoConnect && !socketInstance.connected) {
       socketInstance.connect();
     }
 
-    // Cleanup à la destruction du composant
     return () => {
       socketInstance.off('connect', handleConnect);
       socketInstance.off('disconnect', handleDisconnect);
@@ -160,36 +137,30 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
     };
   }, [token, autoConnect]);
 
-  // Fonction pour se connecter manuellement
   const connect = useCallback(() => {
     if (socket && !socket.connected) {
       socket.connect();
     }
   }, [socket]);
 
-  // Fonction pour se déconnecter
   const disconnect = useCallback(() => {
     disconnectSocket();
     setConnected(false);
     setSocket(null);
   }, []);
 
-  // Fonction pour émettre un événement
   const emit = useCallback((event: string, data: unknown) => {
     if (socket?.connected) {
       socket.emit(event, data);
     }
-    // Note: si socket pas connecté, erreur déjà remontée via lastSocketError
   }, [socket]);
 
-  // Fonction pour écouter un événement
   const on = useCallback((event: string, handler: (data: unknown) => void) => {
     if (socket) {
       socket.on(event, handler);
     }
   }, [socket]);
 
-  // Fonction pour arrêter d'écouter un événement
   const off = useCallback((event: string, handler?: (data: unknown) => void) => {
     if (socket) {
       if (handler) {
