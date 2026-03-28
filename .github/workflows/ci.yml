@@ -79,6 +79,9 @@ jobs:
       - name: Enforce DB push guardrails
         run: bash scripts/no-unsafe-db-push-check.sh
 
+      - name: Verify /internal/metrics is not a stub
+        run: bash scripts/check-metrics-not-stub.sh
+
       - name: Verify Prisma supply-chain (single version in lockfile)
         # Checks pnpm-lock.yaml for unexpected prisma/@prisma/client versions.
         # pnpm.overrides in root package.json should enforce 6.19.2 everywhere.

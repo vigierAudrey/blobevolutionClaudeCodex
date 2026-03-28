@@ -6,7 +6,7 @@ validateProductionEnv();
 
 import { resolve } from 'path';
 import fs from 'fs';
-import { randomBytes } from 'crypto';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import { createServer } from 'http';
 
 // Initialize Sentry BEFORE any other imports (must be after dotenv)
@@ -24,7 +24,9 @@ import { secureLogger } from './utils/secure-logger';
 import { getClientIp } from './lib/client-ip';
 import { hashIpHmacSafe } from './lib/hash-ip';
 import { runJobWithLogContext, withHttpLogContext } from './observability/log-context';
-import { registerLogTransportShutdownHandlers } from './observability/log-transport';
+import { registerLogTransportShutdownHandlers, getLogTransportMetrics } from './observability/log-transport';
+import { getMatchingMetricsSnapshot } from './lib/matching-metrics';
+import { incHttpRequest, incHttp5xx, recordHttpLatency, isExcludedPath, getHttpMetricsSnapshot } from './lib/http-metrics';
 
 const RAW_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -81,6 +83,16 @@ function ensureProductionSecrets() {
 }
 
 ensureProductionSecrets();
+
+// R-01 — warn at startup if METRICS_INTERNAL_TOKEN is absent.
+// No fail-fast: a missing token disables the endpoint (401 on every call),
+// but does not prevent the API from serving traffic.
+// Skipped in test env to avoid polluting test output.
+if (process.env.NODE_ENV !== 'test' && !process.env.METRICS_INTERNAL_TOKEN) {
+  secureLogger.warn('METRICS_INTERNAL_TOKEN_MISSING', {
+    impact: '/internal/metrics will always return 401; internal metrics monitoring is disabled',
+  });
+}
 
 function getRequestIpHash(req: Request): string | undefined {
   return hashIpHmacSafe(getClientIp(req) ?? req.socket?.remoteAddress);
@@ -474,6 +486,25 @@ export function createApp() {
     next();
   });
 
+  // HTTP metrics middleware — no PII, no payload.
+  // Excluded paths (health, /internal/metrics, etc.) are not counted to avoid
+  // inflating application traffic counters with monitoring probes.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (isExcludedPath(req.path)) {
+      return next();
+    }
+    const start = Date.now();
+    incHttpRequest();
+    res.on('finish', () => {
+      const ms = Date.now() - start;
+      recordHttpLatency(ms);
+      if (res.statusCode >= 500) {
+        incHttp5xx();
+      }
+    });
+    return next();
+  });
+
   app.use('/auth', authRouter);
   app.use('/profile', profileRouter);
   app.use('/matching', matchingRouter);
@@ -491,17 +522,52 @@ export function createApp() {
   app.use('/push', pushRouter);
 
 
-  // Internal metrics endpoint — token auth, never logs the provided value
+  // Internal metrics endpoint — token auth, never logs the provided value.
+  // Returns a point-in-time snapshot of:
+  //   - process runtime (uptime, memory — process-level, NOT VPS/container-level)
+  //   - http: global request counters + latency percentiles (excludes monitoring probes)
+  //   - matching: search/decisions counters (matching module only)
+  //   - log_transport: pipeline state (queue, sent, dropped, breaker)
+  // All values are process-lifetime counters — they reset on process restart.
+  // No PII, no secrets, no per-user data in this response.
   app.get('/internal/metrics', (req: Request, res: Response) => {
     const expected = process.env.METRICS_INTERNAL_TOKEN;
     const provided = req.headers['x-internal-token'] as string | undefined;
     const ipHash = getRequestIpHash(req);
-    if (!expected || !provided || provided !== expected) {
+
+    if (!expected || !provided) {
       secureLogger.warn('METRICS_INTERNAL_TOKEN_REJECTED', { ipHash });
       return res.status(401).json({ error: 'Unauthorized' });
     }
+
+    // Timing-safe compare — consistent with security.access.ts
+    const expectedBuffer = Buffer.from(expected, 'utf8');
+    const providedBuffer = Buffer.from(provided, 'utf8');
+    if (
+      expectedBuffer.length !== providedBuffer.length ||
+      !timingSafeEqual(expectedBuffer, providedBuffer)
+    ) {
+      secureLogger.warn('METRICS_INTERNAL_TOKEN_REJECTED', { ipHash });
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     secureLogger.info('METRICS_INTERNAL_TOKEN_ACCESS', { ipHash });
-    return res.json({ ok: true, ts: Date.now() });
+
+    const mem = process.memoryUsage();
+    return res.json({
+      timestamp: new Date().toISOString(),
+      // process.uptime() and memoryUsage() reflect this Node.js process only.
+      // They do NOT represent VPS CPU%, system memory, disk or container limits.
+      process: {
+        uptime_s: Math.floor(process.uptime()),
+        memory_rss_mb: Math.round(mem.rss / 1024 / 1024),
+        memory_heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
+        memory_heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024),
+      },
+      http: getHttpMetricsSnapshot(),
+      matching: getMatchingMetricsSnapshot(),
+      log_transport: getLogTransportMetrics(),
+    });
   });
 
   // Global error handler
