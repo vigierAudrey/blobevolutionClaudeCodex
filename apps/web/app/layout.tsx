@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import dynamicImport from 'next/dynamic';
 import Script from 'next/script';
+import { headers } from 'next/headers';
 import './globals.css';
 import ClientProvider from '@/components/ui/ClientProvider';
 import { ThemeScript } from '@/components/theme/ThemeScript';
@@ -34,6 +35,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const adsenseClientId = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID;
   const adsenseEnabled = process.env.NEXT_PUBLIC_ADSENSE_ENABLED === 'true';
 
+  // Read the per-request nonce set by middleware so inline scripts can be
+  // tagged with it and pass the Content-Security-Policy nonce check.
+  // Falls back to undefined when middleware is not running (e.g. tests).
+  const nonce = headers().get('x-nonce') ?? undefined;
+
   const locale = await getLocale();
   const messages = await getMessages();
 
@@ -41,13 +47,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={locale}>
       <head>
         {/* Apply theme class before paint to avoid FOUC */}
-        <ThemeScript />
+        <ThemeScript nonce={nonce} />
         {adsenseEnabled && adsenseClientId && (
           <Script
             async
             src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClientId}`}
             crossOrigin="anonymous"
             strategy="afterInteractive"
+            nonce={nonce}
           />
         )}
       </head>
