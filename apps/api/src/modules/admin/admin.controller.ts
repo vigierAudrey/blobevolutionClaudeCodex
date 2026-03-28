@@ -9,7 +9,7 @@ import { audit } from '../../middleware/audit';
 import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
 import { requirePermissions } from './admin.guard';
 import { enforceAdminAllowedIp, requireAdminStepUp } from './admin.security-guard';
-import { createRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { createRateLimiter, createLazyRateLimiter, createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
 import { invalidateSessionCache } from '../../lib/auth-session-store';
 import { disconnectUserSockets } from '../../lib/socket';
@@ -91,6 +91,72 @@ async function ensureAdminConversation(adminId: string, targetUserId: string) {
 
 export const adminRouter = Router();
 
+// Rate limiting lazy pour les actions admin destructives / de gestion.
+// createLazyRateLimiter est safe au module-level (résout Redis après bootstrap).
+// Profil ADMIN : 50 req / 5 min. Seuil raisonné : une admin seule ne fera jamais
+// 50 modifications de permissions en 5 min. Protège contre scripting et boucles accidentelles.
+const adminWriteLimiter = createLazyRateLimiter('ADMIN');
+
+// Purge RGPD : 3 tentatives / heure / admin.
+// Justification : une purge manuelle est une action planifiée, rare, irréversible.
+// Même lors d'un incident RGPD actif, 3 exécutions en 1h est largement suffisant.
+// Defense-in-depth : step-up + confirmation string restent les verrous fonctionnels.
+// keyGenerator userId-based → le compteur est isolé par admin, pas par IP.
+const adminGdprPurgeLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 60 * 1000,
+    max: 3,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: any) =>
+      process.env.NODE_ENV === 'test' &&
+      String(process.env.ENABLE_RATE_LIMIT_IN_TESTS ?? '').toLowerCase() !== 'true',
+    keyGenerator: (req: any) => {
+      const userId = (req as any).user?.id;
+      return userId ? `admin_gdpr_purge:${userId}` : 'admin_gdpr_purge:anonymous';
+    },
+    handler: (_req: any, res: any) => {
+      secureLogger.warn('ADMIN_GDPR_PURGE_RATE_LIMIT_EXCEEDED', { endpoint: '/admin/gdpr/run-purge' });
+      res.status(429).json({
+        error: 'ADMIN_GDPR_PURGE_RATE_LIMIT_EXCEEDED',
+        message: 'Limite de purges RGPD atteinte. Maximum 3 par heure.',
+        retryAfter: 3600,
+        timestamp: new Date().toISOString(),
+      });
+    },
+  },
+  'admin_gdpr_purge',
+);
+
+// Création d'alertes système : 10 / heure / admin.
+// Justification : les alertes sont des signaux manuels d'exploitation.
+// 10/heure couvre une maintenance intensive (incident actif). Au-delà : script ou boucle accidentelle.
+const adminAlertCreateLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: any) =>
+      process.env.NODE_ENV === 'test' &&
+      String(process.env.ENABLE_RATE_LIMIT_IN_TESTS ?? '').toLowerCase() !== 'true',
+    keyGenerator: (req: any) => {
+      const userId = (req as any).user?.id;
+      return userId ? `admin_alert_create:${userId}` : 'admin_alert_create:anonymous';
+    },
+    handler: (_req: any, res: any) => {
+      secureLogger.warn('ADMIN_ALERT_CREATE_RATE_LIMIT_EXCEEDED', { endpoint: '/admin/alerts' });
+      res.status(429).json({
+        error: 'ADMIN_ALERT_CREATE_RATE_LIMIT_EXCEEDED',
+        message: "Limite de création d'alertes atteinte. Maximum 10 par heure.",
+        retryAfter: 3600,
+        timestamp: new Date().toISOString(),
+      });
+    },
+  },
+  'admin_alert_create',
+);
+
 // Toutes les routes admin nécessitent une authentification, un email vérifié et le rôle admin
 adminRouter.use(requireAuth, requireVerifiedEmail);
 adminRouter.use(requireAdmin);
@@ -125,8 +191,8 @@ adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:sta
       }
     });
 
-    // Signalements totaux (pas de champ reviewedAt dans le modèle actuel)
-    const reportedProfiles = await prisma.profileReport.count();
+    // F07 — Signalements en attente uniquement (reviewedAt IS NULL)
+    const reportedProfiles = await prisma.profileReport.count({ where: { reviewedAt: null } });
 
     // Formater les statistiques
     const stats = {
@@ -369,6 +435,7 @@ adminRouter.get(
             maxDistanceKm: true,
             emailNotif: true,
             photoUrl: true,
+            // F03: lat/lng selected internally to compute hasLocation, not exposed in response
             lat: true,
             lng: true,
             wantsLesson: true,
@@ -391,6 +458,7 @@ adminRouter.get(
             bio: true,
             pricePerHour: true,
             verified: true,
+            // F03: lat/lng selected internally to compute hasLocation, not exposed in response
             lat: true,
             lng: true,
             createdAt: true,
@@ -421,8 +489,7 @@ adminRouter.get(
             sport: true,
             level: true,
             distanceKm: true,
-            lat: true,
-            lng: true,
+            // F03: lat/lng supprimés — coordonnées précises inutiles pour l'admin
             updatedAt: true
           }
         }
@@ -433,19 +500,32 @@ adminRouter.get(
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const riderReports = user.riderProfile
-      ? await prisma.profileReport.count({ where: { reportedProfileId: user.riderProfile.id } })
-      : 0;
+    // F03 — Strip lat/lng from profiles, expose only hasLocation boolean (RGPD minimisation)
+    const { riderProfile: rawRider, proProfile: rawPro, ...userBase } = user;
+    const riderProfile = rawRider
+      ? (() => {
+          const { lat, lng, ...rest } = rawRider;
+          return { ...rest, hasLocation: lat != null && lng != null };
+        })()
+      : null;
+    const proProfile = rawPro
+      ? (() => {
+          const { lat, lng, ...rest } = rawPro;
+          return { ...rest, hasLocation: lat != null && lng != null };
+        })()
+      : null;
 
-    const reportsSubmitted = await prisma.profileReport.count({ where: { reporterUserId: user.id } });
+    const [riderReports, reportsSubmitted, sessionsCount] = await Promise.all([
+      rawRider
+        ? prisma.profileReport.count({ where: { reportedProfileId: rawRider.id } })
+        : Promise.resolve(0),
+      prisma.profileReport.count({ where: { reporterUserId: user.id } }),
+      prisma.session.count({ where: { userId } }),
+    ]);
 
     return res.json({
-      user,
-      metrics: {
-        reportsReceived: riderReports,
-        reportsSubmitted,
-        sessionsCount: await prisma.session.count({ where: { userId } })
-      }
+      user: { ...userBase, riderProfile, proProfile },
+      metrics: { reportsReceived: riderReports, reportsSubmitted, sessionsCount }
     });
   } catch (error) {
     secureLogger.error('Admin user detail error', { error });
@@ -507,6 +587,7 @@ adminRouter.patch(
 });
 
 // Lister les signalements
+// F07 — status param: 'pending' (default) = non traités, 'reviewed' = traités, 'all' = tous
 adminRouter.get(
   '/reports',
   requirePermissions('reports.view'),
@@ -517,10 +598,19 @@ adminRouter.get(
     const limit = capAdminLimit(req.query.limit); // Gate D: hard cap = 100
     const skip = (page - 1) * limit;
 
-    const [reports, total] = await Promise.all([
+    const statusParam = typeof req.query.status === 'string' ? req.query.status : 'pending';
+    const reviewedAtFilter: Prisma.ProfileReportWhereInput =
+      statusParam === 'reviewed'
+        ? { reviewedAt: { not: null } }
+        : statusParam === 'all'
+          ? {}
+          : { reviewedAt: null }; // default: pending only
+
+    const [reports, total, pendingCount, reviewedCount] = await Promise.all([
       prisma.profileReport.findMany({
         skip,
         take: limit,
+        where: reviewedAtFilter,
         include: {
           reporter: {
             select: {
@@ -546,7 +636,9 @@ adminRouter.get(
           createdAt: 'desc'
         }
       }),
-      prisma.profileReport.count()
+      prisma.profileReport.count({ where: reviewedAtFilter }),
+      prisma.profileReport.count({ where: { reviewedAt: null } }),
+      prisma.profileReport.count({ where: { reviewedAt: { not: null } } }),
     ]);
 
     return res.json({
@@ -556,7 +648,9 @@ adminRouter.get(
         limit,
         total,
         totalPages: Math.ceil(total / limit)
-      }
+      },
+      // F07 — compteurs fiables par statut
+      summary: { pending: pendingCount, reviewed: reviewedCount }
     });
   } catch (error) {
     secureLogger.error('Admin reports list error', { error });
@@ -632,6 +726,7 @@ adminRouter.get(
 // Mettre à jour les permissions d'un admin
 adminRouter.patch(
   '/admins/:id/permissions',
+  adminWriteLimiter,
   requirePermissions('permissions.manage'),
   requireAdminStepUp,
   audit('admin:permissions:update', (req) => `admin:${req.params.id}`),
@@ -663,6 +758,30 @@ adminRouter.patch(
       return res.status(400).json({ error: `Invalid permissions: ${invalidPermissions.join(', ')}` });
     }
 
+    // F01 — Guard escalade : l'acteur ne peut accorder que des permissions qu'il possède lui-même.
+    // req.adminProfile est peuplé par requirePermissions() avant ce handler.
+    const actorProfile = (req as any).adminProfile as { permissions: string[] } | undefined;
+    const actorPerms = new Set(actorProfile?.permissions ?? []);
+    const forbidden = permissions.filter((p: string) => !actorPerms.has(p));
+    if (forbidden.length > 0) {
+      secureLogger.warn('ADMIN_PRIVILEGE_ESCALATION_ATTEMPT', {
+        actorId: currentUser.id,
+        targetAdminId: adminId,
+        forbidden,
+      });
+      return res.status(403).json({
+        error: 'Vous ne pouvez pas accorder des droits que vous ne possédez pas.',
+        forbidden,
+      });
+    }
+
+    // F02 — Lire l'état avant update pour le diff d'audit.
+    const beforeProfile = await prisma.adminProfile.findUnique({
+      where: { userId: adminId },
+      select: { permissions: true },
+    });
+    const before = (beforeProfile?.permissions ?? []) as string[];
+
     // Mettre à jour ou créer le profil admin
     const adminProfile = await prisma.adminProfile.upsert({
       where: { userId: adminId },
@@ -684,6 +803,16 @@ adminRouter.patch(
       }
     });
 
+    // F02 — Enrichir l'audit trail avec le diff before/after.
+    // res.locals.auditMetadata est lu par le middleware audit() sur res.on('finish').
+    const after = adminProfile.permissions as string[];
+    res.locals.auditMetadata = {
+      before,
+      after,
+      added: after.filter((p: string) => !before.includes(p)),
+      removed: before.filter((p: string) => !after.includes(p)),
+    };
+
     return res.json(adminProfile);
   } catch (error) {
     // Don't log validation errors (400) - they are expected client errors
@@ -699,6 +828,7 @@ adminRouter.patch(
 // Appliquer un rôle prédéfini à un admin
 adminRouter.patch(
   '/admins/:id/role',
+  adminWriteLimiter,
   requirePermissions('permissions.manage'),
   requireAdminStepUp,
   audit('admin:role:apply', (req) => `admin:${req.params.id}`),
@@ -726,6 +856,30 @@ adminRouter.patch(
 
     const permissions = ROLE_PERMISSIONS[role] || [];
 
+    // F01 — Guard escalade : l'acteur ne peut appliquer un rôle qui contient des permissions qu'il ne possède pas.
+    const actorProfile = (req as any).adminProfile as { permissions: string[] } | undefined;
+    const actorPerms = new Set(actorProfile?.permissions ?? []);
+    const forbidden = (permissions as string[]).filter((p: string) => !actorPerms.has(p));
+    if (forbidden.length > 0) {
+      secureLogger.warn('ADMIN_ROLE_ESCALATION_ATTEMPT', {
+        actorId: currentUser.id,
+        targetAdminId: adminId,
+        requestedRole: role,
+        forbidden,
+      });
+      return res.status(403).json({
+        error: `Le rôle ${role} contient des droits que vous ne possédez pas.`,
+        forbidden,
+      });
+    }
+
+    // F02 — Lire l'état avant update pour le diff d'audit.
+    const beforeProfile = await prisma.adminProfile.findUnique({
+      where: { userId: adminId },
+      select: { permissions: true },
+    });
+    const before = (beforeProfile?.permissions ?? []) as string[];
+
     // Mettre à jour les permissions
     const adminProfile = await prisma.adminProfile.upsert({
       where: { userId: adminId },
@@ -747,6 +901,16 @@ adminRouter.patch(
       }
     });
 
+    // F02 — Enrichir l'audit trail avec le diff before/after.
+    const after = adminProfile.permissions as string[];
+    res.locals.auditMetadata = {
+      before,
+      after,
+      added: after.filter((p: string) => !before.includes(p)),
+      removed: before.filter((p: string) => !after.includes(p)),
+      appliedRole: role,
+    };
+
     return res.json(adminProfile);
   } catch (error) {
     // Don't log validation errors (400) - they are expected client errors
@@ -762,6 +926,7 @@ adminRouter.patch(
 // ✅ NOUVEAU : Gérer les IPs autorisées pour un admin
 adminRouter.patch(
   '/admins/:id/allowed-ips',
+  adminWriteLimiter,
   requirePermissions('permissions.manage'),
   requireAdminStepUp,
   audit('admin:allowed-ips:update', (req) => `admin:${req.params.id}`),
@@ -1053,6 +1218,8 @@ adminRouter.post(
       reportCreatedAt: report.createdAt.toISOString()
     };
 
+    const reviewingAdminId = (req as any).user?.id as string | undefined;
+
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       if (action === 'ban' && targetUser) {
         await tx.user.update({
@@ -1064,7 +1231,15 @@ adminRouter.post(
         await tx.refreshToken.deleteMany({ where: { userId: targetUser.id } });
       }
 
-      await tx.profileReport.delete({ where: { id: reportId } });
+      // F07 — Mark as reviewed instead of deleting: preserves audit trail, fixes pending counter
+      await tx.profileReport.update({
+        where: { id: reportId },
+        data: {
+          reviewedAt: new Date(),
+          reviewedByAdminId: reviewingAdminId ?? null,
+          reviewedAction: action,
+        }
+      });
     });
 
     // P0 GAP4 FIX: Invalidate session cache and disconnect WS for banned users
@@ -1092,7 +1267,7 @@ adminRouter.post(
 
 adminRouter.get(
   '/alerts',
-  requirePermissions('system.configure'),
+  requirePermissions('system.monitor'), // F05: read-only, safe for monitor role
   audit('admin:alerts:list', () => 'admin:alerts:list'),
   async (req, res) => {
     try {
@@ -1112,6 +1287,7 @@ adminRouter.get(
 
 adminRouter.post(
   '/alerts',
+  adminAlertCreateLimiter,
   requirePermissions('system.configure'),
   audit('admin:alerts:create', () => 'admin:alerts:create'),
   async (req, res) => {
@@ -1448,7 +1624,7 @@ adminRouter.get(
 
 adminRouter.get(
   '/security/logs/summary',
-  requirePermissions('system.configure'),
+  requirePermissions('system.monitor'), // F05: aggregate summary, no per-user PII
   audit('admin:security:logs:summary', () => 'admin:security:logs:summary'),
   async (req, res) => {
     try {
@@ -1518,7 +1694,7 @@ function pseudonymizeIP(ip: string | null): string {
   return 'xxx.xxx.xxx.xxx'; // Fallback
 }
 
-// Rate limiting pour endpoints admin sécurité
+// Rate limiting pour endpoints admin sécurité (login-attempts)
 const adminSecurityRateLimit = createRateLimiter('ADMIN');
 
 // Schema de validation pour l'endpoint /security/login-attempts
@@ -1674,7 +1850,7 @@ adminRouter.get(
 // Rapport de conformité RGPD
 adminRouter.get(
   '/gdpr/compliance-report',
-  requirePermissions('system.configure'),
+  requirePermissions('system.monitor'), // F05: aggregate compliance metrics, no per-user PII
   audit('admin:gdpr:report', () => 'admin:gdpr:report'),
   async (req, res) => {
   try {
@@ -1722,13 +1898,29 @@ adminRouter.get(
   }
 });
 
+// Schéma de confirmation obligatoire pour la purge RGPD (F06).
+// La chaîne exacte doit être fournie côté client — empêche déclenchement accidentel.
+const runPurgeSchema = z.object({
+  confirm: z.literal('CONFIRMER_PURGE_RGPD'),
+});
+
 // Exécution manuelle de la purge RGPD
 adminRouter.post(
   '/gdpr/run-purge',
+  adminGdprPurgeLimiter,
   requirePermissions('system.configure'),
   requireAdminStepUp,
   audit('admin:gdpr:run-purge', () => 'gdpr:purge'),
   async (req, res) => {
+  // F06 — Confirmation explicite requise. Irréversible.
+  const parsed = runPurgeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: 'Confirmation requise.',
+      hint: 'Envoyez { "confirm": "CONFIRMER_PURGE_RGPD" } dans le body.',
+    });
+  }
+
   try {
     const startedAt = Date.now();
     const result = await gdprPurgeService.performFullPurge();
@@ -1845,7 +2037,7 @@ adminRouter.get(
 // GDPR Exports Monitoring Dashboard
 adminRouter.get(
   '/gdpr/exports',
-  requirePermissions('system.configure'),
+  requirePermissions('system.monitor'), // F05: aggregate exports dashboard, no per-user PII
   audit('admin:gdpr:exports', () => 'admin:gdpr:exports'),
   async (req, res) => {
   try {

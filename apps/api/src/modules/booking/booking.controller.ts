@@ -390,32 +390,6 @@ bookingRouter.post('/requests/:id/decision', ensureRole('PRO'), async (req: Auth
   }
 });
 
-bookingRouter.post(
-  '/bookings/manual',
-  requireAdmin,
-  requirePermissions('bookings.manage'),
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const schema = z.object({
-        availabilityId: z.string().uuid(),
-        riderUserId:    z.string().uuid(),
-      });
-      const body = schema.parse(req.body);
-      const current = req.user;
-      if (!current) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-      const booking = await bookingService.addManualBooking(current.id, body);
-      return res.status(201).json(booking);
-    } catch (error: unknown) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: 'Invalid input', details: error.errors });
-      }
-      const status = getErrorStatus(error);
-      return res.status(status).json({ error: getErrorMessage(error) });
-    }
-  }
-);
 
 bookingRouter.get('/bookings/me', ensureRole('PRO'), async (req: AuthenticatedRequest, res: Response) => {
   try {

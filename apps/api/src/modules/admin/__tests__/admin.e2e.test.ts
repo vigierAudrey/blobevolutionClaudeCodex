@@ -411,7 +411,7 @@ describe('Admin Controller', () => {
       .post('/admin/gdpr/run-purge')
       .set('Authorization', `Bearer ${adminToken}`)
       .set('X-CSRF-Token', csrf)
-      .send({})
+      .send({ confirm: 'CONFIRMER_PURGE_RGPD' })   // F06 — confirmation obligatoire
       .expect(200);
 
     expect(response.body).toMatchObject({
@@ -431,6 +431,35 @@ describe('Admin Controller', () => {
     expect(purgeSpy).toHaveBeenCalled();
     expect(log).toBeTruthy();
     purgeSpy.mockRestore();
+  });
+
+  // F06 — Tests négatifs : sans confirmation ou mauvaise chaîne → 400
+  it('F06 — POST /admin/gdpr/run-purge sans body → 400', async () => {
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    const res = await agent
+      .post('/admin/gdpr/run-purge')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({})
+      .expect(400);
+
+    expect(res.body.error).toBe('Confirmation requise.');
+  });
+
+  it('F06 — POST /admin/gdpr/run-purge avec mauvaise chaîne → 400', async () => {
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    const res = await agent
+      .post('/admin/gdpr/run-purge')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({ confirm: 'oui' })
+      .expect(400);
+
+    expect(res.body.error).toBe('Confirmation requise.');
   });
 
   it('allows admins to unblock and block conversations on demand', async () => {
@@ -609,5 +638,206 @@ describe('Admin Controller', () => {
       .get('/admin/analytics/engagement?period=7d')
       .set('Authorization', `Bearer ${riderToken}`)
       .expect(403);
+  });
+
+  // ─── F03: lat/lng absents de GET /admin/users/:id ───────────────────────────
+
+  it('F03 — GET /admin/users/:id ne fuit pas lat/lng, expose hasLocation', async () => {
+    const res = await request(app)
+      .get(`/admin/users/${targetId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const { user } = res.body as { user: Record<string, unknown> };
+
+    // riderProfile: pas de lat/lng, mais hasLocation présent
+    const riderProfile = user.riderProfile as Record<string, unknown> | null;
+    expect(riderProfile).toBeTruthy();
+    expect(riderProfile!.lat).toBeUndefined();
+    expect(riderProfile!.lng).toBeUndefined();
+    expect(typeof riderProfile!.hasLocation).toBe('boolean');
+
+    // lastSearch: pas de lat/lng si présent
+    if (user.lastSearch) {
+      const lastSearch = user.lastSearch as Record<string, unknown>;
+      expect(lastSearch.lat).toBeUndefined();
+      expect(lastSearch.lng).toBeUndefined();
+    }
+  });
+
+  it('F03 — GET /admin/users/:id pro ne fuit pas lat/lng, expose hasLocation', async () => {
+    const res = await request(app)
+      .get(`/admin/users/${proId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const { user } = res.body as { user: Record<string, unknown> };
+    const proProfile = user.proProfile as Record<string, unknown> | null;
+    expect(proProfile).toBeTruthy();
+    expect(proProfile!.lat).toBeUndefined();
+    expect(proProfile!.lng).toBeUndefined();
+    expect(typeof proProfile!.hasLocation).toBe('boolean');
+    // Le pro a été seedé avec lat=43.5, lng=-1.5 → hasLocation doit être true
+    expect(proProfile!.hasLocation).toBe(true);
+  });
+
+  // ─── F05: system.monitor séparé de system.configure ────────────────────────
+
+  it('F05 — admin avec system.monitor peut lire GET /alerts, refusé pour POST /alerts', async () => {
+    // Créer un admin avec seulement system.monitor
+    const monitorUser = await prisma.user.create({
+      data: { email: 'monitor-only@test.com', password: 'hash', role: 'ADMIN', emailVerified: true }
+    });
+    await prisma.adminProfile.create({
+      data: { userId: monitorUser.id, displayName: 'Monitor Only', permissions: ['system.monitor'] }
+    });
+    const monitorToken = jwt.sign({ sub: monitorUser.id, role: 'ADMIN' }, process.env.JWT_SECRET!, { expiresIn: '1h' });
+
+    try {
+      // GET /alerts → 200 avec system.monitor
+      await request(app)
+        .get('/admin/alerts')
+        .set('Authorization', `Bearer ${monitorToken}`)
+        .expect(200);
+
+      // POST /alerts → 403 sans system.configure
+      const agent = request.agent(app);
+      const csrf = await getCsrf(agent);
+      await agent
+        .post('/admin/alerts')
+        .set('Authorization', `Bearer ${monitorToken}`)
+        .set('X-CSRF-Token', csrf)
+        .send({ type: 'test', message: 'test alert', severity: 'INFO' })
+        .expect(403);
+
+      // GET /gdpr/compliance-report → 200 avec system.monitor
+      await request(app)
+        .get('/admin/gdpr/compliance-report')
+        .set('Authorization', `Bearer ${monitorToken}`)
+        .expect(200);
+
+      // POST /gdpr/run-purge → 403 sans system.configure
+      await agent
+        .post('/admin/gdpr/run-purge')
+        .set('Authorization', `Bearer ${monitorToken}`)
+        .set('X-CSRF-Token', csrf)
+        .send({ confirm: 'CONFIRMER_PURGE_RGPD' })
+        .expect(403);
+    } finally {
+      await prisma.adminProfile.deleteMany({ where: { userId: monitorUser.id } });
+      await prisma.user.delete({ where: { id: monitorUser.id } });
+    }
+  });
+
+  it('F05 — SUPER_ADMIN conserve system.configure et system.monitor', async () => {
+    // AVAILABLE_PERMISSIONS importé en tête du fichier
+    expect(AVAILABLE_PERMISSIONS).toContain('system.monitor');
+    expect(AVAILABLE_PERMISSIONS).toContain('system.configure');
+
+    // Le token admin courant a tous les droits → accès aux deux catégories
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    // system.monitor
+    await request(app)
+      .get('/admin/alerts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    // system.configure (write)
+    const created = await agent
+      .post('/admin/alerts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({ type: 'test:f05', message: 'Test F05', severity: 'INFO' })
+      .expect(201);
+
+    expect(created.body.id).toBeTruthy();
+  });
+
+  // ─── F07: compteurs reports + mark reviewed ─────────────────────────────────
+
+  it('F07 — GET /admin/reports retourne summary.pending et summary.reviewed', async () => {
+    const res = await request(app)
+      .get('/admin/reports?page=1&limit=20')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(res.body.summary).toBeDefined();
+    expect(typeof res.body.summary.pending).toBe('number');
+    expect(typeof res.body.summary.reviewed).toBe('number');
+    // Le report seedé est pending (reviewedAt IS NULL)
+    expect(res.body.summary.pending).toBeGreaterThanOrEqual(1);
+  });
+
+  it('F07 — POST /reports/:id/action "dismiss" marque reviewedAt, ne supprime plus le report', async () => {
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    await agent
+      .post(`/admin/reports/${reportId}/action`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({ action: 'dismiss' })
+      .expect(200);
+
+    // Le report doit toujours exister en DB, avec reviewedAt renseigné
+    const report = await prisma.profileReport.findUnique({ where: { id: reportId } });
+    expect(report).not.toBeNull();
+    expect(report!.reviewedAt).not.toBeNull();
+    expect(report!.reviewedAction).toBe('dismiss');
+  });
+
+  it('F07 — le compteur pending diminue après modération, reviewed augmente', async () => {
+    // Avant action: 1 report pending
+    const before = await request(app)
+      .get('/admin/reports')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const pendingBefore = before.body.summary.pending as number;
+    const reviewedBefore = before.body.summary.reviewed as number;
+
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+    await agent
+      .post(`/admin/reports/${reportId}/action`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({ action: 'approve' })
+      .expect(200);
+
+    // Après action
+    const after = await request(app)
+      .get('/admin/reports')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(after.body.summary.pending).toBe(pendingBefore - 1);
+    expect(after.body.summary.reviewed).toBe(reviewedBefore + 1);
+  });
+
+  it('F07 — GET /admin/stats retourne uniquement les reports en attente', async () => {
+    // Le report seedé est pending
+    const stats = await request(app)
+      .get('/admin/stats')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const pendingFromStats = stats.body.reportedProfiles as number;
+
+    // Traiter le report
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+    await agent
+      .post(`/admin/reports/${reportId}/action`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({ action: 'dismiss' })
+      .expect(200);
+
+    // Après traitement, le compteur doit baisser
+    const statsAfter = await request(app)
+      .get('/admin/stats')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(statsAfter.body.reportedProfiles).toBe(pendingFromStats - 1);
   });
 });

@@ -143,6 +143,9 @@ jobs:
           echo "✅ Security check passed: No forbidden flags detected."
           echo "   ALLOW_ACCEPT_DATA_LOSS: ${ALLOW_ACCEPT_DATA_LOSS:-not set}"
 
+      - name: Booking status mutation guards (filet complémentaire — ne remplace pas la revue de code)
+        run: bash scripts/check-booking-status-mutations.sh
+
   lint:
     needs: security-guard
     name: Lint

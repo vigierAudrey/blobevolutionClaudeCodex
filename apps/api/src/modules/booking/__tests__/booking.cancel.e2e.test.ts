@@ -11,10 +11,7 @@
  * - booking inexistant → 404
  * - fenêtre temporelle : rider bloqué si leçon < cutoff
  * - pro non soumis à la fenêtre
- * - addManualBooking refusé au PRO
- * - addManualBooking refusé si riderUserId = PRO
- * - addManualBooking refusé si riderUserId inexistant
- * - addManualBooking autorisé ADMIN + bookings.manage
+ * - POST /bookings/manual supprimé → 404 pour tous les appelants (décision produit 2026-03-24)
  * - createRequest refusé si availability CLOSED
  * - createRequest refusé si availability inexistante
  * - createRequest refusé si self-booking
@@ -343,53 +340,34 @@ describe('POST /booking/bookings/:id/cancel — fenêtre temporelle', () => {
   });
 });
 
-// ─── 5. addManualBooking — authz admin ───────────────────────────────────────
+// ─── 5. POST /bookings/manual — route supprimée (décision produit 2026-03-24) ─
+// La capacité de création manuelle admin a été supprimée.
+// La route ne doit plus exister pour aucun appelant.
 
-describe('POST /booking/bookings/manual — authz admin', () => {
-  it('refusé au PRO — 403', async () => {
-    const avail = await createAvailability();
+describe('POST /booking/bookings/manual — route supprimée', () => {
+  it('404 pour un PRO authentifié', async () => {
     await proSession
       .post('/booking/bookings/manual')
       .set('Authorization', `Bearer ${proToken}`)
-      .send({ availabilityId: avail.id, riderUserId: riderId })
-      .expect(403);
+      .send({ availabilityId: '00000000-0000-0000-0000-000000000001', riderUserId: riderId })
+      .expect(404);
   });
 
-  it('refusé si riderUserId est un PRO (rôle non-RIDER) — 422', async () => {
-    const avail = await createAvailability();
-    const session = await createTestSession(app);
-    const res = await session
+  it('404 pour un RIDER authentifié', async () => {
+    await riderSession
       .post('/booking/bookings/manual')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availabilityId: avail.id, riderUserId: proId })
-      .expect(422);
-
-    expect(res.body.error).toMatch(/not an active rider/i);
+      .set('Authorization', `Bearer ${riderToken}`)
+      .send({ availabilityId: '00000000-0000-0000-0000-000000000001', riderUserId: riderId })
+      .expect(404);
   });
 
-  it('refusé si riderUserId inexistant — 422', async () => {
-    const avail = await createAvailability();
+  it('404 pour un ADMIN avec bookings.manage', async () => {
     const session = await createTestSession(app);
-    const res = await session
+    await session
       .post('/booking/bookings/manual')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availabilityId: avail.id, riderUserId: '00000000-0000-0000-0000-000000000000' })
-      .expect(422);
-
-    expect(res.body.error).toMatch(/not an active rider/i);
-  });
-
-  it('admin avec bookings.manage peut créer un booking manuel — 201', async () => {
-    const avail = await createAvailability();
-    const session = await createTestSession(app);
-    const res = await session
-      .post('/booking/bookings/manual')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availabilityId: avail.id, riderUserId: riderId })
-      .expect(201);
-
-    expect(res.body.id).toBeTruthy();
-    expect(res.body.status).toBe('CONFIRMED');
+      .send({ availabilityId: '00000000-0000-0000-0000-000000000001', riderUserId: riderId })
+      .expect(404);
   });
 });
 

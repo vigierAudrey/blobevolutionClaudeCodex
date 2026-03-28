@@ -38,10 +38,6 @@ type NearbyProSearchRow = {
   hasRequestedSport: boolean | null;
 };
 
-type ManualBookingInput = {
-  availabilityId: string;
-  riderUserId: string;
-};
 
 const availabilityInteractionSelect = {
   eventType: true,
@@ -1103,52 +1099,6 @@ export class BookingService {
     return { success: true, action };
   }
 
-  async addManualBooking(adminId: string, data: ManualBookingInput) {
-    // Vérification rider : le riderUserId doit être un RIDER existant
-    const rider = await prisma.user.findUnique({
-      where: { id: data.riderUserId },
-      select: { id: true, role: true },
-    });
-    if (!rider || rider.role !== 'RIDER') {
-      throw Object.assign(new Error('Target user is not an active rider'), { status: 422 });
-    }
-
-    try {
-      return await withTransactionRetry(async () => {
-        return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-          const availability = await this.lockAvailabilityForBooking(tx, data.availabilityId);
-
-          if (!availability) {
-            throw Object.assign(new Error('Availability not found'), { status: 404 });
-          }
-
-          const { nextBookedCount, nextStatus } = await this.computeNextCapacityState(tx, availability);
-
-          const booking = await tx.booking.create({
-            data: {
-              availabilityId: data.availabilityId,
-              riderUserId: data.riderUserId,
-            },
-          });
-
-          await tx.proAvailability.update({
-            where: { id: data.availabilityId },
-            data: {
-              bookedCount: nextBookedCount,
-              status: nextStatus,
-            },
-          });
-
-          return booking;
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-      }, 7, 150);
-    } catch (error) {
-      if (this.isBookingRequestUniqueViolation(error)) {
-        throw Object.assign(new Error('Booking already exists'), { status: 409 });
-      }
-      throw error;
-    }
-  }
 
   async listProBookings(proUserId: string) {
     return bookingRepository.listBookings({

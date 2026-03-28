@@ -5,7 +5,7 @@
 # Détecte les glissements naïfs les plus courants :
 #   - booking.update() avec status: en dehors de cancelBookingInTx
 #   - adjustBookedCount accessible au PRO
-#   - addManualBooking accessible au PRO
+#   - réintroduction de POST /bookings/manual (capacité admin supprimée, décision produit)
 #
 # Bypassable par renommage de méthode ou reformulation du code.
 # La vraie protection est : cancelBookingInTx comme point unique + tests e2e + revue PR.
@@ -61,14 +61,14 @@ if [ -n "$ADJ_PRO" ]; then
   fi
 fi
 
-# ── 3. addManualBooking accessible au PRO ─────────────────────────────────────
+# ── 3. POST /bookings/manual ne doit plus exister (décision produit 2026-03-24) ─
+# La capacité de création manuelle admin a été supprimée.
+# Si elle réapparaît dans le controller, le CI échoue.
 MAN_LINE=$(grep -n "bookings/manual" "$CONTROLLER" | head -1 | cut -d: -f1 || true)
 if [ -n "$MAN_LINE" ]; then
-  CONTEXT=$(sed -n "$((MAN_LINE > 5 ? MAN_LINE - 5 : 1)),${MAN_LINE}p" "$CONTROLLER")
-  if echo "$CONTEXT" | grep -q "ensureRole('PRO')"; then
-    echo "❌ addManualBooking is accessible to PRO role — must be ADMIN + bookings.manage only"
-    ERRORS=$((ERRORS + 1))
-  fi
+  echo "❌ POST /bookings/manual found in controller — this route was removed (product decision: no admin manual booking)"
+  echo "   Line: $MAN_LINE"
+  ERRORS=$((ERRORS + 1))
 fi
 
 # ── Résultat ─────────────────────────────────────────────────────────────────

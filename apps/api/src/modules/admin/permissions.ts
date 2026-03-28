@@ -12,7 +12,7 @@ export const AVAILABLE_PERMISSIONS = [
   // system.configure: write/destructive ops + per-user PII endpoints (purge, legal archive, audit logs, security events)
   'system.monitor',
   'system.configure',
-  // bookings.manage: manual booking creation (ADMIN) + bookedCount adjustment — restricted to trusted admins only
+  // bookings.manage: bookedCount adjustment (ADMIN correction outil ops) — restricted to trusted admins only
   'bookings.manage',
 ] as const;
 
