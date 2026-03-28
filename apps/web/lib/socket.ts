@@ -46,14 +46,6 @@ export function reconnectSocket(): void {
 }
 
 /**
- * @deprecated Utiliser reconnectSocket().
- * Conservé pour compatibilité — le token passé est ignoré (cookie-only auth).
- */
-export function reconnectSocketWithNewToken(_newToken: string): void {
-  reconnectSocket();
-}
-
-/**
  * Déconnecte le socket
  */
 export function disconnectSocket() {

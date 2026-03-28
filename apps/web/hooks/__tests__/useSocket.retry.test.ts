@@ -39,7 +39,7 @@ describe('useSocket retry logic', () => {
     };
 
     (socketLib.getSocket as jest.Mock).mockReturnValue(mockSocket);
-    (socketLib.reconnectSocketWithNewToken as jest.Mock).mockImplementation(() => {});
+    (socketLib.reconnectSocket as jest.Mock).mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -52,17 +52,11 @@ describe('useSocket retry logic', () => {
       .mockResolvedValueOnce(true) // First call succeeds
       .mockResolvedValueOnce(true); // Second call (should NOT happen)
 
-    const mockGetTokens = jest.fn().mockReturnValue({
-      accessToken: 'new-token-123',
-      refreshToken: 'refresh-token-456'
-    });
-
     (apiClient.refreshToken as jest.Mock) = mockRefreshToken;
-    (apiClient.getTokens as jest.Mock) = mockGetTokens;
 
     // Render hook with autoConnect
     renderHook(() => useSocket({
-      token: 'old-token',
+      token: 'session-hint',
       autoConnect: true
     }));
 
@@ -91,18 +85,14 @@ describe('useSocket retry logic', () => {
 
     // Assert: refreshToken should still be called only once
     expect(mockRefreshToken).toHaveBeenCalledTimes(1);
-    expect(socketLib.reconnectSocketWithNewToken).toHaveBeenCalledTimes(1);
+    expect(socketLib.reconnectSocket).toHaveBeenCalledTimes(1);
+    expect(apiClient.getTokens).not.toHaveBeenCalled();
   });
 
   it('should reset retry flag on successful connection', async () => {
     const mockRefreshToken = jest.fn().mockResolvedValue(true);
-    const mockGetTokens = jest.fn().mockReturnValue({
-      accessToken: 'new-token',
-      refreshToken: 'refresh-token'
-    });
 
     (apiClient.refreshToken as jest.Mock) = mockRefreshToken;
-    (apiClient.getTokens as jest.Mock) = mockGetTokens;
 
     let connectHandler: (() => void) | null = null;
 
@@ -116,7 +106,7 @@ describe('useSocket retry logic', () => {
 
     // Render hook
     renderHook(() => useSocket({
-      token: 'token',
+      token: 'session-hint',
       autoConnect: true
     }));
 
@@ -149,6 +139,8 @@ describe('useSocket retry logic', () => {
     await waitFor(() => {
       expect(mockRefreshToken).toHaveBeenCalledTimes(2);
     }, { timeout: 1000 });
+    expect(socketLib.reconnectSocket).toHaveBeenCalledTimes(2);
+    expect(apiClient.getTokens).not.toHaveBeenCalled();
   });
 
   it('should not trigger concurrent refresh if errors arrive rapidly', async () => {
@@ -157,17 +149,11 @@ describe('useSocket retry logic', () => {
       new Promise(resolve => setTimeout(() => resolve(true), 200))
     );
 
-    const mockGetTokens = jest.fn().mockReturnValue({
-      accessToken: 'new-token',
-      refreshToken: 'refresh-token'
-    });
-
     (apiClient.refreshToken as jest.Mock) = mockRefreshToken;
-    (apiClient.getTokens as jest.Mock) = mockGetTokens;
 
     // Render hook
     renderHook(() => useSocket({
-      token: 'token',
+      token: 'session-hint',
       autoConnect: true
     }));
 
@@ -189,8 +175,7 @@ describe('useSocket retry logic', () => {
 
     // Assert: refreshToken should be called only once (concurrent guard works)
     expect(mockRefreshToken).toHaveBeenCalledTimes(1);
-    // Guard: reconnectSocketWithNewToken should be called only ONCE (not twice)
-    // Second handler awaits same Promise and uses lastReconnectedTokenRef guard
-    expect(socketLib.reconnectSocketWithNewToken).toHaveBeenCalledTimes(1);
+    expect(socketLib.reconnectSocket).toHaveBeenCalledTimes(2);
+    expect(apiClient.getTokens).not.toHaveBeenCalled();
   });
 });

@@ -106,7 +106,7 @@ npm run build
 - `docs/REPRISE.md` - ce fichier
 
 ### Modifiés
-- `lib/socket.ts` - reconnectSocketWithNewToken() + currentToken
+- `lib/socket.ts` - reconnectSocket() cookie-only
 - `lib/apiClient.ts` - expose refreshToken pour WebSocket
 - `hooks/useSocket.ts` - guard double reconnect + isAuthConnectError()
 - `hooks/useChat.ts` - ACK callbacks + lastError UI

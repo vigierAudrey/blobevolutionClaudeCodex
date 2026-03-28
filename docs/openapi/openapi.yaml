@@ -1349,37 +1349,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-  /booking/bookings/manual:
-    post:
-      tags: [Booking]
-      summary: Ajoute une réservation manuelle (PRO)
-      operationId: bookingManual
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                availabilityId:
-                  type: string
-                  format: uuid
-                riderUserId:
-                  type: string
-                  format: uuid
-      responses:
-        '201':
-          description: Réservation créée
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Booking'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
   /booking/bookings/me:
     get:
       tags: [Booking]
