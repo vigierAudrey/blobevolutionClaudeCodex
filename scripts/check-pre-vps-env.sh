@@ -122,10 +122,13 @@ forbidden_value "S3_ACCESS_KEY_ID" "minioadmin"
 forbidden_value "S3_SECRET_ACCESS_KEY" "minioadmin"
 
 # ─── Observabilité ────────────────────────────────────────────────────────────
-# METRICS_INTERNAL_TOKEN requis : le smoke test l'utilise pour /internal/metrics.
-# Sans lui, les checks Redis et security/health sont skippés silencieusement.
+# METRICS_INTERNAL_TOKEN : smoke test l'utilise pour /internal/metrics (X-Internal-Token).
 require_var "METRICS_INTERNAL_TOKEN" 16
 forbidden_value "METRICS_INTERNAL_TOKEN" "CHANGEME_metrics_token_32chars_minimum"
+# SECURITY_MONITOR_TOKEN : smoke test l'utilise pour /security/health (X-Security-Monitor-Token).
+# Header distinct de METRICS_INTERNAL_TOKEN — ne pas confondre.
+require_var "SECURITY_MONITOR_TOKEN" 16
+forbidden_value "SECURITY_MONITOR_TOKEN" "CHANGEME_security_monitor_token_32chars"
 
 # ─── Frontend ─────────────────────────────────────────────────────────────────
 echo "--- Frontend ---"

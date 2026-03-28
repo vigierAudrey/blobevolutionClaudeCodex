@@ -104,7 +104,8 @@ fi
 COOKIE_A=$(mktemp)
 COOKIE_B=$(mktemp)
 COOKIE_RL=$(mktemp)   # Rate-limit test cookie jar
-trap 'rm -f "$COOKIE_A" "$COOKIE_B" "$COOKIE_RL"' EXIT
+HEADERS_A=$(mktemp)   # Dump des headers du login rider A (évite 3 appels redondants)
+trap 'rm -f "$COOKIE_A" "$COOKIE_B" "$COOKIE_RL" "$HEADERS_A"' EXIT
 
 # ─── [1] API liveness ─────────────────────────────────────────────────────────
 echo "--- [1] API liveness ---"
@@ -113,11 +114,13 @@ check "GET /health → 200" "$S" "200"
 
 # ─── [2] API security health ──────────────────────────────────────────────────
 echo "--- [2] API security health ---"
-if [ -n "${METRICS_INTERNAL_TOKEN:-}" ]; then
-  B=$(http_body -H "X-Internal-Token: $METRICS_INTERNAL_TOKEN" "$API/security/health")
+# Header correct : X-Security-Monitor-Token (≠ X-Internal-Token du endpoint /internal/metrics)
+# Env var : SECURITY_MONITOR_TOKEN (indépendant de METRICS_INTERNAL_TOKEN)
+if [ -n "${SECURITY_MONITOR_TOKEN:-}" ]; then
+  B=$(http_body -H "X-Security-Monitor-Token: $SECURITY_MONITOR_TOKEN" "$API/security/health")
   check_contains "GET /security/health contient status" "$B" '"status"'
 else
-  echo "  SKIP /security/health (METRICS_INTERNAL_TOKEN absent)"
+  echo "  SKIP /security/health (SECURITY_MONITOR_TOKEN absent)"
 fi
 
 # ─── [3] Frontend liveness ────────────────────────────────────────────────────
@@ -127,12 +130,14 @@ check "GET web / → pas 5xx" "$([ "$S" -lt 500 ] 2>/dev/null && echo ok || echo
 
 # ─── [4] Redis actif ──────────────────────────────────────────────────────────
 echo "--- [4] Redis actif ---"
-if [ -n "${METRICS_INTERNAL_TOKEN:-}" ]; then
-  B=$(http_body -H "X-Internal-Token: $METRICS_INTERNAL_TOKEN" "$API/internal/metrics")
-  REDIS_OK=$(echo "$B" | jq -r '.redis.connected // false' 2>/dev/null || echo "false")
-  check "Redis connected=true dans /internal/metrics" "$REDIS_OK" "true"
+# Preuve directe : redis-cli ping dans le conteneur (pas d'assertion sur contrat API inexistant).
+# /internal/metrics ne contient pas de champ .redis.connected — ce champ n'existe pas.
+if command -v docker >/dev/null 2>&1; then
+  REDIS_PONG=$(docker compose -f docker-compose.pre-vps.yml exec -T redis \
+    redis-cli -a "${REDIS_PASSWORD:-}" ping 2>/dev/null | tr -d '\r\n' || echo "")
+  check "Redis répond PONG" "$REDIS_PONG" "PONG"
 else
-  echo "  SKIP Redis check (METRICS_INTERNAL_TOKEN absent)"
+  echo "  SKIP Redis ping (docker absent)"
 fi
 
 # ─── [5] HTTPS + cookie Secure ────────────────────────────────────────────────
@@ -161,35 +166,24 @@ if [ -z "$CSRF_A" ]; then
 fi
 
 # Étape 2: login avec cookie session + CSRF token
+# Un seul appel curl : body en stdout, headers en $HEADERS_A (-D), cookies mis à jour (-c/-b).
+# Évite 3 appels redondants qui consomment le rate-limit inutilement (ST-P1-C).
 # shellcheck disable=SC2086
 LOGIN_A=$(curl -sk $CURL_RESOLVE \
   -c "$COOKIE_A" -b "$COOKIE_A" \
+  -D "$HEADERS_A" \
   -X POST "$API/auth/login" \
   -H "Content-Type: application/json" \
   -H "Origin: https://app.blobinfini.local" \
   -H "X-CSRF-Token: $CSRF_A" \
   -d "{\"email\":\"$RIDER_A_EMAIL\",\"password\":\"$RIDER_A_PASS\"}")
 
-# shellcheck disable=SC2086
-LOGIN_A_STATUS=$(curl -sk $CURL_RESOLVE -o /dev/null -w "%{http_code}" \
-  -b "$COOKIE_A" \
-  -X POST "$API/auth/login" \
-  -H "Content-Type: application/json" \
-  -H "Origin: https://app.blobinfini.local" \
-  -H "X-CSRF-Token: $CSRF_A" \
-  -d "{\"email\":\"$RIDER_A_EMAIL\",\"password\":\"$RIDER_A_PASS\"}")
+LOGIN_A_STATUS=$(grep "^HTTP" "$HEADERS_A" | tail -1 | awk '{print $2}' | tr -d '\r')
 check "POST /auth/login rider A → 200" "$LOGIN_A_STATUS" "200"
 check_contains "Réponse login A = ok" "$LOGIN_A" '"ok"'
 
-# Cookie Secure : vérifier via les headers en mode verbose
-# shellcheck disable=SC2086
-COOKIE_SECURE=$(curl -sk $CURL_RESOLVE -v \
-  -b "$COOKIE_A" \
-  -X POST "$API/auth/login" \
-  -H "Content-Type: application/json" \
-  -H "Origin: https://app.blobinfini.local" \
-  -H "X-CSRF-Token: $CSRF_A" \
-  -d "{\"email\":\"$RIDER_A_EMAIL\",\"password\":\"$RIDER_A_PASS\"}" 2>&1 | { grep -i "set-cookie" || true; } | head -3)
+# Cookie Secure : extraire depuis les headers déjà capturés (pas de 3e appel)
+COOKIE_SECURE=$(grep -i "set-cookie" "$HEADERS_A" || true)
 check_contains "Cookie Set-Cookie contient Secure" "$COOKIE_SECURE" "Secure"
 
 # Étape 3: acquérir CSRF post-login (session régénérée mais secret préservé)
@@ -247,9 +241,12 @@ MATCHING=$(http_body \
   -X POST "$API/matching/search" \
   -d '{"sport":"surf","level":"intermediate","date":"anytime","location":{"lat":43.4832,"lng":-1.5586},"distanceKm":100}')
 
-# Geo privacy : lat/lng des profils pas exposés dans les résultats
-check_not_contains "Matching résultats sans lat brut" "$MATCHING" '"lat":'
-check_not_contains "Matching résultats sans lng brut" "$MATCHING" '"lng":'
+# Geo privacy : vérifier uniquement dans results[] — pas dans les critères éventuellement
+# ré-échéés par l'API (la requête elle-même contient "lat" et "lng" dans location).
+# ST-P1-D : un scan du body entier détecterait les critères de recherche, pas une fuite.
+MATCHING_RESULTS=$(echo "$MATCHING" | jq '.results // []' 2>/dev/null || echo "[]")
+check_not_contains "Résultats matching sans lat brut" "$MATCHING_RESULTS" '"lat":'
+check_not_contains "Résultats matching sans lng brut" "$MATCHING_RESULTS" '"lng":'
 check_contains     "Matching contient results[]" "$MATCHING" '"results"'
 
 # ─── [12] Ouverture conversation ──────────────────────────────────────────────

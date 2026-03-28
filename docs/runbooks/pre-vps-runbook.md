@@ -83,19 +83,21 @@ Ces comptes sont créés par `seed.pre-vps.ts` avec des UUIDs **fixes** référe
 ## 4. Qualification smoke test
 
 ```bash
-# Lancer tous les checks (GO/NO-GO)
-./scripts/smoke-test.sh
+# Invocation correcte : exporter TOUTES les vars du .env.pre-vps avant de lancer.
+# Sans set -a, REDIS_PASSWORD et POSTGRES_PASSWORD sont absents du sous-process
+# ce qui fait échouer les checks [4] Redis et [16] Prisma migrate.
+set -a && source .env.pre-vps && set +a && bash scripts/smoke-test.sh
 
-# Résultat attendu :
-# === Smoke test pré-VPS BlobConnect ===
-# ...
-#   OK   GET /health → 200
-#   OK   Auth rider A → 200
-#   OK   Matching ne contient pas lat/lng brut
-#   OK   CORS : origine hostile rejetée
-#   ...
-# VERDICT : GO ✓
+# Résultat attendu : 22/22 — VERDICT : GO ✓
 ```
+
+> **Note re-run** : si vous relancez le smoke-test immédiatement après un premier passage,
+> le rate-limiter du endpoint `/csrf-token` peut être saturé → cascade de 403.
+> Attendre l'expiration de la fenêtre de rate-limit (≈ 1 minute) ou flusher Redis :
+> ```bash
+> REDIS_PASS=$(grep REDIS_PASSWORD .env.pre-vps | cut -d= -f2)
+> docker compose -f docker-compose.pre-vps.yml exec -T redis redis-cli -a "$REDIS_PASS" FLUSHDB
+> ```
 
 Si un check échoue, voir la section Diagnostic ci-dessous.
 
