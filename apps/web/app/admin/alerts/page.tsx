@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiClient, type SystemAlert } from '@/lib/apiClient';
-import { ArrowLeft, Check, Clock3 } from 'lucide-react';
+import { ArrowLeft, Check, Clock3, ExternalLink } from 'lucide-react';
 
 const STATUS_OPTIONS = [
   { value: 'OPEN', label: 'Ouvertes' },
@@ -29,6 +29,39 @@ const SEVERITY_COLORS: Record<SystemAlert['severity'], string> = {
 
 type StatusFilter = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
 type SeverityFilter = 'INFO' | 'WARNING' | 'CRITICAL' | 'ALL';
+
+// F13 — label du lien selon la destination
+function alertLinkLabel(link: string): string {
+  if (/log/i.test(link)) return 'Voir les logs associés';
+  return 'Voir les détails';
+}
+
+// F12 — affichage de l'historique des occurrences
+function OccurrenceInfo({ alert }: { alert: SystemAlert }) {
+  const count = alert.occurrenceCount ?? 1;
+  const first = alert.firstSeenAt ? new Date(alert.firstSeenAt) : null;
+  const last  = alert.lastSeenAt  ? new Date(alert.lastSeenAt)  : null;
+
+  if (count <= 1 && !first) return null;
+
+  const fmt = (d: Date) => d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-0.5">
+      {count > 1 && (
+        <span className="font-medium text-foreground">
+          {count} occurrence{count > 1 ? 's' : ''}
+        </span>
+      )}
+      {first && (
+        <span>Première : {fmt(first)}</span>
+      )}
+      {last && count > 1 && (
+        <span>Dernière : {fmt(last)}</span>
+      )}
+    </div>
+  );
+}
 
 export default function AdminAlertsPage() {
   const router = useRouter();
@@ -87,7 +120,7 @@ export default function AdminAlertsPage() {
       await apiClient.acknowledgeAlert(id);
       void loadAlerts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Impossible de mettre à jour l’alerte');
+      setError(err instanceof Error ? err.message : "Impossible de mettre à jour l'alerte");
     }
   };
 
@@ -96,7 +129,7 @@ export default function AdminAlertsPage() {
       await apiClient.resolveAlert(id);
       void loadAlerts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Impossible de mettre à jour l’alerte');
+      setError(err instanceof Error ? err.message : "Impossible de mettre à jour l'alerte");
     }
   };
 
@@ -185,24 +218,33 @@ export default function AdminAlertsPage() {
                   {new Date(alert.createdAt).toLocaleString('fr-FR')}
                 </p>
               </div>
-              <div>
+              <div className="space-y-1">
                 <p className="font-semibold">{alert.type}</p>
                 <p className="text-sm text-muted-foreground">{alert.message}</p>
+                {/* F12 — historique occurrences */}
+                <OccurrenceInfo alert={alert} />
+                {/* F13 — lien logs si disponible */}
                 {alert.link && (
-                  <Link href={alert.link} className="text-xs text-blue-600 underline" target="_blank" rel="noreferrer">
-                    Voir les détails
+                  <Link
+                    href={alert.link}
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 underline underline-offset-2"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {alertLinkLabel(alert.link)}
                   </Link>
                 )}
               </div>
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="text-xs text-muted-foreground">
-                  Statut : {alert.status}
+                  Statut : {alert.status === 'OPEN' ? 'Ouverte' : alert.status === 'ACKNOWLEDGED' ? 'Reconnue' : 'Résolue'}
                 </p>
                 <div className="flex gap-2">
                   {alert.status === 'OPEN' && (
                     <Button size="sm" variant="outline" onClick={() => handleAcknowledge(alert.id)}>
                       <Clock3 className="h-4 w-4 mr-1" />
-                      Reconnu
+                      Reconnaître
                     </Button>
                   )}
                   {alert.status !== 'RESOLVED' && (

@@ -306,6 +306,9 @@ export interface SystemAlert {
   acknowledgedAt?: string | null;
   resolvedAt?: string | null;
   createdBy?: { id: string; email: string | null } | null;
+  occurrenceCount?: number;
+  firstSeenAt?: string | null;
+  lastSeenAt?: string | null;
 }
 
 export interface SystemAlertListResponse {
