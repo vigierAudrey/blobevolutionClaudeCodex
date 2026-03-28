@@ -1,6 +1,6 @@
 node_modules/
 .env*
-!.env.example
+!.env*.example
 *.log
 dist/
 build/
@@ -16,3 +16,6 @@ apps/web/storybook-static/
 .vercel
 apps/web/.vercel
 apps/api/apps/
+
+# Pré-VPS : certs mkcert locaux (jamais commiter)
+docker/certs/pre-vps/
