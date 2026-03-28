@@ -44,8 +44,12 @@ export function resolveAccessToken(req: Request): AccessTokenResolution {
   let bearerToken: string | null = null;
   if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
     const candidate = auth.slice('Bearer '.length).trim();
-    // Legacy tests may still send "Bearer undefined"/"Bearer null".
-    bearerToken = candidate && candidate !== 'undefined' && candidate !== 'null' ? candidate : null;
+    // Ignore non-JWT-shaped strings: 'undefined', 'null', session hint '1', etc.
+    // A JWT always has exactly 3 dot-separated parts (header.payload.signature).
+    // Sending a non-JWT Bearer alongside a valid cookie would trigger the CONFLICT
+    // check below — ignoring it here lets the cookie path take over cleanly.
+    const isJwtShaped = candidate.split('.').length === 3;
+    bearerToken = isJwtShaped ? candidate : null;
   }
 
   const cookieToken = req.cookies?.accessToken;

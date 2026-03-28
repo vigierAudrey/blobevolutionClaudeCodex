@@ -448,8 +448,8 @@ export interface AdminUserDetail {
       maxDistanceKm: number | null;
       emailNotif: boolean;
       photoUrl: string | null;
-      lat: number | null;
-      lng: number | null;
+      /** F03: precise coordinates removed (RGPD minimisation) — use hasLocation for display */
+      hasLocation: boolean;
       wantsLesson: boolean;
       lessonSport: string | null;
       createdAt: string;
@@ -462,8 +462,8 @@ export interface AdminUserDetail {
       bio: string | null;
       pricePerHour: string | null;
       verified: boolean;
-      lat: number | null;
-      lng: number | null;
+      /** F03: precise coordinates removed (RGPD minimisation) — use hasLocation for display */
+      hasLocation: boolean;
       createdAt: string;
       updatedAt: string;
       offers: Array<{
@@ -486,8 +486,7 @@ export interface AdminUserDetail {
       sport: string;
       level: string;
       distanceKm: number | null;
-      lat: number | null;
-      lng: number | null;
+      // F03: lat/lng supprimés — inutiles pour l'admin, minimisation RGPD
       updatedAt: string;
     } | null;
   };
@@ -661,12 +660,13 @@ const SESSION_HINT_KEY = 'blob_session_hint';
 
 function getTokens() {
   if (typeof window === 'undefined') return null;
-  // Prefer explicit tokens stored in localStorage (backward compat with older sessions).
-  // Auth is also enforced via httpOnly cookies (credentials: 'include') on every request.
-  const accessToken = localStorage.getItem('accessToken');
-  if (!accessToken) return null;
-  const refreshToken = localStorage.getItem('refreshToken');
-  return { accessToken, refreshToken };
+  // Cookie-only auth: the actual tokens are httpOnly cookies, inaccessible to JS.
+  // Return a truthy presence marker when the session hint is set so pages can
+  // guard their renders without reading the real JWT.
+  // The hint ('1') is set by setTokens() after login and cleared on logout.
+  // It carries no security value — the server enforces auth via cookie on every request.
+  const hint = localStorage.getItem(SESSION_HINT_KEY);
+  return hint ? { accessToken: hint, refreshToken: null as string | null } : null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -776,13 +776,8 @@ async function request(
     }
   }
 
-  // Inject Authorization when an access token is available in localStorage.
-  // Auth is also enforced via httpOnly cookie (credentials: 'include') on every request.
-  // Never send "Bearer undefined" or "Bearer null".
-  const tokens = getTokens();
-  if (tokens?.accessToken) {
-    headers['Authorization'] = `Bearer ${tokens.accessToken}`;
-  }
+  // Auth is enforced via httpOnly cookie sent automatically with credentials:'include'.
+  // The session hint in getTokens() is not a JWT — do not inject as Authorization header.
 
   const consentHash = getConsentHash();
   if (consentHash) {
@@ -879,12 +874,8 @@ async function buildStrictHeaders(_withAuth = true) {
   const csrf = await ensureCsrfToken();
   if (csrf) headers['X-CSRF-Token'] = csrf;
 
-  // Inject Authorization when an access token is available.
-  // Auth is also enforced via httpOnly cookie (credentials: 'include').
-  const tokens = getTokens();
-  if (tokens?.accessToken) {
-    headers['Authorization'] = `Bearer ${tokens.accessToken}`;
-  }
+  // Auth is enforced via httpOnly cookie (credentials: 'include').
+  // Session hint is not a JWT — do not inject as Authorization header.
 
   const consentHash = getConsentHash();
   if (consentHash) headers['X-Consent-Hash'] = consentHash;
@@ -1222,7 +1213,7 @@ export const apiClient = {
   getSecurityObservability: () =>
     request('/security/observability', { method: 'GET' }, true) as Promise<SecurityObservability>,
   getGDPRReport: () => request('/admin/gdpr/compliance-report', { method: 'GET' }, true) as Promise<GDPRReport>,
-  runGDPRPurge: () => request('/admin/gdpr/run-purge', { method: 'POST' }, true) as Promise<GDPRPurgeResponse>,
+  runGDPRPurge: () => request('/admin/gdpr/run-purge', { method: 'POST', body: JSON.stringify({ confirm: 'CONFIRMER_PURGE_RGPD' }) }, true) as Promise<GDPRPurgeResponse>,
   searchLegalArchive: (userId: string) => request(`/admin/gdpr/legal-archive/${userId}`, { method: 'GET' }, true),
   getAuditLogs: (params?: AuditLogQuery) => {
     const query = new URLSearchParams();
@@ -1437,9 +1428,7 @@ export const apiClient = {
       const csrf = await ensureCsrfToken();
       if (csrf) headers['X-CSRF-Token'] = csrf;
 
-      const t = getTokens();
-      if (t?.accessToken) headers['Authorization'] = `Bearer ${t.accessToken}`;
-
+      // Auth via httpOnly cookie (credentials: 'include' in requestStrict).
       const payload = bookingDecisionPayloadSchema.parse({ decision });
 
       return requestStrict(
