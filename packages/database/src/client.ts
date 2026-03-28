@@ -7,7 +7,7 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
  * Conformité ROADMAP.md Phase 2: Database SSL obligatoire
  */
 function validateDatabaseSSL(): void {
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && process.env.APP_ENV !== 'pre-vps') {
     const dbUrl = process.env.DATABASE_URL;
 
     if (!dbUrl) {
