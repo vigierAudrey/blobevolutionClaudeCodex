@@ -22,6 +22,7 @@ import {
   Sex,
   Level,
   Sport,
+  MatchStatus,
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
@@ -39,6 +40,8 @@ export const PRE_VPS_IDS = {
   riderBProfile: '22222222-3333-4222-b222-222222222222',
   proA:          '33333333-3333-4333-c333-333333333333',
   proAProfile:   '33333333-4444-4333-c333-333333333333',
+  // Match ACTIVE entre rider A et rider B (requis par POST /conversations/open RIDER_TO_RIDER)
+  matchAB:       'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
 } as const;
 
 export const PRE_VPS_EMAILS = [
@@ -187,6 +190,19 @@ async function runPreVpsSeed(client?: PrismaClient) {
       distanceKm: 50,
       lat: 43.6613,
       lng: -1.3976,
+    },
+  });
+
+  // ─── Match ACTIVE rider A ↔ rider B ────────────────────────────────────────
+  // Requis pour que POST /conversations/open RIDER_TO_RIDER fonctionne.
+  // userOneId < userTwoId (contrainte unique @@unique([userOneId, userTwoId])).
+  console.log('[seed.pre-vps] Création match ACTIVE rider A ↔ rider B...');
+  await prisma.match.create({
+    data: {
+      id: PRE_VPS_IDS.matchAB,
+      userOneId: PRE_VPS_IDS.riderA,
+      userTwoId: PRE_VPS_IDS.riderB,
+      status: MatchStatus.ACTIVE,
     },
   });
 
