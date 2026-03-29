@@ -14,6 +14,7 @@ import { getPasswordRequirementStatuses } from '../../api/src/utils/password-val
 import { PasswordRequirementsList } from './PasswordRequirementsList';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { BLOBOSPHERE_SIGNUP_ARTICLE_KEY, BLOBOSPHERE_SIGNUP_INTENT_KEY } from '@/components/blobosphere/BlobosphereAnalyticsLink';
+import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../lib/franceLaunch';
 
 const PUBLIC_ROLES = [
   { value: 'RIDER', label: 'Rider' },
@@ -154,7 +155,14 @@ export function AuthForm({ mode }: AuthFormProps) {
           setFieldErrors({ consent: 'Merci de confirmer que vous avez lu et accepté la charte.' });
           return;
         }
-        await apiClient.register({ email, password, role, ageConfirmed: true, consentAccepted: true });
+        await apiClient.register({
+          email,
+          password,
+          role,
+          ageConfirmed: true,
+          consentAccepted: true,
+          ...(role === 'PRO' ? { countryCode: FRANCE_ONLY_COUNTRY_CODE } : {}),
+        });
         if (typeof window !== 'undefined') {
           const intent = window.localStorage.getItem(BLOBOSPHERE_SIGNUP_INTENT_KEY);
           if (intent) {
@@ -459,6 +467,14 @@ export function AuthForm({ mode }: AuthFormProps) {
                 <p className="text-sm text-red-600" role="alert">
                   {fieldErrors.role}
                 </p>
+              )}
+              {role === 'PRO' && (
+                <div
+                  className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100"
+                  role="status"
+                >
+                  {FRANCE_ONLY_INFO_MESSAGE}
+                </div>
               )}
             </div>
           )}

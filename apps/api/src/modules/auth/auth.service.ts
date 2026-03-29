@@ -9,6 +9,7 @@ import { AVAILABLE_PERMISSIONS } from '../admin/permissions';
 import { hashIpHmac } from '../../lib/hash-ip';
 import type { AuthenticatedSessionContext } from './auth-session-context';
 import { invalidateSessionCache } from '../../lib/auth-session-store';
+import { assertFranceLaunchProProfile } from '../../lib/france-launch-guard';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
@@ -137,20 +138,42 @@ export class AuthService {
   }
 
   async register(
-    data: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted?: boolean },
+    data: {
+      email: string;
+      password: string;
+      role: 'RIDER' | 'PRO';
+      consentAccepted?: boolean;
+      countryCode?: string | null;
+    },
     opts?: { consentIp?: string },
   ) {
     try {
       const hashed = await bcrypt.hash(data.password, BCRYPT_COST);
-      const user = await prisma.user.create({
-        data: {
-          email: data.email,
-          password: hashed,
-          role: data.role,
-          consentedAt: new Date(),
-          consentVersion: AuthService.CONSENT_VERSION,
-          consentIpHash: hashIpHmac(opts?.consentIp) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
-        },
+      const proCountryCode = data.role === 'PRO'
+        ? assertFranceLaunchProProfile({ countryCode: data.countryCode })
+        : null;
+      const user = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const createdUser = await tx.user.create({
+          data: {
+            email: data.email,
+            password: hashed,
+            role: data.role,
+            consentedAt: new Date(),
+            consentVersion: AuthService.CONSENT_VERSION,
+            consentIpHash: hashIpHmac(opts?.consentIp) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
+          },
+        });
+
+        if (data.role === 'PRO') {
+          await tx.proProfile.create({
+            data: {
+              userId: createdUser.id,
+              countryCode: proCountryCode,
+            },
+          });
+        }
+
+        return createdUser;
       });
       // Génère un token de vérification email
       const verification = await this.createEmailVerification(user.id);
@@ -406,7 +429,7 @@ export class AuthService {
     ]);
     await invalidateSessionCache(match.userId);
     secureLogger.info('PASSWORD_RESET_SUCCESS', { userId: match.userId, via: 'token' });
-    return { message: 'Password updated' };
+    return { message: 'Password updated', userId: match.userId };
   }
 
   async changePassword(userId: string, currentPassword: string, newPassword: string) {

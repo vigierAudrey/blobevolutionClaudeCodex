@@ -32,11 +32,17 @@ describe('Auth E2E', () => {
   let session: TestSession;
   let restoreConsole: () => void;
 
-  const registerUser = async (overrides?: { email?: string; password?: string; role?: 'RIDER' | 'PRO' }) => {
+  const registerUser = async (overrides?: {
+    email?: string;
+    password?: string;
+    role?: 'RIDER' | 'PRO';
+    countryCode?: string;
+  }) => {
     const payload = {
       email: overrides?.email ?? DEFAULT_EMAIL,
       password: overrides?.password ?? DEFAULT_PASSWORD,
       role: overrides?.role ?? 'RIDER',
+      ...(overrides?.countryCode ? { countryCode: overrides.countryCode } : {}),
       consentAccepted: true
     };
     const res = await session.post('/auth/register').send(payload).expect(201);
@@ -68,6 +74,41 @@ describe('Auth E2E', () => {
       .expect(201);
     expect(res.body).toHaveProperty('message');
     expect(res.body).toHaveProperty('userId');
+  });
+
+  it('registers a PRO user limited to France', async () => {
+    const payload = {
+      email: 'pro-fr@test.com',
+      password: DEFAULT_PASSWORD,
+      role: 'PRO' as const,
+      countryCode: 'FR',
+      consentAccepted: true,
+    };
+
+    const res = await session.post('/auth/register').send(payload).expect(201);
+    const user = await prisma.user.findUnique({
+      where: { id: res.body.userId as string },
+      include: { proProfile: true },
+    });
+
+    expect(user?.role).toBe(Role.PRO);
+    expect(user?.proProfile?.countryCode).toBe('FR');
+  });
+
+  it('rejects PRO registration outside France', async () => {
+    const res = await session
+      .post('/auth/register')
+      .send({
+        email: 'pro-ch@test.com',
+        password: DEFAULT_PASSWORD,
+        role: 'PRO',
+        countryCode: 'CH',
+        consentAccepted: true,
+      })
+      .expect(403);
+
+    expect(res.body.error).toBe('FRANCE_ONLY_RESTRICTED');
+    expect(res.body.message).toContain('France');
   });
 
   it('logs in and sets auth cookies', async () => {

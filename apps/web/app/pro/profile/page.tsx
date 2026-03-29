@@ -20,6 +20,7 @@ import { useToast } from '../../../components/ui/toast';
 import { Spinner } from '../../../components/ui/spinner';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../../components/cookies/CookieConsent';
 import { ChangePasswordCard } from '../../../components/profile/ChangePasswordCard';
+import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
 
 // Configuration de sécurité pour l'upload de fichiers
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
@@ -211,7 +212,7 @@ export default function ProProfilePage() {
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data?.error || 'Erreur chargement');
+          throw new Error(data?.message || data?.error || 'Erreur chargement');
         }
 
         setBusinessName(data.businessName || '');
@@ -363,13 +364,13 @@ export default function ProProfilePage() {
 
       const response = await apiRequest('/pro/me', {
         method: 'PUT',
-        body: JSON.stringify({ lat: undefined, lng: undefined }),
+        body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat: undefined, lng: undefined }),
         headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data?.error || 'Erreur lors de la suppression');
+        throw new Error(data?.message || data?.error || 'Erreur lors de la suppression');
       }
 
       setUserLocation(null);
@@ -494,12 +495,13 @@ export default function ProProfilePage() {
           bio: bio || undefined,
           emailNotif,
           photoUrl: finalUrl,
+          countryCode: FRANCE_ONLY_COUNTRY_CODE,
         }),
         headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       const body = await res.json();
-      if (!res.ok) throw new Error(body?.error || 'Sauvegarde impossible');
+      if (!res.ok) throw new Error(body?.message || body?.error || 'Sauvegarde impossible');
 
       // Rediriger vers l'onboarding avec un timestamp pour forcer le rechargement
       router.push(`/pro/onboarding?refresh=${Date.now()}`);
@@ -538,6 +540,9 @@ export default function ProProfilePage() {
               <CardDescription>Ces informations seront visibles par les clients.</CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                {FRANCE_ONLY_INFO_MESSAGE}
+              </div>
               <form onSubmit={onSave} className="space-y-4">
                 <div className="space-y-2">
                   <Label>Nom commercial</Label>

@@ -7,9 +7,11 @@ import { Input } from '../../../components/ui/input';
 import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
 import { useRouter } from 'next/navigation';
+import { useToast } from '../../../components/ui/toast';
 
 import { MapSkeleton } from '../../../components/ui/skeleton';
 import type { LessonRequest, LessonRequestResponse } from '@/types/pro';
+import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
 
 // Force SSR due to Leaflet map (dynamic import with ssr:false)
 export const dynamic = 'force-dynamic';
@@ -92,8 +94,18 @@ const getBrowserInstructions = (browser: BrowserType): { title: string; steps: s
   }
 };
 
+const getApiMessage = (body: unknown, fallback: string) => {
+  if (body && typeof body === 'object') {
+    const data = body as { message?: unknown; error?: unknown };
+    if (typeof data.message === 'string' && data.message.trim()) return data.message;
+    if (typeof data.error === 'string' && data.error.trim()) return data.error;
+  }
+  return fallback;
+};
+
 export default function ProMapPage() {
   const router = useRouter();
+  const toast = useToast();
   const [radiusKm, setRadiusKm] = useState<number | null>(null);
   const [sport, setSport] = useState<'surf' | 'kitesurf'>('surf');
   const [items, setItems] = useState<LessonRequest[]>([]);
@@ -106,6 +118,7 @@ export default function ProMapPage() {
   const radiusPersistRef = useRef<ReturnType<typeof setTimeout>>();
   const lastSavedRadiusRef = useRef<number | null>(null);
   const [radiusSaving, setRadiusSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     // Détecter le navigateur au montage du composant
@@ -123,11 +136,13 @@ export default function ProMapPage() {
           setHasGeolocPermission(true);
         }
         if (ok) {
+          setApiError(null);
           const storedRadius = typeof body?.radiusKm === 'number' ? body.radiusKm : 25;
           const clamped = Math.max(1, Math.min(200, storedRadius));
           setRadiusKm(clamped);
           lastSavedRadiusRef.current = clamped;
         } else {
+          setApiError(getApiMessage(body, 'Impossible de charger votre profil pro.'));
           setRadiusKm(25);
           lastSavedRadiusRef.current = 25;
         }
@@ -156,16 +171,24 @@ export default function ProMapPage() {
         try {
           const t = apiClient.getTokens();
           if (t?.accessToken) {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
               method: 'PUT',
               headers: {
                 'Authorization': `Bearer ${t.accessToken}`,
                 'Content-Type': 'application/json'
               },
-              body: JSON.stringify({ lat, lng })
+              body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat, lng })
             });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(getApiMessage(body, 'Impossible de sauvegarder votre position.'));
+            }
+            setApiError(null);
           }
         } catch (error) {
+          const message = error instanceof Error ? error.message : 'Impossible de sauvegarder votre position.';
+          setApiError(message);
+          toast(message, 'error');
           console.error('Erreur lors de la sauvegarde de la position :', error);
         }
       },
@@ -186,6 +209,7 @@ export default function ProMapPage() {
     if (!geolocEnabled || radiusKm === null) return;
 
     setLoading(true);
+    setApiError(null);
     try {
       const t = apiClient.getTokens();
       if (!t?.accessToken) return;
@@ -197,13 +221,20 @@ export default function ProMapPage() {
       const data = (await r.json()) as LessonRequestResponse;
       if (r.ok) {
         setItems(data.items ?? []);
+      } else {
+        const message = getApiMessage(data, 'Impossible de charger les demandes autour de vous.');
+        setItems([]);
+        setApiError(message);
+        toast(message, 'error');
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Impossible de charger les demandes autour de vous.';
+      setApiError(message);
       console.error('Error loading lesson requests:', error);
     } finally {
       setLoading(false);
     }
-  }, [radiusKm, sport, geolocEnabled]);
+  }, [radiusKm, sport, geolocEnabled, toast]);
 
   // Debounced loading for better performance
   const debouncedLoad = useCallback(() => {
@@ -237,16 +268,24 @@ export default function ProMapPage() {
         const t = apiClient.getTokens();
         if (!t?.accessToken) return;
         setRadiusSaving(true);
-        await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
           method: 'PATCH',
           headers: {
             'Authorization': `Bearer ${t.accessToken}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ radiusKm })
+          body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, radiusKm })
         });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(getApiMessage(body, 'Impossible de sauvegarder votre rayon.'));
+        }
         lastSavedRadiusRef.current = radiusKm;
+        setApiError(null);
       } catch (error) {
+        const message = error instanceof Error ? error.message : 'Impossible de sauvegarder votre rayon.';
+        setApiError(message);
+        toast(message, 'error');
         console.error('Erreur lors de la sauvegarde du rayon :', error);
       } finally {
         setRadiusSaving(false);
@@ -263,7 +302,7 @@ export default function ProMapPage() {
         clearTimeout(radiusPersistRef.current);
       }
     };
-  }, [radiusKm]);
+  }, [radiusKm, toast]);
 
 
   return (
@@ -288,6 +327,14 @@ export default function ProMapPage() {
           <CardTitle className="text-foreground">Carte interactive des demandes</CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+            {FRANCE_ONLY_INFO_MESSAGE}
+          </div>
+          {apiError && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-300" role="alert">
+              {apiError}
+            </div>
+          )}
           {!geolocEnabled && (
             <div className="mb-4 rounded-2xl border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-4">
               <div className="flex items-start gap-3">

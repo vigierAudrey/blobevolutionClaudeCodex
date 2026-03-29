@@ -15,6 +15,9 @@ import { securityEventAlertService } from '../../services/security-event-alert.s
 import { bindAuthenticatedSessionUser, rotateAuthenticatedSession } from './auth-session-context';
 import { enforceAdminAllowedIp, grantAdminStepUp, revalidateAdminRole, resolveAdminStepUpBinding } from '../admin/admin.security-guard';
 import { ipKeyGenerator } from 'express-rate-limit';
+import { FRANCE_ONLY_COUNTRY_CODE, isFranceLaunchGuardError } from '../../lib/france-launch-guard';
+import { disconnectUserSockets } from '../../lib/socket';
+import { invalidateCachedAuth } from '../../lib/socket-auth-cache';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -78,14 +81,25 @@ function clearAuthCookies(res: Response): void {
   res.clearCookie('admin_session', ADMIN_SESSION_COOKIE_BASE);
 }
 
-const registerSchema = z.object({
-  email: z.string().email(),
-  password: passwordSchema, // P1-3: OWASP-compliant password validation
-  role: z.enum(['RIDER', 'PRO']).default('RIDER'),
-  consentAccepted: z.literal(true, {
-    errorMap: () => ({ message: 'Vous devez accepter la charte et l\'avertissement.' }),
-  }),
-});
+const registerSchema = z
+  .object({
+    email: z.string().email(),
+    password: passwordSchema, // P1-3: OWASP-compliant password validation
+    role: z.enum(['RIDER', 'PRO']).default('RIDER'),
+    countryCode: z.string().trim().length(2).transform((value) => value.toUpperCase()).optional(),
+    consentAccepted: z.literal(true, {
+      errorMap: () => ({ message: 'Vous devez accepter la charte et l\'avertissement.' }),
+    }),
+  })
+  .superRefine((value, ctx) => {
+    if (value.role === 'PRO' && !value.countryCode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['countryCode'],
+        message: `Le pays du compte professionnel doit être renseigné et fixé à ${FRANCE_ONLY_COUNTRY_CODE}.`,
+      });
+    }
+  });
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -244,6 +258,13 @@ authRouter.post('/register', validate(registerSchema), async (req, res) => {
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    if (isFranceLaunchGuardError(err)) {
+      return res.status(err.status).json({
+        error: err.code,
+        message: err.message,
+        ...(err.details ? { details: err.details } : {}),
+      });
     }
     if (err?.code === 'EMAIL_ALREADY_EXISTS') {
       return res.status(409).json({ error: 'Email already registered' });
@@ -473,6 +494,11 @@ authRouter.post('/logout', requireAuth, async (req, res) => {
 
     if (allDevices || !refreshToken) {
       const result = await service.logoutAll(userId);
+      // P1-WS: Kill all active WebSocket connections immediately on full logout.
+      // sessionVersion is incremented by logoutAll; we also flush the in-process
+      // socket auth cache so no reconnect is allowed within the 30 s TTL window.
+      disconnectUserSockets(userId, 'logout');
+      invalidateCachedAuth(userId);
       await rotateAuthenticatedSession(req);
       clearAuthCookies(res);
       return res.json(result);
@@ -572,8 +598,12 @@ authRouter.post('/reset-password', async (req, res) => {
   try {
     const { token, password } = resetSchema.parse(req.body);
     const result = await service.resetPassword(token, password);
+    // P1-WS: Kill sockets for the user whose password was just reset.
+    // userId is returned internally but must NOT be forwarded to the client.
+    disconnectUserSockets(result.userId, 'password-reset');
+    invalidateCachedAuth(result.userId);
     clearAuthCookies(res);
-    res.json(result);
+    res.json({ message: result.message });
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
@@ -591,6 +621,9 @@ authRouter.post('/change-password', requireAuth, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
     const result = await service.changePassword(userId, currentPassword, newPassword);
+    // P1-WS: Kill sockets on password change (sessionVersion is incremented by changePassword).
+    disconnectUserSockets(userId, 'password-change');
+    invalidateCachedAuth(userId);
     await rotateAuthenticatedSession(req);
     clearAuthCookies(res);
     res.json(result);

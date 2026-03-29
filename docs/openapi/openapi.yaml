@@ -170,6 +170,12 @@ paths:
                 $ref: '#/components/schemas/RegisterResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Lancement initial limité à la France pour les comptes professionnels
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Email déjà utilisé
           content:
@@ -657,6 +663,12 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Profil professionnel temporairement limité à la France
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '429':
           description: Trop de mises à jour (max 10 par 15 minutes)
           content:
@@ -694,6 +706,12 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Profil professionnel temporairement limité à la France
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '429':
           description: Trop de mises à jour (max 10 par 15 minutes)
           content:
@@ -845,6 +863,12 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Recherche pro temporairement limitée à la France
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /pro/offers/me:
     get:
@@ -1015,6 +1039,12 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Matching géolocalisé temporairement limité à la France
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /matching/decisions:
     post:
       tags: [Matching]
@@ -3604,6 +3634,8 @@ components:
       properties:
         error:
           type: string
+        message:
+          type: string
         details:
           description: Informations supplémentaires (validation, etc.)
       additionalProperties: true
@@ -3660,6 +3692,11 @@ components:
           description: Rôle public sélectionné lors de l'inscription (les comptes ADMIN sont gérés en interne)
           enum: [RIDER, PRO]
           default: RIDER
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: Requis pour les comptes PRO. Doit être fixé à `FR` pendant le lancement initial.
         consentAccepted:
           type: boolean
           enum: [true]
@@ -3987,6 +4024,11 @@ components:
         userId:
           type: string
           format: uuid
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+          nullable: true
         businessName:
           type: string
         bio:
@@ -4014,6 +4056,11 @@ components:
     ProProfileUpdateRequest:
       type: object
       properties:
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: Doit rester `FR` pour le lancement initial.
         businessName:
           type: string
         bio:
@@ -4215,6 +4262,7 @@ components:
           maximum: 500
         location:
           type: object
+          description: Coordonnées explicites de recherche. Si fournies, elles doivent pointer en France métropolitaine ou en Corse pendant le lancement initial.
           properties:
             lat:
               type: number

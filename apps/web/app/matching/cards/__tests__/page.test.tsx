@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../../../../lib/apiClient';
 import Page from '../page';
+import { FRANCE_ONLY_INFO_MESSAGE } from '../../../../lib/franceLaunch';
 
 jest.setTimeout(10000);
 
@@ -585,6 +586,17 @@ describe('Matching Cards Component', () => {
   });
 
   describe('Date Formatting', () => {
+    it('should display the France-only banner for geolocated matching', async () => {
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => expect(mockApiClient.searchMatching).toHaveBeenCalled(), { timeout: 3000 });
+      await waitFor(() => {
+        expect(screen.getByText(FRANCE_ONLY_INFO_MESSAGE)).toBeInTheDocument();
+      });
+    });
+
     it('should format "anytime" as "Peu importe"', async () => {
       // Set the search param to anytime
       mockSearchParams.set('date', 'anytime');
@@ -663,6 +675,21 @@ describe('Matching Cards Component', () => {
   });
 
   describe('Error Handling', () => {
+    it('should display France-only API refusal messages', async () => {
+      mockApiClient.searchMatching.mockRejectedValue(
+        new Error('Le lancement initial est temporairement limité à la France métropolitaine et à la Corse.'),
+      );
+
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => expect(mockApiClient.searchMatching).toHaveBeenCalled(), { timeout: 3000 });
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent('France métropolitaine et à la Corse');
+      });
+    });
+
     it('should display error message when loading fails', async () => {
       mockApiClient.searchMatching.mockRejectedValue(new Error('Erreur réseau'));
 
