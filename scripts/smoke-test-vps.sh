@@ -354,7 +354,7 @@ PRESIGN_RESP=$(curl -sk $CURL_RESOLVE \
   -H "Origin: https://app.blobinfini.local" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: ${CSRF_A_POST:-$CSRF_A}" \
-  -X POST "$API/profile/upload-avatar" \
+  -X POST "$API/profile/photo/upload-url" \
   -d '{"contentType":"image/png"}' 2>/dev/null || echo "{}")
 
 PRESIGN_URL=$(echo "$PRESIGN_RESP" | jq -r '.url // .presignedUrl // .uploadUrl // empty' 2>/dev/null || echo "")
