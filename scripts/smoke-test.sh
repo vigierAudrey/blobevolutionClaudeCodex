@@ -128,7 +128,7 @@ if [ -z "${SECURITY_MONITOR_TOKEN:-}" ]; then
 else
   B=$(http_body -H "X-Security-Monitor-Token: $SECURITY_MONITOR_TOKEN" "$API/security/health")
   HEALTH_STATUS=$(echo "$B" | jq -r '.status // "MISSING"' 2>/dev/null || echo "MISSING")
-  check "GET /security/health status = SAFE" "$HEALTH_STATUS" "SAFE"
+  check "GET /security/health status = SECURE" "$HEALTH_STATUS" "SECURE"
 fi
 
 # ─── [3] Frontend liveness ────────────────────────────────────────────────────
