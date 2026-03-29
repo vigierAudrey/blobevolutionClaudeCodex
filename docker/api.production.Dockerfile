@@ -25,6 +25,12 @@ RUN pnpm --filter @blobinfini/database exec prisma generate
 # Compiler l'API TypeScript
 RUN pnpm --filter @blobinfini/api build
 
+# Drop root — l'image node:22-bullseye fournit l'utilisateur 'node' (UID 1000) par défaut.
+# Prisma client est pré-généré (prisma generate ci-dessus) : aucune écriture au runtime.
+# Port 4000 >= 1024 : bindable sans CAP_NET_BIND_SERVICE.
+RUN chown -R node:node /workspace
+USER node
+
 EXPOSE 4000
 
 ENV NODE_ENV=production

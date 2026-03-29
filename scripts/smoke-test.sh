@@ -116,11 +116,19 @@ check "GET /health → 200" "$S" "200"
 echo "--- [2] API security health ---"
 # Header correct : X-Security-Monitor-Token (≠ X-Internal-Token du endpoint /internal/metrics)
 # Env var : SECURITY_MONITOR_TOKEN (indépendant de METRICS_INTERNAL_TOKEN)
-if [ -n "${SECURITY_MONITOR_TOKEN:-}" ]; then
-  B=$(http_body -H "X-Security-Monitor-Token: $SECURITY_MONITOR_TOKEN" "$API/security/health")
-  check_contains "GET /security/health contient status" "$B" '"status"'
+# Auto-chargement depuis .env.pre-vps si absent de l'environnement hôte
+if [ -z "${SECURITY_MONITOR_TOKEN:-}" ] && [ -f ".env.pre-vps" ]; then
+  SECURITY_MONITOR_TOKEN=$(grep -E '^SECURITY_MONITOR_TOKEN=' .env.pre-vps \
+    | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d ' ')
+fi
+
+if [ -z "${SECURITY_MONITOR_TOKEN:-}" ]; then
+  printf "  \033[31mFAIL\033[0m SECURITY_MONITOR_TOKEN absent — injection manquante dans .env.pre-vps\n"
+  FAIL=$((FAIL + 1))
 else
-  echo "  SKIP /security/health (SECURITY_MONITOR_TOKEN absent)"
+  B=$(http_body -H "X-Security-Monitor-Token: $SECURITY_MONITOR_TOKEN" "$API/security/health")
+  HEALTH_STATUS=$(echo "$B" | jq -r '.status // "MISSING"' 2>/dev/null || echo "MISSING")
+  check "GET /security/health status = SAFE" "$HEALTH_STATUS" "SAFE"
 fi
 
 # ─── [3] Frontend liveness ────────────────────────────────────────────────────
