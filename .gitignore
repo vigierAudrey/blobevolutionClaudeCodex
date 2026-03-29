@@ -19,3 +19,4 @@ apps/api/apps/
 
 # Pré-VPS : certs mkcert locaux (jamais commiter)
 docker/certs/pre-vps/
+docker/certs/vps/
