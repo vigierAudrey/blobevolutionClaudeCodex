@@ -13,6 +13,11 @@ import { prosNearbySchema } from './dto/prosNearby.dto';
 import { computeZoneLarge, recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmacSafe } from '../../lib/hash-ip';
+import {
+  assertFranceLaunchLocation,
+  assertFranceLaunchLocationPresence,
+  isFranceLaunchGuardError,
+} from '../../lib/france-launch-guard';
 import { secureLogger } from '../../utils/secure-logger';
 
 const isBookingRequestRateLimitDisabled = () =>
@@ -68,6 +73,18 @@ const getErrorStatus = (error: unknown): number =>
 const getErrorMessage = (error: unknown): string =>
   isErrorWithStatus(error) && typeof error.message === 'string' ? error.message : 'Internal error';
 
+const sendFranceLaunchGuardError = (res: Response, error: unknown): Response | null => {
+  if (!isFranceLaunchGuardError(error)) {
+    return null;
+  }
+
+  return res.status(error.status).json({
+    error: error.code,
+    message: error.message,
+    ...(error.details ? { details: error.details } : {}),
+  });
+};
+
 const getConsentHash = (req: Request) => {
   const header = req.headers['x-consent-hash'];
   return typeof header === 'string' && header.trim().length > 0 ? header : null;
@@ -104,6 +121,10 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    const franceLaunchError = sendFranceLaunchGuardError(res, error);
+    if (franceLaunchError) {
+      return franceLaunchError;
     }
     const status = getErrorStatus(error);
     return res.status(status).json({ error: getErrorMessage(error) });
@@ -162,6 +183,10 @@ bookingRouter.patch('/availability/:id', ensureRole('PRO'), async (req: Authenti
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
     }
+    const franceLaunchError = sendFranceLaunchGuardError(res, error);
+    if (franceLaunchError) {
+      return franceLaunchError;
+    }
     const status = getErrorStatus(error);
     return res.status(status).json({ error: getErrorMessage(error) });
   }
@@ -210,14 +235,16 @@ bookingRouter.delete('/availability/:id', ensureRole('PRO'), async (req: Authent
 
 bookingRouter.get('/availability/search', async (req: AuthenticatedRequest, res: Response) => {
   try {
+    assertFranceLaunchLocationPresence(req.query.lat !== undefined, req.query.lng !== undefined);
     const query = searchAvailabilitySchema.parse({
       ...req.query,
-      lat: req.query.lat ? Number(req.query.lat) : undefined,
-      lng: req.query.lng ? Number(req.query.lng) : undefined,
+      lat: req.query.lat !== undefined ? Number(req.query.lat) : undefined,
+      lng: req.query.lng !== undefined ? Number(req.query.lng) : undefined,
       radiusKm: req.query.radiusKm ? Number(req.query.radiusKm) : undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
       pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
     });
+    assertFranceLaunchLocation({ lat: query.lat, lng: query.lng });
     const results = await bookingService.searchAvailabilities(query);
     if (req.user?.role === 'RIDER') {
       const consentHash = getConsentHash(req);
@@ -234,6 +261,10 @@ bookingRouter.get('/availability/search', async (req: AuthenticatedRequest, res:
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    const franceLaunchError = sendFranceLaunchGuardError(res, error);
+    if (franceLaunchError) {
+      return franceLaunchError;
     }
     const status = getErrorStatus(error);
     return res.status(status).json({ error: getErrorMessage(error) });
@@ -265,12 +296,14 @@ bookingRouter.post('/availability/:id/track', ensureRole('RIDER'), async (req: A
 
 bookingRouter.get('/pros/nearby', ensureRole('RIDER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
+    assertFranceLaunchLocationPresence(req.query.lat !== undefined, req.query.lng !== undefined);
     const query = prosNearbySchema.parse({
-      lat: req.query.lat ? Number(req.query.lat) : undefined,
-      lng: req.query.lng ? Number(req.query.lng) : undefined,
+      lat: req.query.lat !== undefined ? Number(req.query.lat) : undefined,
+      lng: req.query.lng !== undefined ? Number(req.query.lng) : undefined,
       radiusKm: req.query.radiusKm ? Number(req.query.radiusKm) : undefined,
       sport: typeof req.query.sport === 'string' ? req.query.sport : undefined,
     });
+    assertFranceLaunchLocation({ lat: query.lat, lng: query.lng });
 
     const pros = await bookingService.listNearbyPros(query);
     const consentHash = getConsentHash(req);
@@ -286,6 +319,10 @@ bookingRouter.get('/pros/nearby', ensureRole('RIDER'), async (req: Authenticated
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
+    const franceLaunchError = sendFranceLaunchGuardError(res, error);
+    if (franceLaunchError) {
+      return franceLaunchError;
     }
     const status = getErrorStatus(error);
     return res.status(status).json({ error: getErrorMessage(error) });

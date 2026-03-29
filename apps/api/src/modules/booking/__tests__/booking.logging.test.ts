@@ -77,4 +77,42 @@ describe('booking logging', () => {
     expect(serializedLog).not.toContain('"lat"');
     expect(serializedLog).not.toContain('"lng"');
   });
+
+  it('skips nearby-pro lookup outside France-only scope without leaking precise coordinates', async () => {
+    jest.spyOn(prisma.user, 'findUnique').mockResolvedValue(null as never);
+    jest.spyOn(prisma.proAvailability, 'findUnique').mockResolvedValue({
+      spotLat: 46.2044,
+      spotLng: 6.1432,
+      spotName: 'Outside FR',
+      sport: 'surf',
+    } as never);
+    const queryRawSpy = jest.spyOn(prisma, '$queryRaw').mockResolvedValue([] as never);
+
+    const notifyNearbyProsAboutRequest = Reflect.get(
+      bookingService,
+      'notifyNearbyProsAboutRequest',
+    ) as (riderUserId: string, requestId: string, availabilityId: string) => Promise<void>;
+
+    await runJobWithLogContext('booking:outside-france-test', async () => {
+      await notifyNearbyProsAboutRequest.call(bookingService, 'rider-123', 'request-123', 'availability-123');
+    });
+    await flushLogTransport(200);
+
+    expect(queryRawSpy).not.toHaveBeenCalled();
+
+    const bookingLog = capturedLogs.find(
+      (entry) => entry.event === 'Skipping nearby PRO notification outside France-only scope',
+    );
+
+    expect(bookingLog).toBeDefined();
+    expect(bookingLog?.context).toMatchObject({
+      requestId: 'request-123',
+      availabilityId: 'availability-123',
+      errorCode: 'FRANCE_ONLY_RESTRICTED',
+    });
+
+    const serializedLog = JSON.stringify(bookingLog);
+    expect(serializedLog).not.toContain('46.2044');
+    expect(serializedLog).not.toContain('6.1432');
+  });
 });

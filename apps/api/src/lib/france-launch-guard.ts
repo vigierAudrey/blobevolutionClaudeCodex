@@ -11,16 +11,19 @@ type FranceLaunchGuardErrorCode =
   | (typeof ERROR_CODES.FRANCE_ONLY_INCOMPLETE_LOCATION)
   | (typeof ERROR_CODES.FRANCE_ONLY_RESTRICTED);
 
+type FranceLaunchLocationInput = {
+  lat?: number | null;
+  lng?: number | null;
+};
+
 export type FranceLaunchGuardError = Error & {
   status: number;
   code: FranceLaunchGuardErrorCode;
   details?: Record<string, unknown>;
 };
 
-type FranceLaunchProfileInput = {
+type FranceLaunchProfileInput = FranceLaunchLocationInput & {
   countryCode?: string | null;
-  lat?: number | null;
-  lng?: number | null;
 };
 
 // Approximation volontaire pour le lancement: polygone principal + sous-zones
@@ -98,7 +101,7 @@ function pointInPolygon(point: readonly [number, number], polygon: ReadonlyArray
   return inside;
 }
 
-function hasCoordinatePair(input: FranceLaunchProfileInput): input is FranceLaunchProfileInput & CoordinatePair {
+function hasCoordinatePair(input: FranceLaunchLocationInput): input is FranceLaunchLocationInput & CoordinatePair {
   return typeof input.lat === 'number' && typeof input.lng === 'number';
 }
 
@@ -122,6 +125,24 @@ export function assertFranceLaunchLocation(location?: CoordinatePair | null): vo
   }
 }
 
+export function assertFranceLaunchLocationPresence(hasLat: boolean, hasLng: boolean): void {
+  if (hasLat !== hasLng) {
+    throw createFranceLaunchGuardError(
+      400,
+      ERROR_CODES.FRANCE_ONLY_INCOMPLETE_LOCATION,
+      'La latitude et la longitude doivent être fournies ensemble.',
+    );
+  }
+}
+
+export function assertFranceLaunchLocationInput(input: FranceLaunchLocationInput): void {
+  assertFranceLaunchLocationPresence(input.lat != null, input.lng != null);
+
+  if (hasCoordinatePair(input)) {
+    assertFranceLaunchLocation({ lat: input.lat, lng: input.lng });
+  }
+}
+
 export function assertFranceLaunchProProfile(input: FranceLaunchProfileInput): string {
   const normalizedCountryCode = normalizeCountryCode(input.countryCode);
 
@@ -140,19 +161,7 @@ export function assertFranceLaunchProProfile(input: FranceLaunchProfileInput): s
     });
   }
 
-  const hasLat = input.lat != null;
-  const hasLng = input.lng != null;
-  if (hasLat !== hasLng) {
-    throw createFranceLaunchGuardError(
-      400,
-      ERROR_CODES.FRANCE_ONLY_INCOMPLETE_LOCATION,
-      'La latitude et la longitude doivent être fournies ensemble.',
-    );
-  }
-
-  if (hasCoordinatePair(input)) {
-    assertFranceLaunchLocation({ lat: input.lat, lng: input.lng });
-  }
+  assertFranceLaunchLocationInput(input);
 
   return normalizedCountryCode;
 }
