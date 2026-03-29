@@ -70,10 +70,11 @@ services:
 
   # ─── Stockage objet (S3-compatible) ─────────────────────────────────────────
   minio:
-    # Pin sur dernier release stable avant arrêt publications Docker Hub libres (oct 2025).
-    # Vérifier https://github.com/minio/minio/releases pour les patchs CVE.
-    # Alternative si migration nécessaire : quay.io/minio/minio ou alpine/minio.
-    image: minio/minio:RELEASE.2025-10-15T17-29-55Z
+    # Pin sur RELEASE.2025-09-07T16-13-09Z — dernier tag vérifié Docker Hub (curl API sept 2025).
+    # C'est le dernier tag publié avant arrêt des publications Docker Hub libres.
+    # ⚠️  Aucun tag postérieur disponible sur minio/minio — pour les patchs CVE futurs,
+    # migrer vers quay.io/minio/minio ou https://min.io/docs/minio/container/index.html
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
     environment:
       MINIO_ROOT_USER:     ${S3_ACCESS_KEY_ID}
