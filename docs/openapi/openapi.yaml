@@ -1096,11 +1096,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/Availability'
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Erreur de validation ou coordonnées incomplètes
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Lancement initial limité à la France pour les disponibilités géolocalisées
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /booking/availability/me:
     get:
       tags: [Booking]
@@ -1148,11 +1158,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/Availability'
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Erreur de validation ou coordonnées incomplètes
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Lancement initial limité à la France pour les disponibilités géolocalisées
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /booking/availability/{availabilityId}/adjust-booked:
     patch:
       tags: [Booking]
@@ -1233,7 +1253,21 @@ paths:
                     items:
                       $ref: '#/components/schemas/Availability'
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Erreur de validation ou coordonnées incomplètes
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Lancement initial limité à la France pour les recherches géolocalisées
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /booking/pros/nearby:
     get:
       tags: [Booking]
@@ -1273,11 +1307,21 @@ paths:
                     items:
                       $ref: '#/components/schemas/NearbyPro'
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Erreur de validation ou coordonnées incomplètes
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Lancement initial limité à la France pour les recherches géolocalisées
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /booking/requests:
     post:

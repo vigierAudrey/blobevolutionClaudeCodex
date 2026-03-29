@@ -56,6 +56,29 @@ describe('OpenAPI contract - booking/matching geo hardening', () => {
     expect(itemsRef).toBe('#/components/schemas/NearbyPro');
   });
 
+  it('booking geo routes document France-only guard responses', () => {
+    const doc = loadSpec();
+    const geoOperations = [
+      doc.paths?.['/booking/availability']?.post,
+      doc.paths?.['/booking/availability/{availabilityId}']?.patch,
+      doc.paths?.['/booking/availability/search']?.get,
+      doc.paths?.['/booking/pros/nearby']?.get,
+    ];
+
+    for (const operation of geoOperations) {
+      const badRequestSchema = operation?.responses?.['400']?.content?.['application/json']?.schema;
+      expect(badRequestSchema?.oneOf).toEqual(
+        expect.arrayContaining([
+          { $ref: '#/components/schemas/ValidationError' },
+          { $ref: '#/components/schemas/ErrorResponse' },
+        ]),
+      );
+      expect(operation?.responses?.['403']?.content?.['application/json']?.schema?.$ref).toBe(
+        '#/components/schemas/ErrorResponse',
+      );
+    }
+  });
+
   it('matching search request schema mirrors server validation constraints', () => {
     const doc = loadSpec();
     const schema = doc.components?.schemas?.MatchingSearchRequest;

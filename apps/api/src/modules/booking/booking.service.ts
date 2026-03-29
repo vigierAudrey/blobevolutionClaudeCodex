@@ -9,6 +9,12 @@ import type { CreateAvailabilityInput } from './dto/createAvailability.dto';
 import type { SearchAvailabilityInput } from './dto/searchAvailability.dto';
 import type { CreateBookingRequestInput } from './dto/createRequest.dto';
 import type { ProsNearbyInput } from './dto/prosNearby.dto';
+import {
+  assertFranceLaunchLocationInput,
+  assertFranceLaunchLocationPresence,
+  assertFranceLaunchProProfile,
+  isFranceLaunchGuardError,
+} from '../../lib/france-launch-guard';
 import { secureLogger } from '../../utils/secure-logger';
 
 type SearchAvailabilityFilters = SearchAvailabilityInput & {
@@ -197,6 +203,7 @@ export class BookingService {
     await this.assertProHasGeo(proUserId);
     // Validate geographic coordinates
     this.validateGeoPoint(data.spotLat, data.spotLng);
+    assertFranceLaunchLocationInput({ lat: data.spotLat, lng: data.spotLng });
 
     const dayKeyUtc = this.toUtcDayKey(data.startAt);
 
@@ -375,6 +382,12 @@ export class BookingService {
   }
 
   async updateAvailability(proUserId: string, availabilityId: string, data: Partial<CreateAvailabilityInput>) {
+    assertFranceLaunchLocationPresence(data.spotLat !== undefined, data.spotLng !== undefined);
+    if (data.spotLat !== undefined && data.spotLng !== undefined) {
+      this.validateGeoPoint(data.spotLat, data.spotLng);
+      assertFranceLaunchLocationInput({ lat: data.spotLat, lng: data.spotLng });
+    }
+
     await this.assertProHasGeo(proUserId);
 
     const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -417,12 +430,13 @@ export class BookingService {
         }
       }
 
+      const nextSpotLat = data.spotLat ?? availability.spotLat ?? undefined;
+      const nextSpotLng = data.spotLng ?? availability.spotLng ?? undefined;
+
       if (data.spotLat !== undefined || data.spotLng !== undefined) {
-        this.validateGeoPoint(
-          data.spotLat ?? availability.spotLat ?? undefined,
-          data.spotLng ?? availability.spotLng ?? undefined
-        );
+        this.validateGeoPoint(nextSpotLat, nextSpotLng);
       }
+      assertFranceLaunchLocationInput({ lat: nextSpotLat, lng: nextSpotLng });
       if (data.startAt !== undefined) {
         await this.validateOnlyOneOfferPerDay(proUserId, data.startAt, availabilityId, tx);
       }
@@ -759,9 +773,23 @@ export class BookingService {
         })
       ]);
 
-      if (!availability?.spotLat || !availability?.spotLng) {
+      if (availability?.spotLat == null || availability?.spotLng == null) {
         secureLogger.warn('Cannot notify PROs - availability has no location', { availabilityId });
         return;
+      }
+
+      try {
+        assertFranceLaunchLocationInput({ lat: availability.spotLat, lng: availability.spotLng });
+      } catch (error) {
+        if (isFranceLaunchGuardError(error)) {
+          secureLogger.info('Skipping nearby PRO notification outside France-only scope', {
+            requestId,
+            availabilityId,
+            errorCode: error.code,
+          });
+          return;
+        }
+        throw error;
       }
 
       const riderName = rider?.riderProfile?.displayName || 'Un rider';
@@ -1299,12 +1327,19 @@ export class BookingService {
   private async assertProHasGeo(proUserId: string) {
     const profile = await prisma.proProfile.findUnique({
       where: { userId: proUserId },
-      select: { lat: true, lng: true },
+      select: { countryCode: true, lat: true, lng: true },
     });
 
     if (!profile || profile.lat == null || profile.lng == null) {
       throw Object.assign(new Error('Localisation obligatoire pour publier des créneaux. Ajoutez votre géolocalisation dans votre profil.'), { status: 400 });
     }
+
+    if (profile.countryCode != null) {
+      assertFranceLaunchProProfile(profile);
+      return;
+    }
+
+    assertFranceLaunchLocationInput(profile);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
