@@ -11,6 +11,7 @@ import { secureLogger } from '../../utils/secure-logger';
 import * as matchingMetrics from '../../lib/matching-metrics';
 import { checkDecisionsQuota, refundDecisionsQuota } from '../../lib/matching-quota';
 import { createGeoEndpointLimiter } from '../../middleware/enhanced-rate-limit';
+import { assertFranceLaunchLocation } from '../../lib/france-launch-guard';
 
 export const matchingRouter = Router();
 matchingRouter.use(requireAuth, requireVerifiedEmail);
@@ -363,6 +364,7 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
     // P1 fix: excludeIds validated/normalised/bounded by Zod schema (not req.body raw)
     const { sport, level, date, distanceKm, location, cursor, limit, page, pageSize, sortBy, excludeIds } =
       searchSchema.parse(req.body);
+    assertFranceLaunchLocation(location);
 
     // Ensure we have a profile to read preferences from
     let profile = await prisma.riderProfile.findUnique({ where: { userId } });
@@ -603,7 +605,8 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
       : res
           .status(mapped.status)
           .json({
-            error: mapped.message,
+            error: mapped.code,
+            message: mapped.message,
             ...(mapped.details ? { details: mapped.details } : {}),
           });
   }

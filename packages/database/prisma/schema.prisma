@@ -168,6 +168,7 @@ model RiderProfile {
 model ProProfile {
   id           String     @id @default(uuid())
   userId       String     @unique
+  countryCode  String?
   businessName String?
   bio          String?
   pricePerHour Int?

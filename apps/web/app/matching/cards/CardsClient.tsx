@@ -16,6 +16,7 @@ import { Sparkles, MessageSquare } from 'lucide-react';
 import { formatDateForDisplay } from './utils';
 import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, Sport, Level } from '@/types';
 import { clearMatchingStorage } from '../storage';
+import { FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
 
 const AdBannerFeed = dynamicImport(
   () => import('../../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
@@ -419,6 +420,11 @@ export function CardsClient() {
             </Button>
           </div>
         </div>
+        {useGeoloc && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+            {FRANCE_ONLY_INFO_MESSAGE}
+          </div>
+        )}
 
         <Card className="border-2 shadow-xl rounded-[2rem]">
             <CardHeader className="pb-4">
@@ -430,7 +436,11 @@ export function CardsClient() {
               </div>
             </CardHeader>
             <CardContent className="relative space-y-4">
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && (
+                <p className="text-sm text-red-600" role="alert">
+                  {error}
+                </p>
+              )}
               {isInitialLoading && (
                 <div className="space-y-4">
                   <ProfileCardSkeleton />

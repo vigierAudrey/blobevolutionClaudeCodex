@@ -133,13 +133,32 @@ describe('AuthService', () => {
       const userData = {
         email: 'pro@example.com',
         password: 'SecurePass123!',
-        role: 'PRO' as const
+        role: 'PRO' as const,
+        countryCode: 'FR' as const,
       };
 
       const result = await authService.register(userData);
-      const user = await prisma.user.findUnique({ where: { id: result.userId } });
+      const user = await prisma.user.findUnique({
+        where: { id: result.userId },
+        include: { proProfile: true },
+      });
 
       expect(user!.role).toBe('PRO');
+      expect(user!.proProfile?.countryCode).toBe('FR');
+    });
+
+    it('should reject PRO registration outside France', async () => {
+      await expect(
+        authService.register({
+          email: 'pro-outside@example.com',
+          password: 'SecurePass123!',
+          role: 'PRO',
+          countryCode: 'CH',
+        }),
+      ).rejects.toMatchObject({
+        code: 'FRANCE_ONLY_RESTRICTED',
+        status: 403,
+      });
     });
   });
 

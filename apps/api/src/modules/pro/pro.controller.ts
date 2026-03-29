@@ -13,6 +13,7 @@ import { computeZoneLarge, recordServerAnalyticsEvent } from '../../services/ana
 import { createGeoEndpointLimiter, createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmacSafe } from '../../lib/hash-ip';
+import { assertFranceLaunchProProfile, isFranceLaunchGuardError } from '../../lib/france-launch-guard';
 
 export const proRouter = Router();
 proRouter.use(requireAuth, requireVerifiedEmail);
@@ -85,6 +86,7 @@ const upsertSchema = z.object({
   bio: z.string().max(2000).optional().or(z.literal('').transform(() => undefined)),
   emailNotif: z.boolean().optional(),
   photoUrl: z.string().url().optional(),
+  countryCode: z.string().trim().length(2).transform((value) => value.toUpperCase()).optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   radiusKm: z.number().int().min(1).max(200).optional(),
@@ -133,6 +135,7 @@ const persistProProfile = async (userId: string, body: z.infer<typeof upsertSche
     // Merge with existing preferences to avoid overwriting unspecified fields
     return { notificationPreferences: value };
   };
+  const countrySegment = (value: string | undefined) => (value !== undefined ? { countryCode: value } : {});
 
   return prisma.proProfile.upsert({
     where: { userId },
@@ -142,6 +145,7 @@ const persistProProfile = async (userId: string, body: z.infer<typeof upsertSche
       bio: body.bio,
       emailNotif: body.emailNotif ?? false,
       photoUrl: body.photoUrl,
+      ...countrySegment(body.countryCode),
       lat: body.lat,
       lng: body.lng,
       ...radiusSegment(body.radiusKm),
@@ -152,6 +156,7 @@ const persistProProfile = async (userId: string, body: z.infer<typeof upsertSche
       bio: body.bio,
       emailNotif: body.emailNotif,
       photoUrl: body.photoUrl,
+      ...countrySegment(body.countryCode),
       lat: body.lat,
       lng: body.lng,
       ...radiusSegment(body.radiusKm),
@@ -165,7 +170,22 @@ proRouter.put('/me', requireProRole, profileUpdateLimiter, async (req, res) => {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const body = upsertSchema.parse(req.body);
-    const pp = await persistProProfile(userId, body);
+    const existingProfile = await prisma.proProfile.findUnique({
+      where: { userId },
+      select: { countryCode: true, lat: true, lng: true },
+    });
+    const nextCountryCode = body.countryCode ?? existingProfile?.countryCode ?? undefined;
+    assertFranceLaunchProProfile({
+      countryCode: nextCountryCode,
+      lat: body.lat,
+      lng: body.lng,
+    });
+    const normalizedCountryCode = assertFranceLaunchProProfile({
+      countryCode: nextCountryCode,
+      lat: body.lat ?? existingProfile?.lat ?? undefined,
+      lng: body.lng ?? existingProfile?.lng ?? undefined,
+    });
+    const pp = await persistProProfile(userId, { ...body, countryCode: normalizedCountryCode });
     const consentHash = getConsentHash(req);
     void recordServerAnalyticsEvent({
       eventType: 'PRO_PROFILE_UPDATE',
@@ -178,6 +198,13 @@ proRouter.put('/me', requireProRole, profileUpdateLimiter, async (req, res) => {
     return res.json(pp);
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    if (isFranceLaunchGuardError(err)) {
+      return res.status(err.status).json({
+        error: err.code,
+        message: err.message,
+        ...(err.details ? { details: err.details } : {}),
+      });
+    }
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -187,7 +214,22 @@ proRouter.patch('/me', requireProRole, profileUpdateLimiter, async (req, res) =>
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const body = upsertSchema.parse(req.body || {});
-    const pp = await persistProProfile(userId, body);
+    const existingProfile = await prisma.proProfile.findUnique({
+      where: { userId },
+      select: { countryCode: true, lat: true, lng: true },
+    });
+    const nextCountryCode = body.countryCode ?? existingProfile?.countryCode ?? undefined;
+    assertFranceLaunchProProfile({
+      countryCode: nextCountryCode,
+      lat: body.lat,
+      lng: body.lng,
+    });
+    const normalizedCountryCode = assertFranceLaunchProProfile({
+      countryCode: nextCountryCode,
+      lat: body.lat ?? existingProfile?.lat ?? undefined,
+      lng: body.lng ?? existingProfile?.lng ?? undefined,
+    });
+    const pp = await persistProProfile(userId, { ...body, countryCode: normalizedCountryCode });
     const consentHash = getConsentHash(req);
     void recordServerAnalyticsEvent({
       eventType: 'PRO_PROFILE_UPDATE',
@@ -200,6 +242,13 @@ proRouter.patch('/me', requireProRole, profileUpdateLimiter, async (req, res) =>
     return res.json(pp);
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    if (isFranceLaunchGuardError(err)) {
+      return res.status(err.status).json({
+        error: err.code,
+        message: err.message,
+        ...(err.details ? { details: err.details } : {}),
+      });
+    }
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -234,7 +283,11 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const rawRadius = req.query.radiusKm ? Number(req.query.radiusKm) : undefined;
-    const me = await prisma.proProfile.findUnique({ where: { userId }, select: { lat: true, lng: true, radiusKm: true } });
+    const me = await prisma.proProfile.findUnique({
+      where: { userId },
+      select: { countryCode: true, lat: true, lng: true, radiusKm: true },
+    });
+    assertFranceLaunchProProfile(me ?? {});
     if (!me?.lat || !me?.lng) return res.status(400).json({ error: 'Missing pro location' });
     const radiusFallback = me.radiusKm ?? 25;
     const safeRadius = typeof rawRadius === 'number' && !Number.isNaN(rawRadius) ? rawRadius : radiusFallback;
@@ -304,6 +357,13 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
 
     return res.json({ items });
   } catch (err) {
+    if (isFranceLaunchGuardError(err)) {
+      return res.status(err.status).json({
+        error: err.code,
+        message: err.message,
+        ...(err.details ? { details: err.details } : {}),
+      });
+    }
     secureLogger.error('Error fetching lesson candidates', { error: err });
     return res.status(500).json({ error: 'Internal error' });
   }
