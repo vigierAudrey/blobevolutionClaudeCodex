@@ -49,9 +49,9 @@ export function validateProductionEnv(): void {
   }
 
   // Check DATABASE_URL SSL in production
-  // Exception pré-VPS : réseau Docker interne, SSL entre containers non nécessaire.
-  // APP_ENV=pre-vps doit être défini explicitement — jamais en production réelle.
-  const isPreVps = process.env.APP_ENV === 'pre-vps';
+  // Exception pré-VPS / VPS : réseau Docker interne, SSL entre containers non nécessaire.
+  // APP_ENV=pre-vps ou APP_ENV=vps doit être défini explicitement — jamais en production cloud/managed.
+  const isPreVps = process.env.APP_ENV === 'pre-vps' || process.env.APP_ENV === 'vps';
   if (!process.env.DATABASE_URL) {
     errors.push('DATABASE_URL is not set');
   } else if (
