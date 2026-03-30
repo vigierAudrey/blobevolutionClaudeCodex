@@ -230,8 +230,11 @@ async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Erro
     }
 
     // Étape 1: Vérifier le JWT (pas de query DB encore)
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as { sub: string; role: string };
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as { sub: string; role: string; sv?: number };
     const userId = decoded.sub;
+    // sv (sessionVersion) est encodé dans le JWT à l'émission (buildAccessToken).
+    // S'il est absent (token legacy), on skip la comparaison.
+    const tokenSv = typeof decoded.sv === 'number' && decoded.sv >= 1 ? decoded.sv : undefined;
     await runWithWsLogContext('ws:authenticate', userId, async () => {
       // P0 STEP 2: Vérifier rate limit reconnection AVANT toute query DB
       const reconnectBlockReason = await checkReconnectionAllowed(userId);
@@ -260,6 +263,18 @@ async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Erro
           next(new Error('User not found'));
           return;
         }
+        // P1-WS: Vérifier sessionVersion contre la valeur mise en cache depuis la DB.
+        // Si le JWT porte un sv inférieur à celui de la DB (logout / changement de mot de passe),
+        // la reconnexion est refusée même si le JWT est encore cryptographiquement valide.
+        if (tokenSv !== undefined && cachedAuth.sessionVersion !== undefined && tokenSv < cachedAuth.sessionVersion) {
+          secureLogger.warn('SOCKET_AUTH_SESSION_REVOKED_CACHE', {
+            userId: shortId(userId),
+            tokenSv,
+            cachedSv: cachedAuth.sessionVersion
+          });
+          next(new Error('Session revoked'));
+          return;
+        }
         userRole = cachedAuth.role!;
       } else {
         // Cache MISS → query DB
@@ -268,7 +283,8 @@ async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Erro
           select: {
             id: true,
             role: true,
-            deletedAt: true // P0 STEP 2.1: Vérifier soft delete
+            deletedAt: true, // P0 STEP 2.1: Vérifier soft delete
+            sessionVersion: true // P1-WS: Vérifier révocation de session
           }
         });
 
@@ -288,10 +304,23 @@ async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Erro
           return;
         }
 
+        // P1-WS: Si le JWT porte un sv < sessionVersion en DB, la session est révoquée.
+        if (tokenSv !== undefined && tokenSv < user.sessionVersion) {
+          secureLogger.warn('SOCKET_AUTH_SESSION_REVOKED_DB', {
+            userId: shortId(userId),
+            tokenSv,
+            dbSv: user.sessionVersion
+          });
+          // Mettre en cache le refus pour bloquer les reconnexions rapides.
+          setCachedAuth(userId, false);
+          next(new Error('Session revoked'));
+          return;
+        }
+
         userRole = user.role;
 
-        // P0 STEP 2: Mettre en cache le user
-        setCachedAuth(userId, true, userRole);
+        // P0 STEP 2: Mettre en cache le user avec sessionVersion pour comparaison future.
+        setCachedAuth(userId, true, userRole, user.sessionVersion);
       }
 
       // Attacher l'utilisateur au socket

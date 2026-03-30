@@ -38,6 +38,7 @@ const ENABLE_CACHE = process.env.WS_AUTH_CACHE_ENABLED !== 'false'; // Default: 
 interface CacheEntry {
   exists: boolean;
   role?: string; // undefined si exists=false
+  sessionVersion?: number; // undefined si exists=false ou token legacy sans sv
   expiresAt: number; // timestamp ms
 }
 
@@ -104,8 +105,9 @@ export function getCachedAuth(userId: string): CacheEntry | null {
  * @param userId - ID utilisateur
  * @param exists - Utilisateur existe en DB ?
  * @param role - Rôle utilisateur (si exists=true)
+ * @param sessionVersion - sessionVersion lu depuis la DB (si exists=true)
  */
-export function setCachedAuth(userId: string, exists: boolean, role?: string): void {
+export function setCachedAuth(userId: string, exists: boolean, role?: string, sessionVersion?: number): void {
   if (!ENABLE_CACHE) {
     return;
   }
@@ -115,6 +117,7 @@ export function setCachedAuth(userId: string, exists: boolean, role?: string): v
   cache.set(userId, {
     exists,
     role: exists ? role : undefined,
+    sessionVersion: exists ? sessionVersion : undefined,
     expiresAt
   });
 
