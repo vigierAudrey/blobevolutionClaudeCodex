@@ -146,14 +146,24 @@ forbidden_value "S3_ACCESS_KEY_ID" "minioadmin"
 forbidden_value "S3_ACCESS_KEY_ID" "pvps-access-key"
 forbidden_value "S3_SECRET_ACCESS_KEY" "minioadmin"
 
-# STORAGE_DOMAIN : requis et non-localhost
-if [ -n "${STORAGE_DOMAIN:-}" ]; then
-  must_not_contain "STORAGE_DOMAIN" "localhost"
-  must_not_contain "STORAGE_DOMAIN" "127\.0\.0\."
+# STORAGE_DOMAIN : obligatoire, non-localhost, non-hostname-docker-interne
+require_var "STORAGE_DOMAIN"
+must_not_contain "STORAGE_DOMAIN" "localhost"
+must_not_contain "STORAGE_DOMAIN" "127\.0\.0\."
+must_not_contain "STORAGE_DOMAIN" "0\.0\.0\.0"
+must_not_contain "STORAGE_DOMAIN" "::1"
+must_not_contain "STORAGE_DOMAIN" "minio"
+must_not_contain "STORAGE_DOMAIN" "api"
+must_not_contain "STORAGE_DOMAIN" "web"
+must_not_contain "STORAGE_DOMAIN" "postgres"
+# Rejeter si la valeur contient "://" (protocole fourni par erreur)
+if echo "${STORAGE_DOMAIN:-}" | grep -q "://"; then
+  log_err "STORAGE_DOMAIN ne doit pas contenir le protocole (fournir seulement le domaine, ex: storage.blobinfini.fr)"
+  ERRORS=$((ERRORS + 1))
+elif [ -n "${STORAGE_DOMAIN:-}" ]; then
   log_ok "STORAGE_DOMAIN=${STORAGE_DOMAIN}"
-else
-  log_warn "STORAGE_DOMAIN non défini — les overrides docker-compose.vps.yml utiliseront storage.blobinfini.local"
 fi
+# Note: STORAGE_DOMAIN vide est déjà compté par require_var ci-dessus → ERRORS++
 
 # S3_PRESIGN_ENDPOINT : si défini directement (hors override compose), ne doit pas contenir localhost
 if [ -n "${S3_PRESIGN_ENDPOINT:-}" ]; then

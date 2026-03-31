@@ -609,6 +609,7 @@ export async function runSeed(client?: PrismaClient) {
         pricePerHour: [45, 55, 60, 70, 80][i], // Tarifs variés
         emailNotif: true,
         verified: i < 3, // Les 3 premiers sont vérifiés
+        countryCode: 'FR',
         lat: location.lat + (Math.random() - 0.5) * 0.05,
         lng: location.lng + (Math.random() - 0.5) * 0.05,
       },
@@ -717,6 +718,7 @@ export async function runSeed(client?: PrismaClient) {
         pricePerHour: seed.pricePerHour,
         emailNotif: true,
         verified: seed.verified,
+        countryCode: 'FR',
         lat: seed.location.lat,
         lng: seed.location.lng,
       },

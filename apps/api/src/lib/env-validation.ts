@@ -85,10 +85,12 @@ export function validateProductionEnv(): void {
     }
   }
 
-  // Exception pré-VPS : 2FA désactivé pour permettre les tests de smoke sans TOTP.
+  // Exception pré-VPS UNIQUEMENT : 2FA peut être désactivé pour les smoke-tests sans TOTP.
+  // VPS qualifié (APP_ENV=vps) exige AUTH_REQUIRE_2FA=true — pas d'exemption.
+  const isPreVpsOnly = process.env.APP_ENV === 'pre-vps';
   const authRequire2FA = String(process.env.AUTH_REQUIRE_2FA ?? '').trim().toLowerCase();
-  if (!isPreVps && (authRequire2FA === 'false' || authRequire2FA === '0')) {
-    errors.push('AUTH_REQUIRE_2FA=false is NOT allowed in production');
+  if (!isPreVpsOnly && (authRequire2FA === 'false' || authRequire2FA === '0')) {
+    errors.push('AUTH_REQUIRE_2FA=false is NOT allowed in production or VPS');
   }
 
   const loginAttemptStorePlaintextEmail = String(process.env.LOGINATTEMPT_STORE_PLAINTEXT_EMAIL ?? '').trim().toLowerCase();
@@ -146,6 +148,22 @@ export function validateProductionEnv(): void {
   }
   if (!isPreVps && process.env.S3_SECRET_ACCESS_KEY === 'minioadmin') {
     errors.push('S3_SECRET_ACCESS_KEY must not use the default "minioadmin" value in production');
+  }
+
+  // S3_PRESIGN_ENDPOINT et S3_PUBLIC_URL_BASE : ne doivent jamais pointer vers un hôte interne
+  // (seulement en production non-VPS — en VPS ces vars sont injectées par docker-compose)
+  if (!isPreVps) {
+    for (const key of ['S3_PRESIGN_ENDPOINT', 'S3_PUBLIC_URL_BASE'] as const) {
+      const val = process.env[key];
+      if (val) {
+        if (!val.startsWith('https://')) {
+          errors.push(`${key} must start with https:// in production (current: ${val})`);
+        }
+        if (/localhost|127\.0\.0\.\d|minio[:/]|::1/.test(val)) {
+          errors.push(`${key} must not reference an internal host (current: ${val})`);
+        }
+      }
+    }
   }
 
   // Admin refresh TTL : interdire >24h en production (valeur par défaut = 8h dans auth.service.ts)

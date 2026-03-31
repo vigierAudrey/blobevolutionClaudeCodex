@@ -61,7 +61,7 @@ describe('Availability geo guard', () => {
   it('allows availability creation when pro has geolocation', async () => {
     await prisma.proProfile.upsert({
       where: { userId: proUserId },
-      create: { userId: proUserId, lat: 43.5, lng: -1.5, verified: true },
+      create: { userId: proUserId, countryCode: 'FR', lat: 43.5, lng: -1.5, verified: true },
       update: { lat: 43.5, lng: -1.5 },
     });
 

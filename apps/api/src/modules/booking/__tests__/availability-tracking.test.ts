@@ -39,7 +39,7 @@ describe('Availability Tracking', () => {
     proUserId = proAuth.userId;
     await prisma.proProfile.upsert({
       where: { userId: proUserId },
-      create: { userId: proUserId, lat: 43.493, lng: -1.558, verified: true },
+      create: { userId: proUserId, countryCode: 'FR', lat: 43.493, lng: -1.558, verified: true },
       update: { lat: 43.493, lng: -1.558 },
     });
 
