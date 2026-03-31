@@ -85,7 +85,14 @@ const upsertSchema = z.object({
   businessName: z.string().min(1).max(120).optional().or(z.literal('').transform(() => undefined)),
   bio: z.string().max(2000).optional().or(z.literal('').transform(() => undefined)),
   emailNotif: z.boolean().optional(),
-  photoUrl: z.string().url().optional(),
+  photoUrl: z.string().url().optional().refine(
+    (val) => {
+      if (!val) return true;
+      const base = process.env.S3_PUBLIC_URL_BASE || '';
+      return base ? val.startsWith(base) : true;
+    },
+    { message: 'photoUrl must point to the configured storage domain' }
+  ),
   countryCode: z.string().trim().length(2).transform((value) => value.toUpperCase()).optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
