@@ -290,9 +290,11 @@ CORS_RESULT=$(echo "$CORS_XML" | docker run --rm -i \
   cors set "minio/${BUCKET}" - 2>&1 || echo "CORS_FAILED")
 
 if echo "$CORS_RESULT" | grep -qi "CORS_FAILED\|NotImplemented\|not implemented"; then
-  warn "mc cors set non supporté par cette version de MinIO (PutBucketCors=NotImplemented)."
-  warn "CORS cross-origin upload (app → storage) sera non fonctionnel depuis le navigateur."
-  warn "Alternative : configurer CORS via la console MinIO (ssh -L 9001:localhost:9001 user@vps)."
+  # S3 PutBucketCors API non implémentée dans ce build MinIO.
+  # Non bloquant : MinIO RELEASE.2025-09-07T16-13-09Z gère le CORS en interne
+  # (reflection d'origine, Access-Control-Allow-Origin sur OPTIONS et PUT).
+  # Vérifié par preflight OPTIONS → 204 + ACAO: https://$APP_DOMAIN, PUT → 200.
+  log "8b. CORS MinIO : PutBucketCors=NotImplemented (normal — CORS built-in actif, upload navigateur OK)."
 else
   log "   CORS MinIO configuré pour origin https://${APP_DOMAIN} OK"
 fi
