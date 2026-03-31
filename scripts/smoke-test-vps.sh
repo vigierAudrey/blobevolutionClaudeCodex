@@ -17,6 +17,15 @@
 
 set -uo pipefail
 
+# Charger .env.vps si présent (REDIS_PASSWORD, S3_BUCKET, STORAGE_DOMAIN, SECURITY_MONITOR_TOKEN...)
+# Priorité aux variables déjà définies dans l'environnement hôte.
+if [ -f ".env.vps" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source ".env.vps"
+  set +a
+fi
+
 API="${API_BASE_URL:-https://api.blobinfini.local}"
 WEB="${WEB_BASE_URL:-https://app.blobinfini.local}"
 STORAGE="${STORAGE_BASE_URL:-https://storage.blobinfini.local}"
