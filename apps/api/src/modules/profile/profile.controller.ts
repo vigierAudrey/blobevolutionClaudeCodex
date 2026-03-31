@@ -44,7 +44,14 @@ const upsertSchema = z.object({
   sex: sexEnum.optional(),
   maxDistanceKm: z.number().int().min(1).max(500).optional(),
   emailNotif: z.boolean().optional(),
-  photoUrl: z.string().url().nullable().optional(),
+  photoUrl: z.string().url().nullable().optional().refine(
+    (val) => {
+      if (!val) return true;
+      const base = process.env.S3_PUBLIC_URL_BASE || '';
+      return base ? val.startsWith(base) : true;
+    },
+    { message: 'photoUrl must point to the configured storage domain' }
+  ),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   // Lesson intent (visible on BloboMap Pro)
