@@ -22,7 +22,7 @@ describe('Système anti-overbooking et gestion des capacités', () => {
     proUserId = proUser.id;
     await prisma.proProfile.upsert({
       where: { userId: proUserId },
-      create: { userId: proUserId, lat: 43.4832, lng: -1.5586, verified: true },
+      create: { userId: proUserId, countryCode: 'FR', lat: 43.4832, lng: -1.5586, verified: true },
       update: { lat: 43.4832, lng: -1.5586 },
     });
 

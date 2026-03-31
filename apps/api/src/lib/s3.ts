@@ -55,5 +55,13 @@ export async function presignPutObject(key: string, contentType: string, expires
 export function publicUrlForKey(key: string) {
   const { publicBase, endpoint, bucket } = getEnv();
   const base = publicBase || (endpoint && bucket ? `${endpoint.replace(/\/$/, '')}/${bucket}` : undefined);
-  return base ? `${base}/${key}` : undefined;
+  if (!base) return undefined;
+  // Guard: refuse internal Docker/localhost URLs from reaching the client in production
+  if (process.env.NODE_ENV === 'production' && /localhost|127\.0\.0\.\d|minio[:/]|::1/.test(base)) {
+    throw new Error(
+      `publicUrlForKey: S3_PUBLIC_URL_BASE resolves to an internal URL (${base}). ` +
+      'Set S3_PUBLIC_URL_BASE explicitly to the public storage domain.'
+    );
+  }
+  return `${base}/${key}`;
 }

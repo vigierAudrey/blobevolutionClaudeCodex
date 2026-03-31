@@ -33,7 +33,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env.vps"
 CERTS_DIR="$REPO_ROOT/docker/certs/vps"
 DC="docker compose -f $REPO_ROOT/docker-compose.vps.yml --env-file $ENV_FILE"
-MC_IMAGE="quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z"
+MC_IMAGE="quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 
 RESET=false
 NO_BUILD=false
@@ -226,18 +226,33 @@ docker run --rm \
 
 log "   Policy GET anonyme définie sur '${BUCKET}' OK"
 
-# Vérifier la policy
+# Vérifier la policy (strict : "none" = absence de policy = échec)
 POLICY_RESULT=$(docker run --rm \
   --network "blobconnect-vps_vps" \
   -e "MC_HOST_minio=${MINIO_INT_URL}" \
   "$MC_IMAGE" \
   anonymous get "minio/${BUCKET}" 2>&1 || echo "ERROR")
 
-if echo "$POLICY_RESULT" | grep -qi "download\|public\|none"; then
-  log "   Vérification policy : $POLICY_RESULT"
+if echo "$POLICY_RESULT" | grep -qi "download"; then
+  log "   Vérification policy OK : $POLICY_RESULT"
 else
-  warn "Vérification policy retourne : $POLICY_RESULT"
+  die "Policy bucket incorrecte après application (résultat: $POLICY_RESULT). 'none' = aucune policy anonyme. Vérifier mc anonymous set download."
 fi
+
+# Configuration CORS MinIO : nécessaire pour les uploads cross-origin depuis le navigateur
+# (app.$APP_DOMAIN → storage.$STORAGE_DOMAIN via presigned PUT)
+log "8b. Configuration CORS MinIO pour presigned PUT cross-origin..."
+
+CORS_RULE='{"CORSRules":[{"AllowedHeaders":["*"],"AllowedMethods":["GET","PUT","HEAD"],"AllowedOrigins":["https://'"${APP_DOMAIN}"'"],"ExposeHeaders":["ETag","x-amz-request-id"],"MaxAgeSeconds":3600}]}'
+
+docker run --rm \
+  --network "blobconnect-vps_vps" \
+  -e "MC_HOST_minio=${MINIO_INT_URL}" \
+  "$MC_IMAGE" \
+  cors set --json /dev/stdin "minio/${BUCKET}" <<< "$CORS_RULE" \
+  || die "mc cors set échoué"
+
+log "   CORS MinIO configuré pour origin https://${APP_DOMAIN} OK"
 
 # ─── 9. Migration Prisma ──────────────────────────────────────────────────────
 log "9. Migration Prisma (migrate deploy)..."

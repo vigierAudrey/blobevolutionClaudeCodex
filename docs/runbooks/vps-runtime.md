@@ -178,7 +178,7 @@ docker compose -f docker-compose.vps.yml --env-file .env.vps up -d api
 4. **VPS_CERTS_DIR** : pointer vers les certs Let's Encrypt (`/etc/letsencrypt/live/...`)
 5. **STORAGE_DOMAIN** : mettre `storage.blobinfini.fr` dans `.env.vps`
 6. **SMTP** : remplacer Mailpit par un SMTP réel (Brevo, Postmark, SES...)
-7. **AUTH_REQUIRE_2FA** : passer à `true` pour la production
+7. **AUTH_REQUIRE_2FA** : `true` par défaut dans `.env.vps.example` — vérifier que c'est bien conservé
 8. Relancer `check-vps-env.sh` — doit passer sans erreur
 9. Relancer `smoke-test-vps.sh` — doit retourner GO VPS ✓
 
@@ -194,3 +194,60 @@ docker compose -f docker-compose.vps.yml --env-file .env.vps up -d api
 | Credentials MinIO par défaut | check-vps-env.sh rejette minioadmin et pvps-access-key |
 | Accès console MinIO depuis internet | Port 9001 non exposé — tunnel SSH requis |
 | TLS mal câblé (cert storage manquant) | check-vps-env.sh vérifie les 3 certs (api, app, storage) |
+
+## Contrainte WebSocket — Single-instance uniquement
+
+### Setup actuel : qualifié pour 1 réplique
+
+La configuration WebSocket actuelle (`docker-compose.vps.yml`, `nginx.vps.conf`) est **qualifiée pour un déploiement single-instance** (`REPLICAS=1`). En dessous de cette limite, la stack est fonctionnelle, testée, et sûre.
+
+### Pourquoi le scale horizontal WS n'est pas supporté sans prérequis
+
+Socket.IO maintient des rooms en mémoire par processus (`user:{userId}`, `conversation:{id}`).
+Sans Redis adapter, chaque réplique a sa propre vue des connexions.
+
+Conséquences si `REPLICAS > 1` sans Redis adapter :
+- `disconnectUserSockets(userId)` n'atteint que les sockets connectés **sur la même instance** — les sockets sur d'autres instances ne sont pas révoqués.
+- Un logout ou changement de mot de passe ne garantit pas la déconnexion immédiate de toutes les sessions WS actives.
+- Les messages room-broadcast ne sont pas fanout-able cross-instance.
+
+Le code détecte cette condition et loggue au démarrage :
+```
+WS_MULTI_INSTANCE_WITHOUT_REDIS_ADAPTER  { replicas: N, risk: "Room revocation is best-effort per node" }
+```
+
+### Prérequis pour scale horizontal WS
+
+**1. Redis adapter Socket.IO**
+
+```bash
+# .env.vps
+WS_ADAPTER_REDIS=true   # active l'adapter Redis Socket.IO
+# REDIS_URL doit pointer vers un Redis accessible de toutes les instances
+```
+
+L'adapter distribue les `io.in(room).emit()` et `io.in(room).disconnectSockets()` cross-instance via Redis pub/sub. Voir la doc Socket.IO : https://socket.io/docs/v4/redis-adapter/
+
+**2. Sticky sessions nginx**
+
+Tant que le polling HTTP est actif comme transport fallback, un client en polling doit toujours atteindre la même instance (état de session Socket.IO en mémoire). Sans sticky sessions, le polling peut atterrir sur une instance qui ne connaît pas la session → reconnexion en boucle.
+
+Options nginx :
+```nginx
+upstream api_backend {
+    ip_hash;               # sticky par IP client (simple, acceptable pour VPS)
+    server api_1:4000;
+    server api_2:4000;
+    # ...
+}
+```
+Ou via `sticky cookie` (nginx plus) / balanceur externe avec session affinity.
+
+**3. Checklist avant scale-out**
+
+- [ ] `WS_ADAPTER_REDIS=true` dans `.env.vps`
+- [ ] Redis accessible de toutes les instances (même réseau Docker ou Redis externe)
+- [ ] Sticky sessions activées dans nginx upstream (au moins `ip_hash`)
+- [ ] `REPLICAS` mis à jour dans `.env.vps`
+- [ ] Smoke test `socket-session-revocation` relancé après scale-up
+- [ ] Vérifier l'absence de `WS_MULTI_INSTANCE_WITHOUT_REDIS_ADAPTER` dans les logs

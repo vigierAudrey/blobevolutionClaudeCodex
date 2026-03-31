@@ -362,18 +362,22 @@ PRESIGN_URL=$(echo "$PRESIGN_RESP" | jq -r '.url // .presignedUrl // .uploadUrl 
 if [ -n "$PRESIGN_URL" ]; then
   check_not_contains "Presigned URL sans 'localhost'" "$PRESIGN_URL" "localhost"
   check_not_contains "Presigned URL sans '127.0.0.1'" "$PRESIGN_URL" "127.0.0.1"
+  check_not_contains "Presigned URL sans 'minio:'" "$PRESIGN_URL" "minio:"
   check_contains     "Presigned URL contient storage domain" "$PRESIGN_URL" "$STORAGE_DOMAIN_CHECK"
+  check_contains     "Presigned URL https://" "$PRESIGN_URL" "https://"
   echo "       URL: $(echo "$PRESIGN_URL" | head -c 100)..."
 else
-  echo "  WARN [18] /profile/upload-avatar ne retourne pas de presigned URL directement"
-  echo "       Réponse: $(echo "$PRESIGN_RESP" | head -c 200)"
-  echo "  → Test alternatif : upload direct via MinIO (interne Docker)"
+  printf "  \033[31mFAIL\033[0m [18] /profile/photo/upload-url n'a pas retourné de presigned URL\n"
+  echo "       Réponse brute: $(echo "$PRESIGN_RESP" | head -c 300)"
+  echo "       Cause probable : 2FA requis (AUTH_REQUIRE_2FA=true) mais session smoke-test non complétée."
+  echo "       Les checks [18][19][20] sont INVALIDES sans presigned URL réelle via l'API."
+  FAIL=$((FAIL + 1))
 fi
 
 # ─── [19] Upload réel via presigned URL ────────────────────────────────────────
 echo "--- [19] Upload réel via presigned URL ---"
 if [ -n "$PRESIGN_URL" ]; then
-  # Upload d'un fichier texte via la presigned PUT URL
+  # Upload via presigned PUT URL — ce test doit passer par nginx, pas par mc (sinon aucune valeur probante)
   UPLOAD_STATUS=$(curl -sk \
     $CURL_RESOLVE \
     -X PUT "$PRESIGN_URL" \
@@ -384,28 +388,18 @@ if [ -n "$PRESIGN_URL" ]; then
   check "PUT presigned URL → 200" "$([ "$UPLOAD_STATUS" = "200" ] && echo ok || echo fail)" "ok"
   if [ "$UPLOAD_STATUS" != "200" ]; then
     echo "       HTTP status upload: $UPLOAD_STATUS"
+    echo "       Si 403/SignatureDoesNotMatch : vérifier MINIO_SERVER_URL == S3_PRESIGN_ENDPOINT"
+    echo "       Si 000 : vérifier résolution DNS / certs TLS du storage domain"
   fi
 else
-  # Fallback : upload direct via mc (interne Docker)
-  echo "  → Fallback : upload direct via mc (preuve interne)"
-  if command -v docker >/dev/null 2>&1; then
-    MINIO_INT_URL="http://${S3_ACCESS_KEY_ID:-vps-access-key}:${S3_SECRET_ACCESS_KEY:-}@minio:9000"
-    MC_UPLOAD=$(docker run --rm \
-      --network "blobconnect-vps_vps" \
-      -e "MC_HOST_minio=${MINIO_INT_URL}" \
-      "quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z" \
-      pipe "minio/${S3_BUCKET_CHECK}/${SMOKE_KEY}" 2>&1 <<< "$SMOKE_CONTENT" || echo "ERROR")
-    check "mc pipe upload → OK" \
-      "$(echo "$MC_UPLOAD" | grep -qi "error\|ERROR" && echo fail || echo ok)" "ok"
-  else
-    echo "  SKIP upload (ni presign URL ni docker disponible)"
-    FAIL=$((FAIL + 1))
-  fi
+  # Pas de fallback mc : le test mc bypasse nginx et CORS, ce qui masque les vrais problèmes
+  printf "  \033[31mFAIL\033[0m [19] SKIP — presigned URL absente, test sans valeur probante\n"
+  FAIL=$((FAIL + 1))
 fi
 
 # ─── [20] Lecture via URL publique (GET anonyme) ──────────────────────────────
 echo "--- [20] Lecture via URL publique ---"
-if [ -n "$PRESIGN_URL" ]; then
+if [ -n "$PRESIGN_URL" ] && [ "$UPLOAD_STATUS" = "200" ]; then
   # Extraire la clé depuis la presigned URL (path après le bucket)
   PRESIGN_PATH=$(echo "$PRESIGN_URL" | sed 's/?.*//' | sed "s|.*/${S3_BUCKET_CHECK}/||")
   PUBLIC_READ_URL="${STORAGE}/${S3_BUCKET_CHECK}/${PRESIGN_PATH}"
@@ -420,27 +414,23 @@ if [ -n "$PRESIGN_URL" ]; then
   if [ "$READ_STATUS" != "200" ]; then
     echo "       URL testée: $PUBLIC_READ_URL"
     echo "       HTTP status: $READ_STATUS"
-    echo "       WARN: Si le bucket n'est pas en GET anonyme, utiliser presigned GET à la place."
+    echo "       Si 403 : vérifier mc anonymous set download sur le bucket"
+  fi
+
+  # Test négatif : listing du bucket doit être interdit
+  LIST_STATUS=$(curl -sk \
+    $CURL_RESOLVE \
+    -o /dev/null \
+    -w "%{http_code}" \
+    "${STORAGE}/${S3_BUCKET_CHECK}/" 2>/dev/null || echo "000")
+  check "GET bucket listing → 403 (listing interdit)" \
+    "$([ "$LIST_STATUS" = "403" ] && echo ok || echo fail)" "ok"
+  if [ "$LIST_STATUS" != "403" ]; then
+    echo "       WARN: listing bucket retourne HTTP $LIST_STATUS (attendu: 403)"
   fi
 else
-  # Fallback : vérifier qu'un objet uploadé en interne est lisible
-  if command -v docker >/dev/null 2>&1; then
-    PUBLIC_READ_URL="${STORAGE}/${S3_BUCKET_CHECK}/${SMOKE_KEY}"
-    READ_STATUS=$(curl -sk \
-      $CURL_RESOLVE \
-      -o /dev/null \
-      -w "%{http_code}" \
-      "$PUBLIC_READ_URL" 2>/dev/null || echo "000")
-    check "GET objet smoke via URL publique → 200" \
-      "$([ "$READ_STATUS" = "200" ] && echo ok || echo fail)" "ok"
-    if [ "$READ_STATUS" != "200" ]; then
-      echo "       URL testée: $PUBLIC_READ_URL"
-      echo "       HTTP status: $READ_STATUS"
-    fi
-  else
-    echo "  SKIP lecture publique (ni presign ni docker)"
-    FAIL=$((FAIL + 1))
-  fi
+  printf "  \033[31mFAIL\033[0m [20] SKIP — upload [19] absent ou échoué, test de lecture sans valeur probante\n"
+  FAIL=$((FAIL + 1))
 fi
 
 # ─── Résumé final ─────────────────────────────────────────────────────────────
