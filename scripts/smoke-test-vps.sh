@@ -442,12 +442,40 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# ─── [21] CORS preflight OPTIONS sur le storage domain ───────────────────────
+# Prouve que le navigateur peut envoyer un PUT cross-origin vers storage.$DOMAIN.
+# Sans ces headers, fetch(presignedUrl, {method:'PUT'}) est bloqué par le browser
+# (profile/page.tsx:486, pro/profile/page.tsx:481).
+echo "--- [21] CORS preflight OPTIONS (storage domain → app domain) ---"
+CORS_RESP=$(curl -sk \
+  $CURL_RESOLVE \
+  -D - \
+  -X OPTIONS \
+  "${STORAGE}/${S3_BUCKET_CHECK}/probe-cors-smoke" \
+  -H "Origin: https://app.blobinfini.local" \
+  -H "Access-Control-Request-Method: PUT" \
+  -H "Access-Control-Request-Headers: Content-Type" \
+  -o /dev/null 2>/dev/null || echo "CURL_FAILED")
+
+CORS_ORIGIN=$(echo "$CORS_RESP" | grep -i "access-control-allow-origin" | head -1 | tr -d '\r')
+CORS_METHOD=$(echo "$CORS_RESP" | grep -i "access-control-allow-method" | head -1 | tr -d '\r')
+
+check_contains "CORS OPTIONS → Access-Control-Allow-Origin présent" "$CORS_ORIGIN" "app.blobinfini.local"
+check_contains "CORS OPTIONS → Access-Control-Allow-Methods contient PUT" "$CORS_METHOD" "PUT"
+
+if [ -z "$CORS_ORIGIN" ] || [ -z "$CORS_METHOD" ]; then
+  echo "       CORS_ORIGIN: '${CORS_ORIGIN}'"
+  echo "       CORS_METHOD: '${CORS_METHOD}'"
+  echo "       FAIL: les uploads photo navigateur (RIDER + PRO) seront bloqués par le browser."
+  echo "       Action: vérifier mc cors set dans bootstrap ou configurer via console MinIO."
+fi
+
 # ─── Résumé final ─────────────────────────────────────────────────────────────
 echo ""
 echo "======================================"
 TOTAL=$((PASS + FAIL))
 printf "  Résultat : %d/%d checks passés\n" "$PASS" "$TOTAL"
-printf "  Fonctionnel : 1-16 | S3 VPS proof : 17-20\n"
+printf "  Fonctionnel : 1-16 | S3 VPS proof : 17-21\n"
 if [ "$FAIL" -eq 0 ]; then
   printf "  \033[32mVERDICT : GO VPS ✓\033[0m\n"
   echo "======================================"
