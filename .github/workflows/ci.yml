@@ -285,11 +285,14 @@ jobs:
       - name: Fail on ERL runtime regression signature in logs
         run: bash scripts/check-no-erl-runtime-log.sh
 
-  migrate-test-derived:
-    name: Advisory Derived Migration Replay
+  migrate-deploy-fresh:
+    # Rejoue prisma migrate deploy sur DB vide — bloquant.
+    # Garantit que la chaîne de migration est valide pour tout nouveau déploiement.
+    # Historique : était advisory (continue-on-error: true) avant 2026-04-03 ; rendu
+    # bloquant après résolution du drift Prisma (runbook: docs/runbooks/prisma-migration-drift-2026-03.md).
+    name: Migration Chain — Fresh DB Deploy
     runs-on: ubuntu-22.04
     needs: lint
-    continue-on-error: true
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -339,7 +342,7 @@ jobs:
           done
           echo "✅ Postgres ready."
 
-      - name: Run advisory derived migration replay
+      - name: Run full migration chain on empty DB
         run: pnpm --filter @blobinfini/database migrate:test:derived
 
   type-check:
