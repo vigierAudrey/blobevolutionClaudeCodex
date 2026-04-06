@@ -2617,6 +2617,12 @@ paths:
       tags: [Admin]
       summary: Lance le job de purge RGPD (step-up admin requis)
       operationId: adminGdprRunPurge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GdprRunPurgeRequest'
       responses:
         '200':
           description: Purge exécutée
@@ -2624,6 +2630,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GdprPurgeResponse'
+        '400':
+          description: Confirmation manquante ou invalide
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2633,7 +2645,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/GdprPurgeBlockedResponse'
   /admin/gdpr/exports:
     get:
       tags: [Admin]
@@ -2664,15 +2676,9 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  exports:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/RetentionExportArtifact'
-                  pagination:
-                    type: object
-                    additionalProperties: true
+                $ref: '#/components/schemas/RetentionExportListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2686,21 +2692,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [scope, fromDate, toDate]
-              properties:
-                scope:
-                  type: string
-                  enum: [AUDIT_LOG]
-                fromDate:
-                  type: string
-                  format: date-time
-                toDate:
-                  type: string
-                  format: date-time
-                format:
-                  type: string
-                  enum: [NDJSON]
+              $ref: '#/components/schemas/RetentionExportGenerateRequest'
       responses:
         '200':
           description: Export généré et manifeste scellé
@@ -2708,6 +2700,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RetentionExportGenerateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2767,10 +2761,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminConversationBlockResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Conversation ou membre introuvable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflit métier ou blocage massif trop volumineux
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /admin/conversations/broadcast:
     post:
       tags: [Admin]
@@ -2809,29 +2817,38 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Déblocage massif refusé car trop volumineux pour exécution synchrone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /admin/conversations/blocked/history:
     get:
       tags: [Admin]
       summary: Historique des blocages/déblocages de conversation
       operationId: adminConversationsBlockedHistory
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
       responses:
         '200':
           description: Liste paginée d'actions
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ConversationBlockHistoryItem'
-                  historyReliability:
-                    type: object
-                    additionalProperties: true
-                  pagination:
-                    type: object
-                    additionalProperties: true
+                $ref: '#/components/schemas/ConversationBlockHistoryResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4843,6 +4860,9 @@ components:
           type: string
           enum: [block, unblock]
           default: block
+        reason:
+          type: string
+          maxLength: 500
     AdminConversationBlockResponse:
       type: object
       properties:
@@ -4879,6 +4899,28 @@ components:
           type: integer
         remainingCount:
           type: integer
+    PaginatedResponseMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+    ConversationBlockHistoryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationBlockHistoryItem'
+        historyReliability:
+          $ref: '#/components/schemas/ConversationBlockHistoryReliability'
+        pagination:
+          $ref: '#/components/schemas/PaginatedResponseMeta'
     ReportHistoryItem:
       type: object
       properties:
@@ -4978,6 +5020,15 @@ components:
             createdAt:
               type: string
               format: date-time
+    ConversationBlockHistoryReliability:
+      type: object
+      properties:
+        hasLegacyRows:
+          type: boolean
+        reliableSinceDate:
+          type: string
+        reliableSinceVersion:
+          type: string
     RetentionExportArtifact:
       type: object
       properties:
@@ -5020,6 +5071,31 @@ components:
             id: { type: string }
             email: { type: string, format: email }
             role: { type: string }
+    RetentionExportListResponse:
+      type: object
+      properties:
+        exports:
+          type: array
+          items:
+            $ref: '#/components/schemas/RetentionExportArtifact'
+        pagination:
+          $ref: '#/components/schemas/PaginatedResponseMeta'
+    RetentionExportGenerateRequest:
+      type: object
+      required: [scope, fromDate, toDate]
+      properties:
+        scope:
+          type: string
+          enum: [AUDIT_LOG]
+        fromDate:
+          type: string
+          format: date-time
+        toDate:
+          type: string
+          format: date-time
+        format:
+          type: string
+          enum: [NDJSON]
     RetentionExportGenerateResponse:
       type: object
       properties:
@@ -5037,6 +5113,34 @@ components:
               enum: [base64]
             content:
               type: string
+    GdprRunPurgeRequest:
+      type: object
+      required: [confirm]
+      properties:
+        confirm:
+          type: string
+          enum: [CONFIRMER_PURGE_RGPD]
+    GdprPurgeBlockedResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: string
+          enum: [MISSING_VERIFIED_EXPORT]
+        blockedReason:
+          type: string
+        details:
+          type: object
+          properties:
+            threshold:
+              type: string
+              format: date-time
+            oldestPurgeableLogCreatedAt:
+              type: string
+              format: date-time
+              nullable: true
     AdminConversationBroadcastRequest:
       type: object
       properties:
