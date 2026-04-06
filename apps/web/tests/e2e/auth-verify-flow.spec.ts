@@ -18,7 +18,7 @@ import crypto from 'crypto';
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 const WEB_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3002';
-const MAILPIT_URL = 'http://localhost:8025';
+const MAILPIT_URL = process.env.MAILPIT_URL ?? `http://localhost:${process.env.MAILPIT_HOST_PORT ?? '8025'}`;
 const PASSWORD = 'Passw0rd!Verify99';
 
 // ─── helpers ────────────────────────────────────────────────────────────────

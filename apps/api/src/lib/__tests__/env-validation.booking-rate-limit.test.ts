@@ -17,6 +17,9 @@ describe('validateProductionEnv booking request rate limit guard', () => {
     process.env.S3_BUCKET = 'my-bucket';
     process.env.S3_ACCESS_KEY_ID = 'prod-access-key';
     process.env.S3_SECRET_ACCESS_KEY = 'prod-secret-key';
+    process.env.S3_PUBLIC_URL_BASE = 'https://storage.example.com';
+    process.env.S3_PRESIGN_ENDPOINT = 'https://presign.example.com';
+    process.env.COOKIE_DOMAIN = '.example.com';
     process.env.PRIMARY_ADMIN_EMAILS = 'security-admin@blobconnect.com';
     process.env.TRUST_PROXY_MODE = 'disabled';
   };

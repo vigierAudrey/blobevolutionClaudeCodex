@@ -146,6 +146,17 @@ jobs:
       - name: Booking status mutation guards (filet complémentaire — ne remplace pas la revue de code)
         run: bash scripts/check-booking-status-mutations.sh
 
+      - name: No unguarded destructive DDL in new migrations (block)
+        # Scans migration files added in this PR/push for DROP TABLE, DROP COLUMN,
+        # DROP TYPE, TRUNCATE without an explicit -- DANGEROUS-DDL-APPROVED: comment.
+        # Historical migrations are exempt (not retroactively checked).
+        run: bash scripts/check-dangerous-migrations.sh
+
+      - name: No unjustified SELECT 1 stubs in migrations (block)
+        # All migration stubs (SELECT 1 only) must have a comment explaining why.
+        # A stub without justification silently hides a missing schema object.
+        run: bash scripts/check-migration-stubs.sh
+
   lint:
     needs: security-guard
     name: Lint
@@ -344,6 +355,55 @@ jobs:
 
       - name: Run full migration chain on empty DB
         run: pnpm --filter @blobinfini/database migrate:test:derived
+
+      - name: Verify schema.prisma ↔ migration chain (prisma migrate diff)
+        # Compares what the migrations produced (DATABASE_URL) against what
+        # schema.prisma declares. Exit 2 = drift exists = CI fails.
+        #
+        # This catches the most dangerous case: schema.prisma was modified
+        # without running prisma migrate dev (no migration generated).
+        # On a fresh DB the migrations run fine but schema.prisma declares
+        # objects that don't exist in any migration file.
+        #
+        # Also catches: migration SQL that doesn't match what Prisma generated
+        # (hand-edited migration diverging from schema.prisma intent).
+        working-directory: packages/database
+        run: |
+          set -euo pipefail
+          echo "⏳ Comparing deployed DB schema vs schema.prisma..."
+          # --exit-code: exit 0 = no diff, exit 1 = error, exit 2 = diff exists.
+          # --script: output SQL so the diff is visible in CI logs on failure.
+          # IMPORTANT: set +e before the command — with set -e active, a non-zero exit
+          # from a command substitution aborts the script before we can capture $?.
+          set +e
+          DIFF_SQL=$(npx prisma migrate diff \
+            --from-schema-datasource prisma/schema.prisma \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code \
+            --script 2>&1)
+          DRIFT_EXIT=$?
+          set -e
+          if [ "$DRIFT_EXIT" -eq 2 ]; then
+            echo "❌ SCHEMA DRIFT DETECTED"
+            echo ""
+            echo "   The deployed migration chain does not produce the schema declared in schema.prisma."
+            echo "   Scenario: schema.prisma was modified without running 'prisma migrate dev'."
+            echo ""
+            echo "   SQL needed to bring DB to match schema.prisma:"
+            echo "$DIFF_SQL"
+            echo ""
+            echo "   Fix: run 'pnpm --filter @blobinfini/database migrate' to generate the missing migration."
+            echo "   NEVER fix with db push or psql direct."
+            exit 1
+          elif [ "$DRIFT_EXIT" -ne 0 ]; then
+            echo "❌ prisma migrate diff command failed (exit $DRIFT_EXIT)"
+            echo "$DIFF_SQL"
+            exit 1
+          fi
+          echo "✅ Schema sync confirmed: deployed DB matches schema.prisma."
+          echo ""
+          echo "NOTE: this check detects schema.prisma changes without migrations."
+          echo "It does NOT detect db push drift on an existing local DB (fundamental CI limitation)."
 
   type-check:
     name: Type Check

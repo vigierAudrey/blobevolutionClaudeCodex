@@ -157,6 +157,10 @@ model RiderProfile {
   lessonDate        DateTime?
   lessonPlace       String?
   lessonStudentCount Int?            @default(1)
+  // Coordonnées du lieu demandé pour le cours — source de vérité pour le pin BloboMap.
+  // Indépendantes de lat/lng (position du profil rider).
+  lessonLat         Float?
+  lessonLng         Float?
   incomingDecisions MatchDecision[]   @relation("ProfileAsTarget")
   reports           ProfileReport[]   @relation("ProfileAsReported")
   disciplines       RiderDiscipline[]
