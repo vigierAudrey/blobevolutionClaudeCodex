@@ -2282,14 +2282,61 @@ paths:
       tags: [Admin]
       summary: Liste les signalements
       operationId: adminReports
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, reviewed, all]
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
       responses:
         '200':
-          description: Signalements en attente
+          description: Signalements filtrés par statut
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/reports/history:
+    get:
+      tags: [Admin]
+      summary: Historique métier des signalements traités
+      operationId: adminReportsHistory
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Historique paginé des signalements modérés
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReportHistoryItem'
+                  pagination:
+                    type: object
+                    additionalProperties: true
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2581,6 +2628,96 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Purge bloquée faute d'export VERIFIED couvrant les AuditLog purgeables
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/gdpr/exports:
+    get:
+      tags: [Admin]
+      summary: Liste les manifests d'export de rétention
+      operationId: adminGdprRetentionExports
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: scope
+          schema:
+            type: string
+            enum: [AUDIT_LOG]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [GENERATING, READY, VERIFIED, FAILED, EXPIRED]
+      responses:
+        '200':
+          description: Manifests d'export paginés
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exports:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetentionExportArtifact'
+                  pagination:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      summary: Génère un export de rétention des AuditLog (step-up admin requis)
+      operationId: adminGdprCreateRetentionExport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, fromDate, toDate]
+              properties:
+                scope:
+                  type: string
+                  enum: [AUDIT_LOG]
+                fromDate:
+                  type: string
+                  format: date-time
+                toDate:
+                  type: string
+                  format: date-time
+                format:
+                  type: string
+                  enum: [NDJSON]
+      responses:
+        '200':
+          description: Export généré et manifeste scellé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionExportGenerateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Fenêtre trop large ou export trop volumineux
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /admin/conversations/blocked:
     get:
       tags: [Admin]
@@ -2688,7 +2825,10 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: '#/components/schemas/AuditLogEntry'
+                      $ref: '#/components/schemas/ConversationBlockHistoryItem'
+                  historyReliability:
+                    type: object
+                    additionalProperties: true
                   pagination:
                     type: object
                     additionalProperties: true
@@ -3673,6 +3813,9 @@ components:
               $ref: '#/components/schemas/GdprPurgeUserStats'
             relationalData:
               $ref: '#/components/schemas/GdprPurgeRelationalStats'
+        blockedReason:
+          type: string
+          nullable: true
     ErrorResponse:
       type: object
       properties:
@@ -3709,18 +3852,6 @@ components:
                 type: string
               message:
                 type: string
-    AuthTokens:
-      type: object
-      properties:
-        accessToken:
-          type: string
-        refreshToken:
-          type: string
-        expiresIn:
-          type: integer
-        requiresTwoFactor:
-          type: boolean
-      required: [accessToken, refreshToken, expiresIn]
     RegisterRequest:
       type: object
       required: [email, password, consentAccepted]
@@ -4275,18 +4406,6 @@ components:
           type: string
           enum: [beginner, intermediate, advanced]
           nullable: true
-    Pagination:
-      type: object
-      properties:
-        page:
-          type: integer
-        pageSize:
-          type: integer
-        total:
-          type: integer
-        totalPages:
-          type: integer
-      additionalProperties: true
     MatchingSearchRequest:
       type: object
       required: [sport, level, date]
@@ -4754,8 +4873,170 @@ components:
       properties:
         success:
           type: boolean
-        count:
+        batchId:
+          type: string
+        processedCount:
           type: integer
+        remainingCount:
+          type: integer
+    ReportHistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reviewedByAdminId:
+          type: string
+          nullable: true
+        reviewedAction:
+          type: string
+          nullable: true
+        reporter:
+          type: object
+          properties:
+            email: { type: string, format: email }
+            role: { type: string }
+        reportedProfile:
+          type: object
+          properties:
+            id: { type: string }
+            displayName:
+              type: string
+              nullable: true
+            user:
+              type: object
+              properties:
+                id: { type: string }
+                email: { type: string, format: email }
+                role: { type: string }
+        reviewedByAdmin:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+    ConversationBlockHistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+        conversationId:
+          type: string
+        userId:
+          type: string
+        actorUserId:
+          type: string
+          nullable: true
+        actorType:
+          type: string
+          enum: [USER, ADMIN, SYSTEM]
+        action:
+          type: string
+          enum: [BLOCK, UNBLOCK]
+        source:
+          type: string
+          enum: [USER_SELF, ADMIN_SINGLE, ADMIN_BULK, LEGACY_UNKNOWN]
+        batchId:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        user:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+        actorUser:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+        conversation:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            type: { type: string }
+            createdAt:
+              type: string
+              format: date-time
+    RetentionExportArtifact:
+      type: object
+      properties:
+        id:
+          type: string
+        scope:
+          type: string
+          enum: [AUDIT_LOG]
+        format:
+          type: string
+          enum: [NDJSON]
+        status:
+          type: string
+          enum: [GENERATING, READY, VERIFIED, FAILED, EXPIRED]
+        rowCount:
+          type: integer
+        sha256:
+          type: string
+          nullable: true
+        storageKey:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        fromDate:
+          type: string
+          format: date-time
+        toDate:
+          type: string
+          format: date-time
+        createdByAdmin:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+    RetentionExportGenerateResponse:
+      type: object
+      properties:
+        artifact:
+          $ref: '#/components/schemas/RetentionExportArtifact'
+        download:
+          type: object
+          properties:
+            fileName:
+              type: string
+            mimeType:
+              type: string
+            encoding:
+              type: string
+              enum: [base64]
+            content:
+              type: string
     AdminConversationBroadcastRequest:
       type: object
       properties:
@@ -4902,28 +5183,3 @@ components:
           type: string
         dedupeKey:
           type: string
-    AuditLogEntry:
-      type: object
-      properties:
-        id:
-          type: string
-        action:
-          type: string
-        resource:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        ip:
-          type: string
-          nullable: true
-        user:
-          type: object
-          nullable: true
-          properties:
-            id: { type: string }
-            email: { type: string, format: email }
-            role: { type: string }
-        metadata:
-          type: object
-          additionalProperties: true
