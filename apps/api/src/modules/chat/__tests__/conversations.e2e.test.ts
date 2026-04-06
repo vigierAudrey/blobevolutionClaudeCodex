@@ -1,7 +1,8 @@
 import { createApp } from '../../../index';
 import request, { SuperAgentTest } from 'supertest';
 import type { Response as SupertestResponse } from 'supertest';
-import { ensureProProfile, ensureRiderProfile, createUser } from '../../../tests/helpers/prismaFactories';
+import { ensureRiderProfile, createUser } from '../../../tests/helpers/prismaFactories';
+import { createTestSession, readCookieValue } from '../../../tests/helpers/auth';
 import { Role, clientPrisma as prisma } from '@blobinfini/database';
 
 describe('Conversations E2E', () => {
@@ -11,6 +12,7 @@ describe('Conversations E2E', () => {
   let post: (path: string) => request.Test;
   let riderAccessToken: string;
   let proAccessToken: string;
+  let otherRiderAccessToken: string;
   let otherProAccessToken: string;
   let riderId: string;
   let proId: string;
@@ -66,12 +68,12 @@ describe('Conversations E2E', () => {
     otherRiderId = await resolveUserId(otherRiderRes, 'rider2@test.com', Role.RIDER);
 
     const proRes = await post('/auth/register')
-      .send({ email: 'pro@test.com', password: 'Passw0rd!', role: 'PRO', consentAccepted: true })
+      .send({ email: 'pro@test.com', password: 'Passw0rd!', role: 'PRO', countryCode: 'FR', consentAccepted: true })
       .expect(201);
     proId = await resolveUserId(proRes, 'pro@test.com', Role.PRO);
 
     const otherProRes = await post('/auth/register')
-      .send({ email: 'pro2@test.com', password: 'Passw0rd!', role: 'PRO', consentAccepted: true })
+      .send({ email: 'pro2@test.com', password: 'Passw0rd!', role: 'PRO', countryCode: 'FR', consentAccepted: true })
       .expect(201);
     otherProId = await resolveUserId(otherProRes, 'pro2@test.com', Role.PRO);
 
@@ -81,20 +83,20 @@ describe('Conversations E2E', () => {
       data: { emailVerified: true }
     });
 
-    const riderLogin = await post('/auth/login')
-      .send({ email: 'rider@test.com', password: 'Passw0rd!' })
-      .expect(200);
-    riderAccessToken = riderLogin.body.accessToken;
+    const loginForAccessToken = async (email: string) => {
+      const session = await createTestSession(app);
+      const login = await session
+        .post('/auth/login')
+        .send({ email, password: 'Passw0rd!', consentAccepted: true })
+        .expect(200);
+      const setCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+      return readCookieValue(setCookies, 'accessToken');
+    };
 
-    const proLogin = await post('/auth/login')
-      .send({ email: 'pro@test.com', password: 'Passw0rd!' })
-      .expect(200);
-    proAccessToken = proLogin.body.accessToken;
-
-    const otherProLogin = await post('/auth/login')
-      .send({ email: 'pro2@test.com', password: 'Passw0rd!' })
-      .expect(200);
-    otherProAccessToken = otherProLogin.body.accessToken;
+    riderAccessToken = await loginForAccessToken('rider@test.com');
+    otherRiderAccessToken = await loginForAccessToken('rider2@test.com');
+    proAccessToken = await loginForAccessToken('pro@test.com');
+    otherProAccessToken = await loginForAccessToken('pro2@test.com');
 
     await ensureRiderProfile(prisma, {
       userId: riderId,
@@ -106,14 +108,14 @@ describe('Conversations E2E', () => {
       profile: { displayName: 'Other Rider' }
     });
 
-    await ensureProProfile(prisma, {
-      userId: proId,
-      profile: { businessName: 'Pro Business' }
+    await prisma.proProfile.update({
+      where: { userId: proId },
+      data: { businessName: 'Pro Business' },
     });
 
-    await ensureProProfile(prisma, {
-      userId: otherProId,
-      profile: { businessName: 'Other Pro Business' }
+    await prisma.proProfile.update({
+      where: { userId: otherProId },
+      data: { businessName: 'Other Pro Business' },
     });
   };
 
@@ -460,12 +462,8 @@ describe('Conversations E2E', () => {
         .expect(200);
 
       // L'autre rider (qui est bloqué) ne peut plus envoyer de messages
-      const otherRiderLogin = await post('/auth/login')
-        .send({ email: 'rider2@test.com', password: 'Passw0rd!' });
-      const otherRiderToken = otherRiderLogin.body.accessToken;
-
       await post(`/conversations/${conversationId}/messages`)
-        .set('Authorization', `Bearer ${otherRiderToken}`)
+        .set('Authorization', `Bearer ${otherRiderAccessToken}`)
         .send({ content: 'This should be blocked!' })
         .expect(403);
     });
@@ -505,12 +503,8 @@ describe('Conversations E2E', () => {
         .expect(200);
 
       // L'autre rider peut maintenant envoyer des messages
-      const otherRiderLogin = await post('/auth/login')
-        .send({ email: 'rider2@test.com', password: 'Passw0rd!' });
-      const otherRiderToken = otherRiderLogin.body.accessToken;
-
       await post(`/conversations/${conversationId}/messages`)
-        .set('Authorization', `Bearer ${otherRiderToken}`)
+        .set('Authorization', `Bearer ${otherRiderAccessToken}`)
         .send({ content: 'Message after unblock' })
         .expect(201);
     });
@@ -673,12 +667,8 @@ describe('Conversations E2E', () => {
         .set('Authorization', `Bearer ${riderAccessToken}`);
 
       // Simuler qu'un autre user envoie un message
-      const otherRiderLogin = await post('/auth/login')
-        .send({ email: 'rider2@test.com', password: 'Passw0rd!' });
-      const otherRiderToken = otherRiderLogin.body.accessToken;
-
       await post(`/conversations/${conversationId}/messages`)
-        .set('Authorization', `Bearer ${otherRiderToken}`)
+        .set('Authorization', `Bearer ${otherRiderAccessToken}`)
         .send({ content: 'Unread message!' });
 
       // Vérifier le count non lu
