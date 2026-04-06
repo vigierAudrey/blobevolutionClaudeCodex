@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import type { AuditLog, Role, Sport, AvailabilityStatus } from '@blobinfini/database';
@@ -16,6 +16,16 @@ import { disconnectUserSockets } from '../../lib/socket';
 import { analyticsReportService } from '../../services/analytics/reports.service';
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
 import { capAdminLimit } from '../../utils/admin-list-cap';
+import {
+  DEFAULT_BULK_MAX_SYNC,
+  conversationBlockEventService,
+  ConversationBlockEventServiceError,
+} from '../../services/conversation-block-event.service';
+import { retentionExportArtifactService } from '../../services/retention-export-artifact.service';
+import {
+  CONVERSATION_BLOCK_HISTORY_RELIABLE_SINCE_DATE,
+  CONVERSATION_BLOCK_HISTORY_RELIABLE_SINCE_VERSION,
+} from './moderation-history.constants';
 
 type ConversationMemberWithUser = Prisma.ConversationMemberGetPayload<{
   include: {
@@ -657,6 +667,95 @@ adminRouter.get(
     return res.status(500).json({ error: 'Internal error' });
   }
 });
+
+const reportHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+adminRouter.get(
+  '/reports/history',
+  requirePermissions('reports.view'),
+  audit('admin:reports:history', () => 'admin:reports:history'),
+  async (req, res) => {
+    try {
+      const { page, limit } = reportHistoryQuerySchema.parse(req.query);
+      const skip = (page - 1) * limit;
+
+      const [reports, total] = await Promise.all([
+        prisma.profileReport.findMany({
+          where: { reviewedAt: { not: null } },
+          include: {
+            reporter: {
+              select: {
+                email: true,
+                role: true,
+              },
+            },
+            reportedProfile: {
+              select: {
+                id: true,
+                displayName: true,
+                user: {
+                  select: {
+                    id: true,
+                    email: true,
+                    role: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: [
+            { reviewedAt: 'desc' },
+            { createdAt: 'desc' },
+          ],
+          skip,
+          take: limit,
+        }),
+        prisma.profileReport.count({
+          where: { reviewedAt: { not: null } },
+        }),
+      ]);
+      type ReviewedReport = Awaited<typeof reports>[number];
+      type ReviewerSummary = { id: string; email: string; role: Role };
+
+      const reviewerIds = [...new Set(
+        reports
+          .map((report: ReviewedReport) => report.reviewedByAdminId)
+          .filter((value: string | null): value is string => typeof value === 'string' && value.length > 0),
+      )];
+      const reviewers = reviewerIds.length > 0
+        ? await prisma.user.findMany({
+          where: { id: { in: reviewerIds } },
+          select: { id: true, email: true, role: true },
+        })
+        : [];
+      const reviewersById = new Map(reviewers.map((reviewer: ReviewerSummary) => [reviewer.id, reviewer]));
+
+      return res.json({
+        items: reports.map((report: ReviewedReport) => ({
+          ...report,
+          reviewedByAdmin: report.reviewedByAdminId
+            ? reviewersById.get(report.reviewedByAdminId) ?? null
+            : null,
+        })),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      secureLogger.error('Admin reports history error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
 
 const auditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -1426,17 +1525,46 @@ adminRouter.get(
 
 const adminConversationBlockSchema = z.object({
   userId: z.string().uuid().optional(),
-  action: z.enum(['block', 'unblock']).default('block')
+  action: z.enum(['block', 'unblock']).default('block'),
+  reason: z.string().trim().max(500).optional(),
 });
+
+function handleConversationBlockServiceError(
+  error: ConversationBlockEventServiceError,
+  res: Response,
+) {
+  if (error.code === 'NOT_FOUND') {
+    return res.status(404).json({ error: error.message, details: error.details ?? null });
+  }
+
+  if (error.code === 'BULK_TOO_LARGE') {
+    return res.status(409).json({
+      error: 'BULK_TOO_LARGE_FOR_SYNC',
+      message: `Déblocage massif limité à ${DEFAULT_BULK_MAX_SYNC} entrées en mode synchrone.`,
+      details: error.details ?? null,
+    });
+  }
+
+  if (error.code === 'STATE_CONFLICT' || error.code === 'BULK_CONFLICT_RETRYABLE') {
+    return res.status(409).json({
+      error: error.code,
+      message: error.message,
+      details: error.details ?? null,
+    });
+  }
+
+  return res.status(500).json({ error: 'Internal error' });
+}
 
 adminRouter.post(
   '/conversations/:conversationId/block',
   requirePermissions('reports.moderate'),
+  requireAdminStepUp,
   audit('admin:conversations:block', (req) => `admin:conversation:${req.params.conversationId}`),
   async (req, res) => {
     try {
       const { conversationId } = req.params;
-      const { action, userId } = adminConversationBlockSchema.parse(req.body ?? {});
+      const { action, reason, userId } = adminConversationBlockSchema.parse(req.body ?? {});
 
       const conversation = await prisma.conversation.findUnique({
         where: { id: conversationId },
@@ -1467,24 +1595,15 @@ adminRouter.post(
         return res.status(404).json({ error: 'Member not found in conversation' });
       }
 
-      await prisma.conversationMember.updateMany({
-        where: {
-          conversationId,
-          userId: { in: targetMembers.map((member: ConversationMemberWithUser) => member.userId) }
-        },
-        data: {
-          blockedAt: action === 'unblock' ? null : new Date()
-        }
-      });
-
-      const refreshedMembers: ConversationMemberWithUser[] = await prisma.conversationMember.findMany({
-        where: {
-          conversationId,
-          userId: { in: targetMembers.map((member: ConversationMemberWithUser) => member.userId) }
-        },
-        include: {
-          user: { select: { id: true, email: true, role: true } }
-        }
+      const actor = (req as typeof req & { user?: { id: string } }).user;
+      const result = await conversationBlockEventService.setConversationBlock({
+        conversationId,
+        targetUserIds: targetMembers.map((member: ConversationMemberWithUser) => member.userId),
+        action,
+        actorUserId: actor?.id ?? null,
+        actorType: 'ADMIN',
+        source: 'ADMIN_SINGLE',
+        reason: reason ?? null,
       });
 
       if (!res.locals.auditMetadata) {
@@ -1494,20 +1613,17 @@ adminRouter.post(
         ...(res.locals.auditMetadata || {}),
         conversationId,
         action,
-        targetUserIds: targetMembers.map((member: ConversationMemberWithUser) => member.userId)
+        targetUserIds: targetMembers.map((member: ConversationMemberWithUser) => member.userId),
+        reason: reason ?? null,
       };
 
       return res.json({
-        conversationId,
-        action,
-        updatedMembers: refreshedMembers.map((member: ConversationMemberWithUser) => ({
-          userId: member.userId,
-          email: member.user?.email ?? null,
-          role: member.user?.role ?? null,
-          blockedAt: member.blockedAt
-        }))
+        ...result,
       });
     } catch (error) {
+      if (error instanceof ConversationBlockEventServiceError) {
+        return handleConversationBlockServiceError(error, res);
+      }
       // Don't log validation errors (400) - they are expected client errors
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid input', details: error.errors });
@@ -1522,23 +1638,33 @@ adminRouter.post(
 adminRouter.post(
   '/conversations/unblock-all',
   requirePermissions('reports.moderate'),
+  requireAdminStepUp,
   audit('admin:conversations:unblock-all', () => 'admin:conversations:bulk-unblock'),
-  async (_req, res) => {
+  async (req, res) => {
     try {
-      const result = await prisma.conversationMember.updateMany({
-        where: { blockedAt: { not: null } },
-        data: { blockedAt: null }
-      });
+      const actor = (req as typeof req & { user?: { id: string } }).user;
+      if (!actor?.id) {
+        return res.status(403).json({ error: 'Admin role required' });
+      }
+
+      const result = await conversationBlockEventService.unblockAllConversationMembers(actor.id);
 
       res.locals.auditMetadata = {
-        affectedCount: result.count
+        batchId: result.batchId,
+        affectedCount: result.processedCount,
+        remainingCount: result.remainingCount,
       };
 
       return res.json({
         success: true,
-        count: result.count
+        batchId: result.batchId,
+        processedCount: result.processedCount,
+        remainingCount: result.remainingCount,
       });
     } catch (error) {
+      if (error instanceof ConversationBlockEventServiceError) {
+        return handleConversationBlockServiceError(error, res);
+      }
       secureLogger.error('Admin unblock all conversations error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
@@ -1555,25 +1681,36 @@ adminRouter.get(
       const limit = Math.min(parseInt(req.query.limit as string || '25', 10), 100);
       const skip = (page - 1) * limit;
 
-      const where = { action: 'admin:conversations:block' } as const;
-
-      const [items, total] = await Promise.all([
-        prisma.auditLog.findMany({
-          where,
+      const [items, total, legacyCount] = await Promise.all([
+        prisma.conversationBlockEvent.findMany({
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
           include: {
             user: {
               select: { id: true, email: true, role: true }
+            },
+            actorUser: {
+              select: { id: true, email: true, role: true }
+            },
+            conversation: {
+              select: { id: true, type: true, createdAt: true }
             }
           }
         }),
-        prisma.auditLog.count({ where })
+        prisma.conversationBlockEvent.count(),
+        prisma.conversationBlockEvent.count({
+          where: { source: 'LEGACY_UNKNOWN' }
+        })
       ]);
 
       return res.json({
         items,
+        historyReliability: {
+          hasLegacyRows: legacyCount > 0,
+          reliableSinceDate: CONVERSATION_BLOCK_HISTORY_RELIABLE_SINCE_DATE,
+          reliableSinceVersion: CONVERSATION_BLOCK_HISTORY_RELIABLE_SINCE_VERSION,
+        },
         pagination: {
           page,
           limit,
@@ -1904,6 +2041,26 @@ const runPurgeSchema = z.object({
   confirm: z.literal('CONFIRMER_PURGE_RGPD'),
 });
 
+const retentionExportCreateSchema = z.object({
+  scope: z.literal('AUDIT_LOG'),
+  fromDate: z.coerce.date(),
+  toDate: z.coerce.date(),
+  format: z.literal('NDJSON').default('NDJSON'),
+}).refine((value) => value.toDate >= value.fromDate, {
+  message: 'toDate must be greater than or equal to fromDate',
+  path: ['toDate'],
+});
+
+const retentionExportListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  scope: z.literal('AUDIT_LOG').optional(),
+  status: z.enum(['GENERATING', 'READY', 'VERIFIED', 'FAILED', 'EXPIRED']).optional(),
+});
+
+const RETENTION_EXPORT_MAX_ROWS = 10_000;
+const RETENTION_EXPORT_MAX_BYTES = 10 * 1024 * 1024;
+
 // Exécution manuelle de la purge RGPD
 adminRouter.post(
   '/gdpr/run-purge',
@@ -1922,6 +2079,19 @@ adminRouter.post(
   }
 
   try {
+    const readiness = await gdprPurgeService.getAuditLogPurgeReadiness();
+    if (readiness.hasEligibleLogs && !readiness.exportVerified) {
+      return res.status(409).json({
+        success: false,
+        error: 'MISSING_VERIFIED_EXPORT',
+        blockedReason: 'Un export rétention VERIFIED doit couvrir les AuditLog avant purge.',
+        details: {
+          threshold: readiness.threshold.toISOString(),
+          oldestPurgeableLogCreatedAt: readiness.oldestPurgeableLogCreatedAt?.toISOString() ?? null,
+        },
+      });
+    }
+
     const startedAt = Date.now();
     const result = await gdprPurgeService.performFullPurge();
 
@@ -1941,6 +2111,130 @@ adminRouter.post(
     });
   }
 });
+
+adminRouter.post(
+  '/gdpr/exports',
+  requirePermissions('system.configure'),
+  requireAdminStepUp,
+  audit('admin:gdpr:retention-export', () => 'admin:gdpr:retention-export'),
+  async (req, res) => {
+    let artifactId: string | null = null;
+
+    try {
+      const body = retentionExportCreateSchema.parse(req.body);
+      const actor = (req as typeof req & { user?: { id: string } }).user;
+      if (!actor?.id) {
+        return res.status(403).json({ error: 'Admin role required' });
+      }
+
+      const total = await prisma.auditLog.count({
+        where: {
+          createdAt: {
+            gte: body.fromDate,
+            lte: body.toDate,
+          },
+        },
+      });
+
+      if (total > RETENTION_EXPORT_MAX_ROWS) {
+        return res.status(409).json({
+          error: 'EXPORT_TOO_LARGE',
+          message: `Export limité à ${RETENTION_EXPORT_MAX_ROWS} lignes. Réduire la fenêtre.`,
+          details: { total, maxRows: RETENTION_EXPORT_MAX_ROWS },
+        });
+      }
+
+      const artifact = await retentionExportArtifactService.createArtifact({
+        scope: body.scope,
+        fromDate: body.fromDate,
+        toDate: body.toDate,
+        createdByAdminId: actor.id,
+        format: body.format,
+      });
+      artifactId = artifact.id;
+
+      const logs = await prisma.auditLog.findMany({
+        where: {
+          createdAt: {
+            gte: body.fromDate,
+            lte: body.toDate,
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          userId: true,
+          action: true,
+          resource: true,
+          metadata: true,
+          ip: true,
+          createdAt: true,
+        },
+      });
+
+      type RetentionExportLog = Awaited<typeof logs>[number];
+      const payload = `${logs.map((item: RetentionExportLog) => JSON.stringify(item)).join('\n')}${logs.length > 0 ? '\n' : ''}`;
+      const payloadBytes = Buffer.byteLength(payload, 'utf8');
+      if (payloadBytes > RETENTION_EXPORT_MAX_BYTES) {
+        await retentionExportArtifactService.markFailed(artifact.id, 'EXPORT_TOO_LARGE_BYTES');
+        return res.status(409).json({
+          error: 'EXPORT_TOO_LARGE',
+          message: `Export limité à ${RETENTION_EXPORT_MAX_BYTES} octets. Réduire la fenêtre.`,
+          details: { payloadBytes, maxBytes: RETENTION_EXPORT_MAX_BYTES },
+        });
+      }
+
+      const readyArtifact = await retentionExportArtifactService.markReady({
+        artifactId: artifact.id,
+        rowCount: logs.length,
+        payload,
+      });
+      const verifiedArtifact = await retentionExportArtifactService.verifyArtifact(artifact.id);
+
+      res.locals.auditMetadata = {
+        artifactId: artifact.id,
+        scope: body.scope,
+        fromDate: body.fromDate.toISOString(),
+        toDate: body.toDate.toISOString(),
+        rowCount: logs.length,
+        sha256: readyArtifact.sha256,
+      };
+
+      return res.json({
+        artifact: {
+          id: verifiedArtifact.id,
+          scope: verifiedArtifact.scope,
+          format: verifiedArtifact.format,
+          status: verifiedArtifact.status,
+          rowCount: verifiedArtifact.rowCount,
+          sha256: verifiedArtifact.sha256,
+          createdAt: verifiedArtifact.createdAt,
+          verifiedAt: verifiedArtifact.verifiedAt,
+          fromDate: verifiedArtifact.fromDate,
+          toDate: verifiedArtifact.toDate,
+        },
+        download: {
+          fileName: `audit-log-retention-${body.fromDate.toISOString()}-${body.toDate.toISOString()}.ndjson`,
+          mimeType: 'application/x-ndjson',
+          encoding: 'base64',
+          content: Buffer.from(payload, 'utf8').toString('base64'),
+        },
+      });
+    } catch (error) {
+      if (artifactId) {
+        await retentionExportArtifactService.markFailed(
+          artifactId,
+          error instanceof Error ? error.message : 'UNKNOWN_EXPORT_ERROR',
+        );
+      }
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      secureLogger.error('Retention export generation error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
 
 // Recherche dans l'archive légale (pour litiges)
 adminRouter.get(
@@ -2041,172 +2335,22 @@ adminRouter.get(
   audit('admin:gdpr:exports', () => 'admin:gdpr:exports'),
   async (req, res) => {
   try {
-    const {
-      page = '1',
-      limit = '50',
-      userId,
-      startDate,
-      endDate,
-    } = req.query;
-
-    const pageNum = parseInt(page as string, 10);
-    const limitNum = capAdminLimit(limit); // Gate D: hard cap = 100
-    const skip = (pageNum - 1) * limitNum;
-
-    // Build filters
-    const filters: any = {
-      action: 'GDPR_EXPORT_REQUESTED',
-    };
-
-    if (userId && typeof userId === 'string') {
-      filters.userId = userId;
-    }
-
-    if (startDate || endDate) {
-      filters.createdAt = {};
-      if (startDate && typeof startDate === 'string') {
-        filters.createdAt.gte = new Date(startDate);
-      }
-      if (endDate && typeof endDate === 'string') {
-        filters.createdAt.lte = new Date(endDate);
-      }
-    }
-
-    // Get total count
-    const total = await prisma.auditLog.count({ where: filters });
-
-    // Get exports with user info
-    const exports = await prisma.auditLog.findMany({
-      where: filters,
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            role: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limitNum,
+    const { page, limit, scope, status } = retentionExportListQuerySchema.parse(req.query);
+    const result = await retentionExportArtifactService.listArtifacts({
+      page,
+      limit: capAdminLimit(String(limit)),
+      scope,
+      status,
     });
-
-    // Parse metadata to extract export details
-    const formattedExports = exports.map(
-      (log: Prisma.AuditLogGetPayload<{ include: { user: { select: { id: true; email: true; role: true } } } }>) => {
-        const metadata = log.metadata as any;
-        return {
-          id: log.id,
-          userId: log.userId,
-          userEmail: log.user?.email || 'Unknown',
-          userRole: log.user?.role || 'Unknown',
-          ip: log.ip || metadata?.ip || 'Unknown',
-          exportDate: log.createdAt,
-          dataSize: metadata?.dataSize || 0,
-          dataSizeMB: metadata?.dataSizeMB || ((metadata?.dataSize || 0) / 1024 / 1024).toFixed(2),
-          itemCounts: metadata?.itemCounts || {},
-        };
-      }
-    );
-
-    // Get summary statistics
-    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const last7days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const last30days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
-    const [exports24h, exports7d, exports30d] = await Promise.all([
-      prisma.auditLog.count({
-        where: {
-          action: 'GDPR_EXPORT_REQUESTED',
-          createdAt: { gte: last24h },
-        },
-      }),
-      prisma.auditLog.count({
-        where: {
-          action: 'GDPR_EXPORT_REQUESTED',
-          createdAt: { gte: last7days },
-        },
-      }),
-      prisma.auditLog.count({
-        where: {
-          action: 'GDPR_EXPORT_REQUESTED',
-          createdAt: { gte: last30days },
-        },
-      }),
-    ]);
-
-    // Get exports by role
-    const exportsByRole = await prisma.auditLog.findMany({
-      where: {
-        action: 'GDPR_EXPORT_REQUESTED',
-        createdAt: { gte: last30days },
-      },
-      include: {
-        user: {
-          select: { role: true },
-        },
-      },
-    });
-
-    const roleStats = exportsByRole.reduce(
-      (
-        acc: Record<string, number>,
-        log: Prisma.AuditLogGetPayload<{ include: { user: { select: { role: true } } } }>
-      ) => {
-        const role = log.user?.role || 'Unknown';
-        acc[role] = (acc[role] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-
-    // Get top exporters (users with most exports)
-    const topExporters = await prisma.auditLog.groupBy({
-      by: ['userId'],
-      where: {
-        action: 'GDPR_EXPORT_REQUESTED',
-        createdAt: { gte: last30days },
-        userId: { not: null },
-      },
-      _count: { userId: true },
-      orderBy: { _count: { userId: 'desc' } },
-      take: 10,
-    }) as Array<{ userId: string | null; _count: { userId: number } }>;
-
-    const topExportersWithEmails = await Promise.all(
-      topExporters.map(async (item: { userId: string | null; _count: { userId: number } }) => {
-        const user = await prisma.user.findUnique({
-          where: { id: item.userId! },
-          select: { email: true, role: true },
-        });
-        return {
-          userId: item.userId,
-          email: user?.email || 'Unknown',
-          role: user?.role || 'Unknown',
-          exportCount: item._count?.userId ?? 0,
-        };
-      })
-    );
 
     return res.json({
-      exports: formattedExports,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
-      },
-      summary: {
-        total,
-        last24h: exports24h,
-        last7days: exports7d,
-        last30days: exports30d,
-        byRole: roleStats,
-        topExporters: topExportersWithEmails,
-      },
+      exports: result.items,
+      pagination: result.pagination,
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
     secureLogger.error('GDPR exports monitoring error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }

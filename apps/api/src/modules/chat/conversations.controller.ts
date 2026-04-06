@@ -11,6 +11,10 @@ import { sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
 import { ERROR_CODES } from '../../utils/error-codes';
 import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { getClientIp } from '../../lib/client-ip';
+import {
+  conversationBlockEventService,
+  ConversationBlockEventServiceError,
+} from '../../services/conversation-block-event.service';
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth, requireVerifiedEmail);
@@ -704,12 +708,31 @@ conversationsRouter.post('/:id/unmatch', async (req, res) => {
 conversationsRouter.post('/:id/block', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const id = req.params.id;
     const action = String((req.body?.action || 'block')).toLowerCase();
-    const blockedAt = action === 'unblock' ? null : new Date();
-    await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId: id, userId } as any }, data: { blockedAt } });
+    if (action !== 'block' && action !== 'unblock') {
+      return res.status(400).json({ error: 'Invalid input' });
+    }
+
+    await conversationBlockEventService.setConversationBlock({
+      conversationId: id,
+      targetUserIds: [userId],
+      action,
+      actorUserId: userId,
+      actorType: 'USER',
+      source: 'USER_SELF',
+    });
     return res.json({ ok: true, blocked: action === 'block' });
-  } catch { return res.status(500).json({ error: 'Internal error' }); }
+  } catch (error) {
+    if (error instanceof ConversationBlockEventServiceError && error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (error instanceof ConversationBlockEventServiceError && error.code === 'STATE_CONFLICT') {
+      return res.status(409).json({ error: 'State conflict' });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // Trash / untrash

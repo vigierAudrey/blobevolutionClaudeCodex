@@ -46,6 +46,7 @@ describe('Conversations E2E', () => {
     post = (path: string) => agent.post(path).set('X-CSRF-Token', csrfToken);
 
     await prisma.message.deleteMany();
+    await prisma.conversationBlockEvent.deleteMany();
     await prisma.conversationMember.deleteMany();
     await prisma.conversation.deleteMany();
     await prisma.riderProfile.deleteMany();
@@ -690,4 +691,5 @@ describe('Conversations E2E', () => {
       expect(conv.unread).toBe(1);
     });
   });
+
 });
