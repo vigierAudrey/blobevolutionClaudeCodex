@@ -319,22 +319,12 @@ export default function AdminDashboard() {
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/conversations/blocked">
-                  Conversations bloquées
-                </Link>
-              </Button>
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link href="/admin/conversations/history">
-                  Historique blocages
+                  Blocages actifs
                 </Link>
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/conversations/broadcast">
                   Diffusion admin
-                </Link>
-              </Button>
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link href="/admin/reports/history">
-                  Historique modération
                 </Link>
               </Button>
             </div>
@@ -360,7 +350,7 @@ export default function AdminDashboard() {
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/gdpr">
-                  Conformité RGPD
+                  Rétention & exports
                 </Link>
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
