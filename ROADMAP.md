@@ -201,6 +201,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
   Reprendre `packages/database/prisma/migrations/add_legal_consent_archive.sql` (dialecte MySQL) en migration Prisma/PostgreSQL + `ON CONFLICT`. Mettre à jour `gdprPurgeService` (`apps/api/src/services/gdpr-purge.service.ts`, section « Phase 4 — Gouvernance Admin & RGPD ») et `GET /admin/gdpr/legal-archive/:userId` pour utiliser la nouvelle table. Ajouter tests Prisma e2e.
 - [x] **Finaliser purge RGPD & rotation des logs**  
   Implémenter la suppression des logs obsolètes (`oldLogsDeleted` TODO dans `gdprPurgeService`) + s’assurer que les jobs planifiés via `GDPR_PURGE_INTERVAL_HOURS`, `CONV_PURGE_INTERVAL_HOURS` et `GDPR_PURGE_RUN_ON_START` sont documentés/testés (`docs/deployment.md`, `SECURITY.md`). Ajouter un check `/admin/gdpr/compliance-report` qui échoue si les jobs ne tournent pas.
+  - [x] 2026-04-06: audit log purge désormais bloquée sans manifeste d’export rétention `VERIFIED`; ajout des tables `ConversationBlockEvent` et `RetentionExportArtifact`, du backfill legacy `LEGACY_UNKNOWN`, et bascule des historiques métier hors `AuditLog`.
 - [x] **Redis obligatoire pour le 2FA admin**  
   Supprimer le fallback `memoryStore` (`apps/api/src/services/two-factor.service.ts`, section « Phase 4 — Gouvernance Admin & RGPD ») en production : la génération/validation des codes doit dépendre d’un Redis sécurisé (`REDIS_URL` + mot de passe). Ajout d’un health-check Redis + doc mise à jour (`SECURITY.md`, `docs/deployment.md`).
 - [x] **Aligner le backend sur les vues Admin existantes**  

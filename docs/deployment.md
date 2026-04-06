@@ -31,6 +31,8 @@
 | `GDPR_PURGE_INTERVAL_HOURS` / `GDPR_PURGE_RUN_ON_START` | Planification purge RGPD. |
 | `CONV_PURGE_INTERVAL_HOURS` / `CONV_TRASH_RETENTION_DAYS` | Nettoyage conversations archivées. |
 | `AUDIT_LOG_RETENTION_DAYS` | Conservation des audit logs (par défaut 365j). |
+| `AUDIT_LOG_PURGE_REQUIRES_VERIFIED_EXPORT` | Empêche la suppression des `AuditLog` sans manifeste d’export `VERIFIED` couvrant la fenêtre purgeable. |
+| `LOGIN_ATTEMPT_RETENTION_DAYS` | Conservation des empreintes de tentatives de connexion. |
 | `CSP_REPORT_ONLY` | Laisser à `false` en prod (mode blocage). |
 | `S3_*` | Uploads (photos) via MinIO/S3. |
 | `FIREBASE_*` | Notifications push (optionnel). |
@@ -39,6 +41,14 @@
 > ⚠️ Les secrets sont validés au démarrage (`apps/api/src/index.ts`). Toute valeur manquante/faible arrête l’API immédiatement.
 >
 > ℹ️ **Redis obligatoire** : le 2FA admin repose désormais uniquement sur Redis (pas de fallback mémoire en production). Vérifier `REDIS_URL`, mot de passe et connectivité avant le déploiement.
+
+### Backfill legacy blocages
+- Après déploiement de la migration `20260406110000_add_conversation_block_event_and_retention_export_artifact`, exécuter une seule fois :
+  - `tsx scripts/backfill-conversation-block-events.ts`
+- En cas d’échec partiel ou pour compléter uniquement les lignes encore actives sans événement legacy :
+  - `tsx scripts/backfill-conversation-block-events.ts --repair`
+- Le script écrit des événements `ConversationBlockEvent` avec `source=LEGACY_UNKNOWN` et `batchId=legacy-backfill-20260406`.
+- Tant que des lignes `LEGACY_UNKNOWN` existent, l’UI admin affiche un avertissement indiquant que l’historique complet n’est garanti qu’à partir du `2026-04-06`.
 
 ## 3. Checklist pré-déploiement
 1. Générer de nouveaux secrets (`./scripts/generate-secrets.sh`) et mettre à jour les variables correspondantes.

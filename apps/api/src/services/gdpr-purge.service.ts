@@ -2,6 +2,7 @@ import { clientPrisma as prisma } from '@blobinfini/database';
 import crypto from 'crypto';
 import { secureLogger } from '../utils/secure-logger';
 import { archiveBookingsBulk } from '../lib/booking-archive';
+import { retentionExportArtifactService } from './retention-export-artifact.service';
 
 export interface GDPRTechnicalStats {
   sessionsDeleted: number;
@@ -31,6 +32,14 @@ export interface GDPRPurgeResult {
   summary: string;
 }
 
+export interface AuditLogPurgeReadiness {
+  requiresVerifiedExport: boolean;
+  exportVerified: boolean;
+  hasEligibleLogs: boolean;
+  threshold: Date;
+  oldestPurgeableLogCreatedAt: Date | null;
+}
+
 /**
  * Service de purge RGPD avec protection juridique
  *
@@ -40,6 +49,51 @@ export interface GDPRPurgeResult {
  * - Anonymiser plutôt que supprimer quand possible
  */
 export class GDPRPurgeService {
+  async getAuditLogPurgeReadiness(now: Date = new Date()): Promise<AuditLogPurgeReadiness> {
+    const logRetentionDays = Number(process.env.AUDIT_LOG_RETENTION_DAYS || '365');
+    const requiresVerifiedExport = String(process.env.AUDIT_LOG_PURGE_REQUIRES_VERIFIED_EXPORT || 'true').toLowerCase() !== 'false';
+    const threshold = new Date(now.getTime() - logRetentionDays * 24 * 60 * 60 * 1000);
+
+    const oldestPurgeableLog = await prisma.auditLog.findFirst({
+      where: { createdAt: { lt: threshold } },
+      orderBy: { createdAt: 'asc' },
+      select: { createdAt: true },
+    });
+
+    if (!oldestPurgeableLog) {
+      return {
+        requiresVerifiedExport,
+        exportVerified: true,
+        hasEligibleLogs: false,
+        threshold,
+        oldestPurgeableLogCreatedAt: null,
+      };
+    }
+
+    if (!requiresVerifiedExport) {
+      return {
+        requiresVerifiedExport,
+        exportVerified: true,
+        hasEligibleLogs: true,
+        threshold,
+        oldestPurgeableLogCreatedAt: oldestPurgeableLog.createdAt,
+      };
+    }
+
+    const exportVerified = await retentionExportArtifactService.hasVerifiedCoverage(
+      'AUDIT_LOG',
+      oldestPurgeableLog.createdAt,
+      threshold,
+    );
+
+    return {
+      requiresVerifiedExport,
+      exportVerified,
+      hasEligibleLogs: true,
+      threshold,
+      oldestPurgeableLogCreatedAt: oldestPurgeableLog.createdAt,
+    };
+  }
 
   /**
    * Anonymise une données sensible en conservant un hash pour identification
@@ -55,8 +109,6 @@ export class GDPRPurgeService {
    */
   async purgeExpiredTechnicalData(): Promise<GDPRTechnicalStats> {
     const now = new Date();
-    const logRetentionDays = Number(process.env.AUDIT_LOG_RETENTION_DAYS || '365');
-    const logThreshold = new Date(now.getTime() - logRetentionDays * 24 * 60 * 60 * 1000);
     const analyticsRetentionDays = Number(process.env.ANALYTICS_EVENT_RETENTION_DAYS || '90');
     const analyticsAggRetentionDays = Number(process.env.ANALYTICS_DAILY_AGG_RETENTION_DAYS || '365');
 
@@ -82,11 +134,21 @@ export class GDPRPurgeService {
 
     const tokensDeleted = passwordTokensResult.count + emailTokensResult.count + refreshTokensResult.count;
 
-    const oldLogsResult = await prisma.auditLog.deleteMany({
-      where: {
-        createdAt: { lt: logThreshold }
-      }
-    });
+    const auditLogReadiness = await this.getAuditLogPurgeReadiness(now);
+    const oldLogsResult = auditLogReadiness.hasEligibleLogs && auditLogReadiness.exportVerified
+      ? await prisma.auditLog.deleteMany({
+        where: {
+          createdAt: { lt: auditLogReadiness.threshold }
+        }
+      })
+      : { count: 0 };
+
+    if (auditLogReadiness.hasEligibleLogs && !auditLogReadiness.exportVerified) {
+      secureLogger.warn('GDPR_PURGE_AUDIT_LOG_BLOCKED_MISSING_VERIFIED_EXPORT', {
+        threshold: auditLogReadiness.threshold.toISOString(),
+        oldestPurgeableLogCreatedAt: auditLogReadiness.oldestPurgeableLogCreatedAt?.toISOString() ?? null,
+      });
+    }
 
     // Purger les LoginAttempts anciens (RGPD Article 5.1.e)
     const loginAttemptsDeleted = await this.purgeOldLoginAttempts();

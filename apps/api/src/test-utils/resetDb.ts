@@ -35,6 +35,7 @@ import { clientPrisma as prisma } from '@blobinfini/database';
  */
 const CLEANUP_ORDER = [
   'message',
+  'conversationBlockEvent',
   'conversationMember',
   'conversation',
   'matchDecision',
@@ -50,6 +51,7 @@ const CLEANUP_ORDER = [
   'emailVerificationToken',
   'session',
   'refreshToken',
+  'retentionExportArtifact',
   'adminProfile',
   'riderProfile',
   'proProfile',

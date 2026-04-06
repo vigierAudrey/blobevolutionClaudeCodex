@@ -16,6 +16,7 @@ import { bindAuthenticatedSessionUser, rotateAuthenticatedSession } from './auth
 import { enforceAdminAllowedIp, grantAdminStepUp, revalidateAdminRole, resolveAdminStepUpBinding } from '../admin/admin.security-guard';
 import { ipKeyGenerator } from 'express-rate-limit';
 import { FRANCE_ONLY_COUNTRY_CODE, isFranceLaunchGuardError } from '../../lib/france-launch-guard';
+import { buildLoginAttemptData } from './login-attempt.util';
 import { disconnectUserSockets } from '../../lib/socket';
 import { invalidateCachedAuth } from '../../lib/socket-auth-cache';
 
@@ -304,11 +305,13 @@ authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginS
     const storedUser = await prisma.user.findUnique({ where: { email } });
     await prisma.loginAttempt.create({
       data: {
-        email,
-        ipHash: hashIpHmac(ip) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
-        userAgent,
-        success: true,
-        userId: storedUser?.id
+        ...buildLoginAttemptData({
+          email,
+          ipHash: hashIpHmac(ip) ?? undefined,
+          userAgent,
+          success: true,
+        }),
+        userId: storedUser?.id,
       }
     }).catch(() => {}); // Ignore logging errors
 
@@ -329,14 +332,14 @@ authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginS
     if (err?.name === 'ZodError') {
       reason = 'Invalid input';
       await prisma.loginAttempt.create({
-        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
+        data: buildLoginAttemptData({ email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason })
       }).catch(() => {});
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
       reason = 'Invalid credentials';
       await prisma.loginAttempt.create({
-        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
+        data: buildLoginAttemptData({ email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason })
       }).catch(() => {});
 
       // Detect brute-force or targeted attack patterns (fire-and-forget)
@@ -356,7 +359,7 @@ authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginS
     if (err?.code === 'EMAIL_NOT_VERIFIED') {
       reason = 'Email not verified';
       await prisma.loginAttempt.create({
-        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
+        data: buildLoginAttemptData({ email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason })
       }).catch(() => {});
       return res.status(403).json({ error: 'Email not verified' });
     }
@@ -380,7 +383,7 @@ authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginS
     // Log unexpected errors
     reason = 'Internal server error';
     await prisma.loginAttempt.create({
-      data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
+      data: buildLoginAttemptData({ email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason })
     }).catch(() => {});
     return res.status(500).json({ error: 'Internal error' });
   }

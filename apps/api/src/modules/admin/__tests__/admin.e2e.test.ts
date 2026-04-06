@@ -45,6 +45,46 @@ async function getCsrf(agent: SuperAgentTest) {
 }
 
 async function cleanupFixtureData() {
+  await prisma.retentionExportArtifact.deleteMany({
+    where: {
+      createdByAdmin: { email: { in: [emails.admin, emails.adminTwo] } }
+    }
+  });
+  await prisma.conversationBlockEvent.deleteMany({
+    where: {
+      OR: [
+        { user: { email: { in: [emails.rider, emails.target, emails.pro] } } },
+        { actorUser: { email: { in: [emails.admin, emails.adminTwo] } } }
+      ]
+    }
+  });
+  await prisma.message.deleteMany({
+    where: {
+      conversation: {
+        members: {
+          some: {
+            user: {
+              email: { in: [emails.admin, emails.adminTwo, emails.rider, emails.target, emails.pro] }
+            }
+          }
+        }
+      }
+    }
+  });
+  await prisma.conversationMember.deleteMany({
+    where: {
+      user: {
+        email: { in: [emails.admin, emails.adminTwo, emails.rider, emails.target, emails.pro] }
+      }
+    }
+  });
+  await prisma.conversation.deleteMany({
+    where: {
+      members: {
+        none: {}
+      }
+    }
+  });
   await prisma.profileReport.deleteMany({
     where: {
       OR: [
@@ -491,8 +531,19 @@ describe('Admin Controller', () => {
     const riderMember = await prisma.conversationMember.findUnique({
       where: { conversationId_userId: { conversationId: conversation.id, userId: riderId } }
     });
+    const unblockEvents = await prisma.conversationBlockEvent.findMany({
+      where: { conversationId: conversation.id },
+      orderBy: { createdAt: 'asc' }
+    });
 
     expect(riderMember?.blockedAt).toBeNull();
+    expect(unblockEvents).toHaveLength(1);
+    expect(unblockEvents[0]).toMatchObject({
+      userId: riderId,
+      actorUserId: adminId,
+      action: 'UNBLOCK',
+      source: 'ADMIN_SINGLE'
+    });
 
     await agent
       .post(`/admin/conversations/${conversation.id}/block`)
@@ -504,8 +555,14 @@ describe('Admin Controller', () => {
     const members = await prisma.conversationMember.findMany({
       where: { conversationId: conversation.id }
     });
+    const blockEvents = await prisma.conversationBlockEvent.findMany({
+      where: { conversationId: conversation.id },
+      orderBy: { createdAt: 'asc' }
+    });
 
     expect(members.every((member) => member.blockedAt)).toBe(true);
+    expect(blockEvents).toHaveLength(3);
+    expect(blockEvents.slice(1).every((event) => event.action === 'BLOCK')).toBe(true);
   });
 
   it('allows admins to clear all conversation blocks', async () => {
@@ -531,12 +588,91 @@ describe('Admin Controller', () => {
       .expect(200);
 
     expect(res.body.success).toBe(true);
-    expect(res.body.count).toBeGreaterThanOrEqual(2);
+    expect(res.body.batchId).toEqual(expect.any(String));
+    expect(res.body.processedCount).toBeGreaterThanOrEqual(2);
+    expect(res.body.remainingCount).toBe(0);
 
     const remaining = await prisma.conversationMember.count({
       where: { conversationId: conversation.id, blockedAt: { not: null } }
     });
+    const events = await prisma.conversationBlockEvent.findMany({
+      where: {
+        batchId: res.body.batchId
+      }
+    });
     expect(remaining).toBe(0);
+    expect(events).toHaveLength(2);
+    expect(events.every((event) => event.action === 'UNBLOCK')).toBe(true);
+  });
+
+  it('keeps unblock-all idempotent across repeated calls', async () => {
+    await prisma.conversation.create({
+      data: {
+        type: 'RIDER_TO_RIDER',
+        members: {
+          create: [
+            { userId: riderId, blockedAt: new Date() },
+            { userId: targetId, blockedAt: new Date() }
+          ]
+        }
+      }
+    });
+
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    const first = await agent
+      .post('/admin/conversations/unblock-all')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .expect(200);
+
+    const second = await agent
+      .post('/admin/conversations/unblock-all')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-CSRF-Token', csrf)
+      .expect(200);
+
+    expect(first.body.processedCount).toBeGreaterThanOrEqual(2);
+    expect(second.body.processedCount).toBe(0);
+    expect(second.body.remainingCount).toBe(0);
+  });
+
+  it('requires admin step-up for conversation block operations when enabled', async () => {
+    const previous = process.env.ADMIN_REQUIRE_STEP_UP;
+    process.env.ADMIN_REQUIRE_STEP_UP = 'true';
+
+    const conversation = await prisma.conversation.create({
+      data: {
+        type: 'RIDER_TO_RIDER',
+        members: {
+          create: [
+            { userId: riderId },
+            { userId: targetId }
+          ]
+        }
+      }
+    });
+
+    try {
+      const agent = request.agent(app);
+      const csrf = await getCsrf(agent);
+
+      await agent
+        .post(`/admin/conversations/${conversation.id}/block`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-CSRF-Token', csrf)
+        .send({ action: 'block' })
+        .expect(403);
+
+      await agent
+        .post('/admin/conversations/unblock-all')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-CSRF-Token', csrf)
+        .expect(403);
+    } finally {
+      process.env.ADMIN_REQUIRE_STEP_UP = previous;
+    }
   });
 
   it('exposes conversation block history', async () => {
@@ -569,6 +705,147 @@ describe('Admin Controller', () => {
 
     expect(Array.isArray(history.body.items)).toBe(true);
     expect(history.body.items.length).toBeGreaterThan(0);
+    expect(history.body.historyReliability).toMatchObject({
+      hasLegacyRows: false,
+      reliableSinceDate: '2026-04-06',
+      reliableSinceVersion: '20260406_add_conversation_block_event'
+    });
+    expect(history.body.items[0]).toHaveProperty('actorUser');
+    expect(history.body.items[0]).toHaveProperty('conversation');
+    expect(history.body.items[0]).toHaveProperty('source');
+    expect(history.body.items[0]).toHaveProperty('action');
+  });
+
+  it('reads report history from ProfileReport instead of AuditLog', async () => {
+    await prisma.profileReport.update({
+      where: { id: reportId },
+      data: {
+        reviewedAt: new Date(),
+        reviewedByAdminId: adminId,
+        reviewedAction: 'dismiss',
+      }
+    });
+    await prisma.auditLog.deleteMany({
+      where: { action: 'admin:report:action' }
+    });
+
+    const history = await request(app)
+      .get('/admin/reports/history?page=1&limit=10')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(Array.isArray(history.body.items)).toBe(true);
+    expect(history.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: reportId,
+          reviewedAction: 'dismiss',
+          reviewedByAdminId: adminId,
+          reviewedByAdmin: expect.objectContaining({
+            id: adminId,
+            email: emails.admin,
+          }),
+        })
+      ])
+    );
+  });
+
+  it('gates purge until a verified retention export exists', async () => {
+    const previousRetention = process.env.AUDIT_LOG_RETENTION_DAYS;
+    process.env.AUDIT_LOG_RETENTION_DAYS = '1';
+
+    const oldLog = await prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        action: 'legacy:test',
+        resource: 'legacy:test',
+        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      }
+    });
+
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+
+    try {
+      await agent
+        .post('/admin/gdpr/run-purge')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-CSRF-Token', csrf)
+        .send({ confirm: 'CONFIRMER_PURGE_RGPD' })
+        .expect(409);
+
+      const exportResponse = await agent
+        .post('/admin/gdpr/exports')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-CSRF-Token', csrf)
+        .send({
+          scope: 'AUDIT_LOG',
+          fromDate: '2020-01-01T00:00:00.000Z',
+          toDate: new Date().toISOString(),
+          format: 'NDJSON'
+        })
+        .expect(200);
+
+      expect(exportResponse.body.artifact).toMatchObject({
+        status: 'VERIFIED',
+        rowCount: expect.any(Number),
+        sha256: expect.any(String),
+      });
+      expect(exportResponse.body.download).toMatchObject({
+        mimeType: 'application/x-ndjson',
+        encoding: 'base64',
+      });
+
+      const exportsList = await request(app)
+        .get('/admin/gdpr/exports?page=1&limit=10')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(exportsList.body.exports).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: exportResponse.body.artifact.id,
+            status: 'VERIFIED',
+            scope: 'AUDIT_LOG',
+          })
+        ])
+      );
+
+      const purgeSpy = jest.spyOn(gdprPurgeService, 'performFullPurge').mockResolvedValue({
+        summary: 'Test purge after verified export',
+        technicalData: {
+          sessionsDeleted: 0,
+          tokensDeleted: 0,
+          oldLogsDeleted: 1,
+          loginAttemptsDeleted: 0,
+          analyticsEventsDeleted: 0,
+          analyticsDailyAggDeleted: 0
+        },
+        userAnonymization: {
+          phase1Anonymized: 0,
+          phase2Anonymized: 0,
+          phase3Purged: 0
+        },
+        relationalData: {
+          conversationsDeleted: 0,
+          matchesDeleted: 0,
+          oldSearchesDeleted: 0
+        }
+      });
+
+      await agent
+        .post('/admin/gdpr/run-purge')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-CSRF-Token', csrf)
+        .send({ confirm: 'CONFIRMER_PURGE_RGPD' })
+        .expect(200);
+
+      expect(purgeSpy).toHaveBeenCalled();
+      purgeSpy.mockRestore();
+    } finally {
+      process.env.AUDIT_LOG_RETENTION_DAYS = previousRetention;
+      await prisma.auditLog.deleteMany({ where: { id: oldLog.id } });
+    }
   });
 
   it('sends admin broadcasts to specific emails', async () => {
