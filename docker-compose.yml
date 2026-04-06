@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: blobinfini
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -53,8 +53,8 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:${MINIO_HOST_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - miniodata:/data
 
@@ -62,8 +62,8 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_HOST_PORT:-8025}:8025"
 
   api:
     build:
@@ -80,11 +80,11 @@ services:
       REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379/0
       SMTP_HOST: mailpit
       S3_ENDPOINT: http://minio:9000
-      S3_PRESIGN_ENDPOINT: http://localhost:9000
-      S3_PUBLIC_URL_BASE: http://localhost:9000/blobinfini-dev
+      S3_PRESIGN_ENDPOINT: "http://localhost:${MINIO_HOST_PORT:-9000}"
+      S3_PUBLIC_URL_BASE: "http://localhost:${MINIO_HOST_PORT:-9000}/blobinfini-dev"
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3010,http://localhost:3011}
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     volumes:
       - .:/workspace
     working_dir: /workspace
@@ -127,8 +127,8 @@ services:
       NODE_ENV: production
       SMTP_HOST: mailpit
       S3_ENDPOINT: http://minio:9000
-      S3_PRESIGN_ENDPOINT: http://localhost:9000
-      S3_PUBLIC_URL_BASE: http://localhost:9000/blobinfini-dev
+      S3_PRESIGN_ENDPOINT: "http://localhost:${MINIO_HOST_PORT:-9000}"
+      S3_PUBLIC_URL_BASE: "http://localhost:${MINIO_HOST_PORT:-9000}/blobinfini-dev"
     volumes:
       - ./apps/api/logs:/app/apps/api/logs
     networks:

@@ -2,7 +2,12 @@ import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
-import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
+import {
+  ensureBucket, presignPutObject, publicUrlForKey,
+  getObjectFirstBytes, deleteObject,
+} from '../../lib/s3';
+import { registerPendingUpload, claimUploadToken } from '../../lib/upload-token';
+import { detectMagicBytes } from '../../lib/magic-bytes';
 import crypto from 'crypto';
 import { gdprExportService } from '../../services/gdpr-export.service';
 import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
@@ -74,6 +79,24 @@ const profileUpdateLimiter = createLazyCustomRateLimiter({
   },
 }, 'pro_profile_update');
 
+// Finalize rate limiter : 10 req/5min/userId — cohérent avec profile.controller.ts
+const finalizeRateLimiter = createLazyCustomRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test' && !process.env.ENABLE_RATE_LIMIT_IN_TESTS,
+  keyGenerator: (req: any) => {
+    const userId = (req as any).user?.id;
+    if (userId) return `finalize:user:${userId}`;
+    const ip = getClientIp(req) ?? req.socket?.remoteAddress;
+    return ip ? `finalize:ip:${ipKeyGenerator(ip)}` : 'finalize:anonymous';
+  },
+  handler: (_req: any, res: any) => {
+    res.status(429).json({ error: 'RATE_LIMIT_EXCEEDED', message: 'Trop de tentatives. Réessayez dans 5 minutes.' });
+  },
+}, 'pro_finalize');
+
 const notificationPreferencesSchema = z.object({
   notifyForSurf: z.boolean().optional(),
   notifyForKitesurf: z.boolean().optional(),
@@ -85,14 +108,9 @@ const upsertSchema = z.object({
   businessName: z.string().min(1).max(120).optional().or(z.literal('').transform(() => undefined)),
   bio: z.string().max(2000).optional().or(z.literal('').transform(() => undefined)),
   emailNotif: z.boolean().optional(),
-  photoUrl: z.string().url().optional().refine(
-    (val) => {
-      if (!val) return true;
-      const base = process.env.S3_PUBLIC_URL_BASE || '';
-      return base ? val.startsWith(base) : true;
-    },
-    { message: 'photoUrl must point to the configured storage domain' }
-  ),
+  // photoUrl ne peut être mis à jour que via POST /pro/photo/finalize.
+  // Seul le clear explicite (null) est autorisé ici.
+  photoUrl: z.null().optional(),
   countryCode: z.string().trim().length(2).transform((value) => value.toUpperCase()).optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
@@ -112,6 +130,9 @@ type LessonCandidateRow = {
   lessonDate: Date | null;
   lessonPlace: string | null;
   lessonStudentCount: number | null;
+  // Coordonnées du lieu de cours — arrondies à 3 décimales dans la réponse (~110 m).
+  lessonLat: number;
+  lessonLng: number;
   distanceKm: number;
   activeMatchCount: number;
 };
@@ -274,12 +295,83 @@ proRouter.post('/photo/upload-url', requireProRole, async (req, res) => {
     await ensureBucket();
     const ext = contentType.split('/')[1] || 'bin';
     const key = `pros/${userId}/${crypto.randomUUID()}.${ext}`;
-    const uploadUrl = await presignPutObject(key, contentType, 900);
-    const fileUrl = publicUrlForKey(key);
-
-    return res.json({ uploadUrl, key, fileUrl });
+    const PRESIGN_TTL = 180;
+    const uploadUrl = await presignPutObject(key, contentType, PRESIGN_TTL);
+    await registerPendingUpload(key, userId, PRESIGN_TTL);
+    return res.json({ uploadUrl, key });
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Finalize photo upload pro — valide le contenu réel via magic bytes puis enregistre photoUrl
+proRouter.post('/photo/finalize', requireProRole, finalizeRateLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const bodySchema = z.object({
+      key: z.string().min(1).max(200).regex(
+        /^pros\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpeg|jpg|png|webp)$/,
+        'Invalid key format',
+      ),
+    });
+    let key: string;
+    try {
+      ({ key } = bodySchema.parse(req.body));
+    } catch {
+      return res.status(400).json({ error: 'Invalid key format' });
+    }
+
+    if (!key.startsWith(`pros/${userId}/`)) {
+      secureLogger.warn('UPLOAD_FINALIZE_PRO_KEY_NOT_OWNED', { userId, keyPrefix: key.slice(0, 50) });
+      return res.status(403).json({ error: 'Key does not belong to this user' });
+    }
+
+    const claim = await claimUploadToken(key, userId);
+    if (claim === 'no_redis') {
+      secureLogger.error('UPLOAD_FINALIZE_PRO_NO_REDIS', { userId });
+      return res.status(503).json({ error: 'Service temporarily unavailable' });
+    }
+    if (claim === 'not_found')   return res.status(410).json({ error: 'Upload token expired or not found' });
+    if (claim === 'wrong_user') {
+      secureLogger.warn('UPLOAD_FINALIZE_PRO_WRONG_USER', { userId });
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (claim === 'already_used') return res.status(409).json({ error: 'Upload already finalized' });
+
+    const firstBytes = await getObjectFirstBytes(key);
+    if (!firstBytes) {
+      await deleteObject(key);
+      return res.status(422).json({ error: 'Upload not found or exceeds size limit' });
+    }
+
+    const detectedMime = detectMagicBytes(firstBytes);
+    if (!detectedMime) {
+      await deleteObject(key);
+      secureLogger.warn('UPLOAD_FINALIZE_PRO_INVALID_CONTENT', {
+        userId,
+        firstBytesHex: firstBytes.slice(0, 8).toString('hex'),
+      });
+      return res.status(422).json({ error: 'File content does not match an allowed image format' });
+    }
+
+    const photoUrl = publicUrlForKey(key);
+    if (!photoUrl) return res.status(500).json({ error: 'Storage configuration error' });
+
+    await prisma.proProfile.upsert({
+      where: { userId },
+      create: { userId, photoUrl },
+      update: { photoUrl },
+    });
+
+    secureLogger.info('UPLOAD_FINALIZE_PRO_SUCCESS', { userId, detectedMime });
+    return res.json({ photoUrl });
+  } catch (err: any) {
+    secureLogger.error('UPLOAD_FINALIZE_PRO_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -303,7 +395,9 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
     if (sport !== 'surf' && sport !== 'kitesurf') return res.status(400).json({ error: 'Invalid sport' });
     const plat = me.lat, plng = me.lng;
 
-    // Optimized query using PostGIS and SQL filtering instead of JavaScript
+    // Requête BloboMap : utilise lessonLat/lessonLng (lieu demandé) — PAS lat/lng (profil).
+    // Riders sans lessonLat/lessonLng exclus : mode strict intentionnel.
+    // lessonLatApprox/lessonLngApprox arrondis à 3 décimales (~110 m) : privacy by default.
     const candidates = await prisma.$queryRaw<LessonCandidateRow[]>(Prisma.sql`
       WITH active_matches AS (
         SELECT "userOneId" AS "userId"
@@ -319,36 +413,37 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
         FROM active_matches
         GROUP BY "userId"
       )
-          SELECT
-            rp."id",
-            rp."displayName",
-            rp."bio",
-            rp."lessonSport",
-            rp."lessonLevel",
-            rp."lessonDate",
-            rp."lessonPlace",
-            rp."lessonStudentCount",
-            ST_Distance(
+      SELECT
+        rp."id",
+        rp."displayName",
+        rp."bio",
+        rp."lessonSport",
+        rp."lessonLevel",
+        rp."lessonDate",
+        rp."lessonPlace",
+        rp."lessonStudentCount",
+        rp."lessonLat",
+        rp."lessonLng",
+        ST_Distance(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
-          ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography
+          ST_SetSRID(ST_MakePoint(rp."lessonLng", rp."lessonLat"), 4326)::geography
         ) / 1000.0 AS "distanceKm",
         COALESCE(mc.total, 0) AS "activeMatchCount"
       FROM "RiderProfile" rp
       LEFT JOIN match_counts mc ON mc."userId" = rp."userId"
       WHERE rp."wantsLesson" = true
-        AND rp."lat" IS NOT NULL
-        AND rp."lng" IS NOT NULL
+        AND rp."lessonLat" IS NOT NULL
+        AND rp."lessonLng" IS NOT NULL
         AND (rp."lessonSport" = ${sport} OR rp."lessonSport" IS NULL)
         AND ST_DWithin(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
-          ST_SetSRID(ST_MakePoint(rp."lng", rp."lat"), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(rp."lessonLng", rp."lessonLat"), 4326)::geography,
           ${radiusKm * 1000}
         )
       ORDER BY "distanceKm" ASC
       LIMIT 500
     `);
 
-    // No more JavaScript filtering needed - everything is done in SQL!
     const items = candidates.map((c: LessonCandidateRow) => ({
       id: c.id,
       displayName: c.displayName,
@@ -358,6 +453,11 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
       lessonDate: c.lessonDate,
       lessonPlace: c.lessonPlace,
       lessonStudentCount: c.lessonStudentCount,
+      // Arrondi à 3 décimales ≈ 110 m — identifie un spot côtier sans permettre
+      // de localiser une adresse. 2 décimales (~1.1 km) trop grossier : deux spots
+      // distincts à 500 m (ex. La Gravière / La Piste, Hossegor) seraient confondus.
+      lessonLatApprox: Math.round(c.lessonLat * 1000) / 1000,
+      lessonLngApprox: Math.round(c.lessonLng * 1000) / 1000,
       distanceBucket: toDistanceBucket(c.distanceKm),
     }))
       .slice(0, 500);

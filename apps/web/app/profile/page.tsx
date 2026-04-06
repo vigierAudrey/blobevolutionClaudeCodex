@@ -482,7 +482,7 @@ export default function ProfilePage() {
         if (!uploadResponse.ok) {
           throw new Error('Impossible de préparer le téléversement');
         }
-        const uploadData = (await uploadResponse.json()) as { uploadUrl: string; fileUrl?: string };
+        const uploadData = (await uploadResponse.json()) as { uploadUrl: string; key: string; fileUrl?: string };
         const putResponse = await fetch(uploadData.uploadUrl, {
           method: 'PUT',
           headers: { 'Content-Type': contentType },
@@ -491,10 +491,19 @@ export default function ProfilePage() {
         if (!putResponse.ok) {
           throw new Error('Échec du téléversement');
         }
-        if (uploadData.fileUrl) {
-          payload.photoUrl = uploadData.fileUrl;
-          setPhotoUrl(uploadData.fileUrl);
+        // Finalize: valide le contenu côté serveur et retourne la photoUrl officielle
+        const finalizeResponse = await apiRequest('/profile/photo/finalize', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${tokens.accessToken}` },
+          body: JSON.stringify({ key: uploadData.key }),
+        });
+        if (!finalizeResponse.ok) {
+          throw new Error('Échec de la validation de la photo');
         }
+        const { photoUrl: finalizedUrl } = (await finalizeResponse.json()) as { photoUrl: string };
+        // photoUrl est déjà sauvée en DB par /finalize — ne pas la repasser à updateProfile
+        // (le schéma PUT /profile/me n'accepte que null, pas une string arbitraire)
+        setPhotoUrl(finalizedUrl);
         setPhotoPreviewUrl((previous) => {
           if (previous) URL.revokeObjectURL(previous);
           return null;

@@ -455,12 +455,17 @@ export default function ProMapPage() {
               </div>
               <MapComponent
                 center={center}
-                items={items.map((item) => ({
-                  ...item,
-                  displayName: item.displayName ?? undefined,
-                  distanceKm: item.distanceKm ?? undefined,
-                  type: 'rider' as const
-                }))}
+                items={items
+                  .filter((item) => item.lessonLatApprox != null && item.lessonLngApprox != null)
+                  .map((item) => ({
+                    ...item,
+                    // Le pin est positionné sur le lieu demandé pour le cours,
+                    // pas sur les coordonnées du profil rider.
+                    lat: item.lessonLatApprox as number,
+                    lng: item.lessonLngApprox as number,
+                    displayName: item.displayName ?? undefined,
+                    type: 'rider' as const,
+                  }))}
                 legend={[
                   { label: 'Votre position', color: '#0ea5e9' },
                   { label: 'Demandes de riders', color: '#16a34a' },

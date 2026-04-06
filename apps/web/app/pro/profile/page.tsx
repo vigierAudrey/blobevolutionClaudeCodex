@@ -484,7 +484,15 @@ export default function ProProfilePage() {
           body: file
         });
 
-        if (data.fileUrl) finalUrl = data.fileUrl;
+        // Finalize: valide le contenu côté serveur et retourne la photoUrl officielle
+        const finalizeRes = await apiRequest('/pro/photo/finalize', {
+          method: 'POST',
+          body: JSON.stringify({ key: data.key }),
+          headers: { Authorization: `Bearer ${t.accessToken}` },
+        });
+        if (!finalizeRes.ok) throw new Error('Échec de la validation de la photo');
+        const { photoUrl: finalizedUrl } = (await finalizeRes.json()) as { photoUrl: string };
+        finalUrl = finalizedUrl;
       }
 
       // ✅ CORRIGÉ : Utiliser apiRequest avec protection CSRF

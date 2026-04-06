@@ -70,7 +70,9 @@ export function buildCsp(nonce: string): string {
     // Nonce-based: only scripts tagged with the per-request nonce are allowed.
     // Next.js 14 App Router automatically applies this nonce to its own
     // generated hydration <script> tags when the header is set in middleware.
-    `script-src 'self' 'nonce-${nonce}'`,
+    // 'unsafe-eval' is required in dev for Next.js HMR / react-refresh (eval-based
+    // hot module replacement). Never included in production.
+    `script-src 'self' 'nonce-${nonce}'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
 
     // 'unsafe-inline' is required for Next.js CSS-in-JS / Tailwind inline styles.
     // unpkg.com is needed for Leaflet CSS loaded dynamically in LocationPickerMap.
@@ -79,7 +81,9 @@ export function buildCsp(nonce: string): string {
     `img-src ${imgSrcParts.join(' ')}`,
 
     // Both HTTP (fetch/XHR/polling) and WS (Socket.IO websocket transport).
-    `connect-src 'self' ${apiOrigin} ${wsOrigin}`,
+    // mediaOrigin (MinIO/S3) is included because presigned PUT uploads go directly
+    // from the browser to the storage endpoint — blocked otherwise.
+    `connect-src 'self' ${apiOrigin} ${wsOrigin}${mediaOrigin ? ` ${mediaOrigin}` : ''}`,
 
     // next/font serves fonts from /_next/static — covered by 'self'.
     // data: handles occasional inline font references.

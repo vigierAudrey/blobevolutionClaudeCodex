@@ -135,7 +135,7 @@ export function validateProductionEnv(): void {
   }
 
   // NEW-P2-3: S3 strict validation — all four credentials required, no empty/default values
-  const S3_REQUIRED = ['S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const;
+  const S3_REQUIRED = ['S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_PUBLIC_URL_BASE'] as const;
   for (const key of S3_REQUIRED) {
     const value = process.env[key];
     if (!value || value.trim() === '') {
