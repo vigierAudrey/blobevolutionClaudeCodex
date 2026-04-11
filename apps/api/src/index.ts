@@ -1,8 +1,13 @@
 import './config/loadEnv';
 
 // Validate production environment variables (fail-fast on insecure defaults)
-import { validateProductionEnv } from './lib/env-validation';
+import { validateProductionEnv, validateBruteForceEnv } from './lib/env-validation';
 validateProductionEnv();
+validateBruteForceEnv();
+
+if (!process.env.EMAIL_HASH_SECRET?.trim()) {
+  throw new Error('FATAL: EMAIL_HASH_SECRET is not configured. Set EMAIL_HASH_SECRET environment variable.');
+}
 
 import { resolve } from 'path';
 import fs from 'fs';
@@ -23,6 +28,7 @@ import type { ErrorRequestHandler, Request, Response, NextFunction } from 'expre
 import { secureLogger } from './utils/secure-logger';
 import { getClientIp } from './lib/client-ip';
 import { hashIpHmacSafe } from './lib/hash-ip';
+import { requestIdMiddleware } from './middleware/request-id';
 import { runJobWithLogContext, withHttpLogContext } from './observability/log-context';
 import { registerLogTransportShutdownHandlers, getLogTransportMetrics } from './observability/log-transport';
 import { getMatchingMetricsSnapshot } from './lib/matching-metrics';
@@ -272,6 +278,7 @@ export function createApp() {
   app.use('/analytics', express.json({ limit: analyticsJsonLimit }));
   app.use(express.json());
   app.use(cookieParser());
+  app.use(requestIdMiddleware);
 
   // Trust proxy configuration - more secure than 'true'
   // In dev, trust localhost. In prod, trust only known proxy IPs or use number of hops
