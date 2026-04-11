@@ -301,7 +301,7 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
         return `email:${hashEmailHmac(identifierSource)}`;
       }
 
-      const ip = req.ip || req.socket?.remoteAddress;
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress;
       return ip ? ipKeyGenerator(ip) : 'anonymous';
     };
   }
