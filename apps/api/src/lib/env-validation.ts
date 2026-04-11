@@ -12,6 +12,7 @@ const INSECURE_DEFAULTS = {
   REDIS_PASSWORD: ['change-me-strong', 'change-me'],
   TWO_FACTOR_SECRET: ['change-me-2fa-secret-production', 'change-me'],
   IP_HASH_SECRET: ['change-me-strong-ip-hash-secret-production-min-32-chars', 'change-me'],
+  EMAIL_HASH_SECRET: ['change-me-strong-email-hash-secret-production-min-32-chars', 'change-me'],
   LOG_ACTOR_SECRET: ['blobinfini-dev-log-actor-secret', 'change-me'],
   JWT_SECRET: ['please-change-in-dev', 'change-me', 'secret'],
   JWT_REFRESH_SECRET: ['please-change-in-dev-refresh', 'change-me', 'secret'],
@@ -29,7 +30,8 @@ export function validateProductionEnv(): void {
 
   // Check for insecure defaults
   for (const [key, insecureValues] of Object.entries(INSECURE_DEFAULTS)) {
-    const value = process.env[key];
+    const rawValue = process.env[key];
+    const value = typeof rawValue === 'string' ? rawValue.trim() : '';
 
     if (!value) {
       errors.push(`${key} is not set`);
@@ -122,9 +124,20 @@ export function validateProductionEnv(): void {
   }
 
   // Validate IP_HASH_SECRET is different from TWO_FACTOR_SECRET (security isolation)
-  if (process.env.IP_HASH_SECRET && process.env.TWO_FACTOR_SECRET) {
-    if (process.env.IP_HASH_SECRET === process.env.TWO_FACTOR_SECRET) {
+  const ipHashSecret = process.env.IP_HASH_SECRET?.trim();
+  const twoFactorSecret = process.env.TWO_FACTOR_SECRET?.trim();
+  const emailHashSecret = process.env.EMAIL_HASH_SECRET?.trim();
+
+  if (ipHashSecret && twoFactorSecret) {
+    if (ipHashSecret === twoFactorSecret) {
       errors.push('IP_HASH_SECRET must be different from TWO_FACTOR_SECRET (security isolation)');
+    }
+  }
+
+  // Validate EMAIL_HASH_SECRET is different from IP_HASH_SECRET (security isolation)
+  if (emailHashSecret && ipHashSecret) {
+    if (emailHashSecret === ipHashSecret) {
+      errors.push('EMAIL_HASH_SECRET must be different from IP_HASH_SECRET (security isolation)');
     }
   }
 
@@ -211,4 +224,65 @@ export function validateProductionEnv(): void {
   }
 
   secureLogger.info('ENV_VALIDATION_SUCCEEDED');
+}
+
+/**
+ * Validation légère des variables de configuration LOT 4 brute-force.
+ * WARN uniquement — jamais de fail-fast (variables opérationnelles, non sensibles).
+ * Defaults sûrs définis dans brute-force-detector.ts (email=5, ip=20, ttl=86400).
+ *
+ * Appelé au démarrage dans index.ts, tous environments confondus.
+ */
+export function validateBruteForceEnv(): void {
+  // Seuil email : en dessous de 3, risque de DoS (utilisateurs légitimes flagués)
+  const emailThresholdRaw = process.env.BF_EMAIL_THRESHOLD;
+  if (emailThresholdRaw !== undefined) {
+    const val = Number(emailThresholdRaw);
+    if (isNaN(val) || val < 3) {
+      secureLogger.warn('BF_CONFIG_EMAIL_THRESHOLD_LOW', {
+        value: emailThresholdRaw,
+        minimum: 3,
+        impact: 'Low threshold increases DoS risk — legitimate users could be flagged suspect',
+      });
+    }
+  }
+
+  // Seuil IP : en dessous de 5, risque de faux positifs sur IP NAT partagées
+  const ipThresholdRaw = process.env.BF_IP_THRESHOLD;
+  if (ipThresholdRaw !== undefined) {
+    const val = Number(ipThresholdRaw);
+    if (isNaN(val) || val < 5) {
+      secureLogger.warn('BF_CONFIG_IP_THRESHOLD_LOW', {
+        value: ipThresholdRaw,
+        minimum: 5,
+        impact: 'Low threshold may flag NAT/shared IPs as suspicious',
+      });
+    }
+  }
+
+  // TTL email : en dessous de 300s (5min), la fenêtre ne couvre pas une attaque lente
+  const emailTtlRaw = process.env.BF_EMAIL_TTL_SECONDS;
+  if (emailTtlRaw !== undefined) {
+    const val = Number(emailTtlRaw);
+    if (isNaN(val) || val < 300) {
+      secureLogger.warn('BF_CONFIG_EMAIL_TTL_TOO_SHORT', {
+        value: emailTtlRaw,
+        minimum: 300,
+        impact: 'Short TTL reduces detection window — slow attackers may go undetected',
+      });
+    }
+  }
+
+  // TTL IP : idem
+  const ipTtlRaw = process.env.BF_IP_TTL_SECONDS;
+  if (ipTtlRaw !== undefined) {
+    const val = Number(ipTtlRaw);
+    if (isNaN(val) || val < 300) {
+      secureLogger.warn('BF_CONFIG_IP_TTL_TOO_SHORT', {
+        value: ipTtlRaw,
+        minimum: 300,
+        impact: 'Short TTL reduces detection window — slow attackers may go undetected',
+      });
+    }
+  }
 }
