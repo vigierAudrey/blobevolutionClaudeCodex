@@ -270,6 +270,22 @@ describe('onLoginFailure — détection suspect email', () => {
     expect(ipSuspect).toBeDefined();
     expect((ipSuspect![1] as any).ipHash).toBe('abcdef1234567890abcdef12');
   });
+
+  it('ne pose pas de flag si Redis renvoie un count non numérique', async () => {
+    process.env.BF_EMAIL_THRESHOLD = '1';
+    mockClient.sendCommand.mockImplementation(async (args: string[]) => {
+      if (args[0] === 'EVAL') return 'NaN';
+      if (args[0] === 'SET') return 'OK';
+      return null;
+    });
+
+    await onLoginFailure({ email: 'victim@example.com' });
+
+    expect(mockSecureLogger.warn).not.toHaveBeenCalledWith('BF_SUSPECT_DETECTED', expect.anything());
+    const calls = getCallArgsList(mockClient);
+    const setCalls = calls.filter((args) => args[0] === 'SET');
+    expect(setCalls).toHaveLength(0);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -406,6 +422,24 @@ describe('getIpCount / getEmailCount — sémantique null vs 0', () => {
 
   it('getIpCount retourne null si Redis throw (état inconnu)', async () => {
     mockClient.sendCommand.mockRejectedValue(new Error('Connection reset'));
+    const result = await getIpCount('1.2.3.4');
+    expect(result).toBeNull();
+  });
+
+  it('getIpCount retourne null si Redis renvoie une valeur non numérique', async () => {
+    mockClient.sendCommand.mockResolvedValue('not-a-number');
+    const result = await getIpCount('1.2.3.4');
+    expect(result).toBeNull();
+  });
+
+  it('getEmailCount retourne null si Redis renvoie une valeur non numérique', async () => {
+    mockClient.sendCommand.mockResolvedValue('NaN');
+    const result = await getEmailCount('victim@example.com');
+    expect(result).toBeNull();
+  });
+
+  it('getIpCount retourne null si Redis renvoie une valeur infinie', async () => {
+    mockClient.sendCommand.mockResolvedValue('Infinity');
     const result = await getIpCount('1.2.3.4');
     expect(result).toBeNull();
   });

@@ -89,6 +89,14 @@ describe('admin-stats-cache', () => {
     expect(redisClient.del).toHaveBeenCalledWith(ADMIN_STATS_MAIN_CACHE_KEY);
   });
 
+  it('returns null when cleanup delete fails after invalid JSON', async () => {
+    redisClient.get.mockResolvedValue('{oops');
+    redisClient.del.mockRejectedValue(new Error('delete failed'));
+
+    await expect(getAdminStatsCache(ADMIN_STATS_MAIN_CACHE_KEY, adminStatsSchema)).resolves.toBeNull();
+    expect(redisClient.del).toHaveBeenCalledWith(ADMIN_STATS_MAIN_CACHE_KEY);
+  });
+
   it('returns parsed JSON when the schema matches exactly', async () => {
     const validPayload = {
       totalUsers: 4,
