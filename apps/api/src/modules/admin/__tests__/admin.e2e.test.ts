@@ -228,10 +228,12 @@ describe('Admin Controller', () => {
   };
 
   beforeEach(async () => {
+    process.env.ADMIN_STATS_CACHE_ENABLED = 'false';
     await seedAdminFixture();
   });
 
   afterAll(async () => {
+    delete process.env.ADMIN_STATS_CACHE_ENABLED;
     await cleanupFixtureData();
   });
 

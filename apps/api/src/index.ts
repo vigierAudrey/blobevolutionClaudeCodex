@@ -1,9 +1,10 @@
 import './config/loadEnv';
 
 // Validate production environment variables (fail-fast on insecure defaults)
-import { validateProductionEnv, validateBruteForceEnv } from './lib/env-validation';
+import { validateProductionEnv, validateBruteForceEnv, validateAdminStatsCacheEnv } from './lib/env-validation';
 validateProductionEnv();
 validateBruteForceEnv();
+validateAdminStatsCacheEnv();
 
 if (!process.env.EMAIL_HASH_SECRET?.trim()) {
   throw new Error('FATAL: EMAIL_HASH_SECRET is not configured. Set EMAIL_HASH_SECRET environment variable.');
