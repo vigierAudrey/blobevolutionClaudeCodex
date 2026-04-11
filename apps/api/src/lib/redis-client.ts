@@ -112,6 +112,7 @@ export function getRedisClient(): RedisClientType | null {
 export async function closeRedisClient(): Promise<void> {
   if (redisClient) {
     await redisClient.quit();
+    redisClient = null;
     secureLogger.info('RATE_LIMIT_REDIS_CLIENT_CLOSED');
   }
 }
