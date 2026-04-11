@@ -296,6 +296,24 @@ describe('Admin stats cache e2e', () => {
     });
   });
 
+  it('bypasses Redis entirely when the kill-switch is false', async () => {
+    process.env.ADMIN_STATS_CACHE_ENABLED = 'false';
+    const redisClient = createMemoryRedisClient();
+    redisClient.store.set(ADMIN_STATS_MAIN_CACHE_KEY, JSON.stringify({ totalUsers: 999, bogus: true }));
+    mockGetRedisClient.mockReturnValue(redisClient as any);
+
+    const response = await request(app)
+      .get('/admin/stats')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(response.body.totalUsers).not.toBe(999);
+    expect((response.body as Record<string, unknown>).bogus).toBeUndefined();
+    expect(redisClient.get).not.toHaveBeenCalled();
+    expect(redisClient.setEx).not.toHaveBeenCalled();
+    expect(redisClient.del).not.toHaveBeenCalled();
+  });
+
   it('invalidates stats cache after GDPR purge so the next GET recomputes', async () => {
     const redisClient = createMemoryRedisClient();
     mockGetRedisClient.mockReturnValue(redisClient as any);

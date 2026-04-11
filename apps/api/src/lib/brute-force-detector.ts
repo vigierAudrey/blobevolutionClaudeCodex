@@ -77,6 +77,11 @@ function shouldLogThrottled(key: string): boolean {
   return false;
 }
 
+function parseRedisCounter(value: unknown): number | null {
+  const count = Number(value);
+  return Number.isFinite(count) ? count : null;
+}
+
 // ─── Primitives Redis ─────────────────────────────────────────────────────────
 
 /**
@@ -103,8 +108,7 @@ async function incrWithFixedTtl(key: string, ttlSeconds: number): Promise<number
       key,
       String(ttlSeconds),
     ]);
-    const count = Number(result);
-    return isNaN(count) ? null : count;
+    return parseRedisCounter(result);
   } catch (err) {
     if (shouldLogThrottled('BF_REDIS_UNAVAILABLE')) {
       secureLogger.warn('BF_REDIS_UNAVAILABLE', {
@@ -274,8 +278,7 @@ export async function getIpCount(ip: string): Promise<number | null> {
   try {
     const result = await client.sendCommand(['GET', `bf:ip:${ipHash}`]);
     if (result === null) return 0; // clé absente = aucune tentative dans la fenêtre (état connu)
-    const count = Number(result as unknown as string);
-    return isNaN(count) ? null : count;
+    return parseRedisCounter(result);
   } catch {
     return null;
   }
@@ -306,8 +309,7 @@ export async function getEmailCount(email: string): Promise<number | null> {
   try {
     const result = await client.sendCommand(['GET', `bf:em:${emailHash}`]);
     if (result === null) return 0; // clé absente = aucune tentative dans la fenêtre (état connu)
-    const count = Number(result as unknown as string);
-    return isNaN(count) ? null : count;
+    return parseRedisCounter(result);
   } catch {
     return null;
   }
