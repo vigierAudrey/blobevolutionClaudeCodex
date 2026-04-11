@@ -17,6 +17,13 @@ import { analyticsReportService } from '../../services/analytics/reports.service
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
 import { capAdminLimit } from '../../utils/admin-list-cap';
 import {
+  ADMIN_STATS_MAIN_CACHE_KEY,
+  getAdminStatsCache,
+  getAdminStatsCacheTtlSeconds,
+  invalidateAdminStatsCache,
+  setAdminStatsCache,
+} from '../../lib/admin-stats-cache';
+import {
   DEFAULT_BULK_MAX_SYNC,
   conversationBlockEventService,
   ConversationBlockEventServiceError,
@@ -62,6 +69,54 @@ type CountGroup = { _count: { _all: number } };
 type AuditActionGroup = { action: string; _count: { action: number } };
 type ReportReasonGroup = { reason: string | null; _count: { _all: number } };
 type AvailabilityStatusGroup = { sport: Sport | null; status: AvailabilityStatus; _count: { _all: number } };
+const adminStatsCacheSchema = z.object({
+  totalUsers: z.number().int().nonnegative(),
+  totalRiders: z.number().int().nonnegative(),
+  totalPros: z.number().int().nonnegative(),
+  totalAdmins: z.number().int().nonnegative(),
+  totalConversations: z.number().int().nonnegative(),
+  activeUsers: z.number().int().nonnegative(),
+  reportedProfiles: z.number().int().nonnegative(),
+}).strict();
+
+type AdminStatsResponse = z.infer<typeof adminStatsCacheSchema>;
+
+async function buildAdminStats(): Promise<AdminStatsResponse> {
+  const totalUsers = await prisma.user.count();
+  const usersByRole = await prisma.user.groupBy({
+    by: ['role'],
+    _count: { role: true }
+  }) as RoleCountGroup[];
+
+  const totalConversations = await prisma.conversation.count();
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const activeUsers = await prisma.user.count({
+    where: {
+      sessions: {
+        some: {
+          createdAt: {
+            gte: thirtyDaysAgo
+          }
+        }
+      }
+    }
+  });
+
+  const reportedProfiles = await prisma.profileReport.count({ where: { reviewedAt: null } });
+
+  return {
+    totalUsers,
+    totalRiders: usersByRole.find((group: RoleCountGroup) => group.role === 'RIDER')?._count?.role ?? 0,
+    totalPros: usersByRole.find((group: RoleCountGroup) => group.role === 'PRO')?._count?.role ?? 0,
+    totalAdmins: usersByRole.find((group: RoleCountGroup) => group.role === 'ADMIN')?._count?.role ?? 0,
+    totalConversations,
+    activeUsers,
+    reportedProfiles
+  };
+}
 
 async function ensureAdminConversation(adminId: string, targetUserId: string) {
   const existing = await prisma.conversation.findFirst({
@@ -175,45 +230,13 @@ adminRouter.use(enforceAdminAllowedIp);
 // Statistiques principales
 adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:stats:view', () => 'admin:stats'), async (req, res) => {
   try {
-    // Compter les utilisateurs par rôle
-    const totalUsers = await prisma.user.count();
-    const usersByRole = await prisma.user.groupBy({
-      by: ['role'],
-      _count: { role: true }
-    }) as RoleCountGroup[];
+    const cachedStats = await getAdminStatsCache(ADMIN_STATS_MAIN_CACHE_KEY, adminStatsCacheSchema);
+    if (cachedStats) {
+      return res.json(cachedStats);
+    }
 
-    // Conversations totales
-    const totalConversations = await prisma.conversation.count();
-
-    // Utilisateurs actifs (derniers 30 jours)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const activeUsers = await prisma.user.count({
-      where: {
-        sessions: {
-          some: {
-            createdAt: {
-              gte: thirtyDaysAgo
-            }
-          }
-        }
-      }
-    });
-
-    // F07 — Signalements en attente uniquement (reviewedAt IS NULL)
-    const reportedProfiles = await prisma.profileReport.count({ where: { reviewedAt: null } });
-
-    // Formater les statistiques
-    const stats = {
-      totalUsers,
-      totalRiders: usersByRole.find((group: RoleCountGroup) => group.role === 'RIDER')?._count?.role ?? 0,
-      totalPros: usersByRole.find((group: RoleCountGroup) => group.role === 'PRO')?._count?.role ?? 0,
-      totalAdmins: usersByRole.find((group: RoleCountGroup) => group.role === 'ADMIN')?._count?.role ?? 0,
-      totalConversations,
-      activeUsers,
-      reportedProfiles
-    };
+    const stats = await buildAdminStats();
+    await setAdminStatsCache(ADMIN_STATS_MAIN_CACHE_KEY, stats, getAdminStatsCacheTtlSeconds());
 
     return res.json(stats);
   } catch (error) {
@@ -2094,6 +2117,7 @@ adminRouter.post(
 
     const startedAt = Date.now();
     const result = await gdprPurgeService.performFullPurge();
+    await invalidateAdminStatsCache(ADMIN_STATS_MAIN_CACHE_KEY);
 
     return res.json({
       success: true,

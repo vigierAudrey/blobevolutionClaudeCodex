@@ -286,3 +286,32 @@ export function validateBruteForceEnv(): void {
     }
   }
 }
+
+/**
+ * Validation légère du cache admin /admin/stats.
+ * WARN uniquement — jamais de fail-fast.
+ * Defaults sûrs appliqués côté runtime : enabled=true, ttl=120s.
+ */
+export function validateAdminStatsCacheEnv(): void {
+  const enabledRaw = process.env.ADMIN_STATS_CACHE_ENABLED;
+  if (enabledRaw !== undefined) {
+    const normalized = enabledRaw.trim().toLowerCase();
+    if (!['1', 'true', 'yes', 'on', '0', 'false', 'no', 'off'].includes(normalized)) {
+      secureLogger.warn('ADMIN_STATS_CACHE_ENABLED_INVALID', {
+        value: enabledRaw,
+        defaultApplied: true,
+      });
+    }
+  }
+
+  const ttlRaw = process.env.ADMIN_STATS_CACHE_TTL_SECONDS;
+  if (ttlRaw !== undefined) {
+    const ttl = Number.parseInt(ttlRaw, 10);
+    if (!Number.isFinite(ttl) || ttl <= 0) {
+      secureLogger.warn('ADMIN_STATS_CACHE_TTL_INVALID', {
+        value: ttlRaw,
+        defaultApplied: 120,
+      });
+    }
+  }
+}
