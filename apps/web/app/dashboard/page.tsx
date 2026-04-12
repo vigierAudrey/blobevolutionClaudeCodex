@@ -1,5 +1,5 @@
 "use client";
-import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Search, Sparkles, Tag, User } from 'lucide-react';
+import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Sparkles, Tag, User } from 'lucide-react';
 import nextDynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -410,19 +410,8 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* Bouton 1 : Chercher un pro */}
-              <Link href="/booking/search" className="group">
-                <Button
-                  size="lg"
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg group-hover:shadow-xl group-hover:scale-105 transition-all duration-200 text-base font-semibold"
-                >
-                  <Search size={18} className="mr-2" />
-                  🔍 Chercher un pro
-                </Button>
-              </Link>
-
-              {/* Bouton 2 : Demander un cours - AVEC TOOLTIP */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Bouton 1 : Demander un cours - AVEC TOOLTIP */}
               <div className="relative group/tooltip">
               <Link href="/lesson-request" className="block">
                 <Button
