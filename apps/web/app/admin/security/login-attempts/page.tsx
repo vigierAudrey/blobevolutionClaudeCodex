@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../../../components/ui/button';
 import { Badge } from '../../../../components/ui/badge';
 import { apiClient, type LoginAttempt, type LoginAttemptsResponse } from '../../../../lib/apiClient';
-import { Shield, RefreshCw, Download, Filter, ArrowLeft, AlertTriangle, CheckCircle, XCircle, TrendingUp, Activity } from 'lucide-react';
+import { Shield, RefreshCw, Download, Filter, ArrowLeft, AlertTriangle, CheckCircle, XCircle, TrendingUp, Activity, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +13,7 @@ export const dynamic = 'force-dynamic';
 interface FilterOptions {
   onlyFailed: boolean;
   suspiciousOnly: boolean;
+  /** Max 100 — enforced server-side. */
   limit: number;
 }
 
@@ -24,20 +25,29 @@ export default function AdminLoginAttemptsPage() {
   const [filters, setFilters] = useState<FilterOptions>({
     onlyFailed: false,
     suspiciousOnly: false,
-    limit: 100
+    limit: 50
   });
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [allAttempts, setAllAttempts] = useState<LoginAttemptsResponse['attempts']>([]);
 
-  const loadAttempts = useCallback(async () => {
+  const loadAttempts = useCallback(async (nextCursor?: string | null) => {
     setLoading(true);
     setError(null);
     try {
       const response = await apiClient.getLoginAttempts({
         limit: filters.limit,
         onlyFailed: filters.onlyFailed,
-        suspiciousOnly: filters.suspiciousOnly
+        suspiciousOnly: filters.suspiciousOnly,
+        cursor: nextCursor ?? undefined,
       });
+      if (nextCursor) {
+        setAllAttempts(prev => [...prev, ...response.attempts]);
+      } else {
+        setAllAttempts(response.attempts);
+      }
       setData(response);
+      setCursor(response.nextCursor);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur lors du chargement des tentatives';
       setError(message);
@@ -70,26 +80,30 @@ export default function AdminLoginAttemptsPage() {
   }, [router]);
 
   useEffect(() => {
-    loadAttempts();
+    setCursor(null);
+    setAllAttempts([]);
+    loadAttempts(null);
   }, [loadAttempts]);
 
   useEffect(() => {
     if (!autoRefresh) return;
 
     const interval = setInterval(() => {
-      loadAttempts();
+      setCursor(null);
+      setAllAttempts([]);
+      loadAttempts(null);
     }, 15000); // Refresh every 15 seconds
 
     return () => clearInterval(interval);
   }, [autoRefresh, loadAttempts]);
 
   const exportCSV = () => {
-    if (!data || data.attempts.length === 0) return;
+    if (allAttempts.length === 0) return;
 
     // Pas de colonnes email/IP bruts (toujours null côté API par design RGPD).
     // On exporte uniquement les empreintes pseudonymisées.
     const header = ['Date', 'Empreinte compte', 'Empreinte IP', 'User Agent', 'Succès', 'Raison'];
-    const rows = data.attempts.map(attempt => [
+    const rows = allAttempts.map(attempt => [
       new Date(attempt.createdAt).toISOString(),
       attempt.emailHash ?? '',
       attempt.ipHash ?? '',
@@ -161,24 +175,35 @@ export default function AdminLoginAttemptsPage() {
     return Array.from(map.entries()).sort((a, b) => b[1].length - a[1].length);
   };
 
-  const attempts = data?.attempts || [];
+  const attempts = allAttempts;
   const groupedByIpHash = groupByIpHash(attempts.filter(a => !a.success));
+  const showStats = Boolean(data) && !filters.suspiciousOnly;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/admin/security">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Retour
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-3xl font-bold">Tentatives de connexion</h1>
-            <p className="text-muted-foreground">
-              Surveillance des connexions et détection des activités suspectes
-            </p>
+        <div className="space-y-2">
+          {/* Breadcrumb */}
+          <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+            <Link href="/admin" className="hover:text-foreground transition-colors">Administration</Link>
+            <ChevronRight className="h-3 w-3" />
+            <Link href="/admin/security" className="hover:text-foreground transition-colors">Sécurité</Link>
+            <ChevronRight className="h-3 w-3" />
+            <span className="text-foreground font-medium">Tentatives de connexion</span>
+          </nav>
+          <div className="flex items-center gap-4">
+            <Link href="/admin/security">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Retour
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-3xl font-bold">Tentatives de connexion</h1>
+              <p className="text-muted-foreground">
+                Surveillance des connexions et détection des activités suspectes
+              </p>
+            </div>
           </div>
         </div>
         <div className="flex gap-2">
@@ -194,7 +219,7 @@ export default function AdminLoginAttemptsPage() {
             <Download className="h-4 w-4 mr-2" />
             Export CSV
           </Button>
-          <Button variant="outline" size="sm" onClick={loadAttempts} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => { setCursor(null); setAllAttempts([]); loadAttempts(null); }} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualiser
           </Button>
@@ -212,7 +237,7 @@ export default function AdminLoginAttemptsPage() {
         </Card>
       )}
 
-      {data && (
+      {showStats && data && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -222,7 +247,7 @@ export default function AdminLoginAttemptsPage() {
             <CardContent>
               <div className="text-2xl font-bold">{data.stats.total}</div>
               <p className="text-xs text-muted-foreground">
-                Dernières 24 heures
+                Périmètre courant
               </p>
             </CardContent>
           </Card>
@@ -253,6 +278,16 @@ export default function AdminLoginAttemptsPage() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {filters.suspiciousOnly && (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">
+              Les statistiques globales sont masquées en mode suspects uniquement pour éviter un périmètre incohérent avec la liste affichée.
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       <Card>
@@ -287,10 +322,9 @@ export default function AdminLoginAttemptsPage() {
                 value={filters.limit}
                 onChange={(e) => setFilters(prev => ({ ...prev, limit: parseInt(e.target.value) }))}
               >
+                <option value="25">25</option>
                 <option value="50">50</option>
                 <option value="100">100</option>
-                <option value="200">200</option>
-                <option value="500">500</option>
               </select>
             </div>
           </div>
@@ -338,7 +372,7 @@ export default function AdminLoginAttemptsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
-            Historique des tentatives ({attempts.length})
+            Historique des tentatives ({attempts.length}{data?.stats?.total !== undefined && data.stats.total > attempts.length ? ` / ${data.stats.total}` : ''})
           </CardTitle>
           <CardDescription>
             Tentatives de connexion avec indicateurs de sécurité
@@ -433,6 +467,23 @@ export default function AdminLoginAttemptsPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+          {cursor && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => loadAttempts(cursor)}
+                disabled={loading}
+              >
+                {loading ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 mr-2" />
+                )}
+                Charger la suite
+              </Button>
             </div>
           )}
         </CardContent>

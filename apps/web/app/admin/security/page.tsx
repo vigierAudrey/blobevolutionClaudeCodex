@@ -47,8 +47,20 @@ export default function AdminSecurityPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+        <Link href="/admin" className="hover:text-foreground transition-colors">Administration</Link>
+        <ChevronRight className="h-3 w-3" />
+        <span className="text-foreground font-medium">Sécurité</span>
+      </nav>
+
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Sécurité Platform</h1>
+        <div>
+          <h1 className="text-3xl font-bold">Sécurité Platform</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Surveillez la santé technique de la plateforme et accédez aux outils d&apos;investigation.
+          </p>
+        </div>
         <Button onClick={checkHealth} variant="outline" size="sm">
           <RefreshCw className="h-4 w-4 mr-2" />
           Vérifier
@@ -68,17 +80,17 @@ export default function AdminSecurityPage() {
             ) : isDegraded ? (
               <Badge variant="secondary" className="bg-amber-500 text-white">
                 <AlertTriangle className="h-3 w-3 mr-1" />
-                Dégradé
+                Dégradé — une dépendance est indisponible
               </Badge>
             ) : (
               <Badge variant="destructive">
                 <AlertTriangle className="h-3 w-3 mr-1" />
-                Unsafe
+                Unsafe — vérifiez la configuration
               </Badge>
             )}
           </CardTitle>
           <CardDescription>
-            Contrat canonique: posture sécurité globale. Le détail du pipeline de logs sera exposé séparément.
+            Dernière mesure : {health?.timestamp ?? 'n/a'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -92,18 +104,8 @@ export default function AdminSecurityPage() {
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Lecture du statut</CardTitle>
-          <CardDescription>Interprétation du contrat canonique `/security/health`</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            `SECURE` = posture conforme. `DEGRADED` = dépendance technique indisponible. `UNSAFE` = configuration ou
-            secrets non conformes. Dernière mesure: {health?.timestamp ?? 'n/a'}.
+          <p className="text-xs text-muted-foreground mt-4">
+            SECURE = posture conforme. DEGRADED = dépendance indisponible (DB ou Redis). UNSAFE = secrets ou configuration non conformes.
           </p>
         </CardContent>
       </Card>
@@ -112,7 +114,7 @@ export default function AdminSecurityPage() {
         <CardHeader>
           <CardTitle>Observabilité Logs</CardTitle>
           <CardDescription>
-            Endpoint canonique `/security/observability` branché sur le vrai transport de logs.
+            État du pipeline de transport des logs de sécurité.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -142,6 +144,40 @@ export default function AdminSecurityPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Liens d'investigation — rôle de hub */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Investigation</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Link href="/admin/security/login-attempts">
+            <Card className="hover:bg-muted/50 transition-colors cursor-pointer h-full">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Shield className="h-4 w-4" />
+                  Tentatives de connexion
+                </CardTitle>
+                <CardDescription>
+                  Historique des logins, détection de bruteforce, empreintes IP suspectes.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+
+          <Link href="/admin/security/logs">
+            <Card className="hover:bg-muted/50 transition-colors cursor-pointer h-full">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <FileText className="h-4 w-4" />
+                  Logs de sécurité
+                </CardTitle>
+                <CardDescription>
+                  Journal des événements de sécurité, alertes système et audit trail.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

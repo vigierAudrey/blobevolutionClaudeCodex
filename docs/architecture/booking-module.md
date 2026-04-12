@@ -73,8 +73,7 @@ User
 4. **Refus**
    - Mettre `BookingRequest` à REJECTED + `respondedAt`.
    - Notifier rider.
-5. **Ajout manuel rider (pro)**
-   - Même transaction que acceptation, sans `BookingRequest`.
+5. ~~Ajout manuel rider (admin)~~ — **supprimé** (décision produit 2026-03-24). Les bookings sont créés uniquement via le flow normal (demande rider → acceptation pro).
 6. **Fermeture créneau**
    - Status ` CLOSED`, empêche nouvelles demandes. Si déjà des réservations → avertissement / action manuelle.
 
@@ -93,7 +92,6 @@ Base path `/booking`
 | GET | `/requests/inbox` | PRO | Demandes entrantes (status PENDING). |
 | POST | `/requests/:id/accept` | PRO | Accepter une demande. |
 | POST | `/requests/:id/reject` | PRO | Refuser. |
-| POST | `/bookings/manual` | PRO | Ajouter un rider manuellement. |
 | GET | `/bookings/me` | PRO | Liste bookings confirmés. |
 
 Notes :

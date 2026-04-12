@@ -6,8 +6,15 @@ validateProductionEnv();
 validateBruteForceEnv();
 validateAdminStatsCacheEnv();
 
-if (!process.env.EMAIL_HASH_SECRET?.trim()) {
-  throw new Error('FATAL: EMAIL_HASH_SECRET is not configured. Set EMAIL_HASH_SECRET environment variable.');
+const emailHashSecret = process.env.EMAIL_HASH_SECRET?.trim();
+if (!emailHashSecret) {
+  throw new Error('FATAL: EMAIL_HASH_SECRET is not configured. Set EMAIL_HASH_SECRET in .env before starting the API.');
+}
+
+if (emailHashSecret === 'change-me-strong-email-hash-secret-production-min-32-chars' || emailHashSecret === 'change-me') {
+  throw new Error(
+    'FATAL: EMAIL_HASH_SECRET uses an insecure placeholder. Generate a strong unique value in .env before starting the API.'
+  );
 }
 
 import { resolve } from 'path';

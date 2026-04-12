@@ -20,10 +20,13 @@ export const audit = (action: string, resolveResource?: AuditResourceResolver) =
       // HMAC-SHA256 with IP_HASH_SECRET (v2) - replaces SHA-256 (v1)
       const ipHash = hashIpHmac(ip ?? undefined);
 
+      const requestId = (req as any).requestId as string | undefined;
+
       const metadata = {
         method: req.method,
         statusCode: res.statusCode,
         params: req.params,
+        requestId, // requestIdMiddleware stamps this; undefined if middleware not mounted
         hashVersion: 'v2', // HMAC-SHA256 (24 hex chars) for rainbow table protection
         ...(extraMetadata || {})
       };

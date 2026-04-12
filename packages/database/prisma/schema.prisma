@@ -119,12 +119,14 @@ model LoginAttempt {
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([email])
-  @@index([emailHash])
-  @@index([ip])
-  @@index([ipHash])
-  @@index([createdAt])
-  @@index([success])
+  // Composite indexes aligned with actual query patterns.
+  // (success, createdAt DESC) covers the main admin list query.
+  // (success, ipHash, createdAt DESC) covers suspiciousOnly GROUP BY on ipHash.
+  // (success, emailHash, createdAt DESC) covers suspiciousOnly GROUP BY on emailHash.
+  // Individual indexes on email/ip dropped: always NULL in production (RGPD design), pure write overhead.
+  @@index([success, createdAt(sort: Desc)])
+  @@index([success, ipHash, createdAt(sort: Desc)])
+  @@index([success, emailHash, createdAt(sort: Desc)])
 }
 
 model LastSearch {

@@ -462,8 +462,6 @@ export default function ProProfilePage() {
 
     try {
       const t = ensureAuthenticated();
-      let finalUrl = photoUrl || undefined;
-
       if (file) {
         const ct = file.type || 'image/jpeg';
 
@@ -492,7 +490,7 @@ export default function ProProfilePage() {
         });
         if (!finalizeRes.ok) throw new Error('Échec de la validation de la photo');
         const { photoUrl: finalizedUrl } = (await finalizeRes.json()) as { photoUrl: string };
-        finalUrl = finalizedUrl;
+        setPhotoUrl(finalizedUrl);
       }
 
       // ✅ CORRIGÉ : Utiliser apiRequest avec protection CSRF
@@ -502,7 +500,6 @@ export default function ProProfilePage() {
           businessName: businessName || undefined,
           bio: bio || undefined,
           emailNotif,
-          photoUrl: finalUrl,
           countryCode: FRANCE_ONLY_COUNTRY_CODE,
         }),
         headers: { Authorization: `Bearer ${t.accessToken}` },

@@ -9,8 +9,9 @@
  *   Test 1: 5 requests  → total IP counter: 5
  *   Test 2: 9 requests  → total IP counter: 14
  *   Test 3: 6 requests  → total IP counter: 20  (exactly at limit — 20th passes)
+ *   Test 4: 11 requests → all on distinct IPs, so only loginEmailLimiter can trip
  *
- * Test 4 (skipSuccessfulRequests=false proof) lives in its own file
+ * Test 5 (skipSuccessfulRequests=false proof) lives in its own file
  * (login-skip-sr.e2e.test.ts) to get a fresh module registry and a clean counter.
  */
 
@@ -124,5 +125,47 @@ describe('Active user login rate limit', () => {
       .expect((response) => {
         expect(response.body.error).toBe('AUTH_RATE_LIMIT_EXCEEDED');
       });
+  });
+
+  it('rate limits distributed failed logins for the same email across different IPs', async () => {
+    await resetDb();
+    const email = 'abuse-login-distributed@test.com';
+    const previousTrustProxyMode = process.env.TRUST_PROXY_MODE;
+
+    await getOrCreateUserByEmail({
+      email,
+      role: Role.RIDER,
+      emailVerified: true,
+    });
+
+    process.env.TRUST_PROXY_MODE = 'loopback';
+
+    try {
+      for (let i = 0; i < 10; i += 1) {
+        const session = await createTestSession(app);
+        await session
+          .post('/auth/login')
+          .set('X-Forwarded-For', `10.0.0.${i + 1}`)
+          .send({ email, password: 'WrongPassw0rd!', consentAccepted: true })
+          .expect(401);
+      }
+
+      const blockedSession = await createTestSession(app);
+      await blockedSession
+        .post('/auth/login')
+        .set('X-Forwarded-For', '10.0.0.250')
+        .send({ email, password: 'WrongPassw0rd!', consentAccepted: true })
+        .expect(429)
+        .expect((response) => {
+          expect(response.body.error).toBe('AUTH_RATE_LIMIT_EXCEEDED');
+          expect(response.body.message).toBe('Too many authentication attempts from this network. Please try again later.');
+        });
+    } finally {
+      if (previousTrustProxyMode === undefined) {
+        delete process.env.TRUST_PROXY_MODE;
+      } else {
+        process.env.TRUST_PROXY_MODE = previousTrustProxyMode;
+      }
+    }
   });
 });

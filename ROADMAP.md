@@ -50,6 +50,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
    Finaliser tests UI (composants de base + matching), nettoyer données Playwright, fiabiliser flux CSRF. Voir section « Tests & Qualité ».
    - [x] 2026-03-15: Seed locale `active-tests`, scénario Playwright A/B matching→messages, régressions authZ conversation/socket et script `k6` HTTP local.
    - [x] 2026-03-15: Rééquilibrage load BlobConnect avec réutilisation cookie+CSRF, pagination `GET /conversations`, limitation post-auth plus fine sur matching/chat, et `login` hybride `email+IP` + plafond réseau pour réduire les collisions NAT sans ouvrir la porte aux brute-force.
+   - [x] 2026-03-29: garde-fou France-only initial réellement branché sur l’inscription PRO, `PUT/PATCH /pro/me`, `GET /pro/near/lessons`, `POST /matching/search`, UI informative et tests ciblés API/web.
 3. **📢 Publicité / Monétisation initiale**
    Finaliser déploiement AdSense, bannière RGPD et analytics revenus. Voir section « Monétisation (Publicité) ».
 4. **⚙️ Performance & DX rapides**
@@ -1042,6 +1043,7 @@ apps/api/
 - Helmet basique, pas d’enforcement SSL, audit logs manquants.
 - Couverture UI faible, flux E2E partiellement cassés.
 - Analytics business limitées, CI/CD manuel.
+- Risque 2026-03-29 : les endpoints géolocalisés booking (`/booking/availability/search`, `/booking/pros/nearby`) restent hors garde-fou France-only initial et doivent être cadrés séparément si le périmètre France-only s’étend au booking.
 
 ### Pistes d’amélioration priorisées
 

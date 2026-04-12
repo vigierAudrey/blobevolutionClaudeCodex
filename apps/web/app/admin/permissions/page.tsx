@@ -61,7 +61,31 @@ const PERMISSION_LABELS: Record<string, string> = {
   'reports.moderate': 'Modérer les signalements',
   'analytics.view': 'Voir les analytics',
   'permissions.manage': 'Gérer les permissions',
+  'system.monitor': 'Surveiller le système',
   'system.configure': 'Configuration système'
+};
+
+// Description et niveau de risque de chaque permission.
+// Source de vérité : apps/api/src/modules/admin/permissions.ts
+const PERMISSION_DETAILS: Record<string, { description: string; risk: 'faible' | 'moyen' | 'élevé' | 'critique' }> = {
+  'users.view':         { description: 'Consulter les profils, emails et historique des riders et pros.', risk: 'faible' },
+  'users.suspend':      { description: 'Suspendre ou réactiver un compte utilisateur (réversible).', risk: 'moyen' },
+  'users.delete':       { description: 'Supprimer définitivement un compte. Action irréversible.', risk: 'élevé' },
+  'pros.verify':        { description: 'Valider ou retirer le badge "vérifié" d\'un professionnel.', risk: 'moyen' },
+  'pros.manage':        { description: 'Modifier les paramètres des profils professionnels.', risk: 'moyen' },
+  'reports.view':       { description: 'Consulter les signalements de comportement sans pouvoir agir.', risk: 'faible' },
+  'reports.moderate':   { description: 'Bannir, approuver ou rejeter un signalement. Impact direct sur les utilisateurs.', risk: 'élevé' },
+  'analytics.view':     { description: 'Accéder aux statistiques agrégées (pas de données nominatives).', risk: 'faible' },
+  'permissions.manage': { description: 'Modifier les rôles et permissions des autres admins. Permet l\'escalade de privilèges.', risk: 'critique' },
+  'system.monitor':     { description: 'Lire les alertes système, l\'état Redis/DB et les résumés de sécurité (lecture seule).', risk: 'faible' },
+  'system.configure':   { description: 'Actions destructives : purge RGPD, archives légales, logs de sécurité détaillés.', risk: 'critique' },
+};
+
+const RISK_STYLES: Record<string, string> = {
+  'faible':    'bg-green-50 text-green-700 border-green-200',
+  'moyen':     'bg-yellow-50 text-yellow-700 border-yellow-200',
+  'élevé':     'bg-orange-50 text-orange-700 border-orange-200',
+  'critique':  'bg-red-50 text-red-700 border-red-200',
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -101,8 +125,7 @@ export default function AdminPermissions() {
           router.replace('/dashboard');
           return;
         }
-      } catch (err) {
-        console.error('Auth check failed:', err);
+      } catch {
         router.replace('/login');
       }
     };
@@ -260,6 +283,51 @@ export default function AdminPermissions() {
           </CardContent>
         </Card>
       )}
+
+      {/* Glossaire des permissions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Glossaire des permissions</CardTitle>
+          <CardDescription>
+            Ce que chaque permission autorise et le risque en cas de mauvaise attribution.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="pb-2 pr-4 font-medium text-muted-foreground">Permission</th>
+                  <th className="pb-2 pr-4 font-medium text-muted-foreground">Ce qu&rsquo;elle permet</th>
+                  <th className="pb-2 font-medium text-muted-foreground">Risque</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {Object.entries(PERMISSION_DETAILS).map(([key, detail]) => (
+                  <tr key={key} className="py-2">
+                    <td className="py-2 pr-4 align-top">
+                      <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+                        {key}
+                      </span>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {PERMISSION_LABELS[key] ?? key}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-4 align-top text-muted-foreground">
+                      {detail.description}
+                    </td>
+                    <td className="py-2 align-top">
+                      <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${RISK_STYLES[detail.risk]}`}>
+                        {detail.risk}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Rôles prédéfinis */}
       <Card>

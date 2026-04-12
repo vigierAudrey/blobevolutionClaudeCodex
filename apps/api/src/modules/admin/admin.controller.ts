@@ -7,7 +7,7 @@ import { gdprPurgeService } from '../../services/gdpr-purge.service';
 import { systemAlertService } from '../../services/system-alert.service';
 import { audit } from '../../middleware/audit';
 import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
-import { requirePermissions } from './admin.guard';
+import { requirePermissions, requireAnyPermission } from './admin.guard';
 import { enforceAdminAllowedIp, requireAdminStepUp } from './admin.security-guard';
 import { createRateLimiter, createLazyRateLimiter, createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
@@ -1753,7 +1753,7 @@ const securityActionsExact = ['admin:permissions:update', 'admin:role:apply'];
 
 adminRouter.get(
   '/security/events',
-  requirePermissions('system.configure'),
+  requireAnyPermission('security.read', 'system.configure'),
   audit('admin:security:events', () => 'admin:security:events'),
   async (req, res) => {
     try {
@@ -1784,7 +1784,7 @@ adminRouter.get(
 
 adminRouter.get(
   '/security/logs/summary',
-  requirePermissions('system.monitor'), // F05: aggregate summary, no per-user PII
+  requireAnyPermission('security.read', 'system.monitor'), // F05: aggregate summary, no per-user PII
   audit('admin:security:logs:summary', () => 'admin:security:logs:summary'),
   async (req, res) => {
     try {
@@ -1855,135 +1855,282 @@ function pseudonymizeIP(ip: string | null): string {
 }
 
 // Rate limiting pour endpoints admin sécurité (login-attempts)
+// GET browsing: shared ADMIN limit (50 req/5min).
 const adminSecurityRateLimit = createRateLimiter('ADMIN');
 
-// Schema de validation pour l'endpoint /security/login-attempts
+// Purge endpoint: dedicated tighter limit — prevents accidental spam and protects
+// the shared ADMIN quota from being consumed by purge calls.
+// 5 purge calls / 5 min is sufficient for any legitimate use.
+const adminPurgeRateLimit = createLazyCustomRateLimiter(
+  {
+    windowMs: 5 * 60 * 1000,
+    max: 5,
+    message: { error: 'ADMIN_PURGE_RATE_LIMIT_EXCEEDED', message: 'Too many purge requests.' },
+  },
+  'admin_login_attempt_purge',
+);
+
+// ---------------------------------------------------------------------------
+// Helpers — cursor pagination
+// ---------------------------------------------------------------------------
+
+interface LoginAttemptCursor {
+  createdAt: Date;
+  id: string;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseCursor(raw: string): LoginAttemptCursor | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    if (typeof decoded.createdAt !== 'string' || typeof decoded.id !== 'string') return null;
+    const createdAt = new Date(decoded.createdAt);
+    if (isNaN(createdAt.getTime())) return null;
+    if (!UUID_RE.test(decoded.id)) return null;
+    return { createdAt, id: decoded.id };
+  } catch {
+    return null;
+  }
+}
+
+function encodeCursor(attempt: { createdAt: Date; id: string }): string {
+  return Buffer.from(
+    JSON.stringify({ createdAt: attempt.createdAt.toISOString(), id: attempt.id })
+  ).toString('base64url');
+}
+
+// ---------------------------------------------------------------------------
+// Schema de validation — GET /security/login-attempts
+// ---------------------------------------------------------------------------
+
+// max 100: évite le payload N+1 (include user) et la sérialisation massive.
+// cursor: opaque base64url JSON {createdAt, id} pour tri stable (createdAt DESC, id DESC).
 const loginAttemptsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(500).default(100),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
   onlyFailed: z.enum(['true', 'false']).optional().transform(val => val === 'true'),
-  suspiciousOnly: z.enum(['true', 'false']).optional().transform(val => val === 'true')
+  suspiciousOnly: z.enum(['true', 'false']).optional().transform(val => val === 'true'),
+  cursor: z.string().optional(),
 });
 
 adminRouter.get(
   '/security/login-attempts',
   adminSecurityRateLimit,
-  requirePermissions('system.configure'),
+  requireAnyPermission('security.read', 'system.configure'),
   audit('admin:security:login-attempts', () => 'admin:security:login-attempts'),
   async (req, res) => {
     try {
-      // Validation Zod des paramètres
       const parsed = loginAttemptsQuerySchema.safeParse(req.query);
-
       if (!parsed.success) {
-        return res.status(400).json({
-          error: 'Invalid query parameters',
-          details: parsed.error.format()
-        });
+        return res.status(400).json({ error: 'Invalid query parameters', details: parsed.error.format() });
       }
 
-      const { limit, onlyFailed, suspiciousOnly } = parsed.data;
+      const { limit, onlyFailed, suspiciousOnly, cursor: rawCursor } = parsed.data;
 
-      const where: any = {};
-      if (onlyFailed) {
-        where.success = false;
+      // --- cursor validation ---
+      let cursor: LoginAttemptCursor | null = null;
+      if (rawCursor) {
+        cursor = parseCursor(rawCursor);
+        if (!cursor) {
+          return res.status(400).json({ error: 'Invalid cursor' });
+        }
       }
 
-      // Suspicious criteria: multiple failed attempts from same IP hash or email hash
+      // --- base where filter ---
+      const baseWhere: Prisma.LoginAttemptWhereInput = onlyFailed ? { success: false } : {};
+
+      // --- cursor WHERE clause: (createdAt < cur.createdAt) OR (createdAt = cur.createdAt AND id < cur.id)
+      //     Requires ORDER BY createdAt DESC, id DESC to be stable.
+      const cursorWhere: Prisma.LoginAttemptWhereInput | undefined = cursor
+        ? {
+            OR: [
+              { createdAt: { lt: cursor.createdAt } },
+              { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+            ],
+          }
+        : undefined;
+
       let attempts: LoginAttemptWithUser[];
+
       if (suspiciousOnly) {
-        // Get IP hashes and email hashes with multiple failed attempts in the last 24 hours
+        // --- 2.3: suspiciousOnly rewrite — GROUP BY HAVING in SQL, zero JS aggregation ---
+        //
+        // WHY: the previous approach loaded ALL failed attempts of the last 24h into Node.js
+        // memory and aggregated with Map. Under a DDoS (100k+ rows/day) this OOMs the process.
+        //
+        // NOW: two parallel $queryRaw with GROUP BY + HAVING.
+        // Index used: (success, ipHash, createdAt DESC) and (success, emailHash, createdAt DESC).
+        // At 10M rows: index seek on success=false + createdAt range → O(log n + matching_rows).
+        // LIMIT 200 caps the IN (...) list in the subsequent findMany.
+
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        const failedAttempts = await prisma.loginAttempt.findMany({
-          where: {
-            success: false,
-            createdAt: { gte: oneDayAgo }
-          },
-          orderBy: { createdAt: 'desc' }
-        });
+        type IpHashRow = { ipHash: string };
+        type EmailHashRow = { emailHash: string };
 
-        // Group by ipHash and emailHash to find suspicious patterns (RGPD v2)
-        const ipHashCounts = new Map<string, number>();
-        const emailHashCounts = new Map<string, number>();
+        const [ipRows, emailRows] = await Promise.all([
+          prisma.$queryRaw<IpHashRow[]>`
+            SELECT "ipHash"
+            FROM "LoginAttempt"
+            WHERE success = false
+              AND "createdAt" >= ${oneDayAgo}
+              AND "ipHash" IS NOT NULL
+            GROUP BY "ipHash"
+            HAVING COUNT(*) >= 3
+            ORDER BY COUNT(*) DESC
+            LIMIT 200
+          `,
+          prisma.$queryRaw<EmailHashRow[]>`
+            SELECT "emailHash"
+            FROM "LoginAttempt"
+            WHERE success = false
+              AND "createdAt" >= ${oneDayAgo}
+              AND "emailHash" IS NOT NULL
+            GROUP BY "emailHash"
+            HAVING COUNT(*) >= 5
+            ORDER BY COUNT(*) DESC
+            LIMIT 200
+          `,
+        ]);
 
-        for (const attempt of failedAttempts) {
-          if (attempt.ipHash) {
-            ipHashCounts.set(attempt.ipHash, (ipHashCounts.get(attempt.ipHash) || 0) + 1);
-          }
-          if (attempt.emailHash) {
-            emailHashCounts.set(attempt.emailHash, (emailHashCounts.get(attempt.emailHash) || 0) + 1);
-          }
-        }
-
-        // Filter suspicious ipHashes (3+ failed attempts) and emailHashes (5+ failed attempts)
-        const suspiciousIpHashes = Array.from(ipHashCounts.entries())
-          .filter(([, count]) => count >= 3)
-          .map(([ipHash]) => ipHash);
-        const suspiciousEmailHashes = Array.from(emailHashCounts.entries())
-          .filter(([, count]) => count >= 5)
-          .map(([emailHash]) => emailHash);
+        const suspiciousIpHashes = ipRows.map((r: IpHashRow) => r.ipHash);
+        const suspiciousEmailHashes = emailRows.map((r: EmailHashRow) => r.emailHash);
 
         if (suspiciousIpHashes.length > 0 || suspiciousEmailHashes.length > 0) {
-          await systemAlertService.ensureAlert({
+          // fire-and-forget: alert creation must not block the response
+          systemAlertService.ensureAlert({
             type: 'security:suspicious-login',
             message: 'Tentatives de connexion suspectes détectées',
             severity: 'WARNING',
-            metadata: { suspiciousIpHashes, suspiciousEmailHashes }
-          });
+            metadata: { suspiciousIpHashes, suspiciousEmailHashes },
+          }).catch(() => {});
         }
 
-        attempts = await prisma.loginAttempt.findMany({
-          where: {
-            OR: [
-              { ipHash: { in: suspiciousIpHashes } },
-              { emailHash: { in: suspiciousEmailHashes } }
-            ]
-          },
-          include: {
-            user: {
-              select: { id: true, role: true }
-            }
-          },
-          orderBy: { createdAt: 'desc' },
-          take: limit
-        });
+        if (suspiciousIpHashes.length === 0 && suspiciousEmailHashes.length === 0) {
+          attempts = [];
+        } else {
+          const orClauses: Prisma.LoginAttemptWhereInput[] = [];
+          if (suspiciousIpHashes.length > 0) orClauses.push({ ipHash: { in: suspiciousIpHashes } });
+          if (suspiciousEmailHashes.length > 0) orClauses.push({ emailHash: { in: suspiciousEmailHashes } });
+
+          // cursorWhere is { OR: [...] }. Plain spread would overwrite the outer OR.
+          // Use AND to combine both conditions correctly.
+          const suspiciousWhere: Prisma.LoginAttemptWhereInput = cursorWhere
+            ? { AND: [{ OR: orClauses }, cursorWhere] }
+            : { OR: orClauses };
+
+          attempts = await prisma.loginAttempt.findMany({
+            where: suspiciousWhere,
+            include: { user: { select: { id: true, role: true } } },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: limit,
+          });
+        }
       } else {
         attempts = await prisma.loginAttempt.findMany({
-          where,
-          include: {
-            user: {
-              select: { id: true, role: true }
-            }
-          },
-          orderBy: { createdAt: 'desc' },
-          take: limit
+          where: { ...baseWhere, ...cursorWhere },
+          include: { user: { select: { id: true, role: true } } },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: limit,
         });
       }
 
-      // Calculate stats
-      const total = await prisma.loginAttempt.count({ where });
-      const failed = await prisma.loginAttempt.count({ where: { success: false } });
+      // --- nextCursor: emit only when a full page was returned (more may exist) ---
+      const nextCursor = attempts.length === limit
+        ? encodeCursor(attempts[attempts.length - 1])
+        : null;
+
+      // --- stats: two COUNT queries scoped to the same filter (consistent with the list) ---
+      // Run in parallel; the (success, createdAt) composite index covers both.
+      const [total, failed] = await Promise.all([
+        prisma.loginAttempt.count({ where: baseWhere }),
+        prisma.loginAttempt.count({ where: { ...baseWhere, success: false } }),
+      ]);
       const successRate = total > 0 ? ((total - failed) / total) * 100 : 0;
 
-      // RGPD v2: ipHash already anonymized (HMAC-SHA256), no need to pseudonymize
-      // Remove raw IP field from response (privacy-by-design)
+      // --- RGPD: never expose raw email or ip ---
       const sanitizedAttempts = attempts.map((attempt: LoginAttemptWithUser) => ({
         ...attempt,
-        email: null, // Never expose raw login-attempt email in API responses
-        ip: undefined, // Exclude raw IP (should be null after migration anyway)
-        ipHash: attempt.ipHash, // Already HMAC-SHA256 hashed
+        email: null,
+        ip: undefined,
       }));
 
       return res.json({
         attempts: sanitizedAttempts,
+        nextCursor,
         stats: {
           total,
           failed,
-          successRate: successRate.toFixed(2)
-        }
+          successRate: successRate.toFixed(2),
+        },
       });
     } catch (error) {
       secureLogger.error('Admin login attempts error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// 2.6 — POST /admin/security/login-attempts/purge
+// ---------------------------------------------------------------------------
+//
+// SECURITY SURFACE:
+//   P0 — Accidental mass purge: dryRun=true by default, confirm="CONFIRM" required for real.
+//   P1 — Admin spam: adminSecurityRateLimit (module-level, shared with GET).
+//   P2 — Unauthorized access: requirePermissions('system.configure') gate.
+//
+// Retention rules enforced server-side (not exposed in body):
+//   success=true  → LOGIN_ATTEMPT_SUCCESS_RETENTION_DAYS (default 7)
+//   success=false → LOGIN_ATTEMPT_FAILURE_RETENTION_DAYS (default 30)
+
+const loginAttemptsPurgeBodySchema = z.object({
+  dryRun: z.boolean().default(true),
+  // Must be the literal string "CONFIRM" to execute a real purge.
+  confirm: z.string().optional(),
+});
+
+adminRouter.post(
+  '/security/login-attempts/purge',
+  adminPurgeRateLimit,
+  requireAnyPermission('security.write', 'system.configure'),
+  audit('admin:security:login-attempts:purge', () => 'admin:security:login-attempts:purge'),
+  async (req, res) => {
+    try {
+      const parsed = loginAttemptsPurgeBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid body', details: parsed.error.format() });
+      }
+
+      const { dryRun, confirm } = parsed.data;
+
+      if (!dryRun && confirm !== 'CONFIRM') {
+        return res.status(400).json({
+          error: 'Real purge requires confirm="CONFIRM" in the request body.',
+          hint: 'Send { dryRun: false, confirm: "CONFIRM" } to proceed.',
+        });
+      }
+
+      const result = await gdprPurgeService.purgeOldLoginAttemptsBatched({ dryRun });
+
+      secureLogger.info('ADMIN_LOGIN_ATTEMPTS_PURGE', {
+        ...result,
+        adminUserId: (req as any).user?.id,
+      });
+
+      // Enrich audit log with structured purge metadata (read by audit() on res.finish)
+      res.locals.auditMetadata = {
+        dryRun: result.dryRun,
+        deleted: result.deleted,
+        wouldDelete: result.wouldDelete,
+        batches: result.batches,
+        successRetentionDays: result.successRetentionDays,
+        failureRetentionDays: result.failureRetentionDays,
+      };
+
+      return res.json(result);
+    } catch (error) {
+      secureLogger.error('Admin login attempts purge error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }

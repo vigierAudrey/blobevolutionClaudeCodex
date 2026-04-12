@@ -4,6 +4,7 @@ import type { Response as SupertestResponse } from 'supertest';
 import { ensureRiderProfile, createUser } from '../../../tests/helpers/prismaFactories';
 import { createTestSession, readCookieValue } from '../../../tests/helpers/auth';
 import { Role, clientPrisma as prisma } from '@blobinfini/database';
+import { resetDb } from '../../../test-utils/resetDb';
 
 describe('Conversations E2E', () => {
   const app = createApp();
@@ -18,6 +19,13 @@ describe('Conversations E2E', () => {
   let proId: string;
   let otherRiderId: string;
   let otherProId: string;
+  let riderEmail: string;
+  let proEmail: string;
+  let otherRiderEmail: string;
+  let otherProEmail: string;
+
+  const uniqueEmail = (prefix: string) =>
+    `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
 
   const resolveUserId = async (
     response: SupertestResponse,
@@ -42,40 +50,37 @@ describe('Conversations E2E', () => {
   };
 
   const seedBaseData = async () => {
+    await resetDb();
+
     agent = request.agent(app);
     const csrfRes = await agent.get('/csrf-token').expect(200);
     csrfToken = csrfRes.body.csrfToken as string;
     post = (path: string) => agent.post(path).set('X-CSRF-Token', csrfToken);
 
-    await prisma.message.deleteMany();
-    await prisma.conversationBlockEvent.deleteMany();
-    await prisma.conversationMember.deleteMany();
-    await prisma.conversation.deleteMany();
-    await prisma.riderProfile.deleteMany();
-    await prisma.proProfile.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.user.deleteMany();
+    riderEmail = uniqueEmail('conversation-rider');
+    otherRiderEmail = uniqueEmail('conversation-rider-peer');
+    proEmail = uniqueEmail('conversation-pro');
+    otherProEmail = uniqueEmail('conversation-pro-peer');
 
     const riderRes = await post('/auth/register')
-      .send({ email: 'rider@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
+      .send({ email: riderEmail, password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
       .expect(201);
-    riderId = await resolveUserId(riderRes, 'rider@test.com', Role.RIDER);
+    riderId = await resolveUserId(riderRes, riderEmail, Role.RIDER);
 
     const otherRiderRes = await post('/auth/register')
-      .send({ email: 'rider2@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
+      .send({ email: otherRiderEmail, password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
       .expect(201);
-    otherRiderId = await resolveUserId(otherRiderRes, 'rider2@test.com', Role.RIDER);
+    otherRiderId = await resolveUserId(otherRiderRes, otherRiderEmail, Role.RIDER);
 
     const proRes = await post('/auth/register')
-      .send({ email: 'pro@test.com', password: 'Passw0rd!', role: 'PRO', countryCode: 'FR', consentAccepted: true })
+      .send({ email: proEmail, password: 'Passw0rd!', role: 'PRO', countryCode: 'FR', consentAccepted: true })
       .expect(201);
-    proId = await resolveUserId(proRes, 'pro@test.com', Role.PRO);
+    proId = await resolveUserId(proRes, proEmail, Role.PRO);
 
     const otherProRes = await post('/auth/register')
-      .send({ email: 'pro2@test.com', password: 'Passw0rd!', role: 'PRO', countryCode: 'FR', consentAccepted: true })
+      .send({ email: otherProEmail, password: 'Passw0rd!', role: 'PRO', countryCode: 'FR', consentAccepted: true })
       .expect(201);
-    otherProId = await resolveUserId(otherProRes, 'pro2@test.com', Role.PRO);
+    otherProId = await resolveUserId(otherProRes, otherProEmail, Role.PRO);
 
     // Les actions de conversation exigent un email vérifié
     await prisma.user.updateMany({
@@ -93,10 +98,10 @@ describe('Conversations E2E', () => {
       return readCookieValue(setCookies, 'accessToken');
     };
 
-    riderAccessToken = await loginForAccessToken('rider@test.com');
-    otherRiderAccessToken = await loginForAccessToken('rider2@test.com');
-    proAccessToken = await loginForAccessToken('pro@test.com');
-    otherProAccessToken = await loginForAccessToken('pro2@test.com');
+    riderAccessToken = await loginForAccessToken(riderEmail);
+    otherRiderAccessToken = await loginForAccessToken(otherRiderEmail);
+    proAccessToken = await loginForAccessToken(proEmail);
+    otherProAccessToken = await loginForAccessToken(otherProEmail);
 
     await ensureRiderProfile(prisma, {
       userId: riderId,
@@ -117,14 +122,19 @@ describe('Conversations E2E', () => {
       where: { userId: otherProId },
       data: { businessName: 'Other Pro Business' },
     });
+
+    const [userOneId, userTwoId] = [riderId, otherRiderId].sort();
+    await prisma.match.create({
+      data: {
+        userOneId,
+        userTwoId,
+        status: 'ACTIVE',
+      },
+    });
   };
 
   beforeEach(async () => {
     await seedBaseData();
-  });
-
-  afterAll(async () => {
-    await prisma.$disconnect();
   });
 
   afterAll(async () => {

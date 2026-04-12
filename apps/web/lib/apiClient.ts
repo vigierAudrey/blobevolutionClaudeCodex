@@ -459,6 +459,8 @@ export interface LoginAttempt {
 
 export interface LoginAttemptsResponse {
   attempts: LoginAttempt[];
+  /** Opaque base64url cursor for the next page. Null when no further pages. */
+  nextCursor: string | null;
   stats: {
     total: number;
     failed: number;
@@ -1423,14 +1425,34 @@ export const apiClient = {
   },
   getSecurityLogsSummary: (days: number = 7) =>
     request(`/admin/security/logs/summary?days=${days}`, { method: 'GET' }, true) as Promise<AdminSecuritySummary>,
-  getLoginAttempts: (options?: { limit?: number; onlyFailed?: boolean; suspiciousOnly?: boolean }) => {
+  getLoginAttempts: (options?: {
+    /** Max 100. Values above 100 are rejected server-side. */
+    limit?: number;
+    onlyFailed?: boolean;
+    suspiciousOnly?: boolean;
+    /** Opaque cursor from a previous response's nextCursor field. */
+    cursor?: string;
+  }) => {
     const params = new URLSearchParams();
-    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.limit) params.append('limit', Math.min(options.limit, 100).toString());
     if (options?.onlyFailed) params.append('onlyFailed', 'true');
     if (options?.suspiciousOnly) params.append('suspiciousOnly', 'true');
+    if (options?.cursor) params.append('cursor', options.cursor);
     const query = params.toString() ? `?${params.toString()}` : '';
     return request(`/admin/security/login-attempts${query}`, { method: 'GET' }, true) as Promise<LoginAttemptsResponse>;
   },
+  purgeLoginAttempts: (options: { dryRun?: boolean; confirm?: string } = {}) =>
+    request('/admin/security/login-attempts/purge', {
+      method: 'POST',
+      body: JSON.stringify({ dryRun: options.dryRun ?? true, confirm: options.confirm }),
+    }, true) as Promise<{
+      deleted: number;
+      wouldDelete: number;
+      dryRun: boolean;
+      batches: number;
+      successRetentionDays: number;
+      failureRetentionDays: number;
+    }>,
   getEngagementAnalytics: (period?: AdminAnalyticsPeriod) => {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/engagement${query}`, { method: 'GET' }, true) as Promise<AdminEngagementAnalytics>;

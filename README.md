@@ -573,6 +573,8 @@ npm install
 
 # Setup environnement (première fois uniquement)
 cp .env.example .env
+# Puis remplacez immédiatement EMAIL_HASH_SECRET par une valeur forte et unique
+# Exemple: openssl rand -base64 48 | tr -d '\n'
 docker compose up -d postgres redis minio mailpit
 npm run db:reseed  # Base + données de test
 
@@ -992,6 +994,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 - Profil `RiderProfile` avec `wantsLesson` (bool) et `lessonSport` (surf|kitesurf).
 - Matching : bouton "Faire appel à un pro" et interrupteur "Je veux un cours".
 - Affichage badge "🎓 Cours" sur cartes/résultats si `wantsLesson=true`.
+- Lancement initial : le matching géolocalisé reste temporairement limité à la France métropolitaine et à la Corse.
 - Données conservées : préférences sport, niveau, zone géographique, demandes de session, consentements RGPD.
 
 **Parcours MVP**
@@ -1006,6 +1009,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 **Profil & données**
 
 - Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).
+- Lancement initial : création/édition des comptes et profils pro temporairement limitées à `countryCode=FR`, avec contrôle serveur des coordonnées France métropolitaine + Corse.
 - Informations tarifaires conservées uniquement en base (non exposées) pour préparer le futur retour du paiement.
 - Créneaux publiés, demandes reçues et journal d’audit pro.
 - Pièces justificatives partagées hors plateforme : les utilisateurs doivent vérifier directement les documents fournis par le professionnel.
