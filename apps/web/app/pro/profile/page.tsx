@@ -101,8 +101,6 @@ export default function ProProfilePage() {
     pushEnabled: true,
     emailEnabled: false,
     notifyLessonRequests: true,
-    notifyBookingAccepted: true,
-    notifyBookingRejected: true,
     notifyProMessages: true,
     notifyForSurf: true,
     notifyForKitesurf: true,
@@ -777,62 +775,6 @@ export default function ProProfilePage() {
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                                 notificationPrefs.notifyLessonRequests && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-
-                        {/* Booking Accepted */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-green-300 dark:hover:border-green-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">✅</span>
-                            <div>
-                              <p className="text-sm font-medium">Réservations acceptées</p>
-                              <p className="text-xs text-muted-foreground">Quand un rider accepte ta dispo</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleNotificationPref('notifyBookingAccepted')}
-                            disabled={!notificationPrefs.pushEnabled}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              notificationPrefs.notifyBookingAccepted && notificationPrefs.pushEnabled
-                                ? 'bg-green-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle booking accepted notifications"
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyBookingAccepted && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-
-                        {/* Booking Rejected */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-red-300 dark:hover:border-red-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">❌</span>
-                            <div>
-                              <p className="text-sm font-medium">Réservations refusées</p>
-                              <p className="text-xs text-muted-foreground">Quand un rider refuse ta dispo</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleNotificationPref('notifyBookingRejected')}
-                            disabled={!notificationPrefs.pushEnabled}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              notificationPrefs.notifyBookingRejected && notificationPrefs.pushEnabled
-                                ? 'bg-red-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle booking rejected notifications"
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyBookingRejected && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
                               }`}
                             />
                           </button>
