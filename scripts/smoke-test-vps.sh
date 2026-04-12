@@ -17,6 +17,15 @@
 
 set -uo pipefail
 
+# Charger .env.vps si présent (REDIS_PASSWORD, S3_BUCKET, STORAGE_DOMAIN, SECURITY_MONITOR_TOKEN...)
+# Priorité aux variables déjà définies dans l'environnement hôte.
+if [ -f ".env.vps" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source ".env.vps"
+  set +a
+fi
+
 API="${API_BASE_URL:-https://api.blobinfini.local}"
 WEB="${WEB_BASE_URL:-https://app.blobinfini.local}"
 STORAGE="${STORAGE_BASE_URL:-https://storage.blobinfini.local}"
@@ -31,6 +40,7 @@ RIDER_B_UUID="22222222-2222-4222-b222-222222222222"
 
 PASS=0
 FAIL=0
+SKIP=0
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 check() {
@@ -77,6 +87,12 @@ http_body() {
   curl -sk $CURL_RESOLVE "$@"
 }
 
+# shellcheck disable=SC2086
+http_status_strict() {
+  # Sans -k : valide le certificat TLS réel (jamais utilisé avec CURL_RESOLVE local)
+  curl -s $CURL_RESOLVE -o /dev/null -w "%{http_code}" "$@"
+}
+
 acquire_csrf() {
   local jar="$1"
   # shellcheck disable=SC2086
@@ -102,7 +118,9 @@ COOKIE_A=$(mktemp)
 COOKIE_B=$(mktemp)
 COOKIE_RL=$(mktemp)
 HEADERS_A=$(mktemp)
-trap 'rm -f "$COOKIE_A" "$COOKIE_B" "$COOKIE_RL" "$HEADERS_A"' EXIT
+LOGIN_A_BODY_TMP=$(mktemp)
+MATCHING_TMP=$(mktemp)
+trap 'rm -f "$COOKIE_A" "$COOKIE_B" "$COOKIE_RL" "$HEADERS_A" "$LOGIN_A_BODY_TMP" "$MATCHING_TMP"' EXIT
 
 # ─── [1] API liveness ─────────────────────────────────────────────────────────
 echo "--- [1] API liveness ---"
@@ -149,6 +167,21 @@ S=$(http_status -X POST "$API/auth/login" \
 check "POST /auth/login via HTTPS répond (non 000)" \
   "$([ "$S" != "000" ] && echo ok || echo fail)" "ok"
 
+# ─── [5b] TLS strict — certificat réel (prod uniquement) ────────────────────
+echo "--- [5b] TLS strict (cert valide, sans -k) ---"
+if [ -n "$CURL_RESOLVE" ]; then
+  echo "  SKIP [5b] mode local (CURL_RESOLVE actif — cert auto-signé attendu)"
+  echo "       ⚠ OBLIGATOIRE en prod : relancer avec API_BASE_URL=https://api.blobinfini.fr"
+  SKIP=$((SKIP + 1))
+else
+  TLS_STATUS=$(http_status_strict "$API/health" 2>/dev/null || echo "000")
+  check "TLS strict → /health 200 (cert Let's Encrypt valide)" "$TLS_STATUS" "200"
+  if [ "$TLS_STATUS" = "000" ]; then
+    echo "       FAIL BLOQUANT: curl refuse le cert — expiré / auto-signé / mismatch CN"
+    echo "       Un attaquant MitM peut intercepter tout le trafic en clair"
+  fi
+fi
+
 # ─── [6] CORS hostile rejeté ──────────────────────────────────────────────────
 echo "--- [6] CORS hostile rejeté ---"
 S=$(http_status \
@@ -160,19 +193,27 @@ check "OPTIONS avec Origin hostile → 403" "$S" "403"
 echo "--- [7] Auth rider A ---"
 CSRF_A=$(acquire_csrf "$COOKIE_A")
 # shellcheck disable=SC2086
-LOGIN_A=$(curl -sk $CURL_RESOLVE \
+# -w "%{http_code}" : HTTP/2-safe (évite parsing fragile grep "^HTTP")
+# -o file : body dans fichier séparé pour inspection
+LOGIN_A_STATUS=$(curl -sk $CURL_RESOLVE \
   -c "$COOKIE_A" -b "$COOKIE_A" \
   -D "$HEADERS_A" \
   -X POST "$API/auth/login" \
   -H "Content-Type: application/json" \
   -H "Origin: https://app.blobinfini.local" \
   -H "X-CSRF-Token: $CSRF_A" \
-  -d "{\"email\":\"$RIDER_A_EMAIL\",\"password\":\"$RIDER_A_PASS\"}")
-LOGIN_A_STATUS=$(grep "^HTTP" "$HEADERS_A" | tail -1 | awk '{print $2}' | tr -d '\r')
+  -d "{\"email\":\"$RIDER_A_EMAIL\",\"password\":\"$RIDER_A_PASS\"}" \
+  -o "$LOGIN_A_BODY_TMP" \
+  -w "%{http_code}")
+LOGIN_A=$(cat "$LOGIN_A_BODY_TMP")
 check "POST /auth/login rider A → 200" "$LOGIN_A_STATUS" "200"
 check_contains "Réponse login A = ok" "$LOGIN_A" '"ok"'
 COOKIE_SECURE=$(grep -i "set-cookie" "$HEADERS_A" || true)
-check_contains "Cookie Set-Cookie contient Secure" "$COOKIE_SECURE" "Secure"
+check_contains "Cookie Secure présent"   "$COOKIE_SECURE" "Secure"
+check_contains "Cookie HttpOnly présent" "$COOKIE_SECURE" "HttpOnly"
+SAMESITE_LINE=$(echo "$COOKIE_SECURE" | grep -i "samesite" | head -1 || true)
+check "Cookie SameSite=Lax ou Strict" \
+  "$(echo "$SAMESITE_LINE" | grep -qi "samesite=lax\|samesite=strict" && echo ok || echo fail)" "ok"
 CSRF_A_POST=$(acquire_csrf "$COOKIE_A")
 
 # ─── [8] Auth rider B ─────────────────────────────────────────────────────────
@@ -209,25 +250,30 @@ check "GET /profile/me rider B → 200" "$PROFILE_B_STATUS" "200"
 
 # ─── [11] Matching POST ───────────────────────────────────────────────────────
 echo "--- [11] Matching POST rider A ---"
-MATCHING_STATUS=$(http_status \
+# Un seul appel curl : status via -w, body via -o (élimine la race condition double-requête)
+# shellcheck disable=SC2086
+MATCHING_STATUS=$(curl -sk $CURL_RESOLVE \
   -b "$COOKIE_A" \
   -H "Origin: https://app.blobinfini.local" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: ${CSRF_A_POST:-$CSRF_A}" \
   -X POST "$API/matching/search" \
-  -d '{"sport":"surf","level":"intermediate","date":"anytime","location":{"lat":43.4832,"lng":-1.5586},"distanceKm":100}')
+  -d '{"sport":"surf","level":"intermediate","date":"anytime","location":{"lat":43.4832,"lng":-1.5586},"distanceKm":100}' \
+  -o "$MATCHING_TMP" \
+  -w "%{http_code}")
+MATCHING=$(cat "$MATCHING_TMP")
 check "POST /matching/search → 200" "$MATCHING_STATUS" "200"
-MATCHING=$(http_body \
-  -b "$COOKIE_A" \
-  -H "Origin: https://app.blobinfini.local" \
-  -H "Content-Type: application/json" \
-  -H "X-CSRF-Token: ${CSRF_A_POST:-$CSRF_A}" \
-  -X POST "$API/matching/search" \
-  -d '{"sport":"surf","level":"intermediate","date":"anytime","location":{"lat":43.4832,"lng":-1.5586},"distanceKm":100}')
 MATCHING_RESULTS=$(echo "$MATCHING" | jq '.results // []' 2>/dev/null || echo "[]")
-check_not_contains "Résultats matching sans lat brut" "$MATCHING_RESULTS" '"lat":'
-check_not_contains "Résultats matching sans lng brut" "$MATCHING_RESULTS" '"lng":'
-check_contains     "Matching contient results[]" "$MATCHING" '"results"'
+check_contains "Matching contient results[]" "$MATCHING" '"results"'
+# Résultats vides → geo-privacy non vérifiable (index géospatial cassé ?)
+if [ "$MATCHING_RESULTS" = "[]" ]; then
+  printf "  \033[31mFAIL\033[0m Résultats matching vides — checks geo-privacy non vérifiables\n"
+  printf "       (index géospatial cassé ou aucun pro seedé dans le rayon de test)\n"
+  FAIL=$((FAIL + 1))
+else
+  check_not_contains "Résultats matching sans lat brut"  "$MATCHING_RESULTS" '"lat":'
+  check_not_contains "Résultats matching sans lng brut"  "$MATCHING_RESULTS" '"lng":'
+fi
 
 # ─── [12] Ouverture conversation ──────────────────────────────────────────────
 echo "--- [12] Ouverture conversation A → B ---"
@@ -362,18 +408,22 @@ PRESIGN_URL=$(echo "$PRESIGN_RESP" | jq -r '.url // .presignedUrl // .uploadUrl 
 if [ -n "$PRESIGN_URL" ]; then
   check_not_contains "Presigned URL sans 'localhost'" "$PRESIGN_URL" "localhost"
   check_not_contains "Presigned URL sans '127.0.0.1'" "$PRESIGN_URL" "127.0.0.1"
+  check_not_contains "Presigned URL sans 'minio:'" "$PRESIGN_URL" "minio:"
   check_contains     "Presigned URL contient storage domain" "$PRESIGN_URL" "$STORAGE_DOMAIN_CHECK"
+  check_contains     "Presigned URL https://" "$PRESIGN_URL" "https://"
   echo "       URL: $(echo "$PRESIGN_URL" | head -c 100)..."
 else
-  echo "  WARN [18] /profile/upload-avatar ne retourne pas de presigned URL directement"
-  echo "       Réponse: $(echo "$PRESIGN_RESP" | head -c 200)"
-  echo "  → Test alternatif : upload direct via MinIO (interne Docker)"
+  printf "  \033[31mFAIL\033[0m [18] /profile/photo/upload-url n'a pas retourné de presigned URL\n"
+  echo "       Réponse brute: $(echo "$PRESIGN_RESP" | head -c 300)"
+  echo "       Cause probable : 2FA requis (AUTH_REQUIRE_2FA=true) mais session smoke-test non complétée."
+  echo "       Les checks [18][19][20] sont INVALIDES sans presigned URL réelle via l'API."
+  FAIL=$((FAIL + 1))
 fi
 
 # ─── [19] Upload réel via presigned URL ────────────────────────────────────────
 echo "--- [19] Upload réel via presigned URL ---"
 if [ -n "$PRESIGN_URL" ]; then
-  # Upload d'un fichier texte via la presigned PUT URL
+  # Upload via presigned PUT URL — ce test doit passer par nginx, pas par mc (sinon aucune valeur probante)
   UPLOAD_STATUS=$(curl -sk \
     $CURL_RESOLVE \
     -X PUT "$PRESIGN_URL" \
@@ -384,28 +434,47 @@ if [ -n "$PRESIGN_URL" ]; then
   check "PUT presigned URL → 200" "$([ "$UPLOAD_STATUS" = "200" ] && echo ok || echo fail)" "ok"
   if [ "$UPLOAD_STATUS" != "200" ]; then
     echo "       HTTP status upload: $UPLOAD_STATUS"
+    echo "       Si 403/SignatureDoesNotMatch : vérifier MINIO_SERVER_URL == S3_PRESIGN_ENDPOINT"
+    echo "       Si 000 : vérifier résolution DNS / certs TLS du storage domain"
   fi
 else
-  # Fallback : upload direct via mc (interne Docker)
-  echo "  → Fallback : upload direct via mc (preuve interne)"
-  if command -v docker >/dev/null 2>&1; then
-    MINIO_INT_URL="http://${S3_ACCESS_KEY_ID:-vps-access-key}:${S3_SECRET_ACCESS_KEY:-}@minio:9000"
-    MC_UPLOAD=$(docker run --rm \
-      --network "blobconnect-vps_vps" \
-      -e "MC_HOST_minio=${MINIO_INT_URL}" \
-      "quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z" \
-      pipe "minio/${S3_BUCKET_CHECK}/${SMOKE_KEY}" 2>&1 <<< "$SMOKE_CONTENT" || echo "ERROR")
-    check "mc pipe upload → OK" \
-      "$(echo "$MC_UPLOAD" | grep -qi "error\|ERROR" && echo fail || echo ok)" "ok"
-  else
-    echo "  SKIP upload (ni presign URL ni docker disponible)"
-    FAIL=$((FAIL + 1))
+  # Pas de fallback mc : le test mc bypasse nginx et CORS, ce qui masque les vrais problèmes
+  printf "  \033[31mFAIL\033[0m [19] SKIP — presigned URL absente, test sans valeur probante\n"
+  FAIL=$((FAIL + 1))
+fi
+
+# ─── [19b] nginx bloque Content-Type hostile — XSS polyglot guard ─────────────
+echo "--- [19b] nginx rejette Content-Type: text/html (XSS upload guard) ---"
+if [ -n "$PRESIGN_URL" ]; then
+  # nginx doit intercepter et retourner 415 AVANT que MinIO valide la signature
+  # Si on obtient 403 → nginx laisse passer (MinIO refuse via HMAC) → restriction ABSENTE
+  # Si on obtient 200 → nginx ET MinIO acceptent text/html → DANGER CRITIQUE
+  CT_REJECT=$(curl -sk \
+    $CURL_RESOLVE \
+    -X PUT "$PRESIGN_URL" \
+    -H "Content-Type: text/html" \
+    --data-binary "<script>alert(1)</script>" \
+    -o /dev/null \
+    -w "%{http_code}" 2>/dev/null || echo "000")
+  check "PUT Content-Type: text/html → 415 (nginx bloque XSS polyglot)" \
+    "$([ "$CT_REJECT" = "415" ] && echo ok || echo fail)" "ok"
+  if [ "$CT_REJECT" != "415" ]; then
+    echo "       HTTP obtenu: $CT_REJECT"
+    if [ "$CT_REJECT" = "200" ]; then
+      echo "       DANGER CRITIQUE: HTML/JS uploadable — XSS via URL storage CDN possible"
+    elif [ "$CT_REJECT" = "403" ]; then
+      echo "       nginx ne bloque PAS (MinIO refuse via HMAC — protection absente côté nginx)"
+    fi
+    echo "       Action: vérifier nginx map Content-Type restriction sur PUT /$S3_BUCKET_CHECK/"
   fi
+else
+  printf "  \033[31mFAIL\033[0m [19b] SKIP — presigned URL absente\n"
+  FAIL=$((FAIL + 1))
 fi
 
 # ─── [20] Lecture via URL publique (GET anonyme) ──────────────────────────────
 echo "--- [20] Lecture via URL publique ---"
-if [ -n "$PRESIGN_URL" ]; then
+if [ -n "$PRESIGN_URL" ] && [ "$UPLOAD_STATUS" = "200" ]; then
   # Extraire la clé depuis la presigned URL (path après le bucket)
   PRESIGN_PATH=$(echo "$PRESIGN_URL" | sed 's/?.*//' | sed "s|.*/${S3_BUCKET_CHECK}/||")
   PUBLIC_READ_URL="${STORAGE}/${S3_BUCKET_CHECK}/${PRESIGN_PATH}"
@@ -420,27 +489,93 @@ if [ -n "$PRESIGN_URL" ]; then
   if [ "$READ_STATUS" != "200" ]; then
     echo "       URL testée: $PUBLIC_READ_URL"
     echo "       HTTP status: $READ_STATUS"
-    echo "       WARN: Si le bucket n'est pas en GET anonyme, utiliser presigned GET à la place."
+    echo "       Si 403 : vérifier mc anonymous set download sur le bucket"
+  fi
+
+  # Test négatif : listing du bucket doit être interdit
+  LIST_STATUS=$(curl -sk \
+    $CURL_RESOLVE \
+    -o /dev/null \
+    -w "%{http_code}" \
+    "${STORAGE}/${S3_BUCKET_CHECK}/" 2>/dev/null || echo "000")
+  check "GET bucket listing → 403 (listing interdit)" \
+    "$([ "$LIST_STATUS" = "403" ] && echo ok || echo fail)" "ok"
+  if [ "$LIST_STATUS" != "403" ]; then
+    echo "       WARN: listing bucket retourne HTTP $LIST_STATUS (attendu: 403)"
+  fi
+
+  # Test [20b] : contournement via S3 ListObjectsV2 API (chemin alternatif au /)
+  LIST_V2_STATUS=$(curl -sk \
+    $CURL_RESOLVE \
+    -o /dev/null \
+    -w "%{http_code}" \
+    "${STORAGE}/${S3_BUCKET_CHECK}/?list-type=2" 2>/dev/null || echo "000")
+  check "GET /?list-type=2 → 403 (ListObjectsV2 interdit)" \
+    "$([ "$LIST_V2_STATUS" = "403" ] && echo ok || echo fail)" "ok"
+  if [ "$LIST_V2_STATUS" != "403" ]; then
+    echo "       WARN: ListObjectsV2 retourne HTTP $LIST_V2_STATUS"
+    echo "       Un attaquant peut énumérer tous les objets du bucket via ?list-type=2"
   fi
 else
-  # Fallback : vérifier qu'un objet uploadé en interne est lisible
-  if command -v docker >/dev/null 2>&1; then
-    PUBLIC_READ_URL="${STORAGE}/${S3_BUCKET_CHECK}/${SMOKE_KEY}"
-    READ_STATUS=$(curl -sk \
-      $CURL_RESOLVE \
-      -o /dev/null \
-      -w "%{http_code}" \
-      "$PUBLIC_READ_URL" 2>/dev/null || echo "000")
-    check "GET objet smoke via URL publique → 200" \
-      "$([ "$READ_STATUS" = "200" ] && echo ok || echo fail)" "ok"
-    if [ "$READ_STATUS" != "200" ]; then
-      echo "       URL testée: $PUBLIC_READ_URL"
-      echo "       HTTP status: $READ_STATUS"
-    fi
-  else
-    echo "  SKIP lecture publique (ni presign ni docker)"
-    FAIL=$((FAIL + 1))
-  fi
+  printf "  \033[31mFAIL\033[0m [20] SKIP — upload [19] absent ou échoué, test de lecture sans valeur probante\n"
+  FAIL=$((FAIL + 1))
+fi
+
+# ─── [21] CORS preflight OPTIONS sur le storage domain ───────────────────────
+# Prouve que le navigateur peut envoyer un PUT cross-origin vers storage.$DOMAIN.
+# Sans ces headers, fetch(presignedUrl, {method:'PUT'}) est bloqué par le browser
+# (profile/page.tsx:486, pro/profile/page.tsx:481).
+echo "--- [21] CORS preflight OPTIONS (storage domain → app domain) ---"
+CORS_RESP=$(curl -sk \
+  $CURL_RESOLVE \
+  -D - \
+  -X OPTIONS \
+  "${STORAGE}/${S3_BUCKET_CHECK}/probe-cors-smoke" \
+  -H "Origin: https://app.blobinfini.local" \
+  -H "Access-Control-Request-Method: PUT" \
+  -H "Access-Control-Request-Headers: Content-Type" \
+  -o /dev/null 2>/dev/null || echo "CURL_FAILED")
+
+CORS_ORIGIN=$(echo "$CORS_RESP" | grep -i "access-control-allow-origin" | head -1 | tr -d '\r')
+CORS_METHOD=$(echo "$CORS_RESP" | grep -i "access-control-allow-method" | head -1 | tr -d '\r')
+CORS_HDRS=$(echo "$CORS_RESP"  | grep -i "access-control-allow-header" | head -1 | tr -d '\r')
+
+check_contains "CORS OPTIONS → Access-Control-Allow-Origin présent" "$CORS_ORIGIN" "app.blobinfini.local"
+check_contains "CORS OPTIONS → Access-Control-Allow-Methods contient PUT" "$CORS_METHOD" "PUT"
+check_contains "CORS OPTIONS → Allow-Headers contient Content-Type" "$CORS_HDRS" "Content-Type"
+
+if [ -z "$CORS_ORIGIN" ] || [ -z "$CORS_METHOD" ] || [ -z "$CORS_HDRS" ]; then
+  echo "       CORS_ORIGIN:  '${CORS_ORIGIN}'"
+  echo "       CORS_METHOD:  '${CORS_METHOD}'"
+  echo "       CORS_HEADERS: '${CORS_HDRS}'"
+  echo "       FAIL: les uploads photo navigateur (RIDER + PRO) seront bloqués par le browser."
+  echo "       Action: vérifier mc cors set dans bootstrap ou configurer via console MinIO."
+fi
+
+# ─── [21b] CORS storage — origin hostile doit être rejetée ───────────────────
+echo "--- [21b] CORS storage — origin hostile rejetée ---"
+CORS_HOSTILE=$(curl -sk \
+  $CURL_RESOLVE \
+  -D - \
+  -X OPTIONS \
+  "${STORAGE}/${S3_BUCKET_CHECK}/probe-cors-hostile" \
+  -H "Origin: https://attacker.example" \
+  -H "Access-Control-Request-Method: PUT" \
+  -H "Access-Control-Request-Headers: Content-Type" \
+  -o /dev/null 2>/dev/null || echo "")
+CORS_HOSTILE_ORIGIN=$(echo "$CORS_HOSTILE" | grep -i "access-control-allow-origin" | head -1 | tr -d '\r')
+check_not_contains "CORS storage : origin hostile absente" "$CORS_HOSTILE_ORIGIN" "attacker.example"
+# grep -F : correspondance littérale — évite que * soit interprété comme quantificateur regex
+# détecte : "*", "*.blobinfini.local", toute valeur contenant le caractère *
+if echo "$CORS_HOSTILE_ORIGIN" | grep -qF "*"; then
+  printf "  \033[31mFAIL\033[0m CORS storage : wildcard * détecté (valeur: '%s')\n" "$CORS_HOSTILE_ORIGIN"
+  FAIL=$((FAIL + 1))
+else
+  printf "  \033[32mOK\033[0m   CORS storage : pas de wildcard (*) — grep -F littéral\n"
+  PASS=$((PASS + 1))
+fi
+if echo "$CORS_HOSTILE_ORIGIN" | grep -qF "attacker.example"; then
+  echo "       DANGER: storage accepte des origins hostiles — CORS bypass possible"
 fi
 
 # ─── Résumé final ─────────────────────────────────────────────────────────────
@@ -448,13 +583,21 @@ echo ""
 echo "======================================"
 TOTAL=$((PASS + FAIL))
 printf "  Résultat : %d/%d checks passés\n" "$PASS" "$TOTAL"
-printf "  Fonctionnel : 1-16 | S3 VPS proof : 17-20\n"
-if [ "$FAIL" -eq 0 ]; then
-  printf "  \033[32mVERDICT : GO VPS ✓\033[0m\n"
-  echo "======================================"
-  exit 0
-else
+printf "  Fonctionnel : 1-16 | S3 VPS proof : 17-21b\n"
+if [ "$SKIP" -gt 0 ]; then
+  printf "  Checks ignorés (SKIP) : %d\n" "$SKIP"
+fi
+if [ "$FAIL" -gt 0 ]; then
   printf "  \033[31mVERDICT : NO-GO (%d échec(s))\033[0m\n" "$FAIL"
   echo "======================================"
   exit 1
+elif [ "$SKIP" -gt 0 ]; then
+  printf "  \033[33mVERDICT : GO LOCAL ONLY — TLS NON VALIDÉ (%d check(s) ignoré(s))\033[0m\n" "$SKIP"
+  printf "  Relancer en prod : API_BASE_URL=https://api.blobinfini.fr ./scripts/smoke-test-vps.sh\n"
+  echo "======================================"
+  exit 2
+else
+  printf "  \033[32mVERDICT : GO VPS ✓\033[0m\n"
+  echo "======================================"
+  exit 0
 fi

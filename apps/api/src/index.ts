@@ -1,8 +1,21 @@
 import './config/loadEnv';
 
 // Validate production environment variables (fail-fast on insecure defaults)
-import { validateProductionEnv } from './lib/env-validation';
+import { validateProductionEnv, validateBruteForceEnv, validateAdminStatsCacheEnv } from './lib/env-validation';
 validateProductionEnv();
+validateBruteForceEnv();
+validateAdminStatsCacheEnv();
+
+const emailHashSecret = process.env.EMAIL_HASH_SECRET?.trim();
+if (!emailHashSecret) {
+  throw new Error('FATAL: EMAIL_HASH_SECRET is not configured. Set EMAIL_HASH_SECRET in .env before starting the API.');
+}
+
+if (emailHashSecret === 'change-me-strong-email-hash-secret-production-min-32-chars' || emailHashSecret === 'change-me') {
+  throw new Error(
+    'FATAL: EMAIL_HASH_SECRET uses an insecure placeholder. Generate a strong unique value in .env before starting the API.'
+  );
+}
 
 import { resolve } from 'path';
 import fs from 'fs';
@@ -23,6 +36,7 @@ import type { ErrorRequestHandler, Request, Response, NextFunction } from 'expre
 import { secureLogger } from './utils/secure-logger';
 import { getClientIp } from './lib/client-ip';
 import { hashIpHmacSafe } from './lib/hash-ip';
+import { requestIdMiddleware } from './middleware/request-id';
 import { runJobWithLogContext, withHttpLogContext } from './observability/log-context';
 import { registerLogTransportShutdownHandlers, getLogTransportMetrics } from './observability/log-transport';
 import { getMatchingMetricsSnapshot } from './lib/matching-metrics';
@@ -218,7 +232,6 @@ import { securityRouter } from './modules/security/security.controller';
 import { blobosphereAdminRouter } from './modules/blobosphere/blobosphere.controller';
 import { blobospherePublicRouter } from './modules/blobosphere/blobosphere.public';
 import { contactRouter } from './modules/contact/contact.controller';
-import { bookingRouter } from './modules/booking/booking.controller';
 import pushRouter from './modules/push/push.controller';
 import { consentRouter } from './modules/consent/consent.controller';
 import { analyticsRouter } from './modules/analytics/analytics.controller';
@@ -272,6 +285,7 @@ export function createApp() {
   app.use('/analytics', express.json({ limit: analyticsJsonLimit }));
   app.use(express.json());
   app.use(cookieParser());
+  app.use(requestIdMiddleware);
 
   // Trust proxy configuration - more secure than 'true'
   // In dev, trust localhost. In prod, trust only known proxy IPs or use number of hops
@@ -359,24 +373,6 @@ export function createApp() {
     });
   }
 
-  // Booking archive job — domaine légal de rétention, séparé du RGPD.
-  // Archive les bookings dont availability.endAt < now - BOOKING_ARCHIVE_GRACE_DAYS.
-  // Désactivable indépendamment via BOOKING_ARCHIVE_INTERVAL_HOURS=0.
-  const bookingArchiveHours = Number(process.env.BOOKING_ARCHIVE_INTERVAL_HOURS || '24');
-  const bookingArchiveGraceDays = Number(process.env.BOOKING_ARCHIVE_GRACE_DAYS || '14');
-  async function runBookingArchive() {
-    await runJobWithLogContext('booking-archive', async () => {
-      secureLogger.info('BOOKING_ARCHIVE_JOB_STARTED', { graceDays: bookingArchiveGraceDays });
-      try {
-        const { bookingArchiveService } = await import('./services/booking-archive.service.js');
-        const result = await bookingArchiveService.archiveClosedBookings(bookingArchiveGraceDays);
-        secureLogger.info('BOOKING_ARCHIVE_JOB_COMPLETED', { ...result });
-      } catch (e) {
-        secureLogger.error('BOOKING_ARCHIVE_JOB_ERROR', { error: e });
-      }
-    });
-  }
-
   // Only start background jobs in production/development, not in tests
   if (process.env.NODE_ENV !== 'test') {
     if (gdprPurgeHours > 0) {
@@ -391,14 +387,6 @@ export function createApp() {
       setInterval(purgeOnce, legacyPurgeHours * 60 * 60 * 1000);
       if (String(process.env.CONSENT_PURGE_RUN_ON_START || 'true').toLowerCase() === 'true') {
         purgeOnce();
-      }
-    }
-
-    // Booking archive job (séparé du GDPR — désactivable indépendamment)
-    if (bookingArchiveHours > 0) {
-      setInterval(runBookingArchive, bookingArchiveHours * 60 * 60 * 1000);
-      if (String(process.env.BOOKING_ARCHIVE_RUN_ON_START || 'false').toLowerCase() === 'true') {
-        runBookingArchive();
       }
     }
 
@@ -518,7 +506,6 @@ export function createApp() {
   app.use('/admin/blobosphere', blobosphereAdminRouter);
   app.use('/security', securityRouter);
   app.use('/contact', contactRouter);
-  app.use('/booking', bookingRouter);
   app.use('/push', pushRouter);
 
 

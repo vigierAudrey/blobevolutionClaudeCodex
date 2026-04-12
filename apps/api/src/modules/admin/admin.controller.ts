@@ -1,13 +1,13 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
-import type { AuditLog, Role, Sport, AvailabilityStatus } from '@blobinfini/database';
+import type { AuditLog, Role } from '@blobinfini/database';
 import { requireAuth, requireAdmin, requireVerifiedEmail } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
 import { systemAlertService } from '../../services/system-alert.service';
 import { audit } from '../../middleware/audit';
 import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
-import { requirePermissions } from './admin.guard';
+import { requirePermissions, requireAnyPermission } from './admin.guard';
 import { enforceAdminAllowedIp, requireAdminStepUp } from './admin.security-guard';
 import { createRateLimiter, createLazyRateLimiter, createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
@@ -16,6 +16,23 @@ import { disconnectUserSockets } from '../../lib/socket';
 import { analyticsReportService } from '../../services/analytics/reports.service';
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
 import { capAdminLimit } from '../../utils/admin-list-cap';
+import {
+  ADMIN_STATS_MAIN_CACHE_KEY,
+  getAdminStatsCache,
+  getAdminStatsCacheTtlSeconds,
+  invalidateAdminStatsCache,
+  setAdminStatsCache,
+} from '../../lib/admin-stats-cache';
+import {
+  DEFAULT_BULK_MAX_SYNC,
+  conversationBlockEventService,
+  ConversationBlockEventServiceError,
+} from '../../services/conversation-block-event.service';
+import { retentionExportArtifactService } from '../../services/retention-export-artifact.service';
+import {
+  CONVERSATION_BLOCK_HISTORY_RELIABLE_SINCE_DATE,
+  CONVERSATION_BLOCK_HISTORY_RELIABLE_SINCE_VERSION,
+} from './moderation-history.constants';
 
 type ConversationMemberWithUser = Prisma.ConversationMemberGetPayload<{
   include: {
@@ -51,7 +68,54 @@ const resolveAnalyticsPeriod = (value: unknown): AnalyticsPeriod => {
 type CountGroup = { _count: { _all: number } };
 type AuditActionGroup = { action: string; _count: { action: number } };
 type ReportReasonGroup = { reason: string | null; _count: { _all: number } };
-type AvailabilityStatusGroup = { sport: Sport | null; status: AvailabilityStatus; _count: { _all: number } };
+const adminStatsCacheSchema = z.object({
+  totalUsers: z.number().int().nonnegative(),
+  totalRiders: z.number().int().nonnegative(),
+  totalPros: z.number().int().nonnegative(),
+  totalAdmins: z.number().int().nonnegative(),
+  totalConversations: z.number().int().nonnegative(),
+  activeUsers: z.number().int().nonnegative(),
+  reportedProfiles: z.number().int().nonnegative(),
+}).strict();
+
+type AdminStatsResponse = z.infer<typeof adminStatsCacheSchema>;
+
+async function buildAdminStats(): Promise<AdminStatsResponse> {
+  const totalUsers = await prisma.user.count();
+  const usersByRole = await prisma.user.groupBy({
+    by: ['role'],
+    _count: { role: true }
+  }) as RoleCountGroup[];
+
+  const totalConversations = await prisma.conversation.count();
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const activeUsers = await prisma.user.count({
+    where: {
+      sessions: {
+        some: {
+          createdAt: {
+            gte: thirtyDaysAgo
+          }
+        }
+      }
+    }
+  });
+
+  const reportedProfiles = await prisma.profileReport.count({ where: { reviewedAt: null } });
+
+  return {
+    totalUsers,
+    totalRiders: usersByRole.find((group: RoleCountGroup) => group.role === 'RIDER')?._count?.role ?? 0,
+    totalPros: usersByRole.find((group: RoleCountGroup) => group.role === 'PRO')?._count?.role ?? 0,
+    totalAdmins: usersByRole.find((group: RoleCountGroup) => group.role === 'ADMIN')?._count?.role ?? 0,
+    totalConversations,
+    activeUsers,
+    reportedProfiles
+  };
+}
 
 async function ensureAdminConversation(adminId: string, targetUserId: string) {
   const existing = await prisma.conversation.findFirst({
@@ -165,45 +229,13 @@ adminRouter.use(enforceAdminAllowedIp);
 // Statistiques principales
 adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:stats:view', () => 'admin:stats'), async (req, res) => {
   try {
-    // Compter les utilisateurs par rôle
-    const totalUsers = await prisma.user.count();
-    const usersByRole = await prisma.user.groupBy({
-      by: ['role'],
-      _count: { role: true }
-    }) as RoleCountGroup[];
+    const cachedStats = await getAdminStatsCache(ADMIN_STATS_MAIN_CACHE_KEY, adminStatsCacheSchema);
+    if (cachedStats) {
+      return res.json(cachedStats);
+    }
 
-    // Conversations totales
-    const totalConversations = await prisma.conversation.count();
-
-    // Utilisateurs actifs (derniers 30 jours)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const activeUsers = await prisma.user.count({
-      where: {
-        sessions: {
-          some: {
-            createdAt: {
-              gte: thirtyDaysAgo
-            }
-          }
-        }
-      }
-    });
-
-    // F07 — Signalements en attente uniquement (reviewedAt IS NULL)
-    const reportedProfiles = await prisma.profileReport.count({ where: { reviewedAt: null } });
-
-    // Formater les statistiques
-    const stats = {
-      totalUsers,
-      totalRiders: usersByRole.find((group: RoleCountGroup) => group.role === 'RIDER')?._count?.role ?? 0,
-      totalPros: usersByRole.find((group: RoleCountGroup) => group.role === 'PRO')?._count?.role ?? 0,
-      totalAdmins: usersByRole.find((group: RoleCountGroup) => group.role === 'ADMIN')?._count?.role ?? 0,
-      totalConversations,
-      activeUsers,
-      reportedProfiles
-    };
+    const stats = await buildAdminStats();
+    await setAdminStatsCache(ADMIN_STATS_MAIN_CACHE_KEY, stats, getAdminStatsCacheTtlSeconds());
 
     return res.json(stats);
   } catch (error) {
@@ -211,73 +243,6 @@ adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:sta
     return res.status(500).json({ error: 'Internal error' });
   }
 });
-
-// Visibilité sur les créneaux complets / ouverts pour les admins
-adminRouter.get(
-  '/booking/availability-status',
-  requirePermissions('analytics.view'),
-  audit('admin:availability:status', () => 'admin:availability-status'),
-  async (req, res) => {
-    try {
-      const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 25));
-      const statusQuery = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : undefined;
-      const statusFilter = statusQuery === 'OPEN' || statusQuery === 'CLOSED' ? statusQuery : undefined;
-
-      const [openCount, closedCount, sportBreakdown, items] = await Promise.all([
-        prisma.proAvailability.count({ where: { status: 'OPEN' } }),
-        prisma.proAvailability.count({ where: { status: 'CLOSED' } }),
-        prisma.proAvailability.groupBy({
-          by: ['sport', 'status'],
-          _count: { _all: true }
-        }),
-        prisma.proAvailability.findMany({
-          where: statusFilter ? { status: statusFilter as 'OPEN' | 'CLOSED' } : undefined,
-          orderBy: { startAt: 'desc' },
-          take: limit,
-          select: {
-            id: true,
-            startAt: true,
-            endAt: true,
-            sport: true,
-            levels: true,
-            capacity: true,
-            bookedCount: true,
-            status: true,
-            spotName: true,
-            pro: {
-              select: {
-                id: true,
-                email: true,
-                proProfile: {
-                  select: {
-                    businessName: true,
-                  }
-                }
-              }
-            }
-          }
-        })
-      ]);
-
-      return res.json({
-          summary: {
-            total: openCount + closedCount,
-            open: openCount,
-            closed: closedCount,
-            bySport: (sportBreakdown as AvailabilityStatusGroup[]).map((entry: AvailabilityStatusGroup) => ({
-              sport: entry.sport,
-              status: entry.status,
-              count: entry._count?._all ?? 0
-            }))
-        },
-        items
-      });
-    } catch (error) {
-      secureLogger.error('Admin availability status error', { error });
-      return res.status(500).json({ error: 'Internal error' });
-    }
-  }
-);
 
 // Lister tous les utilisateurs avec pagination
 adminRouter.get(
@@ -657,6 +622,95 @@ adminRouter.get(
     return res.status(500).json({ error: 'Internal error' });
   }
 });
+
+const reportHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+adminRouter.get(
+  '/reports/history',
+  requirePermissions('reports.view'),
+  audit('admin:reports:history', () => 'admin:reports:history'),
+  async (req, res) => {
+    try {
+      const { page, limit } = reportHistoryQuerySchema.parse(req.query);
+      const skip = (page - 1) * limit;
+
+      const [reports, total] = await Promise.all([
+        prisma.profileReport.findMany({
+          where: { reviewedAt: { not: null } },
+          include: {
+            reporter: {
+              select: {
+                email: true,
+                role: true,
+              },
+            },
+            reportedProfile: {
+              select: {
+                id: true,
+                displayName: true,
+                user: {
+                  select: {
+                    id: true,
+                    email: true,
+                    role: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: [
+            { reviewedAt: 'desc' },
+            { createdAt: 'desc' },
+          ],
+          skip,
+          take: limit,
+        }),
+        prisma.profileReport.count({
+          where: { reviewedAt: { not: null } },
+        }),
+      ]);
+      type ReviewedReport = Awaited<typeof reports>[number];
+      type ReviewerSummary = { id: string; email: string; role: Role };
+
+      const reviewerIds = [...new Set(
+        reports
+          .map((report: ReviewedReport) => report.reviewedByAdminId)
+          .filter((value: string | null): value is string => typeof value === 'string' && value.length > 0),
+      )];
+      const reviewers = reviewerIds.length > 0
+        ? await prisma.user.findMany({
+          where: { id: { in: reviewerIds } },
+          select: { id: true, email: true, role: true },
+        })
+        : [];
+      const reviewersById = new Map(reviewers.map((reviewer: ReviewerSummary) => [reviewer.id, reviewer]));
+
+      return res.json({
+        items: reports.map((report: ReviewedReport) => ({
+          ...report,
+          reviewedByAdmin: report.reviewedByAdminId
+            ? reviewersById.get(report.reviewedByAdminId) ?? null
+            : null,
+        })),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      secureLogger.error('Admin reports history error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
 
 const auditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -1426,17 +1480,46 @@ adminRouter.get(
 
 const adminConversationBlockSchema = z.object({
   userId: z.string().uuid().optional(),
-  action: z.enum(['block', 'unblock']).default('block')
+  action: z.enum(['block', 'unblock']).default('block'),
+  reason: z.string().trim().max(500).optional(),
 });
+
+function handleConversationBlockServiceError(
+  error: ConversationBlockEventServiceError,
+  res: Response,
+) {
+  if (error.code === 'NOT_FOUND') {
+    return res.status(404).json({ error: error.message, details: error.details ?? null });
+  }
+
+  if (error.code === 'BULK_TOO_LARGE') {
+    return res.status(409).json({
+      error: 'BULK_TOO_LARGE_FOR_SYNC',
+      message: `Déblocage massif limité à ${DEFAULT_BULK_MAX_SYNC} entrées en mode synchrone.`,
+      details: error.details ?? null,
+    });
+  }
+
+  if (error.code === 'STATE_CONFLICT' || error.code === 'BULK_CONFLICT_RETRYABLE') {
+    return res.status(409).json({
+      error: error.code,
+      message: error.message,
+      details: error.details ?? null,
+    });
+  }
+
+  return res.status(500).json({ error: 'Internal error' });
+}
 
 adminRouter.post(
   '/conversations/:conversationId/block',
   requirePermissions('reports.moderate'),
+  requireAdminStepUp,
   audit('admin:conversations:block', (req) => `admin:conversation:${req.params.conversationId}`),
   async (req, res) => {
     try {
       const { conversationId } = req.params;
-      const { action, userId } = adminConversationBlockSchema.parse(req.body ?? {});
+      const { action, reason, userId } = adminConversationBlockSchema.parse(req.body ?? {});
 
       const conversation = await prisma.conversation.findUnique({
         where: { id: conversationId },
@@ -1467,24 +1550,15 @@ adminRouter.post(
         return res.status(404).json({ error: 'Member not found in conversation' });
       }
 
-      await prisma.conversationMember.updateMany({
-        where: {
-          conversationId,
-          userId: { in: targetMembers.map((member: ConversationMemberWithUser) => member.userId) }
-        },
-        data: {
-          blockedAt: action === 'unblock' ? null : new Date()
-        }
-      });
-
-      const refreshedMembers: ConversationMemberWithUser[] = await prisma.conversationMember.findMany({
-        where: {
-          conversationId,
-          userId: { in: targetMembers.map((member: ConversationMemberWithUser) => member.userId) }
-        },
-        include: {
-          user: { select: { id: true, email: true, role: true } }
-        }
+      const actor = (req as typeof req & { user?: { id: string } }).user;
+      const result = await conversationBlockEventService.setConversationBlock({
+        conversationId,
+        targetUserIds: targetMembers.map((member: ConversationMemberWithUser) => member.userId),
+        action,
+        actorUserId: actor?.id ?? null,
+        actorType: 'ADMIN',
+        source: 'ADMIN_SINGLE',
+        reason: reason ?? null,
       });
 
       if (!res.locals.auditMetadata) {
@@ -1494,20 +1568,17 @@ adminRouter.post(
         ...(res.locals.auditMetadata || {}),
         conversationId,
         action,
-        targetUserIds: targetMembers.map((member: ConversationMemberWithUser) => member.userId)
+        targetUserIds: targetMembers.map((member: ConversationMemberWithUser) => member.userId),
+        reason: reason ?? null,
       };
 
       return res.json({
-        conversationId,
-        action,
-        updatedMembers: refreshedMembers.map((member: ConversationMemberWithUser) => ({
-          userId: member.userId,
-          email: member.user?.email ?? null,
-          role: member.user?.role ?? null,
-          blockedAt: member.blockedAt
-        }))
+        ...result,
       });
     } catch (error) {
+      if (error instanceof ConversationBlockEventServiceError) {
+        return handleConversationBlockServiceError(error, res);
+      }
       // Don't log validation errors (400) - they are expected client errors
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: 'Invalid input', details: error.errors });
@@ -1522,23 +1593,33 @@ adminRouter.post(
 adminRouter.post(
   '/conversations/unblock-all',
   requirePermissions('reports.moderate'),
+  requireAdminStepUp,
   audit('admin:conversations:unblock-all', () => 'admin:conversations:bulk-unblock'),
-  async (_req, res) => {
+  async (req, res) => {
     try {
-      const result = await prisma.conversationMember.updateMany({
-        where: { blockedAt: { not: null } },
-        data: { blockedAt: null }
-      });
+      const actor = (req as typeof req & { user?: { id: string } }).user;
+      if (!actor?.id) {
+        return res.status(403).json({ error: 'Admin role required' });
+      }
+
+      const result = await conversationBlockEventService.unblockAllConversationMembers(actor.id);
 
       res.locals.auditMetadata = {
-        affectedCount: result.count
+        batchId: result.batchId,
+        affectedCount: result.processedCount,
+        remainingCount: result.remainingCount,
       };
 
       return res.json({
         success: true,
-        count: result.count
+        batchId: result.batchId,
+        processedCount: result.processedCount,
+        remainingCount: result.remainingCount,
       });
     } catch (error) {
+      if (error instanceof ConversationBlockEventServiceError) {
+        return handleConversationBlockServiceError(error, res);
+      }
       secureLogger.error('Admin unblock all conversations error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
@@ -1555,25 +1636,36 @@ adminRouter.get(
       const limit = Math.min(parseInt(req.query.limit as string || '25', 10), 100);
       const skip = (page - 1) * limit;
 
-      const where = { action: 'admin:conversations:block' } as const;
-
-      const [items, total] = await Promise.all([
-        prisma.auditLog.findMany({
-          where,
+      const [items, total, legacyCount] = await Promise.all([
+        prisma.conversationBlockEvent.findMany({
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
           include: {
             user: {
               select: { id: true, email: true, role: true }
+            },
+            actorUser: {
+              select: { id: true, email: true, role: true }
+            },
+            conversation: {
+              select: { id: true, type: true, createdAt: true }
             }
           }
         }),
-        prisma.auditLog.count({ where })
+        prisma.conversationBlockEvent.count(),
+        prisma.conversationBlockEvent.count({
+          where: { source: 'LEGACY_UNKNOWN' }
+        })
       ]);
 
       return res.json({
         items,
+        historyReliability: {
+          hasLegacyRows: legacyCount > 0,
+          reliableSinceDate: CONVERSATION_BLOCK_HISTORY_RELIABLE_SINCE_DATE,
+          reliableSinceVersion: CONVERSATION_BLOCK_HISTORY_RELIABLE_SINCE_VERSION,
+        },
         pagination: {
           page,
           limit,
@@ -1593,7 +1685,7 @@ const securityActionsExact = ['admin:permissions:update', 'admin:role:apply'];
 
 adminRouter.get(
   '/security/events',
-  requirePermissions('system.configure'),
+  requireAnyPermission('security.read', 'system.configure'),
   audit('admin:security:events', () => 'admin:security:events'),
   async (req, res) => {
     try {
@@ -1624,7 +1716,7 @@ adminRouter.get(
 
 adminRouter.get(
   '/security/logs/summary',
-  requirePermissions('system.monitor'), // F05: aggregate summary, no per-user PII
+  requireAnyPermission('security.read', 'system.monitor'), // F05: aggregate summary, no per-user PII
   audit('admin:security:logs:summary', () => 'admin:security:logs:summary'),
   async (req, res) => {
     try {
@@ -1695,135 +1787,282 @@ function pseudonymizeIP(ip: string | null): string {
 }
 
 // Rate limiting pour endpoints admin sécurité (login-attempts)
+// GET browsing: shared ADMIN limit (50 req/5min).
 const adminSecurityRateLimit = createRateLimiter('ADMIN');
 
-// Schema de validation pour l'endpoint /security/login-attempts
+// Purge endpoint: dedicated tighter limit — prevents accidental spam and protects
+// the shared ADMIN quota from being consumed by purge calls.
+// 5 purge calls / 5 min is sufficient for any legitimate use.
+const adminPurgeRateLimit = createLazyCustomRateLimiter(
+  {
+    windowMs: 5 * 60 * 1000,
+    max: 5,
+    message: { error: 'ADMIN_PURGE_RATE_LIMIT_EXCEEDED', message: 'Too many purge requests.' },
+  },
+  'admin_login_attempt_purge',
+);
+
+// ---------------------------------------------------------------------------
+// Helpers — cursor pagination
+// ---------------------------------------------------------------------------
+
+interface LoginAttemptCursor {
+  createdAt: Date;
+  id: string;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseCursor(raw: string): LoginAttemptCursor | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    if (typeof decoded.createdAt !== 'string' || typeof decoded.id !== 'string') return null;
+    const createdAt = new Date(decoded.createdAt);
+    if (isNaN(createdAt.getTime())) return null;
+    if (!UUID_RE.test(decoded.id)) return null;
+    return { createdAt, id: decoded.id };
+  } catch {
+    return null;
+  }
+}
+
+function encodeCursor(attempt: { createdAt: Date; id: string }): string {
+  return Buffer.from(
+    JSON.stringify({ createdAt: attempt.createdAt.toISOString(), id: attempt.id })
+  ).toString('base64url');
+}
+
+// ---------------------------------------------------------------------------
+// Schema de validation — GET /security/login-attempts
+// ---------------------------------------------------------------------------
+
+// max 100: évite le payload N+1 (include user) et la sérialisation massive.
+// cursor: opaque base64url JSON {createdAt, id} pour tri stable (createdAt DESC, id DESC).
 const loginAttemptsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(500).default(100),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
   onlyFailed: z.enum(['true', 'false']).optional().transform(val => val === 'true'),
-  suspiciousOnly: z.enum(['true', 'false']).optional().transform(val => val === 'true')
+  suspiciousOnly: z.enum(['true', 'false']).optional().transform(val => val === 'true'),
+  cursor: z.string().optional(),
 });
 
 adminRouter.get(
   '/security/login-attempts',
   adminSecurityRateLimit,
-  requirePermissions('system.configure'),
+  requireAnyPermission('security.read', 'system.configure'),
   audit('admin:security:login-attempts', () => 'admin:security:login-attempts'),
   async (req, res) => {
     try {
-      // Validation Zod des paramètres
       const parsed = loginAttemptsQuerySchema.safeParse(req.query);
-
       if (!parsed.success) {
-        return res.status(400).json({
-          error: 'Invalid query parameters',
-          details: parsed.error.format()
-        });
+        return res.status(400).json({ error: 'Invalid query parameters', details: parsed.error.format() });
       }
 
-      const { limit, onlyFailed, suspiciousOnly } = parsed.data;
+      const { limit, onlyFailed, suspiciousOnly, cursor: rawCursor } = parsed.data;
 
-      const where: any = {};
-      if (onlyFailed) {
-        where.success = false;
+      // --- cursor validation ---
+      let cursor: LoginAttemptCursor | null = null;
+      if (rawCursor) {
+        cursor = parseCursor(rawCursor);
+        if (!cursor) {
+          return res.status(400).json({ error: 'Invalid cursor' });
+        }
       }
 
-      // Suspicious criteria: multiple failed attempts from same IP hash or email hash
+      // --- base where filter ---
+      const baseWhere: Prisma.LoginAttemptWhereInput = onlyFailed ? { success: false } : {};
+
+      // --- cursor WHERE clause: (createdAt < cur.createdAt) OR (createdAt = cur.createdAt AND id < cur.id)
+      //     Requires ORDER BY createdAt DESC, id DESC to be stable.
+      const cursorWhere: Prisma.LoginAttemptWhereInput | undefined = cursor
+        ? {
+            OR: [
+              { createdAt: { lt: cursor.createdAt } },
+              { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+            ],
+          }
+        : undefined;
+
       let attempts: LoginAttemptWithUser[];
+
       if (suspiciousOnly) {
-        // Get IP hashes and email hashes with multiple failed attempts in the last 24 hours
+        // --- 2.3: suspiciousOnly rewrite — GROUP BY HAVING in SQL, zero JS aggregation ---
+        //
+        // WHY: the previous approach loaded ALL failed attempts of the last 24h into Node.js
+        // memory and aggregated with Map. Under a DDoS (100k+ rows/day) this OOMs the process.
+        //
+        // NOW: two parallel $queryRaw with GROUP BY + HAVING.
+        // Index used: (success, ipHash, createdAt DESC) and (success, emailHash, createdAt DESC).
+        // At 10M rows: index seek on success=false + createdAt range → O(log n + matching_rows).
+        // LIMIT 200 caps the IN (...) list in the subsequent findMany.
+
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        const failedAttempts = await prisma.loginAttempt.findMany({
-          where: {
-            success: false,
-            createdAt: { gte: oneDayAgo }
-          },
-          orderBy: { createdAt: 'desc' }
-        });
+        type IpHashRow = { ipHash: string };
+        type EmailHashRow = { emailHash: string };
 
-        // Group by ipHash and emailHash to find suspicious patterns (RGPD v2)
-        const ipHashCounts = new Map<string, number>();
-        const emailHashCounts = new Map<string, number>();
+        const [ipRows, emailRows] = await Promise.all([
+          prisma.$queryRaw<IpHashRow[]>`
+            SELECT "ipHash"
+            FROM "LoginAttempt"
+            WHERE success = false
+              AND "createdAt" >= ${oneDayAgo}
+              AND "ipHash" IS NOT NULL
+            GROUP BY "ipHash"
+            HAVING COUNT(*) >= 3
+            ORDER BY COUNT(*) DESC
+            LIMIT 200
+          `,
+          prisma.$queryRaw<EmailHashRow[]>`
+            SELECT "emailHash"
+            FROM "LoginAttempt"
+            WHERE success = false
+              AND "createdAt" >= ${oneDayAgo}
+              AND "emailHash" IS NOT NULL
+            GROUP BY "emailHash"
+            HAVING COUNT(*) >= 5
+            ORDER BY COUNT(*) DESC
+            LIMIT 200
+          `,
+        ]);
 
-        for (const attempt of failedAttempts) {
-          if (attempt.ipHash) {
-            ipHashCounts.set(attempt.ipHash, (ipHashCounts.get(attempt.ipHash) || 0) + 1);
-          }
-          if (attempt.emailHash) {
-            emailHashCounts.set(attempt.emailHash, (emailHashCounts.get(attempt.emailHash) || 0) + 1);
-          }
-        }
-
-        // Filter suspicious ipHashes (3+ failed attempts) and emailHashes (5+ failed attempts)
-        const suspiciousIpHashes = Array.from(ipHashCounts.entries())
-          .filter(([, count]) => count >= 3)
-          .map(([ipHash]) => ipHash);
-        const suspiciousEmailHashes = Array.from(emailHashCounts.entries())
-          .filter(([, count]) => count >= 5)
-          .map(([emailHash]) => emailHash);
+        const suspiciousIpHashes = ipRows.map((r: IpHashRow) => r.ipHash);
+        const suspiciousEmailHashes = emailRows.map((r: EmailHashRow) => r.emailHash);
 
         if (suspiciousIpHashes.length > 0 || suspiciousEmailHashes.length > 0) {
-          await systemAlertService.ensureAlert({
+          // fire-and-forget: alert creation must not block the response
+          systemAlertService.ensureAlert({
             type: 'security:suspicious-login',
             message: 'Tentatives de connexion suspectes détectées',
             severity: 'WARNING',
-            metadata: { suspiciousIpHashes, suspiciousEmailHashes }
-          });
+            metadata: { suspiciousIpHashes, suspiciousEmailHashes },
+          }).catch(() => {});
         }
 
-        attempts = await prisma.loginAttempt.findMany({
-          where: {
-            OR: [
-              { ipHash: { in: suspiciousIpHashes } },
-              { emailHash: { in: suspiciousEmailHashes } }
-            ]
-          },
-          include: {
-            user: {
-              select: { id: true, role: true }
-            }
-          },
-          orderBy: { createdAt: 'desc' },
-          take: limit
-        });
+        if (suspiciousIpHashes.length === 0 && suspiciousEmailHashes.length === 0) {
+          attempts = [];
+        } else {
+          const orClauses: Prisma.LoginAttemptWhereInput[] = [];
+          if (suspiciousIpHashes.length > 0) orClauses.push({ ipHash: { in: suspiciousIpHashes } });
+          if (suspiciousEmailHashes.length > 0) orClauses.push({ emailHash: { in: suspiciousEmailHashes } });
+
+          // cursorWhere is { OR: [...] }. Plain spread would overwrite the outer OR.
+          // Use AND to combine both conditions correctly.
+          const suspiciousWhere: Prisma.LoginAttemptWhereInput = cursorWhere
+            ? { AND: [{ OR: orClauses }, cursorWhere] }
+            : { OR: orClauses };
+
+          attempts = await prisma.loginAttempt.findMany({
+            where: suspiciousWhere,
+            include: { user: { select: { id: true, role: true } } },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: limit,
+          });
+        }
       } else {
         attempts = await prisma.loginAttempt.findMany({
-          where,
-          include: {
-            user: {
-              select: { id: true, role: true }
-            }
-          },
-          orderBy: { createdAt: 'desc' },
-          take: limit
+          where: { ...baseWhere, ...cursorWhere },
+          include: { user: { select: { id: true, role: true } } },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: limit,
         });
       }
 
-      // Calculate stats
-      const total = await prisma.loginAttempt.count({ where });
-      const failed = await prisma.loginAttempt.count({ where: { success: false } });
+      // --- nextCursor: emit only when a full page was returned (more may exist) ---
+      const nextCursor = attempts.length === limit
+        ? encodeCursor(attempts[attempts.length - 1])
+        : null;
+
+      // --- stats: two COUNT queries scoped to the same filter (consistent with the list) ---
+      // Run in parallel; the (success, createdAt) composite index covers both.
+      const [total, failed] = await Promise.all([
+        prisma.loginAttempt.count({ where: baseWhere }),
+        prisma.loginAttempt.count({ where: { ...baseWhere, success: false } }),
+      ]);
       const successRate = total > 0 ? ((total - failed) / total) * 100 : 0;
 
-      // RGPD v2: ipHash already anonymized (HMAC-SHA256), no need to pseudonymize
-      // Remove raw IP field from response (privacy-by-design)
+      // --- RGPD: never expose raw email or ip ---
       const sanitizedAttempts = attempts.map((attempt: LoginAttemptWithUser) => ({
         ...attempt,
-        email: null, // Never expose raw login-attempt email in API responses
-        ip: undefined, // Exclude raw IP (should be null after migration anyway)
-        ipHash: attempt.ipHash, // Already HMAC-SHA256 hashed
+        email: null,
+        ip: undefined,
       }));
 
       return res.json({
         attempts: sanitizedAttempts,
+        nextCursor,
         stats: {
           total,
           failed,
-          successRate: successRate.toFixed(2)
-        }
+          successRate: successRate.toFixed(2),
+        },
       });
     } catch (error) {
       secureLogger.error('Admin login attempts error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// 2.6 — POST /admin/security/login-attempts/purge
+// ---------------------------------------------------------------------------
+//
+// SECURITY SURFACE:
+//   P0 — Accidental mass purge: dryRun=true by default, confirm="CONFIRM" required for real.
+//   P1 — Admin spam: adminSecurityRateLimit (module-level, shared with GET).
+//   P2 — Unauthorized access: requirePermissions('system.configure') gate.
+//
+// Retention rules enforced server-side (not exposed in body):
+//   success=true  → LOGIN_ATTEMPT_SUCCESS_RETENTION_DAYS (default 7)
+//   success=false → LOGIN_ATTEMPT_FAILURE_RETENTION_DAYS (default 30)
+
+const loginAttemptsPurgeBodySchema = z.object({
+  dryRun: z.boolean().default(true),
+  // Must be the literal string "CONFIRM" to execute a real purge.
+  confirm: z.string().optional(),
+});
+
+adminRouter.post(
+  '/security/login-attempts/purge',
+  adminPurgeRateLimit,
+  requireAnyPermission('security.write', 'system.configure'),
+  audit('admin:security:login-attempts:purge', () => 'admin:security:login-attempts:purge'),
+  async (req, res) => {
+    try {
+      const parsed = loginAttemptsPurgeBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid body', details: parsed.error.format() });
+      }
+
+      const { dryRun, confirm } = parsed.data;
+
+      if (!dryRun && confirm !== 'CONFIRM') {
+        return res.status(400).json({
+          error: 'Real purge requires confirm="CONFIRM" in the request body.',
+          hint: 'Send { dryRun: false, confirm: "CONFIRM" } to proceed.',
+        });
+      }
+
+      const result = await gdprPurgeService.purgeOldLoginAttemptsBatched({ dryRun });
+
+      secureLogger.info('ADMIN_LOGIN_ATTEMPTS_PURGE', {
+        ...result,
+        adminUserId: (req as any).user?.id,
+      });
+
+      // Enrich audit log with structured purge metadata (read by audit() on res.finish)
+      res.locals.auditMetadata = {
+        dryRun: result.dryRun,
+        deleted: result.deleted,
+        wouldDelete: result.wouldDelete,
+        batches: result.batches,
+        successRetentionDays: result.successRetentionDays,
+        failureRetentionDays: result.failureRetentionDays,
+      };
+
+      return res.json(result);
+    } catch (error) {
+      secureLogger.error('Admin login attempts purge error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   }
@@ -1904,6 +2143,26 @@ const runPurgeSchema = z.object({
   confirm: z.literal('CONFIRMER_PURGE_RGPD'),
 });
 
+const retentionExportCreateSchema = z.object({
+  scope: z.literal('AUDIT_LOG'),
+  fromDate: z.coerce.date(),
+  toDate: z.coerce.date(),
+  format: z.literal('NDJSON').default('NDJSON'),
+}).refine((value) => value.toDate >= value.fromDate, {
+  message: 'toDate must be greater than or equal to fromDate',
+  path: ['toDate'],
+});
+
+const retentionExportListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  scope: z.literal('AUDIT_LOG').optional(),
+  status: z.enum(['GENERATING', 'READY', 'VERIFIED', 'FAILED', 'EXPIRED']).optional(),
+});
+
+const RETENTION_EXPORT_MAX_ROWS = 10_000;
+const RETENTION_EXPORT_MAX_BYTES = 10 * 1024 * 1024;
+
 // Exécution manuelle de la purge RGPD
 adminRouter.post(
   '/gdpr/run-purge',
@@ -1922,8 +2181,22 @@ adminRouter.post(
   }
 
   try {
+    const readiness = await gdprPurgeService.getAuditLogPurgeReadiness();
+    if (readiness.hasEligibleLogs && !readiness.exportVerified) {
+      return res.status(409).json({
+        success: false,
+        error: 'MISSING_VERIFIED_EXPORT',
+        blockedReason: 'Un export rétention VERIFIED doit couvrir les AuditLog avant purge.',
+        details: {
+          threshold: readiness.threshold.toISOString(),
+          oldestPurgeableLogCreatedAt: readiness.oldestPurgeableLogCreatedAt?.toISOString() ?? null,
+        },
+      });
+    }
+
     const startedAt = Date.now();
     const result = await gdprPurgeService.performFullPurge();
+    await invalidateAdminStatsCache(ADMIN_STATS_MAIN_CACHE_KEY);
 
     return res.json({
       success: true,
@@ -1941,6 +2214,130 @@ adminRouter.post(
     });
   }
 });
+
+adminRouter.post(
+  '/gdpr/exports',
+  requirePermissions('system.configure'),
+  requireAdminStepUp,
+  audit('admin:gdpr:retention-export', () => 'admin:gdpr:retention-export'),
+  async (req, res) => {
+    let artifactId: string | null = null;
+
+    try {
+      const body = retentionExportCreateSchema.parse(req.body);
+      const actor = (req as typeof req & { user?: { id: string } }).user;
+      if (!actor?.id) {
+        return res.status(403).json({ error: 'Admin role required' });
+      }
+
+      const total = await prisma.auditLog.count({
+        where: {
+          createdAt: {
+            gte: body.fromDate,
+            lte: body.toDate,
+          },
+        },
+      });
+
+      if (total > RETENTION_EXPORT_MAX_ROWS) {
+        return res.status(409).json({
+          error: 'EXPORT_TOO_LARGE',
+          message: `Export limité à ${RETENTION_EXPORT_MAX_ROWS} lignes. Réduire la fenêtre.`,
+          details: { total, maxRows: RETENTION_EXPORT_MAX_ROWS },
+        });
+      }
+
+      const artifact = await retentionExportArtifactService.createArtifact({
+        scope: body.scope,
+        fromDate: body.fromDate,
+        toDate: body.toDate,
+        createdByAdminId: actor.id,
+        format: body.format,
+      });
+      artifactId = artifact.id;
+
+      const logs = await prisma.auditLog.findMany({
+        where: {
+          createdAt: {
+            gte: body.fromDate,
+            lte: body.toDate,
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          userId: true,
+          action: true,
+          resource: true,
+          metadata: true,
+          ip: true,
+          createdAt: true,
+        },
+      });
+
+      type RetentionExportLog = Awaited<typeof logs>[number];
+      const payload = `${logs.map((item: RetentionExportLog) => JSON.stringify(item)).join('\n')}${logs.length > 0 ? '\n' : ''}`;
+      const payloadBytes = Buffer.byteLength(payload, 'utf8');
+      if (payloadBytes > RETENTION_EXPORT_MAX_BYTES) {
+        await retentionExportArtifactService.markFailed(artifact.id, 'EXPORT_TOO_LARGE_BYTES');
+        return res.status(409).json({
+          error: 'EXPORT_TOO_LARGE',
+          message: `Export limité à ${RETENTION_EXPORT_MAX_BYTES} octets. Réduire la fenêtre.`,
+          details: { payloadBytes, maxBytes: RETENTION_EXPORT_MAX_BYTES },
+        });
+      }
+
+      const readyArtifact = await retentionExportArtifactService.markReady({
+        artifactId: artifact.id,
+        rowCount: logs.length,
+        payload,
+      });
+      const verifiedArtifact = await retentionExportArtifactService.verifyArtifact(artifact.id);
+
+      res.locals.auditMetadata = {
+        artifactId: artifact.id,
+        scope: body.scope,
+        fromDate: body.fromDate.toISOString(),
+        toDate: body.toDate.toISOString(),
+        rowCount: logs.length,
+        sha256: readyArtifact.sha256,
+      };
+
+      return res.json({
+        artifact: {
+          id: verifiedArtifact.id,
+          scope: verifiedArtifact.scope,
+          format: verifiedArtifact.format,
+          status: verifiedArtifact.status,
+          rowCount: verifiedArtifact.rowCount,
+          sha256: verifiedArtifact.sha256,
+          createdAt: verifiedArtifact.createdAt,
+          verifiedAt: verifiedArtifact.verifiedAt,
+          fromDate: verifiedArtifact.fromDate,
+          toDate: verifiedArtifact.toDate,
+        },
+        download: {
+          fileName: `audit-log-retention-${body.fromDate.toISOString()}-${body.toDate.toISOString()}.ndjson`,
+          mimeType: 'application/x-ndjson',
+          encoding: 'base64',
+          content: Buffer.from(payload, 'utf8').toString('base64'),
+        },
+      });
+    } catch (error) {
+      if (artifactId) {
+        await retentionExportArtifactService.markFailed(
+          artifactId,
+          error instanceof Error ? error.message : 'UNKNOWN_EXPORT_ERROR',
+        );
+      }
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      secureLogger.error('Retention export generation error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
 
 // Recherche dans l'archive légale (pour litiges)
 adminRouter.get(
@@ -2041,172 +2438,22 @@ adminRouter.get(
   audit('admin:gdpr:exports', () => 'admin:gdpr:exports'),
   async (req, res) => {
   try {
-    const {
-      page = '1',
-      limit = '50',
-      userId,
-      startDate,
-      endDate,
-    } = req.query;
-
-    const pageNum = parseInt(page as string, 10);
-    const limitNum = capAdminLimit(limit); // Gate D: hard cap = 100
-    const skip = (pageNum - 1) * limitNum;
-
-    // Build filters
-    const filters: any = {
-      action: 'GDPR_EXPORT_REQUESTED',
-    };
-
-    if (userId && typeof userId === 'string') {
-      filters.userId = userId;
-    }
-
-    if (startDate || endDate) {
-      filters.createdAt = {};
-      if (startDate && typeof startDate === 'string') {
-        filters.createdAt.gte = new Date(startDate);
-      }
-      if (endDate && typeof endDate === 'string') {
-        filters.createdAt.lte = new Date(endDate);
-      }
-    }
-
-    // Get total count
-    const total = await prisma.auditLog.count({ where: filters });
-
-    // Get exports with user info
-    const exports = await prisma.auditLog.findMany({
-      where: filters,
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            role: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limitNum,
+    const { page, limit, scope, status } = retentionExportListQuerySchema.parse(req.query);
+    const result = await retentionExportArtifactService.listArtifacts({
+      page,
+      limit: capAdminLimit(String(limit)),
+      scope,
+      status,
     });
-
-    // Parse metadata to extract export details
-    const formattedExports = exports.map(
-      (log: Prisma.AuditLogGetPayload<{ include: { user: { select: { id: true; email: true; role: true } } } }>) => {
-        const metadata = log.metadata as any;
-        return {
-          id: log.id,
-          userId: log.userId,
-          userEmail: log.user?.email || 'Unknown',
-          userRole: log.user?.role || 'Unknown',
-          ip: log.ip || metadata?.ip || 'Unknown',
-          exportDate: log.createdAt,
-          dataSize: metadata?.dataSize || 0,
-          dataSizeMB: metadata?.dataSizeMB || ((metadata?.dataSize || 0) / 1024 / 1024).toFixed(2),
-          itemCounts: metadata?.itemCounts || {},
-        };
-      }
-    );
-
-    // Get summary statistics
-    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const last7days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const last30days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
-    const [exports24h, exports7d, exports30d] = await Promise.all([
-      prisma.auditLog.count({
-        where: {
-          action: 'GDPR_EXPORT_REQUESTED',
-          createdAt: { gte: last24h },
-        },
-      }),
-      prisma.auditLog.count({
-        where: {
-          action: 'GDPR_EXPORT_REQUESTED',
-          createdAt: { gte: last7days },
-        },
-      }),
-      prisma.auditLog.count({
-        where: {
-          action: 'GDPR_EXPORT_REQUESTED',
-          createdAt: { gte: last30days },
-        },
-      }),
-    ]);
-
-    // Get exports by role
-    const exportsByRole = await prisma.auditLog.findMany({
-      where: {
-        action: 'GDPR_EXPORT_REQUESTED',
-        createdAt: { gte: last30days },
-      },
-      include: {
-        user: {
-          select: { role: true },
-        },
-      },
-    });
-
-    const roleStats = exportsByRole.reduce(
-      (
-        acc: Record<string, number>,
-        log: Prisma.AuditLogGetPayload<{ include: { user: { select: { role: true } } } }>
-      ) => {
-        const role = log.user?.role || 'Unknown';
-        acc[role] = (acc[role] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-
-    // Get top exporters (users with most exports)
-    const topExporters = await prisma.auditLog.groupBy({
-      by: ['userId'],
-      where: {
-        action: 'GDPR_EXPORT_REQUESTED',
-        createdAt: { gte: last30days },
-        userId: { not: null },
-      },
-      _count: { userId: true },
-      orderBy: { _count: { userId: 'desc' } },
-      take: 10,
-    }) as Array<{ userId: string | null; _count: { userId: number } }>;
-
-    const topExportersWithEmails = await Promise.all(
-      topExporters.map(async (item: { userId: string | null; _count: { userId: number } }) => {
-        const user = await prisma.user.findUnique({
-          where: { id: item.userId! },
-          select: { email: true, role: true },
-        });
-        return {
-          userId: item.userId,
-          email: user?.email || 'Unknown',
-          role: user?.role || 'Unknown',
-          exportCount: item._count?.userId ?? 0,
-        };
-      })
-    );
 
     return res.json({
-      exports: formattedExports,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
-      },
-      summary: {
-        total,
-        last24h: exports24h,
-        last7days: exports7d,
-        last30days: exports30d,
-        byRole: roleStats,
-        topExporters: topExportersWithEmails,
-      },
+      exports: result.items,
+      pagination: result.pagination,
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+    }
     secureLogger.error('GDPR exports monitoring error', { error });
     return res.status(500).json({ error: 'Internal error' });
   }

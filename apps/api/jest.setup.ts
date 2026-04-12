@@ -1,6 +1,10 @@
 import { clientPrisma as prisma } from '@blobinfini/database';
+import { clearAnalyticsRateLimit } from './src/modules/analytics/analytics.controller';
+import { resetTrustedProxiesCache } from './src/lib/client-ip';
+import { resetAuthCache } from './src/lib/socket-auth-cache';
 import { closeRateLimitStore } from './src/middleware/enhanced-rate-limit';
 import { cacheService } from './src/services/cache.service';
+import { challengeCounter, memoryStore } from './src/services/two-factor.service';
 
 const SUPPRESSED_WARNINGS = [
   'PUSH_SERVICE_DISABLED',
@@ -20,6 +24,14 @@ console.warn = (...args: Parameters<typeof console.warn>) => {
 
 afterAll(() => {
   console.warn = originalConsoleWarn;
+});
+
+afterEach(() => {
+  challengeCounter.clear();
+  memoryStore?.clear();
+  resetAuthCache();
+  resetTrustedProxiesCache();
+  clearAnalyticsRateLimit();
 });
 
 // Global cleanup after all tests

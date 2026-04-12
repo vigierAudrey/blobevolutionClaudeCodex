@@ -30,8 +30,6 @@ tags:
     description: Gestion des profils et offres des professionnels
   - name: Matching
     description: Recherche et décisions de matching
-  - name: Booking
-    description: Disponibilités, demandes et réservations de cours
   - name: Conversations
     description: Messagerie temps réel et gestion de conversations
   - name: Contact
@@ -1077,330 +1075,6 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /booking/availability:
-    post:
-      tags: [Booking]
-      summary: Crée une disponibilité de cours (PRO)
-      operationId: bookingCreateAvailability
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AvailabilityInput'
-      responses:
-        '201':
-          description: Disponibilité créée
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Availability'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /booking/availability/me:
-    get:
-      tags: [Booking]
-      summary: Liste les disponibilités du PRO courant
-      operationId: bookingListAvailability
-      responses:
-        '200':
-          description: Disponibilités du pro
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  availabilities:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Availability'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /booking/availability/{availabilityId}:
-    patch:
-      tags: [Booking]
-      summary: Modifie une disponibilité (PRO)
-      operationId: bookingUpdateAvailability
-      parameters:
-        - in: path
-          name: availabilityId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AvailabilityPartial'
-      responses:
-        '200':
-          description: Disponibilité mise à jour
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Availability'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /booking/availability/{availabilityId}/adjust-booked:
-    patch:
-      tags: [Booking]
-      summary: Ajuste manuellement le nombre d'inscrits sur une disponibilité (PRO)
-      operationId: bookingAdjustBookedCount
-      parameters:
-        - in: path
-          name: availabilityId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AvailabilityBookedCountInput'
-      responses:
-        '200':
-          description: Disponibilité mise à jour
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Availability'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          description: Conflit (capacité dépassée ou bookings existants)
-  /booking/availability/search:
-    get:
-      tags: [Booking]
-      summary: Recherche de disponibilités (RIDER)
-      operationId: bookingSearchAvailability
-      parameters:
-        - in: query
-          name: lat
-          schema:
-            type: number
-        - in: query
-          name: lng
-          schema:
-            type: number
-        - in: query
-          name: radiusKm
-          schema:
-            type: number
-        - in: query
-          name: sport
-          schema:
-            type: string
-        - in: query
-          name: level
-          schema:
-            type: string
-        - in: query
-          name: page
-          schema:
-            type: integer
-        - in: query
-          name: pageSize
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Résultats de recherche
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  results:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Availability'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-  /booking/pros/nearby:
-    get:
-      tags: [Booking]
-      summary: Pros visibles autour d'une position (RIDER)
-      operationId: bookingProsNearby
-      parameters:
-        - in: query
-          name: lat
-          required: true
-          schema:
-            type: number
-        - in: query
-          name: lng
-          required: true
-          schema:
-            type: number
-        - in: query
-          name: radiusKm
-          schema:
-            type: number
-            default: 25
-        - in: query
-          name: sport
-          schema:
-            type: string
-            enum: [surf, kitesurf]
-      responses:
-        '200':
-          description: Pros autour de la zone
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  pros:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/NearbyPro'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /booking/requests:
-    post:
-      tags: [Booking]
-      summary: Crée une demande de cours (RIDER)
-      operationId: bookingCreateRequest
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BookingRequestInput'
-      responses:
-        '201':
-          description: Demande enregistrée
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BookingRequest'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /booking/requests/me:
-    get:
-      tags: [Booking]
-      summary: Liste les demandes envoyées par le rider
-      operationId: bookingListRiderRequests
-      responses:
-        '200':
-          description: Demandes rider
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  requests:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/BookingRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /booking/requests/inbox:
-    get:
-      tags: [Booking]
-      summary: Liste les demandes à traiter pour le PRO
-      operationId: bookingListProRequests
-      responses:
-        '200':
-          description: Inbox pro
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  requests:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/BookingRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /booking/requests/{requestId}/decision:
-    post:
-      tags: [Booking]
-      summary: Accepte ou refuse une demande (PRO)
-      operationId: bookingDecideRequest
-      parameters:
-        - in: path
-          name: requestId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BookingDecision'
-      responses:
-        '200':
-          description: Décision enregistrée
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /booking/bookings/me:
-    get:
-      tags: [Booking]
-      summary: Liste les réservations d'un PRO
-      operationId: bookingListProBookings
-      responses:
-        '200':
-          description: Réservations
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  bookings:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Booking'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
   /conversations:
     get:
       tags: [Conversations]
@@ -2075,34 +1749,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-  /admin/booking/availability-status:
-    get:
-      tags: [Admin]
-      summary: Vue admin des créneaux complets vs ouverts
-      operationId: adminAvailabilityStatus
-      parameters:
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [OPEN, CLOSED]
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-      responses:
-        '200':
-          description: Statuts des créneaux avec résumé et derniers items
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminAvailabilityStatusResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
   /admin/users:
     get:
       tags: [Admin]
@@ -2238,14 +1884,61 @@ paths:
       tags: [Admin]
       summary: Liste les signalements
       operationId: adminReports
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, reviewed, all]
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
       responses:
         '200':
-          description: Signalements en attente
+          description: Signalements filtrés par statut
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/reports/history:
+    get:
+      tags: [Admin]
+      summary: Historique métier des signalements traités
+      operationId: adminReportsHistory
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Historique paginé des signalements modérés
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReportHistoryItem'
+                  pagination:
+                    type: object
+                    additionalProperties: true
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2526,6 +2219,12 @@ paths:
       tags: [Admin]
       summary: Lance le job de purge RGPD (step-up admin requis)
       operationId: adminGdprRunPurge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GdprRunPurgeRequest'
       responses:
         '200':
           description: Purge exécutée
@@ -2533,10 +2232,88 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GdprPurgeResponse'
+        '400':
+          description: Confirmation manquante ou invalide
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Purge bloquée faute d'export VERIFIED couvrant les AuditLog purgeables
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GdprPurgeBlockedResponse'
+  /admin/gdpr/exports:
+    get:
+      tags: [Admin]
+      summary: Liste les manifests d'export de rétention
+      operationId: adminGdprRetentionExports
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: scope
+          schema:
+            type: string
+            enum: [AUDIT_LOG]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [GENERATING, READY, VERIFIED, FAILED, EXPIRED]
+      responses:
+        '200':
+          description: Manifests d'export paginés
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionExportListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      summary: Génère un export de rétention des AuditLog (step-up admin requis)
+      operationId: adminGdprCreateRetentionExport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetentionExportGenerateRequest'
+      responses:
+        '200':
+          description: Export généré et manifeste scellé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionExportGenerateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Fenêtre trop large ou export trop volumineux
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /admin/conversations/blocked:
     get:
       tags: [Admin]
@@ -2586,10 +2363,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminConversationBlockResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Conversation ou membre introuvable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflit métier ou blocage massif trop volumineux
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /admin/conversations/broadcast:
     post:
       tags: [Admin]
@@ -2628,26 +2419,38 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Déblocage massif refusé car trop volumineux pour exécution synchrone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /admin/conversations/blocked/history:
     get:
       tags: [Admin]
       summary: Historique des blocages/déblocages de conversation
       operationId: adminConversationsBlockedHistory
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
       responses:
         '200':
           description: Liste paginée d'actions
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AuditLogEntry'
-                  pagination:
-                    type: object
-                    additionalProperties: true
+                $ref: '#/components/schemas/ConversationBlockHistoryResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3629,6 +3432,9 @@ components:
               $ref: '#/components/schemas/GdprPurgeUserStats'
             relationalData:
               $ref: '#/components/schemas/GdprPurgeRelationalStats'
+        blockedReason:
+          type: string
+          nullable: true
     ErrorResponse:
       type: object
       properties:
@@ -3665,18 +3471,6 @@ components:
                 type: string
               message:
                 type: string
-    AuthTokens:
-      type: object
-      properties:
-        accessToken:
-          type: string
-        refreshToken:
-          type: string
-        expiresIn:
-          type: integer
-        requiresTwoFactor:
-          type: boolean
-      required: [accessToken, refreshToken, expiresIn]
     RegisterRequest:
       type: object
       required: [email, password, consentAccepted]
@@ -4231,18 +4025,6 @@ components:
           type: string
           enum: [beginner, intermediate, advanced]
           nullable: true
-    Pagination:
-      type: object
-      properties:
-        page:
-          type: integer
-        pageSize:
-          type: integer
-        total:
-          type: integer
-        totalPages:
-          type: integer
-      additionalProperties: true
     MatchingSearchRequest:
       type: object
       required: [sport, level, date]
@@ -4447,80 +4229,6 @@ components:
         openAvailabilityCount:
           type: integer
       additionalProperties: false
-    AvailabilityBookedCountInput:
-      type: object
-      properties:
-        delta:
-          type: integer
-          minimum: -10
-          maximum: 10
-      required:
-        - delta
-    BookingRequestInput:
-      type: object
-      required:
-        - availabilityId
-        - message
-      properties:
-        availabilityId:
-          type: string
-          format: uuid
-        message:
-          type: string
-        preferredSchedule:
-          type: string
-        ridersCount:
-          type: integer
-    BookingRequest:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        riderUserId:
-          type: string
-          format: uuid
-        proUserId:
-          type: string
-          format: uuid
-        availabilityId:
-          type: string
-          format: uuid
-        status:
-          type: string
-        message:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-      additionalProperties: true
-    BookingDecision:
-      type: object
-      required: [action]
-      properties:
-        action:
-          type: string
-          enum: [ACCEPT, REJECT]
-        reason:
-          type: string
-    Booking:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        availabilityId:
-          type: string
-          format: uuid
-        riderUserId:
-          type: string
-          format: uuid
-        status:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-      additionalProperties: true
     ConversationSummary:
       type: object
       properties:
@@ -4680,6 +4388,9 @@ components:
           type: string
           enum: [block, unblock]
           default: block
+        reason:
+          type: string
+          maxLength: 500
     AdminConversationBlockResponse:
       type: object
       properties:
@@ -4710,8 +4421,254 @@ components:
       properties:
         success:
           type: boolean
-        count:
+        batchId:
+          type: string
+        processedCount:
           type: integer
+        remainingCount:
+          type: integer
+    PaginatedResponseMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+    ConversationBlockHistoryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationBlockHistoryItem'
+        historyReliability:
+          $ref: '#/components/schemas/ConversationBlockHistoryReliability'
+        pagination:
+          $ref: '#/components/schemas/PaginatedResponseMeta'
+    ReportHistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reviewedByAdminId:
+          type: string
+          nullable: true
+        reviewedAction:
+          type: string
+          nullable: true
+        reporter:
+          type: object
+          properties:
+            email: { type: string, format: email }
+            role: { type: string }
+        reportedProfile:
+          type: object
+          properties:
+            id: { type: string }
+            displayName:
+              type: string
+              nullable: true
+            user:
+              type: object
+              properties:
+                id: { type: string }
+                email: { type: string, format: email }
+                role: { type: string }
+        reviewedByAdmin:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+    ConversationBlockHistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+        conversationId:
+          type: string
+        userId:
+          type: string
+        actorUserId:
+          type: string
+          nullable: true
+        actorType:
+          type: string
+          enum: [USER, ADMIN, SYSTEM]
+        action:
+          type: string
+          enum: [BLOCK, UNBLOCK]
+        source:
+          type: string
+          enum: [USER_SELF, ADMIN_SINGLE, ADMIN_BULK, LEGACY_UNKNOWN]
+        batchId:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        user:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+        actorUser:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+        conversation:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            type: { type: string }
+            createdAt:
+              type: string
+              format: date-time
+    ConversationBlockHistoryReliability:
+      type: object
+      properties:
+        hasLegacyRows:
+          type: boolean
+        reliableSinceDate:
+          type: string
+        reliableSinceVersion:
+          type: string
+    RetentionExportArtifact:
+      type: object
+      properties:
+        id:
+          type: string
+        scope:
+          type: string
+          enum: [AUDIT_LOG]
+        format:
+          type: string
+          enum: [NDJSON]
+        status:
+          type: string
+          enum: [GENERATING, READY, VERIFIED, FAILED, EXPIRED]
+        rowCount:
+          type: integer
+        sha256:
+          type: string
+          nullable: true
+        storageKey:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        fromDate:
+          type: string
+          format: date-time
+        toDate:
+          type: string
+          format: date-time
+        createdByAdmin:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            role: { type: string }
+    RetentionExportListResponse:
+      type: object
+      properties:
+        exports:
+          type: array
+          items:
+            $ref: '#/components/schemas/RetentionExportArtifact'
+        pagination:
+          $ref: '#/components/schemas/PaginatedResponseMeta'
+    RetentionExportGenerateRequest:
+      type: object
+      required: [scope, fromDate, toDate]
+      properties:
+        scope:
+          type: string
+          enum: [AUDIT_LOG]
+        fromDate:
+          type: string
+          format: date-time
+        toDate:
+          type: string
+          format: date-time
+        format:
+          type: string
+          enum: [NDJSON]
+    RetentionExportGenerateResponse:
+      type: object
+      properties:
+        artifact:
+          $ref: '#/components/schemas/RetentionExportArtifact'
+        download:
+          type: object
+          properties:
+            fileName:
+              type: string
+            mimeType:
+              type: string
+            encoding:
+              type: string
+              enum: [base64]
+            content:
+              type: string
+    GdprRunPurgeRequest:
+      type: object
+      required: [confirm]
+      properties:
+        confirm:
+          type: string
+          enum: [CONFIRMER_PURGE_RGPD]
+    GdprPurgeBlockedResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: string
+          enum: [MISSING_VERIFIED_EXPORT]
+        blockedReason:
+          type: string
+        details:
+          type: object
+          properties:
+            threshold:
+              type: string
+              format: date-time
+            oldestPurgeableLogCreatedAt:
+              type: string
+              format: date-time
+              nullable: true
     AdminConversationBroadcastRequest:
       type: object
       properties:
@@ -4760,80 +4717,6 @@ components:
         metadata:
           type: object
           additionalProperties: true
-    AdminAvailabilityStatusItem:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        startAt:
-          type: string
-          format: date-time
-        endAt:
-          type: string
-          format: date-time
-        sport:
-          type: string
-        levels:
-          type: array
-          items:
-            type: string
-        capacity:
-          type: integer
-        bookedCount:
-          type: integer
-        status:
-          type: string
-          enum: [OPEN, CLOSED]
-        spotName:
-          type: string
-          nullable: true
-        pro:
-          type: object
-          properties:
-            id: { type: string, format: uuid }
-            email: { type: string, format: email }
-            proProfile:
-              type: object
-              nullable: true
-              properties:
-                businessName: { type: string, nullable: true }
-    AdminAvailabilityStatusResponse:
-      type: object
-      properties:
-        summary:
-          type: object
-          properties:
-            total: { type: integer }
-            open: { type: integer }
-            closed: { type: integer }
-            bySport:
-              type: array
-              items:
-                type: object
-                properties:
-                  sport: { type: string, nullable: true }
-                  status: { type: string, enum: [OPEN, CLOSED] }
-                  count: { type: integer }
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/AdminAvailabilityStatusItem'
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        acknowledgedAt:
-          type: string
-          format: date-time
-          nullable: true
-        resolvedAt:
-          type: string
-          format: date-time
-          nullable: true
     SystemAlertListResponse:
       type: object
       properties:
@@ -4858,28 +4741,3 @@ components:
           type: string
         dedupeKey:
           type: string
-    AuditLogEntry:
-      type: object
-      properties:
-        id:
-          type: string
-        action:
-          type: string
-        resource:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        ip:
-          type: string
-          nullable: true
-        user:
-          type: object
-          nullable: true
-          properties:
-            id: { type: string }
-            email: { type: string, format: email }
-            role: { type: string }
-        metadata:
-          type: object
-          additionalProperties: true

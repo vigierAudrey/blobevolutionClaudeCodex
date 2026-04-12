@@ -14,15 +14,16 @@ export interface LessonRequest {
   id: string;
   userId: string;
   displayName?: string | null;
-  lat: number;
-  lng: number;
-  distanceKm?: number | null;
+  // Coordonnées arrondies à ~1 km — source de vérité pour le pin BloboMap.
+  // Absentes si le rider n'a pas fourni de localisation de cours.
+  lessonLatApprox?: number | null;
+  lessonLngApprox?: number | null;
+  distanceBucket?: '<5km' | '5-15km' | '15-30km' | '>30km' | null;
   lessonSport?: Sport | null;
   lessonLevel?: Level | null;
   lessonDate?: string | null;
   lessonPlace?: string | null;
   lessonStudentCount?: number | null;
-  note?: string | null;
 }
 
 export interface LessonRequestResponse {

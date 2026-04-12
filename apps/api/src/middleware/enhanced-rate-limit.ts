@@ -1,118 +1,22 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
-import { createClient } from 'redis';
 import { Request, Response, NextFunction } from 'express';
-import { resolveRedisUrl } from '../lib/redisConfig';
+import { getRedisClient, redisClientInitPromise, closeRedisClient } from '../lib/redis-client';
 import { getClientIp } from '../lib/client-ip';
 import { hashIpHmacSafe } from '../lib/hash-ip';
-import { createHash } from 'crypto';
+import { hashEmailHmac } from '../lib/hash-email';
 import { secureLogger } from '../utils/secure-logger';
 
-type RedisClientType = ReturnType<typeof createClient>;
 type RateLimitStoreMode = 'memory' | 'redis';
 type RateLimitMiddleware = (req: Request, res: Response, next: NextFunction) => void;
 
-// Redis client (will be initialized based on environment)
-let redisClient: RedisClientType | null = null;
+// Tracks whether Redis init has settled (connected or failed).
+// Used by lazy limiter factories to decide whether to await the init promise.
 let redisInitSettled = process.env.NODE_ENV === 'test';
-const isDevelopment = process.env.NODE_ENV === 'development';
-const REDIS_DEV_HINT_THROTTLE_MS = 30000;
 
-type RedisDevHintState = {
-  nextLogAtMs: number;
-};
-
-function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
-  if (!isDevelopment) {
-    return false;
-  }
-
-  const globals = globalThis as typeof globalThis & {
-    __blobinfiniRedisDevHintState__?: RedisDevHintState;
-  };
-
-  if (!globals.__blobinfiniRedisDevHintState__) {
-    globals.__blobinfiniRedisDevHintState__ = { nextLogAtMs: 0 };
-  }
-
-  const now = Date.now();
-  const state = globals.__blobinfiniRedisDevHintState__;
-
-  if (now >= state.nextLogAtMs) {
-    state.nextLogAtMs = now + REDIS_DEV_HINT_THROTTLE_MS;
-    secureLogger.warn('RATE_LIMIT_REDIS_DEV_HINT', { error: errorMessage });
-  }
-
-  return true;
-}
-
-// Initialize Redis client.
-// - dev: fallback to memory store if Redis is unavailable (documented, acceptable locally).
-// - production: fail-fast with process.exit(1) if Redis is unreachable.
-//   Rationale: memory store resets on restart (no cross-restart consistency) and is not
-//   shared across instances (no multi-instance rate-limit integrity). Silent fallback in
-//   production is a security regression, not a graceful degradation.
-//
-// IMPORTANT: initializeRedis resolves the promise stored in `redisInitPromise`.
-// The server MUST await redisInitPromise before calling httpServer.listen() so that:
-//   1. All rate limiters are rebuilt with the Redis store (not memory store).
-//   2. The startup is deterministic: either Redis is ready or process.exit(1) fires.
-async function initializeRedis(): Promise<RedisClientType | null> {
-  const redisUrl = resolveRedisUrl();
-
-  // Redact credentials from log (redis://:password@host → redis://***@host)
-  const redactedUrl = redisUrl.replace(/\/\/:([^@]+)@/, '//***@');
-  secureLogger.info('RATE_LIMIT_REDIS_CONNECTING', { redisUrl: redactedUrl });
-
-  try {
-    const client = createClient({
-      url: redisUrl,
-      password: process.env.REDIS_PASSWORD?.trim() || undefined,
-      socket: {
-        connectTimeout: 4000,
-        reconnectStrategy: (retries) => Math.min(retries * 200, 2000),
-      },
-      commandsQueueMaxLength: 100, // P2-4: Limiter la queue de commandes
-      disableOfflineQueue: true, // P2-4: Éviter accumulation en mode offline
-    });
-
-    client.on('error', (error) => {
-      if (shouldSuppressRedisErrorLogInDev(error.message)) {
-        return;
-      }
-      secureLogger.error('RATE_LIMIT_REDIS_ERROR', { error: error.message });
-    });
-
-    await client.connect();
-    await client.ping();
-    secureLogger.info('RATE_LIMIT_REDIS_CONNECTED');
-    return client;
-  } catch (error) {
-    if (shouldSuppressRedisErrorLogInDev(error instanceof Error ? error.message : String(error))) {
-      // dev: throttled log, memory store fallback is acceptable and documented.
-      return null;
-    }
-
-    if (process.env.NODE_ENV === 'production') {
-      // production: memory store fallback is NOT acceptable.
-      // - Restarts reset all counters (window integrity lost).
-      // - Multiple instances have isolated stores (rate-limit bypass via load distribution).
-      // Fail-fast so the issue is surfaced immediately rather than degrading silently.
-      secureLogger.error('RATE_LIMIT_REDIS_FATAL', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      process.exit(1);
-    }
-
-    // Non-production, non-development (e.g. staging without Redis): log and use memory store.
-    secureLogger.error('RATE_LIMIT_REDIS_FALLBACK_MEMORY', { error });
-    return null;
-  }
-}
-
-// Build the full set of rate limiters using the current redisClient.
-// Called once at module load (redisClient=null → memory store) and again
-// after Redis connects (redisClient set → Redis store).
+// Build the full set of rate limiters using the current Redis client.
+// Called once at module load (getRedisClient()=null → memory store) and again
+// after Redis connects (getRedisClient() non-null → Redis store).
 // The second call uses Object.assign to mutate the exported object in place,
 // so that all in-flight references (smartRateLimit, controllers) see Redis store.
 function buildRateLimiters() {
@@ -131,7 +35,9 @@ function buildRateLimiters() {
 }
 
 /**
- * Promise that resolves once Redis initialization completes (or resolves immediately in test).
+ * Promise that resolves once Redis is connected AND rate limiters have been
+ * rebuilt with the Redis store. Resolves immediately in test mode.
+ *
  * The server MUST await this before calling httpServer.listen() to guarantee:
  *   - rate limiters use Redis store (not memory store) from the first request
  *   - startup is deterministic: Redis ready OR process.exit(1)
@@ -139,27 +45,29 @@ function buildRateLimiters() {
  */
 export let redisInitPromise: Promise<void> = Promise.resolve();
 
-// Initialize Redis on module load (not in test mode)
 if (process.env.NODE_ENV !== 'test') {
-  redisInitPromise = initializeRedis().then(client => {
-    redisClient = client;
-    if (client) {
-      // Rebuild rate limiters with the now-connected Redis store.
-      // Object.assign mutates the exported `rateLimiters` object in place so
-      // smartRateLimit and any other reference sees the Redis-backed limiters
-      // without requiring a module reload.
-      Object.assign(rateLimiters, buildRateLimiters());
-      secureLogger.info('RATE_LIMITERS_REBUILT_WITH_REDIS');
-    }
-  }).catch(err => {
-    // In production: initializeRedis() already called process.exit(1).
-    // This catch handles non-production/non-development environments.
-    secureLogger.error('RATE_LIMIT_REDIS_INIT_FAILED', {
-      error: err instanceof Error ? err.message : String(err),
+  redisInitPromise = redisClientInitPromise
+    .then(() => {
+      const client = getRedisClient();
+      if (client) {
+        // Rebuild rate limiters with the now-connected Redis store.
+        // Object.assign mutates the exported `rateLimiters` object in place so
+        // smartRateLimit and any other reference sees the Redis-backed limiters
+        // without requiring a module reload.
+        Object.assign(rateLimiters, buildRateLimiters());
+        secureLogger.info('RATE_LIMITERS_REBUILT_WITH_REDIS');
+      }
+    })
+    .catch((err) => {
+      // In production: redis-client.ts already called process.exit(1).
+      // This catch handles non-production/non-development environments.
+      secureLogger.error('RATE_LIMIT_REDIS_INIT_FAILED', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    })
+    .finally(() => {
+      redisInitSettled = true;
     });
-  }).finally(() => {
-    redisInitSettled = true;
-  });
 }
 
 // Rate limit configuration profiles
@@ -310,8 +218,9 @@ export const RATE_LIMIT_PROFILES = {
 // Create rate limiter with appropriate store
 export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, customOptions: any = {}) {
   const config = RATE_LIMIT_PROFILES[profile];
-  const defaultStore = redisClient ? new RedisStore({
-    sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
+  const client = getRedisClient();
+  const defaultStore = client ? new RedisStore({
+    sendCommand: (...args: string[]) => client.sendCommand(args),
   }) : undefined;
 
   const options: any = {
@@ -389,10 +298,10 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
       const identifierSource = fromBody || fromQuery;
 
       if (identifierSource) {
-        return `email:${createHash('sha256').update(identifierSource).digest('hex')}`;
+        return `email:${hashEmailHmac(identifierSource)}`;
       }
 
-      const ip = req.ip || req.socket?.remoteAddress;
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress;
       return ip ? ipKeyGenerator(ip) : 'anonymous';
     };
   }
@@ -401,7 +310,7 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
 }
 
 function getStoreMode(): RateLimitStoreMode {
-  return redisClient ? 'redis' : 'memory';
+  return getRedisClient() ? 'redis' : 'memory';
 }
 
 type GeoRateLimitProfile = 'GEO_HEAVY_BURST' | 'GEO_HEAVY_MINUTE';
@@ -423,13 +332,14 @@ export function createGeoEndpointLimiter(endpointKey: string, profile: GeoRateLi
   let redisLimiter: RateLimitMiddleware | null = null;
 
   const buildRedisLimiter = () => {
-    if (!redisClient || redisLimiter) {
+    const client = getRedisClient();
+    if (!client || redisLimiter) {
       return;
     }
     redisLimiter = createRateLimiter(profile, {
       keyGenerator,
       store: new RedisStore({
-        sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
+        sendCommand: (...args: string[]) => client.sendCommand(args),
       }),
     });
   };
@@ -461,7 +371,7 @@ export function createGeoEndpointLimiter(endpointKey: string, profile: GeoRateLi
 // ─── Architecture Rule: Lazy Rate-Limiter Factories ──────────────────────────
 //
 // NEVER call rateLimit({}) or createRateLimiter() at module top-level (controller imports).
-// These functions resolve `redisClient` at call-time. If called before Redis bootstrap
+// These functions resolve `getRedisClient()` at call-time. If called before Redis bootstrap
 // (always true for synchronously-imported controller modules), the store is permanently
 // memory — breaking cross-restart consistency and multi-instance rate-limit sharing.
 //
@@ -498,7 +408,7 @@ export function createLazyRateLimiter(
       ...(customOptions?.validate ?? {}),
     };
 
-    if (redisClient) {
+    if (getRedisClient()) {
       if (!redisLimiter) {
         redisLimiter = createRateLimiter(profile, { ...customOptions, validate });
       }
@@ -555,14 +465,15 @@ export function createLazyCustomRateLimiter(
       ...(options?.validate ?? {}),
     };
 
-    if (redisClient) {
+    const client = getRedisClient();
+    if (client) {
       if (!redisLimiter) {
         redisLimiter = rateLimit({
           ...options,
           validate,
           skip: skipFn,
           store: new RedisStore({
-            sendCommand: (...args: string[]) => redisClient!.sendCommand(args),
+            sendCommand: (...args: string[]) => client.sendCommand(args),
             prefix: `rl:${storePrefix}:`,
           }),
         });
@@ -588,7 +499,7 @@ export function createLazyCustomRateLimiter(
 }
 
 // Pre-configured rate limiters for the global smartRateLimit middleware.
-// Initially built with memory store (redisClient=null at module-load time).
+// Initially built with memory store (getRedisClient()=null at module-load time).
 // After Redis connects, buildRateLimiters() rebuilds them in-place via Object.assign.
 // All controller-level limiters use createLazyRateLimiter / createLazyCustomRateLimiter
 // (defined above) — no limiter remains frozen on memory store after bootstrap.
@@ -658,8 +569,5 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
 
 // Cleanup function for graceful shutdown
 export async function closeRateLimitStore(): Promise<void> {
-  if (redisClient) {
-    await redisClient.quit();
-    secureLogger.info('RATE_LIMIT_REDIS_CLIENT_CLOSED');
-  }
+  await closeRedisClient();
 }

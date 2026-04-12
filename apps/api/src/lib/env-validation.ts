@@ -12,6 +12,7 @@ const INSECURE_DEFAULTS = {
   REDIS_PASSWORD: ['change-me-strong', 'change-me'],
   TWO_FACTOR_SECRET: ['change-me-2fa-secret-production', 'change-me'],
   IP_HASH_SECRET: ['change-me-strong-ip-hash-secret-production-min-32-chars', 'change-me'],
+  EMAIL_HASH_SECRET: ['change-me-strong-email-hash-secret-production-min-32-chars', 'change-me'],
   LOG_ACTOR_SECRET: ['blobinfini-dev-log-actor-secret', 'change-me'],
   JWT_SECRET: ['please-change-in-dev', 'change-me', 'secret'],
   JWT_REFRESH_SECRET: ['please-change-in-dev-refresh', 'change-me', 'secret'],
@@ -29,7 +30,8 @@ export function validateProductionEnv(): void {
 
   // Check for insecure defaults
   for (const [key, insecureValues] of Object.entries(INSECURE_DEFAULTS)) {
-    const value = process.env[key];
+    const rawValue = process.env[key];
+    const value = typeof rawValue === 'string' ? rawValue.trim() : '';
 
     if (!value) {
       errors.push(`${key} is not set`);
@@ -85,10 +87,12 @@ export function validateProductionEnv(): void {
     }
   }
 
-  // Exception pré-VPS : 2FA désactivé pour permettre les tests de smoke sans TOTP.
+  // Exception pré-VPS UNIQUEMENT : 2FA peut être désactivé pour les smoke-tests sans TOTP.
+  // VPS qualifié (APP_ENV=vps) exige AUTH_REQUIRE_2FA=true — pas d'exemption.
+  const isPreVpsOnly = process.env.APP_ENV === 'pre-vps';
   const authRequire2FA = String(process.env.AUTH_REQUIRE_2FA ?? '').trim().toLowerCase();
-  if (!isPreVps && (authRequire2FA === 'false' || authRequire2FA === '0')) {
-    errors.push('AUTH_REQUIRE_2FA=false is NOT allowed in production');
+  if (!isPreVpsOnly && (authRequire2FA === 'false' || authRequire2FA === '0')) {
+    errors.push('AUTH_REQUIRE_2FA=false is NOT allowed in production or VPS');
   }
 
   const loginAttemptStorePlaintextEmail = String(process.env.LOGINATTEMPT_STORE_PLAINTEXT_EMAIL ?? '').trim().toLowerCase();
@@ -120,9 +124,20 @@ export function validateProductionEnv(): void {
   }
 
   // Validate IP_HASH_SECRET is different from TWO_FACTOR_SECRET (security isolation)
-  if (process.env.IP_HASH_SECRET && process.env.TWO_FACTOR_SECRET) {
-    if (process.env.IP_HASH_SECRET === process.env.TWO_FACTOR_SECRET) {
+  const ipHashSecret = process.env.IP_HASH_SECRET?.trim();
+  const twoFactorSecret = process.env.TWO_FACTOR_SECRET?.trim();
+  const emailHashSecret = process.env.EMAIL_HASH_SECRET?.trim();
+
+  if (ipHashSecret && twoFactorSecret) {
+    if (ipHashSecret === twoFactorSecret) {
       errors.push('IP_HASH_SECRET must be different from TWO_FACTOR_SECRET (security isolation)');
+    }
+  }
+
+  // Validate EMAIL_HASH_SECRET is different from IP_HASH_SECRET (security isolation)
+  if (emailHashSecret && ipHashSecret) {
+    if (emailHashSecret === ipHashSecret) {
+      errors.push('EMAIL_HASH_SECRET must be different from IP_HASH_SECRET (security isolation)');
     }
   }
 
@@ -133,7 +148,7 @@ export function validateProductionEnv(): void {
   }
 
   // NEW-P2-3: S3 strict validation — all four credentials required, no empty/default values
-  const S3_REQUIRED = ['S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const;
+  const S3_REQUIRED = ['S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_PUBLIC_URL_BASE'] as const;
   for (const key of S3_REQUIRED) {
     const value = process.env[key];
     if (!value || value.trim() === '') {
@@ -146,6 +161,22 @@ export function validateProductionEnv(): void {
   }
   if (!isPreVps && process.env.S3_SECRET_ACCESS_KEY === 'minioadmin') {
     errors.push('S3_SECRET_ACCESS_KEY must not use the default "minioadmin" value in production');
+  }
+
+  // S3_PRESIGN_ENDPOINT et S3_PUBLIC_URL_BASE : ne doivent jamais pointer vers un hôte interne
+  // (seulement en production non-VPS — en VPS ces vars sont injectées par docker-compose)
+  if (!isPreVps) {
+    for (const key of ['S3_PRESIGN_ENDPOINT', 'S3_PUBLIC_URL_BASE'] as const) {
+      const val = process.env[key];
+      if (val) {
+        if (!val.startsWith('https://')) {
+          errors.push(`${key} must start with https:// in production (current: ${val})`);
+        }
+        if (/localhost|127\.0\.0\.\d|minio[:/]|::1/.test(val)) {
+          errors.push(`${key} must not reference an internal host (current: ${val})`);
+        }
+      }
+    }
   }
 
   // Admin refresh TTL : interdire >24h en production (valeur par défaut = 8h dans auth.service.ts)
@@ -193,4 +224,94 @@ export function validateProductionEnv(): void {
   }
 
   secureLogger.info('ENV_VALIDATION_SUCCEEDED');
+}
+
+/**
+ * Validation légère des variables de configuration LOT 4 brute-force.
+ * WARN uniquement — jamais de fail-fast (variables opérationnelles, non sensibles).
+ * Defaults sûrs définis dans brute-force-detector.ts (email=5, ip=20, ttl=86400).
+ *
+ * Appelé au démarrage dans index.ts, tous environments confondus.
+ */
+export function validateBruteForceEnv(): void {
+  // Seuil email : en dessous de 3, risque de DoS (utilisateurs légitimes flagués)
+  const emailThresholdRaw = process.env.BF_EMAIL_THRESHOLD;
+  if (emailThresholdRaw !== undefined) {
+    const val = Number(emailThresholdRaw);
+    if (isNaN(val) || val < 3) {
+      secureLogger.warn('BF_CONFIG_EMAIL_THRESHOLD_LOW', {
+        value: emailThresholdRaw,
+        minimum: 3,
+        impact: 'Low threshold increases DoS risk — legitimate users could be flagged suspect',
+      });
+    }
+  }
+
+  // Seuil IP : en dessous de 5, risque de faux positifs sur IP NAT partagées
+  const ipThresholdRaw = process.env.BF_IP_THRESHOLD;
+  if (ipThresholdRaw !== undefined) {
+    const val = Number(ipThresholdRaw);
+    if (isNaN(val) || val < 5) {
+      secureLogger.warn('BF_CONFIG_IP_THRESHOLD_LOW', {
+        value: ipThresholdRaw,
+        minimum: 5,
+        impact: 'Low threshold may flag NAT/shared IPs as suspicious',
+      });
+    }
+  }
+
+  // TTL email : en dessous de 300s (5min), la fenêtre ne couvre pas une attaque lente
+  const emailTtlRaw = process.env.BF_EMAIL_TTL_SECONDS;
+  if (emailTtlRaw !== undefined) {
+    const val = Number(emailTtlRaw);
+    if (isNaN(val) || val < 300) {
+      secureLogger.warn('BF_CONFIG_EMAIL_TTL_TOO_SHORT', {
+        value: emailTtlRaw,
+        minimum: 300,
+        impact: 'Short TTL reduces detection window — slow attackers may go undetected',
+      });
+    }
+  }
+
+  // TTL IP : idem
+  const ipTtlRaw = process.env.BF_IP_TTL_SECONDS;
+  if (ipTtlRaw !== undefined) {
+    const val = Number(ipTtlRaw);
+    if (isNaN(val) || val < 300) {
+      secureLogger.warn('BF_CONFIG_IP_TTL_TOO_SHORT', {
+        value: ipTtlRaw,
+        minimum: 300,
+        impact: 'Short TTL reduces detection window — slow attackers may go undetected',
+      });
+    }
+  }
+}
+
+/**
+ * Validation légère du cache admin /admin/stats.
+ * WARN uniquement — jamais de fail-fast.
+ * Defaults sûrs appliqués côté runtime : enabled=true, ttl=120s.
+ */
+export function validateAdminStatsCacheEnv(): void {
+  const enabledRaw = process.env.ADMIN_STATS_CACHE_ENABLED;
+  if (enabledRaw !== undefined) {
+    const normalized = enabledRaw.trim().toLowerCase();
+    if (!['1', 'true', 'yes', 'on', '0', 'false', 'no', 'off'].includes(normalized)) {
+      secureLogger.warn('ADMIN_STATS_CACHE_ENABLED_INVALID', {
+        value: enabledRaw,
+        defaultApplied: true,
+      });
+    }
+  }
+
+  const ttlRaw = process.env.ADMIN_STATS_CACHE_TTL_SECONDS;
+  if (ttlRaw !== undefined) {
+    const ttl = Number.parseInt(ttlRaw, 10);
+    if (!Number.isFinite(ttl) || ttl <= 0) {
+      secureLogger.warn('ADMIN_STATS_CACHE_TTL_INVALID', {
+        value: ttlRaw,
+        defaultApplied: 120,
+      });
+    }
+  }
 }

@@ -50,6 +50,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
    Finaliser tests UI (composants de base + matching), nettoyer données Playwright, fiabiliser flux CSRF. Voir section « Tests & Qualité ».
    - [x] 2026-03-15: Seed locale `active-tests`, scénario Playwright A/B matching→messages, régressions authZ conversation/socket et script `k6` HTTP local.
    - [x] 2026-03-15: Rééquilibrage load BlobConnect avec réutilisation cookie+CSRF, pagination `GET /conversations`, limitation post-auth plus fine sur matching/chat, et `login` hybride `email+IP` + plafond réseau pour réduire les collisions NAT sans ouvrir la porte aux brute-force.
+   - [x] 2026-03-29: garde-fou France-only initial réellement branché sur l’inscription PRO, `PUT/PATCH /pro/me`, `GET /pro/near/lessons`, `POST /matching/search`, UI informative et tests ciblés API/web.
 3. **📢 Publicité / Monétisation initiale**
    Finaliser déploiement AdSense, bannière RGPD et analytics revenus. Voir section « Monétisation (Publicité) ».
 4. **⚙️ Performance & DX rapides**
@@ -201,6 +202,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
   Reprendre `packages/database/prisma/migrations/add_legal_consent_archive.sql` (dialecte MySQL) en migration Prisma/PostgreSQL + `ON CONFLICT`. Mettre à jour `gdprPurgeService` (`apps/api/src/services/gdpr-purge.service.ts`, section « Phase 4 — Gouvernance Admin & RGPD ») et `GET /admin/gdpr/legal-archive/:userId` pour utiliser la nouvelle table. Ajouter tests Prisma e2e.
 - [x] **Finaliser purge RGPD & rotation des logs**  
   Implémenter la suppression des logs obsolètes (`oldLogsDeleted` TODO dans `gdprPurgeService`) + s’assurer que les jobs planifiés via `GDPR_PURGE_INTERVAL_HOURS`, `CONV_PURGE_INTERVAL_HOURS` et `GDPR_PURGE_RUN_ON_START` sont documentés/testés (`docs/deployment.md`, `SECURITY.md`). Ajouter un check `/admin/gdpr/compliance-report` qui échoue si les jobs ne tournent pas.
+  - [x] 2026-04-06: audit log purge désormais bloquée sans manifeste d’export rétention `VERIFIED`; ajout des tables `ConversationBlockEvent` et `RetentionExportArtifact`, du backfill legacy `LEGACY_UNKNOWN`, et bascule des historiques métier hors `AuditLog`.
 - [x] **Redis obligatoire pour le 2FA admin**  
   Supprimer le fallback `memoryStore` (`apps/api/src/services/two-factor.service.ts`, section « Phase 4 — Gouvernance Admin & RGPD ») en production : la génération/validation des codes doit dépendre d’un Redis sécurisé (`REDIS_URL` + mot de passe). Ajout d’un health-check Redis + doc mise à jour (`SECURITY.md`, `docs/deployment.md`).
 - [x] **Aligner le backend sur les vues Admin existantes**  
@@ -1041,6 +1043,7 @@ apps/api/
 - Helmet basique, pas d’enforcement SSL, audit logs manquants.
 - Couverture UI faible, flux E2E partiellement cassés.
 - Analytics business limitées, CI/CD manuel.
+- Risque 2026-03-29 : les endpoints géolocalisés booking (`/booking/availability/search`, `/booking/pros/nearby`) restent hors garde-fou France-only initial et doivent être cadrés séparément si le périmètre France-only s’étend au booking.
 
 ### Pistes d’amélioration priorisées
 

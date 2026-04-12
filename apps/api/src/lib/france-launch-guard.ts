@@ -11,21 +11,68 @@ type FranceLaunchGuardErrorCode =
   | (typeof ERROR_CODES.FRANCE_ONLY_INCOMPLETE_LOCATION)
   | (typeof ERROR_CODES.FRANCE_ONLY_RESTRICTED);
 
+type FranceLaunchLocationInput = {
+  lat?: number | null;
+  lng?: number | null;
+};
+
 export type FranceLaunchGuardError = Error & {
   status: number;
   code: FranceLaunchGuardErrorCode;
   details?: Record<string, unknown>;
 };
 
-type FranceLaunchProfileInput = {
+type FranceLaunchProfileInput = FranceLaunchLocationInput & {
   countryCode?: string | null;
-  lat?: number | null;
-  lng?: number | null;
 };
 
-// Approximation volontaire pour le lancement: polygone principal + sous-zones
-// dédiées aux Alpes, à l'Alsace et à la Corse. Ce garde-fou n'est pas un moteur
-// SIG légal; il sert uniquement à bloquer clairement les usages hors-France.
+// Bounding box de France (métropole + Corse) — pré-filtre conservateur avant les
+// tests polygon. Exclut rapidement les coordonnées clairement hors-France
+// (Londres, Madrid, Genève canton…) sans coût supplémentaire de ray-casting.
+type Bounds = {
+  readonly minLat: number;
+  readonly maxLat: number;
+  readonly minLng: number;
+  readonly maxLng: number;
+};
+
+const FRANCE_OVERALL_BOUNDS: Bounds = {
+  minLat: 41.0,
+  maxLat: 51.5,
+  minLng: -5.5,
+  maxLng: 9.7,
+};
+
+// Pré-filtre Corse : réduit les appels polygon côté mer Méditerranée.
+const CORSICA_BOUNDS: Bounds = {
+  minLat: 41.2,
+  maxLat: 43.2,
+  minLng: 8.45,
+  maxLng: 9.65,
+};
+
+// Le polygone mainland peut légèrement inclure le centre de Genève en raison
+// de la frontière suisse très irrégulière. Cette boîte d'exclusion supprime
+// le centre-ville sans impacter le côté français (Annemasse / Pays de Gex).
+const GENEVA_EXCLUSION_BOUNDS: Bounds = {
+  minLat: 46.14,
+  maxLat: 46.24,
+  minLng: 6.1,
+  maxLng: 6.19,
+};
+
+function isWithinBounds(lat: number, lng: number, bounds: Bounds): boolean {
+  return (
+    lat >= bounds.minLat &&
+    lat <= bounds.maxLat &&
+    lng >= bounds.minLng &&
+    lng <= bounds.maxLng
+  );
+}
+
+// Polygone principal métropole + sous-zones Alpes / Alsace / Corse.
+// Ce garde-fou n'est pas un moteur SIG légal ; il sert uniquement à bloquer
+// clairement les usages hors-France au lancement.
 const MAINLAND_POLYGON: ReadonlyArray<readonly [number, number]> = [
   [-5.2, 48.6],
   [-4.7, 47.5],
@@ -62,6 +109,8 @@ const ALSACE_POLYGON: ReadonlyArray<readonly [number, number]> = [
   [6.8, 47.65],
 ];
 
+// Rectangle conservatoire couvrant toute la Corse y compris Bonifacio, Porto-Vecchio
+// et le Cap Corse. Le gate polygon 5 points excluait ces villes françaises — non acceptable.
 const CORSICA_POLYGON: ReadonlyArray<readonly [number, number]> = [
   [8.5, 41.3],
   [9.6, 41.3],
@@ -98,7 +147,7 @@ function pointInPolygon(point: readonly [number, number], polygon: ReadonlyArray
   return inside;
 }
 
-function hasCoordinatePair(input: FranceLaunchProfileInput): input is FranceLaunchProfileInput & CoordinatePair {
+function hasCoordinatePair(input: FranceLaunchLocationInput): input is FranceLaunchLocationInput & CoordinatePair {
   return typeof input.lat === 'number' && typeof input.lng === 'number';
 }
 
@@ -109,8 +158,23 @@ export function normalizeCountryCode(countryCode?: string | null): string | null
 }
 
 export function isFranceLaunchCoordinate(lat: number, lng: number): boolean {
+  // Rejet immédiat des valeurs non finies — évite tout contournement via NaN/Infinity.
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+
+  // Pré-filtre global : rejette tout ce qui est clairement hors-France.
+  if (!isWithinBounds(lat, lng, FRANCE_OVERALL_BOUNDS)) return false;
+
   const point: readonly [number, number] = [lng, lat];
-  return [MAINLAND_POLYGON, ALPS_POLYGON, ALSACE_POLYGON, CORSICA_POLYGON].some((polygon) =>
+
+  // Chemin rapide Corse : les zones Corse et métropole ne se chevauchent pas.
+  if (isWithinBounds(lat, lng, CORSICA_BOUNDS)) {
+    return pointInPolygon(point, CORSICA_POLYGON);
+  }
+
+  // Exclusion explicite du centre de Genève avant le test polygon mainland.
+  if (isWithinBounds(lat, lng, GENEVA_EXCLUSION_BOUNDS)) return false;
+
+  return [MAINLAND_POLYGON, ALPS_POLYGON, ALSACE_POLYGON].some((polygon) =>
     pointInPolygon(point, polygon),
   );
 }
@@ -119,6 +183,24 @@ export function assertFranceLaunchLocation(location?: CoordinatePair | null): vo
   if (!location) return;
   if (!isFranceLaunchCoordinate(location.lat, location.lng)) {
     throw createFranceLaunchGuardError(403, ERROR_CODES.FRANCE_ONLY_RESTRICTED, FRANCE_ONLY_SCOPE_MESSAGE);
+  }
+}
+
+export function assertFranceLaunchLocationPresence(hasLat: boolean, hasLng: boolean): void {
+  if (hasLat !== hasLng) {
+    throw createFranceLaunchGuardError(
+      400,
+      ERROR_CODES.FRANCE_ONLY_INCOMPLETE_LOCATION,
+      'La latitude et la longitude doivent être fournies ensemble.',
+    );
+  }
+}
+
+export function assertFranceLaunchLocationInput(input: FranceLaunchLocationInput): void {
+  assertFranceLaunchLocationPresence(input.lat != null, input.lng != null);
+
+  if (hasCoordinatePair(input)) {
+    assertFranceLaunchLocation({ lat: input.lat, lng: input.lng });
   }
 }
 
@@ -140,19 +222,7 @@ export function assertFranceLaunchProProfile(input: FranceLaunchProfileInput): s
     });
   }
 
-  const hasLat = input.lat != null;
-  const hasLng = input.lng != null;
-  if (hasLat !== hasLng) {
-    throw createFranceLaunchGuardError(
-      400,
-      ERROR_CODES.FRANCE_ONLY_INCOMPLETE_LOCATION,
-      'La latitude et la longitude doivent être fournies ensemble.',
-    );
-  }
-
-  if (hasCoordinatePair(input)) {
-    assertFranceLaunchLocation({ lat: input.lat, lng: input.lng });
-  }
+  assertFranceLaunchLocationInput(input);
 
   return normalizedCountryCode;
 }

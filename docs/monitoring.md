@@ -114,6 +114,66 @@ Politique de shutdown:
 - timeout borné via `LOG_SHUTDOWN_FLUSH_TIMEOUT_MS` (défaut: 2000 ms)
 - si le délai expire, le reliquat est drop explicitement et compté
 
+## Contrat /internal/metrics
+
+`GET /internal/metrics` expose un snapshot point-in-temps des métriques applicatives.
+
+Auth : header `X-Internal-Token: $METRICS_INTERNAL_TOKEN` (timing-safe compare).
+Le token n'est jamais loggué. L'IP est hashée (HMAC) avant log.
+
+Payload attendu :
+
+```json
+{
+  "timestamp": "2026-03-23T12:00:00.000Z",
+  "process": {
+    "uptime_s": 3600,
+    "memory_rss_mb": 142,
+    "memory_heap_used_mb": 87,
+    "memory_heap_total_mb": 110
+  },
+  "http": {
+    "requests_total": 12450,
+    "errors_5xx_total": 3,
+    "error_5xx_rate": 0.0002,
+    "latency_p50_ms": 25,
+    "latency_p95_ms": 100,
+    "latency_p99_ms": 250
+  },
+  "matching": {
+    "search": { "requests": 840, "cache_hits": 700, ... },
+    "decisions": { "requests": 320, ... }
+  },
+  "log_transport": {
+    "queued": 0,
+    "sent": 12100,
+    "dropped": 0,
+    "failed": 0,
+    "breakerState": "closed"
+  }
+}
+```
+
+Limites honnêtes de ce snapshot :
+- `process.*` reflète le processus Node.js, PAS la VM/VPS/container.
+  - `memory_rss_mb` ≠ mémoire système disponible.
+  - `uptime_s` repart à 0 à chaque redémarrage de processus.
+  - Pas de CPU%, pas de disk, pas de réseau.
+- `http.*` exclut les appels aux endpoints de monitoring (`/health`, `/internal/metrics`,
+  `/security/health`, `/security/observability`) pour ne pas biaiser les compteurs.
+- `http.requests_total` exclut également les requêtes bloquées en amont par le rate limiter
+  global et le middleware CSRF, avant que le middleware de métriques ne les voie. Ce compteur
+  ne représente donc pas le trafic brut total reçu par l'API.
+- Tous les compteurs sont cumulatifs depuis le démarrage du processus.
+- Pas de rolling window — la latency p99 est sur toute la durée de vie du processus.
+
+Ce qui reste impossible sans VPS réel :
+- CPU% système ou container
+- Mémoire système / limites cgroup
+- Disk I/O, réseau
+- Alerting hors-process (PagerDuty, Grafana)
+- Collecte centralisée de logs
+
 ## État actuel
 
 - Le socle vise un DONE minimal, robuste, testable et documenté.

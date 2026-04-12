@@ -86,6 +86,11 @@ describe('Feature E2E', () => {
 - “nodemailer not available” → en dev, on a Mailpit. `.env` doit inclure `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_ALLOW_NO_AUTH=true`.
 - “get-tsconfig introuvable” → réinstaller: `rm -rf node_modules && npm ci`.
 
+## Politique d'isolation Jest API
+- Le reset central (`apps/api/src/test-utils/resetDb.ts`) tronque désormais toutes les tables métier PostgreSQL entre les tests, puis restaure uniquement les deux users seed Jest.
+- Les états non-DB les plus sensibles sont aussi vidés après chaque test (`challengeCounter` 2FA, cache d'auth socket, cache `trusted proxies`, rate limit analytics).
+- Conséquence attendue : une nouvelle table Prisma n'a plus besoin d'être ajoutée manuellement dans une liste de purge pour rester isolée en CI.
+
 ---
 Astuce pédagogie: pense CI comme “la porte de l’usine”. Si le feu n’est pas vert (build/tests), aucune voiture ne sort. Les E2E sont le test drive qui évite les surprises en arrivant chez le client.
 

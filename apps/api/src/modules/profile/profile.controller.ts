@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { validate } from '../../middleware/validate';
-import { ensureBucket, presignPutObject, publicUrlForKey } from '../../lib/s3';
+import {
+  ensureBucket, presignPutObject, publicUrlForKey,
+  getObjectFirstBytes, deleteObject, __setTestGetObjectMock,
+} from '../../lib/s3';
+import { registerPendingUpload, claimUploadToken } from '../../lib/upload-token';
+import { detectMagicBytes } from '../../lib/magic-bytes';
 import { sendAccountDeletionCancelledEmail, sendAccountDeletionEmail } from '../../lib/mailer';
 import { lookup as mimeLookup, extension as mimeExtension } from 'mime-types';
 import crypto from 'crypto';
@@ -14,9 +19,35 @@ import { securityAlertService } from '../../services/security-alert.service';
 import { secureLogger } from '../../utils/secure-logger';
 import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmacSafe } from '../../lib/hash-ip';
+import {
+  assertFranceLaunchLocationInput,
+  isFranceLaunchGuardError,
+} from '../../lib/france-launch-guard';
 
 export const profileRouter = Router();
 profileRouter.use(requireAuth, requireVerifiedEmail);
+
+// Finalize rate limiter : 10 req/5min/userId.
+// Justification : un finalize légitime coûte 1 Lua + 1 HeadObject + 1 GetObject.
+// Sans limite, un user authentifié peut saturer Redis/MinIO via boucle de finalizations.
+// 10/5min = généreux pour les retries légitimes, bloquant pour l'automatisation.
+// skip en NODE_ENV=test (sauf ENABLE_RATE_LIMIT_IN_TESTS=true) — cohérent avec le projet.
+const finalizeRateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test' && !process.env.ENABLE_RATE_LIMIT_IN_TESTS,
+  keyGenerator: (req) => {
+    const userId = (req as any).user?.id;
+    if (userId) return `finalize:user:${userId}`;
+    const ip = getClientIp(req) ?? req.socket?.remoteAddress;
+    return ip ? `finalize:ip:${ipKeyGenerator(ip)}` : 'finalize:anonymous';
+  },
+  handler: (_req, res) => {
+    res.status(429).json({ error: 'RATE_LIMIT_EXCEEDED', message: 'Trop de tentatives. Réessayez dans 5 minutes.' });
+  },
+});
 
 // GDPR Export rate limiter: max 3 exports per hour per user
 const exportRateLimiter = rateLimit({
@@ -44,7 +75,9 @@ const upsertSchema = z.object({
   sex: sexEnum.optional(),
   maxDistanceKm: z.number().int().min(1).max(500).optional(),
   emailNotif: z.boolean().optional(),
-  photoUrl: z.string().url().nullable().optional(),
+  // photoUrl ne peut être mis à jour que via POST /profile/photo/finalize.
+  // Seul le clear explicite (null) est autorisé ici.
+  photoUrl: z.null().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   // Lesson intent (visible on BloboMap Pro)
@@ -54,6 +87,22 @@ const upsertSchema = z.object({
   lessonDate: z.string().nullish().transform(val => (val && val !== '') ? new Date(val) : null),
   lessonPlace: z.string().max(200).nullable().optional().or(z.literal('').transform(() => null)),
   lessonStudentCount: z.number().int().min(1).max(6).nullable().optional(),
+  // Coordonnées du lieu demandé — source de vérité pour le pin BloboMap.
+  // Doivent être fournies ensemble ou omises ensemble (both-or-none).
+  lessonLat: z.number().min(-90).max(90).nullable().optional(),
+  lessonLng: z.number().min(-180).max(180).nullable().optional(),
+}).superRefine((data, ctx) => {
+  // Both-or-none : fournir une seule des deux coordonnées est une erreur de structure.
+  // Validé ici (Zod) ET en DB (CHECK constraint) — deux lignes de défense.
+  const hasLat = data.lessonLat != null;
+  const hasLng = data.lessonLng != null;
+  if (hasLat !== hasLng) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'lessonLat et lessonLng doivent être fournis ensemble.',
+      path: [hasLat ? 'lessonLng' : 'lessonLat'],
+    });
+  }
 });
 
 const adminUpsertSchema = z.object({
@@ -208,12 +257,39 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
 
     if (user.role === 'RIDER') {
       // Comportement existant pour les riders
-      // Body is already validated and parsed by the validate middleware
-      const body = req.body;
+      // Body is already validated and parsed by the validate middleware.
+      // On copie pour éviter toute mutation de req.body (alias non safe).
+      const body = { ...req.body };
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
         secureLogger.debug('PROFILE_RIDER_UPDATE_REQUEST', { userId, fields: Object.keys(body ?? {}) });
       }
+
+      // Mode strict : wantsLesson=true sans coordonnées de cours → 400.
+      // Règle produit : un rider ne peut pas activer une demande sans localiser
+      // son spot. "Juste une ville" dans lessonPlace ne suffit pas — le champ
+      // est un label d'affichage, pas une source de coords. Le rider doit
+      // capturer sa position GPS via le formulaire.
+      if (body.wantsLesson === true && (body.lessonLat == null || body.lessonLng == null)) {
+        return res.status(400).json({
+          error: 'LESSON_COORDS_REQUIRED',
+          message: 'lessonLat et lessonLng sont requis pour activer une demande de cours.',
+        });
+      }
+
+      // Guard France-only sur les coordonnées de demande de cours.
+      // Appliqué avant tout write : coordonnées hors-France → 403.
+      if (body.lessonLat != null) {
+        assertFranceLaunchLocationInput({ lat: body.lessonLat, lng: body.lessonLng });
+      }
+
+      // Quand wantsLesson passe à false, on efface les coords pour éviter
+      // des coordonnées orphelines qui réapparaîtraient à la réactivation.
+      if (body.wantsLesson === false) {
+        body.lessonLat = null;
+        body.lessonLng = null;
+      }
+
       const rp = await prisma.riderProfile.upsert({
         where: { userId },
         create: { userId, ...body },
@@ -256,6 +332,13 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
     });
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    if (isFranceLaunchGuardError(err)) {
+      return res.status(err.status).json({
+        error: err.code,
+        message: err.message,
+        ...(err.details ? { details: err.details } : {}),
+      });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -390,10 +473,11 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
     await ensureBucket();
     const ext = mimeExtension(contentType) || 'bin';
     const key = `users/${userId}/${crypto.randomUUID()}.${ext}`;
-    const uploadUrl = await presignPutObject(key, contentType, 900);
-    const fileUrl = publicUrlForKey(key);
-
-    return res.json({ uploadUrl, key, fileUrl });
+    const PRESIGN_TTL = 180;
+    const uploadUrl = await presignPutObject(key, contentType, PRESIGN_TTL);
+    await registerPendingUpload(key, userId, PRESIGN_TTL);
+    // fileUrl non retourné ici — calculé côté serveur après finalize réussi uniquement
+    return res.json({ uploadUrl, key });
   } catch (err: any) {
     // eslint-disable-next-line no-console
     secureLogger.error('PROFILE_UPLOAD_URL_ERROR', {
@@ -402,6 +486,99 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Finalize photo upload — valide le contenu réel via magic bytes puis enregistre photoUrl
+profileRouter.post('/photo/finalize', finalizeRateLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (!user || user.role !== 'RIDER') {
+      return res.status(403).json({ error: 'Unauthorized role' });
+    }
+
+    const bodySchema = z.object({
+      key: z.string().min(1).max(200).regex(
+        /^users\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpeg|jpg|png|webp)$/,
+        'Invalid key format',
+      ),
+    });
+    let key: string;
+    try {
+      ({ key } = bodySchema.parse(req.body));
+    } catch {
+      return res.status(400).json({ error: 'Invalid key format' });
+    }
+
+    // Vérification précoce : la clé appartient bien à cet userId
+    if (!key.startsWith(`users/${userId}/`)) {
+      secureLogger.warn('UPLOAD_FINALIZE_KEY_NOT_OWNED', { userId, keyPrefix: key.slice(0, 50) });
+      return res.status(403).json({ error: 'Key does not belong to this user' });
+    }
+
+    // Claim atomique Redis — usage unique, anti-TOCTOU
+    const claim = await claimUploadToken(key, userId);
+    if (claim === 'no_redis') {
+      secureLogger.error('UPLOAD_FINALIZE_NO_REDIS', { userId });
+      return res.status(503).json({ error: 'Service temporarily unavailable' });
+    }
+    if (claim === 'not_found') {
+      return res.status(410).json({ error: 'Upload token expired or not found' });
+    }
+    if (claim === 'wrong_user') {
+      secureLogger.warn('UPLOAD_FINALIZE_WRONG_USER', { userId });
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (claim === 'already_used') {
+      return res.status(409).json({ error: 'Upload already finalized' });
+    }
+
+    // Lecture partielle S3 : 12 premiers octets réels
+    const firstBytes = await getObjectFirstBytes(key);
+    if (!firstBytes) {
+      await deleteObject(key);
+      secureLogger.warn('UPLOAD_FINALIZE_OBJECT_MISSING_OR_OVERSIZED', { userId });
+      return res.status(422).json({ error: 'Upload not found or exceeds size limit' });
+    }
+
+    // Validation magic bytes — jamais le Content-Type déclaré par le client
+    const detectedMime = detectMagicBytes(firstBytes);
+    if (!detectedMime) {
+      await deleteObject(key);
+      secureLogger.warn('UPLOAD_FINALIZE_INVALID_CONTENT', {
+        userId,
+        firstBytesHex: firstBytes.slice(0, 8).toString('hex'),
+      });
+      return res.status(422).json({ error: 'File content does not match an allowed image format' });
+    }
+
+    // URL finale construite côté serveur — jamais fournie par le client
+    const photoUrl = publicUrlForKey(key);
+    if (!photoUrl) {
+      return res.status(500).json({ error: 'Storage configuration error' });
+    }
+
+    // Mise à jour DB — photoUrl devient officielle uniquement ici
+    await prisma.riderProfile.upsert({
+      where: { userId },
+      create: { userId, photoUrl },
+      update: { photoUrl },
+    });
+
+    if (cacheService.isAvailable()) {
+      await cacheService.del(`profile:${userId}`);
+    }
+
+    secureLogger.info('UPLOAD_FINALIZE_SUCCESS', { userId, detectedMime });
+    return res.json({ photoUrl });
+  } catch (err: any) {
+    secureLogger.error('UPLOAD_FINALIZE_ERROR', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return res.status(500).json({ error: 'Internal error' });
   }
 });

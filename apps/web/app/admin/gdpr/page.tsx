@@ -1,55 +1,95 @@
 "use client";
-import { useState, useEffect } from 'react';
+
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Badge } from '../../../components/ui/badge';
 import { apiClient } from '../../../lib/apiClient';
-import type { GDPRReport, GDPRPurgeResponse } from '../../../lib/apiClient';
-import { Shield, AlertTriangle, CheckCircle, Trash2, Search } from 'lucide-react';
+import type {
+  GDPRPurgeResponse,
+  GDPRReport,
+  RetentionExportArtifactSummary,
+} from '../../../lib/apiClient';
+import { AlertTriangle, CheckCircle, Download, RefreshCcw, Search, Shield, Trash2 } from 'lucide-react';
 
 type ArchiveResult = Record<string, unknown> | { error: string };
 
-export default function AdminGDPRPage() {
+function downloadBase64File(fileName: string, mimeType: string, content: string) {
+  const decoded = atob(content);
+  const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+  const blob = new Blob([bytes], { type: mimeType });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+export default function AdminRetentionPage() {
   const [report, setReport] = useState<GDPRReport | null>(null);
+  const [exports, setExports] = useState<RetentionExportArtifactSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [purging, setPurging] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [purgeResult, setPurgeResult] = useState<GDPRPurgeResponse | null>(null);
   const [purgeError, setPurgeError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [searchUserId, setSearchUserId] = useState('');
   const [archiveResult, setArchiveResult] = useState<ArchiveResult | null>(null);
+  const [fromDate, setFromDate] = useState('2020-01-01T00:00:00.000Z');
+  const [toDate, setToDate] = useState(new Date().toISOString());
 
-  const loadReport = async () => {
+  const loadPage = async () => {
     setLoading(true);
     try {
-      const data = await apiClient.getGDPRReport();
-      setReport(data);
-    } catch (error) {
-      console.error('Failed to load GDPR report:', error);
+      const [reportData, exportsData] = await Promise.all([
+        apiClient.getGDPRReport(),
+        apiClient.getRetentionExports({ page: 1, limit: 20 }),
+      ]);
+      setReport(reportData);
+      setExports(exportsData.exports ?? []);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadReport();
+    void loadPage();
   }, []);
 
   const handlePurge = async () => {
     if (!confirm('Confirmer la purge RGPD ? Cette action est irréversible.')) return;
-
     setPurging(true);
     setPurgeError(null);
     try {
       const response = await apiClient.runGDPRPurge();
       setPurgeResult(response);
-      await loadReport();
+      await loadPage();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erreur lors de la purge';
       setPurgeResult(null);
-      setPurgeError(message);
+      setPurgeError(error instanceof Error ? error.message : 'Erreur lors de la purge');
     } finally {
       setPurging(false);
+    }
+  };
+
+  const handleCreateExport = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const response = await apiClient.createRetentionExport({
+        scope: 'AUDIT_LOG',
+        fromDate,
+        toDate,
+        format: 'NDJSON',
+      });
+      downloadBase64File(response.download.fileName, response.download.mimeType, response.download.content);
+      await loadPage();
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Erreur lors de la génération de l’export');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -57,21 +97,29 @@ export default function AdminGDPRPage() {
     if (!searchUserId) return;
     try {
       const result = await apiClient.searchLegalArchive(searchUserId);
-      setArchiveResult(result);
-    } catch (error) {
+      setArchiveResult(result as ArchiveResult);
+    } catch {
       setArchiveResult({ error: 'Archive non trouvée' });
     }
   };
 
-  if (loading) return <p>Chargement...</p>;
+  if (loading) {
+    return <p>Chargement...</p>;
+  }
 
   const isCompliant = report?.compliance.isCompliant ?? false;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">RGPD & Conformité</h1>
-        <Button onClick={loadReport} variant="outline" size="sm">
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">Rétention & exports</h1>
+          <p className="text-muted-foreground">
+            Pilotage de la rétention, des exports de preuve et de la purge RGPD.
+          </p>
+        </div>
+        <Button onClick={() => loadPage()} variant="outline" size="sm">
+          <RefreshCcw className="h-4 w-4 mr-2" />
           Actualiser
         </Button>
       </div>
@@ -80,7 +128,7 @@ export default function AdminGDPRPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
-            Statut de Conformité
+            Statut de conformité
             {isCompliant ? (
               <Badge variant="default" className="bg-green-500">
                 <CheckCircle className="h-3 w-3 mr-1" />
@@ -93,119 +141,102 @@ export default function AdminGDPRPage() {
               </Badge>
             )}
           </CardTitle>
-          <CardDescription>Détails des contrôles automatiques des données personnelles</CardDescription>
+          <CardDescription>Contrôles automatiques des données personnelles et de la purge.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="border rounded-md p-4">
+            <p className="text-sm text-muted-foreground">Sessions expirées</p>
+            <p className="text-2xl font-semibold">{report?.details.expiredSessionsCount ?? 0}</p>
+          </div>
+          <div className="border rounded-md p-4">
+            <p className="text-sm text-muted-foreground">Tokens expirés</p>
+            <p className="text-2xl font-semibold">{report?.details.expiredTokensCount ?? 0}</p>
+          </div>
+          <div className="border rounded-md p-4">
+            <p className="text-sm text-muted-foreground">Comptes supprimés en attente anonymisation</p>
+            <p className="text-2xl font-semibold">{report?.details.unanonymizedDeletedUsers ?? 0}</p>
+          </div>
+          <div className="border rounded-md p-4">
+            <p className="text-sm text-muted-foreground">Comptes supprimés à purger (&gt; 10 ans)</p>
+            <p className="text-2xl font-semibold">{report?.details.oldDeletedUsersAwaitingPurge ?? 0}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="h-5 w-5" />
+            Export avant purge
+          </CardTitle>
+          <CardDescription>
+            Génère un export NDJSON des AuditLog et scelle un manifeste VERIFIED avant purge.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border rounded-md p-4">
-              <p className="text-sm text-muted-foreground">Sessions expirées</p>
-              <p className="text-2xl font-semibold">{report?.details.expiredSessionsCount ?? 0}</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">Début</p>
+              <Input value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
             </div>
-            <div className="border rounded-md p-4">
-              <p className="text-sm text-muted-foreground">Tokens expirés</p>
-              <p className="text-2xl font-semibold">{report?.details.expiredTokensCount ?? 0}</p>
-            </div>
-            <div className="border rounded-md p-4">
-              <p className="text-sm text-muted-foreground">Utilisateurs supprimés en attente anonymisation</p>
-              <p className="text-2xl font-semibold">{report?.details.unanonymizedDeletedUsers ?? 0}</p>
-            </div>
-            <div className="border rounded-md p-4">
-              <p className="text-sm text-muted-foreground">Utilisateurs à purger (&gt; 7j)</p>
-              <p className="text-2xl font-semibold">{report?.details.oldDeletedUsersAwaitingPurge ?? 0}</p>
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">Fin</p>
+              <Input value={toDate} onChange={(event) => setToDate(event.target.value)} />
             </div>
           </div>
-
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold">Recommandations</h2>
-            {report?.compliance.recommendations?.length ? (
-              <ul className="list-disc list-inside text-sm text-muted-foreground">
-                {report.compliance.recommendations.map((rec, idx) => (
-                  <li key={idx}>{rec}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">Aucune recommandation</p>
+          <div className="flex gap-2">
+            <Button onClick={() => handleCreateExport()} disabled={exporting}>
+              <Download className="h-4 w-4 mr-2" />
+              {exporting ? 'Export…' : 'Exporter les AuditLog'}
+            </Button>
+          </div>
+          {exportError && <p className="text-sm text-red-600">{exportError}</p>}
+          <div className="space-y-3">
+            {exports.map((item) => (
+              <div key={item.id} className="border rounded-md p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium">{item.scope}</p>
+                    <p className="text-muted-foreground">
+                      {new Date(item.fromDate).toLocaleString('fr-FR')} → {new Date(item.toDate).toLocaleString('fr-FR')}
+                    </p>
+                  </div>
+                  <Badge variant={item.status === 'VERIFIED' ? 'default' : 'secondary'}>
+                    {item.status}
+                  </Badge>
+                </div>
+                <p className="text-muted-foreground mt-2">
+                  Lignes: {item.rowCount} · SHA-256: {item.sha256 || 'Non calculé'}
+                </p>
+              </div>
+            ))}
+            {exports.length === 0 && (
+              <p className="text-sm text-muted-foreground">Aucun export de rétention généré.</p>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {report && report.compliance.issues.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle className="h-5 w-5" />
-              Problèmes détectés ({report.compliance.issues.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2">
-              {report.compliance.issues.map((issue, idx) => (
-                <li key={idx} className="flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
-                  <span className="text-sm">{issue}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">Purge RGPD</CardTitle>
-          <CardDescription>Supprime les sessions expirées, tokens et anonymise les comptes supprimés</CardDescription>
+          <CardTitle>Purge RGPD</CardTitle>
+          <CardDescription>
+            La purge des AuditLog est bloquée tant qu’aucun manifeste VERIFIED ne couvre la fenêtre purgeable.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button variant="destructive" onClick={handlePurge} disabled={purging}>
+          <Button variant="destructive" onClick={() => handlePurge()} disabled={purging}>
             <Trash2 className="h-4 w-4 mr-2" />
-            Lancer la purge
+            {purging ? 'Purge…' : 'Lancer la purge'}
           </Button>
-          <p className="text-sm text-muted-foreground">
-            Cette action peut prendre plusieurs minutes. Vérifiez l&rsquo;état après exécution.
-          </p>
-          {purgeError && (
-            <p className="text-sm text-red-600">
-              {purgeError}
-            </p>
-          )}
+          {purgeError && <p className="text-sm text-red-600">{purgeError}</p>}
           {purgeResult && !purgeError && (
-            <div className="border rounded-md p-4 bg-muted/60 space-y-3 text-sm">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="font-semibold text-green-700">{purgeResult.message}</p>
-                <span className="text-xs text-muted-foreground">
-                  Exécutée le {new Date(purgeResult.timestamp).toLocaleString('fr-FR')} · {(purgeResult.durationMs / 1000).toFixed(1)}s
-                </span>
-              </div>
+            <div className="border rounded-md p-4 bg-muted/60 space-y-2 text-sm">
+              <p className="font-semibold">{purgeResult.message}</p>
               <p className="text-muted-foreground">{purgeResult.result.summary}</p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Technique</p>
-                  <ul className="text-xs space-y-1">
-                    <li>Sessions supprimées : {purgeResult.result.technicalData.sessionsDeleted}</li>
-                    <li>Tokens supprimés : {purgeResult.result.technicalData.tokensDeleted}</li>
-                    <li>Logs nettoyés : {purgeResult.result.technicalData.oldLogsDeleted}</li>
-                    <li>Events analytics supprimés : {purgeResult.result.technicalData.analyticsEventsDeleted}</li>
-                    <li>Agrégats analytics supprimés : {purgeResult.result.technicalData.analyticsDailyAggDeleted}</li>
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Anonymisation</p>
-                  <ul className="text-xs space-y-1">
-                    <li>Phase 1 : {purgeResult.result.userAnonymization.phase1Anonymized}</li>
-                    <li>Phase 2 : {purgeResult.result.userAnonymization.phase2Anonymized}</li>
-                    <li>Phase 3 : {purgeResult.result.userAnonymization.phase3Purged}</li>
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Données relationnelles</p>
-                  <ul className="text-xs space-y-1">
-                    <li>Conversations supprimées : {purgeResult.result.relationalData.conversationsDeleted}</li>
-                    <li>Matches supprimés : {purgeResult.result.relationalData.matchesDeleted}</li>
-                    <li>Recherches nettoyées : {purgeResult.result.relationalData.oldSearchesDeleted}</li>
-                  </ul>
-                </div>
-              </div>
+              <p className="text-muted-foreground">
+                Logs nettoyés: {purgeResult.result.technicalData.oldLogsDeleted}
+              </p>
             </div>
           )}
         </CardContent>
@@ -213,8 +244,8 @@ export default function AdminGDPRPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">Archives légales</CardTitle>
-          <CardDescription>Rechercher l&rsquo;archive d&rsquo;un utilisateur supprimé pour consultation légale</CardDescription>
+          <CardTitle>Archives légales</CardTitle>
+          <CardDescription>Recherche d’une archive utilisateur supprimé pour consultation légale.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -223,7 +254,7 @@ export default function AdminGDPRPage() {
               value={searchUserId}
               onChange={(e) => setSearchUserId(e.target.value)}
             />
-            <Button onClick={handleSearchArchive} variant="outline">
+            <Button onClick={() => handleSearchArchive()} variant="outline">
               <Search className="h-4 w-4 mr-2" />
               Rechercher
             </Button>
@@ -236,24 +267,6 @@ export default function AdminGDPRPage() {
               </pre>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">Protection légale</CardTitle>
-          <CardDescription>Paramètres d&rsquo;archivage et de rétention de la plateforme</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <p>
-            <strong>Consent archive:</strong> {report?.legalProtection.consentArchiveEnabled ? 'Activée' : 'Désactivée'}
-          </p>
-          <p>
-            <strong>Période de rétention:</strong> {report?.legalProtection.retentionPeriod}
-          </p>
-          <p>
-            <strong>Délai anonymisation:</strong> {report?.legalProtection.anonymizationDelay}
-          </p>
         </CardContent>
       </Card>
     </div>

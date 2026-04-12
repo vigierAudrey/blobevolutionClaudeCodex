@@ -8,16 +8,18 @@ import { validate } from '../../middleware/validate';
 import { passwordSchema } from '../../utils/password-validator';
 import { createLazyCustomRateLimiter, createLazyRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
-import { createHash } from 'crypto';
 import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmac } from '../../lib/hash-ip';
+import { hashEmailHmac } from '../../lib/hash-email';
 import { securityEventAlertService } from '../../services/security-event-alert.service';
 import { bindAuthenticatedSessionUser, rotateAuthenticatedSession } from './auth-session-context';
 import { enforceAdminAllowedIp, grantAdminStepUp, revalidateAdminRole, resolveAdminStepUpBinding } from '../admin/admin.security-guard';
 import { ipKeyGenerator } from 'express-rate-limit';
 import { FRANCE_ONLY_COUNTRY_CODE, isFranceLaunchGuardError } from '../../lib/france-launch-guard';
+import { buildLoginAttemptData } from './login-attempt.util';
 import { disconnectUserSockets } from '../../lib/socket';
 import { invalidateCachedAuth } from '../../lib/socket-auth-cache';
+import * as bfDetector from '../../lib/brute-force-detector';
 
 export const authRouter = Router();
 const service = new AuthService();
@@ -140,10 +142,6 @@ const adminStepUpSchema = z.discriminatedUnion('intent', [
   }),
 ]);
 
-function hashEmail(email: string) {
-  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
-}
-
 function extractLoginEmail(req: Request) {
   return typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
 }
@@ -168,7 +166,7 @@ const loginIpLimiter = createLazyCustomRateLimiter(
         userAgent: req.get('User-Agent'),
         path: req.path,
         method: req.method,
-        emailHash: extractLoginEmail(req) ? hashEmail(extractLoginEmail(req)) : undefined,
+        emailHash: extractLoginEmail(req) ? hashEmailHmac(extractLoginEmail(req)) : undefined,
         retryAfter,
       });
       res.status(429).json({
@@ -195,7 +193,7 @@ const loginAccountIpLimiter = createLazyCustomRateLimiter(
       const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
       const ipToken = ipKeyGenerator(ip);
       const email = extractLoginEmail(req);
-      return email ? `auth_login:email:${hashEmail(email)}:ip:${ipToken}` : `auth_login:ip:${ipToken}`;
+      return email ? `auth_login:email:${hashEmailHmac(email)}:ip:${ipToken}` : `auth_login:ip:${ipToken}`;
     },
     handler: (req: Request, res: Response) => {
       const retryAfter = res.get('Retry-After');
@@ -205,7 +203,7 @@ const loginAccountIpLimiter = createLazyCustomRateLimiter(
         userAgent: req.get('User-Agent'),
         path: req.path,
         method: req.method,
-        emailHash: extractLoginEmail(req) ? hashEmail(extractLoginEmail(req)) : undefined,
+        emailHash: extractLoginEmail(req) ? hashEmailHmac(extractLoginEmail(req)) : undefined,
         retryAfter,
       });
       res.status(429).json({
@@ -219,6 +217,56 @@ const loginAccountIpLimiter = createLazyCustomRateLimiter(
     },
   },
   'auth_login_account_ip',
+);
+
+// Distributed credential stuffing: N IPs attacking the same account.
+// loginIpLimiter (20/15min/IP) and loginAccountIpLimiter (5/15min/email+IP) don't catch it.
+// loginEmailLimiter blocks at the 10th attempt across any IP on the same email.
+//
+// Security properties:
+//   - Key = HMAC(email) — no plaintext email in Redis keys
+//   - skip in tests (unless ENABLE_RATE_LIMIT_IN_TESTS=true) — keyGenerator never called when skip=true
+//   - Response is intentionally identical to the other 429s — no oracle
+//
+// MUST be module-level (ERR_ERL_CREATED_IN_REQUEST_HANDLER if inside handler)
+const loginEmailLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const email = extractLoginEmail(req);
+      if (!email) {
+        // No email in body: charge against IP only (no double-cost on loginIpLimiter key)
+        const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+        return `auth_login:noemail:${ipKeyGenerator(ip)}`;
+      }
+      return `auth_login:email_only:${hashEmailHmac(email)}`;
+    },
+    handler: (req: Request, res: Response) => {
+      const retryAfter = res.get('Retry-After');
+      secureLogger.warn('RATE_LIMIT_EXCEEDED', {
+        profile: 'AUTH_LOGIN_EMAIL',
+        emailHash: extractLoginEmail(req) ? hashEmailHmac(extractLoginEmail(req)) : undefined,
+        userAgent: req.get('User-Agent'),
+        path: req.path,
+        method: req.method,
+        retryAfter,
+      });
+      // Generic — identical to loginIpLimiter/loginAccountIpLimiter response (no oracle)
+      res.status(429).json({
+        error: 'AUTH_RATE_LIMIT_EXCEEDED',
+        message: 'Too many authentication attempts from this network. Please try again later.',
+        retryAfter: '15 minutes',
+        timestamp: new Date().toISOString(),
+        endpoint: '/login',
+        retryAfterSeconds: retryAfter,
+      });
+    },
+    skip: () => process.env.NODE_ENV === 'test' && !process.env.ENABLE_RATE_LIMIT_IN_TESTS,
+  },
+  'auth_login_email',
 );
 
 const stepUpLimiter = createLazyRateLimiter('AUTH', {
@@ -290,7 +338,11 @@ function categorizeUserAgent(userAgent: string | undefined): string | undefined 
   return 'desktop';
 }
 
-authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginSchema), async (req, res) => {
+// Middleware chain order (cheapest rejection first):
+//   1. loginIpLimiter        — broad IP check, no body parsing required
+//   2. loginEmailLimiter     — email-only across IPs (distributed stuffing)
+//   3. loginAccountIpLimiter — email+IP combo (tightest, most specific)
+authRouter.post('/login', loginIpLimiter, loginEmailLimiter, loginAccountIpLimiter, validate(loginSchema), async (req, res) => {
   const { email, password, consentAccepted } = req.body as z.infer<typeof loginSchema>;
   const ip = getClientIp(req);
   const userAgent = categorizeUserAgent(req.get('User-Agent'));
@@ -304,11 +356,13 @@ authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginS
     const storedUser = await prisma.user.findUnique({ where: { email } });
     await prisma.loginAttempt.create({
       data: {
-        email,
-        ipHash: hashIpHmac(ip) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
-        userAgent,
-        success: true,
-        userId: storedUser?.id
+        ...buildLoginAttemptData({
+          email,
+          ipHash: hashIpHmac(ip) ?? undefined,
+          userAgent,
+          success: true,
+        }),
+        userId: storedUser?.id,
       }
     }).catch(() => {}); // Ignore logging errors
 
@@ -329,23 +383,27 @@ authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginS
     if (err?.name === 'ZodError') {
       reason = 'Invalid input';
       await prisma.loginAttempt.create({
-        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
+        data: buildLoginAttemptData({ email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason })
       }).catch(() => {});
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
     }
     if (err?.code === 'UNAUTHORIZED') {
       reason = 'Invalid credentials';
       await prisma.loginAttempt.create({
-        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
+        data: buildLoginAttemptData({ email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason })
       }).catch(() => {});
 
-      // Detect brute-force or targeted attack patterns (fire-and-forget)
+      // Detect brute-force or targeted attack patterns — DB-based alert (fire-and-forget)
       if (ip) {
         securityEventAlertService.detectAndReportLoginFailurePattern(
           email,
           hashIpHmac(ip)!
         ).catch(() => {}); // Never fail login flow
       }
+
+      // LOT 4: Redis brute-force counter — long-window (24h) signal (fire-and-forget)
+      // Branché UNIQUEMENT sur UNAUTHORIZED. Pas sur succès, pas sur 429, pas sur d'autres branches.
+      void bfDetector.onLoginFailure({ ip: ip ?? undefined, email }).catch(() => {});
 
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -356,7 +414,7 @@ authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginS
     if (err?.code === 'EMAIL_NOT_VERIFIED') {
       reason = 'Email not verified';
       await prisma.loginAttempt.create({
-        data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
+        data: buildLoginAttemptData({ email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason })
       }).catch(() => {});
       return res.status(403).json({ error: 'Email not verified' });
     }
@@ -380,7 +438,7 @@ authRouter.post('/login', loginIpLimiter, loginAccountIpLimiter, validate(loginS
     // Log unexpected errors
     reason = 'Internal server error';
     await prisma.loginAttempt.create({
-      data: { email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason }
+      data: buildLoginAttemptData({ email, ipHash: hashIpHmac(ip) ?? undefined, userAgent, success: false, reason })
     }).catch(() => {});
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -541,7 +599,7 @@ authRouter.post(
     try {
       const { email } = resendVerifySchema.parse(req.body);
       // audit.info : déclenchement d'un email transactionnel — trace légère, emailHash safe
-      secureLogger.info('AUTH_RESEND_VERIFICATION_REQUEST', { emailHash: hashEmail(email) });
+      secureLogger.info('AUTH_RESEND_VERIFICATION_REQUEST', { emailHash: hashEmailHmac(email) });
       const result = await service.resendEmailVerification(email);
       res.json(result);
     } catch (err: any) {
@@ -583,7 +641,7 @@ authRouter.post('/forgot-password', async (req, res) => {
   try {
     const { email } = forgotSchema.parse(req.body);
     // audit.info : demande de reset — emailHash safe (SHA-256), pas d'email brut
-    secureLogger.info('AUTH_FORGOT_PASSWORD_REQUEST', { emailHash: hashEmail(email) });
+    secureLogger.info('AUTH_FORGOT_PASSWORD_REQUEST', { emailHash: hashEmailHmac(email) });
     const result = await service.forgotPassword(email);
     res.json(result);
   } catch (err: any) {
@@ -729,7 +787,7 @@ const twoFaSendLimiter = createLazyCustomRateLimiter(
       // Key on email hash so each account has its own budget, regardless of IP rotation
       const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
       if (email) {
-        return `2fa_send:email:${createHash('sha256').update(email).digest('hex')}`;
+        return `2fa_send:email:${hashEmailHmac(email)}`;
       }
       const ip = getClientIp(req) ?? req.ip ?? req.socket?.remoteAddress ?? '';
       return `2fa_send:ip:${ipKeyGenerator(ip)}`;

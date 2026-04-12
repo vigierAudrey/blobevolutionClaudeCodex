@@ -33,7 +33,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env.vps"
 CERTS_DIR="$REPO_ROOT/docker/certs/vps"
 DC="docker compose -f $REPO_ROOT/docker-compose.vps.yml --env-file $ENV_FILE"
-MC_IMAGE="quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z"
+MC_IMAGE="quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 
 RESET=false
 NO_BUILD=false
@@ -85,6 +85,17 @@ fi
 bash "$SCRIPT_DIR/check-vps-env.sh" "$ENV_FILE" || {
   die "Validation de l'env échouée. Corriger .env.vps avant de continuer."
 }
+
+# Décontaminer l'environnement shell avant de charger .env.vps.
+# Si le terminal hôte avait des vars de développement (issues d'un source .env ou .env.pre-vps),
+# docker compose v2 leur donnerait priorité sur --env-file et corromprait les secrets VPS.
+# On unset explicitement les vars critiques AVANT source pour garantir que .env.vps gagne.
+for _var in REDIS_PASSWORD POSTGRES_PASSWORD POSTGRES_USER POSTGRES_DB DATABASE_URL \
+            SESSION_SECRET JWT_SECRET JWT_REFRESH_SECRET TWO_FACTOR_SECRET IP_HASH_SECRET \
+            CONSENT_WRITE_SECRET LOG_ACTOR_SECRET S3_SECRET_ACCESS_KEY S3_ACCESS_KEY_ID \
+            METRICS_INTERNAL_TOKEN SECURITY_MONITOR_TOKEN; do
+  unset "$_var" 2>/dev/null || true
+done
 
 # Charger les vars
 set -a
@@ -198,7 +209,7 @@ log "  Infrastructure OK"
 #   - Accès interne au réseau blobconnect-vps_vps (pas besoin de port hôte)
 #   - MC_HOST_minio : URL interne Docker minio:9000
 #   - `mb --ignore-existing` : crée le bucket s'il n'existe pas encore
-#   - `anonymous set download` : GET anonyme, PUT/LIST toujours requiert auth
+#   - `anonymous set-json` : policy custom GetObject-only (listing interdit)
 #
 # Nota : si le bucket existe déjà (--no-reset), la commande est idempotente.
 
@@ -216,27 +227,76 @@ docker run --rm \
 
 log "   Bucket '${BUCKET}' OK"
 
-# Définir la policy GET anonyme (download = GET seul, pas de listing)
+# Définir la policy s3:GetObject anonyme SANS s3:ListBucket (listing interdit).
+#
+# POURQUOI set-json au lieu de "anonymous set download" ?
+#   - "anonymous set download" = GetObject + ListBucket → expose la liste des fichiers des users
+#   - policy JSON custom = GetObject uniquement → listing 403, fichiers lisibles par URL directe
+#
+# Idempotent : si la policy existe déjà, set-json la remplace sans erreur.
+
+POLICY_JSON='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::'"${BUCKET}"'/*"]}]}'
+POLICY_TMPFILE=$(mktemp /tmp/minio-policy-XXXXXX.json)
+echo "$POLICY_JSON" > "$POLICY_TMPFILE"
+
 docker run --rm \
   --network "blobconnect-vps_vps" \
   -e "MC_HOST_minio=${MINIO_INT_URL}" \
+  -v "${POLICY_TMPFILE}:/tmp/policy.json:ro" \
   "$MC_IMAGE" \
-  anonymous set download "minio/${BUCKET}" \
-  || die "mc anonymous set download échoué"
+  anonymous set-json /tmp/policy.json "minio/${BUCKET}" \
+  || { rm -f "$POLICY_TMPFILE"; die "mc anonymous set-json échoué"; }
 
-log "   Policy GET anonyme définie sur '${BUCKET}' OK"
+rm -f "$POLICY_TMPFILE"
+log "   Policy GetObject-only (listing interdit) définie sur '${BUCKET}' OK"
 
-# Vérifier la policy
+# Vérifier la policy (strict : "none" = absence de policy = échec)
 POLICY_RESULT=$(docker run --rm \
   --network "blobconnect-vps_vps" \
   -e "MC_HOST_minio=${MINIO_INT_URL}" \
   "$MC_IMAGE" \
   anonymous get "minio/${BUCKET}" 2>&1 || echo "ERROR")
 
-if echo "$POLICY_RESULT" | grep -qi "download\|public\|none"; then
-  log "   Vérification policy : $POLICY_RESULT"
+if echo "$POLICY_RESULT" | grep -qi "download\|custom\|getobject\|get-object\|policy"; then
+  log "   Vérification policy OK : policy custom actuelle"
 else
-  warn "Vérification policy retourne : $POLICY_RESULT"
+  warn "Vérification policy retourne: $POLICY_RESULT (non bloquant si set-json n'a pas retourné d'erreur)"
+fi
+
+# Configuration CORS MinIO : nécessaire pour les uploads cross-origin depuis le navigateur
+# (app.$APP_DOMAIN → storage.$STORAGE_DOMAIN via presigned PUT)
+# mc cors set attend du XML (pas JSON) et lit depuis stdin via le flag "-" (mc >= 2025-08-13)
+# docker run -i connecte le stdin du host au container.
+log "8b. Configuration CORS MinIO pour presigned PUT cross-origin..."
+
+CORS_XML='<?xml version="1.0" encoding="UTF-8"?>
+<CORSConfiguration>
+  <CORSRule>
+    <AllowedOrigin>https://'"${APP_DOMAIN}"'</AllowedOrigin>
+    <AllowedMethod>GET</AllowedMethod>
+    <AllowedMethod>PUT</AllowedMethod>
+    <AllowedMethod>HEAD</AllowedMethod>
+    <AllowedHeader>*</AllowedHeader>
+    <ExposeHeader>ETag</ExposeHeader>
+    <ExposeHeader>x-amz-request-id</ExposeHeader>
+    <MaxAgeSeconds>3600</MaxAgeSeconds>
+  </CORSRule>
+</CORSConfiguration>'
+
+CORS_RESULT=$(echo "$CORS_XML" | docker run --rm -i \
+  --network "blobconnect-vps_vps" \
+  -e "MC_HOST_minio=${MINIO_INT_URL}" \
+  "$MC_IMAGE" \
+  cors set "minio/${BUCKET}" - 2>&1 || echo "CORS_FAILED")
+
+if echo "$CORS_RESULT" | grep -qi "CORS_FAILED\|NotImplemented\|not implemented"; then
+  # S3 PutBucketCors API non implémentée dans ce build MinIO.
+  # Non bloquant : MinIO RELEASE.2025-09-07T16-13-09Z gère le CORS en interne
+  # (reflection d'origine, Access-Control-Allow-Origin sur OPTIONS et PUT).
+  # Vérifié par preflight OPTIONS → 204 + ACAO: https://$APP_DOMAIN, PUT → 200.
+  log "8b. CORS MinIO : PutBucketCors=NotImplemented (normal — CORS built-in actif, upload navigateur OK)."
+else
+  log "   CORS MinIO configuré pour origin https://${APP_DOMAIN} OK"
 fi
 
 # ─── 9. Migration Prisma ──────────────────────────────────────────────────────

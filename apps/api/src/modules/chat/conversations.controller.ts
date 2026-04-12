@@ -11,6 +11,10 @@ import { sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
 import { ERROR_CODES } from '../../utils/error-codes';
 import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { getClientIp } from '../../lib/client-ip';
+import {
+  conversationBlockEventService,
+  ConversationBlockEventServiceError,
+} from '../../services/conversation-block-event.service';
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth, requireVerifiedEmail);
@@ -60,6 +64,11 @@ const CONVERSATIONS_MAX_LIMIT = 100;
 const MESSAGE_COOLDOWN_MS = 30_000;
 const MESSAGE_RATE_LIMIT_WINDOW_MS = 60_000;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function buildDirectConversationKey(userA: string, userB: string, conversationType: string): string {
+  const participants = [userA, userB].sort();
+  return `direct:${participants[0]}:${participants[1]}:${conversationType}`;
+}
 
 type ConversationListCursorPayload = {
   updatedAt: string;
@@ -704,12 +713,31 @@ conversationsRouter.post('/:id/unmatch', async (req, res) => {
 conversationsRouter.post('/:id/block', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const id = req.params.id;
     const action = String((req.body?.action || 'block')).toLowerCase();
-    const blockedAt = action === 'unblock' ? null : new Date();
-    await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId: id, userId } as any }, data: { blockedAt } });
+    if (action !== 'block' && action !== 'unblock') {
+      return res.status(400).json({ error: 'Invalid input' });
+    }
+
+    await conversationBlockEventService.setConversationBlock({
+      conversationId: id,
+      targetUserIds: [userId],
+      action,
+      actorUserId: userId,
+      actorType: 'USER',
+      source: 'USER_SELF',
+    });
     return res.json({ ok: true, blocked: action === 'block' });
-  } catch { return res.status(500).json({ error: 'Internal error' }); }
+  } catch (error) {
+    if (error instanceof ConversationBlockEventServiceError && error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (error instanceof ConversationBlockEventServiceError && error.code === 'STATE_CONFLICT') {
+      return res.status(409).json({ error: 'State conflict' });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // Trash / untrash
@@ -782,7 +810,6 @@ const openConversationLimiter = createLazyCustomRateLimiter(
 
 conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
   const envelope = wantsEnvelope(req);
-  let directKey: string | null = null;
   try {
     const meId = (req as any).user?.id as string | undefined;
     if (!meId) {
@@ -791,6 +818,11 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
         : res.status(401).json({ error: 'Unauthorized' });
     }
     const body = z.object({ targetUserId: z.string().uuid() }).parse(req.body);
+    if (body.targetUserId === meId) {
+      return envelope
+        ? sendError(res, 400, ERROR_CODES.VALIDATION_ERROR, 'Invalid input')
+        : res.status(400).json({ error: 'Invalid input' });
+    }
 
     // Determine conversation type based on target user's role
     const targetUser = await prisma.user.findUnique({
@@ -822,14 +854,38 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
     }
 
     const now = new Date();
-    const participants = [meId, body.targetUserId].sort();
-    directKey = `direct:${participants[0]}:${participants[1]}:${conversationType}`;
+    const directKey = buildDirectConversationKey(meId, body.targetUserId, conversationType);
+    let requiredMatchId: string | null = null;
+
+    if (conversationType === 'RIDER_TO_RIDER') {
+      const [userOneId, userTwoId] = [meId, body.targetUserId].sort();
+      const activeMatch = await prisma.match.findUnique({
+        where: {
+          userOneId_userTwoId: { userOneId, userTwoId } as any,
+        },
+        select: { id: true, status: true },
+      });
+
+      if (!activeMatch || activeMatch.status !== 'ACTIVE') {
+        return envelope
+          ? sendError(res, 403, ERROR_CODES.FORBIDDEN, 'Forbidden')
+          : res.status(403).json({ error: 'Forbidden' });
+      }
+
+      requiredMatchId = activeMatch.id;
+    }
+
+    const existingConversationWhere: Prisma.ConversationWhereInput = requiredMatchId
+      ? {
+          OR: [{ matchId: requiredMatchId }, { directKey, type: conversationType as any }],
+        }
+      : {
+          directKey,
+          type: conversationType as any,
+        };
 
     const existingForCooldown = await prisma.conversation.findFirst({
-      where: {
-        directKey,
-        type: conversationType as any,
-      },
+      where: existingConversationWhere,
       select: { id: true },
     });
 
@@ -857,15 +913,39 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
     }
 
     const conv = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      if (requiredMatchId) {
+        const lockedActiveMatches = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT id
+          FROM "Match"
+          WHERE id = ${requiredMatchId}
+            AND status::text = 'ACTIVE'
+          FOR UPDATE
+        `);
+        if (lockedActiveMatches.length === 0) {
+          return { forbidden: true as const };
+        }
+      }
+
       const existing = await tx.conversation.findFirst({
-        where: {
-          directKey,
-          type: conversationType as any,
-        },
-        select: { id: true },
+        where: existingConversationWhere,
+        select: { id: true, matchId: true, directKey: true, type: true },
       });
 
       if (existing) {
+        const data: Prisma.ConversationUpdateInput = {};
+        if (requiredMatchId && !existing.matchId) data.match = { connect: { id: requiredMatchId } };
+        if (!existing.directKey) data.directKey = directKey;
+        if (existing.type !== conversationType) data.type = conversationType as any;
+        if (Object.keys(data).length > 0) {
+          await tx.conversation.update({ where: { id: existing.id }, data });
+        }
+        await tx.conversationMember.createMany({
+          data: [
+            { userId: meId, conversationId: existing.id },
+            { userId: body.targetUserId, conversationId: existing.id },
+          ],
+          skipDuplicates: true,
+        });
         return { id: existing.id, isNew: false };
       }
 
@@ -873,6 +953,7 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
         data: {
           type: conversationType as any,
           directKey,
+          ...(requiredMatchId ? { matchId: requiredMatchId } : {}),
           members: {
             createMany: {
               data: [
@@ -893,10 +974,7 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
       }
 
       const existingAfterRace = await prisma.conversation.findFirst({
-        where: {
-          directKey,
-          type: conversationType as any,
-        },
+        where: existingConversationWhere,
         select: { id: true },
       });
 
@@ -906,6 +984,12 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
 
       throw error;
     });
+
+    if ('forbidden' in conv) {
+      return envelope
+        ? sendError(res, 403, ERROR_CODES.FORBIDDEN, 'Forbidden')
+        : res.status(403).json({ error: 'Forbidden' });
+    }
 
     return envelope
       ? sendOk(res, conv.isNew ? 201 : 200, { id: conv.id, created: conv.isNew })

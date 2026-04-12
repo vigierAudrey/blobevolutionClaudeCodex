@@ -170,56 +170,6 @@ export class PushNotificationService {
   }
 
   /**
-   * Send booking acceptance notification
-   */
-  async sendBookingAccepted(userId: string, bookingData: {
-    proName: string;
-    spotName: string;
-    dateTime: string;
-    conversationId?: string;
-  }): Promise<boolean> {
-    const notification: PushNotificationData = {
-      title: '🎉 Demande acceptée !',
-      body: `${bookingData.proName} a accepté ton cours à ${bookingData.spotName}`,
-      type: 'booking_accepted',
-      url: `/reservations/confirmed`,
-      userId,
-      data: {
-        bookingId: bookingData,
-        conversationId: bookingData.conversationId,
-        viewUrl: '/reservations/confirmed',
-        messageUrl: bookingData.conversationId ? `/messages/${bookingData.conversationId}` : undefined
-      }
-    };
-
-    return this.sendToUser(userId, notification);
-  }
-
-  /**
-   * Send booking rejection notification
-   */
-  async sendBookingRejected(userId: string, bookingData: {
-    proName: string;
-    spotName: string;
-    reason?: string;
-  }): Promise<boolean> {
-    const notification: PushNotificationData = {
-      title: '😔 Demande refusée',
-      body: `${bookingData.proName} ne peut pas donner le cours à ${bookingData.spotName}`,
-      type: 'booking_rejected',
-      url: `/reservations/start`,
-      userId,
-      data: {
-        bookingData,
-        reason: bookingData.reason,
-        searchUrl: '/reservations/start'
-      }
-    };
-
-    return this.sendToUser(userId, notification);
-  }
-
-  /**
    * Send new message notification
    */
   async sendNewMessage(userId: string, messageData: {
@@ -279,43 +229,6 @@ export class PushNotificationService {
       type: 'general',
       url: '/dashboard',
       userId
-    };
-
-    return this.sendToUser(userId, notification);
-  }
-
-  /**
-   * Send new lesson request notification to PRO
-   */
-  async sendNewLessonRequest(userId: string, requestData: {
-    riderName: string;
-    sport: string;
-    distanceKm: number;
-    lessonDate?: string;
-    spotName?: string;
-  }): Promise<boolean> {
-    const sportEmoji = requestData.sport === 'surf' ? '🏄' : '🪁';
-    const distance = Math.round(requestData.distanceKm);
-
-    let bodyText = `${requestData.riderName} cherche un cours de ${requestData.sport} à ${distance} km de toi`;
-    if (requestData.spotName) {
-      bodyText += ` près de ${requestData.spotName}`;
-    }
-
-    const notification: PushNotificationData = {
-      title: `${sportEmoji} Nouvelle demande de cours !`,
-      body: bodyText,
-      type: 'new_lesson_request',
-      url: `/pro/map`,
-      userId,
-      data: {
-        sport: requestData.sport,
-        distanceKm: requestData.distanceKm,
-        lessonDate: requestData.lessonDate,
-        spotName: requestData.spotName,
-        riderName: requestData.riderName,
-        mapUrl: '/pro/map'
-      }
     };
 
     return this.sendToUser(userId, notification);

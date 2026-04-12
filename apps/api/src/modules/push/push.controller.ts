@@ -250,43 +250,6 @@ router.get('/status', async (req: Request, res: Response) => {
 });
 
 /**
- * Trigger booking acceptance notification
- */
-export async function notifyBookingAccepted(
-  userId: string,
-  bookingData: {
-    proName: string;
-    spotName: string;
-    dateTime: string;
-    conversationId?: string;
-  }
-): Promise<void> {
-  try {
-    await pushNotificationService.sendBookingAccepted(userId, bookingData);
-  } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_BOOKING_ACCEPTED_FAILED', { userId, error: (error as Error)?.message });
-  }
-}
-
-/**
- * Trigger booking rejection notification
- */
-export async function notifyBookingRejected(
-  userId: string,
-  bookingData: {
-    proName: string;
-    spotName: string;
-    reason?: string;
-  }
-): Promise<void> {
-  try {
-    await pushNotificationService.sendBookingRejected(userId, bookingData);
-  } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_BOOKING_REJECTED_FAILED', { userId, error: (error as Error)?.message });
-  }
-}
-
-/**
  * Trigger new message notification
  */
 export async function notifyNewMessage(
@@ -320,26 +283,6 @@ export async function notifyCourseReminder(
     await pushNotificationService.sendCourseReminder(userId, reminderData);
   } catch (error) {
     secureLogger.error('PUSH_NOTIFY_COURSE_REMINDER_FAILED', { userId, error: (error as Error)?.message });
-  }
-}
-
-/**
- * Trigger new lesson request notification (PRO receives notification about nearby rider)
- */
-export async function notifyNewLessonRequest(
-  userId: string,
-  requestData: {
-    riderName: string;
-    sport: string;
-    distanceKm: number;
-    lessonDate?: string;
-    spotName?: string;
-  }
-): Promise<void> {
-  try {
-    await pushNotificationService.sendNewLessonRequest(userId, requestData);
-  } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_NEW_LESSON_REQUEST_FAILED', { userId, error: (error as Error)?.message });
   }
 }
 

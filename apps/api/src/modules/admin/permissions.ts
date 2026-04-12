@@ -12,8 +12,12 @@ export const AVAILABLE_PERMISSIONS = [
   // system.configure: write/destructive ops + per-user PII endpoints (purge, legal archive, audit logs, security events)
   'system.monitor',
   'system.configure',
-  // bookings.manage: bookedCount adjustment (ADMIN correction outil ops) — restricted to trusted admins only
-  'bookings.manage',
+  // LOT 3 security RBAC:
+  // security.read  — browse login attempts, security events, logs summary (no destructive ops)
+  // security.write — trigger purges, manage alert ack/resolve (destructive / write ops)
+  // Backward compat: endpoints also accept system.configure (OR logic via requireAnyPermission)
+  'security.read',
+  'security.write',
 ] as const;
 
 export type Permission = typeof AVAILABLE_PERMISSIONS[number];
@@ -27,7 +31,8 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'reports.view',
     'reports.moderate',
     'analytics.view',
-    'system.monitor'  // F05: moderators can read alerts + security summary
+    'system.monitor',  // F05: moderators can read alerts + security summary
+    'security.read',   // LOT 3: moderators can browse login attempts — no purge access
   ],
   ANALYTICS: [
     'users.view',
