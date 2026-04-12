@@ -1,4 +1,8 @@
-# Architecture – Module « Booking » (Checkpoint 2)
+# Architecture – Module « Booking » (DÉPRÉCIÉ — supprimé dans refactor/remove-pro-booking-planning)
+
+> ⚠️ Ce module a été supprimé. Ce document est conservé pour référence historique uniquement.
+> Les données historiques (`ProAvailability`, `BookingRequest`, `Booking`, `BookingLegalArchive`) restent en DB pour des raisons RGPD.
+> Voir la dette technique dans `TECH_DEBT.md` pour le plan de migration DB à venir.
 
 ## Positionnement dans le monorepo
 
