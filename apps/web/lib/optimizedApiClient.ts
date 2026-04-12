@@ -154,35 +154,6 @@ export const optimizedApiClient = {
     CacheTTL.CONVERSATIONS
   ),
 
-  // Pro-specific optimizations
-  async initializePro() {
-    console.log('🚀 Initializing pro data in parallel...');
-    const start = performance.now();
-
-    try {
-      const [availabilities, inbox] = await Promise.all([
-        cachedRequest(
-          CacheKeys.proAvailabilities(),
-          () => apiClient.getBookingAvailabilitiesForPro(),
-          CacheTTL.PROFILE_DATA
-        ),
-        cachedRequest(
-          CacheKeys.proInbox(),
-          () => apiClient.getBookingRequestsInbox(),
-          CacheTTL.REAL_TIME
-        ),
-      ]);
-
-      const duration = performance.now() - start;
-      console.log(`✅ Pro data initialized in ${duration.toFixed(1)}ms`);
-
-      return { availabilities, inbox };
-    } catch (error) {
-      console.error('❌ Pro initialization failed:', error);
-      throw error;
-    }
-  },
-
   // Prefetching for predicted user actions
   async prefetchMatchingData(params: Parameters<typeof apiClient.searchMatching>[0]) {
     console.log('🔮 Prefetching matching data...');
@@ -255,14 +226,6 @@ export const optimizedApiClient = {
   trashConversation: apiClient.trashConversation,
   untrashConversation: apiClient.untrashConversation,
   favoriteConversation: apiClient.favoriteConversation,
-  searchBookingAvailability: apiClient.searchBookingAvailability,
-  searchNearbyPros: apiClient.searchNearbyPros,
-  getBookingAvailabilitiesForPro: apiClient.getBookingAvailabilitiesForPro,
-  createBookingAvailability: apiClient.createBookingAvailability,
-  createBookingRequest: apiClient.createBookingRequest,
-  getBookingRequestsInbox: apiClient.getBookingRequestsInbox,
-  decideBookingRequest: apiClient.decideBookingRequest,
-  getMyBookingRequests: apiClient.getMyBookingRequests,
   saveTokens: apiClient.saveTokens,
   clearTokens: apiClient.clearTokens,
   getTokens: apiClient.getTokens,
