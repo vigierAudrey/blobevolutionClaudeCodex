@@ -18,8 +18,6 @@ export const AVAILABLE_PERMISSIONS = [
   // Backward compat: endpoints also accept system.configure (OR logic via requireAnyPermission)
   'security.read',
   'security.write',
-  // bookings.manage: bookedCount adjustment (ADMIN correction outil ops) — restricted to trusted admins only
-  'bookings.manage',
 ] as const;
 
 export type Permission = typeof AVAILABLE_PERMISSIONS[number];

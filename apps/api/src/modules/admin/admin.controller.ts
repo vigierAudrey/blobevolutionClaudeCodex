@@ -1,7 +1,7 @@
 import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
-import type { AuditLog, Role, Sport, AvailabilityStatus } from '@blobinfini/database';
+import type { AuditLog, Role } from '@blobinfini/database';
 import { requireAuth, requireAdmin, requireVerifiedEmail } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
 import { systemAlertService } from '../../services/system-alert.service';
@@ -68,7 +68,6 @@ const resolveAnalyticsPeriod = (value: unknown): AnalyticsPeriod => {
 type CountGroup = { _count: { _all: number } };
 type AuditActionGroup = { action: string; _count: { action: number } };
 type ReportReasonGroup = { reason: string | null; _count: { _all: number } };
-type AvailabilityStatusGroup = { sport: Sport | null; status: AvailabilityStatus; _count: { _all: number } };
 const adminStatsCacheSchema = z.object({
   totalUsers: z.number().int().nonnegative(),
   totalRiders: z.number().int().nonnegative(),
@@ -244,73 +243,6 @@ adminRouter.get('/stats', requirePermissions('analytics.view'), audit('admin:sta
     return res.status(500).json({ error: 'Internal error' });
   }
 });
-
-// Visibilité sur les créneaux complets / ouverts pour les admins
-adminRouter.get(
-  '/booking/availability-status',
-  requirePermissions('analytics.view'),
-  audit('admin:availability:status', () => 'admin:availability-status'),
-  async (req, res) => {
-    try {
-      const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 25));
-      const statusQuery = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : undefined;
-      const statusFilter = statusQuery === 'OPEN' || statusQuery === 'CLOSED' ? statusQuery : undefined;
-
-      const [openCount, closedCount, sportBreakdown, items] = await Promise.all([
-        prisma.proAvailability.count({ where: { status: 'OPEN' } }),
-        prisma.proAvailability.count({ where: { status: 'CLOSED' } }),
-        prisma.proAvailability.groupBy({
-          by: ['sport', 'status'],
-          _count: { _all: true }
-        }),
-        prisma.proAvailability.findMany({
-          where: statusFilter ? { status: statusFilter as 'OPEN' | 'CLOSED' } : undefined,
-          orderBy: { startAt: 'desc' },
-          take: limit,
-          select: {
-            id: true,
-            startAt: true,
-            endAt: true,
-            sport: true,
-            levels: true,
-            capacity: true,
-            bookedCount: true,
-            status: true,
-            spotName: true,
-            pro: {
-              select: {
-                id: true,
-                email: true,
-                proProfile: {
-                  select: {
-                    businessName: true,
-                  }
-                }
-              }
-            }
-          }
-        })
-      ]);
-
-      return res.json({
-          summary: {
-            total: openCount + closedCount,
-            open: openCount,
-            closed: closedCount,
-            bySport: (sportBreakdown as AvailabilityStatusGroup[]).map((entry: AvailabilityStatusGroup) => ({
-              sport: entry.sport,
-              status: entry.status,
-              count: entry._count?._all ?? 0
-            }))
-        },
-        items
-      });
-    } catch (error) {
-      secureLogger.error('Admin availability status error', { error });
-      return res.status(500).json({ error: 'Internal error' });
-    }
-  }
-);
 
 // Lister tous les utilisateurs avec pagination
 adminRouter.get(
