@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
-import { apiClient, type AdminAvailabilityStatusResponse, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary, type SecurityHealth, type SystemAlert } from '../../../lib/apiClient';
+import { apiClient, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary, type SecurityHealth, type SystemAlert } from '../../../lib/apiClient';
 import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity, BookOpen, PenSquare, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -65,8 +65,6 @@ export default function AdminDashboard() {
   const [alertsError, setAlertsError] = useState<string | null>(null);
   // F10 — timestamp du dernier refresh réussi des alertes
   const [alertsLastUpdated, setAlertsLastUpdated] = useState<Date | null>(null);
-  const [availabilityStatus, setAvailabilityStatus] = useState<AdminAvailabilityStatusResponse | null>(null);
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   // F09/F11 — santé système
   const [healthStatus, setHealthStatus] = useState<SecurityHealth | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
@@ -77,22 +75,18 @@ export default function AdminDashboard() {
   const loadInsights = useCallback(async () => {
     setInsightsLoading(true);
     setInsightsError(null);
-    setAvailabilityError(null);
     try {
-      const [blockedRes, eventsRes, summaryRes, availabilityRes] = await Promise.all([
+      const [blockedRes, eventsRes, summaryRes] = await Promise.all([
         apiClient.getBlockedConversations(5),
         apiClient.getSecurityEvents(5),
         apiClient.getSecurityLogsSummary(7),
-        apiClient.getAdminAvailabilityStatus({ limit: 12 })
       ]);
       setBlockedConversations(blockedRes.blocked || []);
       setSecurityEvents(eventsRes.events || []);
       setSecuritySummary(summaryRes ?? null);
-      setAvailabilityStatus(availabilityRes ?? null);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Impossible de charger les insights sécurité';
       setInsightsError(message);
-      setAvailabilityError(message);
     } finally {
       setInsightsLoading(false);
     }
@@ -593,79 +587,6 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Offres complètes / ouvertes */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
-            Créneaux complets / ouverts
-          </CardTitle>
-          <CardDescription>Visibilité admin sur la capacité des créneaux pros (dates, sports)</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          {insightsLoading && <p className="text-muted-foreground">Chargement…</p>}
-          {availabilityError && !insightsLoading && (
-            <p className="text-red-600">{availabilityError}</p>
-          )}
-          {!insightsLoading && availabilityStatus && (
-            <>
-              <div className="flex flex-wrap gap-3 text-xs">
-                <span className="px-2 py-1 rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200">
-                  Ouverts : {availabilityStatus.summary.open}
-                </span>
-                <span className="px-2 py-1 rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200">
-                  Complets : {availabilityStatus.summary.closed}
-                </span>
-                <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-200">
-                  Total suivis : {availabilityStatus.summary.total}
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="text-left text-muted-foreground">
-                    <tr>
-                      <th className="py-2 pr-3 font-medium">Pro</th>
-                      <th className="py-2 pr-3 font-medium">Sport</th>
-                      <th className="py-2 pr-3 font-medium">Période</th>
-                      <th className="py-2 pr-3 font-medium">Capacité</th>
-                      <th className="py-2 pr-3 font-medium">Statut</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {availabilityStatus.items.slice(0, 10).map((item) => {
-                      const ratio = `${item.bookedCount}/${item.capacity}`;
-                      const isClosed = item.status === 'CLOSED' || item.bookedCount >= item.capacity;
-                      return (
-                        <tr key={item.id} className="border-b last:border-b-0">
-                          <td className="py-2 pr-3">
-                            {item.pro.proProfile?.businessName || item.pro.email}
-                          </td>
-                          <td className="py-2 pr-3 uppercase">{item.sport}</td>
-                          <td className="py-2 pr-3">
-                            {new Date(item.startAt).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' })}
-                            {' → '}
-                            {new Date(item.endAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td className="py-2 pr-3">{ratio}</td>
-                          <td className="py-2 pr-3">
-                            <span className={`px-2 py-1 rounded-full ${isClosed ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'}`}>
-                              {isClosed ? 'Complet' : 'Ouvert'}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-          {!insightsLoading && !availabilityStatus && !availabilityError && (
-            <p className="text-muted-foreground">Aucun créneau référencé pour l'instant.</p>
-          )}
-        </CardContent>
-      </Card>
 
       {/* F08/F10/F13 — Alertes système avec polling et timestamp */}
       <Card>

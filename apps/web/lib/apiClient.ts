@@ -414,35 +414,6 @@ export interface AdminSecuritySummary {
   items: Array<{ action: string; count: number }>;
 }
 
-export interface AdminAvailabilityStatusItem {
-  id: string;
-  startAt: string;
-  endAt: string;
-  sport: 'surf' | 'kitesurf';
-  levels: string[];
-  capacity: number;
-  bookedCount: number;
-  status: 'OPEN' | 'CLOSED';
-  spotName: string | null;
-  pro: {
-    id: string;
-    email: string;
-    proProfile?: {
-      businessName: string | null;
-    } | null;
-  };
-}
-
-export interface AdminAvailabilityStatusResponse {
-  summary: {
-    total: number;
-    open: number;
-    closed: number;
-    bySport: Array<{ sport: string | null; status: 'OPEN' | 'CLOSED'; count: number }>;
-  };
-  items: AdminAvailabilityStatusItem[];
-}
-
 export interface LoginAttempt {
   id: string;
   email: string | null;
@@ -1332,13 +1303,6 @@ export const apiClient = {
     return request(`/admin/audit${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<AuditLogResponse>;
   },
   getAdminStats: () => request('/admin/stats', { method: 'GET' }, true),
-  getAdminAvailabilityStatus: (params?: { status?: 'OPEN' | 'CLOSED'; limit?: number }) => {
-    const query = new URLSearchParams();
-    if (params?.status) query.append('status', params.status);
-    if (params?.limit) query.append('limit', params.limit.toString());
-    const qs = query.toString();
-    return request(`/admin/booking/availability-status${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<AdminAvailabilityStatusResponse>;
-  },
   getAdminUsers: (params?: { page?: number; limit?: number; role?: string }) => {
     const query = new URLSearchParams();
     if (params?.page) query.append('page', params.page.toString());
