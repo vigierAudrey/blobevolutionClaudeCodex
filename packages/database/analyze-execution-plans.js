@@ -3,6 +3,11 @@
 /**
  * Analyse détaillée des plans d'exécution PostgreSQL/PostGIS
  * Script pour comprendre l'utilisation des index GIST
+ *
+ * ⚠️  POST-DROP WARNING: Ce script interroge "ProAvailability" directement.
+ * Après le DROP booking decommission, les requêtes lèveront :
+ *   ERROR: relation "ProAvailability" does not exist
+ * À n'exécuter que sur des bases pré-DROP.
  */
 
 const { Client } = require('pg');

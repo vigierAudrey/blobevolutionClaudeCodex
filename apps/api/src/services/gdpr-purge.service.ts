@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import { secureLogger } from '../utils/secure-logger';
 import { archiveBookingsBulk } from '../lib/booking-archive';
 import { retentionExportArtifactService } from './retention-export-artifact.service';
+import { isTableGoneError } from '../middleware/booking-disabled';
+import { isBookingTableDropAllowed, getBookingDecommissionPhase } from '../lib/booking-decommission-state';
 
 export interface GDPRTechnicalStats {
   sessionsDeleted: number;
@@ -440,37 +442,99 @@ export class GDPRPurgeService {
       // tout sera détruit par user.delete() ci-dessous.
       // On collecte : bookings en tant que rider + bookings en tant que pro
       // (via les slots de disponibilité de ce pro).
-      const bookingsToArchive = await prisma.booking.findMany({
-        where: {
-          OR: [
-            { riderUserId: user.id },
-            { availability: { proUserId: user.id } },
-          ],
-        },
-        include: {
-          availability: {
-            select: { proUserId: true, sport: true, startAt: true, price: true },
-          },
-        },
-      });
+      //
+      // POST-DÉCOMMISSION (phase 7+) : si la table Booking a été supprimée,
+      // on skip l'archivage silencieusement — le backfill a préalablement
+      // garanti que tous les bookings existants sont archivés.
+      //
+      // SÉCURITÉ P0 : si l'archivage échoue pour une raison non-P2021,
+      // on bloque la suppression de l'utilisateur et on alerte.
+      // Mieux vaut ne pas purger que de purger sans trace légale.
+      let archiveError = false;
 
-      if (bookingsToArchive.length > 0) {
-        const archiveResult = await archiveBookingsBulk(
-          bookingsToArchive,
-          new Date(), // closedAt = maintenant (pré-suppression)
-          `gdpr-phase3:${user.id}`
-        );
-        secureLogger.info('GDPR_PHASE3_BOOKINGS_ARCHIVED', {
-          userId: '[redacted]',
-          created: archiveResult.created,
-          skipped: archiveResult.skipped,
-          errors:  archiveResult.errors,
+      try {
+        const bookingsToArchive = await prisma.booking.findMany({
+          where: {
+            OR: [
+              { riderUserId: user.id },
+              { availability: { proUserId: user.id } },
+            ],
+          },
+          include: {
+            availability: {
+              select: { proUserId: true, sport: true, startAt: true, price: true },
+            },
+          },
         });
+
+        if (bookingsToArchive.length > 0) {
+          const archiveResult = await archiveBookingsBulk(
+            bookingsToArchive,
+            new Date(), // closedAt = maintenant (pré-suppression)
+            `gdpr-phase3:${user.id}`,
+          );
+
+          secureLogger.info('GDPR_PHASE3_BOOKINGS_ARCHIVED', {
+            userId: '[redacted]',
+            created: archiveResult.created,
+            skipped: archiveResult.skipped,
+            errors:  archiveResult.errors,
+          });
+
+          // Blocage P0 : erreurs d'archivage = on ne supprime pas l'utilisateur.
+          // Il sera retraité au prochain cycle de purge.
+          if (archiveResult.errors > 0) {
+            secureLogger.error('GDPR_PHASE3_ARCHIVE_ERRORS_BLOCKING_USER_DELETE', {
+              userId: '[redacted]',
+              archiveErrors: archiveResult.errors,
+            });
+            archiveError = true;
+          }
+        }
+      } catch (err: unknown) {
+        if (isTableGoneError(err)) {
+          // Table Booking absente en base.
+          // Autorisé UNIQUEMENT si BOOKING_DECOMMISSION_STATE=DECOMMISSIONED est explicitement positionné,
+          // ce qui prouve que le backfill et le freeze analytics ont été complétés avant le drop.
+          //
+          // Sans cet état : blocage P0 — on ne sait pas si la table a été droppée accidentellement
+          // ou si le backfill légal a vraiment été exécuté. Mieux vaut bloquer que perdre une trace.
+          if (!isBookingTableDropAllowed()) {
+            secureLogger.error('GDPR_PHASE3_BOOKING_TABLE_GONE_WITHOUT_DECOMMISSION_STATE', {
+              userId: '[redacted]',
+              currentPhase: getBookingDecommissionPhase(),
+              required: 'BOOKING_DECOMMISSION_STATE=DECOMMISSIONED',
+              action: 'USER_DELETE_BLOCKED',
+            });
+            archiveError = true; // BLOCK — état non validé
+          } else {
+            // État DECOMMISSIONED confirmé explicitement.
+            // Le backfill a préalablement garanti l'archivage de tous les bookings.
+            secureLogger.info('GDPR_PHASE3_BOOKING_TABLE_GONE_SKIP_ARCHIVE', {
+              userId: '[redacted]',
+              phase: 'DECOMMISSIONED',
+            });
+            // archiveError reste false → suppression autorisée
+          }
+        } else {
+          // Erreur inattendue → blocage P0
+          secureLogger.error('GDPR_PHASE3_BOOKING_ARCHIVE_UNEXPECTED_ERROR', {
+            userId: '[redacted]',
+            error: err instanceof Error ? err.message : String(err),
+          });
+          archiveError = true;
+        }
+      }
+
+      if (archiveError) {
+        // On incrémente pour le reporting mais on NE supprime PAS l'utilisateur.
+        phase3Count++;
+        continue;
       }
 
       // Supprimer définitivement l'utilisateur et ses données
       await prisma.user.delete({
-        where: { id: user.id }
+        where: { id: user.id },
       });
 
       phase3Count++;

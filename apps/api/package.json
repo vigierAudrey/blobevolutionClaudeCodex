@@ -16,7 +16,13 @@
     "gdpr:purge": "tsx src/scripts/gdpr-purge-cli.ts purge",
     "gdpr:archive": "tsx src/scripts/gdpr-purge-cli.ts archive",
     "cleanup:phantom-riders": "tsx scripts/cleanup-phantom-rider-profiles.ts",
-    "cleanup:phantom-riders:force": "tsx scripts/cleanup-phantom-rider-profiles.ts --force"
+    "cleanup:phantom-riders:force": "tsx scripts/cleanup-phantom-rider-profiles.ts --force",
+    "backfill:booking-archive": "tsx src/scripts/backfill-booking-legal-archive.ts",
+    "backfill:booking-archive:execute": "tsx src/scripts/backfill-booking-legal-archive.ts --execute",
+    "backfill:booking-archive:verify": "tsx src/scripts/backfill-booking-legal-archive.ts --verify",
+    "analytics:snapshot:status": "tsx src/scripts/freeze-booking-analytics-snapshot.ts --status",
+    "analytics:snapshot:freeze": "tsx src/scripts/freeze-booking-analytics-snapshot.ts",
+    "analytics:snapshot:freeze:force": "tsx src/scripts/freeze-booking-analytics-snapshot.ts --force"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.616.0",

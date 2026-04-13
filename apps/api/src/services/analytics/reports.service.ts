@@ -9,6 +9,7 @@ import {
 } from './definitions';
 import { computeZoneLarge, hashIdentifier, normalizeDay } from './events.service';
 import { loadPublishedBlobosphereArticles } from '../blobosphere-content.service';
+import { getBookingDecommissionPhase, isBookingTableDropAllowed } from '../../lib/booking-decommission-state';
 
 const ACTIVITY_EVENTS_BY_ROLE: Record<'RIDER' | 'PRO', readonly AnalyticsEventType[]> = {
   RIDER: RIDER_ACTIVITY_EVENTS,
@@ -602,6 +603,49 @@ export const analyticsReportService = {
   },
 
   async getMarketplaceHealth(period: AnalyticsPeriod) {
+    // Phase 3 décommission booking : lire depuis le snapshot gelé si disponible.
+    // Évite toute requête live sur BookingRequest/ProAvailability (tables en cours de suppression).
+    const phase = getBookingDecommissionPhase();
+
+    let snapshot: { frozen: boolean; snapshotAt: Date; marketplaceJson: unknown } | null = null;
+    try {
+      snapshot = await prisma.bookingAnalyticsSnapshot.findUnique({ where: { period } });
+    } catch {
+      // Table BookingAnalyticsSnapshot absente acceptable uniquement en LIVE (avant migration).
+      // En FREEZE_ACTIVE ou DECOMMISSIONED : la table doit exister — erreur explicite.
+      if (phase !== 'LIVE') {
+        throw new Error(
+          `ANALYTICS_SNAPSHOT_TABLE_MISSING in phase=${phase} for period=${period}. ` +
+          'Run: pnpm --filter @blobinfini/api analytics:snapshot:freeze',
+        );
+      }
+    }
+
+    if (snapshot?.frozen) {
+      // frozen=true → aucune lecture live sur les tables booking
+      return {
+        period,
+        frozenAt: snapshot.snapshotAt.toISOString(),
+        dataNote: 'Données historiques gelées — module booking décommissionné. Aucune nouvelle donnée depuis le gel.',
+        privacyThreshold: PRIVACY_THRESHOLD,
+        definitions: {
+          supplyDemand: ANALYTICS_DEFINITIONS.supplyDemand,
+        },
+        ...(snapshot.marketplaceJson as object),
+      };
+    }
+
+    // Snapshot absent ou non gelé en phase DECOMMISSIONED = état incohérent.
+    // Jamais de fallback live si les tables booking sont censées ne plus exister.
+    if (isBookingTableDropAllowed()) {
+      throw new Error(
+        `ANALYTICS_SNAPSHOT_MISSING_AFTER_DECOMMISSION: period=${period} has no frozen snapshot ` +
+        'but BOOKING_DECOMMISSION_STATE=DECOMMISSIONED. ' +
+        'Run: pnpm --filter @blobinfini/api analytics:snapshot:freeze',
+      );
+    }
+
+    // Fallback live : phase LIVE ou FREEZE_ACTIVE, snapshot pas encore gelé (transition normale)
     const marketplace = await computeMarketplaceHealth(period);
     return {
       period,
@@ -631,6 +675,63 @@ export const analyticsReportService = {
   },
 
   async getTtfv(period: AnalyticsPeriod) {
+    // Phase 3 décommission booking : lire depuis le snapshot gelé si disponible.
+    const phase = getBookingDecommissionPhase();
+
+    let snapshot: {
+      frozen: boolean; snapshotAt: Date;
+      ttfvRiderSampleSize: number; ttfvRiderMedianMin: number | null;
+      ttfvRiderP90Min: number | null; ttfvRiderMasked: boolean;
+      ttfvProSampleSize: number; ttfvProMedianMin: number | null;
+      ttfvProP90Min: number | null; ttfvProMasked: boolean;
+    } | null = null;
+    try {
+      snapshot = await prisma.bookingAnalyticsSnapshot.findUnique({ where: { period } });
+    } catch {
+      if (phase !== 'LIVE') {
+        throw new Error(
+          `ANALYTICS_SNAPSHOT_TABLE_MISSING in phase=${phase} for period=${period}. ` +
+          'Run: pnpm --filter @blobinfini/api analytics:snapshot:freeze',
+        );
+      }
+    }
+
+    if (snapshot?.frozen) {
+      // frozen=true → aucune lecture live sur les tables booking
+      return {
+        period,
+        frozenAt: snapshot.snapshotAt.toISOString(),
+        dataNote: 'Données historiques gelées — module booking décommissionné. Aucune nouvelle donnée depuis le gel.',
+        privacyThreshold: PRIVACY_THRESHOLD,
+        definitions: {
+          ttfvRider: ANALYTICS_DEFINITIONS.ttfvRider,
+          ttfvPro: ANALYTICS_DEFINITIONS.ttfvPro,
+        },
+        riders: {
+          sampleSize:    snapshot.ttfvRiderSampleSize,
+          medianMinutes: snapshot.ttfvRiderMedianMin,
+          p90Minutes:    snapshot.ttfvRiderP90Min,
+          masked:        snapshot.ttfvRiderMasked,
+        },
+        pros: {
+          sampleSize:    snapshot.ttfvProSampleSize,
+          medianMinutes: snapshot.ttfvProMedianMin,
+          p90Minutes:    snapshot.ttfvProP90Min,
+          masked:        snapshot.ttfvProMasked,
+        },
+      };
+    }
+
+    // Snapshot absent ou non gelé en phase DECOMMISSIONED = état incohérent.
+    if (isBookingTableDropAllowed()) {
+      throw new Error(
+        `ANALYTICS_SNAPSHOT_MISSING_AFTER_DECOMMISSION: period=${period} has no frozen snapshot ` +
+        'but BOOKING_DECOMMISSION_STATE=DECOMMISSIONED. ' +
+        'Run: pnpm --filter @blobinfini/api analytics:snapshot:freeze',
+      );
+    }
+
+    // Fallback live : phase LIVE ou FREEZE_ACTIVE, snapshot pas encore gelé (transition normale)
     const [rider, pro] = await Promise.all([
       computeTtfvRiders(period),
       computeTtfvPros(period),

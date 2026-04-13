@@ -3,6 +3,7 @@ import type { ProAvailability } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
 import { hashIpHmac } from '../lib/hash-ip';
 import * as crypto from 'crypto';
+import { isTableGoneError } from '../middleware/booking-disabled';
 
 /**
  * GDPR Data Export Service
@@ -340,45 +341,68 @@ export class GdprExportService {
     }
 
     // Booking requests (as rider)
-    const bookingRequests = await prisma.bookingRequest.findMany({
-      where: { riderUserId: userId },
-      select: {
-        availabilityId: true,
-        message: true,
-        status: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: EXPORT_LIMITS.BOOKING_REQUESTS,
-    });
+    // Défensif post-décommission : si la table n'existe plus (P2021/P2022),
+    // on skip gracieusement — l'utilisateur n'a plus de données de booking à exporter.
+    // Toute autre erreur Prisma est remontée (comportement normal).
+    try {
+      const bookingRequests = await prisma.bookingRequest.findMany({
+        where: { riderUserId: userId },
+        select: {
+          availabilityId: true,
+          message: true,
+          status: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: EXPORT_LIMITS.BOOKING_REQUESTS,
+      });
 
-    if (bookingRequests.length > 0) {
-      exportData.bookingRequests = bookingRequests.map((req: BookingRequestSummary) => ({
-        availabilityId: req.availabilityId,
-        message: req.message,
-        status: req.status,
-        createdAt: req.createdAt.toISOString(),
-      }));
+      if (bookingRequests.length > 0) {
+        exportData.bookingRequests = bookingRequests.map((req: BookingRequestSummary) => ({
+          availabilityId: req.availabilityId,
+          message: req.message,
+          status: req.status,
+          createdAt: req.createdAt.toISOString(),
+        }));
+      }
+    } catch (err: unknown) {
+      if (isTableGoneError(err)) {
+        // Table supprimée après décommission complète du module booking.
+        // RGPD Art. 20 : on exporte ce qui existe. Si la table n'existe plus,
+        // l'utilisateur n'a plus de données de booking à exporter.
+        secureLogger.info('GDPR_EXPORT_BOOKING_REQUEST_TABLE_GONE', { userId: '[redacted]' });
+      } else {
+        // Erreur inattendue → remontée sans masquage
+        throw err;
+      }
     }
 
     // Bookings (as rider)
-    const bookings = await prisma.booking.findMany({
-      where: { riderUserId: userId },
-      select: {
-        availabilityId: true,
-        status: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: EXPORT_LIMITS.BOOKINGS,
-    });
+    try {
+      const bookings = await prisma.booking.findMany({
+        where: { riderUserId: userId },
+        select: {
+          availabilityId: true,
+          status: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: EXPORT_LIMITS.BOOKINGS,
+      });
 
-    if (bookings.length > 0) {
-      exportData.bookings = bookings.map((booking: BookingSummary) => ({
-        availabilityId: booking.availabilityId,
-        status: booking.status,
-        createdAt: booking.createdAt.toISOString(),
-      }));
+      if (bookings.length > 0) {
+        exportData.bookings = bookings.map((booking: BookingSummary) => ({
+          availabilityId: booking.availabilityId,
+          status: booking.status,
+          createdAt: booking.createdAt.toISOString(),
+        }));
+      }
+    } catch (err: unknown) {
+      if (isTableGoneError(err)) {
+        secureLogger.info('GDPR_EXPORT_BOOKING_TABLE_GONE', { userId: '[redacted]' });
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -424,23 +448,32 @@ export class GdprExportService {
     }
 
     // Pro availabilities
+    // Défensif post-décommission : si la table ProAvailability n'existe plus, skip gracieux.
+    try {
       const availabilities: ProAvailability[] = await prisma.proAvailability.findMany({
         where: { proUserId: userId },
         orderBy: { startAt: 'desc' },
         take: EXPORT_LIMITS.PRO_AVAILABILITIES,
-    });
+      });
 
-    if (availabilities.length > 0) {
-      exportData.proAvailabilities = availabilities.map((avail: ProAvailability) => ({
-        sport: avail.sport,
-        levels: avail.levels,
-        startAt: avail.startAt.toISOString(),
-        endAt: avail.endAt.toISOString(),
-        capacity: avail.capacity,
-        bookedCount: avail.bookedCount,
-        status: avail.status,
-        price: avail.price?.toString() ?? null,
-      }));
+      if (availabilities.length > 0) {
+        exportData.proAvailabilities = availabilities.map((avail: ProAvailability) => ({
+          sport: avail.sport,
+          levels: avail.levels,
+          startAt: avail.startAt.toISOString(),
+          endAt: avail.endAt.toISOString(),
+          capacity: avail.capacity,
+          bookedCount: avail.bookedCount,
+          status: avail.status,
+          price: avail.price?.toString() ?? null,
+        }));
+      }
+    } catch (err: unknown) {
+      if (isTableGoneError(err)) {
+        secureLogger.info('GDPR_EXPORT_AVAILABILITY_TABLE_GONE', { userId: '[redacted]' });
+      } else {
+        throw err;
+      }
     }
 
     // Contact requests (as pro)

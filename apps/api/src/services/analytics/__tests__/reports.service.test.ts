@@ -17,8 +17,6 @@ async function cleanup() {
 
   if (testUserIds.length > 0) {
     // Delete dependent records by user IDs
-    await prisma.bookingRequest.deleteMany({ where: { riderUserId: { in: testUserIds } } });
-    await prisma.proAvailability.deleteMany({ where: { proUserId: { in: testUserIds } } });
     await prisma.proProfile.deleteMany({ where: { userId: { in: testUserIds } } });
     await prisma.riderProfile.deleteMany({ where: { userId: { in: testUserIds } } });
   }
@@ -45,71 +43,6 @@ describe('Analytics report service', () => {
     await cleanup();
   });
 
-  it('masks marketplace segments below privacy threshold', async () => {
-    const proEmail = buildEmail('market-masked-pro');
-    const riderEmail = buildEmail('market-masked-rider');
-    const pro = await prisma.user.create({
-      data: {
-        email: proEmail,
-        password: 'hash',
-        role: 'PRO',
-        emailVerified: true,
-      },
-    });
-    await prisma.proProfile.create({
-      data: {
-        userId: pro.id,
-        businessName: 'Pro Test',
-        verified: true,
-        lat: 43.5,
-        lng: -1.5,
-      },
-    });
-
-    const rider = await prisma.user.create({
-      data: {
-        email: riderEmail,
-        password: 'hash',
-        role: 'RIDER',
-        emailVerified: true,
-      },
-    });
-    await prisma.riderProfile.create({
-      data: {
-        userId: rider.id,
-        displayName: 'Rider Test',
-      },
-    });
-
-    const availability = await prisma.proAvailability.create({
-      data: {
-        proUserId: pro.id,
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        endAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-        capacity: 1,
-        status: 'OPEN',
-        spotLat: 43.5,
-        spotLng: -1.5,
-      },
-    });
-
-    await prisma.bookingRequest.create({
-      data: {
-        riderUserId: rider.id,
-        availabilityId: availability.id,
-        status: 'PENDING',
-      },
-    });
-
-    const report = await analyticsReportService.getMarketplaceHealth('7d');
-
-    expect(report.acceptance.masked).toBe(true);
-    expect(report.supplyDemand.length).toBeGreaterThan(0);
-    expect(report.supplyDemand[0].masked).toBe(true);
-    expect(report.supplyDemand[0].demandRequests).toBeNull();
-  });
 
   it('computes rider retention cohorts from activity events', async () => {
     const now = new Date();
@@ -225,64 +158,4 @@ describe('Analytics report service', () => {
     expect(report.stickiness.stickiness.total).toBeCloseTo(expectedStickiness, 5);
   });
 
-  it('computes marketplace acceptance metrics above the privacy threshold', async () => {
-    const pro = await prisma.user.create({
-      data: {
-        email: buildEmail('market-acceptance-pro'),
-        password: 'hash',
-        role: 'PRO',
-        emailVerified: true,
-      },
-    });
-
-    const availability = await prisma.proAvailability.create({
-      data: {
-        proUserId: pro.id,
-        sport: 'surf',
-        levels: ['beginner'],
-        startAt: new Date(Date.now() + DAY_MS),
-        endAt: new Date(Date.now() + 2 * DAY_MS),
-        capacity: 1,
-        status: 'OPEN',
-        spotLat: 43.6,
-        spotLng: -1.5,
-      },
-    });
-
-    const riders = [];
-    for (let i = 0; i < 20; i += 1) {
-      const rider = await prisma.user.create({
-        data: {
-          email: buildEmail(`market-acceptance-rider-${i}`),
-          password: 'hash',
-          role: 'RIDER',
-          emailVerified: true,
-        },
-      });
-      riders.push(rider);
-    }
-
-    const createdAt = new Date(Date.now() - 2 * DAY_MS);
-    const requests = riders.map((rider, index) => ({
-      riderUserId: rider.id,
-      availabilityId: availability.id,
-      status: index % 2 === 0 ? 'ACCEPTED' : 'REJECTED',
-      createdAt,
-      respondedAt: new Date(createdAt.getTime() + (index + 1) * 60 * 60 * 1000),
-    }));
-
-    await prisma.bookingRequest.createMany({ data: requests });
-
-    const report = await analyticsReportService.getMarketplaceHealth('30d');
-    const acceptance = report.acceptance;
-    const acceptanceSurf = report.acceptanceBySport.find((entry) => entry.sport === 'surf');
-
-    expect(acceptance.masked).toBe(false);
-    expect(acceptance.totalRequests).toBe(20);
-    expect(acceptance.acceptedRequests).toBe(10);
-    expect(acceptance.acceptanceRate).toBeCloseTo(50, 1);
-    expect(acceptance.medianResponseHours).toBeCloseTo(10, 1);
-    expect(acceptanceSurf?.masked).toBe(false);
-    expect(acceptanceSurf?.acceptanceRate).toBeCloseTo(50, 1);
-  });
 });

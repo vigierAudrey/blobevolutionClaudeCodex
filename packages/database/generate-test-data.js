@@ -3,6 +3,11 @@
 /**
  * Script pour générer des données de test géolocalisées
  * Permet de tester les performances PostGIS avec plus de données
+ *
+ * ⚠️  POST-DROP WARNING: Ce script crée et supprime des entrées "ProAvailability".
+ * Après le DROP booking decommission, ces opérations lèveront :
+ *   ERROR: relation "ProAvailability" does not exist
+ * À n'exécuter que sur des bases pré-DROP.
  */
 
 const { PrismaClient } = require('@prisma/client');

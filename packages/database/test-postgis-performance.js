@@ -3,6 +3,11 @@
 /**
  * Script de test de performance PostgreSQL/PostGIS
  * Alternative à psql utilisant Node.js et pg
+ *
+ * ⚠️  POST-DROP WARNING: Ce script interroge "ProAvailability" directement.
+ * Après le DROP booking decommission, les requêtes lèveront :
+ *   ERROR: relation "ProAvailability" does not exist
+ * À n'exécuter que sur des bases pré-DROP.
  */
 
 const { Client } = require('pg');

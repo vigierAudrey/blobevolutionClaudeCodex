@@ -901,6 +901,31 @@ model UploadJob {
   @@index([userId])
 }
 
+/// Snapshot figé des métriques analytics dépendant des tables booking supprimées.
+/// Peuplé une seule fois par freeze-booking-analytics-snapshot.ts avant le DROP des tables.
+/// Ne jamais supprimer ce modèle — il remplace les requêtes live sur BookingRequest/ProAvailability.
+model BookingAnalyticsSnapshot {
+  id               String   @id @default(uuid())
+  /// Période analytics : '7d' | '30d' | '90d'
+  period           String   @unique
+  /// Timestamp du gel — à inclure dans les réponses API pour transparence
+  snapshotAt       DateTime @default(now())
+  /// true = données gelées définitivement, le code ne doit plus lire les tables booking
+  frozen           Boolean  @default(false)
+  // TTFV Riders (Time To First Value)
+  ttfvRiderSampleSize Int    @default(0)
+  ttfvRiderMedianMin  Float?
+  ttfvRiderP90Min     Float?
+  ttfvRiderMasked     Boolean @default(true)
+  // TTFV Pros
+  ttfvProSampleSize   Int    @default(0)
+  ttfvProMedianMin    Float?
+  ttfvProP90Min       Float?
+  ttfvProMasked       Boolean @default(true)
+  /// Données marketplace sérialisées (supplyDemand, acceptance, acceptanceBySport)
+  marketplaceJson     Json   @default("{}")
+}
+
 model AnalyticsDailyAgg {
   id         String             @id @default(uuid())
   day        DateTime

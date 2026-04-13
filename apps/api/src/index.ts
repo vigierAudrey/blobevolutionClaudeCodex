@@ -221,6 +221,7 @@ const corsMiddleware = (req: Request, res: Response, next: NextFunction) => {
 import compression from 'compression';
 import { setupCSRF, csrfProtection, getCSRFToken } from './middleware/csrf';
 import { smartRateLimit } from './middleware/enhanced-rate-limit';
+import { bookingDisabledGuard } from './middleware/booking-disabled';
 import { authRouter } from './modules/auth/auth.controller';
 import { profileRouter } from './modules/profile/profile.controller';
 import { matchingRouter } from './modules/matching/matching.controller';
@@ -235,6 +236,7 @@ import { contactRouter } from './modules/contact/contact.controller';
 import pushRouter from './modules/push/push.controller';
 import { consentRouter } from './modules/consent/consent.controller';
 import { analyticsRouter } from './modules/analytics/analytics.controller';
+import { assertDecommissionedStateConsistent, isBookingTableDropAllowed } from './lib/booking-decommission-state';
 
 
 const OPENAPI_SPEC_CANDIDATES = [
@@ -464,6 +466,11 @@ export function createApp() {
   // Apply CSRF protection to all routes
   app.use(csrfProtection);
 
+  // Booking decommission guard — hard-fail 410 on any booking write attempt.
+  // Mounted after CSRF (writes require CSRF token → guard fires after CSRF validation).
+  // Active in production unconditionally. In test: active only if BOOKING_DISABLED=true.
+  app.use(bookingDisabledGuard);
+
   // Simple request logging for debugging (P2-9: Use secureLogger to prevent logging sensitive query params)
   app.use((req, _res, next) => {
     secureLogger.info('HTTP_REQUEST', {
@@ -576,6 +583,25 @@ const app = createApp();
 
 if (process.env.NODE_ENV !== 'test') {
   registerLogTransportShutdownHandlers();
+
+  // Preflight décommission booking (Option A) :
+  // Si BOOKING_DECOMMISSION_STATE=DECOMMISSIONED, vérifier en DB que tous les snapshots
+  // analytics sont gelés. Échec = log CRITICAL + process.exit(1).
+  // Ce contrôle garantit que l'ENV var n'a pas été positionné avant l'exécution des scripts.
+  if (isBookingTableDropAllowed()) {
+    assertDecommissionedStateConsistent()
+      .then(() => {
+        secureLogger.info('BOOKING_DECOMMISSION_PREFLIGHT_PASSED');
+      })
+      .catch((err: unknown) => {
+        secureLogger.error('BOOKING_DECOMMISSION_PREFLIGHT_CRITICAL', {
+          error: err instanceof Error ? err.message : String(err),
+          action: 'PROCESS_EXIT_1',
+        });
+        process.exit(1);
+      });
+  }
+
   const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
   // Create HTTP server for both Express and Socket.io

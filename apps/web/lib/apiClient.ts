@@ -1,15 +1,6 @@
 import type { MessageListResponse, SendMessagePayload, ThreadListQuery, ThreadListResponse } from '@/types/messages';
 import { z } from 'zod';
 import { requestStrict, requestStrictWithStatus } from './requestStrict';
-import type {
-  AvailabilityLevel,
-  AvailabilitySport,
-  AvailabilityStatus,
-  BookingAvailability,
-  BookingRequestInboxItem,
-  CreateBookingAvailabilityPayload,
-  RiderBookingRequest,
-} from './types/booking';
 
 export interface AuditLogEntry {
   id: string;
@@ -554,112 +545,6 @@ export interface AdminUserDetail {
   };
 }
 
-export interface BookingAvailabilityResult {
-  id: string;
-  pro: {
-    userId: string;
-    businessName: string | null;
-  };
-  sport: 'surf' | 'kitesurf';
-  levels: string[];
-  startAt: string;
-  endAt: string;
-  capacity: number;
-  bookedCount: number;
-  status: 'OPEN' | 'CLOSED';
-  spotName: string | null;
-  spotLat: number | null;
-  spotLng: number | null;
-  distanceKm: number | null;
-  riders: Array<{ id: string; displayName: string; avatarUrl: string | null }>;
-}
-
-export interface NearbyProResult {
-  proId: string;
-  proPublicId: string;
-  businessName: string | null;
-  photoUrl: string | null;
-  verified: boolean;
-  /** Gate B: no precise GPS. Use distanceBucket for display only. */
-  distanceBucket: '<5km' | '5-15km' | '15-30km' | '>30km';
-  distanceKm: number;
-  sports: Array<'surf' | 'kitesurf'>;
-  openAvailabilityCount: number;
-}
-
-export type ProBooking = {
-  id: string;
-  availability: BookingAvailability;
-  rider: {
-    id: string;
-    riderProfile: {
-      id: string;
-      displayName: string | null;
-      photoUrl: string | null;
-      sex: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED';
-    } | null;
-  };
-};
-
-export type RiderBooking = {
-  id: string;
-  availability: BookingAvailability & {
-    pro: {
-      id: string;
-      proProfile: {
-        businessName: string | null;
-        photoUrl: string | null;
-      } | null;
-    };
-  };
-};
-
-type BookingRequestInboxApiItem = {
-  id: string;
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
-  message?: string | null;
-  createdAt: string;
-  respondedAt?: string | null;
-  availability: {
-    id: string;
-    startAt: string;
-    endAt: string;
-    spotName: string | null;
-    sport: AvailabilitySport;
-    levels: AvailabilityLevel[];
-    capacity: number;
-    bookedCount: number;
-    status: AvailabilityStatus;
-  };
-  rider: {
-    id: string;
-    email: string;
-    riderProfile?: {
-      displayName?: string | null;
-      photoUrl?: string | null;
-    } | null;
-  };
-};
-
-type BookingRequestMeApiItem = {
-  id: string;
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
-  message?: string | null;
-  createdAt: string;
-  respondedAt?: string | null;
-  availability: {
-    id: string;
-    sport: AvailabilitySport;
-    levels: AvailabilityLevel[];
-    spotName: string | null;
-    startAt: string;
-    endAt: string;
-    pro: {
-      proPublicId: string | null;
-      businessName: string | null;
-    };
-  };
-};
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 let cachedCsrfToken: string | null = null;
@@ -966,37 +851,6 @@ const openConversationDataSchema = z
   .strict();
 type OpenConversationData = z.infer<typeof openConversationDataSchema>;
 
-const createBookingAvailabilityPayloadSchema = z.object({
-  sport: z.enum(['surf', 'kitesurf']),
-  levels: z.array(z.enum(['beginner', 'intermediate', 'advanced'])).min(1),
-  startAt: z.string().datetime(),
-  endAt: z.string().datetime(),
-  capacity: z.number().int().positive().max(20).optional(),
-  spotName: z.string().min(1).max(120).optional(),
-  spotLat: z.number().min(-90).max(90).optional(),
-  spotLng: z.number().min(-180).max(180).optional(),
-  price: z.number().nonnegative().max(9999).optional(),
-});
-
-const proAvailabilityDataSchema = z
-  .object({
-    id: z.string().uuid(),
-    proUserId: z.string().uuid().optional(),
-    sport: z.enum(['surf', 'kitesurf']),
-    levels: z.array(z.enum(['beginner', 'intermediate', 'advanced'])),
-    startAt: z.string(),
-    endAt: z.string(),
-    capacity: z.number().int().nullable().optional(),
-    bookedCount: z.number().int().nonnegative().optional(),
-    spotName: z.string().nullable().optional(),
-    spotLat: z.number().nullable().optional(),
-    spotLng: z.number().nullable().optional(),
-    price: z.number().nullable().optional(),
-    status: z.enum(['OPEN', 'CLOSED']).optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
-  })
-  .strict();
 
 const sendMessagePayloadSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('TEXT'), content: z.string().min(1).max(1000) }),
@@ -1016,15 +870,6 @@ const sendMessageDataSchema = z
   })
   .strict();
 
-// Booking API expects decision enum 'ACCEPT' | 'REJECT' and returns canonical action 'accept' | 'reject' (see API decideBookingRequestSchema).
-const bookingDecisionPayloadSchema = z.object({
-  decision: z.enum(['ACCEPT', 'REJECT']),
-});
-
-const bookingDecisionDataSchema = z.object({
-  success: z.boolean(),
-  action: z.enum(['accept', 'reject']),
-});
 
 const reportProfileBodySchema = z.object({
   targetProfileId: z.string().uuid(),
@@ -1433,137 +1278,6 @@ export const apiClient = {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/matching/ttfm${query}`, { method: 'GET' }, true) as Promise<AdminMatchingTTFM>;
   },
-  searchBookingAvailability: (params: {
-    sport: 'surf' | 'kitesurf';
-    level: 'beginner' | 'intermediate' | 'advanced';
-    lat: number;
-    lng: number;
-    radiusKm: number;
-    startAt?: string;
-    endAt?: string;
-    page?: number;
-    pageSize?: number;
-  }) => {
-    const query = new URLSearchParams();
-    query.append('sport', params.sport);
-    query.append('level', params.level);
-    query.append('lat', params.lat.toString());
-    query.append('lng', params.lng.toString());
-    query.append('radiusKm', params.radiusKm.toString());
-    if (params.startAt) query.append('startAt', params.startAt);
-    if (params.endAt) query.append('endAt', params.endAt);
-    if (params.page) query.append('page', params.page.toString());
-    if (params.pageSize) query.append('pageSize', params.pageSize.toString());
-    return request(`/booking/availability/search?${query.toString()}`, { method: 'GET' }, true) as Promise<{ results: BookingAvailabilityResult[] }>;
-  },
-  searchNearbyPros: (params: {
-    lat: number;
-    lng: number;
-    radiusKm?: number;
-    sport?: 'surf' | 'kitesurf';
-  }) => {
-    const query = new URLSearchParams();
-    query.append('lat', params.lat.toString());
-    query.append('lng', params.lng.toString());
-    query.append('radiusKm', (params.radiusKm ?? 25).toString());
-    if (params.sport) query.append('sport', params.sport);
-    return request(`/booking/pros/nearby?${query.toString()}`, { method: 'GET' }, true) as Promise<{ pros: NearbyProResult[] }>;
-  },
-  getBookingAvailabilitiesForPro: () =>
-    request('/booking/availability/me', { method: 'GET' }, true) as Promise<{ availabilities: BookingAvailability[] }> ,
-  createBookingAvailability: (payload: CreateBookingAvailabilityPayload) =>
-    (async () => {
-      const parsed = createBookingAvailabilityPayloadSchema.parse(payload);
-
-      const headers = await buildStrictHeaders(true);
-
-      return requestStrict('/booking/availability', { method: 'POST', headers, body: JSON.stringify(parsed) }, proAvailabilityDataSchema);
-    })(),
-  updateBookingAvailability: (availabilityId: string, payload: Partial<CreateBookingAvailabilityPayload>) =>
-    request(`/booking/availability/${availabilityId}`, { method: 'PATCH', body: JSON.stringify(payload) }, true) as Promise<BookingAvailability>,
-  adjustBookingAvailabilityBookedCount: (availabilityId: string, delta: number) =>
-    request(`/booking/availability/${availabilityId}/adjust-booked`, { method: 'PATCH', body: JSON.stringify({ delta }) }, true) as Promise<BookingAvailability>,
-  deleteBookingAvailability: (availabilityId: string) =>
-    request(`/booking/availability/${availabilityId}`, { method: 'DELETE' }, true) as Promise<{ success: boolean; message: string }>,
-  createBookingRequest: (payload: { availabilityId: string; message?: string }) =>
-    request('/booking/requests', { method: 'POST', body: JSON.stringify(payload) }, true) as Promise<{ id: string }>,
-  getBookingRequestsInbox: async () => {
-    const response = (await request('/booking/requests/inbox', { method: 'GET' }, true)) as {
-      requests: BookingRequestInboxApiItem[];
-    };
-    return {
-      requests: response.requests.map<BookingRequestInboxItem>((req) => ({
-        id: req.id,
-        status: req.status,
-        riderName: req.rider.riderProfile?.displayName ?? req.rider.email,
-        riderEmail: req.rider.email,
-        riderAvatarUrl: req.rider.riderProfile?.photoUrl ?? null,
-        message: req.message ?? null,
-        createdAt: req.createdAt,
-        respondedAt: req.respondedAt ?? null,
-        availability: {
-          id: req.availability.id,
-          startAt: req.availability.startAt,
-          endAt: req.availability.endAt,
-          spotName: req.availability.spotName,
-          sport: req.availability.sport,
-          levels: req.availability.levels,
-          capacity: req.availability.capacity,
-          bookedCount: req.availability.bookedCount,
-          status: req.availability.status,
-        },
-      })),
-    };
-  },
-  decideBookingRequest: (requestId: string, decision: 'ACCEPT' | 'REJECT') =>
-    (async () => {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      const csrf = await ensureCsrfToken();
-      if (csrf) headers['X-CSRF-Token'] = csrf;
-
-      // Auth via httpOnly cookie (credentials: 'include' in requestStrict).
-      const payload = bookingDecisionPayloadSchema.parse({ decision });
-
-      return requestStrict(
-        `/booking/requests/${requestId}/decision`,
-        { method: 'POST', body: JSON.stringify(payload), headers },
-        bookingDecisionDataSchema
-      );
-    })(),
-  getProBookings: () =>
-    request('/booking/bookings/me', { method: 'GET' }, true) as Promise<{ bookings: ProBooking[] }>,
-  getRiderBookings: () =>
-    request('/booking/bookings/rider/me', { method: 'GET' }, true) as Promise<{ bookings: RiderBooking[] }>,
-  getMyBookingRequests: async () => {
-    const response = (await request('/booking/requests/me', { method: 'GET' }, true)) as {
-      requests: BookingRequestMeApiItem[];
-    };
-    return {
-      requests: response.requests.map<RiderBookingRequest>((req) => ({
-        id: req.id,
-        status: req.status,
-        message: req.message ?? null,
-        createdAt: req.createdAt,
-        respondedAt: req.respondedAt ?? null,
-        availability: {
-          id: req.availability.id,
-          sport: req.availability.sport,
-          levels: req.availability.levels,
-          spotName: req.availability.spotName,
-          startAt: req.availability.startAt,
-          endAt: req.availability.endAt,
-          pro: {
-            proPublicId: req.availability.pro.proPublicId ?? null,
-            businessName: req.availability.pro.businessName,
-          },
-        },
-      })),
-    };
-  },
-
   /**
    * saveTokens — Activates the local session hint flag.
    * Tokens themselves are managed as httpOnly cookies by the server.
