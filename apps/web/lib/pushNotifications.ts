@@ -310,30 +310,10 @@ export class PushNotificationManager {
    * Test notification (for development)
    */
   async testNotification(): Promise<boolean> {
-    if (!this.isSubscribed()) {
-      console.log('❌ Not subscribed to notifications');
-      return false;
-    }
-
-    try {
-      const response = await fetch('/api/push/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`
-        },
-        body: JSON.stringify({
-          title: '🧪 Test BlobConnect',
-          body: 'Si tu vois ça, les notifications fonctionnent ! 🎉',
-          type: 'general'
-        })
-      });
-
-      return response.ok;
-    } catch (error) {
-      console.error('❌ Error sending test notification:', error);
-      return false;
-    }
+    // NOTE: backend test notification (POST /push/test) is not wired here.
+    // The Next.js proxy route does not exist and the push UI is currently disabled.
+    // Wire this via apiClient (cookie auth, not localStorage Bearer) when re-enabling push.
+    return false;
   }
 
   /**
