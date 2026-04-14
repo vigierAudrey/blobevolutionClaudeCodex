@@ -36,12 +36,7 @@ export default function MatchingPage() {
   useEffect(() => {
     (async () => {
       try {
-        // Vérifier le rôle de l'utilisateur
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
+        // No local hint check — truth comes from the server session.
         const currentUser = await apiClient.me() as DashboardUser;
 
         // Rediriger les PRO vers leur dashboard

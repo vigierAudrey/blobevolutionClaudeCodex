@@ -9,6 +9,7 @@ import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { apiClient } from '../../lib/apiClient';
+import { requireClientSession, SessionRequiredError } from '../../lib/clientSession';
 import loadingBlob from '../../public/images/loading/favicon-96x96.png';
 
 const AdBannerSidebar = nextDynamic(
@@ -51,13 +52,8 @@ export default function DashboardPage() {
   const [hasMatchingShortcut, setHasMatchingShortcut] = useState(false);
 
   useEffect(() => {
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) {
-      router.replace('/login');
-      return;
-    }
-    apiClient
-      .me()
+    // No local hint check — truth comes from the server session.
+    requireClientSession()
       .then((u) => {
         setUser(u as DashboardUser);
         // First-login banner heuristic: show once per user until dismissed
@@ -65,6 +61,11 @@ export default function DashboardPage() {
         const visited = typeof window !== 'undefined' ? localStorage.getItem(key) : '1';
         if (!visited) setShowProfilePrompt(true);
         if (typeof window !== 'undefined') localStorage.setItem(key, '1');
+      })
+      .catch((err) => {
+        if (err instanceof SessionRequiredError) {
+          router.replace('/login');
+        }
       })
       .finally(() => setLoading(false));
   }, [router]);

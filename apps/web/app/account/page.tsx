@@ -4,6 +4,7 @@
 export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../../lib/apiClient';
+import { requireClientSession, SessionRequiredError } from '../../lib/clientSession';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../components/BackBar';
 
@@ -23,15 +24,14 @@ export default function AccountPage() {
   const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) {
-      router.replace('/login');
-      return;
-    }
-    apiClient
-      .me()
+    // No local hint check — truth comes from the server session.
+    requireClientSession()
       .then(setUser)
       .catch((err: unknown) => {
+        if (err instanceof SessionRequiredError) {
+          router.replace('/login');
+          return;
+        }
         setError(err instanceof Error ? err.message : 'Erreur');
       })
       .finally(() => setLoading(false));

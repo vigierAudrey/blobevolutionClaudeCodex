@@ -34,12 +34,7 @@ function ResultsInner() {
   useEffect(() => {
     (async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-
+        // No local hint check — truth comes from the server session.
         const user = await apiClient.me() as DashboardUser;
         if (user.role === 'PRO') {
           router.replace('/pro/dashboard');

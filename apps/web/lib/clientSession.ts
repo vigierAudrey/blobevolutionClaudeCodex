@@ -24,6 +24,34 @@ export class RoleMismatchError extends Error {
   }
 }
 
+function classifyApiError(error: unknown): SessionRequiredError | null {
+  const errorCode = typeof (error as { code?: unknown })?.code === 'string'
+    ? (error as { code: string }).code
+    : null;
+  const status = typeof (error as { status?: unknown })?.status === 'number'
+    ? (error as { status: number }).status
+    : null;
+  if (errorCode === 'SESSION_EXPIRED' || status === 401) {
+    return new SessionRequiredError();
+  }
+  return null;
+}
+
+/**
+ * Verifies the server session is active.
+ * Throws SessionRequiredError on 401 / SESSION_EXPIRED.
+ * Never reads blob_session_hint — truth comes from the server.
+ */
+export async function requireClientSession(): Promise<SessionUser> {
+  try {
+    return await apiClient.me();
+  } catch (error) {
+    const sessionError = classifyApiError(error);
+    if (sessionError) throw sessionError;
+    throw error;
+  }
+}
+
 export async function requireClientRole(requiredRole: SessionRole): Promise<SessionUser> {
   try {
     const user = await apiClient.me();
@@ -36,16 +64,8 @@ export async function requireClientRole(requiredRole: SessionRole): Promise<Sess
       throw error;
     }
 
-    const errorCode = typeof (error as { code?: unknown })?.code === 'string'
-      ? (error as { code: string }).code
-      : null;
-    const status = typeof (error as { status?: unknown })?.status === 'number'
-      ? (error as { status: number }).status
-      : null;
-
-    if (errorCode === 'SESSION_EXPIRED' || status === 401) {
-      throw new SessionRequiredError();
-    }
+    const sessionError = classifyApiError(error);
+    if (sessionError) throw sessionError;
 
     throw error;
   }

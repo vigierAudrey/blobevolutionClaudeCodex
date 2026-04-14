@@ -174,12 +174,9 @@ export default function ProfilePage() {
   useEffect(() => {
     const loadNotificationPreferences = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) return;
-
+        // Auth via httpOnly cookie — no hint check, no Authorization header.
         const response = await apiRequest('/profile/notifications', {
           method: 'GET',
-          headers: { Authorization: `Bearer ${tokens.accessToken}` },
         });
 
         if (response.ok) {
@@ -269,7 +266,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
 
   const handleDeleteLocation = async () => {
-    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver pour utiliser le matching et voir les offres à proximité.')) {
+    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver pour utiliser le matching géolocalisé.')) {
       return;
     }
 
@@ -309,12 +306,9 @@ export default function ProfilePage() {
 
   const checkDeletionStatus = async () => {
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) return;
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       const response = await apiRequest('/profile/deletion-status', {
         method: 'GET',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
       });
 
       if (response.ok) {
@@ -329,15 +323,9 @@ export default function ProfilePage() {
   const handleRequestDeletion = async () => {
     setLoadingDeletion(true);
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) {
-        toast('Session expirée, veuillez vous reconnecter', 'error');
-        return;
-      }
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       const response = await apiRequest('/profile/delete-account', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
       });
 
       const data = await response.json();
@@ -366,15 +354,9 @@ export default function ProfilePage() {
   const handleCancelDeletion = async () => {
     setLoadingDeletion(true);
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) {
-        toast('Session expirée, veuillez vous reconnecter', 'error');
-        return;
-      }
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       const response = await apiRequest('/profile/cancel-deletion', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
       });
 
       const data = await response.json();
@@ -426,15 +408,9 @@ export default function ProfilePage() {
     setSavingNotifPrefs(true);
 
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) {
-        toast('Session expirée, veuillez vous reconnecter', 'error');
-        return;
-      }
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       const response = await apiRequest('/profile/notifications', {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
         body: JSON.stringify(notificationPrefs),
       });
 
@@ -467,16 +443,11 @@ export default function ProfilePage() {
     };
 
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) {
-        throw new Error('Session expirée, veuillez vous reconnecter.');
-      }
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       if (photoFile) {
         const contentType = photoFile.type || 'image/jpeg';
         const uploadResponse = await apiRequest('/profile/photo/upload-url', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${tokens.accessToken}` },
           body: JSON.stringify({ contentType }),
         });
         if (!uploadResponse.ok) {
@@ -494,7 +465,6 @@ export default function ProfilePage() {
         // Finalize: valide le contenu côté serveur et retourne la photoUrl officielle
         const finalizeResponse = await apiRequest('/profile/photo/finalize', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${tokens.accessToken}` },
           body: JSON.stringify({ key: uploadData.key }),
         });
         if (!finalizeResponse.ok) {
@@ -795,9 +765,7 @@ export default function ProfilePage() {
                           <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
                             Lat: {userLocation.lat.toFixed(4)}, Lng: {userLocation.lng.toFixed(4)}
                           </p>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            Utilisée pour le matching et la recherche d&apos;offres à proximité
-                          </p>
+                          <p className="text-xs text-muted-foreground mt-2">Utilisée pour le matching géolocalisé</p>
                         </div>
                       </div>
                       <Button
@@ -816,7 +784,7 @@ export default function ProfilePage() {
                     <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:bg-slate-900/20 p-4">
                       <p className="text-sm text-muted-foreground flex items-start gap-2">
                         <span>ℹ️</span>
-                        <span>Aucune géolocalisation enregistrée. Active-la depuis Matching ou Offres pour trouver des partenaires près de toi.</span>
+                        <span>Aucune géolocalisation enregistrée. Active-la depuis Matching pour trouver des partenaires près de toi.</span>
                       </p>
                     </div>
                   )}
@@ -1052,17 +1020,11 @@ export default function ProfilePage() {
                       type="button"
                       onClick={async () => {
                         try {
-                          const tokens = apiClient.getTokens();
-                          if (!tokens?.accessToken) {
-                            toast('Session expirée, veuillez vous reconnecter', 'error');
-                            return;
-                          }
-
+                          // Auth via httpOnly cookie — no hint check, no Authorization header.
                           toast('Génération de l\'export en cours...', 'info');
 
                           const response = await apiRequest('/profile/export', {
                             method: 'GET',
-                            headers: { Authorization: `Bearer ${tokens.accessToken}` },
                           });
 
                           if (!response.ok) {
