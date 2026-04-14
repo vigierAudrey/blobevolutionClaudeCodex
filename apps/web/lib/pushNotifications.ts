@@ -128,15 +128,9 @@ export class PushNotificationManager {
 
         this.currentToken = null;
 
-        // Notify backend
-        await fetch('/api/push/unregister', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`
-          },
-          body: JSON.stringify(storedToken ? { token: storedToken } : {})
-        }).catch(e => console.log('Failed to notify backend:', e));
+        // NOTE: backend token removal (POST /push/unregister) is not called here
+        // because the consumer of this method is currently disabled in the UI.
+        // Wire this via apiClient (cookie auth) when re-enabling the unsubscribe flow.
 
         console.log('✅ Successfully unsubscribed from push notifications');
         return true;
