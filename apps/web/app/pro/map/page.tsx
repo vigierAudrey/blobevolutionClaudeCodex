@@ -8,6 +8,8 @@ import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../../components/ui/toast';
+import { apiRequest } from '../../../lib/csrf';
+import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../../../lib/clientSession';
 
 import { MapSkeleton } from '../../../components/ui/skeleton';
 import type { LessonRequest, LessonRequestResponse } from '@/types/pro';
@@ -119,23 +121,32 @@ export default function ProMapPage() {
   const lastSavedRadiusRef = useRef<number | null>(null);
   const [radiusSaving, setRadiusSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [authorized, setAuthorized] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
     // Détecter le navigateur au montage du composant
     setBrowserType(detectBrowser());
 
-    // Load pro location via /pro/me
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) return;
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, { headers: { Authorization: `Bearer ${t.accessToken}` }})
-      .then(async r => ({ ok: r.ok, body: await r.json() }))
-      .then(({ ok, body }) => {
-        if (ok && body?.lat && body?.lng) {
+    let active = true;
+
+    const bootstrap = async () => {
+      try {
+        await requireClientRole('PRO');
+        if (!active) return;
+        setAuthorized(true);
+
+        const response = await apiRequest('/pro/me', { method: 'GET' });
+        const body = await response.json().catch(() => ({}));
+
+        if (!active) return;
+
+        if (response.ok && body?.lat && body?.lng) {
           setCenter([body.lat, body.lng]);
           setGeolocEnabled(true);
           setHasGeolocPermission(true);
         }
-        if (ok) {
+        if (response.ok) {
           setApiError(null);
           const storedRadius = typeof body?.radiusKm === 'number' ? body.radiusKm : 25;
           const clamped = Math.max(1, Math.min(200, storedRadius));
@@ -146,12 +157,32 @@ export default function ProMapPage() {
           setRadiusKm(25);
           lastSavedRadiusRef.current = 25;
         }
-      })
-      .catch(() => {
+      } catch (error) {
+        if (!active) return;
+        if (error instanceof RoleMismatchError) {
+          router.replace('/dashboard');
+          return;
+        }
+        if (error instanceof SessionRequiredError) {
+          router.replace('/login');
+          return;
+        }
+        setApiError('Impossible de charger votre profil pro.');
         setRadiusKm(25);
         lastSavedRadiusRef.current = 25;
-      });
-  }, []);
+      } finally {
+        if (active) {
+          setAuthLoading(false);
+        }
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   const enableGeolocation = () => {
     if (!navigator.geolocation) {
@@ -169,15 +200,10 @@ export default function ProMapPage() {
 
         // Sauvegarder la position dans le profil pro
         try {
-          const t = apiClient.getTokens();
-          if (t?.accessToken) {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+          if (authorized) {
+            const response = await apiRequest('/pro/me', {
               method: 'PUT',
-              headers: {
-                'Authorization': `Bearer ${t.accessToken}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat, lng })
+              body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat, lng }),
             });
             const body = await response.json().catch(() => ({}));
             if (!response.ok) {
@@ -206,18 +232,14 @@ export default function ProMapPage() {
   };
 
   const load = useCallback(async () => {
-    if (!geolocEnabled || radiusKm === null) return;
+    if (!authorized || !geolocEnabled || radiusKm === null) return;
 
     setLoading(true);
     setApiError(null);
     try {
-      const t = apiClient.getTokens();
-      if (!t?.accessToken) return;
-
-      const r = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/near/lessons?radiusKm=${radiusKm}&sport=${sport}`,
-        { headers: { Authorization: `Bearer ${t.accessToken}` } },
-      );
+      const r = await apiRequest(`/pro/near/lessons?radiusKm=${radiusKm}&sport=${sport}`, {
+        method: 'GET',
+      });
       const data = (await r.json()) as LessonRequestResponse;
       if (r.ok) {
         setItems(data.items ?? []);
@@ -234,7 +256,7 @@ export default function ProMapPage() {
     } finally {
       setLoading(false);
     }
-  }, [radiusKm, sport, geolocEnabled, toast]);
+  }, [authorized, radiusKm, sport, geolocEnabled, toast]);
 
   // Debounced loading for better performance
   const debouncedLoad = useCallback(() => {
@@ -265,15 +287,10 @@ export default function ProMapPage() {
 
     const persist = async () => {
       try {
-        const t = apiClient.getTokens();
-        if (!t?.accessToken) return;
+        if (!authorized) return;
         setRadiusSaving(true);
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+        const response = await apiRequest('/pro/me', {
           method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${t.accessToken}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, radiusKm })
         });
         const body = await response.json().catch(() => ({}));
@@ -302,8 +319,16 @@ export default function ProMapPage() {
         clearTimeout(radiusPersistRef.current);
       }
     };
-  }, [radiusKm, toast]);
+  }, [authorized, radiusKm, toast]);
 
+  if (authLoading) {
+    return (
+      <div className="max-w-5xl mx-auto space-y-6 pb-8">
+        <BackBar fallbackHref="/pro/dashboard" />
+        <MapSkeleton />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-8">

@@ -592,8 +592,8 @@ async function ensureCsrfToken(): Promise<string | null> {
  * Session hint key — a non-sensitive flag in localStorage.
  *
  * With cookie-based auth, the actual tokens are httpOnly and cannot be read by JS.
- * This flag indicates "a session was established" so pages can skip the initial
- * API call when the user is clearly not logged in (e.g. fresh browser tab after logout).
+ * This flag indicates "a session was established" for UX-only affordances.
+ * It must never be treated as proof that the server-side session is still valid.
  *
  * It is NOT the token itself and carries no security value on its own.
  * The server enforces auth via the httpOnly cookie on every request.
@@ -603,8 +603,8 @@ const SESSION_HINT_KEY = 'blob_session_hint';
 function getTokens() {
   if (typeof window === 'undefined') return null;
   // Cookie-only auth: the actual tokens are httpOnly cookies, inaccessible to JS.
-  // Return a truthy presence marker when the session hint is set so pages can
-  // guard their renders without reading the real JWT.
+  // Return a truthy presence marker when the session hint is set for optional UX.
+  // Do not use it to decide whether the user is really authenticated.
   // The hint ('1') is set by setTokens() after login and cleared on logout.
   // It carries no security value — the server enforces auth via cookie on every request.
   const hint = localStorage.getItem(SESSION_HINT_KEY);
@@ -614,7 +614,7 @@ function getTokens() {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function setTokens(_access = '', _refresh = '') {
   // Tokens are set as httpOnly cookies by the server — nothing to store in JS.
-  // We only update the local session hint to reflect that a session is active.
+  // We only update the local session hint to reflect likely active UX state.
   if (typeof window === 'undefined') return;
   localStorage.setItem(SESSION_HINT_KEY, '1');
 }

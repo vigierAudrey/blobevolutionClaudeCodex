@@ -14,13 +14,13 @@ import { Badge } from '../../../components/ui/badge';
 import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText, Bell } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
-import { apiClient } from '../../../lib/apiClient';
 import { apiRequest } from '../../../lib/csrf';
 import { useToast } from '../../../components/ui/toast';
 import { Spinner } from '../../../components/ui/spinner';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../../components/cookies/CookieConsent';
 import { ChangePasswordCard } from '../../../components/profile/ChangePasswordCard';
 import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
+import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../../../lib/clientSession';
 
 // Configuration de sécurité pour l'upload de fichiers
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
@@ -79,6 +79,7 @@ export default function ProProfilePage() {
   const { updateConsent: resetConsent, consentReady: consentStateReady, consentLevel } = useCookieConsent();
 
   const [loading, setLoading] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [businessName, setBusinessName] = useState('');
   const [bio, setBio] = useState('');
@@ -151,16 +152,6 @@ export default function ProProfilePage() {
     return summaries[consentLevel] ?? summaries.none;
   }, [consentLevel]);
 
-  // Hook pour vérifier l'authentification
-  const ensureAuthenticated = useCallback(() => {
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) {
-      router.replace('/login');
-      throw new Error('Session expirée');
-    }
-    return t;
-  }, [router]);
-
   // Cleanup blob URL à la destruction
   useEffect(() => {
     return () => {
@@ -168,51 +159,25 @@ export default function ProProfilePage() {
     };
   }, [blobUrl]);
 
-  // Load notification preferences on mount
   useEffect(() => {
-    const loadNotificationPreferences = async () => {
+    let active = true;
+
+    const bootstrap = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) return;
+        await requireClientRole('PRO');
+        if (!active) return;
+        setAuthorized(true);
 
-        const response = await apiRequest('/profile/notifications', {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${tokens.accessToken}` },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.preferences) {
-            setNotificationPrefs((prev) => ({ ...prev, ...data.preferences }));
-          }
-        }
-      } catch (error) {
-        console.error('Error loading notification preferences:', error);
-      } finally {
-        setLoadingNotifPrefs(false);
-      }
-    };
-
-    void loadNotificationPreferences();
-  }, []);
-
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const t = ensureAuthenticated();
-
-        // ✅ CORRIGÉ : Utiliser apiRequest avec protection CSRF
         const response = await apiRequest('/pro/me', {
           method: 'GET',
-          headers: { Authorization: `Bearer ${t.accessToken}` },
         });
-
         const data = await response.json();
 
         if (!response.ok) {
           throw new Error(data?.message || data?.error || 'Erreur chargement');
         }
 
+        if (!active) return;
         setBusinessName(data.businessName || '');
         setBio(data.bio || '');
         setEmailNotif(!!data.emailNotif);
@@ -225,14 +190,65 @@ export default function ProProfilePage() {
           setUserLocation(null);
         }
       } catch (e) {
+        if (!active) return;
+        if (e instanceof RoleMismatchError) {
+          router.replace('/dashboard');
+          return;
+        }
+        if (e instanceof SessionRequiredError) {
+          router.replace('/login');
+          return;
+        }
         setErr(sanitizeErrorMessage(e));
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
-    loadProfile();
-  }, [ensureAuthenticated]);
+    void bootstrap();
+
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  // Load notification preferences after real auth bootstrap
+  useEffect(() => {
+    if (!authorized) return;
+
+    let active = true;
+
+    const loadNotificationPreferences = async () => {
+      try {
+        const response = await apiRequest('/profile/notifications', {
+          method: 'GET',
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        if (active && data.preferences) {
+          setNotificationPrefs((prev) => ({ ...prev, ...data.preferences }));
+        }
+      } catch (error) {
+        console.error('Error loading notification preferences:', error);
+      } finally {
+        if (active) {
+          setLoadingNotifPrefs(false);
+        }
+      }
+    };
+
+    void loadNotificationPreferences();
+
+    return () => {
+      active = false;
+    };
+  }, [authorized]);
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -272,11 +288,10 @@ export default function ProProfilePage() {
 
   const checkDeletionStatus = useCallback(async () => {
     try {
-      const t = ensureAuthenticated();
+      if (!authorized) return;
 
       const response = await apiRequest('/pro/deletion-status', {
         method: 'GET',
-        headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       if (response.ok) {
@@ -286,16 +301,15 @@ export default function ProProfilePage() {
     } catch (error) {
       console.error('Error checking deletion status:', error);
     }
-  }, [ensureAuthenticated]);
+  }, [authorized]);
 
   const handleRequestDeletion = async () => {
     setLoadingDeletion(true);
     try {
-      const t = ensureAuthenticated();
+      if (!authorized) return;
 
       const response = await apiRequest('/pro/delete-account', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       const data = await response.json();
@@ -323,11 +337,10 @@ export default function ProProfilePage() {
   const handleCancelDeletion = async () => {
     setLoadingDeletion(true);
     try {
-      const t = ensureAuthenticated();
+      if (!authorized) return;
 
       const response = await apiRequest('/pro/cancel-deletion', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       const data = await response.json();
@@ -347,23 +360,23 @@ export default function ProProfilePage() {
 
   // Check deletion status on mount
   useEffect(() => {
+    if (!authorized) return;
     void checkDeletionStatus();
-  }, [checkDeletionStatus]);
+  }, [authorized, checkDeletionStatus]);
 
   // Handler pour supprimer la géolocalisation
   const handleDeleteLocation = async () => {
-    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver depuis la BloboMap ou vos Offres pour apparaître dans les recherches à proximité.')) {
+    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver depuis la BloboMap pour apparaître dans les recherches à proximité.')) {
       return;
     }
 
     setDeletingLocation(true);
     try {
-      const t = ensureAuthenticated();
+      if (!authorized) return;
 
       const response = await apiRequest('/pro/me', {
         method: 'PUT',
         body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat: undefined, lng: undefined }),
-        headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       if (!response.ok) {
@@ -428,15 +441,13 @@ export default function ProProfilePage() {
     setSavingNotifPrefs(true);
 
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) {
+      if (!authorized) {
         toast('Session expirée, veuillez vous reconnecter', 'error');
         return;
       }
 
       const response = await apiRequest('/profile/notifications', {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
         body: JSON.stringify(notificationPrefs),
       });
 
@@ -459,7 +470,10 @@ export default function ProProfilePage() {
     setErr(null);
 
     try {
-      const t = ensureAuthenticated();
+      if (!authorized) {
+        router.replace('/login');
+        return;
+      }
       if (file) {
         const ct = file.type || 'image/jpeg';
 
@@ -467,7 +481,6 @@ export default function ProProfilePage() {
         const p = await apiRequest('/pro/photo/upload-url', {
           method: 'POST',
           body: JSON.stringify({ contentType: ct }),
-          headers: { Authorization: `Bearer ${t.accessToken}` },
         });
 
         const data = await p.json();
@@ -484,7 +497,6 @@ export default function ProProfilePage() {
         const finalizeRes = await apiRequest('/pro/photo/finalize', {
           method: 'POST',
           body: JSON.stringify({ key: data.key }),
-          headers: { Authorization: `Bearer ${t.accessToken}` },
         });
         if (!finalizeRes.ok) throw new Error('Échec de la validation de la photo');
         const { photoUrl: finalizedUrl } = (await finalizeRes.json()) as { photoUrl: string };
@@ -500,7 +512,6 @@ export default function ProProfilePage() {
           emailNotif,
           countryCode: FRANCE_ONLY_COUNTRY_CODE,
         }),
-        headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       const body = await res.json();
@@ -662,7 +673,7 @@ export default function ProProfilePage() {
                     <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/20 p-4">
                       <p className="text-sm text-muted-foreground flex items-start gap-2">
                         <span>ℹ️</span>
-                        <span>Aucune géolocalisation enregistrée. Active-la depuis la BloboMap ou tes Offres pour apparaître dans les recherches à proximité.</span>
+                        <span>Aucune géolocalisation enregistrée. Active-la depuis la BloboMap pour apparaître dans les recherches à proximité.</span>
                       </p>
                     </div>
                   )}
@@ -931,8 +942,7 @@ export default function ProProfilePage() {
                       type="button"
                       onClick={async () => {
                         try {
-                          const tokens = apiClient.getTokens();
-                          if (!tokens?.accessToken) {
+                          if (!authorized) {
                             toast('Session expirée, veuillez vous reconnecter', 'error');
                             return;
                           }
@@ -941,7 +951,6 @@ export default function ProProfilePage() {
 
                           const response = await apiRequest('/pro/export', {
                             method: 'GET',
-                            headers: { Authorization: `Bearer ${tokens.accessToken}` },
                           });
 
                           if (!response.ok) {
@@ -1030,7 +1039,7 @@ export default function ProProfilePage() {
                 <h3 className="font-semibold text-sm text-blue-900 dark:text-blue-100">💡 Avant de supprimer</h3>
                 <ul className="text-sm space-y-1 list-disc list-inside text-blue-800 dark:text-blue-200">
                   <li>Vous pouvez <strong>exporter vos données</strong> (droit RGPD)</li>
-                  <li>Pensez à <strong>clôturer vos offres</strong> en cours</li>
+                  <li>Pensez à <strong>finaliser vos échanges</strong> en cours</li>
                   <li>Vos messages seront supprimés définitivement</li>
                 </ul>
               </div>

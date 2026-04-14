@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui
 import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
 import type { ThreadSummary, ThreadListQuery } from '@/types/messages';
+import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../../../lib/clientSession';
 
 export default function ProMessagesPage() {
   const router = useRouter();
@@ -28,19 +29,17 @@ export default function ProMessagesPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-
-        const currentUser = await apiClient.me();
-        if (currentUser.role !== 'PRO') {
+        await requireClientRole('PRO');
+        setAuthorized(true);
+      } catch (err) {
+        if (err instanceof RoleMismatchError) {
           router.replace('/dashboard');
           return;
         }
-        setAuthorized(true);
-      } catch (err) {
+        if (err instanceof SessionRequiredError) {
+          router.replace('/login');
+          return;
+        }
         console.error('Auth check failed:', err);
         router.replace('/login');
       } finally {

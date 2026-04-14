@@ -12,6 +12,7 @@ import { User, Map, Info, LogOut, MessageSquare, Gift, Sparkles } from 'lucide-r
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
 import { useAnalytics } from '@/hooks/useAnalytics';
+import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../../../lib/clientSession';
 
 export default function ProDashboardPage() {
   const router = useRouter();
@@ -21,24 +22,34 @@ export default function ProDashboardPage() {
   const trackedRef = useRef(false);
 
   useEffect(() => {
-    const t = optimizedApiClient.getTokens();
-    if (!t?.accessToken) {
-      router.replace('/login');
-      return;
-    }
-    optimizedApiClient
-      .me()
+    let active = true;
+
+    requireClientRole('PRO')
       .then((u) => {
-        if (u.role !== 'PRO') {
+        if (!active) return;
+        setUser(u as DashboardUser);
+      })
+      .catch((error) => {
+        if (!active) return;
+        if (error instanceof RoleMismatchError) {
           router.replace('/dashboard');
           return;
         }
-        setUser(u);
-      })
-      .catch(() => {
+        if (error instanceof SessionRequiredError) {
+          router.replace('/login');
+          return;
+        }
         router.replace('/login');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   useEffect(() => {
