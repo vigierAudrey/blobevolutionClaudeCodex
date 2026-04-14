@@ -290,29 +290,9 @@ function getCurrentUserId(): string | undefined {
  * Track push notification events for analytics
  */
 function trackPushEvent(event: string, data?: Record<string, any>) {
-  try {
-    // Send to analytics endpoint
-    fetch('/api/analytics/push-events', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        event,
-        data,
-        timestamp: Date.now(),
-        userAgent: navigator.userAgent,
-        url: window.location.href
-      })
-    }).catch((error: unknown) => {
-      console.log('📊 Analytics tracking failed:', error);
-    });
-
-    // Also log to console in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`📊 Push Event: ${event}`, data);
-    }
-  } catch (error: unknown) {
-    console.error('Error tracking push event:', error);
+  // NOTE: /api/analytics/push-events Next.js route does not exist.
+  // Analytics tracking is a no-op until the push UI is re-enabled with proper wiring.
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`📊 Push Event (not sent): ${event}`, data);
   }
 }
