@@ -74,9 +74,8 @@ describe('getUserFacingMessage', () => {
       });
 
       const context: ErrorContext = {
-        domain: 'booking',
-        action: 'create-availability',
-        role: 'pro',
+        domain: 'matching',
+        action: 'search',
       };
 
       const result = getUserFacingMessage(err, context);
@@ -133,23 +132,6 @@ describe('getUserFacingMessage', () => {
       expect(result.text).toContain('message');
     });
 
-    it('shows context-specific message for booking pro', () => {
-      const err = normalizeAppError({
-        code: ERROR_CODES.FORBIDDEN,
-        message: 'Access denied',
-      });
-
-      const context: ErrorContext = {
-        domain: 'booking',
-        action: 'update-availability',
-        role: 'pro',
-      };
-
-      const result = getUserFacingMessage(err, context);
-
-      expect(result.text).toContain('disponibilité');
-    });
-
     it('shows generic message for unknown context', () => {
       const err = normalizeAppError({
         code: ERROR_CODES.FORBIDDEN,
@@ -190,25 +172,6 @@ describe('getUserFacingMessage', () => {
       expect(result.text).toContain('message');
     });
 
-    it('shows context-specific message for booking', () => {
-      const err = normalizeAppError({
-        code: ERROR_CODES.VALIDATION_ERROR,
-        message: 'Invalid dates',
-      });
-
-      const context: ErrorContext = {
-        domain: 'booking',
-        action: 'create-availability',
-        role: 'pro',
-      };
-
-      const result = getUserFacingMessage(err, context);
-
-      expect(result.text).toContain('dates');
-      expect(result.text).toContain('lieu');
-      expect(result.text).toContain('capacité');
-    });
-
     it('shows context-specific message for matching', () => {
       const err = normalizeAppError({
         code: ERROR_CODES.VALIDATION_ERROR,
@@ -234,9 +197,8 @@ describe('getUserFacingMessage', () => {
       });
 
       const context: ErrorContext = {
-        domain: 'booking',
-        action: 'create-availability',
-        role: 'pro',
+        domain: 'matching',
+        action: 'match-decision',
       };
 
       const result = getUserFacingMessage(err, context);
@@ -247,32 +209,7 @@ describe('getUserFacingMessage', () => {
         canRetry: false,
         actionHint: 'fix_input',
       });
-      expect(result.text).toContain('disponibilité existe déjà');
-    });
-  });
-
-  describe('BOOKING_CONFLICT', () => {
-    it('shows error severity with fix_input hint', () => {
-      const err = normalizeAppError({
-        code: ERROR_CODES.BOOKING_CONFLICT,
-        message: 'Conflict',
-      });
-
-      const context: ErrorContext = {
-        domain: 'booking',
-        action: 'decide-request',
-        role: 'pro',
-      };
-
-      const result = getUserFacingMessage(err, context);
-
-      expect(result).toMatchObject({
-        title: 'Conflit de réservation',
-        text: 'Cette disponibilité est déjà réservée ou fermée.',
-        severity: 'error',
-        canRetry: false,
-        actionHint: 'fix_input',
-      });
+      expect(result.text).toContain('Cet élément existe déjà');
     });
   });
 
@@ -354,9 +291,8 @@ describe('getUserFacingMessage', () => {
       });
 
       const context: ErrorContext = {
-        domain: 'booking',
-        action: 'create-availability',
-        role: 'pro',
+        domain: 'matching',
+        action: 'search',
       };
 
       const result = getUserFacingMessage(err, context);
@@ -453,9 +389,8 @@ describe('getUserFacingMessage', () => {
       });
 
       const context: ErrorContext = {
-        domain: 'booking',
-        action: 'create-availability',
-        role: 'pro',
+        domain: 'matching',
+        action: 'search',
       };
 
       const result = getUserFacingMessage(err, context);
@@ -533,14 +468,13 @@ describe('getUserFacingMessage', () => {
         code: ERROR_CODES.FORBIDDEN,
         message: 'Forbidden',
         status: 403,
-        url: 'http://localhost:4000/booking/availability/123',
+        url: 'http://localhost:4000/conversations/abc/messages',
       };
 
       const normalized = normalizeAppError(rawError);
       const userMsg = getUserFacingMessage(normalized, {
-        domain: 'booking',
-        action: 'delete-availability',
-        role: 'pro',
+        domain: 'chat',
+        action: 'send-message',
       });
 
       expect(userMsg).toMatchObject({
@@ -549,7 +483,7 @@ describe('getUserFacingMessage', () => {
         canRetry: false,
         actionHint: 'contact_support',
       });
-      expect(userMsg.text).toContain('disponibilité');
+      expect(userMsg.text).toContain('message');
     });
 
     it('handles full client-only error flow', () => {

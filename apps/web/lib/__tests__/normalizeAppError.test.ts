@@ -183,24 +183,6 @@ describe('normalizeAppError', () => {
       });
     });
 
-    it('normalizes BOOKING_CONFLICT', () => {
-      const err = {
-        code: ERROR_CODES.BOOKING_CONFLICT,
-        message: 'Booking conflict',
-        status: 409,
-        url: 'http://localhost:4000/booking/requests/123/decision',
-      };
-
-      const result = normalizeAppError(err);
-
-      expect(result).toMatchObject({
-        kind: 'permanent',
-        code: ERROR_CODES.BOOKING_CONFLICT,
-        canRetry: false,
-        actionHint: 'fix_input',
-      });
-    });
-
     it('normalizes MATCHING_CONFLICT', () => {
       const err = {
         code: ERROR_CODES.MATCHING_CONFLICT,

@@ -25,7 +25,7 @@ export interface PushSubscriptionData {
 export interface NotificationData {
   title: string;
   body: string;
-  type: 'booking_accepted' | 'booking_rejected' | 'new_message' | 'reminder' | 'general';
+  type: 'new_message' | 'reminder' | 'general';
   url?: string;
   icon?: string;
   data?: Record<string, unknown>;
@@ -219,8 +219,8 @@ export class PushNotificationManager {
           </div>
           <div class="space-y-2">
             <div class="flex items-center text-sm text-gray-600">
-              <span class="mr-2">🏄</span>
-              <span>Confirmations de cours</span>
+              <span class="mr-2">🤝</span>
+              <span>Mises en relation</span>
             </div>
             <div class="flex items-center text-sm text-gray-600">
               <span class="mr-2">💬</span>
@@ -228,7 +228,7 @@ export class PushNotificationManager {
             </div>
             <div class="flex items-center text-sm text-gray-600">
               <span class="mr-2">⏰</span>
-              <span>Rappels de cours</span>
+              <span>Rappels importants</span>
             </div>
           </div>
           <div class="flex space-x-3">

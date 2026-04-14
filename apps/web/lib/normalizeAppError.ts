@@ -59,11 +59,10 @@ function classifyError(code: string, _retryAfterSeconds?: number): {
     };
   }
 
-  // VALIDATION_ERROR, UNIQUE_CONSTRAINT, BOOKING_CONFLICT, MATCHING_CONFLICT: permanent, canRetry false, actionHint fix_input
+  // VALIDATION_ERROR, UNIQUE_CONSTRAINT, MATCHING_CONFLICT: permanent, canRetry false, actionHint fix_input
   if (
     code === ERROR_CODES.VALIDATION_ERROR ||
     code === ERROR_CODES.UNIQUE_CONSTRAINT ||
-    code === ERROR_CODES.BOOKING_CONFLICT ||
     code === ERROR_CODES.MATCHING_CONFLICT
   ) {
     return {
