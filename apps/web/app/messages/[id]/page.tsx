@@ -101,8 +101,14 @@ export default function ConversationPage() {
     const initialize = async () => {
       try {
         await apiClient.me();
-      } catch {
-        router.replace('/login');
+      } catch (err) {
+        const code = typeof (err as { code?: unknown })?.code === 'string'
+          ? (err as { code: string }).code : null;
+        const status = typeof (err as { status?: unknown })?.status === 'number'
+          ? (err as { status: number }).status : null;
+        if (code === 'SESSION_EXPIRED' || status === 401) {
+          router.replace('/login');
+        }
         return;
       }
 

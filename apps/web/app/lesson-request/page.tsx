@@ -96,8 +96,16 @@ export default function LessonRequestPage() {
           setSavedRequest({ sport, level, date, place, studentCount });
         }
       } catch (err) {
-        console.error('Error loading profile:', err);
-        router.replace('/login');
+        const code = typeof (err as { code?: unknown })?.code === 'string'
+          ? (err as { code: string }).code : null;
+        const status = typeof (err as { status?: unknown })?.status === 'number'
+          ? (err as { status: number }).status : null;
+        if (code === 'SESSION_EXPIRED' || status === 401) {
+          router.replace('/login');
+          return;
+        }
+        // Non-auth error (network, server) — don't redirect to login.
+        console.error('Error loading lesson request profile:', err);
       } finally {
         setLoading(false);
       }
