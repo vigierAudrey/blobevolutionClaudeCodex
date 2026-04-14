@@ -43,11 +43,7 @@ export default function AdminBlockedConversationsPage() {
   useEffect(() => {
     const ensureAdmin = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
+        // No local hint check — truth comes from the server session.
         const current = await apiClient.me();
         if (current.role !== 'ADMIN') {
           router.replace('/dashboard');
