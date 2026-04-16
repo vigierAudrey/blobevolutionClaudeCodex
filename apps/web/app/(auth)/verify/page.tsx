@@ -1,7 +1,7 @@
 "use client";
 
 export const dynamic = 'force-dynamic';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,10 +13,15 @@ function VerifyInner() {
   const [status, setStatus] = useState<'idle' | 'success' | 'error' | 'loading'>('idle');
   const [message, setMessage] = useState<string>('');
   const [redirectTo, setRedirectTo] = useState<string>('/login');
+  // Guard against React StrictMode double-invocation: the one-time token must only
+  // be consumed once. Without this ref, StrictMode's mount→unmount→remount cycle
+  // sends two concurrent POST requests; the second always gets 401 (token already used).
+  const verifyCalledRef = useRef(false);
 
   useEffect(() => {
     const t = search.get('token');
-    if (t) {
+    if (t && !verifyCalledRef.current) {
+      verifyCalledRef.current = true;
       // Remove token from URL bar immediately after reading it — token must not
       // linger in the address bar or browser history after submission.
       window.history.replaceState(null, '', '/verify');
