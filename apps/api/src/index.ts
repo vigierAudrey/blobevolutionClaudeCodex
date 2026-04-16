@@ -236,7 +236,7 @@ import { contactRouter } from './modules/contact/contact.controller';
 import pushRouter from './modules/push/push.controller';
 import { consentRouter } from './modules/consent/consent.controller';
 import { analyticsRouter } from './modules/analytics/analytics.controller';
-import { assertDecommissionedStateConsistent, isBookingTableDropAllowed } from './lib/booking-decommission-state';
+import { assertDecommissionedStateConsistent, isBookingTableDropAllowed, getBookingDecommissionPhase } from './lib/booking-decommission-state';
 
 
 const OPENAPI_SPEC_CANDIDATES = [
@@ -584,54 +584,69 @@ const app = createApp();
 if (process.env.NODE_ENV !== 'test') {
   registerLogTransportShutdownHandlers();
 
-  // Preflight décommission booking (Option A) :
-  // Si BOOKING_DECOMMISSION_STATE=DECOMMISSIONED, vérifier en DB que tous les snapshots
-  // analytics sont gelés. Échec = log CRITICAL + process.exit(1).
-  // Ce contrôle garantit que l'ENV var n'a pas été positionné avant l'exécution des scripts.
-  if (isBookingTableDropAllowed()) {
-    assertDecommissionedStateConsistent()
-      .then(() => {
+  // Démarrage async : le preflight décommission booking DOIT être résolu (ou rejeté)
+  // avant que listen() soit appelé. L'IIFE async garantit que listen() ne peut pas
+  // être atteint tant que la Promise preflight n'est pas terminée.
+  (async () => {
+    // Log de phase au démarrage : si FREEZE_ACTIVE (BOOKING_DISABLED=true, tables présentes),
+    // confirme dans les logs que le guard 410 est bien armé — observabilité ops sans effet de bord.
+    const _bookingPhase = getBookingDecommissionPhase();
+    if (_bookingPhase === 'FREEZE_ACTIVE') {
+      secureLogger.info('BOOKING_FREEZE_GUARD_ACTIVE', {
+        phase: 'FREEZE_ACTIVE',
+        guardTrigger: 'BOOKING_DISABLED=true',
+        message: 'Toutes les écritures booking sont bloquées (410 Gone). Séquence ops de décommission en cours.',
+      });
+    }
+
+    // Preflight décommission booking (Option A) :
+    // Si BOOKING_DECOMMISSION_STATE=DECOMMISSIONED, vérifier en DB que tous les snapshots
+    // analytics sont gelés. Échec = log CRITICAL + process.exit(1) AVANT tout listen().
+    // Ce contrôle garantit que l'ENV var n'a pas été positionné avant l'exécution des scripts.
+    if (isBookingTableDropAllowed()) {
+      try {
+        await assertDecommissionedStateConsistent();
         secureLogger.info('BOOKING_DECOMMISSION_PREFLIGHT_PASSED');
-      })
-      .catch((err: unknown) => {
+      } catch (err: unknown) {
         secureLogger.error('BOOKING_DECOMMISSION_PREFLIGHT_CRITICAL', {
           error: err instanceof Error ? err.message : String(err),
           action: 'PROCESS_EXIT_1',
         });
         process.exit(1);
+      }
+    }
+
+    const port = process.env.PORT ? Number(process.env.PORT) : 4000;
+
+    // Create HTTP server for both Express and Socket.io
+    const httpServer = createServer(app);
+
+    // Initialize Socket.io
+    const { initializeSocket } = require('./lib/socket');
+    initializeSocket(httpServer);
+
+    // Load 2FA Lua script into Redis for EVALSHA optimization
+    // This improves 2FA verification performance by ~30%
+    import('./services/two-factor.service.js').then(({ loadLuaScript }) => {
+      loadLuaScript().catch((error: unknown) => {
+        secureLogger.error('STARTUP_LUA_SCRIPT_LOAD_FAILED', {
+          error: error instanceof Error ? error.message : String(error)
+        });
       });
-  }
-
-  const port = process.env.PORT ? Number(process.env.PORT) : 4000;
-
-  // Create HTTP server for both Express and Socket.io
-  const httpServer = createServer(app);
-
-  // Initialize Socket.io
-  const { initializeSocket } = require('./lib/socket');
-  initializeSocket(httpServer);
-
-  // Load 2FA Lua script into Redis for EVALSHA optimization
-  // This improves 2FA verification performance by ~30%
-  import('./services/two-factor.service.js').then(({ loadLuaScript }) => {
-    loadLuaScript().catch((error: unknown) => {
-      secureLogger.error('STARTUP_LUA_SCRIPT_LOAD_FAILED', {
+    }).catch((error: unknown) => {
+      secureLogger.error('STARTUP_LUA_SCRIPT_IMPORT_FAILED', {
         error: error instanceof Error ? error.message : String(error)
       });
     });
-  }).catch((error: unknown) => {
-    secureLogger.error('STARTUP_LUA_SCRIPT_IMPORT_FAILED', {
-      error: error instanceof Error ? error.message : String(error)
-    });
-  });
 
-  httpServer.listen(port, () => {
-    secureLogger.info('API_SERVER_READY', {
-      port,
-      env: process.env.NODE_ENV ?? 'development',
+    httpServer.listen(port, () => {
+      secureLogger.info('API_SERVER_READY', {
+        port,
+        env: process.env.NODE_ENV ?? 'development',
+      });
+      secureLogger.info('WEBSOCKET_SERVER_READY', { port });
     });
-    secureLogger.info('WEBSOCKET_SERVER_READY', { port });
-  });
+  })();
 }
 
 export default app;

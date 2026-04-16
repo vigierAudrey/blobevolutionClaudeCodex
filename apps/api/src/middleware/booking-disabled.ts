@@ -7,7 +7,7 @@
  *   - Liste explicite des paths écriture (pas de pattern générique) — conservative by design
  *   - 410 Gone (pas 404) : indique une suppression intentionnelle, pas une ressource absente
  *   - Log structuré de chaque tentative bloquée pour preuve d'absence d'activité
- *   - Actif si BOOKING_DISABLED=true OU NODE_ENV=production (post-décommission)
+ *   - Actif si et seulement si BOOKING_DISABLED=true (NODE_ENV n'est jamais lu ici)
  *   - Lire (GET) n'est pas bloqué : les données historiques restent consultables par les services internes
  *
  * MONTAGE : après csrfProtection, avant les routers — cf. createApp() dans index.ts
