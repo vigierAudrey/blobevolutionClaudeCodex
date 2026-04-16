@@ -3,8 +3,38 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 import MapComponent from '../MapComponent';
 
+type LatLngLiteral = { lat: number; lng: number };
+type LatLngTuple = [number, number];
+type MarkerEventHandlers = Record<string, (...args: unknown[]) => void>;
+type LatLngBoundsMock = {
+  getSouth: () => number;
+  getNorth: () => number;
+  getWest: () => number;
+  getEast: () => number;
+};
+type MapContainerMockProps = React.PropsWithChildren<{
+  center: LatLngTuple;
+  zoom: number;
+}>;
+type MarkerMockProps = React.PropsWithChildren<{
+  position: LatLngTuple;
+  eventHandlers?: MarkerEventHandlers;
+}>;
+type PopupMockProps = React.PropsWithChildren;
+type ReactLeafletMockState = {
+  mapInstance: {
+    flyToBounds: jest.Mock;
+    setView: jest.Mock;
+    flyTo: jest.Mock;
+    getZoom: jest.Mock;
+  };
+  mapEventsHandlers: { current: MarkerEventHandlers | null };
+  markerInstances: Array<{ eventHandlers?: MarkerEventHandlers; position?: LatLngTuple }>;
+};
+type ReactLeafletMockModule = { __mock: ReactLeafletMockState };
+
 jest.mock('leaflet', () => {
-  const latLngBounds = (points: Array<{ lat: number; lng: number }>) => {
+  const latLngBounds = (points: LatLngLiteral[]): LatLngBoundsMock => {
     const lats = points.map((point) => point.lat);
     const lngs = points.map((point) => point.lng);
     return {
@@ -15,9 +45,13 @@ jest.mock('leaflet', () => {
     };
   };
 
-  class FakeIconDefault {}
-  Object.assign(FakeIconDefault.prototype, { _getIconUrl: jest.fn() });
-  (FakeIconDefault as unknown).mergeOptions = jest.fn();
+  class FakeIconDefault {
+    static mergeOptions = jest.fn();
+
+    _getIconUrl = jest.fn();
+  }
+
+  const divIcon = jest.fn((options: Record<string, unknown>) => ({ options }));
 
   return {
     __esModule: true,
@@ -25,10 +59,10 @@ jest.mock('leaflet', () => {
       Icon: {
         Default: FakeIconDefault,
       },
-      divIcon: jest.fn((options: unknown) => ({ options })),
+      divIcon,
       latLngBounds,
     },
-    divIcon: jest.fn((options: unknown) => ({ options })),
+    divIcon,
     latLngBounds,
   };
 });
@@ -44,14 +78,14 @@ jest.mock('react-leaflet', () => {
   const mapEventsHandlers: { current: Record<string, (...args: unknown[]) => void> | null } = {
     current: null,
   };
-  const markerInstances: Array<{ eventHandlers?: Record<string, (...args: unknown[]) => void>; position?: unknown }> = [];
-  const MapContainer = ({ children, center, zoom }: unknown) => (
+  const markerInstances: Array<{ eventHandlers?: MarkerEventHandlers; position?: LatLngTuple }> = [];
+  const MapContainer = ({ children, center, zoom }: MapContainerMockProps) => (
     <div data-testid="map-container" data-center={JSON.stringify(center)} data-zoom={zoom}>
       {children}
     </div>
   );
   const TileLayer = () => <div data-testid="tile-layer" />;
-  const Marker = ({ children, position, eventHandlers }: unknown) => {
+  const Marker = ({ children, position, eventHandlers }: MarkerMockProps) => {
     markerInstances.push({ eventHandlers, position });
     return (
       <div data-testid="marker" data-position={JSON.stringify(position)}>
@@ -59,7 +93,7 @@ jest.mock('react-leaflet', () => {
       </div>
     );
   };
-  const Popup = ({ children }: unknown) => <div data-testid="popup">{children}</div>;
+  const Popup = ({ children }: PopupMockProps) => <div data-testid="popup">{children}</div>;
   const Circle = () => <div data-testid="circle" />;
 
   return {
@@ -82,17 +116,8 @@ jest.mock('react-leaflet', () => {
   };
 });
 
-const getReactLeafletMocks = () =>
-  (jest.requireMock('react-leaflet') as unknown).__mock as {
-    mapInstance: {
-      flyToBounds: jest.Mock;
-      setView: jest.Mock;
-      flyTo: jest.Mock;
-      getZoom: jest.Mock;
-    };
-    mapEventsHandlers: { current: Record<string, (...args: unknown[]) => void> | null };
-    markerInstances: Array<{ eventHandlers?: Record<string, (...args: unknown[]) => void>; position?: unknown }>;
-  };
+const getReactLeafletMocks = (): ReactLeafletMockState =>
+  (jest.requireMock('react-leaflet') as ReactLeafletMockModule).__mock;
 
 describe('MapComponent', () => {
   beforeEach(() => {
