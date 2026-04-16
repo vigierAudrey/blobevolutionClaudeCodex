@@ -9,10 +9,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { apiClient } from '../../../lib/apiClient';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
+import { useToast } from '../../../components/ui/toast';
 import type { DashboardUser } from '@/types/user';
 import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, Sport, Level } from '@/types';
 import { Sparkles, ListChecks } from 'lucide-react';
 import { clearMatchingStorage } from '../storage';
+import {
+  FRANCE_ONLY_COPY,
+  getFranceOnlyApiMessage,
+  isFranceCoordinates,
+} from '../../../lib/france-only';
 
 const levelLabels: Record<Level, string> = {
   beginner: 'Débutant',
@@ -28,6 +34,7 @@ const sportLabels: Record<Sport, string> = {
 
 function ResultsInner() {
   const router = useRouter();
+  const toast = useToast();
   const sp = useSearchParams();
 
   // Vérifier le rôle utilisateur
@@ -86,17 +93,29 @@ function ResultsInner() {
       pageSize,
     };
     if (useGeoloc && distanceKm) payload.distanceKm = Number(distanceKm);
-    if (useGeoloc && lat && lng) payload.location = { lat: Number(lat), lng: Number(lng) };
+    if (useGeoloc && lat && lng) {
+      const nextLocation = { lat: Number(lat), lng: Number(lng) };
+      if (!isFranceCoordinates(nextLocation)) {
+        setData(null);
+        setError(FRANCE_ONLY_COPY.matchingSearch);
+        toast(FRANCE_ONLY_COPY.matchingSearch, 'info', 4000);
+        return;
+      }
+      payload.location = nextLocation;
+    }
 
     try {
       const response = await apiClient.searchMatching(payload) as MatchingResults;
       setData(response);
       setError(null);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
+      const message = getFranceOnlyApiMessage(err) || (err instanceof Error ? err.message : null);
       setError(message || 'Erreur recherche');
+      if (message) {
+        toast(message, getFranceOnlyApiMessage(err) ? 'info' : 'error', 4000);
+      }
     }
-  }, [sport, level, date, sortBy, pageSize, page, useGeoloc, distanceKm, lat, lng]);
+  }, [date, distanceKm, lat, level, lng, page, pageSize, sortBy, sport, toast, useGeoloc]);
 
   useEffect(() => {
     void loadResults();

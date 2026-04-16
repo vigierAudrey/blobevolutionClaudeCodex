@@ -32,12 +32,18 @@ describe('Auth E2E', () => {
   let session: TestSession;
   let restoreConsole: () => void;
 
-  const registerUser = async (overrides?: { email?: string; password?: string; role?: 'RIDER' | 'PRO' }) => {
+  const registerUser = async (overrides?: {
+    email?: string;
+    password?: string;
+    role?: 'RIDER' | 'PRO';
+    proCountryCode?: string;
+  }) => {
     const payload = {
       email: overrides?.email ?? DEFAULT_EMAIL,
       password: overrides?.password ?? DEFAULT_PASSWORD,
       role: overrides?.role ?? 'RIDER',
-      consentAccepted: true
+      consentAccepted: true,
+      ...(overrides?.proCountryCode ? { proCountryCode: overrides.proCountryCode } : {}),
     };
     const res = await session.post('/auth/register').send(payload).expect(201);
     return {
@@ -68,6 +74,75 @@ describe('Auth E2E', () => {
       .expect(201);
     expect(res.body).toHaveProperty('message');
     expect(res.body).toHaveProperty('userId');
+  });
+
+  it('registers a PRO only when the declared country is France and provisions the pro profile', async () => {
+    const email = `pro-fr-${Date.now()}@test.com`;
+
+    const res = await session
+      .post('/auth/register')
+      .send({
+        email,
+        password: DEFAULT_PASSWORD,
+        role: 'PRO',
+        proCountryCode: 'FR',
+        consentAccepted: true,
+      })
+      .expect(201);
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { proProfile: true },
+    });
+
+    expect(res.body).toHaveProperty('userId');
+    expect(user?.role).toBe(Role.PRO);
+    expect(user?.proProfile?.countryCode).toBe('FR');
+  });
+
+  it('rejects PRO registration without an explicit French country code and leaves no partial account', async () => {
+    const email = `pro-missing-country-${Date.now()}@test.com`;
+
+    const res = await session
+      .post('/auth/register')
+      .send({
+        email,
+        password: DEFAULT_PASSWORD,
+        role: 'PRO',
+        consentAccepted: true,
+      })
+      .expect(403);
+
+    expect(res.body).toMatchObject({
+      error: 'FRANCE_ONLY',
+      message: 'Pour le lancement, les profils professionnels sont disponibles uniquement en France.',
+    });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    expect(user).toBeNull();
+  });
+
+  it('rejects PRO registration outside France and leaves no partial account', async () => {
+    const email = `pro-es-${Date.now()}@test.com`;
+
+    const res = await session
+      .post('/auth/register')
+      .send({
+        email,
+        password: DEFAULT_PASSWORD,
+        role: 'PRO',
+        proCountryCode: 'ES',
+        consentAccepted: true,
+      })
+      .expect(403);
+
+    expect(res.body).toMatchObject({
+      error: 'FRANCE_ONLY',
+      message: 'Pour le lancement, les profils professionnels sont disponibles uniquement en France.',
+    });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    expect(user).toBeNull();
   });
 
   it('logs in and sets auth cookies', async () => {

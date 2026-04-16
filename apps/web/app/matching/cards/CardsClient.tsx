@@ -16,6 +16,11 @@ import { Sparkles, MessageSquare } from 'lucide-react';
 import { formatDateForDisplay } from './utils';
 import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, Sport, Level } from '@/types';
 import { clearMatchingStorage } from '../storage';
+import {
+  FRANCE_ONLY_COPY,
+  getFranceOnlyApiMessage,
+  isFranceCoordinates,
+} from '../../../lib/france-only';
 
 const AdBannerFeed = dynamicImport(
   () => import('../../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
@@ -170,7 +175,18 @@ export function CardsClient() {
       }
 
       if (useGeoloc && distanceKm) body.distanceKm = Number(distanceKm);
-      if (useGeoloc && lat && lng) body.location = { lat: Number(lat), lng: Number(lng) };
+      if (useGeoloc && lat && lng) {
+        const nextLocation = { lat: Number(lat), lng: Number(lng) };
+        if (!isFranceCoordinates(nextLocation)) {
+          setCandidates([]);
+          setCursor(0);
+          setNextCursor(null);
+          setError(FRANCE_ONLY_COPY.matchingSearch);
+          toast(FRANCE_ONLY_COPY.matchingSearch, 'info', 4000);
+          return;
+        }
+        body.location = nextLocation;
+      }
 
       const data = await optimizedApiClient.searchMatching(body) as MatchingSearchResponse;
 
@@ -190,12 +206,15 @@ export function CardsClient() {
         setCandidates((prev) => prev.concat(deduped));
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
+      const message = getFranceOnlyApiMessage(err) || (err instanceof Error ? err.message : null);
       setError(message || 'Erreur chargement');
+      if (message) {
+        toast(message, getFranceOnlyApiMessage(err) ? 'info' : 'error', 4000);
+      }
     } finally {
       setLoading(false);
     }
-  }, [sport, level, date, useGeoloc, distanceKm, lat, lng]);
+  }, [date, distanceKm, lat, level, lng, sport, toast, useGeoloc]);
 
   useEffect(() => {
     void fetchBatch();

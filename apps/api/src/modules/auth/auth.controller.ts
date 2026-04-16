@@ -82,6 +82,7 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: passwordSchema, // P1-3: OWASP-compliant password validation
   role: z.enum(['RIDER', 'PRO']).default('RIDER'),
+  proCountryCode: z.string().trim().min(2).max(2).transform((value) => value.toUpperCase()).optional(),
   consentAccepted: z.literal(true, {
     errorMap: () => ({ message: 'Vous devez accepter la charte et l\'avertissement.' }),
   }),
@@ -244,6 +245,9 @@ authRouter.post('/register', validate(registerSchema), async (req, res) => {
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    }
+    if (err?.code === 'FRANCE_ONLY') {
+      return res.status(403).json({ error: 'FRANCE_ONLY', message: err.message });
     }
     if (err?.code === 'EMAIL_ALREADY_EXISTS') {
       return res.status(409).json({ error: 'Email already registered' });

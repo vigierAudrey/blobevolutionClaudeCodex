@@ -71,6 +71,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
   - [x] JWT avec rotation/invalidation des refresh tokens.
   - [x] Bcrypt coût 12 pour les mots de passe.
   - [x] Helmet.js basique.
+  - [x] 2026-03-29: Garde-fou lancement France-only côté serveur pour les comptes pros et la recherche géographique, avec messages front temporaires et contrat OpenAPI réaligné.
 
 ### Vulnérabilités critiques — Phase 1 (exemple, estimation 2h)
 

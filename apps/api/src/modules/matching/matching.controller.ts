@@ -11,6 +11,7 @@ import { secureLogger } from '../../utils/secure-logger';
 import * as matchingMetrics from '../../lib/matching-metrics';
 import { checkDecisionsQuota, refundDecisionsQuota } from '../../lib/matching-quota';
 import { createGeoEndpointLimiter } from '../../middleware/enhanced-rate-limit';
+import { FRANCE_ONLY_MESSAGES, assertFranceCoordinates } from '../../lib/france-only';
 
 export const matchingRouter = Router();
 matchingRouter.use(requireAuth, requireVerifiedEmail);
@@ -388,6 +389,10 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
       location: effectiveLocation,
     } as const;
 
+    if (criteria.location) {
+      assertFranceCoordinates(criteria.location, FRANCE_ONLY_MESSAGES.matchingSearch);
+    }
+
     // Persist last search (for defaults next time)
     const dateValue = date === 'anytime' ? null : new Date(date + 'T00:00:00Z');
     await prisma.lastSearch.upsert({
@@ -603,7 +608,8 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
       : res
           .status(mapped.status)
           .json({
-            error: mapped.message,
+            error: (mapped.code as string) || mapped.message,
+            ...(mapped.code ? { message: mapped.message } : {}),
             ...(mapped.details ? { details: mapped.details } : {}),
           });
   }

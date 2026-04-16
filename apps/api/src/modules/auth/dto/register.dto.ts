@@ -4,6 +4,7 @@ export const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   role: z.enum(['RIDER', 'PRO']).default('RIDER'),
+  proCountryCode: z.string().trim().min(2).max(2).transform((value) => value.toUpperCase()).optional(),
   ageConfirmed: z.literal(true, {
     errorMap: () => ({ message: 'Vous devez avoir 18 ans ou plus pour vous inscrire.' }),
   }),

@@ -53,6 +53,7 @@ function sanitizeErrorMessage(error: unknown): string {
       CSRF_INVALID_TOKEN: 'Session expirée, veuillez rafraîchir la page',
       CSRF_NO_TOKEN: 'Session expirée, veuillez rafraîchir la page',
       UNAUTHORIZED: 'Veuillez vous reconnecter',
+      FRANCE_ONLY: 'Cette fonctionnalité est actuellement disponible uniquement en France.',
       FILE_TOO_LARGE: 'Le fichier est trop volumineux (max 5 Mo)',
       INVALID_FILE_TYPE: 'Type de fichier non supporté',
     };
@@ -363,13 +364,13 @@ export default function ProProfilePage() {
 
       const response = await apiRequest('/pro/me', {
         method: 'PUT',
-        body: JSON.stringify({ lat: undefined, lng: undefined }),
+        body: JSON.stringify({ countryCode: 'FR', lat: undefined, lng: undefined }),
         headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data?.error || 'Erreur lors de la suppression');
+        throw new Error(data?.message || data?.error || 'Erreur lors de la suppression');
       }
 
       setUserLocation(null);
@@ -490,6 +491,7 @@ export default function ProProfilePage() {
       const res = await apiRequest('/pro/me', {
         method: 'PUT',
         body: JSON.stringify({
+          countryCode: 'FR',
           businessName: businessName || undefined,
           bio: bio || undefined,
           emailNotif,
@@ -499,7 +501,7 @@ export default function ProProfilePage() {
       });
 
       const body = await res.json();
-      if (!res.ok) throw new Error(body?.error || 'Sauvegarde impossible');
+      if (!res.ok) throw new Error(body?.message || body?.error || 'Sauvegarde impossible');
 
       // Rediriger vers l'onboarding avec un timestamp pour forcer le rechargement
       router.push(`/pro/onboarding?refresh=${Date.now()}`);
@@ -652,10 +654,15 @@ export default function ProProfilePage() {
                     </div>
                   ) : (
                     <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/20 p-4">
-                      <p className="text-sm text-muted-foreground flex items-start gap-2">
-                        <span>ℹ️</span>
-                        <span>Aucune géolocalisation enregistrée. Active-la depuis la BloboMap ou tes Offres pour apparaître dans les recherches à proximité.</span>
-                      </p>
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground flex items-start gap-2">
+                          <span>ℹ️</span>
+                          <span>Aucune géolocalisation enregistrée. Active-la depuis la BloboMap ou tes Offres pour apparaître dans les recherches à proximité.</span>
+                        </p>
+                        <Button asChild variant="outline" size="sm" type="button">
+                          <Link href="/pro/map">Activer ma position</Link>
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>

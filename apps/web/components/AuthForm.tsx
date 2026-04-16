@@ -7,6 +7,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { useToast } from './ui/toast';
 import type { ZodIssue } from 'zod';
 import type { DashboardUser, UserRole } from '@/types/user';
 import { Eye, EyeOff, LogIn, UserPlus, AlertCircle, CheckCircle2, Mail } from 'lucide-react';
@@ -14,6 +15,7 @@ import { getPasswordRequirementStatuses } from '../../api/src/utils/password-val
 import { PasswordRequirementsList } from './PasswordRequirementsList';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { BLOBOSPHERE_SIGNUP_ARTICLE_KEY, BLOBOSPHERE_SIGNUP_INTENT_KEY } from '@/components/blobosphere/BlobosphereAnalyticsLink';
+import { FRANCE_ONLY_COPY } from '../lib/france-only';
 
 const PUBLIC_ROLES = [
   { value: 'RIDER', label: 'Rider' },
@@ -65,6 +67,7 @@ const getErrorMessage = (error: unknown, fallback = 'Une erreur est survenue') =
 
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
+  const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<PublicRole>('RIDER');
@@ -154,7 +157,14 @@ export function AuthForm({ mode }: AuthFormProps) {
           setFieldErrors({ consent: 'Merci de confirmer que vous avez lu et accepté la charte.' });
           return;
         }
-        await apiClient.register({ email, password, role, ageConfirmed: true, consentAccepted: true });
+        await apiClient.register({
+          email,
+          password,
+          role,
+          ageConfirmed: true,
+          consentAccepted: true,
+          ...(role === 'PRO' ? { proCountryCode: 'FR' as const } : {}),
+        });
         if (typeof window !== 'undefined') {
           const intent = window.localStorage.getItem(BLOBOSPHERE_SIGNUP_INTENT_KEY);
           if (intent) {
@@ -447,7 +457,13 @@ export function AuthForm({ mode }: AuthFormProps) {
                     : 'border-input bg-background focus-visible:ring-ring'
                 }`}
                 value={role}
-                onChange={(event) => setRole(event.target.value as PublicRole)}
+                onChange={(event) => {
+                  const nextRole = event.target.value as PublicRole;
+                  setRole(nextRole);
+                  if (nextRole === 'PRO') {
+                    toast(FRANCE_ONLY_COPY.proInfo, 'info', 4000);
+                  }
+                }}
               >
                 {PUBLIC_ROLES.map((option) => (
                   <option key={option.value} value={option.value}>

@@ -3,6 +3,7 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../../../../lib/apiClient';
+import { FRANCE_ONLY_COPY } from '../../../../lib/france-only';
 import Page from '../page';
 
 jest.setTimeout(10000);
@@ -32,10 +33,11 @@ jest.mock('../../../../lib/optimizedApiClient', () => {
     measureApiPerformance: jest.fn(() => ({ end: jest.fn() })),
   };
 });
+const mockToast = jest.fn();
 jest.mock('../../../../components/ui/toast', () => {
   const mockReact = require('react');
   return {
-    useToast: jest.fn(() => jest.fn()),
+    useToast: jest.fn(() => mockToast),
     ToastProvider: ({ children }) => mockReact.createElement('div', { 'data-testid': 'toast-provider' }, children),
   };
 });
@@ -158,6 +160,7 @@ describe('Matching Cards Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
+    mockToast.mockClear();
 
     // Setup router mock
     mockUseRouter.mockReturnValue({
@@ -674,6 +677,38 @@ describe('Matching Cards Component', () => {
       await waitFor(() => {
         expect(screen.getByText('Erreur réseau')).toBeInTheDocument();
       });
+    });
+
+    it('shows an informative toast and skips the API call when geolocation is outside France', async () => {
+      mockSearchParams.set('lat', '41.3874');
+      mockSearchParams.set('lng', '2.1686');
+
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(FRANCE_ONLY_COPY.matchingSearch)).toBeInTheDocument();
+      });
+      expect(mockToast).toHaveBeenCalledWith(FRANCE_ONLY_COPY.matchingSearch, 'info', 4000);
+      expect(mockApiClient.searchMatching).not.toHaveBeenCalled();
+    });
+
+    it('maps a FRANCE_ONLY API refusal to the existing informational toast', async () => {
+      mockApiClient.searchMatching.mockRejectedValue({
+        body: { error: 'FRANCE_ONLY', message: FRANCE_ONLY_COPY.matchingSearch },
+        message: 'Forbidden',
+        status: 403,
+      });
+
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(FRANCE_ONLY_COPY.matchingSearch)).toBeInTheDocument();
+      });
+      expect(mockToast).toHaveBeenCalledWith(FRANCE_ONLY_COPY.matchingSearch, 'info', 4000);
     });
   });
 

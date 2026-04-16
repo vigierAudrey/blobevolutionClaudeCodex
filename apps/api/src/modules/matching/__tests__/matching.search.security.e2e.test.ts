@@ -105,6 +105,53 @@ describe('POST /matching/search security & safety', () => {
     expect(withoutStoredLocation.body.criteria?.location ?? null).toBeNull();
   });
 
+  it('accepts a matching search centered in France and stores the normalized location', async () => {
+    const res = await riderSession
+      .post('/matching/search')
+      .send({
+        sport: 'surf',
+        level: 'beginner',
+        date: '2025-09-04',
+        distanceKm: 20,
+        location: { lat: 43.4832, lng: -1.5586 },
+      })
+      .expect(200);
+
+    expect(res.body.error).toBeUndefined();
+    expect(res.body.criteria?.location).toMatchObject({ lat: 43.4832, lng: -1.5586 });
+
+    const lastSearch = await prisma.lastSearch.findUnique({
+      where: { userId: riderUserId },
+      select: { lat: true, lng: true, distanceKm: true },
+    });
+    expect(lastSearch).toMatchObject({
+      lat: 43.4832,
+      lng: -1.5586,
+      distanceKm: 20,
+    });
+  });
+
+  it('rejects a matching search centered outside France and does not persist the search', async () => {
+    const res = await riderSession
+      .post('/matching/search')
+      .send({
+        sport: 'surf',
+        level: 'beginner',
+        date: '2025-09-04',
+        distanceKm: 20,
+        location: { lat: 41.3874, lng: 2.1686 },
+      })
+      .expect(403);
+
+    expect(res.body).toMatchObject({
+      error: 'FRANCE_ONLY',
+      message: 'La recherche géographique est actuellement limitée à la France.',
+    });
+
+    const lastSearchCount = await prisma.lastSearch.count({ where: { userId: riderUserId } });
+    expect(lastSearchCount).toBe(0);
+  });
+
   it('abuse/IDOR: forbids PRO role on search endpoint', async () => {
     await proSession
       .post('/matching/search')

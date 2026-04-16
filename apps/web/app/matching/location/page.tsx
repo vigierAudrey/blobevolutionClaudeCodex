@@ -9,7 +9,9 @@ import { Button } from '../../../components/ui/button';
 import type { DashboardUser } from '@/types/user';
 import type { Level, Partner, Sport } from '@/types/matching';
 import { Badge } from '../../../components/ui/badge';
+import { useToast } from '../../../components/ui/toast';
 import { MapPin, AlertTriangle } from 'lucide-react';
+import { FRANCE_ONLY_COPY, isFranceCoordinates } from '../../../lib/france-only';
 
 // Force SSR due to useSearchParams and localStorage usage
 export const dynamic = 'force-dynamic';
@@ -93,6 +95,7 @@ const LNG_KEY = 'matching.lng';
 
 function LocationInner() {
   const router = useRouter();
+  const toast = useToast();
   const sp = useSearchParams();
   const [sport, setSport] = useState<Sport | null>(null);
   const [level, setLevel] = useState<Level | null>(null);
@@ -153,6 +156,10 @@ function LocationInner() {
   const saveAndNext = async () => {
     try { localStorage.setItem(DIST_KEY, String(distanceKm)); } catch {}
     if (lat != null && lng != null) {
+      if (!isFranceCoordinates({ lat, lng })) {
+        toast(FRANCE_ONLY_COPY.matchingSearch, 'info', 4000);
+        return;
+      }
       try { localStorage.setItem(LAT_KEY, String(lat)); localStorage.setItem(LNG_KEY, String(lng)); } catch {}
       if (saveDefault) {
         try { await apiClient.updateProfile({ lat, lng }); } catch {}
@@ -179,8 +186,16 @@ function LocationInner() {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLat(pos.coords.latitude);
-        setLng(pos.coords.longitude);
+        const nextLat = pos.coords.latitude;
+        const nextLng = pos.coords.longitude;
+        if (!isFranceCoordinates({ lat: nextLat, lng: nextLng })) {
+          setLat(null);
+          setLng(null);
+          toast(FRANCE_ONLY_COPY.matchingSearch, 'info', 4000);
+          return;
+        }
+        setLat(nextLat);
+        setLng(nextLng);
         setGeolocError(false);
       },
       (error) => {

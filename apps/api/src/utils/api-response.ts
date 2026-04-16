@@ -57,7 +57,10 @@ export const mapErrorToApiError = (error: unknown): MappedError => {
   if (error && typeof error === 'object' && 'status' in error && typeof (error as any).status === 'number') {
     const status = (error as any).status as number;
     const message = (error as any).message ?? 'Error';
-    return { status, code: 'APPLICATION_ERROR', message };
+    const code = typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : 'APPLICATION_ERROR';
+    return { status, code, message };
   }
 
   const fallbackMessage = error instanceof Error ? error.message : 'Internal error';

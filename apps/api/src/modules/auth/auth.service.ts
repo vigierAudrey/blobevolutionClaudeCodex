@@ -9,6 +9,7 @@ import { AVAILABLE_PERMISSIONS } from '../admin/permissions';
 import { hashIpHmac } from '../../lib/hash-ip';
 import type { AuthenticatedSessionContext } from './auth-session-context';
 import { invalidateSessionCache } from '../../lib/auth-session-store';
+import { FRANCE_ONLY_MESSAGES, normalizeCountryCode } from '../../lib/france-only';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
@@ -137,20 +138,47 @@ export class AuthService {
   }
 
   async register(
-    data: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted?: boolean },
+    data: {
+      email: string;
+      password: string;
+      role: 'RIDER' | 'PRO';
+      consentAccepted?: boolean;
+      proCountryCode?: string;
+    },
     opts?: { consentIp?: string },
   ) {
+    if (data.role === 'PRO' && normalizeCountryCode(data.proCountryCode) !== 'FR') {
+      throw {
+        code: 'FRANCE_ONLY',
+        status: 403,
+        message: FRANCE_ONLY_MESSAGES.proRegistration,
+      };
+    }
+
     try {
       const hashed = await bcrypt.hash(data.password, BCRYPT_COST);
-      const user = await prisma.user.create({
-        data: {
-          email: data.email,
-          password: hashed,
-          role: data.role,
-          consentedAt: new Date(),
-          consentVersion: AuthService.CONSENT_VERSION,
-          consentIpHash: hashIpHmac(opts?.consentIp) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
-        },
+      const user = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const createdUser = await tx.user.create({
+          data: {
+            email: data.email,
+            password: hashed,
+            role: data.role,
+            consentedAt: new Date(),
+            consentVersion: AuthService.CONSENT_VERSION,
+            consentIpHash: hashIpHmac(opts?.consentIp) ?? undefined,
+          },
+        });
+
+        if (data.role === 'PRO') {
+          await tx.proProfile.create({
+            data: {
+              userId: createdUser.id,
+              countryCode: 'FR',
+            },
+          });
+        }
+
+        return createdUser;
       });
       // Génère un token de vérification email
       const verification = await this.createEmailVerification(user.id);
