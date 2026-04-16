@@ -13,9 +13,21 @@
  *                                in dev/test, included for completeness)
  *
  * SCOPE: E2E test setup ONLY. Never called in production.
+ * HARD GUARD: execution in NODE_ENV=production is refused before any Redis connection.
  * IMPACT: counters reset to 0 — equivalent to the 15-min window expiring naturally.
  * NO PROD CHANGE: this file is a test script, it does not modify any prod code.
  */
+
+// ── Production guard ──────────────────────────────────────────────────────────
+// Must run before any import that touches Redis so no connection is ever opened.
+if (process.env.NODE_ENV === 'production') {
+  console.error(
+    '[flush-e2e-rate-limits] REFUSED: this script must not run in production. ' +
+    'It is an E2E test helper only. Exiting with code 1.',
+  );
+  process.exit(1);
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 import 'dotenv/config';
 import { resolve } from 'path';
@@ -78,7 +90,8 @@ async function flushAuthRateLimitKeys(): Promise<void> {
 }
 
 flushAuthRateLimitKeys().catch((err) => {
-  // Non-fatal — test suite will catch actual failures
-  console.warn('[flush-e2e-rate-limits] Unexpected error:', err instanceof Error ? err.message : String(err));
-  process.exit(0); // exit 0: don't block the E2E run
+  // Unexpected error (not a Redis-down case — that is handled inside the function via return).
+  // Fail hard so CI surfaces the problem rather than silently continuing.
+  console.error('[flush-e2e-rate-limits] Unexpected error:', err instanceof Error ? err.message : String(err));
+  process.exit(1);
 });
