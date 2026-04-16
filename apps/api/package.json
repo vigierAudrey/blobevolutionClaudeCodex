@@ -22,7 +22,8 @@
     "backfill:booking-archive:verify": "tsx src/scripts/backfill-booking-legal-archive.ts --verify",
     "analytics:snapshot:status": "tsx src/scripts/freeze-booking-analytics-snapshot.ts --status",
     "analytics:snapshot:freeze": "tsx src/scripts/freeze-booking-analytics-snapshot.ts",
-    "analytics:snapshot:freeze:force": "tsx src/scripts/freeze-booking-analytics-snapshot.ts --force"
+    "analytics:snapshot:freeze:force": "tsx src/scripts/freeze-booking-analytics-snapshot.ts --force",
+    "flush:e2e-rate-limits": "tsx scripts/flush-e2e-rate-limits.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.616.0",

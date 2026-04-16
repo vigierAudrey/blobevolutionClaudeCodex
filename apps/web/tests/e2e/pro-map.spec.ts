@@ -1,8 +1,76 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { loginWithCookieSession } from './helpers/auth';
 
-const PRO_EMAIL = process.env.E2E_PRO_EMAIL ?? 'dev+pro1@test.com';
-const PRO_PASSWORD = process.env.E2E_PRO_PASSWORD ?? 'Passw0rd!';
+const WEB_BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? process.env.E2E_BASE_URL ?? 'http://localhost:3020';
 const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
+const PRO_EMAIL = process.env.E2E_PRO_EMAIL ?? 'dev+pro9@test.com';
+const PRO_PASSWORD = process.env.E2E_PRO_PASSWORD ?? 'Passw0rd!';
+// rider1 is reserved for the PRO-role security test — use rider2 for the lesson fixture
+// to avoid sharing the AUTH_LOGIN_ACCOUNT_IP rate-limit bucket between beforeAll and tests.
+const RIDER_EMAIL = process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
+const RIDER_PASSWORD = process.env.E2E_RIDER_PASSWORD ?? 'Passw0rd!';
+const FIXTURE_RIDER_EMAIL = process.env.E2E_FIXTURE_RIDER_EMAIL ?? 'dev+rider2@test.com';
+
+// Pro9 "Hossegor Peak Coaching" is seeded at lat:43.6645, lng:-1.3908.
+// These lesson coords place the fixture rider ~100 m from the pro — guaranteed
+// to appear in any radius query ≥ 1 km (spec uses 200 km).
+const FIXTURE_LESSON_LAT = 43.664;
+const FIXTURE_LESSON_LNG = -1.390;
+
+/**
+ * Injects a visible lesson-request fixture for the Blobomap spec.
+ *
+ * The global seed creates riders with wantsLesson=true but WITHOUT lessonLat/lessonLng.
+ * /pro/near/lessons applies a strict WHERE lessonLat IS NOT NULL AND lessonLng IS NOT NULL,
+ * so those riders are invisible. This function patches dev+rider1 via PUT /profile/me
+ * to add valid French lesson coordinates near pro9 (Hossegor), making it appear on the map.
+ *
+ * Business invariants respected:
+ *  - wantsLesson=true requires lessonLat AND lessonLng (both-or-none)
+ *  - Coordinates must be in France (France-only launch guard)
+ *  - No prod code modified
+ */
+async function setupLessonFixture(): Promise<void> {
+  const apiContext = await playwrightRequest.newContext({ baseURL: API_BASE_URL });
+  try {
+    // Bootstrap CSRF secret into a fresh session
+    const csrfRes = await apiContext.get('/csrf-token');
+    if (!csrfRes.ok()) throw new Error(`CSRF fetch failed: ${csrfRes.status()}`);
+    const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
+
+    // Login as the dedicated fixture rider (not RIDER_EMAIL which is used in security tests,
+    // to keep each account's AUTH_LOGIN_ACCOUNT_IP bucket independent)
+    const loginRes = await apiContext.post('/auth/login', {
+      headers: { 'X-CSRF-Token': csrfToken },
+      data: { email: FIXTURE_RIDER_EMAIL, password: RIDER_PASSWORD, consentAccepted: true },
+    });
+    if (!loginRes.ok()) throw new Error(`Rider login failed: ${loginRes.status()}`);
+
+    // After login the session is renewed — fetch a fresh CSRF token
+    const csrfRes2 = await apiContext.get('/csrf-token');
+    if (!csrfRes2.ok()) throw new Error(`Post-login CSRF fetch failed: ${csrfRes2.status()}`);
+    const { csrfToken: csrfToken2 } = (await csrfRes2.json()) as { csrfToken: string };
+
+    // Patch lesson coords so the rider appears on /pro/near/lessons
+    const profileRes = await apiContext.put('/profile/me', {
+      headers: { 'X-CSRF-Token': csrfToken2 },
+      data: {
+        wantsLesson: true,
+        lessonSport: 'surf',
+        lessonLevel: 'beginner',
+        lessonStudentCount: 1,
+        lessonLat: FIXTURE_LESSON_LAT,
+        lessonLng: FIXTURE_LESSON_LNG,
+      },
+    });
+    if (!profileRes.ok()) {
+      const body = await profileRes.text();
+      throw new Error(`Profile fixture update failed: ${profileRes.status()} — ${body}`);
+    }
+  } finally {
+    await apiContext.dispose();
+  }
+}
 
 function testIp(tag: string) {
   const base = Math.abs(
@@ -15,50 +83,114 @@ function testIp(tag: string) {
   return `10.${a}.${b}.${c ^ d || 42}`;
 }
 
-async function loginViaApi(email: string, password: string) {
-  const apiContext = await playwrightRequest.newContext({
-    baseURL: API_BASE_URL,
-    extraHTTPHeaders: { 'X-Forwarded-For': testIp(`api-${email}`) },
-  });
+function appUrl(path: string) {
+  return new URL(path, WEB_BASE_URL).toString();
+}
 
-  const csrfResponse = await apiContext.get('/csrf-token');
-  const csrfJson = (await csrfResponse.json()) as { csrfToken: string };
+type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
 
-  const loginResponse = await apiContext.post('/auth/login', {
-    headers: {
-      'X-CSRF-Token': csrfJson.csrfToken,
+async function createPageFromStorageState(
+  browser: Browser,
+  storageState: StorageState,
+  tag: string,
+) {
+  const context = await browser.newContext({
+    storageState,
+    extraHTTPHeaders: {
+      'X-Forwarded-For': testIp(tag),
     },
-    data: { email, password },
   });
+  const page = await context.newPage();
+  return { context, page };
+}
 
-  if (!loginResponse.ok()) {
-    throw new Error(`API login failed for ${email}: ${loginResponse.status()} ${await loginResponse.text()}`);
+async function resolveMatchingOptionValue(selectLocator: Locator, pattern: RegExp) {
+  const options = await selectLocator.locator('option').evaluateAll(
+    (elements: Element[]) =>
+      elements.map((element) => {
+        const option = element as HTMLOptionElement;
+        return {
+          value: option.value,
+          label: option.textContent ?? '',
+        };
+      }),
+  );
+
+  const match = options.find((option) => pattern.test(option.label));
+  if (!match) {
+    throw new Error(`No select option matches ${pattern}`);
   }
 
-  const tokens = await loginResponse.json();
-  await apiContext.dispose();
-  return tokens as { accessToken: string; refreshToken: string };
+  return match.value;
+}
+
+function mapMarkerIcons(page: Page) {
+  return page.locator('.leaflet-marker-icon.map-marker-icon');
+}
+
+async function dismissAdsModalIfPresent(page: Page) {
+  const modalHeading = page.getByRole('heading', { name: /Publicités adaptées à tes goûts surf\/kite/i });
+  if (await modalHeading.isVisible().catch(() => false)) {
+    const dismissButton = page
+      .getByRole('button', { name: /Continuer avec les pubs basiques|Utiliser les pubs limitées/i })
+      .first();
+    await dismissButton.click();
+    await expect(modalHeading).toBeHidden({ timeout: 10_000 });
+  }
+}
+
+async function loadVisibleLessonRequests(page: Page) {
+  await page.waitForTimeout(500);
+  await dismissAdsModalIfPresent(page);
+
+  const radiusInput = page.locator('input[type="number"]').first();
+  await radiusInput.fill('200');
+  await dismissAdsModalIfPresent(page);
+  await page.getByRole('button', { name: /Rafraîchir/i }).click();
+
+  await expect
+    .poll(
+      async () => {
+        const text = await page.locator('main').textContent();
+        const match = text?.match(/(\d+)\s+demande\(s\)\s+trouvée\(s\)/i);
+        return match ? Number(match[1]) : -1;
+      },
+      { timeout: 15_000 },
+    )
+    .toBeGreaterThan(0);
+}
+
+async function firstRiderMarker(page: Page) {
+  const markers = mapMarkerIcons(page);
+  const count = await markers.count();
+  if (count === 0) {
+    return null;
+  }
+
+  // Marker 0 is the pro center marker when geolocation is enabled.
+  return count > 1 ? markers.nth(1) : markers.first();
 }
 
 test.describe('Pro Map (Blobomap)', () => {
-  test('should display map page with riders looking for lessons', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map'),
-      },
+  test.describe.configure({ mode: 'serial' });
+
+  let proStorageState: StorageState;
+
+  test.beforeAll(async ({ browser }) => {
+    const context = await loginWithCookieSession(browser, PRO_EMAIL, {
+      password: PRO_PASSWORD,
+      tag: 'pro-map-auth',
     });
-    const page = await context.newPage();
+    proStorageState = await context.storageState();
+    await context.close();
 
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
+    // Ensure at least one rider has lesson coords visible to /pro/near/lessons
+    await setupLessonFixture();
+  });
 
-    await page.goto('/pro/map');
+  test('should display map page with riders looking for lessons', async ({ browser }) => {
+    const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map');
+    await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
 
     // Page should load successfully
@@ -78,33 +210,15 @@ test.describe('Pro Map (Blobomap)', () => {
   });
 
   test('should display markers for riders on the map', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-markers'),
-      },
-    });
-    const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
-
-    await page.goto('/pro/map');
+    const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-markers');
+    await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    await page.waitForTimeout(3000);
+    await loadVisibleLessonRequests(page);
 
-    // Look for rider markers or pins
-    // This is highly dependent on the map library used (Leaflet, Mapbox, etc.)
-    const markers = page.locator('[class*="marker"], [class*="pin"], img[src*="marker"], img[alt*="marker"]');
+    const markers = mapMarkerIcons(page);
 
     if (await markers.count() > 0) {
-      // Markers found
       expect(await markers.count()).toBeGreaterThan(0);
     } else {
       // No markers - could be empty state
@@ -118,36 +232,19 @@ test.describe('Pro Map (Blobomap)', () => {
   });
 
   test('should show rider details on marker click', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-details'),
-      },
-    });
-    const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
-
-    await page.goto('/pro/map');
+    const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-details');
+    await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    await page.waitForTimeout(3000);
+    await loadVisibleLessonRequests(page);
 
-    // Try to click on a marker
-    const marker = page.locator('[class*="marker"], [class*="pin"]').first();
+    const marker = await firstRiderMarker(page);
 
-    if (await marker.count() > 0) {
+    if (marker) {
       await marker.click();
       await page.waitForTimeout(1000);
 
-      // Look for popup or details panel
-      const detailsPanel = page.locator('[class*="popup"], [class*="details"], [data-testid="rider-details"]');
+      const detailsPanel = page.locator('.leaflet-popup-content, [class*="details"], [data-testid="rider-details"]');
 
       if (await detailsPanel.count() > 0) {
         await expect(detailsPanel.first()).toBeVisible();
@@ -158,26 +255,12 @@ test.describe('Pro Map (Blobomap)', () => {
   });
 
   test('should filter riders by sport', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-filter-sport'),
-      },
-    });
-    const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
-
-    await page.goto('/pro/map');
+    const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-filter-sport');
+    await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
 
     await page.waitForTimeout(2000);
+    await dismissAdsModalIfPresent(page);
 
     // Look for sport filter
     const sportSelect = page.locator('select').filter({ hasText: /sport/i });
@@ -195,33 +278,20 @@ test.describe('Pro Map (Blobomap)', () => {
   });
 
   test('should filter riders by level', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-filter-level'),
-      },
-    });
-    const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
-
-    await page.goto('/pro/map');
+    const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-filter-level');
+    await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
 
     await page.waitForTimeout(2000);
+    await dismissAdsModalIfPresent(page);
 
     // Look for level filter
     const levelSelect = page.locator('select').filter({ hasText: /niveau|level/i });
     const levelButtons = page.locator('button').filter({ hasText: /débutant|beginner|intermediate|avancé|advanced/i });
 
     if (await levelSelect.count() > 0) {
-      await levelSelect.selectOption({ label: /débutant|beginner/i });
+      const levelValue = await resolveMatchingOptionValue(levelSelect.first(), /débutant|beginner/i);
+      await levelSelect.first().selectOption(levelValue);
       await page.waitForTimeout(1000);
     } else if (await levelButtons.count() > 0) {
       await levelButtons.first().click();
@@ -232,26 +302,12 @@ test.describe('Pro Map (Blobomap)', () => {
   });
 
   test('should adjust map radius/distance filter', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-radius'),
-      },
-    });
-    const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
-
-    await page.goto('/pro/map');
+    const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-radius');
+    await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
 
     await page.waitForTimeout(2000);
+    await dismissAdsModalIfPresent(page);
 
     // Look for radius/distance input
     const radiusInput = page.locator('input[type="number"], input[type="range"]').filter({ hasText: /rayon|radius|distance|km/i });
@@ -271,26 +327,12 @@ test.describe('Pro Map (Blobomap)', () => {
   });
 
   test('should show rider count or statistics', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-stats'),
-      },
-    });
-    const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
-
-    await page.goto('/pro/map');
+    const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-stats');
+    await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
 
     await page.waitForTimeout(2000);
+    await dismissAdsModalIfPresent(page);
 
     // Look for rider count display
     const countDisplay = page.locator('text=/\\d+\\s*(riders?|demandes?|résultats?|results?)/i');
@@ -303,31 +345,15 @@ test.describe('Pro Map (Blobomap)', () => {
   });
 
   test('should allow contacting a rider from the map', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-contact'),
-      },
-    });
-    const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
-
-    await page.goto('/pro/map');
+    const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-contact');
+    await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    await page.waitForTimeout(3000);
+    await loadVisibleLessonRequests(page);
 
-    // Click on a marker
-    const marker = page.locator('[class*="marker"], [class*="pin"]').first();
+    const marker = await firstRiderMarker(page);
 
-    if (await marker.count() > 0) {
+    if (marker) {
       await marker.click();
       await page.waitForTimeout(1000);
 
@@ -345,44 +371,21 @@ test.describe('Pro Map (Blobomap)', () => {
 
 test.describe('Pro Map Security', () => {
   test('should require authentication to access map', async ({ page }) => {
-    await page.goto('/pro/map');
+    await page.goto(appUrl('/pro/map'));
 
     // Should redirect to login
     await expect(page).toHaveURL(/\/(login|auth|connexion)/i, { timeout: 10000 });
   });
 
   test('should require PRO role to access map', async ({ browser }) => {
-    // This test assumes we have a RIDER account set up
-    const RIDER_EMAIL = process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
-    const RIDER_PASSWORD = process.env.E2E_RIDER_PASSWORD ?? 'Passw0rd!';
-
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('rider-access-pro-map'),
-      },
+    const context = await loginWithCookieSession(browser, RIDER_EMAIL, {
+      password: RIDER_PASSWORD,
+      tag: 'rider-access-pro-map',
     });
     const page = await context.newPage();
+    await page.goto(appUrl('/pro/map'));
 
-    try {
-      const tokens = await loginViaApi(RIDER_EMAIL, RIDER_PASSWORD);
-      await page.addInitScript(
-        ({ accessToken, refreshToken }) => {
-          window.localStorage.setItem('accessToken', accessToken);
-          window.localStorage.setItem('refreshToken', refreshToken);
-        },
-        tokens
-      );
-
-      await page.goto('/pro/map');
-
-      // Should redirect away from pro map
-      await page.waitForTimeout(2000);
-      const url = page.url();
-      expect(url).not.toContain('/pro/map');
-    } catch (error) {
-      // Expected to fail if RIDER account doesn't exist
-      console.log('RIDER account test skipped - account not configured');
-    }
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 
     await context.close();
   });
