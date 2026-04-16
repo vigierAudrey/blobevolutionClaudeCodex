@@ -1,10 +1,11 @@
 import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { type ReadonlyURLSearchParams, useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../../../../lib/apiClient';
 import Page from '../page';
 import { FRANCE_ONLY_INFO_MESSAGE } from '../../../../lib/franceLaunch';
+import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 
 jest.setTimeout(10000);
 
@@ -37,29 +38,52 @@ jest.mock('../../../../components/ui/toast', () => {
   const mockReact = require('react');
   return {
     useToast: jest.fn(() => jest.fn()),
-    ToastProvider: ({ children }) => mockReact.createElement('div', { 'data-testid': 'toast-provider' }, children),
+    ToastProvider: ({ children }: { children?: React.ReactNode }) =>
+      mockReact.createElement('div', { 'data-testid': 'toast-provider' }, children),
   };
 });
+
+type DragInfo = {
+  offset: { x: number; y: number };
+  velocity: { x: number; y: number };
+};
+
+type MockMotionProps = React.ComponentPropsWithoutRef<'div'> & {
+  drag?: 'x' | boolean;
+  dragConstraints?: unknown;
+  dragElastic?: unknown;
+  dragMomentum?: boolean;
+  whileTap?: unknown;
+  transition?: unknown;
+  onDrag?: (event: React.MouseEvent<HTMLDivElement>, info: DragInfo) => void;
+  onDragEnd?: (event: React.MouseEvent<HTMLDivElement>, info: DragInfo) => void;
+};
+
 jest.mock('framer-motion', () => {
-  const mockReact = require('react');
-  const MockMotion = mockReact.forwardRef(({ children, style, onDrag, onDragEnd, drag, whileTap: _unusedWhileTap, transition: _unusedTransition, className, ...rest }, ref) => {
-    const handleMouseDown = (e) => {
+  const mockReact = require('react') as typeof React;
+  const MockMotion = mockReact.forwardRef(function MockMotion(
+    {
+      children,
+      style,
+      onDrag,
+      onDragEnd,
+      drag,
+      whileTap: _unusedWhileTap,
+      transition: _unusedTransition,
+      dragConstraints: _unusedDragConstraints,
+      dragElastic: _unusedDragElastic,
+      dragMomentum: _unusedDragMomentum,
+      className,
+      ...rest
+    }: MockMotionProps,
+    ref: React.ForwardedRef<HTMLDivElement>,
+  ) {
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
       if (onDrag) onDrag(e, { offset: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } });
     };
-    const handleMouseUp = (e) => {
+    const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
       if (onDragEnd) onDragEnd(e, { offset: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } });
     };
-
-    // Filter out framer-motion specific props that would generate warnings
-    const validProps = { ...rest };
-    delete validProps.drag;
-    delete validProps.dragConstraints;
-    delete validProps.dragElastic;
-    delete validProps.dragMomentum;
-    delete validProps.onDrag;
-    delete validProps.onDragEnd;
-    delete validProps.whileTap;
-    delete validProps.transition;
 
     return mockReact.createElement('div', {
       ref,
@@ -67,7 +91,7 @@ jest.mock('framer-motion', () => {
       className,
       onMouseDown: drag === 'x' ? handleMouseDown : undefined,
       onMouseUp: drag === 'x' ? handleMouseUp : undefined,
-      ...validProps,
+      ...rest,
     }, children);
   });
 
@@ -82,12 +106,25 @@ jest.mock('framer-motion', () => {
   };
 });
 
-const mockUseRouter = useRouter;
-const mockUseSearchParams = useSearchParams;
-const mockApiClient = apiClient;
+type MockedApiClient = jest.Mocked<typeof apiClient> & {
+  getConsent: jest.Mock;
+};
+
+const mockUseRouter = jest.mocked(useRouter);
+const mockUseSearchParams = jest.mocked(useSearchParams);
+const mockApiClient = apiClient as MockedApiClient;
+
+function createReadonlySearchParams(entries: Record<string, string>): ReadonlyURLSearchParams {
+  return new URLSearchParams(entries) as unknown as ReadonlyURLSearchParams;
+}
+
+type SearchMatchingResponse = Awaited<ReturnType<typeof apiClient.searchMatching>>;
+type SearchCandidate = NonNullable<SearchMatchingResponse['results']>[number];
+type MatchDecisionsResponse = Awaited<ReturnType<typeof apiClient.matchDecisions>>;
+type DisciplinesResponse = Awaited<ReturnType<typeof apiClient.getDisciplines>>;
 
 // Test data
-const mockProfile = {
+const mockProfile: SearchCandidate = {
   id: 'profile-1',
   displayName: 'Surf Rider',
   gender: 'FEMALE',
@@ -95,9 +132,10 @@ const mockProfile = {
   level: 'intermediate',
   distanceKm: 5,
   wantsLesson: false,
+  lessonSport: null,
 };
 
-const mockProfiles = [
+const mockProfiles: SearchCandidate[] = [
   mockProfile,
   {
     id: 'profile-2',
@@ -107,6 +145,7 @@ const mockProfiles = [
     level: 'advanced',
     distanceKm: 12,
     wantsLesson: true,
+    lessonSport: 'kitesurf',
   },
 ];
 
@@ -121,14 +160,16 @@ const mockUserProfile = {
   photoUrl: 'https://example.com/photo.jpg',
 };
 
-const mockDisciplines = [
+const mockDisciplines: DisciplinesResponse = [
   { sport: 'surf', level: 'beginner' },
 ];
 
 // Helper function to render with providers
-function renderWithProviders(ui) {
-  const { ToastProvider } = require('../../../../components/ui/toast');
-  const Wrapper = ({ children }) => React.createElement(ToastProvider, null, children);
+function renderWithProviders(ui: React.ReactElement) {
+  const { ToastProvider } = require('../../../../components/ui/toast') as {
+    ToastProvider: React.ComponentType<React.PropsWithChildren>;
+  };
+  const Wrapper = ({ children }: React.PropsWithChildren) => React.createElement(ToastProvider, null, children);
   return render(ui, { wrapper: Wrapper });
 }
 
@@ -154,49 +195,32 @@ async function advanceTime(ms: number) {
 describe('Matching Cards Component', () => {
   const mockPush = jest.fn();
   const mockReplace = jest.fn();
-  const mockSearchParams = new URLSearchParams();
+  const defaultSearchParams = {
+    sport: 'surf',
+    level: 'intermediate',
+    date: '2024-01-15',
+    useGeoloc: '1',
+    distanceKm: '20',
+    lat: '43.4832',
+    lng: '-1.5586',
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
 
     // Setup router mock
-    mockUseRouter.mockReturnValue({
+    const router: AppRouterInstance = {
       push: mockPush,
       replace: mockReplace,
       back: jest.fn(),
       forward: jest.fn(),
       refresh: jest.fn(),
       prefetch: jest.fn(),
-    });
-
-    // Setup search params mock
-    mockSearchParams.set('sport', 'surf');
-    mockSearchParams.set('level', 'intermediate');
-    mockSearchParams.set('date', '2024-01-15');
-    mockSearchParams.set('useGeoloc', '1');
-    mockSearchParams.set('distanceKm', '20');
-    mockSearchParams.set('lat', '43.4832');
-    mockSearchParams.set('lng', '-1.5586');
-
-    const mockUrlSearchParams = {
-      get: (key) => mockSearchParams.get(key),
-      getAll: jest.fn(),
-      has: jest.fn(),
-      keys: jest.fn(),
-      values: jest.fn(),
-      entries: jest.fn(),
-      forEach: jest.fn(),
-      toString: jest.fn(),
-      append: jest.fn(),
-      delete: jest.fn(),
-      set: jest.fn(),
-      sort: jest.fn(),
-      size: 0,
-      [Symbol.iterator]: jest.fn(),
     };
+    mockUseRouter.mockReturnValue(router);
 
-    mockUseSearchParams.mockReturnValue(mockUrlSearchParams);
+    mockUseSearchParams.mockReturnValue(createReadonlySearchParams(defaultSearchParams));
 
     // Setup API client mocks
     mockApiClient.getTokens.mockReturnValue({ accessToken: 'fake-token', refreshToken: 'fake-refresh' });
@@ -208,8 +232,8 @@ describe('Matching Cards Component', () => {
       total: mockProfiles.length,
     });
     mockApiClient.listConversations.mockResolvedValue({ items: [] });
-    mockApiClient.matchDecisions.mockResolvedValue({ createdConversations: [] });
-    (mockApiClient as unknown as typeof mockApiClient & { getConsent: jest.Mock }).getConsent = jest.fn().mockResolvedValue({ consent: null });
+    mockApiClient.matchDecisions.mockResolvedValue({ count: 0, createdConversations: [] });
+    mockApiClient.getConsent = jest.fn().mockResolvedValue({ consent: null });
   });
 
   afterEach(() => {
@@ -304,10 +328,11 @@ describe('Matching Cards Component', () => {
   describe('Loading States', () => {
     it('should display loading indicator during initial load', async () => {
       // Make searchMatching return a promise that takes time to resolve
-      mockApiClient.searchMatching.mockImplementation(() =>
-        new Promise((resolve) => {
+      mockApiClient.searchMatching.mockImplementation(
+        () =>
+          new Promise<SearchMatchingResponse>((resolve) => {
           setTimeout(() => resolve({ results: mockProfiles, total: 2 }), 100);
-        })
+          }),
       );
 
       await act(async () => {
@@ -466,6 +491,7 @@ describe('Matching Cards Component', () => {
   describe('Match Handling', () => {
     it('should display match popup when match is created', async () => {
       mockApiClient.matchDecisions.mockResolvedValue({
+        count: 1,
         createdConversations: [{
           conversationId: 'conv-1',
           otherDisplayName: 'Match User',
@@ -502,6 +528,7 @@ describe('Matching Cards Component', () => {
 
     it('should navigate to conversation when clicking message button', async () => {
       mockApiClient.matchDecisions.mockResolvedValue({
+        count: 1,
         createdConversations: [{
           conversationId: 'conv-123',
           otherDisplayName: 'Match User',
@@ -598,31 +625,9 @@ describe('Matching Cards Component', () => {
     });
 
     it('should format "anytime" as "Peu importe"', async () => {
-      // Set the search param to anytime
-      mockSearchParams.set('date', 'anytime');
-
-      // Mock the URLSearchParams to return anytime for date
-      const mockUrlSearchParams = {
-        get: (key) => {
-          if (key === 'date') return 'anytime';
-          return mockSearchParams.get(key);
-        },
-        getAll: jest.fn(),
-        has: jest.fn(),
-        keys: jest.fn(),
-        values: jest.fn(),
-        entries: jest.fn(),
-        forEach: jest.fn(),
-        toString: jest.fn(),
-        append: jest.fn(),
-        delete: jest.fn(),
-        set: jest.fn(),
-        sort: jest.fn(),
-        size: 0,
-        [Symbol.iterator]: jest.fn(),
-      };
-
-      mockUseSearchParams.mockReturnValue(mockUrlSearchParams);
+      mockUseSearchParams.mockReturnValue(
+        createReadonlySearchParams({ ...defaultSearchParams, date: 'anytime' }),
+      );
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
@@ -638,30 +643,9 @@ describe('Matching Cards Component', () => {
 
     it('should format today date as "Aujourd\'hui"', async () => {
       const today = new Date().toISOString().slice(0, 10);
-      mockSearchParams.set('date', today);
-
-      // Re-mock the URLSearchParams with today's date
-      const mockUrlSearchParams = {
-        get: (key: string) => {
-          if (key === 'date') return today;
-          return mockSearchParams.get(key);
-        },
-        getAll: jest.fn(),
-        has: jest.fn(),
-        keys: jest.fn(),
-        values: jest.fn(),
-        entries: jest.fn(),
-        forEach: jest.fn(),
-        toString: jest.fn(),
-        append: jest.fn(),
-        delete: jest.fn(),
-        set: jest.fn(),
-        sort: jest.fn(),
-        size: 0,
-        [Symbol.iterator]: jest.fn(),
-      };
-
-      mockUseSearchParams.mockReturnValue(mockUrlSearchParams as unknown as ReturnType<typeof useSearchParams>);
+      mockUseSearchParams.mockReturnValue(
+        createReadonlySearchParams({ ...defaultSearchParams, date: today }),
+      );
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
