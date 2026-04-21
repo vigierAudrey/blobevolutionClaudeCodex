@@ -9,7 +9,7 @@
  *   5. getTokens() is never called (hint not consulted)
  */
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 

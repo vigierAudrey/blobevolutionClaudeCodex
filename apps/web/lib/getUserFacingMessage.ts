@@ -89,7 +89,7 @@ function getTitle(code: string, _context: ErrorContext): string {
  * Get user-facing text for error code
  */
 function getText(code: string, context: ErrorContext, retryAfterSeconds?: number): string {
-  const { domain, action, role } = context;
+  const { domain, action } = context;
 
   switch (code) {
     case ERROR_CODES.RATE_LIMITED:

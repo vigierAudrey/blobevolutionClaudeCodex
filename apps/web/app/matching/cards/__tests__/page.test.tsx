@@ -120,7 +120,6 @@ function createReadonlySearchParams(entries: Record<string, string>): ReadonlyUR
 
 type SearchMatchingResponse = Awaited<ReturnType<typeof apiClient.searchMatching>>;
 type SearchCandidate = NonNullable<SearchMatchingResponse['results']>[number];
-type MatchDecisionsResponse = Awaited<ReturnType<typeof apiClient.matchDecisions>>;
 type DisciplinesResponse = Awaited<ReturnType<typeof apiClient.getDisciplines>>;
 
 // Test data

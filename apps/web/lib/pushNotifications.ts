@@ -120,7 +120,6 @@ export class PushNotificationManager {
       const success = await unsubscribeFromPush();
 
       if (success) {
-        const storedToken = localStorage.getItem('fcmToken');
         // Clear local storage
         localStorage.removeItem('pushSubscribed');
         localStorage.removeItem('fcmToken');

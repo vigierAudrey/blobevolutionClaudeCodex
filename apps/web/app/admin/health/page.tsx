@@ -34,7 +34,7 @@ function CheckRow({ name, value, meta }: {
         <p className="text-xs text-muted-foreground">{meta.description}</p>
         {name === 'config' || name === 'env' ? (
           <p className="text-xs text-muted-foreground italic mt-0.5">
-            Ce check est toujours OK hors production — il vérifie la configuration du serveur, pas l'infrastructure.
+            Ce check est toujours OK hors production — il vérifie la configuration du serveur, pas l&apos;infrastructure.
           </p>
         ) : null}
       </div>
@@ -158,7 +158,7 @@ export default function AdminHealthPage() {
           <p className="text-xs text-muted-foreground">
             Les checks <strong>Configuration</strong> et <strong>Variables secrètes</strong> vérifient la conformité de
             la configuration serveur (origines autorisées, longueur des secrets). Ils sont toujours OK
-            en dehors de la production et ne reflètent pas l'état de l'infrastructure en temps réel.
+            en dehors de la production et ne reflètent pas l&apos;état de l&apos;infrastructure en temps réel.
           </p>
         </>
       )}

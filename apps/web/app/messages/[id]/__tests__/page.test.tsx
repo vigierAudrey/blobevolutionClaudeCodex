@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { render, waitFor } from '@testing-library/react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 
 jest.mock('next/navigation', () => ({

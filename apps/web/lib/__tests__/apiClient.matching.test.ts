@@ -141,7 +141,6 @@ describe('API Client - Matching Integration', () => {
           method: 'POST',
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer fake-access-token',
           }),
           credentials: 'include',
           body: JSON.stringify(mockSearchRequest),
@@ -173,7 +172,6 @@ describe('API Client - Matching Integration', () => {
           method: 'POST',
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer fake-access-token',
           }),
           credentials: 'include',
           body: JSON.stringify(minimalRequest),
@@ -230,7 +228,7 @@ describe('API Client - Matching Integration', () => {
       const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
       expect(headers.get('Content-Type')).toBe('application/json');
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
       expect(init.credentials).toBe('include');
@@ -333,7 +331,7 @@ describe('API Client - Matching Integration', () => {
       const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
       expect(headers.get('Content-Type')).toBe('application/json');
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
     });
@@ -359,7 +357,7 @@ describe('API Client - Matching Integration', () => {
       expect(result).toEqual({ id: reportRequest.targetProfileId });
       const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
       expect(headers.get('Content-Type')).toBe('application/json');
@@ -441,7 +439,7 @@ describe('API Client - Matching Integration', () => {
       expect(result).toEqual({ id: '33333333-3333-3333-3333-333333333333', created: true });
       const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
       expect(headers.get('Content-Type')).toBe('application/json');
@@ -561,7 +559,7 @@ describe('API Client - Matching Integration', () => {
       expect(result).toEqual(successData);
       const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
       expect(headers.get('Content-Type')).toBe('application/json');
@@ -672,7 +670,6 @@ describe('API Client - Matching Integration', () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer fake-access-token',
         },
         credentials: 'include',
         cache: 'no-store',
@@ -697,7 +694,6 @@ describe('API Client - Matching Integration', () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer fake-access-token',
         },
         credentials: 'include',
         cache: 'no-store',
@@ -770,7 +766,7 @@ describe('API Client - Matching Integration', () => {
   });
 
   describe('Gestion des tokens et authentification', () => {
-    it('devrait inclure le token d\'autorisation dans les requêtes', async () => {
+    it('devrait utiliser les cookies (credentials: include) — pas de header Authorization Bearer', async () => {
       queueCsrfSuccess();
       fetchMock.mockResolvedValueOnce({
         ok: true,
@@ -784,9 +780,10 @@ describe('API Client - Matching Integration', () => {
       });
 
       const [, options] = fetchMock.mock.calls[1] as [unknown, RequestInit];
-      expect(options.headers).toMatchObject({
-        'Authorization': 'Bearer fake-access-token',
-      });
+      // Auth is cookie-based (httpOnly): credentials:'include' is the mechanism.
+      // No Authorization: Bearer header is injected — the session hint is not a JWT.
+      expect(options.credentials).toBe('include');
+      expect(options.headers).not.toHaveProperty('Authorization');
     });
 
     it('devrait gérer l\'absence de tokens', async () => {

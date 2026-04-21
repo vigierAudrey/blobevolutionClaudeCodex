@@ -67,7 +67,7 @@ function VerifyInner() {
       <BackBar fallbackHref="/" />
       <Card>
         <CardHeader>
-          <CardTitle>Vérification de l'email</CardTitle>
+          <CardTitle>Vérification de l&apos;email</CardTitle>
           <CardDescription>Cette page confirme la validation de ton compte.</CardDescription>
         </CardHeader>
         <CardContent>

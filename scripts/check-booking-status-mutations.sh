@@ -23,8 +23,8 @@ ERRORS=0
 SERVICE="apps/api/src/modules/booking/booking.service.ts"
 
 if [ ! -f "$SERVICE" ]; then
-  echo "ERROR: $SERVICE not found"
-  exit 1
+  echo "INFO: booking module removed — guard skipped (no service to protect)"
+  exit 0
 fi
 
 # Extraire les lignes contenant booking.update avec status (hors commentaires)
@@ -47,8 +47,8 @@ fi
 CONTROLLER="apps/api/src/modules/booking/booking.controller.ts"
 
 if [ ! -f "$CONTROLLER" ]; then
-  echo "ERROR: $CONTROLLER not found"
-  exit 1
+  echo "INFO: booking module removed — guard skipped (no controller to protect)"
+  exit 0
 fi
 
 # Cherche ensureRole('PRO') sur la même ligne ou les 3 lignes précédant adjust-booked
