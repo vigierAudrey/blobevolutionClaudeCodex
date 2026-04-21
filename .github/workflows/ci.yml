@@ -506,6 +506,7 @@ jobs:
       JWT_SECRET: ci-jwt-secret
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret
       IP_HASH_SECRET: ci-ip-hash-secret-for-e2e-only-min-32-chars
+      EMAIL_HASH_SECRET: ci-email-hash-secret-for-e2e-only-min-32-chars
       LOG_ACTOR_SECRET: ci-log-actor-secret-for-e2e-only-min-32-chars
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
       WEB_BASE_URL: http://127.0.0.1:3002
