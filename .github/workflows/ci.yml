@@ -509,6 +509,8 @@ jobs:
       LOG_ACTOR_SECRET: ci-log-actor-secret-for-e2e-only-min-32-chars
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
       WEB_BASE_URL: http://127.0.0.1:3002
+      E2E_API_PORT: '4020'
+      E2E_WEB_PORT: '3020'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -556,6 +558,13 @@ jobs:
 
       - name: Seed database
         run: pnpm run db:reseed
+
+      - name: Build Web for E2E
+        # next start requires a pre-built .next/. NEXT_PUBLIC_API_URL is baked
+        # at build time — must match E2E_API_PORT defined in this job's env.
+        run: pnpm --filter @blobinfini/web build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:${{ env.E2E_API_PORT }}
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps

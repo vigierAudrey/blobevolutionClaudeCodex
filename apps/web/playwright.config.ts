@@ -51,7 +51,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'cd ../.. && npm run dev --workspace @blobinfini/api',
+      command: 'pnpm --filter @blobinfini/api run dev',
       url: `${apiURL}/health`,
       env: {
         ...process.env,
@@ -64,18 +64,19 @@ export default defineConfig({
       timeout: 180_000,
     },
     {
-      command: 'cd ../.. && cd apps/web && npx next dev -p $PORT',
+      // Requires a pre-built .next/ in apps/web/ — run build with NEXT_PUBLIC_API_URL set first.
+      // next dev is too slow (cold-compile >180s). NEXT_PUBLIC_API_URL is baked at build time.
+      command: 'npx next start -p $PORT',
       url: baseURL,
       env: {
         ...process.env,
         ...safeTestEnv,
         PORT: String(finalWebPort),
-        NEXT_PUBLIC_API_URL: apiURL,
       },
       reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
-      timeout: 180_000,
+      timeout: 60_000,
     },
   ],
   projects: [
