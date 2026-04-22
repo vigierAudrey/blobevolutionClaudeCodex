@@ -527,7 +527,6 @@ model ProOffer {
   clicks       ProOfferClick[]
 
   @@index([sport, level])
-  @@index([lat, lng])
   @@index([isActive])
 }
 
