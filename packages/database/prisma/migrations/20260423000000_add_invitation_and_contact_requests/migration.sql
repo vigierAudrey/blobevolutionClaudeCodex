@@ -1,6 +1,6 @@
 -- LOT-INV-002: ConversationInvitation, ContactRequest, ContactRequestResponse + index drift
 -- Scope strict: aucune modification hors de ces 3 modèles + RefreshToken.tokenHash + MatchDecision composite
--- Note: IF NOT EXISTS utilisé car le dev DB a été avancé via db push; migrations appliquées en ordre sur DB fraîche
+-- Note: SQL sans IF NOT EXISTS — exécutable sur DB fraîche CI. Sur DB locale avancée via db push, utiliser migrate resolve --applied.
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. Enums
