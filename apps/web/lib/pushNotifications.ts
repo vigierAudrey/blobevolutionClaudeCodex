@@ -25,7 +25,7 @@ export interface PushSubscriptionData {
 export interface NotificationData {
   title: string;
   body: string;
-  type: 'booking_accepted' | 'booking_rejected' | 'new_message' | 'reminder' | 'general';
+  type: 'new_message' | 'reminder' | 'general';
   url?: string;
   icon?: string;
   data?: Record<string, unknown>;
@@ -120,7 +120,6 @@ export class PushNotificationManager {
       const success = await unsubscribeFromPush();
 
       if (success) {
-        const storedToken = localStorage.getItem('fcmToken');
         // Clear local storage
         localStorage.removeItem('pushSubscribed');
         localStorage.removeItem('fcmToken');
@@ -128,15 +127,9 @@ export class PushNotificationManager {
 
         this.currentToken = null;
 
-        // Notify backend
-        await fetch('/api/push/unregister', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`
-          },
-          body: JSON.stringify(storedToken ? { token: storedToken } : {})
-        }).catch(e => console.log('Failed to notify backend:', e));
+        // NOTE: backend token removal (POST /push/unregister) is not called here
+        // because the consumer of this method is currently disabled in the UI.
+        // Wire this via apiClient (cookie auth) when re-enabling the unsubscribe flow.
 
         console.log('✅ Successfully unsubscribed from push notifications');
         return true;
@@ -219,8 +212,8 @@ export class PushNotificationManager {
           </div>
           <div class="space-y-2">
             <div class="flex items-center text-sm text-gray-600">
-              <span class="mr-2">🏄</span>
-              <span>Confirmations de cours</span>
+              <span class="mr-2">🤝</span>
+              <span>Mises en relation</span>
             </div>
             <div class="flex items-center text-sm text-gray-600">
               <span class="mr-2">💬</span>
@@ -228,7 +221,7 @@ export class PushNotificationManager {
             </div>
             <div class="flex items-center text-sm text-gray-600">
               <span class="mr-2">⏰</span>
-              <span>Rappels de cours</span>
+              <span>Rappels importants</span>
             </div>
           </div>
           <div class="flex space-x-3">
@@ -316,30 +309,10 @@ export class PushNotificationManager {
    * Test notification (for development)
    */
   async testNotification(): Promise<boolean> {
-    if (!this.isSubscribed()) {
-      console.log('❌ Not subscribed to notifications');
-      return false;
-    }
-
-    try {
-      const response = await fetch('/api/push/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`
-        },
-        body: JSON.stringify({
-          title: '🧪 Test BlobConnect',
-          body: 'Si tu vois ça, les notifications fonctionnent ! 🎉',
-          type: 'general'
-        })
-      });
-
-      return response.ok;
-    } catch (error) {
-      console.error('❌ Error sending test notification:', error);
-      return false;
-    }
+    // NOTE: backend test notification (POST /push/test) is not wired here.
+    // The Next.js proxy route does not exist and the push UI is currently disabled.
+    // Wire this via apiClient (cookie auth, not localStorage Bearer) when re-enabling push.
+    return false;
   }
 
   /**

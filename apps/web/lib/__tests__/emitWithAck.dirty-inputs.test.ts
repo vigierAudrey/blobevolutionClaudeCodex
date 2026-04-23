@@ -8,17 +8,24 @@ import { emitWithAck, type SocketEmitter } from '../emitWithAck';
 import { z } from 'zod';
 
 describe('emitWithAck - dirty inputs regression tests', () => {
+  type AckCallback = (...args: unknown[]) => void;
+  type EmitHandler = (event: string, payload: unknown, callback: AckCallback) => void;
+
+  const createMockSocket = (handler: EmitHandler): SocketEmitter => ({
+    emit(event: string, payload: unknown, callback: AckCallback) {
+      handler(event, payload, callback);
+    },
+  });
+
   const successSchema = z.object({
     ok: z.literal(true),
     data: z.object({ id: z.string() }),
   });
 
   it('devrait rejeter avec CLIENT_TIMEOUT si ACK est manquant (timeout)', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((_event, _payload, _callback) => {
-        // Ne jamais appeler callback = ACK jamais reçu
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, _callback) => {
+      // Ne jamais appeler callback = ACK jamais reçu
+    });
 
     await expect(
       emitWithAck(mockSocket, 'test-event', {}, successSchema, { timeoutMs: 100 })
@@ -29,12 +36,10 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait rejeter avec INTERNAL_ERROR si ACK a format invalide (Zod error)', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // Retourner un ACK invalide (ni error ni success)
-        callback({ invalid: 'response' });
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // Retourner un ACK invalide (ni error ni success)
+      callback({ invalid: 'response' });
+    });
 
     await expect(
       emitWithAck(mockSocket, 'test-event', {}, successSchema)
@@ -45,18 +50,16 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer ACK avec ok:false (error payload)', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        callback({
-          ok: false,
-          error: {
-            code: 'INTERNAL_ERROR',
-            message: 'Server error',
-            details: { reason: 'DB timeout' },
-          },
-        });
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      callback({
+        ok: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Server error',
+          details: { reason: 'DB timeout' },
+        },
+      });
+    });
 
     await expect(
       emitWithAck(mockSocket, 'test-event', {}, successSchema)
@@ -68,18 +71,16 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer ACK avec ok:false mais error object incomplet', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        callback({
-          ok: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Bad request',
-            // details manque
-          },
-        });
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      callback({
+        ok: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Bad request',
+          // details manque
+        },
+      });
+    });
 
     await expect(
       emitWithAck(mockSocket, 'test-event', {}, successSchema)
@@ -91,11 +92,9 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer ACK null/undefined sans crasher', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        callback(null);
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      callback(null);
+    });
 
     await expect(
       emitWithAck(mockSocket, 'test-event', {}, successSchema)
@@ -106,11 +105,9 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer ACK qui est une string au lieu d\'un object', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        callback('Unexpected string response');
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      callback('Unexpected string response');
+    });
 
     await expect(
       emitWithAck(mockSocket, 'test-event', {}, successSchema)
@@ -130,14 +127,12 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait résoudre correctement un ACK valide avec ok:true', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        callback({
-          ok: true,
-          data: { id: 'msg-123' },
-        });
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      callback({
+        ok: true,
+        data: { id: 'msg-123' },
+      });
+    });
 
     const result = await emitWithAck(mockSocket, 'test-event', {}, successSchema);
     expect(result).toEqual({ id: 'msg-123' });
@@ -146,12 +141,10 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   it('devrait ignorer late ACK qui arrive après timeout (pas de re-resolve/re-reject)', async () => {
     let capturedCallback: ((...args: unknown[]) => void) | null = null;
 
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        capturedCallback = callback;
-        // Ne pas appeler callback immédiatement = simuler un timeout
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      capturedCallback = callback;
+      // Ne pas appeler callback immédiatement = simuler un timeout
+    });
 
     const promise = emitWithAck(mockSocket, 'test-event', {}, successSchema, { timeoutMs: 50 });
 
@@ -177,16 +170,14 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer ACK avec getter qui throw sans crasher', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        const poisonedAck = {
-          get ok() {
-            throw new Error('Getter boom!');
-          },
-        };
-        callback(poisonedAck);
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      const poisonedAck = {
+        get ok() {
+          throw new Error('Getter boom!');
+        },
+      };
+      callback(poisonedAck);
+    });
 
     await expect(
       emitWithAck(mockSocket, 'test-event', {}, successSchema)
@@ -197,24 +188,20 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer multi-args ACK en préférant l\'objet ack-like', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // Appeler callback avec 2 args : premier est ack-like
-        callback({ ok: true, data: { id: 'multi-123' } }, 'extra-arg');
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // Appeler callback avec 2 args : premier est ack-like
+      callback({ ok: true, data: { id: 'multi-123' } }, 'extra-arg');
+    });
 
     const result = await emitWithAck(mockSocket, 'test-event', {}, successSchema);
     expect(result).toEqual({ id: 'multi-123' });
   });
 
   it('devrait gérer multi-args ACK sans objet ack-like (rejeter avec INTERNAL_ERROR)', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // Appeler callback avec 2 args non-ack-like
-        callback('arg1', 'arg2');
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // Appeler callback avec 2 args non-ack-like
+      callback('arg1', 'arg2');
+    });
 
     await expect(
       emitWithAck(mockSocket, 'test-event', {}, successSchema)
@@ -225,11 +212,9 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait rejeter avec INTERNAL_ERROR si emit() throw synchroniquement', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn(() => {
-        throw new Error('Transport error: socket closed');
-      }),
-    };
+    const mockSocket = createMockSocket(() => {
+      throw new Error('Transport error: socket closed');
+    });
 
     await expect(
       emitWithAck(mockSocket, 'test-event', {}, successSchema, { timeoutMs: 100 })
@@ -244,18 +229,16 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer multi-args avec getter malicieux + ack valide sans crasher', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        const poisonedArg = {
-          get ok() {
-            throw new Error('Malicious getter!');
-          },
-        };
-        const validAck = { ok: true, data: { id: 'safe-123' } };
-        // Premier arg est poison, second est valide
-        callback(poisonedArg, validAck);
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      const poisonedArg = {
+        get ok() {
+          throw new Error('Malicious getter!');
+        },
+      };
+      const validAck = { ok: true, data: { id: 'safe-123' } };
+      // Premier arg est poison, second est valide
+      callback(poisonedArg, validAck);
+    });
 
     // Doit préférer le second arg (ack valide) et résoudre
     const result = await emitWithAck(mockSocket, 'test-event', {}, successSchema);
@@ -263,22 +246,20 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer details avec objet circulaire sans crasher (safe serialization)', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // Simuler une erreur avec objet circulaire dans details
-        const circular: Record<string, unknown> = { foo: 'bar' };
-        circular.self = circular;
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // Simuler une erreur avec objet circulaire dans details
+      const circular: Record<string, unknown> = { foo: 'bar' };
+      circular.self = circular;
 
-        callback({
-          ok: false,
-          error: {
-            code: 'INTERNAL_ERROR',
-            message: 'Circular error',
-            details: circular,
-          },
-        });
-      }),
-    };
+      callback({
+        ok: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Circular error',
+          details: circular,
+        },
+      });
+    });
 
     const error = await emitWithAck(mockSocket, 'test-event', {}, successSchema).catch(e => e);
 
@@ -292,24 +273,22 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer proxy malicieux qui throw sur getOwnPropertyDescriptor', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // Proxy qui throw lors de la détection de propriété
-        const maliciousProxy = new Proxy(
-          {},
-          {
-            getOwnPropertyDescriptor() {
-              throw new Error('Proxy trap explosion!');
-            },
-          }
-        );
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // Proxy qui throw lors de la détection de propriété
+      const maliciousProxy = new Proxy(
+        {},
+        {
+          getOwnPropertyDescriptor() {
+            throw new Error('Proxy trap explosion!');
+          },
+        }
+      );
 
-        const validAck = { ok: true, data: { id: 'proxy-safe-456' } };
+      const validAck = { ok: true, data: { id: 'proxy-safe-456' } };
 
-        // Premier arg est proxy malicieux, second est valide
-        callback(maliciousProxy, validAck);
-      }),
-    };
+      // Premier arg est proxy malicieux, second est valide
+      callback(maliciousProxy, validAck);
+    });
 
     // Doit skipper le proxy malicieux et utiliser le validAck
     const result = await emitWithAck(mockSocket, 'test-event', {}, successSchema);
@@ -317,26 +296,24 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer objet avec propriété inaccessible dans details (getter throw)', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // Objet avec getter qui throw
-        const nastyObject = Object.defineProperty({}, 'dangerous', {
-          get() {
-            throw new Error('Access forbidden!');
-          },
-          enumerable: true,
-        });
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // Objet avec getter qui throw
+      const nastyObject = Object.defineProperty({}, 'dangerous', {
+        get() {
+          throw new Error('Access forbidden!');
+        },
+        enumerable: true,
+      });
 
-        callback({
-          ok: false,
-          error: {
-            code: 'INTERNAL_ERROR',
-            message: 'Nasty error',
-            details: nastyObject,
-          },
-        });
-      }),
-    };
+      callback({
+        ok: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Nasty error',
+          details: nastyObject,
+        },
+      });
+    });
 
     const error = await emitWithAck(mockSocket, 'test-event', {}, successSchema).catch(e => e);
 
@@ -355,11 +332,9 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer Error dans details avec extraction safe (name, message, stack)', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn(() => {
-        throw new TypeError('Network failure');
-      }),
-    };
+    const mockSocket = createMockSocket(() => {
+      throw new TypeError('Network failure');
+    });
 
     const error = await emitWithAck(mockSocket, 'test-event', {}, successSchema).catch(e => e);
 
@@ -378,29 +353,27 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer ZodError dans details avec extraction safe (issues)', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // Simuler une ZodError dans details
-        const zodError = new z.ZodError([
-          {
-            code: 'invalid_type',
-            expected: 'string',
-            received: 'number',
-            path: ['field'],
-            message: 'Expected string, received number',
-          },
-        ]);
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // Simuler une ZodError dans details
+      const zodError = new z.ZodError([
+        {
+          code: 'invalid_type',
+          expected: 'string',
+          received: 'number',
+          path: ['field'],
+          message: 'Expected string, received number',
+        },
+      ]);
 
-        callback({
-          ok: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Schema validation failed',
-            details: zodError,
-          },
-        });
-      }),
-    };
+      callback({
+        ok: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Schema validation failed',
+          details: zodError,
+        },
+      });
+    });
 
     const error = await emitWithAck(mockSocket, 'test-event', {}, successSchema).catch(e => e);
 
@@ -423,12 +396,10 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   it('devrait préférer arg avec {data} dans multi-args (normalizeAck détecte data)', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // Premier arg: pas ack-like, second arg: {data} only (success-like)
-        callback('random-string', { data: { id: 'data-only-123' } });
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // Premier arg: pas ack-like, second arg: {data} only (success-like)
+      callback('random-string', { data: { id: 'data-only-123' } });
+    });
 
     // Note: ce test va échouer car {data} seul ne match pas le successSchema {ok:true, data}
     // mais on vérifie que normalizeAck l'identifie comme ack-like (pas l'array)
@@ -441,13 +412,11 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait rejeter avec INTERNAL_ERROR si ACK dépasse maxAckBytes', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // ACK avec payload volumineux
-        const largeData = { ok: true, data: { id: 'x'.repeat(1000) } };
-        callback(largeData);
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // ACK avec payload volumineux
+      const largeData = { ok: true, data: { id: 'x'.repeat(1000) } };
+      callback(largeData);
+    });
 
     // maxAckBytes = 500 (ACK sera ~1020 bytes)
     await expect(
@@ -462,11 +431,9 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait accepter ACK dans la limite maxAckBytes', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        callback({ ok: true, data: { id: 'small-123' } });
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      callback({ ok: true, data: { id: 'small-123' } });
+    });
 
     // maxAckBytes = 1000 (ACK sera ~40 bytes)
     const result = await emitWithAck(mockSocket, 'test-event', {}, successSchema, { maxAckBytes: 1000 });
@@ -474,14 +441,12 @@ describe('emitWithAck - dirty inputs regression tests', () => {
   });
 
   it('devrait gérer maxAckBytes avec ACK non-stringifiable (circular) sans crash', async () => {
-    const mockSocket: SocketEmitter = {
-      emit: jest.fn((event, payload, callback) => {
-        // Circular reference (JSON.stringify va throw)
-        const circular: Record<string, unknown> = { ok: true };
-        circular.self = circular;
-        callback(circular);
-      }),
-    };
+    const mockSocket = createMockSocket((_event, _payload, callback) => {
+      // Circular reference (JSON.stringify va throw)
+      const circular: Record<string, unknown> = { ok: true };
+      circular.self = circular;
+      callback(circular);
+    });
 
     // maxAckBytes guard devrait catch JSON.stringify error et continuer vers parsing normal
     // qui devrait échouer via Zod (ok:true mais data manque)

@@ -63,7 +63,7 @@ export interface AppError {
  * Context for getUserFacingMessage
  */
 export interface ErrorContext {
-  domain: 'chat' | 'booking' | 'matching' | 'reporting';
+  domain: 'chat' | 'matching' | 'reporting';
   action: string; // e.g., 'send-message', 'create-availability', 'match-decision'
   role?: 'rider' | 'pro' | 'admin';
 }

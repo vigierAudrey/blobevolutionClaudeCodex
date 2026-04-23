@@ -225,7 +225,7 @@ describe('API Client - Matching Integration', () => {
 
       const result = await apiClient.matchDecisions(mockDecisions);
 
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
       expect(headers.get('Content-Type')).toBe('application/json');
       expect(headers.get('Authorization')).toBeNull();
@@ -328,7 +328,7 @@ describe('API Client - Matching Integration', () => {
         }),
       );
 
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
       expect(headers.get('Content-Type')).toBe('application/json');
       expect(headers.get('Authorization')).toBeNull();
@@ -420,6 +420,7 @@ describe('API Client - Matching Integration', () => {
     });
   });
 
+
   describe('reportProfile (strict)', () => {
     const reportRequest = {
       targetProfileId: '11111111-1111-1111-1111-111111111111',
@@ -438,7 +439,7 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.reportProfile(reportRequest);
 
       expect(result).toEqual({ id: reportRequest.targetProfileId });
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
       expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
@@ -520,7 +521,7 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.openConversation(targetUserId);
 
       expect(result).toEqual({ id: '33333333-3333-3333-3333-333333333333', created: true });
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
       expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
@@ -730,6 +731,7 @@ describe('API Client - Matching Integration', () => {
     });
   });
 
+
   describe('sendMessage (strict HTTP fallback)', () => {
     const conversationId = '66666666-6666-6666-6666-666666666666';
     const payload = { type: 'TEXT' as const, content: 'Hello' };
@@ -757,7 +759,7 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.sendMessage(conversationId, payload);
 
       expect(result).toEqual(successData);
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
       expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
@@ -1000,7 +1002,7 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       });
 
-      const [, options] = fetchMock.mock.calls[1];
+      const [, options] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       expect(options.headers).not.toHaveProperty('Authorization');
     });
 
@@ -1061,8 +1063,8 @@ describe('API Client - Matching Integration', () => {
 
       await apiClient.matchDecisions(manyDecisions);
 
-      const [, options] = fetchMock.mock.calls[1];
-      const body = JSON.parse(options.body);
+      const [, options] = fetchMock.mock.calls[1] as [unknown, RequestInit];
+      const body = JSON.parse(options.body as string);
 
       // Dans une vraie implémentation, on limiterait à 100 éléments max
       expect(body.items).toHaveLength(150); // Pour ce test, on vérifie la structure

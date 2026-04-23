@@ -108,12 +108,7 @@ function LocationInner() {
   useEffect(() => {
     (async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-
+        // No local hint check — truth comes from the server session.
         const currentUser = await apiClient.me() as DashboardUser;
 
         if (currentUser.role === 'PRO') {

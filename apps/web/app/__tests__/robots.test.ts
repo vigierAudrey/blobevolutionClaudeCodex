@@ -1,27 +1,26 @@
 import robots from '../robots';
 
 describe('app robots', () => {
-  const initialNodeEnv = process.env.NODE_ENV;
-  const initialSiteUrl = process.env.SITE_URL;
-  const initialPublicSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  let envRestore: ReturnType<typeof jest.replaceProperty<typeof process, 'env'>> | null = null;
+
+  const replaceEnv = (overrides: Partial<NodeJS.ProcessEnv>) => {
+    envRestore?.restore();
+    envRestore = jest.replaceProperty(process, 'env', {
+      ...process.env,
+      ...overrides,
+    });
+  };
 
   afterEach(() => {
-    process.env.NODE_ENV = initialNodeEnv;
-    if (initialSiteUrl === undefined) {
-      delete process.env.SITE_URL;
-    } else {
-      process.env.SITE_URL = initialSiteUrl;
-    }
-    if (initialPublicSiteUrl === undefined) {
-      delete process.env.NEXT_PUBLIC_SITE_URL;
-    } else {
-      process.env.NEXT_PUBLIC_SITE_URL = initialPublicSiteUrl;
-    }
+    envRestore?.restore();
+    envRestore = null;
   });
 
   it('contains Disallow: /admin and sitemap line', () => {
-    process.env.SITE_URL = 'https://blobinfini.com';
-    delete process.env.NEXT_PUBLIC_SITE_URL;
+    replaceEnv({
+      SITE_URL: 'https://blobinfini.com',
+      NEXT_PUBLIC_SITE_URL: undefined,
+    });
 
     const result = robots();
 
@@ -38,9 +37,11 @@ describe('app robots', () => {
   });
 
   it('uses an absolute non-localhost sitemap URL in production fallback mode', () => {
-    process.env.NODE_ENV = 'production';
-    delete process.env.SITE_URL;
-    delete process.env.NEXT_PUBLIC_SITE_URL;
+    replaceEnv({
+      NODE_ENV: 'production',
+      SITE_URL: undefined,
+      NEXT_PUBLIC_SITE_URL: undefined,
+    });
 
     const result = robots();
 
