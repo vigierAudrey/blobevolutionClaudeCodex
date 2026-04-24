@@ -566,6 +566,98 @@ jobs:
       - name: Run Playwright E2E tests
         run: pnpm run test:e2e
 
+  auth-verify-e2e:
+    name: Auth Verify E2E
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    if: github.event_name != 'pull_request' || github.base_ref == 'main'
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        # Port mapping requis : job sans container — le runner accède au service via localhost.
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
+      SESSION_SECRET: ci-session-secret
+      JWT_SECRET: ci-jwt-secret
+      JWT_REFRESH_SECRET: ci-jwt-refresh-secret
+      IP_HASH_SECRET: ci-ip-hash-secret-for-e2e-only-min-32-chars
+      LOG_ACTOR_SECRET: ci-log-actor-secret-for-e2e-only-min-32-chars
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
+      WEB_BASE_URL: http://127.0.0.1:3002
+      MAILPIT_URL: http://127.0.0.1:8025
+      SMTP_HOST: 127.0.0.1
+      SMTP_PORT: 1025
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare PostGIS (create DBs + extensions)
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          export PGPASSWORD=postgres
+          # Timeout augmenté à 60s : postgis/postgis:15-3.4 peut être lent à démarrer.
+          deadline=$((SECONDS + 60))
+          until pg_isready -h localhost -U postgres; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "❌ Postgres not ready after 60s — aborting." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "✅ Postgres TCP ready."
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "select 1" > /dev/null
+          echo "✅ Postgres auth ready."
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini;"
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE blobinfini_shadow;"
+          psql "postgresql://postgres:postgres@localhost:5432/blobinfini" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql "postgresql://postgres:postgres@localhost:5432/blobinfini_shadow" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Generate Prisma Client
+        run: pnpm run db:generate
+
+      - name: Run DB migrations
+        run: pnpm run db:migrate:deploy
+
+      - name: Seed database
+        run: pnpm run db:reseed
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps
+
+      - name: Run Playwright auth verify E2E spec
+        run: pnpm exec playwright test --config=playwright.auth-verify.config.ts
+
   verify-import-alias:
     runs-on: ubuntu-22.04
     needs: build-and-test
