@@ -350,7 +350,7 @@ export default function AdminDashboard() {
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/blobosphere/editor">
                   <PenSquare className="mr-2 h-4 w-4" />
-                  Ouvrir l'éditeur interne
+                  Ouvrir l&apos;éditeur interne
                 </Link>
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
