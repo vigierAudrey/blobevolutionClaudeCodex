@@ -21,16 +21,12 @@ jest.mock('../../lib/mailer', () => ({
   send2FACode: jest.fn().mockResolvedValue({ sent: true }),
 }));
 
-jest.mock('../cache.service', () => ({
-  cacheService: {
-    set: jest.fn(),
-    get: jest.fn(),
-    setTwoFactorCodeHash: jest.fn(),
-    getTwoFactorCodeHash: jest.fn(),
-    del: jest.fn(),
-    getClient: jest.fn(),
-  },
-}));
+// Note: cache.service est intentionnellement NON mocké via jest.mock().
+// jest.setup.ts charge two-factor.service.ts avant l'exécution du fichier de test,
+// ce qui signifie que la variable cacheService dans two-factor.service.ts est déjà
+// liée au vrai singleton avant que jest.mock() puisse l'intercepter.
+// Solution : jest.spyOn sur le singleton réel — visible par two-factor.service.ts
+// car les deux partagent la même instance (CacheService.getInstance()).
 
 // security-event-alert.service est appelé fire-and-forget dans les cas BLOCKED_*
 jest.mock('../security-event-alert.service', () => ({
@@ -41,18 +37,19 @@ jest.mock('../security-event-alert.service', () => ({
 
 // ─── Imports ─────────────────────────────────────────────────────────────────
 
-import { beforeEach, describe, it, expect, jest } from '@jest/globals';
+import { beforeEach, afterEach, describe, it, expect, jest } from '@jest/globals';
 import { TwoFactorService } from '../two-factor.service';
 import { cacheService } from '../cache.service';
 import { send2FACode } from '../../lib/mailer';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const mockCacheGetTwoFactorHash = cacheService.getTwoFactorCodeHash as unknown as jest.MockedFunction<any>;
-const mockCacheDel = cacheService.del as jest.MockedFunction<typeof cacheService.del>;
-const mockCacheSet = cacheService.set as jest.MockedFunction<typeof cacheService.set>;
-const mockCacheSetTwoFactorHash = cacheService.setTwoFactorCodeHash as unknown as jest.MockedFunction<any>;
-const mockGetClient = cacheService.getClient as jest.MockedFunction<typeof cacheService.getClient>;
+// Spies assigned in beforeEach — use SpyInstance so mockReturnValue/mockResolvedValue work
+let mockCacheGetTwoFactorHash: jest.SpyInstance;
+let mockCacheDel: jest.SpyInstance;
+let mockCacheSet: jest.SpyInstance;
+let mockCacheSetTwoFactorHash: jest.SpyInstance;
+let mockGetClient: jest.SpyInstance;
 const mockSend2FACode = send2FACode as jest.MockedFunction<typeof send2FACode>;
 
 /** Crée un faux client Redis avec toutes les méthodes utilisées par TwoFactorService */
@@ -86,13 +83,18 @@ describe('TwoFactorService — chemin Redis (unit)', () => {
     service = new TwoFactorService();
     mockRedis = makeMockRedisClient();
 
-    // Defaults mémoire (pas de Redis) — chaque test active Redis explicitement
-    mockGetClient.mockReturnValue(null);
-    mockCacheSet.mockResolvedValue(true);
-    mockCacheSetTwoFactorHash.mockResolvedValue({ ok: true });
-    mockCacheGetTwoFactorHash.mockResolvedValue({ ok: true, found: false });
-    mockCacheDel.mockResolvedValue(true);
+    // Spy sur le vrai singleton — deux-factor.service.ts voit ces spies car il
+    // partage la même instance CacheService que ce fichier de test.
+    mockGetClient = jest.spyOn(cacheService, 'getClient').mockReturnValue(null);
+    mockCacheSetTwoFactorHash = jest.spyOn(cacheService, 'setTwoFactorCodeHash').mockResolvedValue({ ok: true } as any);
+    mockCacheGetTwoFactorHash = jest.spyOn(cacheService, 'getTwoFactorCodeHash').mockResolvedValue({ ok: true, found: false } as any);
+    mockCacheDel = jest.spyOn(cacheService, 'del').mockResolvedValue(true);
+    mockCacheSet = jest.spyOn(cacheService, 'set').mockResolvedValue(true);
     mockSend2FACode.mockResolvedValue({ sent: true });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   // ───────────────────────────────────────────────────────────────────────────
