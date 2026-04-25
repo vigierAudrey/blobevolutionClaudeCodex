@@ -54,7 +54,7 @@ async function getResettableTables(): Promise<string[]> {
     ORDER BY tablename ASC
   `);
 
-  return rows.map((row) => row.tablename);
+  return rows.map((row: TableRow) => row.tablename);
 }
 
 async function ensureSeedUsers(): Promise<void> {
