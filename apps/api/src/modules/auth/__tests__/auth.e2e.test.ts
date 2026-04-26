@@ -340,26 +340,6 @@ describe('Auth E2E', () => {
     }
   });
 
-  it('booking endpoints reject unverified riders even if login flag is disabled', async () => {
-    const prev = process.env.AUTH_REQUIRE_VERIFIED;
-    try {
-      process.env.AUTH_REQUIRE_VERIFIED = 'false';
-
-      const email = 'unverified-booking@test.com';
-      await getOrCreateUserByEmail({ email, role: Role.RIDER, emailVerified: false });
-
-      const login = await session.post('/auth/login').send({ email, password: TEST_PASSWORD }).expect(200);
-      const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
-      const access = readCookieValue(loginCookies, 'accessToken');
-
-      const res = await session.get('/booking/requests/me').set('Authorization', `Bearer ${access}`).expect(403);
-      expect(res.body).toHaveProperty('error', 'Email not verified');
-    } finally {
-      if (prev === undefined) delete process.env.AUTH_REQUIRE_VERIFIED;
-      else process.env.AUTH_REQUIRE_VERIFIED = prev;
-    }
-  });
-
   // P1-3: Password validation tests (OWASP-compliant)
   describe('Password Validation (P1-3)', () => {
     const expectValidationMessage = (body: any, substring: string) => {

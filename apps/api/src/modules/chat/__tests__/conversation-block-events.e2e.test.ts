@@ -18,6 +18,7 @@ describe('Conversation block events E2E', () => {
     await prisma.message.deleteMany();
     await prisma.conversationMember.deleteMany();
     await prisma.conversation.deleteMany();
+    await prisma.match.deleteMany();
     await prisma.riderProfile.deleteMany();
     await prisma.refreshToken.deleteMany();
     await prisma.session.deleteMany();
@@ -56,6 +57,10 @@ describe('Conversation block events E2E', () => {
       where: { id: { in: [riderId, otherRiderId] } },
       data: { emailVerified: true },
     });
+
+    // RIDER_TO_RIDER conversations require an active Match between the two users
+    const [userOneId, userTwoId] = [riderId, otherRiderId].sort();
+    await prisma.match.create({ data: { userOneId, userTwoId } });
 
     const loginRes = await post('/auth/login')
       .send({ email: 'block-rider@test.com', password: 'Passw0rd!' })
