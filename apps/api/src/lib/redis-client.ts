@@ -127,7 +127,7 @@ export let redisClientInitPromise: Promise<void> = Promise.resolve();
 
 // Initialize Redis on module load — skip in test environment.
 if (process.env.NODE_ENV !== 'test') {
-  redisClientInitPromise = initializeRedis()
+  const baseInit = initializeRedis()
     .then((client) => {
       redisClient = client;
     })
@@ -138,4 +138,23 @@ if (process.env.NODE_ENV !== 'test') {
         error: err instanceof Error ? err.message : String(err),
       });
     });
+
+  if (process.env.NODE_ENV !== 'production') {
+    // In dev/staging, client.connect() never rejects when reconnectStrategy retries
+    // indefinitely and Redis is unavailable. Cap init to 5 s so requests are never
+    // blocked forever — memory store is an acceptable fallback in non-production.
+    const settle = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        if (!redisClient) {
+          secureLogger.warn('RATE_LIMIT_REDIS_CONNECT_TIMEOUT', {
+            msg: 'Redis connect timed out after 5 s, proceeding with memory store',
+          });
+        }
+        resolve();
+      }, 5000);
+    });
+    redisClientInitPromise = Promise.race([baseInit, settle]);
+  } else {
+    redisClientInitPromise = baseInit;
+  }
 }
