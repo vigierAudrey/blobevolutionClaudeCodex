@@ -42,21 +42,50 @@ async function loginViaApi(email: string, password: string) {
 
 test.describe('Pro Profile Management', () => {
   test('should display and update pro profile information', async ({ browser }) => {
+    // ── Auth: capture httpOnly session cookies via API request context ──────
+    // loginViaApi uses a standalone APIRequestContext — its cookies are NOT
+    // automatically available to the page context. We must transfer them via
+    // storageState so the browser sends the real httpOnly accessToken cookie.
+    // We also set blob_session_hint so apiClient.getTokens() returns truthy
+    // and ensureAuthenticated() does NOT call router.replace('/login').
+    const apiCtx = await playwrightRequest.newContext({
+      baseURL: API_BASE_URL,
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-profile-login') },
+    });
+    const csrfRes = await apiCtx.get('/csrf-token');
+    const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
+    const loginRes = await apiCtx.post('/auth/login', {
+      headers: { 'X-CSRF-Token': csrfToken },
+      data: { email: PRO_EMAIL, password: PRO_PASSWORD },
+    });
+    if (!loginRes.ok()) {
+      throw new Error(`PRO login failed: ${loginRes.status()} ${await loginRes.text()}`);
+    }
+    const sessionState = await apiCtx.storageState();
+    await apiCtx.dispose();
+
+    // ── Browser context with transferred session cookies ────────────────────
     const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-profile'),
-      },
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-profile') },
+      storageState: sessionState,
     });
     const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
+    // blob_session_hint = '1' is the marker apiClient.getTokens() reads from
+    // localStorage. Without it, getTokens() returns null → immediate redirect.
+    // blob_consent pre-set to 'limited' suppresses the cookie consent modal
+    // (fixed inset-0 z-50 overlay) that would otherwise block all clicks.
+    await page.addInitScript(() => {
+      window.localStorage.setItem('blob_session_hint', '1');
+      window.localStorage.setItem(
+        'blob_consent',
+        JSON.stringify({
+          mode: 'limited',
+          signals: { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' },
+          cmpVersion: 'blobinfini-consent-v1',
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+    });
 
     await page.goto('/pro/profile');
     await expect(page).toHaveURL(/\/pro\/profile/);
@@ -75,12 +104,15 @@ test.describe('Pro Profile Management', () => {
     await bioTextarea.clear();
     await bioTextarea.fill('Professional surf instructor with 10 years of experience');
 
-    // Save changes
-    const saveButton = page.getByRole('button', { name: /enregistrer|save|mettre.*jour|update/i });
-    await saveButton.click();
+    // Confirm React state has settled after fills before attempting the click
+    await expect(businessNameInput).toHaveValue('My Updated Surf School');
+    await expect(bioTextarea).toHaveValue('Professional surf instructor with 10 years of experience');
 
-    // Save redirects to /pro/onboarding (no inline success message — redirect is the confirmation)
-    await expect(page).toHaveURL(/\/pro\/onboarding/, { timeout: 10000 });
+    // Save — Promise.all starts waitForURL listener before the click fires
+    await Promise.all([
+      page.waitForURL(/\/pro\/onboarding/, { timeout: 10000 }),
+      page.getByRole('button', { name: /enregistrer|save|mettre.*jour|update/i }).click(),
+    ]);
 
     // Navigate back to profile and verify changes persisted
     await page.goto('/pro/profile');
