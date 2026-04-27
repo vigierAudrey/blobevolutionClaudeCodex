@@ -34,10 +34,12 @@ test.describe('Admin dashboard access control', () => {
     const meBody = (await authMe.json()) as { role?: string };
     expect(meBody.role).not.toBe('ADMIN');
 
-    // No admin_session cookie → middleware must redirect to /login
+    // No admin_session cookie → middleware must redirect to /login.
+    // waitForLoadState('networkidle') is intentionally absent: Next.js dev mode
+    // keeps HMR WebSocket connections open indefinitely, so networkidle never
+    // fires and the test would time out after 45 s.
     await page.goto('/admin/dashboard');
-    await page.waitForLoadState('networkidle');
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
 
     await context.close();
   });
@@ -57,9 +59,11 @@ test.describe('Admin dashboard access control', () => {
     const meBody = (await authMe.json()) as { role?: string };
     expect(meBody.role).toBe('ADMIN');
 
-    // admin_session cookie is in the context → middleware allows /admin/*
+    // admin_session cookie is in the context → middleware allows /admin/*.
+    // The dashboard is CSR: heading appears only after apiClient.me() resolves.
+    // 25 s covers Next.js first-compile latency (10-20 s in CI) + React render.
     await page.goto('/admin/dashboard');
-    await expect(page.getByRole('heading', { name: /Administration/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Administration/i })).toBeVisible({ timeout: 25_000 });
 
     await context.close();
   });

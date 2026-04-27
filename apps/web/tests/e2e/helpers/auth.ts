@@ -102,19 +102,20 @@ export async function loginWithCookieSession(
 export async function loginThroughUi(page: Page, email: string, password = DEFAULT_PASSWORD): Promise<void> {
   const forwardedFor = testIp(`ui-${email}`);
 
+  // addInitScript runs before every navigation in this page's lifetime.
+  // Setting the session hint here avoids an extra page.goto('/login') that
+  // would force Next.js to compile the login route and consume ~15-25 s of
+  // the 45 s test budget before the actual test navigation even starts.
   await page.addInitScript(
-    ({ consent }) => {
+    ({ consent, sessionHintKey }) => {
       window.localStorage.setItem('blob_consent', consent);
       window.localStorage.setItem('cookie-consent', 'essential');
       window.localStorage.setItem('blob_device_id', 'playwright-active-users');
+      window.localStorage.setItem(sessionHintKey, '1');
     },
-    { consent: MINIMAL_AD_CONSENT },
+    { consent: MINIMAL_AD_CONSENT, sessionHintKey: SESSION_HINT_KEY },
   );
 
-  // Login via API context to avoid cross-origin CSRF timing issues in CI.
-  // This proves cookie-based auth works: the cookies are placed in the browser
-  // context exactly as they would be after a real login, then the browser uses
-  // them for all subsequent authenticated requests.
   const apiContext = await playwrightRequest.newContext({
     baseURL: API_BASE_URL,
     extraHTTPHeaders: { 'X-Forwarded-For': forwardedFor },
@@ -140,20 +141,14 @@ export async function loginThroughUi(page: Page, email: string, password = DEFAU
   const storageState = await apiContext.storageState();
   await apiContext.dispose();
 
-  // Transfer auth cookies into the browser context
+  // Transfer auth cookies into the browser context.
+  // The session hint (blob_session_hint) will be set by addInitScript on the
+  // next navigation — no page.goto('/login') needed here.
   await page.context().addCookies(storageState.cookies);
 
-  // Navigate to set localStorage, then set the session hint.
-  await page.goto('/login');
-  await page.evaluate((sessionHintKey) => {
-    window.localStorage.setItem(sessionHintKey, '1');
-  }, SESSION_HINT_KEY);
-
-  // Strong proof: verify the httpOnly cookies are accepted by the API.
-  // page.request shares the browser context's cookie jar, so this call
-  // proves the server accepts the transferred session — not just that
-  // localStorage was written.
-  const authCheck = await page.request.get(`${API_BASE_URL}/auth/me`);
+  // Prove the cookie transfer worked: page.request shares the browser context
+  // cookie jar, so a 200 here means the server accepts the session.
+  const authCheck = await page.request.get(`${API_BASE_URL}/auth/me`, { timeout: 10_000 });
   if (!authCheck.ok()) {
     throw new Error(
       `Cookie session not established for ${email}: /auth/me returned ${authCheck.status()}`,
