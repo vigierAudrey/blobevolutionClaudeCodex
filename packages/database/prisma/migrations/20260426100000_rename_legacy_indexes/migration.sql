@@ -20,8 +20,13 @@ ALTER INDEX "BookingRequest_rider_idx"        RENAME TO "BookingRequest_riderUse
 ALTER INDEX "BookingRequest_unique_pending"   RENAME TO "BookingRequest_riderUserId_availabilityId_status_key";
 
 -- ---------------------------------------------------------------------------
--- ProAvailability — implicit index backing the UNIQUE TABLE CONSTRAINT
--- (ALTER INDEX works on constraint-backed implicit indexes in PostgreSQL)
+-- ProAvailability — UNIQUE TABLE CONSTRAINT (created via CONSTRAINT clause in
+-- 20250918_booking_module). ALTER INDEX renames the backing index but leaves the
+-- pg_constraint row with the old name, causing Prisma migrate diff to see residual
+-- drift. ALTER TABLE … RENAME CONSTRAINT renames the constraint (and its backing
+-- index together) atomically in PostgreSQL — no lock escalation, no data change.
 -- ---------------------------------------------------------------------------
 
-ALTER INDEX "ProAvailability_unique_slot" RENAME TO "ProAvailability_proUserId_startAt_endAt_key";
+ALTER TABLE "ProAvailability"
+  RENAME CONSTRAINT "ProAvailability_unique_slot"
+  TO "ProAvailability_proUserId_startAt_endAt_key";

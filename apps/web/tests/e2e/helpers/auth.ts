@@ -143,10 +143,20 @@ export async function loginThroughUi(page: Page, email: string, password = DEFAU
   // Transfer auth cookies into the browser context
   await page.context().addCookies(storageState.cookies);
 
-  // Navigate to an initial page so localStorage is accessible, then set the
-  // session hint so authenticated pages don't redirect to /login.
+  // Navigate to set localStorage, then set the session hint.
   await page.goto('/login');
   await page.evaluate((sessionHintKey) => {
     window.localStorage.setItem(sessionHintKey, '1');
   }, SESSION_HINT_KEY);
+
+  // Strong proof: verify the httpOnly cookies are accepted by the API.
+  // page.request shares the browser context's cookie jar, so this call
+  // proves the server accepts the transferred session — not just that
+  // localStorage was written.
+  const authCheck = await page.request.get(`${API_BASE_URL}/auth/me`);
+  if (!authCheck.ok()) {
+    throw new Error(
+      `Cookie session not established for ${email}: /auth/me returned ${authCheck.status()}`,
+    );
+  }
 }
