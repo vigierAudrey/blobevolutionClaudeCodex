@@ -18,3 +18,8 @@ for (const filename of candidates) {
 if (process.env.NODE_ENV === 'test' && !process.env.TRUST_PROXY_MODE) {
   process.env.TRUST_PROXY_MODE = 'disabled';
 }
+
+// S3 test defaults — publicUrlForKey() returns undefined when neither
+// S3_PUBLIC_URL_BASE nor (S3_ENDPOINT + S3_BUCKET) is set, causing 500s in tests.
+if (!process.env.S3_BUCKET) process.env.S3_BUCKET = 'test-bucket';
+if (!process.env.S3_ENDPOINT) process.env.S3_ENDPOINT = 'http://test.local';

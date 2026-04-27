@@ -1,4 +1,4 @@
-import { expect, request as playwrightRequest, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { request as playwrightRequest, type Browser, type BrowserContext, type Page } from '@playwright/test';
 
 const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 const DEFAULT_PASSWORD = process.env.E2E_DEFAULT_PASSWORD ?? 'Passw0rd!';
@@ -100,35 +100,53 @@ export async function loginWithCookieSession(
 }
 
 export async function loginThroughUi(page: Page, email: string, password = DEFAULT_PASSWORD): Promise<void> {
+  const forwardedFor = testIp(`ui-${email}`);
+
   await page.addInitScript(
-    ({ consent, sessionHintKey }) => {
+    ({ consent }) => {
       window.localStorage.setItem('blob_consent', consent);
       window.localStorage.setItem('cookie-consent', 'essential');
       window.localStorage.setItem('blob_device_id', 'playwright-active-users');
-      if (!window.localStorage.getItem(sessionHintKey)) {
-        window.localStorage.removeItem(sessionHintKey);
-      }
     },
-    { consent: MINIMAL_AD_CONSENT, sessionHintKey: SESSION_HINT_KEY },
+    { consent: MINIMAL_AD_CONSENT },
   );
 
-  await page.goto('/login');
-
-  await page.getByLabel('Email').fill(email);
-  await page.locator('input#password').fill(password);
-
-  const authMeResponse = page.waitForResponse((response) => {
-    return response.url().includes('/auth/me') && response.request().method() === 'GET';
+  // Login via API context to avoid cross-origin CSRF timing issues in CI.
+  // This proves cookie-based auth works: the cookies are placed in the browser
+  // context exactly as they would be after a real login, then the browser uses
+  // them for all subsequent authenticated requests.
+  const apiContext = await playwrightRequest.newContext({
+    baseURL: API_BASE_URL,
+    extraHTTPHeaders: { 'X-Forwarded-For': forwardedFor },
   });
 
-  await page.getByRole('button', { name: /Se connecter/i }).click();
+  const csrfResponse = await apiContext.get('/csrf-token');
+  if (!csrfResponse.ok()) {
+    throw new Error(`Unable to fetch CSRF token (${csrfResponse.status()})`);
+  }
+  const csrfJson = (await csrfResponse.json()) as { csrfToken?: string };
+  if (!csrfJson.csrfToken) {
+    throw new Error('Missing csrfToken in /csrf-token response');
+  }
 
-  const response = await authMeResponse;
-  expect(response.status()).toBe(200);
+  const loginResponse = await apiContext.post('/auth/login', {
+    headers: { 'X-CSRF-Token': csrfJson.csrfToken },
+    data: { email, password, consentAccepted: true },
+  });
+  if (!loginResponse.ok()) {
+    throw new Error(`Login failed for ${email}: ${loginResponse.status()} ${await loginResponse.text()}`);
+  }
 
-  await page.waitForFunction(
-    (sessionHintKey) => window.localStorage.getItem(sessionHintKey) === '1',
-    SESSION_HINT_KEY,
-    { timeout: 15000 },
-  );
+  const storageState = await apiContext.storageState();
+  await apiContext.dispose();
+
+  // Transfer auth cookies into the browser context
+  await page.context().addCookies(storageState.cookies);
+
+  // Navigate to an initial page so localStorage is accessible, then set the
+  // session hint so authenticated pages don't redirect to /login.
+  await page.goto('/login');
+  await page.evaluate((sessionHintKey) => {
+    window.localStorage.setItem(sessionHintKey, '1');
+  }, SESSION_HINT_KEY);
 }

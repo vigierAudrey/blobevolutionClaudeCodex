@@ -40,9 +40,11 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
     const originalEnv = {
       NODE_ENV: process.env.NODE_ENV,
       DATABASE_URL: process.env.DATABASE_URL,
+      TWO_FACTOR_SECRET: process.env.TWO_FACTOR_SECRET,
     };
     process.env.NODE_ENV = 'production';
     process.env.DATABASE_URL = 'postgresql://u:p@localhost/db?sslmode=require';
+    process.env.TWO_FACTOR_SECRET = 'test-two-factor-secret-for-production-mode-contract-test-xxxxx';
 
     let base: Record<string, unknown> | null = null;
     jest.isolateModules(() => {
@@ -59,6 +61,8 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
 
     process.env.NODE_ENV = originalEnv.NODE_ENV;
     if (originalEnv.DATABASE_URL !== undefined) process.env.DATABASE_URL = originalEnv.DATABASE_URL;
+    if (originalEnv.TWO_FACTOR_SECRET !== undefined) process.env.TWO_FACTOR_SECRET = originalEnv.TWO_FACTOR_SECRET;
+    else delete process.env.TWO_FACTOR_SECRET;
 
     expect(base!['secure']).toBe(true);
   });
@@ -78,10 +82,12 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
       NODE_ENV: process.env.NODE_ENV,
       COOKIE_DOMAIN: process.env.COOKIE_DOMAIN,
       DATABASE_URL: process.env.DATABASE_URL,
+      TWO_FACTOR_SECRET: process.env.TWO_FACTOR_SECRET,
     };
     process.env.NODE_ENV = 'production';
     process.env.DATABASE_URL = 'postgresql://u:p@localhost/db?sslmode=require';
     process.env.COOKIE_DOMAIN = '.blobinfini.app';
+    process.env.TWO_FACTOR_SECRET = 'test-two-factor-secret-for-production-mode-contract-test-xxxxx';
 
     let base: Record<string, unknown> | null = null;
     jest.isolateModules(() => {
@@ -98,6 +104,8 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
 
     process.env.NODE_ENV = originalEnv.NODE_ENV;
     if (originalEnv.DATABASE_URL !== undefined) process.env.DATABASE_URL = originalEnv.DATABASE_URL;
+    if (originalEnv.TWO_FACTOR_SECRET !== undefined) process.env.TWO_FACTOR_SECRET = originalEnv.TWO_FACTOR_SECRET;
+    else delete process.env.TWO_FACTOR_SECRET;
     if (originalEnv.COOKIE_DOMAIN === undefined) {
       delete process.env.COOKIE_DOMAIN;
     } else {
@@ -112,9 +120,11 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
       NODE_ENV: process.env.NODE_ENV,
       COOKIE_DOMAIN: process.env.COOKIE_DOMAIN,
       DATABASE_URL: process.env.DATABASE_URL,
+      TWO_FACTOR_SECRET: process.env.TWO_FACTOR_SECRET,
     };
     process.env.NODE_ENV = 'production';
     process.env.DATABASE_URL = 'postgresql://u:p@localhost/db?sslmode=require';
+    process.env.TWO_FACTOR_SECRET = 'test-two-factor-secret-for-production-mode-contract-test-xxxxx';
     delete process.env.COOKIE_DOMAIN;
 
     let base: Record<string, unknown> | null = null;
@@ -132,6 +142,8 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
 
     process.env.NODE_ENV = originalEnv.NODE_ENV;
     if (originalEnv.DATABASE_URL !== undefined) process.env.DATABASE_URL = originalEnv.DATABASE_URL;
+    if (originalEnv.TWO_FACTOR_SECRET !== undefined) process.env.TWO_FACTOR_SECRET = originalEnv.TWO_FACTOR_SECRET;
+    else delete process.env.TWO_FACTOR_SECRET;
     if (originalEnv.COOKIE_DOMAIN !== undefined) {
       process.env.COOKIE_DOMAIN = originalEnv.COOKIE_DOMAIN;
     }
