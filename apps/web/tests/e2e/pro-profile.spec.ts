@@ -61,17 +61,17 @@ test.describe('Pro Profile Management', () => {
     await page.goto('/pro/profile');
     await expect(page).toHaveURL(/\/pro\/profile/);
 
-    // Verify profile form is displayed
-    await expect(page.getByLabel(/nom.*entreprise|business.*name/i)).toBeVisible();
-    await expect(page.getByLabel(/bio|description/i)).toBeVisible();
+    // Verify profile form is displayed — labels: "Nom commercial" and "Présentation"
+    await expect(page.getByLabel(/nom.*commercial|nom.*entreprise|business.*name/i)).toBeVisible();
+    await expect(page.getByLabel(/présentation|bio|description/i)).toBeVisible();
 
     // Update business name
-    const businessNameInput = page.getByLabel(/nom.*entreprise|business.*name/i);
+    const businessNameInput = page.getByLabel(/nom.*commercial|nom.*entreprise|business.*name/i);
     await businessNameInput.clear();
     await businessNameInput.fill('My Updated Surf School');
 
     // Update bio
-    const bioTextarea = page.getByLabel(/bio|description/i);
+    const bioTextarea = page.getByLabel(/présentation|bio|description/i);
     await bioTextarea.clear();
     await bioTextarea.fill('Professional surf instructor with 10 years of experience');
 
@@ -79,12 +79,12 @@ test.describe('Pro Profile Management', () => {
     const saveButton = page.getByRole('button', { name: /enregistrer|save|mettre.*jour|update/i });
     await saveButton.click();
 
-    // Wait for success message or confirmation
-    await expect(page.locator('text=/profil.*mis.*jour|profile.*updated|success/i')).toBeVisible({ timeout: 10000 });
+    // Save redirects to /pro/onboarding (no inline success message — redirect is the confirmation)
+    await expect(page).toHaveURL(/\/pro\/onboarding/, { timeout: 10000 });
 
-    // Reload page to verify changes persisted
-    await page.reload();
-    await expect(businessNameInput).toHaveValue('My Updated Surf School');
+    // Navigate back to profile and verify changes persisted
+    await page.goto('/pro/profile');
+    await expect(page.getByLabel(/nom.*commercial|nom.*entreprise|business.*name/i)).toHaveValue('My Updated Surf School');
 
     await context.close();
   });
