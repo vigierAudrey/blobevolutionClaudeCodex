@@ -31,6 +31,8 @@ const safeTestEnv = {
   NEXT_PUBLIC_FIREBASE_VAPID_KEY: '',
   WEBHOOK_URL: '',
   N8N_WEBHOOK_URL: '',
+  NEXT_PUBLIC_ADSENSE_ENABLED: 'true',
+  NEXT_PUBLIC_ADSENSE_CLIENT_ID: 'ca-pub-0000000000000000',
 };
 
 async function waitForServer(port: number, label: string) {

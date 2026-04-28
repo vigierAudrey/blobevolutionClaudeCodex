@@ -31,7 +31,7 @@ async function registerUser(email: string, role: 'PRO' | 'RIDER'): Promise<void>
 
   const reg = await apiCtx.post('/auth/register', {
     headers: { 'X-CSRF-Token': csrfToken },
-    data: { email, password: PASSWORD, role, consentAccepted: true },
+    data: { email, password: PASSWORD, role, consentAccepted: true, ...(role === 'PRO' ? { countryCode: 'FR' } : {}) },
   });
   await apiCtx.dispose();
   if (!reg.ok()) {

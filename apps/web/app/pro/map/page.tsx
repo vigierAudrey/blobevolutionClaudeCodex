@@ -126,10 +126,15 @@ export default function ProMapPage() {
 
     // Load pro location via /pro/me
     const t = apiClient.getTokens();
-    if (!t?.accessToken) return;
+    if (!t?.accessToken) {
+      router.replace('/login');
+      return;
+    }
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, { headers: { Authorization: `Bearer ${t.accessToken}` }})
-      .then(async r => ({ ok: r.ok, body: await r.json() }))
-      .then(({ ok, body }) => {
+      .then(async r => ({ ok: r.ok, status: r.status, body: await r.json() }))
+      .then(({ ok, status, body }) => {
+        if (status === 401) { router.replace('/login'); return; }
+        if (status === 403) { router.replace('/dashboard'); return; }
         if (ok && body?.lat && body?.lng) {
           setCenter([body.lat, body.lng]);
           setGeolocEnabled(true);
