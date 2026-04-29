@@ -28,7 +28,7 @@
     "gray-matter": "^4.0.3",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.556.0",
-    "next": "14.2.35",
+    "next": "15.5.15",
     "next-intl": "^4.6.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
@@ -82,7 +82,7 @@
   "overrides": {
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "next": "14.2.35",
+    "next": "15.5.15",
     "styled-jsx": "5.1.1"
   }
 }
