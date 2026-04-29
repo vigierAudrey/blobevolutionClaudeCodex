@@ -86,19 +86,19 @@ export function AdBanner({
   useEffect(() => {
     if (!adEnabled) return;
 
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'ad_impression', {
+        ad_mode: consentMode,
+        ad_slot: slot,
+        page_location: pathname ?? '',
+      });
+    }
+
     loadAdSense()
       .then(() => {
         try {
           window.adsbygoogle = window.adsbygoogle || [];
           window.adsbygoogle.push({});
-
-          if (typeof window.gtag === 'function') {
-            window.gtag('event', 'ad_impression', {
-              ad_mode: consentMode,
-              ad_slot: slot,
-              page_location: pathname ?? '',
-            });
-          }
         } catch (error) {
           console.warn('AdSense rendering error', error);
         }

@@ -110,7 +110,7 @@ export default function ProMapPage() {
   const [sport, setSport] = useState<'surf' | 'kitesurf'>('surf');
   const [items, setItems] = useState<LessonRequest[]>([]);
   const [center, setCenter] = useState<[number, number] | null>(null);
-  const [hasGeolocPermission, setHasGeolocPermission] = useState(false);
+  const [hasGeolocPermission, setHasGeolocPermission] = useState<boolean | null>(null);
   const [geolocEnabled, setGeolocEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [browserType, setBrowserType] = useState<BrowserType>('other');
@@ -156,7 +156,7 @@ export default function ProMapPage() {
         setRadiusKm(25);
         lastSavedRadiusRef.current = 25;
       });
-  }, []);
+  }, [router]);
 
   const enableGeolocation = () => {
     if (!navigator.geolocation) {

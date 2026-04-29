@@ -39,7 +39,6 @@ export default function MatchingPage() {
         // Vérifier le rôle de l'utilisateur
         const tokens = apiClient.getTokens();
         if (!tokens?.accessToken) {
-          router.replace('/login');
           return;
         }
         const currentUser = await apiClient.me() as DashboardUser;
@@ -272,6 +271,10 @@ export default function MatchingPage() {
                 size="lg"
                 disabled={!canContinue}
                 onClick={() => {
+                  if (!apiClient.getTokens()?.accessToken) {
+                    router.push('/login');
+                    return;
+                  }
                   if (chosenSport === 'surf') {
                     try { localStorage.setItem(SPORT_KEY, 'surf'); localStorage.setItem(LEVEL_KEY, (surfLevel || 'beginner') as string); } catch {}
                     router.push(`/matching/date?sport=surf&level=${surfLevel || 'beginner'}`);

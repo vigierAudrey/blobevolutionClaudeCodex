@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 // Fix pour les icônes Leaflet dans Next.js
 // Type assertion pour accéder à la propriété privée _getIconUrl de Leaflet
@@ -59,18 +60,10 @@ export default function MapComponent({
   const legendRef = useRef<HTMLDivElement | null>(null);
   const legendButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Cache CSS loading to avoid reloading on every component mount
   useEffect(() => {
-    if (typeof window !== 'undefined' && !document.querySelector('link[href*="leaflet.css"]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      link.crossOrigin = '';
-      link.as = 'style';
-      document.head.appendChild(link);
-
-      // Add mobile-specific styles for better touch interaction
+    if (typeof window !== 'undefined' && !document.querySelector('style[data-leaflet-mobile]')) {
       const style = document.createElement('style');
+      style.setAttribute('data-leaflet-mobile', '');
       style.textContent = `
         /* Mobile optimizations for Leaflet map */
         .leaflet-container {
