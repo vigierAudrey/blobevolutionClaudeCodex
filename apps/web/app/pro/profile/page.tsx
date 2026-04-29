@@ -548,8 +548,9 @@ export default function ProProfilePage() {
               </div>
               <form onSubmit={onSave} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Nom commercial</Label>
+                  <Label htmlFor="businessName">Nom commercial</Label>
                   <Input
+                    id="businessName"
                     value={businessName}
                     onChange={(e) => setBusinessName(e.target.value)}
                     placeholder="Ex: BlobPro School"
@@ -557,8 +558,9 @@ export default function ProProfilePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Présentation</Label>
+                  <Label htmlFor="bio">Présentation</Label>
                   <Textarea
+                    id="bio"
                     value={bio}
                     onChange={(e)=>setBio(e.target.value)}
                     placeholder="Ce que tu proposes, ton expérience, ton spot préféré…"

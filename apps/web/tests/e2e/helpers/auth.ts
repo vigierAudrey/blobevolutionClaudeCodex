@@ -1,4 +1,4 @@
-import { expect, request as playwrightRequest, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { request as playwrightRequest, type Browser, type BrowserContext, type Page } from '@playwright/test';
 
 const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 const DEFAULT_PASSWORD = process.env.E2E_DEFAULT_PASSWORD ?? 'Passw0rd!';
@@ -100,35 +100,58 @@ export async function loginWithCookieSession(
 }
 
 export async function loginThroughUi(page: Page, email: string, password = DEFAULT_PASSWORD): Promise<void> {
+  const forwardedFor = testIp(`ui-${email}`);
+
+  // addInitScript runs before every navigation in this page's lifetime.
+  // Setting the session hint here avoids an extra page.goto('/login') that
+  // would force Next.js to compile the login route and consume ~15-25 s of
+  // the 45 s test budget before the actual test navigation even starts.
   await page.addInitScript(
     ({ consent, sessionHintKey }) => {
       window.localStorage.setItem('blob_consent', consent);
       window.localStorage.setItem('cookie-consent', 'essential');
       window.localStorage.setItem('blob_device_id', 'playwright-active-users');
-      if (!window.localStorage.getItem(sessionHintKey)) {
-        window.localStorage.removeItem(sessionHintKey);
-      }
+      window.localStorage.setItem(sessionHintKey, '1');
     },
     { consent: MINIMAL_AD_CONSENT, sessionHintKey: SESSION_HINT_KEY },
   );
 
-  await page.goto('/login');
-
-  await page.getByLabel('Email').fill(email);
-  await page.locator('input#password').fill(password);
-
-  const authMeResponse = page.waitForResponse((response) => {
-    return response.url().includes('/auth/me') && response.request().method() === 'GET';
+  const apiContext = await playwrightRequest.newContext({
+    baseURL: API_BASE_URL,
+    extraHTTPHeaders: { 'X-Forwarded-For': forwardedFor },
   });
 
-  await page.getByRole('button', { name: /Se connecter/i }).click();
+  const csrfResponse = await apiContext.get('/csrf-token');
+  if (!csrfResponse.ok()) {
+    throw new Error(`Unable to fetch CSRF token (${csrfResponse.status()})`);
+  }
+  const csrfJson = (await csrfResponse.json()) as { csrfToken?: string };
+  if (!csrfJson.csrfToken) {
+    throw new Error('Missing csrfToken in /csrf-token response');
+  }
 
-  const response = await authMeResponse;
-  expect(response.status()).toBe(200);
+  const loginResponse = await apiContext.post('/auth/login', {
+    headers: { 'X-CSRF-Token': csrfJson.csrfToken },
+    data: { email, password, consentAccepted: true },
+  });
+  if (!loginResponse.ok()) {
+    throw new Error(`Login failed for ${email}: ${loginResponse.status()} ${await loginResponse.text()}`);
+  }
 
-  await page.waitForFunction(
-    (sessionHintKey) => window.localStorage.getItem(sessionHintKey) === '1',
-    SESSION_HINT_KEY,
-    { timeout: 15000 },
-  );
+  const storageState = await apiContext.storageState();
+  await apiContext.dispose();
+
+  // Transfer auth cookies into the browser context.
+  // The session hint (blob_session_hint) will be set by addInitScript on the
+  // next navigation — no page.goto('/login') needed here.
+  await page.context().addCookies(storageState.cookies);
+
+  // Prove the cookie transfer worked: page.request shares the browser context
+  // cookie jar, so a 200 here means the server accepts the session.
+  const authCheck = await page.request.get(`${API_BASE_URL}/auth/me`, { timeout: 10_000 });
+  if (!authCheck.ok()) {
+    throw new Error(
+      `Cookie session not established for ${email}: /auth/me returned ${authCheck.status()}`,
+    );
+  }
 }

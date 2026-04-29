@@ -31,6 +31,8 @@ const safeTestEnv = {
   NEXT_PUBLIC_FIREBASE_VAPID_KEY: '',
   WEBHOOK_URL: '',
   N8N_WEBHOOK_URL: '',
+  NEXT_PUBLIC_ADSENSE_ENABLED: 'true',
+  NEXT_PUBLIC_ADSENSE_CLIENT_ID: 'ca-pub-0000000000000000',
 };
 
 async function waitForServer(port: number, label: string) {
@@ -44,6 +46,7 @@ async function waitForServer(port: number, label: string) {
 export default defineConfig({
   testDir: './apps/web/tests/e2e',
   timeout: 45_000,
+  globalTimeout: 10 * 60 * 1000,
   // Avoid root-owned default 'test-results' folder in some environments
   outputDir: 'playwright-out',
   globalSetup: './playwright.global-setup.ts',

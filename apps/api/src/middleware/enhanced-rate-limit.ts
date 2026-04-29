@@ -450,11 +450,19 @@ export function createLazyCustomRateLimiter(
   let memoryLimiter: ReturnType<typeof rateLimit> | null = null;
   let redisLimiter: ReturnType<typeof rateLimit> | null = null;
 
-  // Wrap skip to add consistent skip-in-tests logic (same pattern as createLazyRateLimiter)
+  // Wrap skip to add consistent skip-in-tests/dev-localhost logic (same as createRateLimiter)
   const callerSkip = options?.skip;
   const skipFn = (req: Request): boolean => {
     const enableInTests = String(process.env.ENABLE_RATE_LIMIT_IN_TESTS ?? '').toLowerCase() === 'true';
     if (process.env.NODE_ENV === 'test' && !enableInTests) return true;
+    if (process.env.NODE_ENV === 'development') {
+      const isLocalhost =
+        req.ip === '::1' ||
+        req.ip === '127.0.0.1' ||
+        req.ip === '::ffff:127.0.0.1' ||
+        req.hostname === 'localhost';
+      if (isLocalhost) return true;
+    }
     return callerSkip ? (callerSkip as (r: Request) => boolean)(req) : false;
   };
 

@@ -1,45 +1,18 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { loginWithCookieSession } from './helpers/auth';
 
 const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
-const DEFAULT_PASSWORD = process.env.E2E_DEFAULT_PASSWORD ?? 'Passw0rd!';
 
-function testIp(tag: string) {
-  const base = Math.abs(
-    Array.from(`${tag}-${Date.now()}-${Math.random()}`)
-      .reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  );
-  const a = (base >> 12) & 255;
-  const b = (base >> 8) & 255;
-  const c = (base >> 4) & 255;
-  const d = base & 255;
-  return `10.${a}.${b}.${c ^ d || 99}`;
-}
-
-async function loginViaApi(email: string, tag: string) {
-  const apiContext = await playwrightRequest.newContext({
-    baseURL: API_BASE_URL,
-    extraHTTPHeaders: { 'X-Forwarded-For': testIp(`api-${tag}`) },
-  });
-  const csrfResponse = await apiContext.get('/csrf-token');
-  if (!csrfResponse.ok()) {
-    throw new Error(`Unable to fetch CSRF token (${csrfResponse.status()})`);
-  }
-  const csrfJson = (await csrfResponse.json()) as { csrfToken: string };
-
-  const loginResponse = await apiContext.post('/auth/login', {
-    headers: { 'X-CSRF-Token': csrfJson.csrfToken },
-    data: { email, password: DEFAULT_PASSWORD },
-  });
-
-  if (!loginResponse.ok()) {
-    throw new Error(`Login failed for ${email}: ${loginResponse.status()} ${await loginResponse.text()}`);
-  }
-
-  const tokens = (await loginResponse.json()) as { accessToken: string; refreshToken: string };
-  await apiContext.dispose();
-  return tokens;
-}
-
+/**
+ * Admin access-control gate.
+ *
+ * All three tests use the real cookie-based auth flow:
+ *  1. API login → httpOnly accessToken + refreshToken cookies (+ admin_session for ADMIN role)
+ *  2. Cookies transferred to browser context via storageState
+ *  3. Next.js middleware reads admin_session from request headers (server-side)
+ *
+ * No localStorage tokens. No body-token extraction.
+ */
 test.describe('Admin dashboard access control', () => {
   test('redirects unauthenticated users to login', async ({ page }) => {
     await page.goto('/admin/dashboard');
@@ -48,50 +21,50 @@ test.describe('Admin dashboard access control', () => {
 
   test('prevents rider from accessing admin dashboard', async ({ browser }) => {
     const riderEmail = process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
-    const tokens = await loginViaApi(riderEmail, 'admin-gate-rider');
 
-    const context = await browser.newContext();
-    await context.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
+    // RIDER login — no admin_session cookie in API response
+    const context = await loginWithCookieSession(browser, riderEmail, {
+      tag: 'admin-gate-rider',
+    });
     const page = await context.newPage();
+
+    // Verify session is live (httpOnly cookie proof)
+    const authMe = await page.request.get(`${API_BASE_URL}/auth/me`);
+    expect(authMe.status()).toBe(200);
+    const meBody = (await authMe.json()) as { role?: string };
+    expect(meBody.role).not.toBe('ADMIN');
+
+    // No admin_session cookie → middleware must redirect to /login.
+    // waitForLoadState('networkidle') is intentionally absent: Next.js dev mode
+    // keeps HMR WebSocket connections open indefinitely, so networkidle never
+    // fires and the test would time out after 45 s.
     await page.goto('/admin/dashboard');
-    await page.waitForLoadState('networkidle');
-    // Middleware redirection kicks in first for non-admin → /login
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
+
     await context.close();
   });
 
   test('allows admin to access dashboard', async ({ browser }) => {
-    const tokens = await loginViaApi('dev+admin@test.com', 'admin-gate-admin');
-    const context = await browser.newContext();
-    await context.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
-    // Set gating cookie expected by Next.js middleware for /admin/*
-    await context.addCookies([
-      {
-        name: 'admin_session',
-        value: '1',
-        domain: 'localhost',
-        path: '/',
-        httpOnly: false,
-        secure: false,
-        sameSite: 'Lax',
-        expires: Math.floor(Date.now() / 1000) + 7 * 24 * 3600,
-      },
-    ]);
+    const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'dev+admin@test.com';
+
+    // ADMIN login — API sets admin_session httpOnly cookie automatically
+    const context = await loginWithCookieSession(browser, adminEmail, {
+      tag: 'admin-gate-admin',
+    });
     const page = await context.newPage();
+
+    // Verify the session is accepted by the API and the role is ADMIN
+    const authMe = await page.request.get(`${API_BASE_URL}/auth/me`);
+    expect(authMe.status()).toBe(200);
+    const meBody = (await authMe.json()) as { role?: string };
+    expect(meBody.role).toBe('ADMIN');
+
+    // admin_session cookie is in the context → middleware allows /admin/*.
+    // The dashboard is CSR: heading appears only after apiClient.me() resolves.
+    // 25 s covers Next.js first-compile latency (10-20 s in CI) + React render.
     await page.goto('/admin/dashboard');
-    await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Administration/i })).toBeVisible({ timeout: 25_000 });
+
     await context.close();
   });
 });

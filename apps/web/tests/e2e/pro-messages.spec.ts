@@ -89,7 +89,7 @@ test.describe('Pro Messages', () => {
 
     // Look for conversation list or empty state
     const hasConversations = await page.locator('[data-testid="conversation-list"], .conversation-item').count() > 0;
-    const hasEmptyState = await page.locator('text=/aucun.*message|no.*messages|vide|empty/i').count() > 0;
+    const hasEmptyState = await page.locator('text=/aucun.*(message|conversation)|no.*messages|vide|empty/i').count() > 0;
 
     // Either conversations or empty state should be visible
     expect(hasConversations || hasEmptyState).toBe(true);
@@ -297,7 +297,7 @@ test.describe('Pro Messages Security', () => {
 
     // All conversations should belong to this pro
     // (Implementation specific - just verify page loads correctly)
-    await expect(page.locator('h1, h2').filter({ hasText: /messages/i }).first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h1, h2').filter({ hasText: /messages|conversations/i }).first()).toBeVisible({ timeout: 10000 });
 
     await context.close();
   });

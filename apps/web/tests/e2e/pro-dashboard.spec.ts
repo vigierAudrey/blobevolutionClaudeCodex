@@ -2,6 +2,8 @@ import { test, expect, request as playwrightRequest } from '@playwright/test';
 
 const PRO_EMAIL = process.env.E2E_PRO_EMAIL ?? 'dev+pro1@test.com';
 const PRO_PASSWORD = process.env.E2E_PRO_PASSWORD ?? 'Passw0rd!';
+const RIDER_EMAIL = process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
+const RIDER_PASSWORD = process.env.E2E_RIDER_PASSWORD ?? 'Passw0rd!';
 const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 
 function testIp(tag: string) {
@@ -32,12 +34,18 @@ async function loginViaApi(email: string, password: string) {
   });
 
   if (!loginResponse.ok()) {
+    await apiContext.dispose();
     throw new Error(`API login failed for ${email}: ${loginResponse.status()} ${await loginResponse.text()}`);
   }
 
-  const tokens = await loginResponse.json();
+  const state = await apiContext.storageState();
   await apiContext.dispose();
-  return tokens as { accessToken: string; refreshToken: string };
+
+  const cookie = state.cookies.find(c => c.name === 'accessToken');
+  if (!cookie) {
+    throw new Error(`No accessToken cookie after login for ${email}`);
+  }
+  return cookie;
 }
 
 test.describe('Pro Dashboard', () => {
@@ -49,14 +57,11 @@ test.describe('Pro Dashboard', () => {
     });
     const page = await context.newPage();
 
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
+    const cookie = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
+    await context.addCookies([cookie]);
+    await page.addInitScript((hint) => {
+      window.localStorage.setItem('blob_session_hint', hint);
+    }, cookie.value);
 
     await page.goto('/pro/dashboard');
     await expect(page).toHaveURL(/\/pro\/dashboard/);
@@ -93,14 +98,11 @@ test.describe('Pro Dashboard', () => {
     });
     const page = await context.newPage();
 
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
+    const cookie = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
+    await context.addCookies([cookie]);
+    await page.addInitScript((hint) => {
+      window.localStorage.setItem('blob_session_hint', hint);
+    }, cookie.value);
 
     await page.goto('/pro/dashboard');
     await expect(page).toHaveURL(/\/pro\/dashboard/);
@@ -123,14 +125,11 @@ test.describe('Pro Dashboard', () => {
     });
     const page = await context.newPage();
 
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
+    const cookie = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
+    await context.addCookies([cookie]);
+    await page.addInitScript((hint) => {
+      window.localStorage.setItem('blob_session_hint', hint);
+    }, cookie.value);
 
     await page.goto('/pro/dashboard');
     await expect(page).toHaveURL(/\/pro\/dashboard/);
@@ -164,20 +163,16 @@ test.describe('Pro Dashboard', () => {
     });
     const page = await context.newPage();
 
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
+    const cookie = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
+    await context.addCookies([cookie]);
+    await page.addInitScript((hint) => {
+      window.localStorage.setItem('blob_session_hint', hint);
+    }, cookie.value);
 
     await page.goto('/pro/dashboard');
     await expect(page).toHaveURL(/\/pro\/dashboard/);
 
     // Look for numeric metrics (views, clicks, bookings count, etc.)
-    const metricsPattern = /\d+/;
     const potentialMetrics = page.locator('text=/vues|views|clics|clicks|total|count/i');
 
     if (await potentialMetrics.count() > 0) {
@@ -195,14 +190,11 @@ test.describe('Pro Dashboard', () => {
     });
     const page = await context.newPage();
 
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
+    const cookie = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
+    await context.addCookies([cookie]);
+    await page.addInitScript((hint) => {
+      window.localStorage.setItem('blob_session_hint', hint);
+    }, cookie.value);
 
     await page.goto('/pro/dashboard');
     await expect(page).toHaveURL(/\/pro\/dashboard/);
@@ -226,14 +218,11 @@ test.describe('Pro Dashboard', () => {
     });
     const page = await context.newPage();
 
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
+    const cookie = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
+    await context.addCookies([cookie]);
+    await page.addInitScript((hint) => {
+      window.localStorage.setItem('blob_session_hint', hint);
+    }, cookie.value);
 
     await page.goto('/pro/dashboard');
     await expect(page).toHaveURL(/\/pro\/dashboard/);
@@ -254,10 +243,6 @@ test.describe('Pro Dashboard Security', () => {
   });
 
   test('should require PRO role to access dashboard', async ({ browser }) => {
-    // This test assumes we have a RIDER account set up
-    const RIDER_EMAIL = process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
-    const RIDER_PASSWORD = process.env.E2E_RIDER_PASSWORD ?? 'Passw0rd!';
-
     const context = await browser.newContext({
       extraHTTPHeaders: {
         'X-Forwarded-For': testIp('rider-access-pro-dashboard'),
@@ -266,14 +251,11 @@ test.describe('Pro Dashboard Security', () => {
     const page = await context.newPage();
 
     try {
-      const tokens = await loginViaApi(RIDER_EMAIL, RIDER_PASSWORD);
-      await page.addInitScript(
-        ({ accessToken, refreshToken }) => {
-          window.localStorage.setItem('accessToken', accessToken);
-          window.localStorage.setItem('refreshToken', refreshToken);
-        },
-        tokens
-      );
+      const cookie = await loginViaApi(RIDER_EMAIL, RIDER_PASSWORD);
+      await context.addCookies([cookie]);
+      await page.addInitScript((hint) => {
+        window.localStorage.setItem('blob_session_hint', hint);
+      }, cookie.value);
 
       await page.goto('/pro/dashboard');
 

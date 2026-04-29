@@ -110,7 +110,7 @@ export default function ProMapPage() {
   const [sport, setSport] = useState<'surf' | 'kitesurf'>('surf');
   const [items, setItems] = useState<LessonRequest[]>([]);
   const [center, setCenter] = useState<[number, number] | null>(null);
-  const [hasGeolocPermission, setHasGeolocPermission] = useState(false);
+  const [hasGeolocPermission, setHasGeolocPermission] = useState<boolean | null>(null);
   const [geolocEnabled, setGeolocEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [browserType, setBrowserType] = useState<BrowserType>('other');
@@ -126,10 +126,15 @@ export default function ProMapPage() {
 
     // Load pro location via /pro/me
     const t = apiClient.getTokens();
-    if (!t?.accessToken) return;
+    if (!t?.accessToken) {
+      router.replace('/login');
+      return;
+    }
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, { headers: { Authorization: `Bearer ${t.accessToken}` }})
-      .then(async r => ({ ok: r.ok, body: await r.json() }))
-      .then(({ ok, body }) => {
+      .then(async r => ({ ok: r.ok, status: r.status, body: await r.json() }))
+      .then(({ ok, status, body }) => {
+        if (status === 401) { router.replace('/login'); return; }
+        if (status === 403) { router.replace('/dashboard'); return; }
         if (ok && body?.lat && body?.lng) {
           setCenter([body.lat, body.lng]);
           setGeolocEnabled(true);
@@ -151,7 +156,7 @@ export default function ProMapPage() {
         setRadiusKm(25);
         lastSavedRadiusRef.current = 25;
       });
-  }, []);
+  }, [router]);
 
   const enableGeolocation = () => {
     if (!navigator.geolocation) {

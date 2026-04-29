@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
 import { apiClient, type SecurityHealth, type SecurityObservability } from '../../../lib/apiClient';
-import { Shield, CheckCircle, AlertTriangle, RefreshCw, ChevronRight, FileText, Activity } from 'lucide-react';
+import { Shield, CheckCircle, AlertTriangle, RefreshCw, ChevronRight, FileText } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminSecurityPage() {

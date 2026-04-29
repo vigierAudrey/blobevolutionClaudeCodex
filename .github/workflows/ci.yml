@@ -486,8 +486,14 @@ jobs:
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     if: github.event_name != 'pull_request' || github.base_ref == 'main'
     services:
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
       postgres:
         image: postgis/postgis:15-3.4
         env:
@@ -510,8 +516,12 @@ jobs:
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret
       IP_HASH_SECRET: ci-ip-hash-secret-for-e2e-only-min-32-chars
       LOG_ACTOR_SECRET: ci-log-actor-secret-for-e2e-only-min-32-chars
+      EMAIL_HASH_SECRET: ci-email-hash-secret-for-e2e-only-min-32-chars
+      MAILPIT_URL: http://localhost:8025
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
       WEB_BASE_URL: http://127.0.0.1:3002
+      NEXT_PUBLIC_ADSENSE_ENABLED: 'true'
+      NEXT_PUBLIC_ADSENSE_CLIENT_ID: 'ca-pub-0000000000000000'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

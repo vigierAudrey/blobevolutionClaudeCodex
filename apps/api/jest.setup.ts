@@ -1,10 +1,8 @@
 import { clientPrisma as prisma } from '@blobinfini/database';
-import { clearAnalyticsRateLimit } from './src/modules/analytics/analytics.controller';
 import { resetTrustedProxiesCache } from './src/lib/client-ip';
 import { resetAuthCache } from './src/lib/socket-auth-cache';
 import { closeRateLimitStore } from './src/middleware/enhanced-rate-limit';
 import { cacheService } from './src/services/cache.service';
-import { challengeCounter, memoryStore } from './src/services/two-factor.service';
 
 const SUPPRESSED_WARNINGS = [
   'PUSH_SERVICE_DISABLED',
@@ -27,11 +25,19 @@ afterAll(() => {
 });
 
 afterEach(() => {
+  // Lazy require so that jest.mock() in test files intercepts two-factor.service dependencies
+  // before the module is loaded — a top-level import would bind real references at setup time.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { challengeCounter, memoryStore } = require('./src/services/two-factor.service') as typeof import('./src/services/two-factor.service');
   challengeCounter.clear();
   memoryStore?.clear();
   resetAuthCache();
   resetTrustedProxiesCache();
-  clearAnalyticsRateLimit();
+  if (process.env.NODE_ENV === 'test') {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { clearAnalyticsRateLimit } = require('./src/modules/analytics/analytics.controller') as typeof import('./src/modules/analytics/analytics.controller');
+    clearAnalyticsRateLimit();
+  }
 });
 
 // Global cleanup after all tests
