@@ -1,9 +1,9 @@
-import crypto from 'crypto';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import type { ConsentLevel, ConsentSignal, UserConsent } from '@blobinfini/database';
 
 const CONSENT_TTL_MONTHS = 13;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE = 10_000;
 
 type CachedConsent = {
   value: UserConsent | null;
@@ -21,17 +21,14 @@ export type ConsentPayload = {
   cmpVersion?: string | null;
 };
 
-const HEX_SHA256_REGEX = /^[a-f0-9]{64}$/i;
+const HEX_SHA256_REGEX = /^[0-9a-f]{64}$/;
 
 const sanitizeHash = (input: string) => {
   const trimmed = (input || '').trim();
-  if (!trimmed) {
+  if (!HEX_SHA256_REGEX.test(trimmed)) {
     throw new Error('Invalid user hash');
   }
-  if (HEX_SHA256_REGEX.test(trimmed)) {
-    return trimmed.toLowerCase();
-  }
-  return crypto.createHash('sha256').update(trimmed).digest('hex');
+  return trimmed;
 };
 
 const getCachedConsent = (hash: string): UserConsent | null | undefined => {
@@ -45,6 +42,11 @@ const getCachedConsent = (hash: string): UserConsent | null | undefined => {
 };
 
 const setCachedConsent = (hash: string, value: UserConsent | null) => {
+  if (consentCache.size >= CACHE_MAX_SIZE) {
+    // FIFO eviction: remove oldest inserted entry
+    const firstKey = consentCache.keys().next().value;
+    if (firstKey !== undefined) consentCache.delete(firstKey);
+  }
   consentCache.set(hash, {
     value,
     expiresAt: Date.now() + CACHE_TTL_MS,
@@ -125,4 +127,8 @@ export async function createOrUpdateConsent(payload: ConsentPayload) {
 
 export function __clearConsentCache() {
   clearConsentCache();
+}
+
+export function getConsentCacheSize() {
+  return consentCache.size;
 }
