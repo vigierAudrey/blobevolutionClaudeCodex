@@ -41,6 +41,17 @@ async function bootstrapConsent(context: BrowserContext, mode: ConsentMode) {
 }
 
 async function assertGtagSignals(page: Page, expected: typeof SIGNALS[ConsentMode], mode: ConsentMode) {
+  // gtag() calls are fired in React useEffects — they can execute slightly after the
+  // DOM element (ins.adsbygoogle) is painted. Poll instead of snapshotting immediately.
+  await page.waitForFunction(
+    () => {
+      const calls = (window as WindowWithGtagTracking).__gtagCalls ?? [];
+      return calls.some((a: unknown) => Array.isArray(a) && a[0] === 'consent' && a[1] === 'update');
+    },
+    undefined,
+    { timeout: 5000 },
+  );
+
   const calls = await page.evaluate(() => (window as WindowWithGtagTracking).__gtagCalls ?? []);
   const consentCall = calls.find((args: unknown) => Array.isArray(args) && args[0] === 'consent' && args[1] === 'update');
   expect(consentCall).toBeTruthy();
@@ -51,7 +62,18 @@ async function assertGtagSignals(page: Page, expected: typeof SIGNALS[ConsentMod
   if (mode === 'none') {
     return;
   }
-  const impression = calls.find((args: unknown) => Array.isArray(args) && args[0] === 'event' && args[1] === 'ad_impression');
+
+  await page.waitForFunction(
+    () => {
+      const calls = (window as WindowWithGtagTracking).__gtagCalls ?? [];
+      return calls.some((a: unknown) => Array.isArray(a) && a[0] === 'event' && a[1] === 'ad_impression');
+    },
+    undefined,
+    { timeout: 5000 },
+  );
+
+  const allCalls = await page.evaluate(() => (window as WindowWithGtagTracking).__gtagCalls ?? []);
+  const impression = allCalls.find((args: unknown) => Array.isArray(args) && args[0] === 'event' && args[1] === 'ad_impression');
   expect(impression).toBeTruthy();
   if (Array.isArray(impression)) {
     expect(impression[2]).toMatchObject({ ad_mode: mode });
