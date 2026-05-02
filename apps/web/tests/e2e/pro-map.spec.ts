@@ -141,7 +141,8 @@ test.describe('Pro Map (Blobomap)', () => {
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
 
     // Click first rider marker if present — then assert the Leaflet popup appears.
-    const marker = page.locator('.leaflet-marker-icon').first();
+    // Uses .map-marker-item to exclude the center marker which has no rider popup.
+    const marker = page.locator('.leaflet-marker-icon.map-marker-item').first();
     if (await marker.count() > 0) {
       await marker.click();
       // MapComponent renders a Leaflet <Popup> with rider details.
@@ -256,12 +257,15 @@ test.describe('Pro Map (Blobomap)', () => {
 
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
 
-    // Contact flow requires a marker. If no markers in seed, skip interaction — not a test bug.
-    const marker = page.locator('.leaflet-marker-icon').first();
+    // Contact flow requires a rider marker. Uses .map-marker-item to exclude the center
+    // marker, which has no "Contacter" button. If no rider markers in seed, skip — not a test bug.
+    const marker = page.locator('.leaflet-marker-icon.map-marker-item').first();
     if (await marker.count() > 0) {
       await marker.click();
+      // Wait for popup to open before looking for the button (Leaflet popup animation).
+      await expect(page.locator('.leaflet-popup')).toBeVisible({ timeout: 5000 });
       // The MapComponent popup renders a "💬 Contacter" button.
-      await expect(page.getByRole('button', { name: /contacter/i }).first()).toBeVisible({ timeout: 5000 });
+      await expect(page.getByRole('button', { name: /contacter/i }).first()).toBeVisible({ timeout: 3000 });
     }
 
     await context.close();
