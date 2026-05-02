@@ -1,9 +1,25 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type Page } from '@playwright/test';
 
 const PRO_EMAIL = process.env.E2E_PRO_EMAIL ?? 'dev+pro1@test.com';
 const PRO_PASSWORD = process.env.E2E_PRO_PASSWORD ?? 'Passw0rd!';
 const RIDER_EMAIL = process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
 const RIDER_PASSWORD = process.env.E2E_RIDER_PASSWORD ?? 'Passw0rd!';
+
+// Pre-computed at module load so the updatedAt timestamp is stable across retries.
+const NPA_CONSENT_JSON = JSON.stringify({
+  mode: 'npa',
+  signals: { ad_storage: 'granted', ad_user_data: 'denied', ad_personalization: 'denied' },
+  cmpVersion: 'playwright-suite',
+  updatedAt: new Date().toISOString(),
+});
+
+// Inject a non-none consent state so CookieConsent modal never appears during pro-map tests.
+async function setupConsent(page: Page): Promise<void> {
+  await page.addInitScript((consent) => {
+    window.localStorage.setItem('blob_consent', consent);
+    window.localStorage.setItem('cookie-consent', 'essential');
+  }, NPA_CONSENT_JSON);
+}
 const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 
 function testIp(tag: string) {
@@ -64,6 +80,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
@@ -85,6 +102,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
@@ -115,6 +133,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
@@ -143,6 +162,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
@@ -176,6 +196,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
@@ -205,6 +226,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
@@ -227,6 +249,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
@@ -265,6 +288,7 @@ test.describe('Pro Map Security', () => {
       await page.addInitScript((hint) => {
         window.localStorage.setItem('blob_session_hint', hint);
       }, cookie.value);
+      await setupConsent(page);
 
       await page.goto('/pro/map');
 
