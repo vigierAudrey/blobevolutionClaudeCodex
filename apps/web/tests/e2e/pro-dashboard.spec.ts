@@ -134,21 +134,19 @@ test.describe('Pro Dashboard', () => {
     await page.goto('/pro/dashboard');
     await expect(page).toHaveURL(/\/pro\/dashboard/);
 
-    // Look for navigation links to other pro sections
-    const actionLinks = [
-      page.getByRole('link', { name: /messages/i }),
-      page.getByRole('link', { name: /profil|profile/i }),
-      page.getByRole('link', { name: /planning|calendar/i })
-    ];
+    // Wait for the dashboard to finish loading (h1 only appears after me() resolves)
+    await expect(
+      page.locator('h1, h2').filter({ hasText: /dashboard|tableau.*bord/i }).first(),
+    ).toBeVisible({ timeout: 10000 });
 
-    // At least one action link should be present
-    let foundLink = false;
-    for (const link of actionLinks) {
-      if (await link.count() > 0) {
-        foundLink = true;
-        break;
-      }
-    }
+    // The dashboard renders "Messages" and "Profil Pro" links inside card wrappers.
+    // Use href-based locators: more stable than accessible-name on complex card links.
+    const messagesLink = page.locator('a[href="/pro/messages"]');
+    const profileLink = page.locator('a[href="/pro/profile"]');
+
+    // At least one navigation card link must be present
+    const foundLink =
+      (await messagesLink.count()) > 0 || (await profileLink.count()) > 0;
 
     expect(foundLink).toBe(true);
 

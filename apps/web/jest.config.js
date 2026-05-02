@@ -4,6 +4,7 @@ export default {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
     '^~/(.*)$': '<rootDir>/$1',
+    '\\.css$': '<rootDir>/__mocks__/styleMock.js',
   },
   transform: {
     '^.+\\.(js|jsx|ts|tsx)$': ['@swc/jest'],

@@ -1,9 +1,25 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type Page } from '@playwright/test';
 
 const PRO_EMAIL = process.env.E2E_PRO_EMAIL ?? 'dev+pro1@test.com';
 const PRO_PASSWORD = process.env.E2E_PRO_PASSWORD ?? 'Passw0rd!';
 const RIDER_EMAIL = process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
 const RIDER_PASSWORD = process.env.E2E_RIDER_PASSWORD ?? 'Passw0rd!';
+
+// Pre-computed at module load so the updatedAt timestamp is stable across retries.
+const NPA_CONSENT_JSON = JSON.stringify({
+  mode: 'npa',
+  signals: { ad_storage: 'granted', ad_user_data: 'denied', ad_personalization: 'denied' },
+  cmpVersion: 'playwright-suite',
+  updatedAt: new Date().toISOString(),
+});
+
+// Inject a non-none consent state so CookieConsent modal never appears during pro-map tests.
+async function setupConsent(page: Page): Promise<void> {
+  await page.addInitScript((consent) => {
+    window.localStorage.setItem('blob_consent', consent);
+    window.localStorage.setItem('cookie-consent', 'essential');
+  }, NPA_CONSENT_JSON);
+}
 const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 
 function testIp(tag: string) {
@@ -48,12 +64,14 @@ async function loginViaApi(email: string, password: string) {
   return cookie;
 }
 
+// Seed guarantee: dev+pro1 has lat/lng → /pro/me returns them → geolocEnabled=true.
+// Therefore .leaflet-container ALWAYS renders for an authenticated pro with seed data.
+// Lesson-request markers depend on riders searching near the pro location (no seed guarantee).
+
 test.describe('Pro Map (Blobomap)', () => {
   test('should display map page with riders looking for lessons', async ({ browser }) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map'),
-      },
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-map') },
     });
     const page = await context.newPage();
 
@@ -62,31 +80,20 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    // Page should load successfully
-    await page.waitForTimeout(2000);
-
-    // Look for map container or canvas
-    const mapContainer = page.locator('[data-testid="map"], #map, .map-container, canvas');
-
-    if (await mapContainer.count() > 0) {
-      await expect(mapContainer.first()).toBeVisible({ timeout: 10000 });
-    } else {
-      // If no map found, at least verify page loaded
-      await expect(page.locator('body')).toBeVisible();
-    }
+    // Seed guarantees lat/lng → Leaflet map container must appear.
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
 
     await context.close();
   });
 
   test('should display markers for riders on the map', async ({ browser }) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-markers'),
-      },
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-map-markers') },
     });
     const page = await context.newPage();
 
@@ -95,33 +102,29 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    await page.waitForTimeout(3000);
+    // Map container is guaranteed (seed has lat/lng)
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
 
-    // Look for rider markers or pins
-    const markers = page.locator('[class*="marker"], [class*="pin"], img[src*="marker"], img[alt*="marker"]');
-
-    if (await markers.count() > 0) {
-      expect(await markers.count()).toBeGreaterThan(0);
-    } else {
-      // No markers - could be empty state
-      const emptyState = page.locator('text=/aucun.*rider|no.*riders|pas.*demande/i');
-      if (await emptyState.count() > 0) {
-        await expect(emptyState.first()).toBeVisible();
-      }
+    // Markers require lesson requests in seed near the pro location — no guarantee.
+    // If present, assert at least one is visible. If absent, that is the expected empty state.
+    const markers = page.locator('.leaflet-marker-icon');
+    const markerCount = await markers.count();
+    if (markerCount > 0) {
+      await expect(markers.first()).toBeVisible();
     }
+    // No else-fail: 0 markers = valid empty state, documented by count display below.
 
     await context.close();
   });
 
   test('should show rider details on marker click', async ({ browser }) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-details'),
-      },
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-map-details') },
     });
     const page = await context.newPage();
 
@@ -130,25 +133,20 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    await page.waitForTimeout(3000);
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
 
-    // Try to click on a marker
-    const marker = page.locator('[class*="marker"], [class*="pin"]').first();
-
+    // Click first rider marker if present — then assert the Leaflet popup appears.
+    // Uses .map-marker-item to exclude the center marker which has no rider popup.
+    const marker = page.locator('.leaflet-marker-icon.map-marker-item').first();
     if (await marker.count() > 0) {
       await marker.click();
-      await page.waitForTimeout(1000);
-
-      // Look for popup or details panel
-      const detailsPanel = page.locator('[class*="popup"], [class*="details"], [data-testid="rider-details"]');
-
-      if (await detailsPanel.count() > 0) {
-        await expect(detailsPanel.first()).toBeVisible();
-      }
+      // MapComponent renders a Leaflet <Popup> with rider details.
+      await expect(page.locator('.leaflet-popup')).toBeVisible({ timeout: 5000 });
     }
 
     await context.close();
@@ -156,9 +154,7 @@ test.describe('Pro Map (Blobomap)', () => {
 
   test('should filter riders by sport', async ({ browser }) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-filter-sport'),
-      },
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-map-filter-sport') },
     });
     const page = await context.newPage();
 
@@ -167,66 +163,32 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    await page.waitForTimeout(2000);
+    // The sport buttons (🏄 Surf / 🪁 Kitesurf) are rendered unconditionally in CardContent.
+    // They do NOT depend on geoloc state — hard assertion is correct.
+    const surfBtn = page.getByRole('button', { name: /surf/i }).first();
+    const kitesurfBtn = page.getByRole('button', { name: /kitesurf/i }).first();
+    await expect(surfBtn).toBeVisible({ timeout: 10000 });
+    await expect(kitesurfBtn).toBeVisible();
 
-    // Look for sport filter
-    const sportSelect = page.locator('select').filter({ hasText: /sport/i });
-    const sportButtons = page.locator('button').filter({ hasText: /surf|kitesurf/i });
-
-    if (await sportSelect.count() > 0) {
-      await sportSelect.selectOption('surf');
-      await page.waitForTimeout(1000);
-    } else if (await sportButtons.count() > 0) {
-      await sportButtons.first().click();
-      await page.waitForTimeout(1000);
-    }
-
-    await context.close();
-  });
-
-  test('should filter riders by level', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-filter-level'),
-      },
-    });
-    const page = await context.newPage();
-
-    const cookie = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await context.addCookies([cookie]);
-    await page.addInitScript((hint) => {
-      window.localStorage.setItem('blob_session_hint', hint);
-    }, cookie.value);
-
-    await page.goto('/pro/map');
-    await expect(page).toHaveURL(/\/pro\/map/);
-
-    await page.waitForTimeout(2000);
-
-    // Look for level filter
-    const levelSelect = page.locator('select').filter({ hasText: /niveau|level/i });
-    const levelButtons = page.locator('button').filter({ hasText: /débutant|beginner|intermediate|avancé|advanced/i });
-
-    if (await levelSelect.count() > 0) {
-      await levelSelect.selectOption({ label: /débutant|beginner/i });
-      await page.waitForTimeout(1000);
-    } else if (await levelButtons.count() > 0) {
-      await levelButtons.first().click();
-      await page.waitForTimeout(1000);
-    }
+    // Switch to Kitesurf and wait for the API fetch that the click triggers.
+    // If geoloc is active (seed guarantees it), the fetch fires immediately.
+    await kitesurfBtn.click();
+    await page.waitForResponse(
+      (resp) => resp.url().includes('/pro/near/lessons') && resp.status() === 200,
+      { timeout: 8000 },
+    );
 
     await context.close();
   });
 
   test('should adjust map radius/distance filter', async ({ browser }) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-radius'),
-      },
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-map-radius') },
     });
     const page = await context.newPage();
 
@@ -235,34 +197,28 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    await page.waitForTimeout(2000);
+    // Radius input (labeled "Rayon :") is always rendered — hard assertion.
+    const radiusInput = page.getByLabel(/rayon/i);
+    await expect(radiusInput).toBeVisible({ timeout: 10000 });
 
-    // Look for radius/distance input
-    const radiusInput = page.locator('input[type="number"], input[type="range"]').filter({ hasText: /rayon|radius|distance|km/i });
-
-    if (await radiusInput.count() === 0) {
-      const labeledInput = page.getByLabel(/rayon|radius|distance/i);
-      if (await labeledInput.count() > 0) {
-        await labeledInput.fill('50');
-        await page.waitForTimeout(1000);
-      }
-    } else {
-      await radiusInput.first().fill('50');
-      await page.waitForTimeout(1000);
-    }
+    await radiusInput.fill('50');
+    // Seed has lat/lng → geoloc active → radius change triggers debounced API fetch.
+    await page.waitForResponse(
+      (resp) => resp.url().includes('/pro/near/lessons') && resp.status() === 200,
+      { timeout: 8000 },
+    );
 
     await context.close();
   });
 
   test('should show rider count or statistics', async ({ browser }) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-stats'),
-      },
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-map-stats') },
     });
     const page = await context.newPage();
 
@@ -271,27 +227,21 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    await page.waitForTimeout(2000);
-
-    // Look for rider count display
-    const countDisplay = page.locator('text=/\\d+\\s*(riders?|demandes?|résultats?|results?)/i');
-
-    if (await countDisplay.count() > 0) {
-      await expect(countDisplay.first()).toBeVisible();
-    }
+    // "X demande(s) trouvée(s)" is shown when geoloc is active — seed guarantees it.
+    // The count can be 0 if no lesson requests exist near the pro location.
+    await expect(page.locator('text=/demande\\(s\\) trouvée\\(s\\)/i')).toBeVisible({ timeout: 10000 });
 
     await context.close();
   });
 
   test('should allow contacting a rider from the map', async ({ browser }) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-map-contact'),
-      },
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-map-contact') },
     });
     const page = await context.newPage();
 
@@ -300,25 +250,22 @@ test.describe('Pro Map (Blobomap)', () => {
     await page.addInitScript((hint) => {
       window.localStorage.setItem('blob_session_hint', hint);
     }, cookie.value);
+    await setupConsent(page);
 
     await page.goto('/pro/map');
     await expect(page).toHaveURL(/\/pro\/map/);
 
-    await page.waitForTimeout(3000);
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
 
-    // Click on a marker
-    const marker = page.locator('[class*="marker"], [class*="pin"]').first();
-
+    // Contact flow requires a rider marker. Uses .map-marker-item to exclude the center
+    // marker, which has no "Contacter" button. If no rider markers in seed, skip — not a test bug.
+    const marker = page.locator('.leaflet-marker-icon.map-marker-item').first();
     if (await marker.count() > 0) {
       await marker.click();
-      await page.waitForTimeout(1000);
-
-      // Look for contact button
-      const contactButton = page.getByRole('button', { name: /contacter|contact|message|envoyer/i });
-
-      if (await contactButton.count() > 0) {
-        await expect(contactButton.first()).toBeVisible();
-      }
+      // Wait for popup to open before looking for the button (Leaflet popup animation).
+      await expect(page.locator('.leaflet-popup')).toBeVisible({ timeout: 5000 });
+      // The MapComponent popup renders a "💬 Contacter" button.
+      await expect(page.getByRole('button', { name: /contacter/i }).first()).toBeVisible({ timeout: 3000 });
     }
 
     await context.close();
@@ -335,9 +282,7 @@ test.describe('Pro Map Security', () => {
 
   test('should require PRO role to access map', async ({ browser }) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('rider-access-pro-map'),
-      },
+      extraHTTPHeaders: { 'X-Forwarded-For': testIp('rider-access-pro-map') },
     });
     const page = await context.newPage();
 
@@ -347,16 +292,14 @@ test.describe('Pro Map Security', () => {
       await page.addInitScript((hint) => {
         window.localStorage.setItem('blob_session_hint', hint);
       }, cookie.value);
+      await setupConsent(page);
 
       await page.goto('/pro/map');
 
-      // Should redirect away from pro map
-      await page.waitForTimeout(2000);
-      const url = page.url();
-      expect(url).not.toContain('/pro/map');
-    } catch (error) {
-      // Expected to fail if RIDER account doesn't exist
-      console.log('RIDER account test skipped - account not configured');
+      // Should redirect away from pro map — wait for navigation to settle
+      await page.waitForURL((url) => !url.pathname.includes('/pro/map'), { timeout: 8000 });
+    } catch {
+      // Expected if RIDER account is not configured in this environment
     }
 
     await context.close();

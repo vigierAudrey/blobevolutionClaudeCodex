@@ -6,8 +6,22 @@ import {
   type ConsentPayload,
 } from '../../services/consent.service';
 import { secureLogger } from '../../utils/secure-logger';
+import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 
 export const consentRouter = Router();
+
+const HASH_REGEX = /^[0-9a-f]{64}$/;
+
+const consentReadLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'CONSENT_RATE_LIMIT_EXCEEDED' },
+  },
+  'consent_read',
+);
 
 const consentBodySchema = z.object({
   consentLevel: z.enum(['personalized', 'npa', 'limited', 'none']),
@@ -17,13 +31,13 @@ const consentBodySchema = z.object({
   cmpVersion: z.string().max(120).optional(),
 });
 
-consentRouter.get('/:hash', async (req, res) => {
-  try {
-    const { hash } = req.params;
-    if (!hash) {
-      return res.status(400).json({ error: 'Missing hash parameter' });
-    }
+consentRouter.get('/:hash', consentReadLimiter, async (req, res) => {
+  const { hash } = req.params;
+  if (!hash || !HASH_REGEX.test(hash)) {
+    return res.status(400).json({ error: 'Invalid hash format' });
+  }
 
+  try {
     const consent = await getConsent(hash);
     if (!consent) {
       return res.json({ consent: null });
@@ -37,12 +51,12 @@ consentRouter.get('/:hash', async (req, res) => {
 });
 
 consentRouter.post('/:hash', async (req, res) => {
-  try {
-    const { hash } = req.params;
-    if (!hash) {
-      return res.status(400).json({ error: 'Missing hash parameter' });
-    }
+  const { hash } = req.params;
+  if (!hash || !HASH_REGEX.test(hash)) {
+    return res.status(400).json({ error: 'Invalid hash format' });
+  }
 
+  try {
     const parsedBody = consentBodySchema.parse(req.body);
 
     const payload: ConsentPayload = {

@@ -135,12 +135,12 @@ export default function MapComponent({
     const size = isMobile ? 28 : 20; // Bigger markers for touch
     const border = isMobile ? 3 : 2;
 
-    const createIcon = (color: string, highlighted = false) => {
+    const createIcon = (color: string, highlighted = false, extraClass = '') => {
       const finalSize = highlighted ? size * 1.8 : size;
       const finalBorder = highlighted ? border * 1.5 : border;
 
       return L.divIcon({
-        className: 'map-marker-icon',
+        className: extraClass ? `map-marker-icon ${extraClass}` : 'map-marker-icon',
         html: `
           <div style="
             width: ${finalSize}px;
@@ -170,13 +170,13 @@ export default function MapComponent({
     };
 
     return {
-      availability: createIcon('#2563eb'),
-      rider: createIcon('#16a34a'),
-      default: createIcon('#f97316'),
+      availability: createIcon('#2563eb', false, 'map-marker-item'),
+      rider: createIcon('#16a34a', false, 'map-marker-item'),
+      default: createIcon('#f97316', false, 'map-marker-item'),
       center: createIcon('#0ea5e9'),
-      availabilityHighlighted: createIcon('#2563eb', true),
-      riderHighlighted: createIcon('#16a34a', true),
-      defaultHighlighted: createIcon('#f97316', true),
+      availabilityHighlighted: createIcon('#2563eb', true, 'map-marker-item'),
+      riderHighlighted: createIcon('#16a34a', true, 'map-marker-item'),
+      defaultHighlighted: createIcon('#f97316', true, 'map-marker-item'),
     } satisfies Record<'availability' | 'rider' | 'default' | 'center' | 'availabilityHighlighted' | 'riderHighlighted' | 'defaultHighlighted', L.DivIcon>;
   }, []);
 

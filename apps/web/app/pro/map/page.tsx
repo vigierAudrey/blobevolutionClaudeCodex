@@ -417,8 +417,9 @@ export default function ProMapPage() {
 
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Rayon :</label>
+                <label htmlFor="radiusKm" className="text-sm font-medium">Rayon :</label>
                 <Input
+                  id="radiusKm"
                   type="number"
                   min={1}
                   max={200}

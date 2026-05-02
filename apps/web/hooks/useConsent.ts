@@ -19,6 +19,13 @@ interface WindowWithTCF extends Window {
 
 interface WindowWithGtag extends Window {
   gtag?: (...args: unknown[]) => void;
+  /** Set to true when state.ready becomes true (bootstrap async chain resolved, mode is
+   *  final). Positioned synchronously before the gtag:consent:update call in the same
+   *  Effect 2 execution — by the time any external code observes true, gtag has fired.
+   *  Observable by e2e tests only — never read by product code. */
+  __CONSENT_READY?: boolean;
+  /** Mirrors state.mode at the moment __CONSENT_READY is set. Observable by e2e tests only. */
+  __CONSENT_MODE?: ConsentMode;
 }
 
 type ConsentSource = 'tcf' | 'local' | 'remote' | 'default' | 'manual';
@@ -215,6 +222,9 @@ export function useConsent() {
 
     let cancelled = false;
     const bootstrap = async () => {
+      // Reset observable signal at bootstrap start so stale values from SPA navigation
+      // or previous bootstrap runs cannot be observed as truthy before this run resolves.
+      (window as WindowWithGtag).__CONSENT_READY = false;
       const deviceId = ensureDeviceId();
       if (!deviceId) return;
 
@@ -274,11 +284,20 @@ export function useConsent() {
     if (typeof window === 'undefined') return;
     if (!state.ready) return;
 
+    const windowWithGtag = window as WindowWithGtag;
+
+    // Bootstrap-complete signal: always updated when ready, decoupled from the gtag
+    // dedup guard below. A cmpVersion-triggered re-bootstrap resets this to false before
+    // restarting, so true here always reflects the current bootstrap run's resolved mode.
+    windowWithGtag.__CONSENT_READY = true;
+    windowWithGtag.__CONSENT_MODE = state.mode;
+
+    // Dedup guard: gtag consent:update fires once per unique signal combination.
+    // Prevents double-fire on React StrictMode remounts and cmpVersion re-bootstraps.
     const snapshot = `${state.mode}:${state.signals.ad_storage}:${state.signals.ad_user_data}:${state.signals.ad_personalization}`;
     if (gtagSnapshotRef.current === snapshot) return;
     gtagSnapshotRef.current = snapshot;
 
-    const windowWithGtag = window as WindowWithGtag;
     if (typeof windowWithGtag.gtag === 'function') {
       windowWithGtag.gtag('consent', 'update', {
         ad_storage: state.signals.ad_storage,
