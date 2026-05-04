@@ -52,7 +52,6 @@ model User {
   createdAlerts          SystemAlert[]            @relation("UserSystemAlerts")
   conversationInvitations ConversationInvitation[] @relation("InvitedToConversation")
   sentConversationInvitations ConversationInvitation[] @relation("ConversationInviter")
-  uploadJobs              UploadJob[]
   conversationBlockEventsTarget ConversationBlockEvent[] @relation("ConversationBlockEventTargetUser")
   conversationBlockEventsActor  ConversationBlockEvent[] @relation("ConversationBlockEventActorUser")
   retentionExportArtifacts      RetentionExportArtifact[] @relation("RetentionExportArtifactCreatedBy")
@@ -527,7 +526,6 @@ model ProOffer {
   clicks       ProOfferClick[]
 
   @@index([sport, level])
-  @@index([lat, lng])
   @@index([isActive])
 }
 
@@ -877,29 +875,6 @@ model AnalyticsEvent {
   @@index([zoneLarge])
 }
 
-// ---------------------------------------------------------------------------
-// Upload idempotency (IDP-1 / IDP-2 / IDP-3)
-// ---------------------------------------------------------------------------
-
-enum UploadJobStatus {
-  PENDING
-  FINALIZED
-  FAILED
-}
-
-model UploadJob {
-  id            String          @id @default(uuid())
-  quarantineKey String          @unique  // quarantine S3 key — one job per upload attempt
-  userId        String
-  status        UploadJobStatus @default(PENDING)
-  publishedKey  String?         // set on successful finalization
-  attempts      Int             @default(0)
-  createdAt     DateTime        @default(now())
-  finalizedAt   DateTime?
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
 
 model AnalyticsDailyAgg {
   id         String             @id @default(uuid())
