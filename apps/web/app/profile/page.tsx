@@ -18,7 +18,7 @@ import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { apiRequest } from '../../lib/csrf';
 import Link from 'next/link';
-import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, User, Waves, Bell, Settings, Sparkles } from 'lucide-react';
+import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, User, Waves, Bell, Settings, Sparkles, Eye } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
 import type { Level } from '@/types/matching';
@@ -517,14 +517,23 @@ export default function ProfilePage() {
         <BackBar fallbackHref="/dashboard" />
 
         {/* Page Header */}
-        <div className="flex items-center gap-3 pb-2 border-b">
-          <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-            <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+        <div className="flex items-center justify-between gap-3 pb-2 border-b">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+              <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Mon Profil</h1>
+              <p className="text-sm text-muted-foreground">Personnalise ton profil pour un matching optimal</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Mon Profil</h1>
-            <p className="text-sm text-muted-foreground">Personnalise ton profil pour un matching optimal</p>
-          </div>
+          <Button asChild variant="outline" size="sm" className="flex-shrink-0 gap-1.5">
+            <Link href="/profile/preview">
+              <Eye className="h-4 w-4" />
+              <span className="hidden sm:inline">Voir mon profil</span>
+              <span className="sm:hidden">Aperçu</span>
+            </Link>
+          </Button>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-6">
