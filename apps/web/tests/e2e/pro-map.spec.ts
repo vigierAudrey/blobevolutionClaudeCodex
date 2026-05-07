@@ -211,6 +211,7 @@ test.describe('Pro Map (Blobomap)', () => {
 
   test('should display map page with riders looking for lessons', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map');
+    await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
 
