@@ -27,11 +27,11 @@ Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement d
 ### Fonctionnalités clés
 
 - **Matching** : Algorithme multi-critères (géoloc, niveau, dispo) pour connecter riders.
-- **Réservation** : Mise en relation riders/pros pour cours.
+- **Mise en relation** : publication de demandes géolocalisées par les particuliers, visibles des pros selon leur zone configurée ; contact via messagerie, organisation du cours librement hors plateforme — sans réservation ni paiement orchestrés.
 - **Sécurité riders** : Contrôle d'identité pro obligatoire avant session.
 - **Social** : Messagerie temps réel, groupes, favoris, système de réputation.
 - **Blobosphère** : Hub éditorial SEO pour contenus communautaires.
-- **BloboMap** : Carte interactive pour pros/spots.
+- **BloboMap** : Carte de visualisation à destination des professionnels pour identifier les demandes géolocalisées dans leur zone d'activité — pas de partage de spots, pas de tracking communautaire.
 - **Modèle économique** : Association loi 1901, financée par publicité et sponsors.
 - **Paiement en ligne** : désactivé temporairement (mise en relation uniquement pour le MVP).
 
@@ -80,6 +80,28 @@ Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement d
 - Ne jamais supprimer une validation Zod ni affaiblir un guard de sécurité sans validation sécurité/produit.
 - Pas d’ajout de champs paiement/marketing sans décision produit documentée + revue RGPD.
 - Pas d’introduction de sink XSS : `dangerouslySetInnerHTML` interdit (sauf cas ultra cadré + sanitation + tests).
+
+### 🚫 Règle anti-réintroduction scope produit (P0)
+
+Toute proposition réintroduisant les éléments suivants est **hors scope MVP** et doit être refusée sauf demande explicite avec validation produit documentée :
+
+- Réservation orchestrée par la plateforme
+- Calendrier transactionnel partagé (rider/pro)
+- Paiement intégré ou Stripe actif
+- Gestion complète de disponibilités (création/mise à jour/suppression de créneaux calendrier)
+- Workflow booking complet (request → confirm → cancel → complete)
+- Statuts confirmed / cancelled / completed
+- Commission, escrow ou facturation automatique
+- Synchronisation calendrier externe (Google Calendar, Apple Calendar)
+
+**BlobConnect MVP = mise en relation locale. L’organisation du cours se fait hors plateforme.**
+
+Procédure obligatoire si une telle demande est reçue :
+1. Signaler explicitement que c’est hors scope MVP.
+2. Proposer l’alternative dans le modèle actuel (messagerie / mise en relation directe).
+3. Demander confirmation explicite avant d’implémenter quoi que ce soit.
+
+Référence officielle : `docs/product-positioning.md`
 
 ### Support & diagnostic
 
@@ -447,7 +469,7 @@ blobevolutionClaudeCodex/
 │               ├── analytics/   # Analytics
 │               ├── auth/        # 🔐 Authentification
 │               ├── blobosphere/ # Contenus éditoriaux
-│               ├── booking/     # Réservations & mise en relation
+│               ├── booking/     # Demandes de cours & mise en relation (module code — pas de réservation orchestrée)
 │               ├── chat/        # Messagerie temps réel
 │               ├── consent/     # Consentement & publicité
 │               ├── contact/     # Contact & support
@@ -895,7 +917,7 @@ Quand tu génères du code pour BlobConnect / Blobinfini :
 
 - Page `/matching` : interrupteur "Je veux un cours avec un pro" → `wantsLesson=true` + `lessonSport`
 - Résultats : indication "Recherche cours" visible sur les profils
-- Sécurité : avertissement contrôle identité pro avant confirmation réservation
+- Sécurité : avertissement contrôle identité pro avant toute rencontre avec un professionnel
 
 ### Seeds & Commandes utiles
 

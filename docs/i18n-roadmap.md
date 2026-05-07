@@ -245,7 +245,7 @@ node scripts/extract-i18n-strings.js
     "dashboard": "Tableau de bord",
     "matching": "Matching",
     "messages": "Messages",
-    "booking": "Réservations",
+    "booking": "Demandes de cours",
     "profile": "Profil",
     "logout": "Déconnexion"
   },
@@ -271,15 +271,16 @@ node scripts/extract-i18n-strings.js
     "level": "Niveau"
   },
   "booking": {
-    "book": "Réserver",
-    "bookNow": "Réserver maintenant",
-    "selectDate": "Choisir une date",
-    "selectTime": "Choisir un horaire",
-    "confirm": "Confirmer la réservation",
-    "cancel": "Annuler la réservation",
-    "pending": "En attente",
-    "confirmed": "Confirmée",
-    "completed": "Terminée"
+    "_note": "HORS SCOPE MVP — ce namespace décrit une UI de réservation non implémentée. Voir docs/product-positioning.md. Si ce namespace est réutilisé, utiliser le vocabulaire demande de cours / mise en relation.",
+    "book": "Envoyer une demande",
+    "bookNow": "Contacter ce professionnel",
+    "selectDate": "Choisir une date souhaitée",
+    "selectTime": "Choisir un créneau souhaité",
+    "confirm": "Envoyer la demande",
+    "cancel": "Annuler la demande",
+    "pending": "En attente de réponse",
+    "confirmed": "Contact établi",
+    "completed": "Cours organisé"
   },
   "messages": {
     "conversations": "Conversations",
@@ -681,13 +682,11 @@ npm run dev
 
 ---
 
-### Checkpoint 5.5 : Refactoring Booking
+### ~~Checkpoint 5.5 : Refactoring Booking~~ — HORS SCOPE MVP
 
-**Fichiers** : Tous les fichiers dans `apps/web/app/booking/`
-
-**⚠️ ATTENTION** : Vérifier les messages d'erreur de validation (côté API aussi si nécessaire)
-
-**✅ Validation** : Créer une réservation de test dans chaque langue
+> ⚠️ **Ce checkpoint est hors scope MVP.** BlobConnect ne fournit pas d'interface de réservation. Le dossier `apps/web/app/booking/` peut contenir du code historique mais aucune page booking active n'est dans le scope du MVP. Voir [docs/product-positioning.md](./product-positioning.md).
+>
+> *Ne pas implémenter ni internationaliser de parcours de réservation sans décision produit explicite.*
 
 ---
 
