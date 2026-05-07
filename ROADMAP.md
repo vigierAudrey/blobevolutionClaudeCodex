@@ -16,7 +16,7 @@
 - **Positionnement MVP Simplifié :**
   - ✅ **Auth complète** (register, login, 2FA, reset password)
   - ✅ **Matching géospatial** (PostGIS, cartes, swipe)
-  - ✅ **Booking & Messaging** (demandes, chat temps réel)
+  - ✅ **Demandes de cours & Messagerie** (demandes géolocalisées, contact via chat temps réel — organisation du cours hors plateforme)
   - ⏸️ **Pas de paiement** (mis en pause, focus publicité AdSense)
   - ⏸️ **Pas de gamification** (flocons d'avoine retirés du MVP)
 - **Monétisation initiale :** Publicité AdSense uniquement
@@ -932,7 +932,7 @@ apps/api/
 ### Paiements & Crédit (⏸️ EXCLU DU MVP - Décision Oct 2025)
 
 **Décision stratégique :** Simplifier le MVP en excluant complètement le système de paiement.
-**Rationale :** Focus sur matching/booking + monétisation publicitaire AdSense uniquement.
+**Rationale :** Focus sur la mise en relation locale (matching + demandes géolocalisées + messagerie) + monétisation publicitaire AdSense. Pas de réservation orchestrée ni de paiement intégré dans le scope MVP.
 
 - [ ] Intégration Stripe Connect
 - [ ] Calcul commissions
@@ -967,7 +967,7 @@ apps/api/
   - [x] Cohortes riders/pros + stickiness + TTFV.
   - [x] Marketplace health (supply/demand, acceptation, delai).
   - [x] Trust & Safety + Blobosphere analytics agreges.
-- [ ] Métriques conversion matching→booking.
+- [ ] Métriques conversion matching→contact (matching ayant abouti à une première prise de contact via messagerie).
 - [ ] Analyse géographique utilisateurs.
 - [ ] Reporting pro (revenus, planning).
 - [ ] Grafana/Prometheus self-hosted (objectif 200€/mois économisés).

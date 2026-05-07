@@ -9,7 +9,7 @@
  * Requires running servers:
  *   - API: PLAYWRIGHT_API_URL (default http://localhost:4000)
  *   - Web: PLAYWRIGHT_BASE_URL (default http://localhost:3002)
- *   - Mailpit: http://localhost:8025
+ *   - Mailpit HTTP API: MAILPIT_URL (defaulted by playwright.auth-verify.config.ts)
  *
  * Run: SKIP_E2E_RESEED=1 npx playwright test --config=playwright.auth-verify.config.ts
  */
@@ -18,33 +18,45 @@ import crypto from 'crypto';
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 const WEB_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3002';
-const MAILPIT_URL = process.env.MAILPIT_URL ?? `http://localhost:${process.env.MAILPIT_HOST_PORT ?? '8025'}`;
+const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://127.0.0.1:8025';
 const PASSWORD = 'Passw0rd!Verify99';
+const PRO_COUNTRY_CODE = 'FR';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 async function registerUser(email: string, role: 'PRO' | 'RIDER'): Promise<void> {
   const apiCtx = await playwrightRequest.newContext({ baseURL: API_URL });
-  const csrfRes = await apiCtx.get('/csrf-token');
-  if (!csrfRes.ok()) throw new Error(`CSRF fetch failed: ${csrfRes.status()}`);
-  const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
+  try {
+    const csrfRes = await apiCtx.get('/csrf-token');
+    if (!csrfRes.ok()) throw new Error(`CSRF fetch failed: ${csrfRes.status()}`);
+    const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
 
-  const reg = await apiCtx.post('/auth/register', {
-    headers: { 'X-CSRF-Token': csrfToken },
-    data: { email, password: PASSWORD, role, consentAccepted: true, ...(role === 'PRO' ? { countryCode: 'FR' } : {}) },
-  });
-  await apiCtx.dispose();
-  if (!reg.ok()) {
-    const body = await reg.text();
-    throw new Error(`Register failed ${reg.status()}: ${body}`);
+    const reg = await apiCtx.post('/auth/register', {
+      headers: { 'X-CSRF-Token': csrfToken },
+      data: {
+        email,
+        password: PASSWORD,
+        role,
+        consentAccepted: true,
+        ...(role === 'PRO' ? { countryCode: PRO_COUNTRY_CODE } : {}),
+      },
+    });
+    if (!reg.ok()) {
+      const body = await reg.text();
+      throw new Error(`Register failed ${reg.status()} for role=${role}: ${body}`);
+    }
+  } finally {
+    await apiCtx.dispose();
   }
 }
 
 async function getVerifyUrlFromMailpit(recipientEmail: string): Promise<string> {
   const deadline = Date.now() + 15_000;
+  let lastFailure = `Mailpit URL ${MAILPIT_URL} did not return a matching message`;
   while (Date.now() < deadline) {
     const listRes = await fetch(`${MAILPIT_URL}/api/v1/messages?limit=50`);
     if (!listRes.ok) {
+      lastFailure = `Mailpit list failed with HTTP ${listRes.status} at ${MAILPIT_URL}/api/v1/messages?limit=50`;
       await new Promise((r) => setTimeout(r, 500));
       continue;
     }
@@ -60,6 +72,11 @@ async function getVerifyUrlFromMailpit(recipientEmail: string): Promise<string> 
     );
     if (msg) {
       const msgRes = await fetch(`${MAILPIT_URL}/api/v1/message/${msg.ID}`);
+      if (!msgRes.ok) {
+        lastFailure = `Mailpit message fetch failed with HTTP ${msgRes.status} at ${MAILPIT_URL}/api/v1/message/${msg.ID}`;
+        await new Promise((r) => setTimeout(r, 600));
+        continue;
+      }
       const msgData = (await msgRes.json()) as { Text?: string; HTML?: string };
       const body = msgData.Text ?? msgData.HTML ?? '';
       // Extract the full verify URL from the email body
@@ -76,7 +93,7 @@ async function getVerifyUrlFromMailpit(recipientEmail: string): Promise<string> 
     }
     await new Promise((r) => setTimeout(r, 600));
   }
-  throw new Error(`No verification email found for ${recipientEmail} within 15s`);
+  throw new Error(`No verification email found for ${recipientEmail} within 15s. ${lastFailure}`);
 }
 
 function uniqueEmail(prefix: string) {

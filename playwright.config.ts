@@ -45,6 +45,9 @@ async function waitForServer(port: number, label: string) {
 
 export default defineConfig({
   testDir: './apps/web/tests/e2e',
+  // auth-verify-flow has its own dedicated config and Mailpit prerequisite.
+  testIgnore: ['**/auth-verify-flow.spec.ts'],
+  globalTimeout: process.env.CI ? 20 * 60 * 1000 : undefined,
   timeout: 45_000,
   globalTimeout: 10 * 60 * 1000,
   // Avoid root-owned default 'test-results' folder in some environments

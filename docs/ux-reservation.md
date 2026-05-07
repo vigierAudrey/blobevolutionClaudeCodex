@@ -1,4 +1,25 @@
-# UX Spec – Réservation Riders ↔ Pros (Phase 1)
+> ## ⚠️ DOCUMENT HISTORIQUE — HORS SCOPE MVP
+>
+> Ce document décrit une spécification UX de réservation **qui n'a pas été implémentée** et qui **ne correspond plus au modèle produit de BlobConnect**.
+>
+> **À ne pas utiliser comme source de vérité produit.**
+>
+> **Pourquoi ce document est obsolète :**
+> - BlobConnect MVP ne fournit **pas** de moteur de réservation.
+> - Il n'existe **pas** de calendrier partagé entre riders et pros.
+> - Il n'existe **pas** de gestion transactionnelle de créneaux.
+> - Il n'existe **pas** de statuts `Confirmé / En attente / Refusé` orchestrés par la plateforme.
+> - L'organisation du cours se fait librement **hors plateforme** après mise en relation via la messagerie.
+>
+> **Le modèle produit réel :** un particulier publie une demande de cours géolocalisée ; les professionnels dans leur périmètre voient les demandes locales ; la messagerie permet la prise de contact ; le reste se passe hors plateforme.
+>
+> **Référence officielle :** [docs/product-positioning.md](./product-positioning.md) et [README.md — Vision Produit](../README.md#-vision-produit).
+>
+> *Document conservé pour mémoire historique uniquement. Ne pas implémenter.*
+
+---
+
+# UX Spec – Réservation Riders ↔ Pros (Phase 1) — HISTORIQUE
 
 ## Objectif et portée
 

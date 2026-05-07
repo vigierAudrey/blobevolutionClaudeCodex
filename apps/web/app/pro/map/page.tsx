@@ -124,13 +124,8 @@ export default function ProMapPage() {
     // Détecter le navigateur au montage du composant
     setBrowserType(detectBrowser());
 
-    // Load pro location via /pro/me
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) {
-      router.replace('/login');
-      return;
-    }
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, { headers: { Authorization: `Bearer ${t.accessToken}` }})
+    // Load pro location via /pro/me (cookie auth)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, { credentials: 'include' })
       .then(async r => ({ ok: r.ok, status: r.status, body: await r.json() }))
       .then(({ ok, status, body }) => {
         if (status === 401) { router.replace('/login'); return; }
@@ -174,22 +169,19 @@ export default function ProMapPage() {
 
         // Sauvegarder la position dans le profil pro
         try {
-          const t = apiClient.getTokens();
-          if (t?.accessToken) {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
-              method: 'PUT',
-              headers: {
-                'Authorization': `Bearer ${t.accessToken}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat, lng })
-            });
-            const body = await response.json().catch(() => ({}));
-            if (!response.ok) {
-              throw new Error(getApiMessage(body, 'Impossible de sauvegarder votre position.'));
-            }
-            setApiError(null);
+          const csrfRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/csrf-token`, { credentials: 'include' });
+          const { csrfToken = '' } = await csrfRes.json().catch(() => ({})) as { csrfToken?: string };
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+            method: 'PUT',
+            headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat, lng })
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(getApiMessage(body, 'Impossible de sauvegarder votre position.'));
           }
+          setApiError(null);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Impossible de sauvegarder votre position.';
           setApiError(message);
@@ -216,12 +208,9 @@ export default function ProMapPage() {
     setLoading(true);
     setApiError(null);
     try {
-      const t = apiClient.getTokens();
-      if (!t?.accessToken) return;
-
       const r = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/near/lessons?radiusKm=${radiusKm}&sport=${sport}`,
-        { headers: { Authorization: `Bearer ${t.accessToken}` } },
+        { credentials: 'include' },
       );
       const data = (await r.json()) as LessonRequestResponse;
       if (r.ok) {
@@ -270,15 +259,13 @@ export default function ProMapPage() {
 
     const persist = async () => {
       try {
-        const t = apiClient.getTokens();
-        if (!t?.accessToken) return;
+        const csrfRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/csrf-token`, { credentials: 'include' });
+        const { csrfToken = '' } = await csrfRes.json().catch(() => ({})) as { csrfToken?: string };
         setRadiusSaving(true);
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
           method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${t.accessToken}`,
-            'Content-Type': 'application/json'
-          },
+          headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, radiusKm })
         });
         const body = await response.json().catch(() => ({}));

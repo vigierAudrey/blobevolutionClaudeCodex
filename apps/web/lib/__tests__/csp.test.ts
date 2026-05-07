@@ -130,6 +130,11 @@ describe('buildCsp', () => {
     expect(imgSrc).toContain('cdnjs.cloudflare.com');
   });
 
+  it('includes *.tile.openstreetmap.org in img-src (Leaflet map tiles)', () => {
+    const imgSrc = directive(buildCsp('test'), 'img-src');
+    expect(imgSrc).toContain('*.tile.openstreetmap.org');
+  });
+
   it('includes localhost:9000 in img-src (MinIO dev)', () => {
     const imgSrc = directive(buildCsp('test'), 'img-src');
     expect(imgSrc).toContain('localhost:9000');

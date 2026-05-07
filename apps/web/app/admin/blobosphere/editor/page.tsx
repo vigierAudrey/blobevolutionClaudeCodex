@@ -83,11 +83,7 @@ function BlobosphereEditorContent() {
   useEffect(() => {
     const init = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
+        // No local hint check — truth comes from the server session.
         const me = await apiClient.me();
         if (me.role !== 'ADMIN') {
           router.replace('/dashboard');

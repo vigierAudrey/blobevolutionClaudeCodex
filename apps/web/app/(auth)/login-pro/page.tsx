@@ -59,6 +59,7 @@ export default function ProLoginPage() {
     try {
       await apiClient.verifyPro2FA(email, code);
       // Auth via cookie httpOnly — pas de tokens en body (setAuthCookies côté serveur)
+      apiClient.saveTokens();
 
       // Récupérer le rôle de l'utilisateur pour rediriger correctement
       try {

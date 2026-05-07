@@ -29,8 +29,7 @@ describe('Static Home page', () => {
     const demandLinks = screen.getAllByRole('link', { name: /Publier ma demande/i });
     expect(demandLinks.some(link => link.getAttribute('href')?.includes('/register'))).toBe(true);
 
-    const offerLinks = screen.getAllByRole('link', { name: /Voir les offres autour de moi/i });
-    expect(offerLinks.some(link => link.getAttribute('href')?.includes('/register'))).toBe(true);
+    expect(screen.queryByRole('link', { name: /Voir les offres autour de moi/i })).not.toBeInTheDocument();
   });
 
   it('affiche les Bons plans et la Blobosphère', () => {

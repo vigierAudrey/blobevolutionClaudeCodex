@@ -114,12 +114,7 @@ export default function AdminPermissions() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-
+        // No local hint check — truth comes from the server session.
         const currentUser = await apiClient.me();
         if (currentUser.role !== 'ADMIN') {
           router.replace('/dashboard');

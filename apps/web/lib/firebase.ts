@@ -144,33 +144,11 @@ function showForegroundNotification(notification: ForegroundNotification) {
 /**
  * Send FCM token to backend
  */
-export async function saveFCMToken(token: string, userId?: string): Promise<boolean> {
-  try {
-    const response = await fetch('/api/push/register', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`
-      },
-      body: JSON.stringify({
-        token,
-        userId,
-        userAgent: navigator.userAgent,
-        timestamp: Date.now()
-      })
-    });
-
-    if (response.ok) {
-      console.log('✅ FCM Token saved to backend');
-      return true;
-    } else {
-      console.error('❌ Failed to save FCM token:', response.status);
-      return false;
-    }
-  } catch (error) {
-    console.error('❌ Error saving FCM token:', error);
-    return false;
-  }
+export async function saveFCMToken(_token: string, _userId?: string): Promise<boolean> {
+  // NOTE: backend token registration (POST /push/register) is not wired here.
+  // The Next.js proxy route does not exist and the subscribe UI is currently disabled.
+  // Wire this via apiClient (cookie auth, not localStorage Bearer) when re-enabling push.
+  return false;
 }
 
 /**

@@ -222,19 +222,12 @@ export default function Home() {
                   <span>Réserve ou discute avant de confirmer</span>
                 </li>
               </ul>
-              <div className="flex flex-col gap-3">
-                <Button asChild size="lg" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg hover:shadow-xl transition-all group-hover:scale-105">
-                  <Link href="/register?intent=lesson-request" className="inline-flex items-center justify-center gap-2">
-                    Publier ma demande
-                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" size="lg" className="w-full border-2 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-all">
-                  <Link href="/register?intent=offers">
-                    Voir les offres autour de moi
-                  </Link>
-                </Button>
-              </div>
+              <Button asChild size="lg" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg hover:shadow-xl transition-all group-hover:scale-105">
+                <Link href="/register?intent=lesson-request" className="inline-flex items-center justify-center gap-2">
+                  Publier ma demande
+                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                </Link>
+              </Button>
             </CardContent>
           </Card>
         </div>

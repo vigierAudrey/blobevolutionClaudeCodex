@@ -5,25 +5,37 @@ import { ToastProvider, Toaster, useToast } from '../toast';
 
 describe('ToastProvider', () => {
   let counter = 0;
+  let randomUUIDSpy: jest.SpiedFunction<Crypto['randomUUID']>;
+  const originalCrypto = global.crypto;
 
   beforeAll(() => {
-    Object.defineProperty(global, 'crypto', {
-      value: {
-        randomUUID: jest.fn(() => `toast-id-${counter++}`),
-      },
-      configurable: true,
-    });
+    if (typeof global.crypto?.randomUUID !== 'function') {
+      Object.defineProperty(global, 'crypto', {
+        value: {
+          randomUUID: () => 'toast-id-fallback',
+        },
+        configurable: true,
+      });
+    }
   });
 
   beforeEach(() => {
     counter = 0;
-    ((global.crypto as { randomUUID: jest.Mock }).randomUUID).mockClear();
+    randomUUIDSpy = jest.spyOn(global.crypto, 'randomUUID').mockImplementation(() => `toast-id-${counter++}`);
     jest.useFakeTimers();
   });
 
   afterEach(() => {
+    randomUUIDSpy.mockRestore();
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
+  });
+
+  afterAll(() => {
+    Object.defineProperty(global, 'crypto', {
+      value: originalCrypto,
+      configurable: true,
+    });
   });
 
   it('throws when useToast is called outside provider', () => {

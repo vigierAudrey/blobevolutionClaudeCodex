@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '../../lib/apiClient';
+import { requireClientSession, SessionRequiredError } from '../../lib/clientSession';
 import { BackBar } from '../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -32,14 +33,8 @@ export default function OnboardingPage() {
   const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) {
-      router.replace('/login');
-      return;
-    }
-
-    // Vérifier que l'utilisateur est bien un RIDER
-    apiClient.me()
+    // No local hint check — truth comes from the server session.
+    requireClientSession()
       .then((user) => {
         if (user.role === 'PRO') {
           router.replace('/pro/onboarding');
@@ -60,7 +55,13 @@ export default function OnboardingPage() {
           setDisciplines(Array.isArray(d) ? d : []);
         }
       })
-      .catch((err) => setError(getErrorMessage(err, 'Erreur')))
+      .catch((err) => {
+        if (err instanceof SessionRequiredError) {
+          router.replace('/login');
+          return;
+        }
+        setError(getErrorMessage(err, 'Erreur'));
+      })
       .finally(() => setLoading(false));
   }, [router]);
 

@@ -21,12 +21,12 @@ Ce monorepo contient la version vivante de BlobConnect, marketplace de mise en r
 
 BlobConnect connecte les passionnés de sports de glisse en proposant :
 
-- **Matching intelligent** entre riders basé sur géolocalisation, niveau et disponibilités
-- **Réservation de cours** avec moniteurs professionnels certifiés
-- **Paiements en ligne** (désactivés temporairement le temps de repenser l’intégration Stripe)
-- **Messagerie intégrée** avec filtrage anti-contournement
+- **Matching intelligent** entre riders basé sur géolocalisation, niveau et affinités
+- **Publication de demandes géolocalisées** : un particulier publie une intention de cours (surf/kitesurf) ; les professionnels dans leur périmètre configuré voient les demandes locales
+- **Consultation réciproque des profils** : les deux parties peuvent consulter la fiche de l’autre avant de prendre contact
+- **Messagerie intégrée** pour organiser librement le cours — sans réservation ni paiement orchestrés par la plateforme
 - **(Reporté)** Gamification communautaire (systèmes de points/badges) – hors scope MVP
-- **Carte interactive** (BloboMap) montrant groupes et spots en temps réel
+- **BloboMap** : outil de visualisation à destination des professionnels pour identifier les demandes géolocalisées dans leur zone d’activité
 - **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de BlobConnect
 
 ### Utilisateurs cibles
@@ -62,7 +62,7 @@ Backend:
   - Socket.io (temps réel)
 
 Services:
-  - Stripe (paiements + 3D Secure — actuellement désactivé)
+  - Stripe (paiements — hors scope MVP, non actif)
   - Twilio (SMS/2FA)
   - Google Maps / OpenStreetMap
   - Firebase (notifications push)
@@ -379,7 +379,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
   - Rooms par conversation (isolation broadcast)
   - Fallback HTTP si WS fail
 - **Dashboard**: Polling optimisé 60s (voir ci-dessus)
-- **Réservations**: Fetch + push notification (pas de WS permanent)
+- **Demandes de cours**: Fetch + push notification (pas de WS permanent)
 - **Blobomap**: Fetch on interaction (pas de temps réel)
 
 **Documentation complète**: Voir [docs/ARCHITECTURE_REALTIME.md](./docs/ARCHITECTURE_REALTIME.md)
@@ -396,7 +396,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 |---------|-----------------|
 | Dashboard unread count | Polling leader (60s) |
 | Messages temps réel | WebSocket (`apps/web/lib/socket.ts`) |
-| Bookings status | Polling visible (5min) + Push/Email |
+| Demandes de cours | Fetch + Push/Email (pas de WS permanent) |
 | Map/Search | Fetch à l'interaction |
 | Notifications badge | Push FCM (`apps/web/lib/firebase.ts`) |
 
@@ -406,18 +406,18 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 
 - ✅ **Auth Module complet** : inscription, connexion, JWT, reset password, RGPD
 - ✅ **Matching & Géolocalisation** : algorithme intelligent PostGIS
-- ✅ **Réservations basiques** : demandes riders ↔ pros
+- ✅ **Mise en relation** : publication de demandes géolocalisées, visualisation BloboMap, contact via messagerie
 - ✅ **Chat temps réel** : Socket.io avec anti-contournement
 - ✅ **PWA avancée** : push notifications, offline-first, installation
 - ✅ **Performance optimisée** : cache Redis, requêtes N+1 éliminées
 - ✅ **Sécurité production** : CSRF, rate limiting, RGPD complet
-- ⏸️ **Système paiement** : Stripe Connect (intégration suspendue)
+- ⏸️ **Paiement / transaction** : hors scope MVP — l'organisation financière du cours se fait hors plateforme
 - ⏳ **Blobosphère MVP** : CMS éditorial (en cours)
 
 
 ### 🚀 Phase 2 (exemple) - Croissance (priorités à confirmer)
 
-- 🔥 **Système paiement complet** : Stripe Connect + facturation automatique (replanifié)
+- 🔜 **Fonctionnalités professionnelles avancées** (exploratoire post-MVP) : outils premium / abonnement si l'adoption terrain valide un réel intérêt — hors scope actuel
 - 🔥 **Tests unitaires** : couverture 80%+ pour stabilité production
 - 📈 **Blobosphère enrichie** : CMS complet + SEO + partage social
 - 📊 **Analytics avancées** : tableau de bord business + métriques
@@ -1010,7 +1010,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 
 - Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).
 - Lancement initial : création/édition des comptes et profils pro temporairement limitées à `countryCode=FR`, avec contrôle serveur des coordonnées France métropolitaine + Corse.
-- Informations tarifaires conservées uniquement en base (non exposées) pour préparer le futur retour du paiement.
+- Informations tarifaires non exposées en UI (données conservées en base pour usage interne uniquement).
 - Créneaux publiés, demandes reçues et journal d’audit pro.
 - Pièces justificatives partagées hors plateforme : les utilisateurs doivent vérifier directement les documents fournis par le professionnel.
 - Auth renforcée avec 2FA obligatoire sur connexion.
@@ -1019,8 +1019,8 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 
 1. Inscription via parcours pro + activation email.
 2. Activation du 2FA (code reçu par email) à la première connexion.
-3. Paramétrage du profil public et des créneaux sur `/pro/profile` et `/pro/map`.
-4. Réception des demandes, réponse (acceptation/refus) et suivi depuis le planning pro.
+3. Paramétrage du profil public et de la zone d'activité sur `/pro/profile` et `/pro/map`.
+4. Visualisation des demandes géolocalisées sur la BloboMap, prise de contact via la messagerie ; l'organisation du cours se fait librement hors plateforme.
 
 ### API liées
 
@@ -1168,11 +1168,11 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 - Expiration demandes jour-même
 - Système verrouillage groupe (cadenas)
 
-### Paiement & Commission (désactivés)
+### Paiement & Commission (hors scope MVP)
 
-- Intégration Stripe temporairement coupée
+- Pas de paiement intégré dans BlobConnect — l'organisation financière du cours se fait hors plateforme
 - Aucun prélèvement ni escrow en production
-- Réactivation planifiée une fois le nouveau parcours défini
+- Éventuellement exploratoire post-MVP si l'adoption terrain valide l'intérêt de fonctionnalités premium
 
 ### Messagerie
 
@@ -1183,10 +1183,11 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 
 ### Gamification (retirée)
 
-> Les mécaniques de points, badges, concours ou mascottes personnalisées sont désactivées pour le MVP afin de concentrer l'équipe sur le matching, la réservation et la Blobosphère.
+> Les mécaniques de points, badges, concours ou mascottes personnalisées sont désactivées pour le MVP afin de concentrer l'équipe sur la mise en relation, la messagerie et la Blobosphère.
 
 ## 📚 Documentation Technique
 
+- [**Positionnement Produit MVP**](./docs/product-positioning.md) — **Source de vérité scope fonctionnel (à lire en premier)**
 - [Synthèse Projet (PDF)](./docs/synthese-blobinfini.pdf)
 - [API Documentation](./docs/api.md)
 - [Database Schema](./docs/database.md)
@@ -1202,7 +1203,7 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 ## 🤝 Contribution IA
 
 ### Checklist avant de coder
-1. **Synchronisez le contexte** : relisez `claude.md`, ce README et les RFC pertinentes (`docs/architecture/*`).
+1. **Synchronisez le contexte** : relisez `claude.md`, ce README, `docs/product-positioning.md` (scope MVP) et les RFC pertinentes (`docs/architecture/*`).
 2. **Cadrez le besoin** : story/bug, critères d’acceptation, métriques attendues (inclure impacts Blobosphère/SEO/IA).
 3. **Mappez les dépendances** : migrations Prisma, seeds, feature flags, variables d’environnement, scripts CI.
 4. **Partagez un plan concis** : étapes, fichiers ciblés, tests prévus; validez-le avec l’équipe avant d’écrire du code.
