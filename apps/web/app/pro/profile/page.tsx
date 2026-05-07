@@ -11,7 +11,7 @@ import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText, Bell } from 'lucide-react';
+import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText, Bell, Eye } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { apiClient } from '../../../lib/apiClient';
@@ -529,6 +529,12 @@ export default function ProProfilePage() {
           <h1 className="text-xl font-bold text-foreground">Profil Professionnel 💼</h1>
           <p className="text-sm text-muted-foreground">Gère tes informations visibles par les clients</p>
         </div>
+        <Button asChild variant="outline" size="sm" className="flex-shrink-0 gap-1.5" data-testid="preview-button">
+          <Link href="/pro/profile/preview">
+            <Eye className="h-4 w-4" />
+            Voir mon profil
+          </Link>
+        </Button>
       </div>
 
       {loading ? (

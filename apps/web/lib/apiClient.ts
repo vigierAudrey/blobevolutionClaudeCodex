@@ -922,6 +922,7 @@ export const apiClient = {
     request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<{ ok: true; message: string }>,
 
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
+  getProProfile: () => request('/pro/me/preview', { method: 'GET' }, true),
   updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
   getDisciplines: () => request('/profile/disciplines', { method: 'GET' }, true) as Promise<Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced'|'anytime' }>>,

@@ -97,6 +97,18 @@ const finalizeRateLimiter = createLazyCustomRateLimiter({
   },
 }, 'pro_finalize');
 
+const previewRateLimiter = createLazyCustomRateLimiter({
+  windowMs: 60 * 1000, // 1 min
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test' && !process.env.ENABLE_RATE_LIMIT_IN_TESTS,
+  keyGenerator: (req: any) => {
+    const userId = (req as any).user?.id;
+    return userId ? `pro_preview:${userId}` : 'pro_preview:anonymous';
+  },
+}, 'pro_preview');
+
 const notificationPreferencesSchema = z.object({
   notifyForSurf: z.boolean().optional(),
   notifyForKitesurf: z.boolean().optional(),
@@ -151,6 +163,50 @@ proRouter.get('/me', requireProRole, async (req, res) => {
     let pp = await prisma.proProfile.findUnique({ where: { userId } });
     if (!pp) pp = await prisma.proProfile.create({ data: { userId } });
     return res.json(pp);
+  } catch {
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Preview DTO — server-side guarantee: never exposes lat/lng/emailNotif/id/userId/timestamps/notificationPreferences
+proRouter.get('/me/preview', requireProRole, previewRateLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const pp = await prisma.proProfile.findUnique({
+      where: { userId },
+      select: {
+        businessName: true,
+        bio: true,
+        photoUrl: true,
+        radiusKm: true,
+        countryCode: true,
+        lat: true,
+        lng: true,
+      },
+    });
+
+    if (!pp) {
+      return res.json({
+        businessName: null,
+        bio: null,
+        photoUrl: null,
+        radiusKm: null,
+        countryCode: null,
+        hasLocation: false,
+      });
+    }
+
+    // lat/lng fetched only to compute hasLocation — deliberately excluded from response
+    return res.json({
+      businessName: pp.businessName,
+      bio: pp.bio,
+      photoUrl: pp.photoUrl,
+      radiusKm: pp.radiusKm,
+      countryCode: pp.countryCode,
+      hasLocation: pp.lat != null && pp.lng != null,
+    });
   } catch {
     return res.status(500).json({ error: 'Internal error' });
   }
