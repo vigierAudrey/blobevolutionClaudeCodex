@@ -165,6 +165,13 @@ async function loadVisibleLessonRequests(page: Page) {
   await page.waitForTimeout(500);
   await dismissAdsModalIfPresent(page);
 
+  // Disable Leaflet CSS transitions so markers are immediately stable after
+  // flyToBounds — prevents the "element is not stable" / "intercepts pointer
+  // events" race when the viewport animates on radius change.
+  await page.addStyleTag({
+    content: '.leaflet-zoom-animated { transition-property: none !important; }',
+  });
+
   const radiusInput = page.locator('input[type="number"]').first();
   await radiusInput.fill('200');
   await dismissAdsModalIfPresent(page);
