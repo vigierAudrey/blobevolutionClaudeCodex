@@ -12,6 +12,7 @@ import {
   type AdminAnalyticsPeriod,
   type AdminBehaviorAnalytics,
   type AdminMatchingTTFM,
+  type AdminLessonRequestsAnalytics,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -26,6 +27,7 @@ import {
   AlertTriangle,
   Globe,
   LineChart,
+  BookOpen,
 } from 'lucide-react';
 
 const PERIODS: Array<{ value: AdminAnalyticsPeriod; label: string }> = [
@@ -70,6 +72,7 @@ export default function AdminAnalytics() {
   const [matchingData, setMatchingData] = useState<AdminMatchingAnalytics | null>(null);
   const [behaviorData, setBehaviorData] = useState<AdminBehaviorAnalytics | null>(null);
   const [ttfmData, setTtfmData] = useState<AdminMatchingTTFM | null>(null);
+  const [lessonData, setLessonData] = useState<AdminLessonRequestsAnalytics | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,17 +99,19 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior, ttfm] = await Promise.all([
+      const [engagement, matching, behavior, ttfm, lesson] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
         apiClient.getMatchingTTFMAnalytics(period),
+        apiClient.getLessonRequestsAnalytics(period),
       ]);
 
       setEngagementData(engagement);
       setMatchingData(matching);
       setBehaviorData(behavior);
       setTtfmData(ttfm);
+      setLessonData(lesson);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -542,6 +547,152 @@ export default function AdminAnalytics() {
             Not configured · Inventaire interne: {formatNumber(blobosphere?.totals.pageviews ?? null)} pageviews / {formatNumber(blobosphere?.totals.outboundClicks ?? null)} outbound clicks.
           </CardContent>
         </Card>
+      </section>
+
+      {/* ── Demandes de cours (BloboMap) ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-5 w-5 text-teal-600" />
+          <h2 className="text-2xl font-semibold">Demandes de cours</h2>
+        </div>
+
+        {/* KPI cards */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Demandes actives</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonData?.snapshot.totalActive ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                dont {formatNumber(lessonData?.snapshot.newInPeriod ?? null)} dans la période
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Surf / Kitesurf</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">
+                {formatNumber(lessonData?.snapshot.bySport.surf ?? null)}
+                <span className="text-base font-normal text-muted-foreground"> surf</span>
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {formatNumber(lessonData?.snapshot.bySport.kitesurf ?? null)} kitesurf
+                {(lessonData?.snapshot.bySport.other ?? 0) > 0 && ` · ${lessonData?.snapshot.bySport.other} autre`}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Contacts pros (période)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonData?.proContactStats.totalContacts ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {lessonData?.proContactStats.masked
+                  ? 'Riders contactés : masqué'
+                  : `${formatNumber(lessonData?.proContactStats.distinctRidersContacted ?? null)} riders contactés`}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Taux de contact pro</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">
+                {lessonData?.proContactStats.masked
+                  ? 'Masqué'
+                  : formatPercent(lessonData?.proContactStats.contactRatePct ?? null)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Délai médian : {formatHours(lessonData?.proContactStats.medianFirstContactHours ?? null)}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Répartition par nombre d'élèves */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="h-4 w-4" />
+                Taille de groupe
+              </CardTitle>
+              <CardDescription>Nombre d&apos;élèves par demande</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground">
+                    <th className="py-2">Taille</th>
+                    <th>Nb demandes</th>
+                    <th>%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { label: 'Solo (1)', value: lessonData?.snapshot.byStudentCount.solo ?? 0 },
+                    { label: 'Duo (2)', value: lessonData?.snapshot.byStudentCount.duo ?? 0 },
+                    { label: 'Groupe (3+)', value: lessonData?.snapshot.byStudentCount.group ?? 0 },
+                  ].map((row) => {
+                    const total = lessonData?.snapshot.totalActive ?? 0;
+                    const pct = total > 0 ? (row.value / total) * 100 : 0;
+                    return (
+                      <tr key={row.label} className="border-t">
+                        <td className="py-2 font-medium">{row.label}</td>
+                        <td>{formatNumber(row.value)}</td>
+                        <td>{formatPercent(pct)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          {/* Zones géographiques */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Globe className="h-4 w-4" />
+                Zones géographiques
+              </CardTitle>
+              <CardDescription>Segments masqués si n &lt; {lessonData?.privacyThreshold ?? 20}</CardDescription>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              {(lessonData?.byZone.length ?? 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">Aucune donnée géographique disponible.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground">
+                      <th className="py-2">Zone</th>
+                      <th>Nb demandes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(lessonData?.byZone ?? []).slice(0, 10).map((z) => (
+                      <tr key={z.zone} className="border-t">
+                        <td className="py-2 font-mono text-xs">{z.zone}</td>
+                        <td>
+                          {z.masked ? (
+                            <span className="text-muted-foreground italic">masqué (n={z.sampleSize})</span>
+                          ) : (
+                            formatNumber(z.count)
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </section>
     </div>
   );

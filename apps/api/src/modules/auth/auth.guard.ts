@@ -273,15 +273,6 @@ export function requireAuthSensitive(options: AuthSensitiveOptions = {}) {
   };
 }
 
-export function requireRole(role: 'RIDER' | 'PRO' | 'ADMIN') {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as any).user as { id: string; role: string } | undefined;
-    if (!user) return res.status(401).json({ error: 'Unauthorized' });
-    if (user.role !== role) return res.status(403).json({ error: 'Forbidden' });
-    next();
-  };
-}
-
 export async function requireVerifiedEmail(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user as { id: string } | undefined;
   if (!user?.id) return res.status(401).json({ error: 'Unauthorized' });
@@ -295,7 +286,18 @@ export async function requireVerifiedEmail(req: Request, res: Response, next: Ne
   }
 }
 
-// Helper pour les middlewares admin
-export const requireAdmin = requireRole('ADMIN');
-export const requirePro = requireRole('PRO');
-export const requireRider = requireRole('RIDER');
+// Source unique de vérité pour les guards de rôle PRO/RIDER (DB fallback + alertes sécurité).
+export { requireRole } from '../../lib/role-guard';
+import { requireRole as _requireRole } from '../../lib/role-guard';
+
+// requireAdmin reste synchrone + JWT-only : le routeur admin est protégé par IP allowlist,
+// step-up auth et session server-side — le fallback DB y serait redondant.
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const user = (req as any).user as { id: string; role: string } | undefined;
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (user.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
+  return next();
+}
+
+export const requirePro = _requireRole('PRO');
+export const requireRider = _requireRole('RIDER');

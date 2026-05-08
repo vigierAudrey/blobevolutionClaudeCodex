@@ -163,6 +163,48 @@ jobs:
         # Inline "// e2e-lint-ok" suppresses a single flagged line.
         run: bash scripts/check-e2e-antipatterns.sh
 
+      - name: AuthZ route guard — no sensitive routes without explicit guard (block)
+        # Scans pro.controller.ts and profile.controller.ts for sensitive routes
+        # (POST/PUT/PATCH/DELETE or paths containing delete/photo/export/disciplines/me/near/lessons)
+        # without requireProRole, requireRiderRole, requireRole(...), or // authz-guard-ok: <reason>.
+        # Catches silent AuthZ regressions when a new route is added without a guard.
+        run: bash scripts/check-authz-route-guards.sh
+
+      - name: Self-test check-authz-route-guards (poison pill)
+        # Proves the guard blocks an unguarded sensitive route and accepts a valid annotation.
+        run: |
+          set -euo pipefail
+          TMPFILE="$(mktemp /tmp/authz_poison_XXXXXX.ts)"
+          trap 'rm -f "$TMPFILE"' EXIT
+
+          # Poison files use profileRouter to match the guard's router pattern.
+          # AUTHZ_OVERRIDE_FILES redirects the script to scan only the temp file.
+
+          # ── Test 1: unguarded sensitive route → must FAIL ────────────────────
+          printf 'const profileRouter = { post: () => {} };\nprofileRouter.post("/delete-account", async (req, res) => {\n});\n' > "$TMPFILE"
+          code=0
+          AUTHZ_OVERRIDE_FILES="$TMPFILE" bash scripts/check-authz-route-guards.sh 2>&1 || code=$?
+          if [ "$code" -eq 0 ]; then
+            echo "❌ POISON FAILED: guard did not block unguarded POST /delete-account" >&2
+            exit 1
+          fi
+          echo "✅ POISON OK [unguarded sensitive route blocked]"
+
+          # ── Test 2: annotated exception with justification → must PASS ───────
+          printf 'const profileRouter = { post: () => {} };\nprofileRouter.post("/delete-account", async (req, res) => { // authz-guard-ok: test-only justification\n});\n' > "$TMPFILE"
+          AUTHZ_OVERRIDE_FILES="$TMPFILE" bash scripts/check-authz-route-guards.sh
+          echo "✅ POISON OK [annotated exception accepted]"
+
+          # ── Test 3: annotation without justification → must FAIL ─────────────
+          printf 'const profileRouter = { post: () => {} };\nprofileRouter.post("/delete-account", async (req, res) => { // authz-guard-ok:\n});\n' > "$TMPFILE"
+          code=0
+          AUTHZ_OVERRIDE_FILES="$TMPFILE" bash scripts/check-authz-route-guards.sh 2>&1 || code=$?
+          if [ "$code" -eq 0 ]; then
+            echo "❌ POISON FAILED: guard accepted authz-guard-ok annotation without justification" >&2
+            exit 1
+          fi
+          echo "✅ POISON OK [empty authz-guard-ok rejected]"
+
   lint:
     needs: security-guard
     name: Lint

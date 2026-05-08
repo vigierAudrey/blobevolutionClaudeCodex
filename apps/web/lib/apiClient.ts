@@ -273,6 +273,32 @@ export interface AdminBehaviorAnalytics {
   };
 }
 
+export interface AdminLessonRequestsAnalytics {
+  period: AdminAnalyticsPeriod;
+  privacyThreshold: number;
+  definitions: { lessonRequests: string };
+  snapshot: {
+    totalActive: number;
+    newInPeriod: number;
+    bySport: { surf: number; kitesurf: number; other: number };
+    byStudentCount: { solo: number; duo: number; group: number };
+  };
+  byZone: Array<{
+    zone: string;
+    count: number | null;
+    sampleSize: number;
+    masked: boolean;
+  }>;
+  proContactStats: {
+    totalContacts: number;
+    distinctRidersContacted: number | null;
+    contactRatePct: number | null;
+    medianFirstContactHours: number | null;
+    sampleSize: number;
+    masked: boolean;
+  };
+}
+
 export interface AdminBlockedConversation {
   conversationId: string;
   blockedAt: string | null;
@@ -1278,6 +1304,10 @@ export const apiClient = {
   getMatchingTTFMAnalytics: (period?: AdminAnalyticsPeriod) => {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/matching/ttfm${query}`, { method: 'GET' }, true) as Promise<AdminMatchingTTFM>;
+  },
+  getLessonRequestsAnalytics: (period?: AdminAnalyticsPeriod) => {
+    const query = period ? `?period=${period}` : '';
+    return request(`/admin/analytics/lesson-requests${query}`, { method: 'GET' }, true) as Promise<AdminLessonRequestsAnalytics>;
   },
   /**
    * saveTokens — Activates the local session hint flag.

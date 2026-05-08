@@ -533,7 +533,7 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
 });
 
 // GDPR Data Export endpoint (Article 20 - Right to data portability)
-proRouter.get('/export', exportRateLimiter, async (req, res) => {
+proRouter.get('/export', requireProRole, exportRateLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -561,7 +561,7 @@ proRouter.get('/export', exportRateLimiter, async (req, res) => {
 });
 
 // Account deletion with 30-day grace period (CNIL best practice)
-proRouter.post('/delete-account', async (req, res) => {
+proRouter.post('/delete-account', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -627,7 +627,7 @@ proRouter.post('/delete-account', async (req, res) => {
 });
 
 // Cancel account deletion (within 30-day grace period)
-proRouter.post('/cancel-deletion', async (req, res) => {
+proRouter.post('/cancel-deletion', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -693,7 +693,7 @@ proRouter.post('/cancel-deletion', async (req, res) => {
 });
 
 // Get deletion status
-proRouter.get('/deletion-status', async (req, res) => {
+proRouter.get('/deletion-status', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });

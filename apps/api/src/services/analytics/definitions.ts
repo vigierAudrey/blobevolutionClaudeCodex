@@ -56,4 +56,5 @@ export const ANALYTICS_DEFINITIONS = {
   supplyDemand: 'Historical booking requests versus pro availabilities by sport and large zone (data frozen — booking feature deprecated).',
   trustSafety: 'Verified pro rate, reports per 1k users, and moderation median delay (when available).',
   blobosphere: 'Pageviews, outbound clicks, and signup conversions aggregated per article.',
+  lessonRequests: 'Riders with an active lesson request (wantsLesson=true on their profile). Pro contacts = ContactRequests sent to lesson-seeking riders. Response time approximated from rider profile.updatedAt to first ContactRequest.',
 } as const;

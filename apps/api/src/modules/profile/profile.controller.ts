@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
+import { requireRiderRole } from './profile.guard';
 import { validate } from '../../middleware/validate';
 import {
   ensureBucket, presignPutObject, publicUrlForKey,
@@ -109,7 +110,7 @@ const adminUpsertSchema = z.object({
   displayName: z.string().min(1).max(60).optional().or(z.literal('').transform(() => undefined)),
 });
 
-profileRouter.get('/me', async (req, res) => {
+profileRouter.get('/me', async (req, res) => { // authz-guard-ok: role-dispatched; PRO→403+securityAlert, ADMIN→AdminProfile, RIDER→RiderProfile
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -195,7 +196,7 @@ profileRouter.get('/me', async (req, res) => {
   }
 });
 
-profileRouter.put('/me', validate(upsertSchema), async (req, res) => {
+profileRouter.put('/me', validate(upsertSchema), async (req, res) => { // authz-guard-ok: role-dispatched; PRO→403+securityAlert, handles ADMIN and RIDER separately
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -349,7 +350,7 @@ const sportEnum = ['surf', 'kitesurf'] as const;
 const levelEnum = ['beginner', 'intermediate', 'advanced'] as const;
 const disciplineSchema = z.object({ sport: z.enum(sportEnum), level: z.enum(levelEnum) });
 
-profileRouter.get('/disciplines', async (req, res) => {
+profileRouter.get('/disciplines', requireRiderRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -362,7 +363,7 @@ profileRouter.get('/disciplines', async (req, res) => {
   }
 });
 
-profileRouter.put('/disciplines', async (req, res) => {
+profileRouter.put('/disciplines', requireRiderRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -387,7 +388,7 @@ profileRouter.put('/disciplines', async (req, res) => {
 });
 
 // Generate a pre-signed URL for direct upload to S3/MinIO
-profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.string().min(1) })), async (req, res) => {
+profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.string().min(1) })), async (req, res) => { // authz-guard-ok: inline role guard; PRO+ADMIN blocked with securityAlert, only RIDER proceeds to S3
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -491,7 +492,7 @@ profileRouter.post('/photo/upload-url', validate(z.object({ contentType: z.strin
 });
 
 // Finalize photo upload — valide le contenu réel via magic bytes puis enregistre photoUrl
-profileRouter.post('/photo/finalize', finalizeRateLimiter, async (req, res) => {
+profileRouter.post('/photo/finalize', finalizeRateLimiter, async (req, res) => { // authz-guard-ok: inline role guard; non-RIDER rejected inside handler via user.role check
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -584,7 +585,7 @@ profileRouter.post('/photo/finalize', finalizeRateLimiter, async (req, res) => {
 });
 
 // GDPR Data Export endpoint (Article 20 - Right to data portability)
-profileRouter.get('/export', exportRateLimiter, async (req, res) => {
+profileRouter.get('/export', exportRateLimiter, async (req, res) => { // authz-guard-ok: GDPR Art.20 portability endpoint; any authenticated user exports their own data, role-neutral by design
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -615,7 +616,7 @@ profileRouter.get('/export', exportRateLimiter, async (req, res) => {
 });
 
 // GDPR Account Deletion - Request deletion with 30-day grace period
-profileRouter.post('/delete-account', async (req, res) => {
+profileRouter.post('/delete-account', requireRiderRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -679,7 +680,7 @@ profileRouter.post('/delete-account', async (req, res) => {
 });
 
 // GDPR Account Deletion - Cancel deletion request
-profileRouter.post('/cancel-deletion', async (req, res) => {
+profileRouter.post('/cancel-deletion', requireRiderRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -743,7 +744,7 @@ profileRouter.post('/cancel-deletion', async (req, res) => {
 });
 
 // GDPR Account Deletion - Check deletion status
-profileRouter.get('/deletion-status', async (req, res) => {
+profileRouter.get('/deletion-status', requireRiderRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -865,7 +866,7 @@ profileRouter.get('/notifications', async (req, res) => {
 });
 
 // Update notification preferences (works for both RIDER and PRO)
-profileRouter.put('/notifications', validate(notificationPreferencesSchema), async (req, res) => {
+profileRouter.put('/notifications', validate(notificationPreferencesSchema), async (req, res) => { // authz-guard-ok: role-agnostic preferences; RIDER+PRO valid, role-based field filtering enforced inside handler
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });

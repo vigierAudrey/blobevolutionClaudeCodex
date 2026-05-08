@@ -1094,6 +1094,23 @@ adminRouter.get(
   }
 });
 
+// Analytics détaillées - Demandes de cours riders (BloboMap)
+adminRouter.get(
+  '/analytics/lesson-requests',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:lesson-requests', () => 'admin:analytics:lesson-requests'),
+  async (req, res) => {
+  try {
+    const period = resolveAnalyticsPeriod(req.query.period);
+    const report = await analyticsReportService.getLessonRequests(period);
+    return res.json(report);
+
+  } catch (error) {
+    secureLogger.error('Analytics lesson-requests error', { error });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
 const reportActionSchema = z.object({
   action: z.enum(['approve', 'dismiss', 'ban'])
 });

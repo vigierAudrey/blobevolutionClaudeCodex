@@ -646,4 +646,136 @@ export const analyticsReportService = {
       pros: pro,
     };
   },
+
+  async getLessonRequests(period: AnalyticsPeriod) {
+    const now = new Date();
+    const startDate = getPeriodStart(period, now);
+
+    type LessonProfile = {
+      lessonSport: string | null;
+      lessonStudentCount: number | null;
+      lessonLat: number | null;
+      lessonLng: number | null;
+      updatedAt: Date;
+    };
+
+    type ContactRow = {
+      contactId: string;
+      contactCreatedAt: Date;
+      profileUpdatedAt: Date;
+      riderId: string;
+    };
+
+    // Snapshot: all active lesson requests (not period-filtered — current state)
+    const activeProfiles: LessonProfile[] = await prisma.riderProfile.findMany({
+      where: { wantsLesson: true },
+      select: {
+        lessonSport: true,
+        lessonStudentCount: true,
+        lessonLat: true,
+        lessonLng: true,
+        updatedAt: true,
+      },
+    });
+
+    const totalActive = activeProfiles.length;
+
+    // By sport
+    const sportMap = new Map<string, number>();
+    for (const p of activeProfiles) {
+      const sport = p.lessonSport?.toLowerCase() ?? 'inconnu';
+      sportMap.set(sport, (sportMap.get(sport) ?? 0) + 1);
+    }
+    const bySport = {
+      surf: sportMap.get('surf') ?? 0,
+      kitesurf: sportMap.get('kitesurf') ?? 0,
+      other: totalActive - (sportMap.get('surf') ?? 0) - (sportMap.get('kitesurf') ?? 0),
+    };
+
+    // By student count (1 / 2 / 3+)
+    let solo = 0, duo = 0, group = 0;
+    for (const p of activeProfiles) {
+      const n = p.lessonStudentCount ?? 1;
+      if (n <= 1) solo++;
+      else if (n === 2) duo++;
+      else group++;
+    }
+    const byStudentCount = { solo, duo, group };
+
+    // By geo zone — bucket lessonLat/lessonLng; mask if < PRIVACY_THRESHOLD
+    const zoneMap = new Map<string, number>();
+    for (const p of activeProfiles) {
+      const zone = computeZoneLarge(p.lessonLat, p.lessonLng);
+      if (zone) zoneMap.set(zone, (zoneMap.get(zone) ?? 0) + 1);
+    }
+    const byZone = Array.from(zoneMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([zone, count]) => ({
+        zone,
+        count: count < PRIVACY_THRESHOLD ? null : count,
+        sampleSize: count,
+        masked: count < PRIVACY_THRESHOLD,
+      }));
+
+    // New in period: riders who (re)activated wantsLesson within the window
+    const newInPeriod = activeProfiles.filter(
+      (p) => p.updatedAt >= startDate && p.updatedAt <= now
+    ).length;
+
+    // Pro contacts in period: ContactRequests sent to lesson-seeking riders
+    const contactsRaw = await prisma.$queryRaw<ContactRow[]>`
+      SELECT
+        cr.id            AS "contactId",
+        cr."createdAt"   AS "contactCreatedAt",
+        rp."updatedAt"   AS "profileUpdatedAt",
+        rp."userId"      AS "riderId"
+      FROM "ContactRequest" cr
+      JOIN "ConversationMember" cm
+        ON cm."conversationId" = cr."conversationId"
+        AND cm."userId" != cr."proUserId"
+      JOIN "RiderProfile" rp
+        ON rp."userId" = cm."userId"
+      WHERE rp."wantsLesson" = true
+        AND cr."createdAt" >= ${startDate}::timestamptz
+        AND cr."createdAt" <= ${now}::timestamptz`;
+
+    const totalContacts = contactsRaw.length;
+    const distinctRidersContacted = new Set(contactsRaw.map((r: ContactRow) => r.riderId)).size;
+
+    const contactRatePct =
+      totalActive > 0 ? Math.round((distinctRidersContacted / totalActive) * 1000) / 10 : 0;
+
+    // Median first-contact delay: contactCreatedAt - profileUpdatedAt (hours)
+    const delayHours = contactsRaw
+      .map((r: ContactRow) => (r.contactCreatedAt.getTime() - r.profileUpdatedAt.getTime()) / (60 * 60 * 1000))
+      .filter((h: number) => h >= 0);
+    const medianFirstContactHours =
+      delayHours.length > 0 ? computePercentile(delayHours, 50) : null;
+
+    const proContactSampleSize = distinctRidersContacted;
+    const proContactMasked = proContactSampleSize < PRIVACY_THRESHOLD;
+
+    return {
+      period,
+      privacyThreshold: PRIVACY_THRESHOLD,
+      definitions: {
+        lessonRequests: ANALYTICS_DEFINITIONS.lessonRequests,
+      },
+      snapshot: {
+        totalActive,
+        newInPeriod,
+        bySport,
+        byStudentCount,
+      },
+      byZone,
+      proContactStats: {
+        totalContacts,
+        distinctRidersContacted: proContactMasked ? null : distinctRidersContacted,
+        contactRatePct: proContactMasked ? null : contactRatePct,
+        medianFirstContactHours: proContactMasked ? null : medianFirstContactHours,
+        sampleSize: proContactSampleSize,
+        masked: proContactMasked,
+      },
+    };
+  },
 };
