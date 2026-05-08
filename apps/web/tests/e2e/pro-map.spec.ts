@@ -37,10 +37,11 @@ const FIXTURE_LESSON_LNG = -1.390;
 /**
  * Injects a visible lesson-request fixture for the Blobomap spec.
  *
- * The global seed creates riders with wantsLesson=true but WITHOUT lessonLat/lessonLng.
- * /pro/near/lessons applies a strict WHERE lessonLat IS NOT NULL AND lessonLng IS NOT NULL,
- * so those riders are invisible. This function patches dev+rider1 via PUT /profile/me
- * to add valid French lesson coordinates near pro9 (Hossegor), making it appear on the map.
+ * The global seed provides lessonLat/lessonLng for some wantsLesson riders, but
+ * their coords are near their own base location — not necessarily near pro9 at
+ * Hossegor. This function patches dev+rider2 via PUT /profile/me to set coords
+ * ~100 m from pro9, guaranteeing at least one rider appears in the map regardless
+ * of which random seed riders happen to be in range.
  *
  * Business invariants respected:
  *  - wantsLesson=true requires lessonLat AND lessonLng (both-or-none)
@@ -142,7 +143,11 @@ async function resolveMatchingOptionValue(selectLocator: Locator, pattern: RegEx
 }
 
 function mapMarkerIcons(page: Page) {
-  return page.locator('.leaflet-marker-icon.map-marker-icon');
+  // .map-marker-item is present on rider/availability markers only — the center
+  // (pro location) marker uses .map-marker-icon without .map-marker-item.
+  // Using the more specific selector avoids counting or targeting the center
+  // marker when zoomed out and markers overlap at the same pixel.
+  return page.locator('.leaflet-marker-icon.map-marker-item');
 }
 
 async function dismissAdsModalIfPresent(page: Page) {
@@ -175,6 +180,15 @@ async function loadVisibleLessonRequests(page: Page) {
       { timeout: 15_000 },
     )
     .toBeGreaterThan(0);
+
+  // Wait for the Leaflet flyToBounds animation to settle. The map animates when
+  // bounds change; clicking a marker during animation triggers "intercepts pointer
+  // events" because the marker pane is mid-transform. leaflet-zoom-anim is added
+  // to the container for the duration of the animation.
+  await page.waitForFunction(
+    () => !document.querySelector('.leaflet-container.leaflet-zoom-anim'),
+    { timeout: 5_000 },
+  ).catch(() => { /* animation may have already ended */ });
 }
 
 async function firstRiderMarker(page: Page) {
@@ -184,8 +198,9 @@ async function firstRiderMarker(page: Page) {
     return null;
   }
 
-  // Marker 0 is the pro center marker when geolocation is enabled.
-  return count > 1 ? markers.nth(1) : markers.first();
+  // mapMarkerIcons now uses .map-marker-item which excludes the center marker,
+  // so the first match is already the first rider marker.
+  return markers.first();
 }
 
 // Seed guarantee: dev+pro1 has lat/lng → /pro/me returns them → geolocEnabled=true.
@@ -258,10 +273,12 @@ test.describe('Pro Map (Blobomap)', () => {
     const marker = await firstRiderMarker(page);
 
     if (marker) {
-      await marker.click();
+      // force: true bypasses "intercepts pointer events" — at high zoom-out levels
+      // (200 km radius) markers can overlap at the same pixel. Leaflet still
+      // receives the click event on the correct element via its own hit-testing.
+      await marker.click({ force: true });
       // MapComponent renders a Leaflet <Popup> with rider details.
       await expect(page.locator('.leaflet-popup')).toBeVisible({ timeout: 5000 });
-
     }
 
     await context.close();
@@ -363,7 +380,8 @@ test.describe('Pro Map (Blobomap)', () => {
     const marker = await firstRiderMarker(page);
 
     if (marker) {
-      await marker.click();
+      // force: true — same rationale as the marker-click test above.
+      await marker.click({ force: true });
       // Wait for popup to open before looking for the button (Leaflet popup animation).
       await expect(page.locator('.leaflet-popup')).toBeVisible({ timeout: 5000 });
       // The MapComponent popup renders a "💬 Contacter" button.
