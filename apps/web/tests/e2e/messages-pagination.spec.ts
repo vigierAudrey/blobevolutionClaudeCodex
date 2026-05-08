@@ -9,10 +9,14 @@
  *  5. Ouverture d'une conversation depuis la liste [MOCK API]
  *  6. Envoi d'un message : UI optimiste puis confirmation serveur [MOCK API]
  *
- * Stratégie auth :
- *   1 seul loginViaApi dans beforeAll + injection localStorage par test (token partagé).
+ * Stratégie auth (LOT A — cookies httpOnly) :
+ *   1 seul loginWithCookieSession dans beforeAll → storageState partagé via createAuthContext.
  *   WHY pro1 : dev+active-rider-* sont soumis au loginAccountIpLimiter (rate limit strict)
  *   et sont déjà utilisés par active-users.spec.ts. dev+pro1 est un compte régulier.
+ *   WHY storageState : /auth/login retourne { ok: true }, les tokens sont exclusivement
+ *   en cookies httpOnly. localStorage.accessToken/refreshToken sont morts (LOT A).
+ *   blob_session_hint='1' est injecté via context.addInitScript — supprime le redirect
+ *   client-side de ensureAuthenticated() sans exposer de token dans localStorage.
  *
  * Mode sériel obligatoire :
  *   test.describe.configure({ mode: 'serial' }) garantit l'exécution séquentielle.
@@ -31,7 +35,8 @@
  *   WHY FAKE CLOCK : le setInterval est à 15s, attendre 15s en test est flaky et lent.
  */
 
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect, type Browser, type BrowserContext } from '@playwright/test';
+import { loginWithCookieSession } from './helpers/auth';
 
 // ─── Mode sériel ──────────────────────────────────────────────────────────────
 test.describe.configure({ mode: 'serial' });
@@ -39,9 +44,8 @@ test.describe.configure({ mode: 'serial' });
 // ─── Config ──────────────────────────────────────────────────────────────────
 const RIDER_EMAIL = process.env.E2E_MESSAGES_EMAIL ?? 'dev+pro1@test.com';
 const RIDER_PASSWORD = process.env.E2E_MESSAGES_PASSWORD ?? 'Passw0rd!';
-const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 
-// ─── Auth helper ─────────────────────────────────────────────────────────────
+// ─── Auth helpers (LOT A : cookies httpOnly) ──────────────────────────────────
 
 function testIp(tag: string): string {
   const base = Math.abs(
@@ -55,23 +59,15 @@ function testIp(tag: string): string {
   return `10.${a}.${b}.${c ^ d || 42}`;
 }
 
-async function loginViaApi(email: string, password: string) {
-  const apiCtx = await playwrightRequest.newContext({
-    baseURL: API_BASE_URL,
-    extraHTTPHeaders: { 'X-Forwarded-For': testIp(`msg-auth-${email}`) },
-  });
-  const csrfJson = (await (await apiCtx.get('/csrf-token')).json()) as { csrfToken: string };
-  const loginRes = await apiCtx.post('/auth/login', {
-    headers: { 'X-CSRF-Token': csrfJson.csrfToken },
-    data: { email, password, consentAccepted: true },
-  });
-  if (!loginRes.ok()) {
-    throw new Error(`Login failed for ${email}: ${loginRes.status()} ${await loginRes.text()}`);
-  }
-  const tokens = (await loginRes.json()) as { accessToken: string; refreshToken: string };
-  await apiCtx.dispose();
-  return tokens;
-}
+type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
+
+// Pré-calculé — supprime la modale CookieConsent (fixed inset-0 z-50) sur tous les tests.
+const CONSENT_JSON = JSON.stringify({
+  mode: 'limited',
+  signals: { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' },
+  cmpVersion: 'blobinfini-consent-v1',
+  updatedAt: '2026-03-15T00:00:00.000Z',
+});
 
 // ─── Fetch mock via addInitScript ────────────────────────────────────────────
 // WHY NOT page.route() :
@@ -158,11 +154,19 @@ async function mockConversationsApi(
   );
 }
 
-// ─── Token partagé : 1 seul login pour les 6 tests ───────────────────────────
-let sharedTokens: { accessToken: string; refreshToken: string };
+// ─── Session partagée : 1 seul login pour les 6 tests ────────────────────────
+// WHY storageState : loginWithCookieSession() capture tous les cookies httpOnly via
+// APIRequestContext. Le storageState est réutilisé dans chaque test via createAuthContext()
+// — évite les N logins simultanés sur le même compte qui déclencheraient AUTH_LOGIN_ACCOUNT_IP.
+let sharedStorageState!: StorageState;
 
-test.beforeAll(async () => {
-  sharedTokens = await loginViaApi(RIDER_EMAIL, RIDER_PASSWORD);
+test.beforeAll(async ({ browser }) => {
+  const ctx = await loginWithCookieSession(browser, RIDER_EMAIL, {
+    password: RIDER_PASSWORD,
+    tag: 'msg-auth-beforeall',
+  });
+  sharedStorageState = await ctx.storageState();
+  await ctx.close();
 });
 
 // ─── Mock data factory ───────────────────────────────────────────────────────
@@ -200,28 +204,21 @@ const MOCK_PAGE_2 = {
   total: 4,
 };
 
-// ─── Helper : injecter le token + consentement ads dans localStorage ─────────
-// WHY consent : CookieConsent affiche une modale fullscreen (fixed inset-0 z-50) si
-// localStorage.blob_consent est absent ou mode==='none'. Ça bloque tous les clics.
-// On pré-injecte mode='limited' (aucun tracking) pour que la modale ne s'affiche pas.
-async function injectToken(page: import('@playwright/test').Page) {
-  await page.addInitScript(
-    ({ at, rt }: { at: string; rt: string }) => {
-      window.localStorage.setItem('accessToken', at);
-      window.localStorage.setItem('refreshToken', rt);
-      // Supprime la modale ads en pré-acceptant le mode "limited" (pas de tracking)
-      window.localStorage.setItem(
-        'blob_consent',
-        JSON.stringify({
-          mode: 'limited',
-          signals: { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' },
-          cmpVersion: 'blobinfini-consent-v1',
-          updatedAt: new Date().toISOString(),
-        }),
-      );
-    },
-    { at: sharedTokens.accessToken, rt: sharedTokens.refreshToken },
-  );
+// ─── Context auth par test ────────────────────────────────────────────────────
+// Crée un contexte browser avec :
+//   - storageState complet (cookies httpOnly de session)
+//   - blob_session_hint='1' via addInitScript → getTokens() retourne truthy
+//   - blob_consent pré-injecté → supprime la modale CookieConsent (inset-0 z-50)
+async function createAuthContext(browser: Browser, tag: string): Promise<BrowserContext> {
+  const context = await browser.newContext({
+    storageState: sharedStorageState,
+    extraHTTPHeaders: { 'X-Forwarded-For': testIp(tag) },
+  });
+  await context.addInitScript((consent) => {
+    window.localStorage.setItem('blob_session_hint', '1');
+    window.localStorage.setItem('blob_consent', consent);
+  }, CONSENT_JSON);
+  return context;
 }
 
 // ─── Suite 1 : Affichage liste ────────────────────────────────────────────────
@@ -230,11 +227,8 @@ test.describe('Messagerie rider — liste conversations', () => {
   test('1. Affichage initial : h1 visible + liste ou état vide', async ({ browser }) => {
     // WHY REAL DATA : ce test valide que la page monte correctement en conditions réelles.
     // L'état vide ("Aucune conversation") est une réponse valide — le test ne le rejette pas.
-    const context = await browser.newContext({
-      extraHTTPHeaders: { 'X-Forwarded-For': testIp('msg-list-initial') },
-    });
+    const context = await createAuthContext(browser, 'msg-list-initial');
     const page = await context.newPage();
-    await injectToken(page);
 
     await page.goto('/messages');
 
@@ -253,11 +247,8 @@ test.describe('Messagerie rider — liste conversations', () => {
   });
 
   test('2. Filtre "Non lus" : pas de crash, liste ou état vide', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: { 'X-Forwarded-For': testIp('msg-filter-unread') },
-    });
+    const context = await createAuthContext(browser, 'msg-filter-unread');
     const page = await context.newPage();
-    await injectToken(page);
 
     await page.goto('/messages');
     await expect(page.getByRole('heading', { name: 'Messagerie' })).toBeVisible({ timeout: 12000 });
@@ -300,11 +291,8 @@ test.describe('Messagerie rider — pagination "Charger plus"', () => {
     // Avec limit=100, il faudrait >100 conversations en base de test. Ce n'est pas le cas.
     // Le mock est le seul moyen déterministe de prouver ce comportement.
 
-    const context = await browser.newContext({
-      extraHTTPHeaders: { 'X-Forwarded-For': testIp('msg-load-more') },
-    });
+    const context = await createAuthContext(browser, 'msg-load-more');
     const page = await context.newPage();
-    await injectToken(page);
     await mockConversationsApi(page, { page1: MOCK_PAGE_1, page2: MOCK_PAGE_2 });
 
     await page.goto('/messages');
@@ -368,11 +356,8 @@ test.describe('Messagerie rider — pagination "Charger plus"', () => {
     // En pratique, React 18 fonctionne correctement avec le fake clock Playwright car
     // ses timers 0ms sont déclenchés avant les timers de 15s lors du fastForward.
 
-    const context = await browser.newContext({
-      extraHTTPHeaders: { 'X-Forwarded-For': testIp('msg-polling-stable') },
-    });
+    const context = await createAuthContext(browser, 'msg-polling-stable');
     const page = await context.newPage();
-    await injectToken(page);
     await mockConversationsApi(page, { page1: MOCK_PAGE_1, page2: MOCK_PAGE_2 });
 
     // Installer le fake clock AVANT la navigation pour capturer le setInterval
@@ -547,11 +532,8 @@ test.describe('Messagerie rider — détail conversation', () => {
     // WHY MOCK : garantit qu'une conversation est toujours disponible dans la liste,
     // indépendamment du seed. Le test vérifie uniquement la navigation (URL), pas le contenu.
 
-    const context = await browser.newContext({
-      extraHTTPHeaders: { 'X-Forwarded-For': testIp('msg-open-conv') },
-    });
+    const context = await createAuthContext(browser, 'msg-open-conv');
     const page = await context.newPage();
-    await injectToken(page);
 
     // Mock : liste avec une conversation connue
     await mockConversationsApi(page, {
@@ -583,11 +565,8 @@ test.describe('Messagerie rider — détail conversation', () => {
     const CONV_ID = 'e2e-conv-send-test';
     const MSG_TEXT = `Test Playwright send ${Date.now()}`;
 
-    const context = await browser.newContext({
-      extraHTTPHeaders: { 'X-Forwarded-For': testIp('msg-send-msg') },
-    });
+    const context = await createAuthContext(browser, 'msg-send-msg');
     const page = await context.newPage();
-    await injectToken(page);
 
     // Mock complet : /conversations (list) + /conversations/:id/messages (GET + POST)
     await mockMessageDetailApi(page, CONV_ID, MSG_TEXT);

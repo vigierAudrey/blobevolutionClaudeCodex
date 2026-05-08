@@ -45,18 +45,10 @@ test.describe('Pro Messages', () => {
     await page.goto(appUrl('/pro/messages'));
     await expect(page).toHaveURL(/\/pro\/messages/);
 
-    // Wait for async load: either conversations or the empty-state text must appear.
-    // The page fetches conversations from the API; we poll until one of them is true.
-    await expect.poll(
-      async () => {
-        const hasConversations =
-          (await page.locator('.divide-y a[href*="/messages/"]').count()) > 0;
-        const hasEmptyState =
-          (await page.locator('text=/Aucune conversation|no.*messages/i').count()) > 0;
-        return hasConversations || hasEmptyState;
-      },
-      { timeout: 15_000 },
-    ).toBe(true);
+    // Seed guarantees pro1 has conv1 (RIDER_TO_PRO with rider1).
+    // PRO_TO_PRO conversations are filtered client-side, so only conv1 appears.
+    // Hard assertion: if seed is absent, test fails with a clear message.
+    await expect(page.locator('a[href*="/messages/"]').first()).toBeVisible({ timeout: 15_000 });
 
     await context.close();
   });
@@ -71,22 +63,21 @@ test.describe('Pro Messages', () => {
     await page.goto(appUrl('/pro/messages'));
     await expect(page).toHaveURL(/\/pro\/messages/);
 
-    const conversationLink = page.locator('.divide-y a[href*="/messages/"]').first();
+    // Seed guarantees pro1 has conv1 — hard assert, no conditional.
+    const conversationLink = page.locator('a[href*="/messages/"]').first();
+    await expect(conversationLink).toBeVisible({ timeout: 15_000 });
+    await conversationLink.click();
+    await page.waitForURL(/\/messages\//, { timeout: 8_000 });
 
-    if ((await conversationLink.count()) > 0) {
-      await conversationLink.click();
-      await page.waitForURL(/\/messages\//, { timeout: 8_000 });
-
-      const inputByPlaceholder = page.locator('textarea[placeholder], input[type="text"][placeholder]').first();
-      if ((await inputByPlaceholder.count()) > 0) {
-        await inputByPlaceholder.fill('Bonjour, je suis disponible pour une session cette semaine.');
-        const sendButton = page.getByRole('button', { name: /envoyer|send/i });
-        if ((await sendButton.count()) > 0) {
-          await sendButton.click();
-          await page.waitForTimeout(1_000);
-        }
-      }
-    }
+    // Conversation detail: input must be visible (page fully mounted and auth OK).
+    const msgInput = page.locator('input[placeholder="Écrire un message"]');
+    await expect(msgInput).toBeVisible({ timeout: 8_000 });
+    await msgInput.fill('Bonjour, je suis disponible pour une session cette semaine.');
+    const sendButton = page.getByRole('button', { name: /envoyer|send/i });
+    await expect(sendButton).toBeVisible();
+    await sendButton.click();
+    // Input cleared = optimistic send confirmed.
+    await expect(msgInput).toHaveValue('', { timeout: 5_000 });
 
     await context.close();
   });
@@ -101,43 +92,44 @@ test.describe('Pro Messages', () => {
     await page.goto(appUrl('/pro/messages'));
     await expect(page).toHaveURL(/\/pro\/messages/);
 
-    const conversationLink = page.locator('.divide-y a[href*="/messages/"]').first();
+    // Seed guarantees pro1 has conv1 — hard assert, no conditional.
+    const conversationLink = page.locator('a[href*="/messages/"]').first();
+    await expect(conversationLink).toBeVisible({ timeout: 15_000 });
+    await conversationLink.click();
+    await page.waitForURL(/\/messages\//, { timeout: 8_000 });
 
-    if ((await conversationLink.count()) > 0) {
-      await conversationLink.click();
-      await page.waitForURL(/\/messages\//, { timeout: 8_000 });
-      await page.waitForTimeout(1_000);
-
-      const messageHistory = page.locator(
-        '[data-testid="message"], .message, [data-testid="chat-message"], [class*="message"]'
-      );
-      if ((await messageHistory.count()) > 0) {
-        await expect(messageHistory.first()).toBeVisible();
-      }
-    }
+    // Previous test (serial mode) sent this exact message — it must appear in history.
+    // If this test is run in isolation without the send test, it may fail: that is correct
+    // behavior, as this test depends on the send test having run first.
+    await expect(
+      page.getByText('Bonjour, je suis disponible pour une session cette semaine.')
+    ).toBeVisible({ timeout: 8_000 });
 
     await context.close();
   });
 
-  test('should filter or search conversations', async ({ browser }) => {
+  test('should filter conversations by category', async ({ browser }) => {
     const context = await loginWithCookieSession(browser, PRO_EMAIL, {
       password: PRO_PASSWORD,
-      tag: 'pro-messages-search',
+      tag: 'pro-messages-filter',
     });
     const page = await context.newPage();
 
     await page.goto(appUrl('/pro/messages'));
     await expect(page).toHaveURL(/\/pro\/messages/);
 
-    const searchInput = page.locator(
-      'input[type="search"], input[placeholder*="recherch" i], input[placeholder*="search" i]'
-    );
+    // The pro messages page uses filter buttons (not a search input).
+    // Verify the "Élèves" filter button exists and responds to click.
+    const ridersFilterBtn = page.getByRole('button', { name: /Élèves/i });
+    await expect(ridersFilterBtn).toBeVisible({ timeout: 10_000 });
+    await ridersFilterBtn.click();
 
-    if ((await searchInput.count()) > 0) {
-      await searchInput.fill('test');
-      await page.waitForTimeout(500);
-      await expect(searchInput).toHaveValue('test');
-    }
+    // After filter: list must show matching conversations or the category empty state.
+    // The category empty state is distinct from the global empty state.
+    await expect(
+      page.locator('a[href*="/messages/"]').first()
+        .or(page.locator('text=/Aucune conversation/i'))
+    ).toBeVisible({ timeout: 8_000 });
 
     await context.close();
   });
@@ -152,12 +144,16 @@ test.describe('Pro Messages', () => {
     await page.goto(appUrl('/pro/messages'));
     await expect(page).toHaveURL(/\/pro\/messages/);
 
-    const conversationLink = page.locator('.divide-y a[href*="/messages/"]').first();
-    if ((await conversationLink.count()) > 0) {
-      await conversationLink.click();
-      await page.waitForURL(/\/messages\//, { timeout: 8_000 });
-      await page.waitForTimeout(1_000);
-    }
+    // Opening a conversation implicitly marks it as read (server-side side-effect).
+    // Hard assert: seed guarantees conv1 exists, no conditional branch.
+    const conversationLink = page.locator('a[href*="/messages/"]').first();
+    await expect(conversationLink).toBeVisible({ timeout: 15_000 });
+    await conversationLink.click();
+    await page.waitForURL(/\/messages\//, { timeout: 8_000 });
+
+    // Detail page must be fully functional: input visible proves page mounted and auth OK.
+    const msgInput = page.locator('input[placeholder="Écrire un message"]');
+    await expect(msgInput).toBeVisible({ timeout: 8_000 });
 
     await context.close();
   });

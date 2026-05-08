@@ -152,7 +152,13 @@ function mapMarkerIcons(page: Page) {
 
 async function dismissAdsModalIfPresent(page: Page) {
   const modalHeading = page.getByRole('heading', { name: /Publicités adaptées à tes goûts surf\/kite/i });
-  if (await modalHeading.isVisible().catch(() => false)) {
+  // waitFor polls briefly so a late-appearing modal (rendered after initial paint) is caught.
+  // isVisible() is instantaneous and misses modals that appear after this call.
+  const appeared = await modalHeading
+    .waitFor({ state: 'visible', timeout: 2_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (appeared) {
     const dismissButton = page
       .getByRole('button', { name: /Continuer avec les pubs basiques|Utiliser les pubs limitées/i })
       .first();
@@ -162,7 +168,7 @@ async function dismissAdsModalIfPresent(page: Page) {
 }
 
 async function loadVisibleLessonRequests(page: Page) {
-  await page.waitForTimeout(500);
+  // Callers already waited for .leaflet-container visibility — dismiss modal directly.
   await dismissAdsModalIfPresent(page);
 
   // Disable Leaflet CSS transitions so markers are immediately stable after
@@ -198,21 +204,9 @@ async function loadVisibleLessonRequests(page: Page) {
   ).catch(() => { /* animation may have already ended */ });
 }
 
-async function firstRiderMarker(page: Page) {
-  const markers = mapMarkerIcons(page);
-  const count = await markers.count();
-  if (count === 0) {
-    return null;
-  }
-
-  // mapMarkerIcons now uses .map-marker-item which excludes the center marker,
-  // so the first match is already the first rider marker.
-  return markers.first();
-}
-
-// Seed guarantee: dev+pro1 has lat/lng → /pro/me returns them → geolocEnabled=true.
+// Seed guarantee: dev+pro9 has lat/lng → /pro/me returns them → geolocEnabled=true.
 // Therefore .leaflet-container ALWAYS renders for an authenticated pro with seed data.
-// Lesson-request markers depend on riders searching near the pro location (no seed guarantee).
+// Lesson-request markers are guaranteed by setupLessonFixture() in beforeAll.
 
 test.describe('Pro Map (Blobomap)', () => {
   test.describe.configure({ mode: 'serial' });
@@ -252,18 +246,10 @@ test.describe('Pro Map (Blobomap)', () => {
 
     await loadVisibleLessonRequests(page);
 
+    // loadVisibleLessonRequests guarantees count > 0 via expect.poll on the rider count text.
+    // No conditional needed: if markers are absent here, the fixture failed upstream.
     const markers = mapMarkerIcons(page);
-
-    if (await markers.count() > 0) {
-      expect(await markers.count()).toBeGreaterThan(0);
-    } else {
-      const emptyState = page.locator('text=/aucun.*rider|no.*riders|pas.*demande/i');
-      if (await emptyState.count() > 0) {
-        await expect(emptyState.first()).toBeVisible();
-      }
-
-    }
-    // No else-fail: 0 markers = valid empty state, documented by count display below.
+    expect(await markers.count()).toBeGreaterThan(0);
 
     await context.close();
   });
@@ -277,16 +263,15 @@ test.describe('Pro Map (Blobomap)', () => {
 
     await loadVisibleLessonRequests(page);
 
-    const marker = await firstRiderMarker(page);
-
-    if (marker) {
-      // force: true bypasses "intercepts pointer events" — at high zoom-out levels
-      // (200 km radius) markers can overlap at the same pixel. Leaflet still
-      // receives the click event on the correct element via its own hit-testing.
-      await marker.click({ force: true });
-      // MapComponent renders a Leaflet <Popup> with rider details.
-      await expect(page.locator('.leaflet-popup')).toBeVisible({ timeout: 5000 });
-    }
+    // loadVisibleLessonRequests guarantees markers are present — assertion replaces conditional.
+    const markers = mapMarkerIcons(page);
+    expect(await markers.count()).toBeGreaterThan(0);
+    // force: true bypasses "intercepts pointer events" — at high zoom-out levels
+    // (200 km radius) markers can overlap at the same pixel. Leaflet still
+    // receives the click event on the correct element via its own hit-testing.
+    await markers.first().click({ force: true });
+    // MapComponent renders a Leaflet <Popup> with rider details.
+    await expect(page.locator('.leaflet-popup')).toBeVisible({ timeout: 5000 });
 
     await context.close();
   });
@@ -296,7 +281,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-    await page.waitForTimeout(2000);
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10_000 });
     await dismissAdsModalIfPresent(page);
 
     // Sport buttons are rendered unconditionally — hard assertion preserved from #147.
@@ -314,27 +299,38 @@ test.describe('Pro Map (Blobomap)', () => {
     await context.close();
   });
 
-  test('should filter riders by level', async ({ browser }) => {
+  test.skip('should filter riders by level', async ({ browser }) => {
+    // SKIPPED: the level filter UI (select or buttons) does not exist in the current
+    // /pro/map implementation. This test was a permanent false green before (#147).
+    // Re-enable and implement when the level filter feature is added to the map page.
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-filter-level');
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-
-    await page.waitForTimeout(2000);
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10_000 });
     await dismissAdsModalIfPresent(page);
 
     const levelSelect = page.locator('select').filter({ hasText: /niveau|level/i });
     const levelButtons = page.locator('button').filter({ hasText: /débutant|beginner|intermediate|avancé|advanced/i });
 
-    if (await levelSelect.count() > 0) {
+    if (await levelSelect.count() > 0) { // e2e-lint-ok: inside test.skip, never executes
       const levelValue = await resolveMatchingOptionValue(levelSelect.first(), /débutant|beginner/i);
+      const levelResponse = page.waitForResponse(
+        (resp) => resp.url().includes('/pro/near/lessons') && resp.status() === 200,
+        { timeout: 8_000 },
+      );
       await levelSelect.first().selectOption(levelValue);
-      await page.waitForTimeout(1000);
-    } else if (await levelButtons.count() > 0) {
+      await levelResponse;
+    } else if (await levelButtons.count() > 0) { // e2e-lint-ok: inside test.skip, never executes
+      const levelResponse = page.waitForResponse(
+        (resp) => resp.url().includes('/pro/near/lessons') && resp.status() === 200,
+        { timeout: 8_000 },
+      );
       await levelButtons.first().click();
-      await page.waitForTimeout(1000);
+      await levelResponse;
+    } else {
+      throw new Error('No level filter UI found (neither select nor buttons): implement the feature first');
     }
-
 
     await context.close();
   });
@@ -344,7 +340,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-    await page.waitForTimeout(2000);
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10_000 });
     await dismissAdsModalIfPresent(page);
 
     // Radius input (labeled "Rayon :") is always rendered — hard assertion preserved from #147.
@@ -366,7 +362,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-    await page.waitForTimeout(2000);
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10_000 });
     await dismissAdsModalIfPresent(page);
 
     // Fixture ensures at least 1 rider is visible → hard assertion preserved from #147.
@@ -384,16 +380,15 @@ test.describe('Pro Map (Blobomap)', () => {
 
     await loadVisibleLessonRequests(page);
 
-    const marker = await firstRiderMarker(page);
-
-    if (marker) {
-      // force: true — same rationale as the marker-click test above.
-      await marker.click({ force: true });
-      // Wait for popup to open before looking for the button (Leaflet popup animation).
-      await expect(page.locator('.leaflet-popup')).toBeVisible({ timeout: 5000 });
-      // The MapComponent popup renders a "💬 Contacter" button.
-      await expect(page.getByRole('button', { name: /contacter/i }).first()).toBeVisible({ timeout: 3000 });
-    }
+    // loadVisibleLessonRequests guarantees markers are present — assertion replaces conditional.
+    const markers = mapMarkerIcons(page);
+    expect(await markers.count()).toBeGreaterThan(0);
+    // force: true — same rationale as the marker-click test above.
+    await markers.first().click({ force: true });
+    // Wait for popup to open before looking for the button (Leaflet popup animation).
+    await expect(page.locator('.leaflet-popup')).toBeVisible({ timeout: 5000 });
+    // The MapComponent popup renders a "💬 Contacter" button.
+    await expect(page.getByRole('button', { name: /contacter/i }).first()).toBeVisible({ timeout: 3000 });
 
     await context.close();
   });

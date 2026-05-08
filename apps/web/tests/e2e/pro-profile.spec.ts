@@ -1,7 +1,10 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { loginWithCookieSession } from './helpers/auth';
 
 const PRO_EMAIL = process.env.E2E_PRO_EMAIL ?? 'dev+pro1@test.com';
 const PRO_PASSWORD = process.env.E2E_PRO_PASSWORD ?? 'Passw0rd!';
+const RIDER_EMAIL = process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
+const RIDER_PASSWORD = process.env.E2E_RIDER_PASSWORD ?? 'Passw0rd!';
 const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 
 function testIp(tag: string) {
@@ -15,39 +18,14 @@ function testIp(tag: string) {
   return `10.${a}.${b}.${c ^ d || 42}`;
 }
 
-async function loginViaApi(email: string, password: string) {
-  const apiContext = await playwrightRequest.newContext({
-    baseURL: API_BASE_URL,
-    extraHTTPHeaders: { 'X-Forwarded-For': testIp(`api-${email}`) },
-  });
-
-  const csrfResponse = await apiContext.get('/csrf-token');
-  const csrfJson = (await csrfResponse.json()) as { csrfToken: string };
-
-  const loginResponse = await apiContext.post('/auth/login', {
-    headers: {
-      'X-CSRF-Token': csrfJson.csrfToken,
-    },
-    data: { email, password },
-  });
-
-  if (!loginResponse.ok()) {
-    throw new Error(`API login failed for ${email}: ${loginResponse.status()} ${await loginResponse.text()}`);
-  }
-
-  const tokens = await loginResponse.json();
-  await apiContext.dispose();
-  return tokens as { accessToken: string; refreshToken: string };
-}
-
 test.describe('Pro Profile Management', () => {
   test('should display and update pro profile information', async ({ browser }) => {
     // ── Auth: capture httpOnly session cookies via API request context ──────
-    // loginViaApi uses a standalone APIRequestContext — its cookies are NOT
-    // automatically available to the page context. We must transfer them via
-    // storageState so the browser sends the real httpOnly accessToken cookie.
-    // We also set blob_session_hint so apiClient.getTokens() returns truthy
-    // and ensureAuthenticated() does NOT call router.replace('/login').
+    // Uses a standalone APIRequestContext — its cookies are NOT automatically
+    // available to the page context. We transfer them via storageState so the
+    // browser sends the real httpOnly accessToken cookie on every request.
+    // blob_session_hint='1' is set via addInitScript so apiClient.getTokens()
+    // returns truthy and ensureAuthenticated() does NOT redirect to /login.
     const apiCtx = await playwrightRequest.newContext({
       baseURL: API_BASE_URL,
       extraHTTPHeaders: { 'X-Forwarded-For': testIp('pro-profile-login') },
@@ -122,106 +100,54 @@ test.describe('Pro Profile Management', () => {
   });
 
   test('should upload a profile photo', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-photo-upload'),
-      },
+    const context = await loginWithCookieSession(browser, PRO_EMAIL, {
+      password: PRO_PASSWORD,
+      tag: 'pro-photo-upload',
     });
     const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
 
     await page.goto('/pro/profile');
     await expect(page).toHaveURL(/\/pro\/profile/);
 
-    // Look for photo upload button or input
-    const photoInput = page.locator('input[type="file"]').or(page.getByLabel(/photo|image|logo/i));
-
-    if (await photoInput.count() > 0) {
-      // If photo upload is available, test it
-      await expect(photoInput.first()).toBeVisible();
-      // Note: Actual file upload would require a test file
-      // For now, just verify the input exists
-    }
+    // File input must exist — no conditional (the upload section is always rendered).
+    await expect(page.locator('input[type="file"]').first()).toBeVisible({ timeout: 10_000 });
 
     await context.close();
   });
 
   test('should display location settings', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-location'),
-      },
+    // SKIPPED: location fields (lat/lng/radius) are rendered conditionally based on
+    // the server's pro profile state. Hard-asserting requires a known seed state.
+    // Re-enable when the seed guarantees a geo-located pro1 profile.
+    test.skip(true, 'Location fields rendered conditionally — requires seeded coordinates');
+    const context = await loginWithCookieSession(browser, PRO_EMAIL, {
+      password: PRO_PASSWORD,
+      tag: 'pro-location',
     });
     const page = await context.newPage();
-
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
 
     await page.goto('/pro/profile');
     await expect(page).toHaveURL(/\/pro\/profile/);
 
-    // Verify location fields exist
-    const locationFields = [
-      page.getByLabel(/latitude|lat/i),
-      page.getByLabel(/longitude|lng|lon/i),
-      page.getByLabel(/rayon|radius/i)
-    ];
-
-    for (const field of locationFields) {
-      if (await field.count() > 0) {
-        await expect(field.first()).toBeVisible();
-      }
-    }
+    await expect(page.getByLabel(/latitude|lat/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel(/longitude|lng|lon/i).first()).toBeVisible({ timeout: 10_000 });
 
     await context.close();
   });
 
   test('should display email notification preferences', async ({ browser }) => {
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('pro-notif'),
-      },
+    // SKIPPED: filter({ hasText }) on input[type="checkbox"] matches nothing (checkboxes
+    // have no inner text). Re-enable with a correct selector once the notification
+    // section's exact structure is confirmed (aria-label or adjacent label text).
+    test.skip(true, 'Broken selector: input[type="checkbox"].filter({ hasText }) never matches');
+    const context = await loginWithCookieSession(browser, PRO_EMAIL, {
+      password: PRO_PASSWORD,
+      tag: 'pro-notif',
     });
     const page = await context.newPage();
 
-    const tokens = await loginViaApi(PRO_EMAIL, PRO_PASSWORD);
-    await page.addInitScript(
-      ({ accessToken, refreshToken }) => {
-        window.localStorage.setItem('accessToken', accessToken);
-        window.localStorage.setItem('refreshToken', refreshToken);
-      },
-      tokens
-    );
-
     await page.goto('/pro/profile');
     await expect(page).toHaveURL(/\/pro\/profile/);
-
-    // Look for email notification checkbox
-    const emailNotifCheckbox = page.locator('input[type="checkbox"]').filter({ hasText: /email|notification/i });
-
-    if (await emailNotifCheckbox.count() > 0) {
-      await expect(emailNotifCheckbox.first()).toBeVisible();
-      // Toggle it
-      await emailNotifCheckbox.first().click();
-      // Save
-      const saveButton = page.getByRole('button', { name: /enregistrer|save/i });
-      await saveButton.click();
-      await page.waitForTimeout(1000);
-    }
 
     await context.close();
   });
@@ -236,37 +162,16 @@ test.describe('Pro Profile Security', () => {
   });
 
   test('should not allow RIDER to access pro profile page', async ({ browser }) => {
-    // This test assumes we have a RIDER account set up
-    const RIDER_EMAIL = process.env.E2E_RIDER_EMAIL ?? 'dev+rider1@test.com';
-    const RIDER_PASSWORD = process.env.E2E_RIDER_PASSWORD ?? 'Passw0rd!';
-
-    const context = await browser.newContext({
-      extraHTTPHeaders: {
-        'X-Forwarded-For': testIp('rider-access-pro'),
-      },
+    const context = await loginWithCookieSession(browser, RIDER_EMAIL, {
+      password: RIDER_PASSWORD,
+      tag: 'rider-access-pro',
     });
     const page = await context.newPage();
 
-    try {
-      const tokens = await loginViaApi(RIDER_EMAIL, RIDER_PASSWORD);
-      await page.addInitScript(
-        ({ accessToken, refreshToken }) => {
-          window.localStorage.setItem('accessToken', accessToken);
-          window.localStorage.setItem('refreshToken', refreshToken);
-        },
-        tokens
-      );
+    await page.goto('/pro/profile');
 
-      await page.goto('/pro/profile');
-
-      // Should either redirect to home or show access denied
-      await page.waitForTimeout(2000);
-      const url = page.url();
-      expect(url).not.toContain('/pro/profile');
-    } catch (error) {
-      // Expected to fail if RIDER account doesn't exist
-      console.log('RIDER account test skipped - account not configured');
-    }
+    // RIDER must not access pro routes — wait for server/client redirect
+    await page.waitForURL((url) => !url.pathname.startsWith('/pro/profile'), { timeout: 8_000 });
 
     await context.close();
   });

@@ -157,6 +157,12 @@ jobs:
         # A stub without justification silently hides a missing schema object.
         run: bash scripts/check-migration-stubs.sh
 
+      - name: No E2E anti-patterns (false greens / fragile auth) (block)
+        # Blocks: loginViaApi, localStorage token storage, waitForTimeout,
+        # .divide-y selectors, conditional count() assertions, addCookies in specs.
+        # Inline "// e2e-lint-ok" suppresses a single flagged line.
+        run: bash scripts/check-e2e-antipatterns.sh
+
   lint:
     needs: security-guard
     name: Lint

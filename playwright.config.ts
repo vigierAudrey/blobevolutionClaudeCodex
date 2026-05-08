@@ -47,9 +47,8 @@ export default defineConfig({
   testDir: './apps/web/tests/e2e',
   // auth-verify-flow has its own dedicated config and Mailpit prerequisite.
   testIgnore: ['**/auth-verify-flow.spec.ts'],
-  globalTimeout: process.env.CI ? 20 * 60 * 1000 : undefined,
+  globalTimeout: process.env.CI ? 20 * 60 * 1000 : 10 * 60 * 1000,
   timeout: 45_000,
-  globalTimeout: 10 * 60 * 1000,
   // Avoid root-owned default 'test-results' folder in some environments
   outputDir: 'playwright-out',
   globalSetup: './playwright.global-setup.ts',
@@ -58,7 +57,7 @@ export default defineConfig({
   },
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 1 : 4,
   reporter: process.env.CI
     ? [['github'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
     : 'list',

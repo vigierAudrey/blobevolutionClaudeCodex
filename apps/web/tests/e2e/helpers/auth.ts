@@ -77,9 +77,14 @@ export async function loginWithCookieSession(
     },
   });
 
-  await context.addInitScript((sessionHintKey) => {
-    window.localStorage.setItem(sessionHintKey, '1');
-  }, SESSION_HINT_KEY);
+  await context.addInitScript(
+    ({ sessionHintKey, consent }: { sessionHintKey: string; consent: string }) => {
+      window.localStorage.setItem(sessionHintKey, '1');
+      // Suppress CookieConsent modal (fixed inset-0 z-50) so it never blocks clicks.
+      window.localStorage.setItem('blob_consent', consent);
+    },
+    { sessionHintKey: SESSION_HINT_KEY, consent: MINIMAL_AD_CONSENT },
+  );
 
   if (options.adminSession) {
     await context.addCookies([

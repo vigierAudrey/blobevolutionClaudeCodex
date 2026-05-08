@@ -201,6 +201,13 @@ export default function ProProfilePage() {
       try {
         const t = ensureAuthenticated();
 
+        // Server-side role is the source of truth — RIDER must not stay on PRO-only page.
+        const me = await apiClient.me();
+        if (me.role !== 'PRO') {
+          router.replace('/dashboard');
+          return;
+        }
+
         // ✅ CORRIGÉ : Utiliser apiRequest avec protection CSRF
         const response = await apiRequest('/pro/me', {
           method: 'GET',
@@ -232,7 +239,7 @@ export default function ProProfilePage() {
     };
 
     loadProfile();
-  }, [ensureAuthenticated]);
+  }, [ensureAuthenticated, router]);
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
