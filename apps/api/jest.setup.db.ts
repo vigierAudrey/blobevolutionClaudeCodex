@@ -33,7 +33,9 @@ import { resetDb } from './src/test-utils/resetDb';
 afterEach(async () => {
   // Skip cleanup si le test gère son propre cycle de vie
   const testPath = expect.getState().testPath || '';
-  const skipCleanupPatterns: string[] = [];
+  const skipCleanupPatterns: string[] = [
+    'conversations-archive-purge', // manages its own cleanup via beforeAll/afterAll
+  ];
 
   const shouldSkipCleanup = skipCleanupPatterns.some(pattern => testPath.includes(pattern));
 

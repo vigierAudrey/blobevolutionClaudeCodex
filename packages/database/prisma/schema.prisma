@@ -444,6 +444,10 @@ model ConversationMember {
   lastReadAt     DateTime?
   trashedAt      DateTime?
   favoritedAt    DateTime?
+  /// Null = active. Set by auto-archive when user exceeds 100 active conversations.
+  archivedAt     DateTime?
+  /// Purge deadline: archivedAt + 18 months, or trashedAt + 30 days. Null on active rows.
+  purgeAt        DateTime?
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -451,6 +455,8 @@ model ConversationMember {
   @@index([userId])
   @@index([userId, trashedAt, conversationId])
   @@index([blockedAt, id])
+  @@index([userId, archivedAt])
+  @@index([purgeAt])
 }
 
 model ConversationBlockEvent {

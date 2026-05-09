@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { createHash } from 'crypto';
 import { z, ZodError } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
@@ -11,6 +12,7 @@ import { sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
 import { ERROR_CODES } from '../../utils/error-codes';
 import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { getClientIp } from '../../lib/client-ip';
+import { pollingRateLimit } from '../../middleware/polling-rate-limit';
 import {
   conversationBlockEventService,
   ConversationBlockEventServiceError,
@@ -43,6 +45,8 @@ const conversationMemberSelect = {
   },
   lastReadAt: true,
   trashedAt: true,
+  archivedAt: true,
+  purgeAt: true,
   favoritedAt: true,
   blockedAt: true,
 } as const;
@@ -76,10 +80,13 @@ type ConversationListCursorPayload = {
 };
 
 const conversationsListQuerySchema = z.object({
+  // Legacy param — preserved for backwards compat. `scope` takes precedence if both present.
   includeTrashed: z
     .union([z.boolean(), z.string()])
     .optional()
     .transform((value) => String(value ?? 'false').toLowerCase() === 'true'),
+  // New param: explicit scope filter.
+  scope: z.enum(['active', 'archived', 'trashed', 'all']).optional(),
   type: z.enum(['RIDER_TO_RIDER', 'RIDER_TO_PRO', 'PRO_TO_PRO']).optional(),
   limit: z.coerce.number().int().min(1).max(CONVERSATIONS_MAX_LIMIT).optional().default(CONVERSATIONS_DEFAULT_LIMIT),
   cursor: z.string().optional(),
@@ -123,6 +130,123 @@ function decodeConversationCursor(cursor: string | undefined): { updatedAt: Date
 
   return { updatedAt, conversationId: raw.conversationId };
 }
+
+// ─── Archive / purge policy ────────────────────────────────────────────────────
+
+/** Maximum active conversations per user before auto-archiving the oldest ones. */
+export const ACTIVE_CONVERSATIONS_MAX = 100;
+
+/** Months before an auto-archived conversation member is hard-deleted by the purge job. */
+const ARCHIVE_PURGE_MONTHS = 18;
+
+/**
+ * Max conversations archived per single auto-archive pass.
+ * Bounds the findMany + updateMany to at most 500 rows per GET /conversations call.
+ * Users far above the limit converge progressively across successive calls.
+ */
+export const ARCHIVE_BATCH_CAP = 500;
+
+type ConversationListScope = 'active' | 'archived' | 'trashed' | 'all';
+
+/**
+ * Resolves explicit `scope` param, falling back to legacy `includeTrashed` boolean.
+ * Explicit `scope` always wins.
+ */
+function normalizeConversationScope(
+  scope: ConversationListScope | undefined,
+  includeTrashedLegacy: boolean,
+): ConversationListScope {
+  if (scope) return scope;
+  return includeTrashedLegacy ? 'all' : 'active';
+}
+
+/** WHERE clause fragment for ConversationMember based on scope. */
+function memberScopeWhere(scope: ConversationListScope): Prisma.ConversationMemberWhereInput {
+  switch (scope) {
+    case 'active':   return { archivedAt: null, trashedAt: null };
+    case 'archived': return { archivedAt: { not: null }, trashedAt: null };
+    case 'trashed':  return { trashedAt: { not: null } };
+    case 'all':      return {};
+  }
+}
+
+/**
+ * Auto-archive the oldest active conversations when the user exceeds ACTIVE_CONVERSATIONS_MAX.
+ *
+ * Transaction + double-guard (archivedAt: null, trashedAt: null) prevents TOCTOU races.
+ * ARCHIVE_BATCH_CAP bounds latency: at most 500 rows per call.
+ */
+export async function maybeAutoArchive(userId: string): Promise<number> {
+  const archivedCount = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const activeCount = await tx.conversationMember.count({
+      where: { userId, trashedAt: null, archivedAt: null },
+    });
+    if (activeCount <= ACTIVE_CONVERSATIONS_MAX) return 0;
+
+    const toArchive = Math.min(activeCount - ACTIVE_CONVERSATIONS_MAX, ARCHIVE_BATCH_CAP);
+
+    const oldest = await tx.conversationMember.findMany({
+      where: { userId, trashedAt: null, archivedAt: null },
+      orderBy: [{ conversation: { updatedAt: 'asc' } }, { conversation: { id: 'asc' } }],
+      take: toArchive,
+      select: { id: true },
+    });
+
+    if (oldest.length === 0) return 0;
+
+    const now = new Date();
+    const purgeAt = new Date(now);
+    purgeAt.setMonth(purgeAt.getMonth() + ARCHIVE_PURGE_MONTHS);
+
+    const result = await tx.conversationMember.updateMany({
+      where: { id: { in: oldest.map((m: { id: string }) => m.id) }, archivedAt: null, trashedAt: null },
+      data: { archivedAt: now, purgeAt },
+    });
+    return result.count;
+  });
+
+  if (archivedCount > 0) {
+    secureLogger.info('chat.auto_archive.run', { archived_count: archivedCount });
+  }
+  return archivedCount;
+}
+
+// ─── ETag helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Computes a lightweight ETag fingerprint for GET /conversations.
+ * Uses MAX(updatedAt) + COUNT from ConversationMember — scoped strictly to userId.
+ * Always includes userId in the hash to prevent cross-user collisions.
+ *
+ * Cache-Control: private, no-store is set alongside — CDNs must never cache this.
+ */
+async function computeConversationListETag(
+  userId: string,
+  scope: ConversationListScope,
+  convType: string | undefined,
+): Promise<string> {
+  // Two queries via Prisma ORM — avoids raw SQL fragment nesting ($N numbering bug).
+  // Both queries are scoped strictly to userId — ETags cannot be shared across users.
+  const scopeWhere = memberScopeWhere(scope);
+  const typeWhere = convType
+    ? { conversation: { is: { type: convType as 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' | 'PRO_TO_PRO' } } }
+    : {};
+
+  const [cnt, latest] = await Promise.all([
+    prisma.conversationMember.count({ where: { userId, ...scopeWhere, ...typeWhere } }),
+    prisma.conversationMember.findFirst({
+      where: { userId, ...scopeWhere, ...typeWhere },
+      orderBy: { conversation: { updatedAt: 'desc' } },
+      select: { conversation: { select: { updatedAt: true } } },
+    }),
+  ]);
+
+  const maxTs = latest?.conversation?.updatedAt;
+  const fingerprint = `${userId}:${scope}:${convType ?? ''}:${maxTs?.getTime() ?? 0}:${cnt}`;
+  return `W/"${createHash('sha256').update(fingerprint).digest('hex').slice(0, 32)}"`;
+}
+
+// ─── End archive / ETag helpers ───────────────────────────────────────────────
 
 function buildEnvelopeAwareRateLimitHandler(message: string, code: string, reason: string) {
   return (req: Request, res: Response) => {
@@ -240,11 +364,30 @@ const conversationMessagesPerConversationLimiter = createLazyCustomRateLimiter(
 );
 
 // List conversations with last message + unread count (excludes trashed by default)
-conversationsRouter.get('/', conversationsListLimiter, async (req, res) => {
+// Polling rate limit applied first — avoids requireVerifiedEmail DB lookup on 429.
+conversationsRouter.get('/', pollingRateLimit, conversationsListLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const { includeTrashed, type: convType, limit, cursor } = conversationsListQuerySchema.parse(req.query);
+    const { includeTrashed, scope: rawScope, type: convType, limit, cursor } = conversationsListQuerySchema.parse(req.query);
+
+    const scope = normalizeConversationScope(rawScope, includeTrashed);
+
+    // Auto-archive on active scope: keeps active count ≤ ACTIVE_CONVERSATIONS_MAX.
+    // No-op if count is within limit (fast COUNT-only path).
+    if (scope === 'active') {
+      await maybeAutoArchive(userId);
+    }
+
+    // ETag: computed after auto-archive so the fingerprint reflects current state.
+    // Cache-Control: private — must never be cached by proxies or CDNs.
+    const etag = await computeConversationListETag(userId, scope, convType);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+
     const decodedCursor = decodeConversationCursor(cursor);
 
     const conversationFilters: Prisma.ConversationWhereInput = {};
@@ -266,7 +409,7 @@ conversationsRouter.get('/', conversationsListLimiter, async (req, res) => {
     const convs: ConversationMemberWithRelations[] = await prisma.conversationMember.findMany({
       where: {
         userId,
-        ...(includeTrashed ? {} : { trashedAt: null }),
+        ...memberScopeWhere(scope),
         ...(Object.keys(conversationFilters).length > 0 ? { conversation: { is: conversationFilters } } : {}),
       },
       select: conversationMemberSelect,
@@ -387,6 +530,7 @@ conversationsRouter.get('/', conversationsListLimiter, async (req, res) => {
         lastAt: conv.messages[0]?.createdAt ?? conv.updatedAt,
         unread,
         trashed: !!cm.trashedAt,
+        archived: !!cm.archivedAt,
         favorite: !!cm.favoritedAt,
         blocked: !!cm.blockedAt,
         memberCount,
@@ -1553,6 +1697,70 @@ conversationsRouter.delete('/:id/members/:targetUserId', async (req, res) => {
     return res.json({ ok: true });
   } catch (e) {
     secureLogger.error('CONVERSATIONS_MEMBER_REMOVE_FAILED', { error: e, conversationId: req.params.id });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ─── Archive / restore ────────────────────────────────────────────────────────
+
+// Manually archive a conversation (user's membership only — not the other participant's).
+conversationsRouter.patch('/:id/archive', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const conversationId = req.params.id;
+
+    // Verify membership (prevents IDOR: only archive your own membership)
+    const member = await prisma.conversationMember.findUnique({
+      where: { conversationId_userId: { conversationId, userId } },
+      select: { id: true, archivedAt: true, trashedAt: true },
+    });
+
+    if (!member) return res.status(404).json({ error: 'Conversation not found' });
+    if (member.trashedAt) return res.status(400).json({ error: 'Cannot archive a trashed conversation' });
+    if (member.archivedAt) return res.status(409).json({ error: 'Already archived' });
+
+    const now = new Date();
+    const purgeAt = new Date(now);
+    purgeAt.setMonth(purgeAt.getMonth() + 18);
+
+    await prisma.conversationMember.update({
+      where: { id: member.id },
+      data: { archivedAt: now, purgeAt },
+    });
+
+    return res.json({ ok: true, archivedAt: now });
+  } catch (e) {
+    secureLogger.error('CONVERSATIONS_ARCHIVE_FAILED', { error: e, conversationId: req.params.id });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Restore an archived conversation back to active.
+conversationsRouter.patch('/:id/restore', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const conversationId = req.params.id;
+
+    const member = await prisma.conversationMember.findUnique({
+      where: { conversationId_userId: { conversationId, userId } },
+      select: { id: true, archivedAt: true, trashedAt: true },
+    });
+
+    if (!member) return res.status(404).json({ error: 'Conversation not found' });
+    if (!member.archivedAt && !member.trashedAt) return res.status(409).json({ error: 'Conversation is already active' });
+
+    await prisma.conversationMember.update({
+      where: { id: member.id },
+      data: { archivedAt: null, trashedAt: null, purgeAt: null },
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    secureLogger.error('CONVERSATIONS_RESTORE_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
