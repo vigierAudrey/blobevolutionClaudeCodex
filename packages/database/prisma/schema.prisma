@@ -456,7 +456,9 @@ model ConversationMember {
   @@index([userId, trashedAt, conversationId])
   @@index([blockedAt, id])
   @@index([userId, archivedAt])
-  @@index([purgeAt])
+  // purgeAt: partial index managed via migration SQL (WHERE purgeAt IS NOT NULL).
+  // Prisma does not support partial index syntax in schema.prisma — declaring @@index([purgeAt])
+  // here would cause migrate diff to report a spurious drift (full vs partial index mismatch).
 }
 
 model ConversationBlockEvent {
