@@ -2,7 +2,8 @@
  * Guard CI test: Ensures all P1 outbound socket emits are validated with Zod
  *
  * This test prevents regressions where someone removes Zod validation before emit.
- * It's a targeted guard that only checks the 5 specific P1 emit sites identified in the audit.
+ * It's a targeted guard that only checks the 2 active P1 emit sites in socket.ts.
+ * (new-match / match-decision / new-matching-card were removed as dead code in 1db1fac)
  *
  * NOT a global ESLint rule (which could have false positives).
  */
@@ -64,18 +65,6 @@ describe('Socket Outbound Validation Guard (P1 Critical Events)', () => {
     assertEmitHasValidation('user-typing', 'userTypingOutboundSchema');
   });
 
-  it('should validate new-match emit with newMatchOutboundSchema', () => {
-    assertEmitHasValidation('new-match', 'newMatchOutboundSchema');
-  });
-
-  it('should validate match-decision emit with matchDecisionOutboundSchema', () => {
-    assertEmitHasValidation('match-decision', 'matchDecisionOutboundSchema');
-  });
-
-  it('should validate new-matching-card emit with newMatchingCardOutboundSchema', () => {
-    assertEmitHasValidation('new-matching-card', 'newMatchingCardOutboundSchema');
-  });
-
   // ============================================================================
   // Verification: Schemas are imported
   // ============================================================================
@@ -84,9 +73,6 @@ describe('Socket Outbound Validation Guard (P1 Critical Events)', () => {
     const requiredSchemas = [
       'newMessageOutboundSchema',
       'userTypingOutboundSchema',
-      'newMatchOutboundSchema',
-      'matchDecisionOutboundSchema',
-      'newMatchingCardOutboundSchema'
     ];
 
     for (const schema of requiredSchemas) {
@@ -103,8 +89,8 @@ describe('Socket Outbound Validation Guard (P1 Critical Events)', () => {
     const p1MarkerPattern = /✅ P1: Validate outbound payload with Zod before emit/g;
     const p1Markers = [...socketFileContent.matchAll(p1MarkerPattern)];
 
-    // Should have 5 P1 markers (one for each critical event)
-    expect(p1Markers.length).toBe(5);
+    // Should have 2 P1 markers (one for each active critical event: new-message, user-typing)
+    expect(p1Markers.length).toBe(2);
   });
 
   // ============================================================================
@@ -115,9 +101,6 @@ describe('Socket Outbound Validation Guard (P1 Critical Events)', () => {
     const criticalEvents = [
       'new-message',
       'user-typing',
-      'new-match',
-      'match-decision',
-      'new-matching-card'
     ];
 
     for (const eventName of criticalEvents) {

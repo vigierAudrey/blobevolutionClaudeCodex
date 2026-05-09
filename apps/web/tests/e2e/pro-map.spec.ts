@@ -301,7 +301,7 @@ test.describe('Pro Map (Blobomap)', () => {
 
   // Level filter UI does not exist in the current /pro/map implementation (#147).
   // Re-enable and implement when the level filter feature is added to the map page.
-  test.todo('should filter riders by level — level filter UI not yet implemented in /pro/map (#147)');
+  test.skip('should filter riders by level — level filter UI not yet implemented in /pro/map (#147)', () => {});
 
   test('should adjust map radius/distance filter', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-radius');

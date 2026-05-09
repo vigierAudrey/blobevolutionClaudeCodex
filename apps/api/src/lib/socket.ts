@@ -18,10 +18,7 @@ import {
   validateSocketPayload,
   SocketErrorCode,
   newMessageOutboundSchema,
-  userTypingOutboundSchema,
-  newMatchOutboundSchema,
-  matchDecisionOutboundSchema,
-  newMatchingCardOutboundSchema
+  userTypingOutboundSchema
 } from './socket-schemas';
 import {
   RATE_LIMIT_ENABLED,
