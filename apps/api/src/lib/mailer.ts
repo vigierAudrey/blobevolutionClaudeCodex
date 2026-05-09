@@ -68,7 +68,7 @@ export async function sendMail(mail: Mail) {
   }
 }
 
-export function buildWebUrl(pathname: string, params?: Record<string, string>) {
+function buildWebUrl(pathname: string, params?: Record<string, string>) {
   const base = process.env.WEB_BASE_URL || 'http://localhost:3002';
   const url = new URL(pathname.startsWith('/') ? pathname : `/${pathname}`, base);
   if (params) {

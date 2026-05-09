@@ -299,41 +299,9 @@ test.describe('Pro Map (Blobomap)', () => {
     await context.close();
   });
 
-  test.skip('should filter riders by level', async ({ browser }) => {
-    // SKIPPED: the level filter UI (select or buttons) does not exist in the current
-    // /pro/map implementation. This test was a permanent false green before (#147).
-    // Re-enable and implement when the level filter feature is added to the map page.
-    const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-filter-level');
-    await setupConsent(page);
-    await page.goto(appUrl('/pro/map'));
-    await expect(page).toHaveURL(/\/pro\/map/);
-    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10_000 });
-    await dismissAdsModalIfPresent(page);
-
-    const levelSelect = page.locator('select').filter({ hasText: /niveau|level/i });
-    const levelButtons = page.locator('button').filter({ hasText: /débutant|beginner|intermediate|avancé|advanced/i });
-
-    if (await levelSelect.count() > 0) { // e2e-lint-ok: inside test.skip, never executes
-      const levelValue = await resolveMatchingOptionValue(levelSelect.first(), /débutant|beginner/i);
-      const levelResponse = page.waitForResponse(
-        (resp) => resp.url().includes('/pro/near/lessons') && resp.status() === 200,
-        { timeout: 8_000 },
-      );
-      await levelSelect.first().selectOption(levelValue);
-      await levelResponse;
-    } else if (await levelButtons.count() > 0) { // e2e-lint-ok: inside test.skip, never executes
-      const levelResponse = page.waitForResponse(
-        (resp) => resp.url().includes('/pro/near/lessons') && resp.status() === 200,
-        { timeout: 8_000 },
-      );
-      await levelButtons.first().click();
-      await levelResponse;
-    } else {
-      throw new Error('No level filter UI found (neither select nor buttons): implement the feature first');
-    }
-
-    await context.close();
-  });
+  // Level filter UI does not exist in the current /pro/map implementation (#147).
+  // Re-enable and implement when the level filter feature is added to the map page.
+  test.todo('should filter riders by level — level filter UI not yet implemented in /pro/map (#147)');
 
   test('should adjust map radius/distance filter', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-radius');

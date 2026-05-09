@@ -116,10 +116,7 @@ test.describe('Pro Profile Management', () => {
   });
 
   test('should display location settings', async ({ browser }) => {
-    // SKIPPED: location fields (lat/lng/radius) are rendered conditionally based on
-    // the server's pro profile state. Hard-asserting requires a known seed state.
-    // Re-enable when the seed guarantees a geo-located pro1 profile.
-    test.skip(true, 'Location fields rendered conditionally — requires seeded coordinates');
+    // Pro1 seed always sets lat/lng — "Position active" is guaranteed to render.
     const context = await loginWithCookieSession(browser, PRO_EMAIL, {
       password: PRO_PASSWORD,
       tag: 'pro-location',
@@ -129,17 +126,16 @@ test.describe('Pro Profile Management', () => {
     await page.goto('/pro/profile');
     await expect(page).toHaveURL(/\/pro\/profile/);
 
-    await expect(page.getByLabel(/latitude|lat/i).first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByLabel(/longitude|lng|lon/i).first()).toBeVisible({ timeout: 10_000 });
+    // Geolocation section heading is always rendered (not conditional)
+    await expect(page.getByRole('heading', { name: /géolocalisation/i })).toBeVisible({ timeout: 10_000 });
+    // Pro1 seed always has lat/lng → "Position active" block is rendered
+    await expect(page.getByText('Position active')).toBeVisible({ timeout: 5_000 });
 
     await context.close();
   });
 
   test('should display email notification preferences', async ({ browser }) => {
-    // SKIPPED: filter({ hasText }) on input[type="checkbox"] matches nothing (checkboxes
-    // have no inner text). Re-enable with a correct selector once the notification
-    // section's exact structure is confirmed (aria-label or adjacent label text).
-    test.skip(true, 'Broken selector: input[type="checkbox"].filter({ hasText }) never matches');
+    // Checkbox #notif is tied to its label via htmlFor — use getByRole for robust selection.
     const context = await loginWithCookieSession(browser, PRO_EMAIL, {
       password: PRO_PASSWORD,
       tag: 'pro-notif',
@@ -148,6 +144,10 @@ test.describe('Pro Profile Management', () => {
 
     await page.goto('/pro/profile');
     await expect(page).toHaveURL(/\/pro\/profile/);
+
+    // Targets <input id="notif"> via associated <Label htmlFor="notif"> text
+    const emailCheckbox = page.getByRole('checkbox', { name: /recevoir des emails pour les nouvelles demandes/i });
+    await expect(emailCheckbox).toBeVisible({ timeout: 10_000 });
 
     await context.close();
   });

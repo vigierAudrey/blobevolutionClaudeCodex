@@ -968,13 +968,6 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
   return io;
 }
 
-/**
- * Récupère l'instance Socket.io (pour utilisation dans d'autres modules)
- */
-export function getSocketIO(): SocketIOServer | null {
-  return io;
-}
-
 export function getSocketHardeningMetrics() {
   return {
     preAuthRateLimit: getPreAuthRateLimitMetrics(),
@@ -998,73 +991,6 @@ export function notifyUser(userId: string, event: string, data: any) {
   });
 }
 
-/**
- * Envoie une notification à tous les membres d'une conversation
- */
-export function notifyConversation(conversationId: string, event: string, data: any) {
-  runWithWsLogContext('ws:notify-conversation', undefined, () => {
-    if (!io) {
-      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_CONVERSATION', { event });
-      return;
-    }
-
-    io.to(`conversation:${conversationId}`).emit(event, data);
-  });
-}
-
-/**
- * Notifie un utilisateur qu'il a un nouveau match
- */
-export function notifyNewMatch(userId: string, matchData: {
-  matchId: string;
-  conversationId?: string;
-  otherUser: {
-    id: string;
-    displayName: string;
-    photoUrl?: string | null;
-  };
-}) {
-  runWithWsLogContext('ws:notify-new-match', userId, () => {
-    if (!io) {
-      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCH');
-      return;
-    }
-
-    // ✅ P1: Validate outbound payload with Zod before emit
-    const newMatchPayload = newMatchOutboundSchema.parse(matchData);
-    io.to(`user:${userId}`).emit('new-match', newMatchPayload);
-    secureLogger.info('WS_NOTIFY_NEW_MATCH', { userId: shortId(userId) });
-  });
-}
-
-/**
- * Notifie les utilisateurs qu'une nouvelle carte de matching est disponible
- * Envoie à tous les users qui correspondent aux critères (sport, level, zone)
- */
-export function notifyNewMatchingCard(criteria: {
-  sport: string;
-  level: string;
-  location?: { lat: number; lng: number };
-  distanceKm?: number;
-  profileId: string;
-}) {
-  runWithWsLogContext('ws:notify-new-matching-card', undefined, () => {
-    if (!io) {
-      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCHING_CARD');
-      return;
-    }
-
-    // Broadcast à tous les utilisateurs connectés (ils filtreront côté client)
-    // ✅ P1: Validate outbound payload with Zod before emit
-    const newMatchingCardPayload = newMatchingCardOutboundSchema.parse({
-      sport: criteria.sport,
-      level: criteria.level,
-      profileId: criteria.profileId
-    });
-    io.emit('new-matching-card', newMatchingCardPayload);
-    secureLogger.info('WS_NOTIFY_NEW_MATCHING_CARD', { profileId: shortId(criteria.profileId) });
-  });
-}
 
 /**
  * Déconnecte de force toutes les connexions WebSocket d'un utilisateur.
@@ -1087,31 +1013,6 @@ export function disconnectUserSockets(userId: string, reason?: string): void {
     secureLogger.info('WS_USER_SOCKETS_DISCONNECTED', {
       userId: shortId(userId),
       reason: reason ?? 'admin-forced-disconnect',
-    });
-  });
-}
-
-/**
- * Notifie qu'une décision de match a été prise (accept/decline)
- */
-export function notifyMatchDecision(targetUserId: string, decision: {
-  actorUserId: string;
-  decision: 'ACCEPT' | 'DECLINE';
-  mutualMatch: boolean;
-  conversationId?: string;
-}) {
-  runWithWsLogContext('ws:notify-match-decision', targetUserId, () => {
-    if (!io) {
-      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_MATCH_DECISION');
-      return;
-    }
-
-    // ✅ P1: Validate outbound payload with Zod before emit
-    const matchDecisionPayload = matchDecisionOutboundSchema.parse(decision);
-    io.to(`user:${targetUserId}`).emit('match-decision', matchDecisionPayload);
-    secureLogger.info('WS_NOTIFY_MATCH_DECISION', {
-      targetUserId: shortId(targetUserId),
-      decision: decision.decision
     });
   });
 }

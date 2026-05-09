@@ -30,8 +30,6 @@
     "build:api": "pnpm --filter @blobinfini/api build",
     "build:web": "pnpm run db:generate && pnpm --filter @blobinfini/web build",
     "type-check": "pnpm --filter @blobinfini/api type-check && pnpm --filter @blobinfini/web type-check",
-    "type-check:legacy": "tsc -p tsconfig.base.json && tsc -p apps/api/tsconfig.json",
-    "//": "⚠️  DO NOT use type-check:legacy in CI. Use workspace-specific scripts instead: pnpm --filter @blobinfini/web type-check && pnpm --filter @blobinfini/api type-check",
     "db:generate": "pnpm --filter @blobinfini/database generate",
     "db:migrate": "pnpm --filter @blobinfini/database migrate",
     "db:migrate:deploy": "pnpm --filter @blobinfini/database migrate:deploy",

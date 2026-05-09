@@ -151,7 +151,7 @@ function hasCoordinatePair(input: FranceLaunchLocationInput): input is FranceLau
   return typeof input.lat === 'number' && typeof input.lng === 'number';
 }
 
-export function normalizeCountryCode(countryCode?: string | null): string | null {
+function normalizeCountryCode(countryCode?: string | null): string | null {
   if (typeof countryCode !== 'string') return null;
   const normalized = countryCode.trim().toUpperCase();
   return normalized.length === 2 ? normalized : null;
@@ -186,7 +186,7 @@ export function assertFranceLaunchLocation(location?: CoordinatePair | null): vo
   }
 }
 
-export function assertFranceLaunchLocationPresence(hasLat: boolean, hasLng: boolean): void {
+function assertFranceLaunchLocationPresence(hasLat: boolean, hasLng: boolean): void {
   if (hasLat !== hasLng) {
     throw createFranceLaunchGuardError(
       400,
