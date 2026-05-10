@@ -30,6 +30,11 @@ services:
   postgres:
     image: postgis/postgis:15-3.4
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       POSTGRES_USER:     ${POSTGRES_USER:-blobinfini_pvps}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -113,6 +118,11 @@ services:
       context: .
       dockerfile: docker/api.production.Dockerfile
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     env_file: .env.pre-vps
     environment:
       # Ces variables surchargent .env.pre-vps avec les noms d'hôtes Docker internes
@@ -152,6 +162,11 @@ services:
       args:
         NEXT_PUBLIC_API_URL: "https://api.blobinfini.local"
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     env_file: .env.pre-vps
     environment:
       PORT: "3000"
@@ -173,6 +188,11 @@ services:
   nginx:
     image: nginx:alpine
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - pre-vps
     ports:

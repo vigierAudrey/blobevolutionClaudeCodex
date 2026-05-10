@@ -87,6 +87,8 @@ require_var "JWT_SECRET" 64
 require_var "JWT_REFRESH_SECRET" 64
 require_var "TWO_FACTOR_SECRET" 16
 require_var "IP_HASH_SECRET" 16
+require_var "EMAIL_HASH_SECRET" 16
+forbidden_value "EMAIL_HASH_SECRET" "CHANGEME_email_hash_secret_32chars_minimum_xxxxxxxxxx_different_from_ip"
 require_var "CONSENT_WRITE_SECRET" 64
 require_var "LOG_ACTOR_SECRET" 64
 
@@ -94,6 +96,12 @@ require_var "LOG_ACTOR_SECRET" 64
 if [ -n "${IP_HASH_SECRET:-}" ] && [ -n "${TWO_FACTOR_SECRET:-}" ]; then
   if [ "${IP_HASH_SECRET}" = "${TWO_FACTOR_SECRET}" ]; then
     echo "COLLISION : IP_HASH_SECRET et TWO_FACTOR_SECRET identiques"
+    ERRORS=$((ERRORS + 1))
+  fi
+fi
+if [ -n "${EMAIL_HASH_SECRET:-}" ] && [ -n "${IP_HASH_SECRET:-}" ]; then
+  if [ "${EMAIL_HASH_SECRET}" = "${IP_HASH_SECRET}" ]; then
+    echo "COLLISION : EMAIL_HASH_SECRET et IP_HASH_SECRET identiques"
     ERRORS=$((ERRORS + 1))
   fi
 fi
@@ -129,6 +137,14 @@ forbidden_value "METRICS_INTERNAL_TOKEN" "CHANGEME_metrics_token_32chars_minimum
 # Header distinct de METRICS_INTERNAL_TOKEN — ne pas confondre.
 require_var "SECURITY_MONITOR_TOKEN" 16
 forbidden_value "SECURITY_MONITOR_TOKEN" "CHANGEME_security_monitor_token_32chars"
+
+# ─── GDPR ─────────────────────────────────────────────────────────────────────
+echo "--- GDPR ---"
+# ANONYMIZATION_SALT : hachage RGPD dans booking-archive.ts et gdpr-purge.service.ts.
+# Fallback insécure 'blobinfini-gdpr-salt' si absent — toujours définir explicitement.
+require_var "ANONYMIZATION_SALT" 16
+forbidden_value "ANONYMIZATION_SALT" "CHANGEME_gdpr_anonymization_salt_32chars_xxxxxxxxxx"
+forbidden_value "ANONYMIZATION_SALT" "blobinfini-gdpr-salt"
 
 # ─── Frontend ─────────────────────────────────────────────────────────────────
 echo "--- Frontend ---"
