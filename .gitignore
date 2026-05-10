@@ -20,3 +20,10 @@ apps/api/apps/
 # Pré-VPS : certs mkcert locaux (jamais commiter)
 docker/certs/pre-vps/
 docker/certs/vps/
+
+# Backups PostgreSQL (ne jamais commiter — contiennent des données)
+# Par défaut les backups vont dans $HOME/backups/ (hors repo).
+# Cette entrée est un filet de sécurité si BACKUP_DIR est mal configuré.
+backups/
+*.sql.gz
+*.sql.bak
