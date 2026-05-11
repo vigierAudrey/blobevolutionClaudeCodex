@@ -12,10 +12,10 @@
  * pour garantir que getRedisClient() retourne un client connecté.
  */
 
+import RedisStore from 'connect-redis';
 import type { Store } from 'express-session';
-import { RedisStore } from 'connect-redis';
-import { getRedisClient } from './redis-client';
 import { secureLogger } from '../utils/secure-logger';
+import { getRedisClient } from './redis-client';
 
 export function buildSessionStore(): Store | undefined {
   const client = getRedisClient();

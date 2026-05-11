@@ -25,7 +25,8 @@ jest.mock('../redis-client', () => ({
 }));
 
 jest.mock('connect-redis', () => ({
-  RedisStore: jest.fn().mockImplementation(() => ({ __redis: true })),
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({ __redis: true })),
 }));
 
 const { getRedisClient } = require('../redis-client') as { getRedisClient: jest.Mock };
@@ -58,7 +59,8 @@ describe('buildSessionStore()', () => {
     jest.resetModules();
     jest.mock('../redis-client', () => ({ getRedisClient: jest.fn().mockReturnValue(fakeClient) }));
     jest.mock('connect-redis', () => ({
-      RedisStore: jest.fn().mockImplementation(() => ({ __redis: true })),
+      __esModule: true,
+      default: jest.fn().mockImplementation(() => ({ __redis: true })),
     }));
     jest.mock('../../utils/secure-logger', () => ({
       secureLogger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), security: jest.fn(), debug: jest.fn() },
