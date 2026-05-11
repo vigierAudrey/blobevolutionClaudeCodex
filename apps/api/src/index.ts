@@ -41,6 +41,9 @@ import { runJobWithLogContext, withHttpLogContext } from './observability/log-co
 import { registerLogTransportShutdownHandlers, getLogTransportMetrics } from './observability/log-transport';
 import { getMatchingMetricsSnapshot } from './lib/matching-metrics';
 import { incHttpRequest, incHttp5xx, recordHttpLatency, isExcludedPath, getHttpMetricsSnapshot } from './lib/http-metrics';
+import { httpAccessLog } from './middleware/http-access-log';
+import { buildSessionStore } from './lib/session-store';
+import { redisClientInitPromise } from './lib/redis-client';
 
 const RAW_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -308,10 +311,12 @@ export function createApp() {
     return 'blobinfini-dev-secret-change-in-production';
   })();
 
+  const sessionStoreInstance = buildSessionStore();
   app.use(session({
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
+    store: sessionStoreInstance,
     cookie: {
       secure: process.env.NODE_ENV === 'production', // HTTPS only in production
       httpOnly: true,
@@ -464,15 +469,8 @@ export function createApp() {
   // Apply CSRF protection to all routes
   app.use(csrfProtection);
 
-  // Simple request logging for debugging (P2-9: Use secureLogger to prevent logging sensitive query params)
-  app.use((req, _res, next) => {
-    secureLogger.info('HTTP_REQUEST', {
-      method: req.method,
-      path: req.path, // Path only (no query params)
-      // Query params are automatically redacted by secureLogger if they contain sensitive keys
-    });
-    next();
-  });
+  // HTTP access log — method, path, status, duration_ms, request_id, actor_ref (no PII).
+  app.use(httpAccessLog);
 
   // HTTP metrics middleware — no PII, no payload.
   // Excluded paths (health, /internal/metrics, etc.) are not counted to avoid
@@ -572,40 +570,51 @@ export const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) =>
   res.status(500).json({ error: 'Internal server error' });
 };
 
-const app = createApp();
-
 if (process.env.NODE_ENV !== 'test') {
+  // Attendre que Redis soit connecté avant de créer l'app et d'écouter.
+  // En production : redis-client.ts appelle process.exit(1) si Redis échoue,
+  // donc la promesse ne résout que si Redis est disponible.
+  // En dev : la promesse résout après 5s max (timeout + memory fallback accepté).
   registerLogTransportShutdownHandlers();
-  const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
-  // Create HTTP server for both Express and Socket.io
-  const httpServer = createServer(app);
+  redisClientInitPromise.then(() => {
+    const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
-  // Initialize Socket.io
-  const { initializeSocket } = require('./lib/socket');
-  initializeSocket(httpServer);
+    // createApp() est appelé APRÈS Redis init : buildSessionStore() retourne RedisStore.
+    const app = createApp();
 
-  // Load 2FA Lua script into Redis for EVALSHA optimization
-  // This improves 2FA verification performance by ~30%
-  import('./services/two-factor.service.js').then(({ loadLuaScript }) => {
-    loadLuaScript().catch((error: unknown) => {
-      secureLogger.error('STARTUP_LUA_SCRIPT_LOAD_FAILED', {
+    // Create HTTP server for both Express and Socket.io
+    const httpServer = createServer(app);
+
+    // Initialize Socket.io
+    const { initializeSocket } = require('./lib/socket');
+    initializeSocket(httpServer);
+
+    // Load 2FA Lua script into Redis for EVALSHA optimization
+    // This improves 2FA verification performance by ~30%
+    import('./services/two-factor.service.js').then(({ loadLuaScript }) => {
+      loadLuaScript().catch((error: unknown) => {
+        secureLogger.error('STARTUP_LUA_SCRIPT_LOAD_FAILED', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+    }).catch((error: unknown) => {
+      secureLogger.error('STARTUP_LUA_SCRIPT_IMPORT_FAILED', {
         error: error instanceof Error ? error.message : String(error)
       });
     });
-  }).catch((error: unknown) => {
-    secureLogger.error('STARTUP_LUA_SCRIPT_IMPORT_FAILED', {
-      error: error instanceof Error ? error.message : String(error)
-    });
-  });
 
-  httpServer.listen(port, () => {
-    secureLogger.info('API_SERVER_READY', {
-      port,
-      env: process.env.NODE_ENV ?? 'development',
+    httpServer.listen(port, () => {
+      secureLogger.info('API_SERVER_READY', {
+        port,
+        env: process.env.NODE_ENV ?? 'development',
+      });
+      secureLogger.info('WEBSOCKET_SERVER_READY', { port });
     });
-    secureLogger.info('WEBSOCKET_SERVER_READY', { port });
+  }).catch((error: unknown) => {
+    secureLogger.error('STARTUP_REDIS_INIT_FAILED', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    process.exit(1);
   });
 }
-
-export default app;

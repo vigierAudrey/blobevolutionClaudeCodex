@@ -26,6 +26,9 @@ BACKUP_MIN_BYTES="${BACKUP_MIN_BYTES:-1024}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 DC_PROJECT="${DC_PROJECT:-blobconnect-pre-vps}"
 ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env.pre-vps}"
+# BACKUP_PREFIX : préfixe du nom de fichier et du glob de rotation.
+# Surcharger pour différencier les stacks (ex: blobsurf_vps).
+BACKUP_PREFIX="${BACKUP_PREFIX:-blobconnect_prevps}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -79,7 +82,7 @@ chmod 700 "$BACKUP_DIR_ABS"
 
 # ─── Nommage horodaté ─────────────────────────────────────────────────────────
 TIMESTAMP=$(date -u '+%Y-%m-%d_%H%M%S_UTC')
-BACKUP_FILE="$BACKUP_DIR_ABS/blobconnect_prevps_${TIMESTAMP}.sql.gz"
+BACKUP_FILE="$BACKUP_DIR_ABS/${BACKUP_PREFIX}_${TIMESTAMP}.sql.gz"
 BACKUP_TEMP="${BACKUP_FILE}.tmp"
 PGPASS_IN_CONTAINER="/tmp/.pgbk_${TIMESTAMP//[^0-9]/}"
 
@@ -159,15 +162,15 @@ while IFS= read -r -d '' old; do
   rm -f "$old"
   (( DELETED++ )) || true
 done < <(find "$BACKUP_DIR_ABS" -maxdepth 1 \
-           -name 'blobconnect_prevps_*.sql.gz' \
+           -name "${BACKUP_PREFIX}_*.sql.gz" \
            -mtime +"$BACKUP_RETENTION_DAYS" -print0 2>/dev/null)
 
-REMAINING=$(find "$BACKUP_DIR_ABS" -maxdepth 1 -name 'blobconnect_prevps_*.sql.gz' | wc -l)
+REMAINING=$(find "$BACKUP_DIR_ABS" -maxdepth 1 -name "${BACKUP_PREFIX}_*.sql.gz" | wc -l)
 
 log "=== Backup terminé avec succès ==="
 log "  Fichier   : $BACKUP_FILE"
 log "  Taille    : ${BACKUP_SIZE} bytes"
 log "  Conservés : $REMAINING (rotation: $DELETED supprimé(s))"
-log "  Valider   : ./scripts/restore-pg.sh $BACKUP_FILE"
+log "  Valider   : ./scripts/restore-blobsurf.sh $BACKUP_FILE  # (ou restore-pg.sh pour pre-vps)"
 
 trap - EXIT
