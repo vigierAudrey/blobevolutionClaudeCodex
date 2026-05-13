@@ -57,6 +57,10 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
       }));
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       base = require('../auth.controller').ADMIN_SESSION_COOKIE_BASE as Record<string, unknown>;
+      // Stop the setInterval started by socket-auth-cache in this isolated context
+      // (NODE_ENV=production activates the timer; must be stopped on the same instance).
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require('../../../lib/socket-auth-cache').stopAuthCacheCleanup();
     });
 
     process.env.NODE_ENV = originalEnv.NODE_ENV;
@@ -100,6 +104,8 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
       }));
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       base = require('../auth.controller').ADMIN_SESSION_COOKIE_BASE as Record<string, unknown>;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require('../../../lib/socket-auth-cache').stopAuthCacheCleanup();
     });
 
     process.env.NODE_ENV = originalEnv.NODE_ENV;
@@ -138,6 +144,8 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
       }));
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       base = require('../auth.controller').ADMIN_SESSION_COOKIE_BASE as Record<string, unknown>;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require('../../../lib/socket-auth-cache').stopAuthCacheCleanup();
     });
 
     process.env.NODE_ENV = originalEnv.NODE_ENV;
@@ -292,10 +300,6 @@ describe('admin_session — clearCookie options cohérentes avec setCookie', () 
   });
 
   afterAll(() => {
-    try {
-      // Cleanup any timer leaks from isolateModules
-      const { stopAuthCacheCleanup } = require('../../../lib/socket-auth-cache');
-      stopAuthCacheCleanup();
-    } catch { /* best effort */ }
+    // Timers from isolateModules are stopped inline in each it() block above.
   });
 });

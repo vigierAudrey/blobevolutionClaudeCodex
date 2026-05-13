@@ -56,6 +56,7 @@ describe('/security/health endpoint', () => {
       env: expect.stringMatching(/^(ok|fail)$/),
       db: expect.stringMatching(/^(ok|fail)$/),
       redis: expect.stringMatching(/^(ok|fail)$/),
+      smtp: expect.stringMatching(/^(ok|fail)$/),
     });
   });
 });
