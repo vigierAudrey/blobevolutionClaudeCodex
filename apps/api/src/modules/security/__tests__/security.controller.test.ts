@@ -34,6 +34,7 @@ describe('Security Controller', () => {
 
       expect(response.body).toHaveProperty('status');
       expect(response.body).toHaveProperty('checks');
+      expect(response.body.checks).toHaveProperty('smtp');
     } finally {
       if (previous === undefined) {
         delete process.env.SECURITY_MONITOR_TOKEN;
@@ -104,6 +105,17 @@ describe('Security Controller', () => {
           dropped: expect.any(Number),
           failed: expect.any(Number),
           breakerState: expect.stringMatching(/^(closed|open|half-open)$/),
+        },
+        email: {
+          email_sent_total: expect.any(Number),
+          email_failed_total: expect.any(Number),
+          email_timeout_total: expect.any(Number),
+          email_latency_ms: {
+            p50: expect.any(Number),
+            p95: expect.any(Number),
+            p99: expect.any(Number),
+          },
+          by_type: expect.any(Object),
         },
       });
       expect(response.body.pipeline.queued).toBeGreaterThan(0);

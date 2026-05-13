@@ -8,7 +8,7 @@
 #   4. Entrée /etc/hosts (optionnelle avec --hosts)
 #   5. Reset volumes (optionnel avec --reset)
 #   6. Build des images Docker production
-#   7. Démarrage infrastructure (postgres, redis, minio, mailpit)
+#   7. Démarrage infrastructure (postgres, redis, minio)
 #   8. Configuration MinIO : bucket + policy GET anonyme
 #   9. Migration Prisma (migrate deploy — jamais db push)
 #  10. Seed des comptes de test stables
@@ -181,9 +181,9 @@ else
   fi
 fi
 
-# ─── 7. Démarrage infra (postgres, redis, minio, mailpit) ────────────────────
+# ─── 7. Démarrage infra (postgres, redis, minio) ─────────────────────────────
 log "7. Démarrage de l'infrastructure..."
-$DC up -d postgres redis minio mailpit
+$DC up -d postgres redis minio
 
 log "   Attente postgres..."
 timeout 60 bash -c "until $DC exec -T postgres pg_isready -U ${POSTGRES_USER:-blobinfini_vps} >/dev/null 2>&1; do sleep 2; done" \

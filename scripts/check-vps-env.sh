@@ -10,6 +10,7 @@
 #   - S3_PRESIGN_ENDPOINT ne contient PAS localhost (cassant sur VPS réel)
 #   - S3_PUBLIC_URL_BASE ne contient PAS localhost (idem)
 #   - STORAGE_DOMAIN défini et non-localhost (si utilisé)
+#   - SMTP Brevo obligatoire, authentifié, sans fallback Mailpit
 #   - Certs VPS présents pour les 3 domaines (api, app, storage)
 
 set -euo pipefail
@@ -191,6 +192,38 @@ require_var "METRICS_INTERNAL_TOKEN" 16
 forbidden_value "METRICS_INTERNAL_TOKEN" "CHANGEME_metrics_token_32chars_minimum"
 require_var "SECURITY_MONITOR_TOKEN" 16
 forbidden_value "SECURITY_MONITOR_TOKEN" "CHANGEME_security_monitor_token_32chars"
+
+# ─── SMTP / Brevo ─────────────────────────────────────────────────────────────
+echo "--- SMTP / Brevo ---"
+require_var "SMTP_HOST"
+require_var "SMTP_PORT"
+require_var "SMTP_USER"
+require_var "SMTP_PASS" 8
+require_var "SMTP_FROM"
+require_var "SMTP_SECURE"
+if [ "${SMTP_HOST:-}" != "smtp-relay.brevo.com" ]; then
+  log_err "SMTP_HOST doit valoir 'smtp-relay.brevo.com' en VPS (valeur actuelle: ${SMTP_HOST:-<vide>})"
+  ERRORS=$((ERRORS + 1))
+fi
+if [ "${SMTP_PORT:-}" != "587" ] && [ "${SMTP_PORT:-}" != "465" ]; then
+  log_err "SMTP_PORT doit valoir 587 ou 465 en VPS (valeur actuelle: ${SMTP_PORT:-<vide>})"
+  ERRORS=$((ERRORS + 1))
+fi
+if [ "${SMTP_ALLOW_NO_AUTH:-}" = "true" ] || [ "${SMTP_ALLOW_NO_AUTH:-}" = "1" ]; then
+  log_err "SMTP_ALLOW_NO_AUTH ne doit jamais être activé en VPS"
+  ERRORS=$((ERRORS + 1))
+fi
+if [ "${SMTP_PORT:-}" = "465" ] && [ "${SMTP_SECURE:-}" != "true" ]; then
+  log_err "SMTP_SECURE doit valoir true quand SMTP_PORT=465"
+  ERRORS=$((ERRORS + 1))
+fi
+if [ "${SMTP_PORT:-}" = "587" ] && [ "${SMTP_SECURE:-}" != "false" ]; then
+  log_err "SMTP_SECURE doit valoir false quand SMTP_PORT=587"
+  ERRORS=$((ERRORS + 1))
+fi
+must_not_contain "SMTP_HOST" "^mailpit$"
+must_not_contain "SMTP_HOST" "^localhost$"
+must_not_contain "SMTP_HOST" "^127\\.0\\.0\\.1$"
 
 # ─── Frontend ─────────────────────────────────────────────────────────────────
 echo "--- Frontend ---"

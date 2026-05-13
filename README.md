@@ -304,7 +304,7 @@ Ce standard est reconnu par Google, Facebook, GitHub et recommandé par l'ANSSI.
 # Variables d'environnement obligatoires
 ADMIN_EMAIL=admin@blobinfini.com  # Email(s) recevant les alertes (séparés par virgules)
 
-# Configuration SMTP (déjà configurée pour Mailpit en dev)
+# Configuration SMTP (Mailpit local/dev uniquement)
 SMTP_HOST=localhost
 SMTP_PORT=1025
 SMTP_SECURE=false
@@ -1082,6 +1082,8 @@ Activer l’envoi d’emails (dev avec Mailpit)
 - `.env` déjà prêt pour Mailpit: `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_SECURE=false`.
 - Définir `WEB_BASE_URL` (ex: http://localhost:3002) pour générer les liens.
 - `apps/api` dépend de `nodemailer`; exécutez `npm install` à la racine si besoin.
+
+Mailpit ne doit pas être utilisé en VPS/pré-prod réelle: utiliser Brevo via `.env.vps` et `docker-compose.vps.yml`.
 
 Sans SMTP actif, l’API continue de fonctionner et ignore l’envoi (log d’info seulement).
 

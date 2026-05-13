@@ -255,7 +255,7 @@ describe('Auth E2E', () => {
       await session.post('/auth/login').send({ email: 'blocked@test.com', password: DEFAULT_PASSWORD }).expect(403);
 
       const resend = await session.post('/auth/resend-verification').send({ email: 'blocked@test.com' }).expect(200);
-      expect(resend.body).toHaveProperty('message');
+      expect(resend.body.message).toBe('If the account exists, the request has been processed');
       expect(resend.body).toHaveProperty('verificationToken');
       const token = resend.body.verificationToken as string;
 
@@ -501,28 +501,112 @@ describe('Auth E2E', () => {
       const rlApp = createApp();
       const rlSession = await createTestSession(rlApp);
 
-      // EMAIL_VERIFICATION limiter uses the default IP key (req.ip).
-      // Use a unique X-Forwarded-For per run so the MemoryStore key is unique
-      // and counters from a previous watch-mode run don't bleed into this one.
-      // Trust proxy is enabled for 127.0.0.1 in createApp(), so this header is trusted.
-      const ts = Date.now();
-      const testRunIp = `10.${(ts >>> 16) & 0xFF}.${(ts >>> 8) & 0xFF}.${ts & 0xFF}`;
-
       try {
         for (let i = 0; i < 3; i++) {
           const res = await rlSession
             .post('/auth/resend-verification')
-            .set('X-Forwarded-For', testRunIp)
             .send({ email: testEmail });
           expect([200, 404]).toContain(res.status);
         }
 
         const res = await rlSession
           .post('/auth/resend-verification')
-          .set('X-Forwarded-For', testRunIp)
           .send({ email: testEmail })
           .expect(429);
         expect(res.body.error).toContain('EMAIL_VERIFICATION_RATE_LIMIT_EXCEEDED');
+      } finally {
+        if (previousFlag === undefined) {
+          delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+        } else {
+          process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+        }
+      }
+    });
+
+    it('should apply rate limiting on /forgot-password', async () => {
+      const testEmail = `forgot-rate-limit-${Date.now()}@example.com`;
+
+      const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+      const rlApp = createApp();
+      const rlSession = await createTestSession(rlApp);
+
+      try {
+        for (let i = 0; i < 3; i += 1) {
+          await rlSession
+            .post('/auth/forgot-password')
+            .send({ email: testEmail })
+            .expect(200);
+        }
+
+        const res = await rlSession
+          .post('/auth/forgot-password')
+          .send({ email: testEmail })
+          .expect(429);
+
+        expect(res.body.error).toContain('PASSWORD_RESET_RATE_LIMIT_EXCEEDED');
+      } finally {
+        if (previousFlag === undefined) {
+          delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+        } else {
+          process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+        }
+      }
+    });
+
+    it('should apply IP rate limiting on /resend-verification across distinct emails', async () => {
+      const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+      const rlApp = createApp();
+      const rlSession = await createTestSession(rlApp);
+
+      try {
+        for (let i = 0; i < 5; i += 1) {
+          await rlSession
+            .post('/auth/resend-verification')
+            .set('x-enable-ip-rate-limit', 'true')
+            .send({ email: `resend-ip-${Date.now()}-${i}@example.com` })
+            .expect(200);
+        }
+
+        const res = await rlSession
+          .post('/auth/resend-verification')
+          .set('x-enable-ip-rate-limit', 'true')
+          .send({ email: `resend-ip-${Date.now()}-blocked@example.com` })
+          .expect(429);
+
+        expect(res.body.error).toBe('EMAIL_VERIFICATION_IP_RATE_LIMIT_EXCEEDED');
+      } finally {
+        if (previousFlag === undefined) {
+          delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+        } else {
+          process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+        }
+      }
+    });
+
+    it('should apply IP rate limiting on /forgot-password across distinct emails', async () => {
+      const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+      const rlApp = createApp();
+      const rlSession = await createTestSession(rlApp);
+
+      try {
+        for (let i = 0; i < 5; i += 1) {
+          await rlSession
+            .post('/auth/forgot-password')
+            .set('x-enable-ip-rate-limit', 'true')
+            .send({ email: `forgot-ip-${Date.now()}-${i}@example.com` })
+            .expect(200);
+        }
+
+        const res = await rlSession
+          .post('/auth/forgot-password')
+          .set('x-enable-ip-rate-limit', 'true')
+          .send({ email: `forgot-ip-${Date.now()}-blocked@example.com` })
+          .expect(429);
+
+        expect(res.body.error).toBe('PASSWORD_RESET_IP_RATE_LIMIT_EXCEEDED');
       } finally {
         if (previousFlag === undefined) {
           delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;

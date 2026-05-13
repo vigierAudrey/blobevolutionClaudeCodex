@@ -1,3 +1,4 @@
+import { getEmailMetricsSnapshot } from '../../lib/email-metrics';
 import { getLogTransportMetrics } from '../../observability/log-transport';
 import {
   resolveSecurityObservabilityStatus,
@@ -6,6 +7,7 @@ import {
 
 export function buildSecurityObservabilityResponse(): SecurityObservabilityResponse {
   const metrics = getLogTransportMetrics();
+  const email = getEmailMetricsSnapshot();
   const pipeline = {
     queued: metrics.queued,
     sent: metrics.sent,
@@ -15,8 +17,9 @@ export function buildSecurityObservabilityResponse(): SecurityObservabilityRespo
   };
 
   return {
-    status: resolveSecurityObservabilityStatus(pipeline),
+    status: resolveSecurityObservabilityStatus(pipeline, email),
     timestamp: new Date().toISOString(),
     pipeline,
+    email,
   };
 }

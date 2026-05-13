@@ -285,6 +285,28 @@ const resendVerifySchema = z.object({
   email: z.string().email(),
 });
 
+const resendVerificationIpLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `resend_verification:ip:${ipKeyGenerator(ip)}`;
+    },
+    handler: (_req: Request, res: Response) => {
+      res.status(429).json({
+        error: 'EMAIL_VERIFICATION_IP_RATE_LIMIT_EXCEEDED',
+        message: 'Too many verification requests from this IP. Please try again later.',
+        retryAfter: '15 minutes',
+      });
+    },
+    skip: (req: Request) => process.env.NODE_ENV === 'test' && req.get('x-enable-ip-rate-limit') !== 'true',
+  },
+  'resend_verification_ip',
+);
+
 // 2FA Schemas
 const send2FASchema = z.object({
   email: z.string().email(),
@@ -316,6 +338,9 @@ authRouter.post('/register', validate(registerSchema), async (req, res) => {
     }
     if (err?.code === 'EMAIL_ALREADY_EXISTS') {
       return res.status(409).json({ error: 'Email already registered' });
+    }
+    if (err?.code === 'EMAIL_DELIVERY_UNAVAILABLE') {
+      return res.status(503).json({ error: 'Registration temporarily unavailable' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
@@ -594,6 +619,7 @@ authRouter.post('/verify-email', async (req, res) => {
 // P2-5: Rate limiting to prevent email spam (3 attempts/hour per email)
 authRouter.post(
   '/resend-verification',
+  resendVerificationIpLimiter,
   createLazyRateLimiter('EMAIL_VERIFICATION'),
   async (req, res) => {
     try {
@@ -637,7 +663,30 @@ authRouter.get('/me', requireAuth, async (req, res) => {
   }
 });
 
-authRouter.post('/forgot-password', async (req, res) => {
+const forgotPasswordLimiter = createLazyRateLimiter('PASSWORD_RESET_EMAIL');
+const forgotPasswordIpLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `forgot_password:ip:${ipKeyGenerator(ip)}`;
+    },
+    handler: (_req: Request, res: Response) => {
+      res.status(429).json({
+        error: 'PASSWORD_RESET_IP_RATE_LIMIT_EXCEEDED',
+        message: 'Too many password reset requests from this IP. Please try again later.',
+        retryAfter: '15 minutes',
+      });
+    },
+    skip: (req: Request) => process.env.NODE_ENV === 'test' && req.get('x-enable-ip-rate-limit') !== 'true',
+  },
+  'forgot_password_ip',
+);
+
+authRouter.post('/forgot-password', forgotPasswordIpLimiter, forgotPasswordLimiter, async (req, res) => {
   try {
     const { email } = forgotSchema.parse(req.body);
     // audit.info : demande de reset — emailHash safe (SHA-256), pas d'email brut
@@ -789,7 +838,7 @@ const twoFaSendLimiter = createLazyCustomRateLimiter(
       if (email) {
         return `2fa_send:email:${hashEmailHmac(email)}`;
       }
-      const ip = getClientIp(req) ?? req.ip ?? req.socket?.remoteAddress ?? '';
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
       return `2fa_send:ip:${ipKeyGenerator(ip)}`;
     },
     handler: (_req: Request, res: Response) => {
@@ -803,8 +852,30 @@ const twoFaSendLimiter = createLazyCustomRateLimiter(
   '2fa_send',
 );
 
+const twoFaSendIpLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `2fa_send:ip:${ipKeyGenerator(ip)}`;
+    },
+    handler: (_req: Request, res: Response) => {
+      res.status(429).json({
+        error: 'TOO_MANY_2FA_IP_REQUESTS',
+        message: 'Too many 2FA requests from this IP. Please try again later.',
+        retryAfter: '15 minutes',
+      });
+    },
+    skip: (req: Request) => process.env.NODE_ENV === 'test' && req.get('x-enable-ip-rate-limit') !== 'true',
+  },
+  '2fa_send_ip',
+);
+
 // 2FA Routes
-authRouter.post('/2fa/send', twoFaSendLimiter, async (req, res) => {
+authRouter.post('/2fa/send', twoFaSendIpLimiter, twoFaSendLimiter, async (req, res) => {
   try {
     const { email } = send2FASchema.parse(req.body);
 
@@ -828,7 +899,7 @@ authRouter.post('/2fa/send', twoFaSendLimiter, async (req, res) => {
       // "code envoyé" de "trop de challenges actifs" pour énumérer les comptes PRO.
       return res.json({ message: 'Si un compte PRO correspondant existe, un code a été envoyé.' });
     }
-    res.status(500).json({ error: '2FA service unavailable' });
+    res.status(503).json({ error: '2FA service unavailable' });
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: err.errors });

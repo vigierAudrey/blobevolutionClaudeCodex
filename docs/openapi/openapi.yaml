@@ -2888,7 +2888,7 @@ components:
       enum: [SECURE, DEGRADED, UNSAFE]
     SecurityHealthChecks:
       type: object
-      required: [config, env, db, redis]
+      required: [config, env, db, redis, smtp]
       properties:
         config:
           $ref: '#/components/schemas/SecurityHealthCheckState'
@@ -2897,6 +2897,8 @@ components:
         db:
           $ref: '#/components/schemas/SecurityHealthCheckState'
         redis:
+          $ref: '#/components/schemas/SecurityHealthCheckState'
+        smtp:
           $ref: '#/components/schemas/SecurityHealthCheckState'
     SecurityHealthResponse:
       type: object
@@ -2933,9 +2935,56 @@ components:
           minimum: 0
         breakerState:
           $ref: '#/components/schemas/SecurityBreakerState'
+    SecurityEmailLatency:
+      type: object
+      required: [p50, p95, p99]
+      properties:
+        p50:
+          type: integer
+          minimum: 0
+        p95:
+          type: integer
+          minimum: 0
+        p99:
+          type: integer
+          minimum: 0
+    SecurityEmailMetrics:
+      type: object
+      required: [email_sent_total, email_failed_total, email_timeout_total, email_latency_ms, by_type]
+      properties:
+        email_sent_total:
+          type: integer
+          minimum: 0
+        email_failed_total:
+          type: integer
+          minimum: 0
+        email_timeout_total:
+          type: integer
+          minimum: 0
+        email_latency_ms:
+          $ref: '#/components/schemas/SecurityEmailLatency'
+        by_type:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/SecurityEmailMetricsByType'
+    SecurityEmailMetricsByType:
+      type: object
+      required: [email_sent_total, email_failed_total, email_timeout_total, email_latency_ms]
+      properties:
+        email_sent_total:
+          type: integer
+          minimum: 0
+        email_failed_total:
+          type: integer
+          minimum: 0
+        email_timeout_total:
+          type: integer
+          minimum: 0
+        email_latency_ms:
+          $ref: '#/components/schemas/SecurityEmailLatency'
     SecurityObservabilityResponse:
       type: object
-      required: [status, timestamp, pipeline]
+      required: [status, timestamp, pipeline, email]
       properties:
         status:
           $ref: '#/components/schemas/SecurityObservabilityStatus'
@@ -2944,6 +2993,8 @@ components:
           format: date-time
         pipeline:
           $ref: '#/components/schemas/SecurityObservabilityPipeline'
+        email:
+          $ref: '#/components/schemas/SecurityEmailMetrics'
     BlobospherePost:
       type: object
       properties:

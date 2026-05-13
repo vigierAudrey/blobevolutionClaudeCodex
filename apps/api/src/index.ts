@@ -39,6 +39,7 @@ import { hashIpHmacSafe } from './lib/hash-ip';
 import { requestIdMiddleware } from './middleware/request-id';
 import { runJobWithLogContext, withHttpLogContext } from './observability/log-context';
 import { registerLogTransportShutdownHandlers, getLogTransportMetrics } from './observability/log-transport';
+import { getEmailMetricsSnapshot } from './lib/email-metrics';
 import { getMatchingMetricsSnapshot } from './lib/matching-metrics';
 import { incHttpRequest, incHttp5xx, recordHttpLatency, isExcludedPath, getHttpMetricsSnapshot } from './lib/http-metrics';
 import { httpAccessLog } from './middleware/http-access-log';
@@ -550,6 +551,7 @@ export function createApp() {
         memory_heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024),
       },
       http: getHttpMetricsSnapshot(),
+      email: getEmailMetricsSnapshot(),
       matching: getMatchingMetricsSnapshot(),
       log_transport: getLogTransportMetrics(),
     });

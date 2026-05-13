@@ -187,6 +187,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
   Disponible via `apps/api/src/index.ts` (section « Monitoring & Traçabilité ») + Supertest `apps/api/src/index.security.test.ts`. Les issues listent automatiquement CORS, secrets, proxies et mode trusté ; la doc `SECURITY.md#Surveillance-securityhealth` explique comment peupler `ALLOWED_ORIGINS`/`TRUSTED_PROXY_IPS` et brancher un check HTTP.
 - [x] **Audit logs actions sensibles**  
   `audit()` est désormais branché sur les presets de rôles admin, la modération des signalements et la purge RGPD (`apps/api/src/modules/admin/admin.controller.ts`). Les tests `admin.e2e.test.ts` vérifient la présence d'une trace (`admin:role:apply`, `admin:report:action`, `admin:gdpr:run-purge`) avant de considérer l'action réussie.
+- [x] **2026-05-12 — SMTP VPS durci** : Mailpit retiré de `docker-compose.vps.yml`, `.env.vps.example` basculé sur Brevo SMTP relay, validation/healthcheck SMTP VPS ajoutés et `forgot-password` limité par email comme `resend-verification`.
 - [x] **Cron `/security/health`**  
   Script `scripts/security-health-check.sh` + workflow planifié `.github/workflows/security-health-monitor.yml` surveillent l'endpoint toutes les 30 min via `X-Security-Monitor-Token` dédié. Le vieux pattern JWT admin jetable n’est plus accepté.
   - [x] 2026-03-14: contrat `/security/health` unifié, alias `/api/security` supprimé, workflow réactivé, UI/OpenAPI réalignés.

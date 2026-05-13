@@ -260,7 +260,8 @@ Système de sécurité BlobConnect`;
       to: this.ADMIN_EMAIL,
       subject,
       text,
-      html
+      html,
+      type: 'security_alert',
     });
   }
 

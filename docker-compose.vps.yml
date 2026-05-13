@@ -107,16 +107,6 @@ services:
       retries: 5
       start_period: 10s
 
-  # ─── Capture emails (remplacer par SMTP réel en production) ─────────────────
-  mailpit:
-    image: axllent/mailpit:v1.29.4
-    restart: unless-stopped
-    networks:
-      - vps
-    # Port UI exposé en loopback — accès via tunnel SSH uniquement
-    ports:
-      - "127.0.0.1:8025:8025"
-
   # ─── API Node.js (build production) ─────────────────────────────────────────
   api:
     build:
@@ -128,8 +118,8 @@ services:
       # Variables Docker internes — surchargent .env.vps
       DATABASE_URL: "postgresql://${POSTGRES_USER:-blobinfini_vps}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-blobinfini_vps}"
       REDIS_URL:    "redis://default:${REDIS_PASSWORD}@redis:6379/0"
-      SMTP_HOST:    mailpit
-      SMTP_PORT:    "1025"
+      # SMTP: la cible réelle est fournie par .env.vps (Brevo en VPS/pré-prod réelle).
+      # AUCUN override Docker vers Mailpit ici : tout fallback silencieux est interdit.
       # S3_ENDPOINT : connexion interne API → MinIO (réseau Docker)
       S3_ENDPOINT:  "http://minio:9000"
       # S3_PRESIGN_ENDPOINT : URL utilisée par le SDK pour générer les URLs présignées.
