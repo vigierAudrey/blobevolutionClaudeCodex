@@ -15,6 +15,7 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/ packages/
 COPY apps/api/ apps/api/
 COPY types/ types/
+COPY docs/ docs/
 
 # Installer toutes les dépendances (dev incluses pour la compilation)
 RUN pnpm install --frozen-lockfile
