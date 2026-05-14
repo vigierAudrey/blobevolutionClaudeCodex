@@ -122,7 +122,7 @@ DOWNLOAD_LOG="$(mktemp)"
 timeout 300 rclone copy \
   "$LATEST_R2_FULL" \
   "$STAGING_DIR/" \
-  --retries 3 --retry-wait 10 \
+  --retries 3 \
   > "$DOWNLOAD_LOG" 2>&1 || DOWNLOAD_EXIT=$?
 
 if [[ $DOWNLOAD_EXIT -ne 0 ]]; then

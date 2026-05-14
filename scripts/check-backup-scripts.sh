@@ -73,6 +73,43 @@ for s in "${OPTIONAL_SCRIPTS[@]}"; do
   _check_script "$s" "false"
 done
 
+# ─── Compatibilité rclone ─────────────────────────────────────────────────────
+# Vérifie l'absence de flags introduits après rclone v1.63 dans les scripts R2.
+# Ubuntu 24.04 LTS installe rclone v1.60.x — ces flags provoquent "unknown flag".
+_check_rclone_compat() {
+  local r2_scripts=(
+    "$ROOT_DIR/scripts/backup-encrypt-upload.sh"
+    "$ROOT_DIR/scripts/r2-restore-test.sh"
+    "$ROOT_DIR/scripts/r2-rotate.sh"
+  )
+  # --retry-wait : introduit en v1.64.0 — absent de v1.60.x (Ubuntu 24.04 LTS)
+  local incompatible_flags=("--retry-wait")
+  local found_incompat=false
+
+  for flag in "${incompatible_flags[@]}"; do
+    for script in "${r2_scripts[@]}"; do
+      [[ -f "$script" ]] || continue
+      if grep -q -- "$flag" "$script"; then
+        echo "❌ check-backup-scripts: flag '$flag' dans $(basename "$script") — incompatible rclone < v1.64 (Ubuntu 24.04 LTS : v1.60.x)"
+        ERRORS=$(( ERRORS + 1 ))
+        found_incompat=true
+      fi
+    done
+  done
+
+  if ! $found_incompat; then
+    echo "✅ check-backup-scripts: aucun flag rclone incompatible (v1.60.x) dans les scripts R2"
+  fi
+
+  if command -v rclone >/dev/null 2>&1; then
+    local version
+    version="$(rclone --version 2>/dev/null | head -1 || echo 'version inconnue')"
+    echo "   rclone détecté : $version"
+  fi
+}
+
+_check_rclone_compat
+
 rm -f /tmp/check-syntax-err /tmp/check-shellcheck-err
 
 if [[ $ERRORS -gt 0 ]]; then
