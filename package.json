@@ -80,7 +80,7 @@
     "@storybook/nextjs": "^8.6.15",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
-    "get-port": "^7.1.0",
+    "get-port": "^7.2.0",
     "http-server": "^14.1.1",
     "npm-run-all": "^4.1.5",
     "patch-package": "^8.0.1",
