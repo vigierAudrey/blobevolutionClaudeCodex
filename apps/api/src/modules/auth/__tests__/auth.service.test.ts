@@ -7,11 +7,28 @@ import crypto from 'crypto';
 
 // Mock mailer module
 jest.mock('../../../lib/mailer', () => ({
+  MailDeliveryError: class MailDeliveryError extends Error {
+    provider: string;
+    type: string;
+    latencyMs: number;
+    timedOut: boolean;
+    smtpCode?: number;
+
+    constructor(args: { provider: string; type: string; latencyMs: number; timedOut: boolean; smtpCode?: number }) {
+      super('Email delivery unavailable');
+      this.name = 'MailDeliveryError';
+      this.provider = args.provider;
+      this.type = args.type;
+      this.latencyMs = args.latencyMs;
+      this.timedOut = args.timedOut;
+      this.smtpCode = args.smtpCode;
+    }
+  },
   sendPasswordResetEmail: jest.fn(),
   sendVerificationEmail: jest.fn()
 }));
 
-import { sendPasswordResetEmail, sendVerificationEmail } from '../../../lib/mailer';
+import { MailDeliveryError, sendPasswordResetEmail, sendVerificationEmail } from '../../../lib/mailer';
 
 const mockSendPasswordResetEmail = sendPasswordResetEmail as jest.MockedFunction<typeof sendPasswordResetEmail>;
 const mockSendVerificationEmail = sendVerificationEmail as jest.MockedFunction<typeof sendVerificationEmail>;
@@ -40,6 +57,8 @@ describe('AuthService', () => {
 
     // Clear mocks
     jest.clearAllMocks();
+    mockSendVerificationEmail.mockResolvedValue(undefined as any);
+    mockSendPasswordResetEmail.mockResolvedValue(undefined as any);
 
     // Clean up test data
     await prisma.passwordResetToken.deleteMany();
@@ -115,8 +134,13 @@ describe('AuthService', () => {
         });
     });
 
-    it('should handle email sending failure gracefully', async () => {
-      mockSendVerificationEmail.mockRejectedValue(new Error('Email service down'));
+    it('should rollback registration when verification email delivery fails', async () => {
+      mockSendVerificationEmail.mockRejectedValue(new MailDeliveryError({
+        type: 'email_verification',
+        provider: 'brevo',
+        latencyMs: 42,
+        timedOut: false,
+      }));
 
       const userData = {
         email: 'test@example.com',
@@ -124,9 +148,8 @@ describe('AuthService', () => {
         role: 'RIDER' as const
       };
 
-      // Should not throw even if email fails
-      const result = await authService.register(userData);
-      expect(result.userId).toBeDefined();
+      await expect(authService.register(userData)).rejects.toEqual({ code: 'EMAIL_DELIVERY_UNAVAILABLE' });
+      await expect(prisma.user.findUnique({ where: { email: userData.email } })).resolves.toBeNull();
     });
 
     it('should create user with PRO role', async () => {
@@ -457,7 +480,7 @@ describe('AuthService', () => {
       it('should create password reset token for existing user', async () => {
         const result = await authService.forgotPassword('reset@example.com');
 
-        expect(result.message).toBe('If the email exists, a reset link was sent');
+        expect(result.message).toBe('If the email exists, the request has been processed');
         expect(result.resetToken).toBeDefined(); // In test env
 
         // Verify token was created in database
@@ -476,17 +499,22 @@ describe('AuthService', () => {
       it('should return generic message for non-existent user', async () => {
         const result = await authService.forgotPassword('nonexistent@example.com');
 
-        expect(result.message).toBe('If the email exists, a reset link was sent');
+        expect(result.message).toBe('If the email exists, the request has been processed');
         expect(result.resetToken).toBeUndefined();
         expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
       });
 
       it('should handle email sending failure gracefully', async () => {
-        mockSendPasswordResetEmail.mockRejectedValue(new Error('Email service down'));
+        mockSendPasswordResetEmail.mockRejectedValue(new MailDeliveryError({
+          type: 'password_reset',
+          provider: 'brevo',
+          latencyMs: 42,
+          timedOut: false,
+        }));
 
         const result = await authService.forgotPassword('reset@example.com');
 
-        expect(result.message).toBe('If the email exists, a reset link was sent');
+        expect(result.message).toBe('If the email exists, the request has been processed');
         // Should create token even if email fails
         expect(result.resetToken).toBeDefined();
       });
@@ -523,6 +551,23 @@ describe('AuthService', () => {
           where: { userId: testUserId, revokedAt: null }
         });
         expect(activeTokens.length).toBe(0);
+      });
+
+      it('should invalidate all active sibling reset tokens after a successful reset', async () => {
+        const second = await authService.forgotPassword('reset@example.com');
+        expect(second.resetToken).toBeDefined();
+
+        await authService.resetPassword(resetToken, 'SiblingSafePass123!');
+
+        const tokens = await prisma.passwordResetToken.findMany({
+          where: { userId: testUserId },
+        });
+        expect(tokens).toHaveLength(2);
+        expect(tokens.every((entry) => entry.usedAt !== null)).toBe(true);
+
+        await expect(authService.resetPassword(second.resetToken, 'AnotherPass123!'))
+          .rejects
+          .toEqual({ code: 'UNAUTHORIZED', message: 'Invalid or expired token' });
       });
 
       it('should reject invalid reset token', async () => {
@@ -679,7 +724,7 @@ describe('AuthService', () => {
       it('should resend verification email for unverified user', async () => {
         const result = await authService.resendEmailVerification('verify@example.com');
 
-        expect(result.message).toBe('If the account exists, a verification email was sent');
+        expect(result.message).toBe('If the account exists, the request has been processed');
         expect(result.verificationToken).toBeDefined(); // In test env
 
         // Verify email sending was attempted
@@ -689,7 +734,7 @@ describe('AuthService', () => {
       it('should return generic message for non-existent user', async () => {
         const result = await authService.resendEmailVerification('nonexistent@example.com');
 
-        expect(result.message).toBe('If the account exists, a verification email was sent');
+        expect(result.message).toBe('If the account exists, the request has been processed');
         expect(result.verificationToken).toBeUndefined();
         // Service behavior: email is still attempted for security (no info leak)
         // expect(mockSendVerificationEmail).not.toHaveBeenCalled();
@@ -704,7 +749,7 @@ describe('AuthService', () => {
 
         const result = await authService.resendEmailVerification('verify@example.com');
 
-        expect(result.message).toBe('If the account exists, a verification email was sent');
+        expect(result.message).toBe('If the account exists, the request has been processed');
         expect(result.verificationToken).toBeUndefined();
         // Service behavior: email is still attempted for security (no info leak)
         // expect(mockSendVerificationEmail).not.toHaveBeenCalled();

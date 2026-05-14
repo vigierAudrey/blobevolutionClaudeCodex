@@ -117,10 +117,12 @@ fi
 COOKIE_A=$(mktemp)
 COOKIE_B=$(mktemp)
 COOKIE_RL=$(mktemp)
+COOKIE_EMAIL=$(mktemp)
 HEADERS_A=$(mktemp)
+HEADERS_EMAIL=$(mktemp)
 LOGIN_A_BODY_TMP=$(mktemp)
 MATCHING_TMP=$(mktemp)
-trap 'rm -f "$COOKIE_A" "$COOKIE_B" "$COOKIE_RL" "$HEADERS_A" "$LOGIN_A_BODY_TMP" "$MATCHING_TMP"' EXIT
+trap 'rm -f "$COOKIE_A" "$COOKIE_B" "$COOKIE_RL" "$COOKIE_EMAIL" "$HEADERS_A" "$HEADERS_EMAIL" "$LOGIN_A_BODY_TMP" "$MATCHING_TMP"' EXIT
 
 # ─── [1] API liveness ─────────────────────────────────────────────────────────
 echo "--- [1] API liveness ---"
@@ -141,6 +143,45 @@ else
   B=$(http_body -H "X-Security-Monitor-Token: $SECURITY_MONITOR_TOKEN" "$API/security/health")
   HEALTH_STATUS=$(echo "$B" | jq -r '.status // "MISSING"' 2>/dev/null || echo "MISSING")
   check "GET /security/health status = SECURE" "$HEALTH_STATUS" "SECURE"
+fi
+
+# ─── [2b] Email runtime réel (optionnel) ─────────────────────────────────────
+echo "--- [2b] Email runtime réel (optionnel) ---"
+if [ "${SMOKE_EMAIL_REAL:-0}" != "1" ]; then
+  echo "  SKIP Email runtime réel désactivé (exporter SMOKE_EMAIL_REAL=1 pour activer)"
+  SKIP=$((SKIP + 1))
+else
+  if [ -z "${OPS_TEST_EMAIL:-}" ]; then
+    printf "  \033[31mFAIL\033[0m OPS_TEST_EMAIL absent — le smoke réel refuse de tourner sans boîte canari dédiée\n"
+    FAIL=$((FAIL + 1))
+  elif [ "${APP_ENV:-}" != "vps" ] && [ "${APP_ENV:-}" != "pre-vps" ]; then
+    printf "  \033[31mFAIL\033[0m APP_ENV doit valoir vps ou pre-vps pour SMOKE_EMAIL_REAL=1 (actuel: '%s')\n" "${APP_ENV:-<vide>}"
+    FAIL=$((FAIL + 1))
+  else
+    EMAIL_CSRF=$(acquire_csrf "$COOKIE_EMAIL")
+    REQUEST_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "")
+    REQUEST_ID_ARGS=()
+    if [ -n "$REQUEST_ID" ]; then
+      REQUEST_ID_ARGS=(-H "X-Request-Id: $REQUEST_ID")
+    fi
+    # shellcheck disable=SC2086
+    EMAIL_STATUS=$(curl -sk $CURL_RESOLVE \
+      -c "$COOKIE_EMAIL" -b "$COOKIE_EMAIL" \
+      -D "$HEADERS_EMAIL" \
+      -X POST "$API/auth/forgot-password" \
+      -H "Content-Type: application/json" \
+      -H "Origin: https://app.blobinfini.local" \
+      -H "X-CSRF-Token: $EMAIL_CSRF" \
+      "${REQUEST_ID_ARGS[@]}" \
+      -d "{\"email\":\"$OPS_TEST_EMAIL\"}" \
+      -o /dev/null \
+      -w "%{http_code}")
+    check "POST /auth/forgot-password canari → 200" "$EMAIL_STATUS" "200"
+    EMAIL_REQ_ID=$(grep -i '^x-request-id:' "$HEADERS_EMAIL" | tail -1 | awk '{print $2}' | tr -d '\r')
+    if [ "$EMAIL_STATUS" = "200" ]; then
+      printf "  INFO corrélation logs email: x-request-id=%s ; chercher AUTH_FORGOT_PASSWORD_REQUEST / EMAIL_SEND_* dans les logs API\n" "${EMAIL_REQ_ID:-${REQUEST_ID:-unknown}}"
+    fi
+  fi
 fi
 
 # ─── [3] Frontend liveness ────────────────────────────────────────────────────

@@ -537,6 +537,8 @@ jobs:
     timeout-minutes: 30
     if: github.event_name != 'pull_request' || github.base_ref == 'main'
     services:
+      # Mailpit reste en CI pour les scénarios E2E de capture d'email locale.
+      # Ce job ne valide pas la parité SMTP VPS/Brevo.
       mailpit:
         image: axllent/mailpit:latest
         ports:

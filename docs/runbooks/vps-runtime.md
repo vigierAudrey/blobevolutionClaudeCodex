@@ -177,7 +177,7 @@ docker compose -f docker-compose.vps.yml --env-file .env.vps up -d api
 3. **nginx.vps.conf** : remplacer `*.blobinfini.local` → `*.blobinfini.fr` (ou votre domaine)
 4. **VPS_CERTS_DIR** : pointer vers les certs Let's Encrypt (`/etc/letsencrypt/live/...`)
 5. **STORAGE_DOMAIN** : mettre `storage.blobinfini.fr` dans `.env.vps`
-6. **SMTP** : remplacer Mailpit par un SMTP réel (Brevo, Postmark, SES...)
+6. **SMTP** : configurer Brevo (`SMTP_HOST=smtp-relay.brevo.com`, auth obligatoire, aucun `SMTP_ALLOW_NO_AUTH`)
 7. **AUTH_REQUIRE_2FA** : `true` par défaut dans `.env.vps.example` — vérifier que c'est bien conservé
 8. Relancer `check-vps-env.sh` — doit passer sans erreur
 9. Relancer `smoke-test-vps.sh` — doit retourner GO VPS ✓
@@ -191,6 +191,7 @@ docker compose -f docker-compose.vps.yml --env-file .env.vps up -d api
 | Bucket trop ouvert | Policy `download` uniquement (GET-object, pas ListBucket ni PutObject) |
 | Presigned URL mal configurée | MINIO_SERVER_URL = S3_PRESIGN_ENDPOINT (validation HMAC côté MinIO) |
 | Confusion pré-VPS / VPS | APP_ENV=vps, project name distinct, volumes distincts, subnet distinct |
+| Fallback silencieux vers Mailpit | `docker-compose.vps.yml` n'embarque aucun service Mailpit; `check-vps-env.sh` + `validateProductionEnv()` imposent Brevo SMTP authentifié |
 | Credentials MinIO par défaut | check-vps-env.sh rejette minioadmin et pvps-access-key |
 | Accès console MinIO depuis internet | Port 9001 non exposé — tunnel SSH requis |
 | TLS mal câblé (cert storage manquant) | check-vps-env.sh vérifie les 3 certs (api, app, storage) |

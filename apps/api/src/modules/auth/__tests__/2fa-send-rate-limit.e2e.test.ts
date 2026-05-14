@@ -9,6 +9,23 @@
  */
 
 jest.mock('../../../lib/mailer', () => ({
+  MailDeliveryError: class MailDeliveryError extends Error {
+    provider: string;
+    type: string;
+    latencyMs: number;
+    timedOut: boolean;
+    smtpCode?: number;
+
+    constructor(args: { provider: string; type: string; latencyMs: number; timedOut: boolean; smtpCode?: number }) {
+      super('Email delivery unavailable');
+      this.name = 'MailDeliveryError';
+      this.provider = args.provider;
+      this.type = args.type;
+      this.latencyMs = args.latencyMs;
+      this.timedOut = args.timedOut;
+      this.smtpCode = args.smtpCode;
+    }
+  },
   sendPasswordResetEmail: jest.fn(),
   sendVerificationEmail: jest.fn().mockResolvedValue(undefined),
   send2FACode: jest.fn().mockResolvedValue({ sent: true }),
@@ -53,7 +70,7 @@ import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import { resetDb } from '../../../test-utils/resetDb';
 import { createTestSession } from '../../../tests/helpers/auth';
 import { challengeCounter } from '../../../services/two-factor.service';
-import { send2FACode } from '../../../lib/mailer';
+import { MailDeliveryError, send2FACode } from '../../../lib/mailer';
 
 const mockSend2FACode = send2FACode as jest.MockedFunction<typeof send2FACode>;
 
@@ -138,6 +155,36 @@ describe('POST /auth/2fa/send — anti-énumération et rate limit', () => {
 
     expect(res.body.message).toBe(GENERIC_MESSAGE);
     expect(res.body.error).toBeUndefined();
+  });
+
+  it('retourne 503 propre si la livraison email 2FA échoue pour un compte PRO', async () => {
+    const session = await createTestSession(app);
+    const hashed = await bcrypt.hash('Passw0rd!', 12);
+    await prisma.user.create({
+      data: {
+        email: 'pro-2fa-mail-down@test.com',
+        password: hashed,
+        role: Role.PRO,
+        emailVerified: true,
+        consentedAt: new Date(),
+        consentVersion: 'v1.0.0',
+      },
+    });
+
+    mockSend2FACode.mockRejectedValueOnce(new MailDeliveryError({
+      type: 'two_factor_code',
+      provider: 'brevo',
+      latencyMs: 41,
+      timedOut: false,
+      smtpCode: 451,
+    }));
+
+    const res = await session
+      .post('/auth/2fa/send')
+      .send({ email: 'pro-2fa-mail-down@test.com' })
+      .expect(503);
+
+    expect(res.body).toEqual({ error: '2FA service unavailable' });
   });
 
   it('retourne 200 générique (pas 429) quand tooManyChallenges pour un PRO — anti-énumération', async () => {
@@ -298,5 +345,25 @@ describe('POST /auth/2fa/send — anti-énumération et rate limit', () => {
     // emailB reste libre — budget indépendant par email
     const res = await session.post('/auth/2fa/send').send({ email: emailB }).expect(200);
     expect(res.body.message).toBe(GENERIC_MESSAGE);
+  });
+
+  it('bloque un flood IP sur /2fa/send même avec des emails différents', async () => {
+    const session = await createTestSession(app);
+
+    for (let i = 0; i < 5; i += 1) {
+      await session
+        .post('/auth/2fa/send')
+        .set('x-enable-ip-rate-limit', 'true')
+        .send({ email: `pro-2fa-ip-${Date.now()}-${i}@test.com` })
+        .expect(200);
+    }
+
+    const res = await session
+      .post('/auth/2fa/send')
+      .set('x-enable-ip-rate-limit', 'true')
+      .send({ email: `pro-2fa-ip-${Date.now()}-blocked@test.com` })
+      .expect(429);
+
+    expect(res.body.error).toBe('TOO_MANY_2FA_IP_REQUESTS');
   });
 });

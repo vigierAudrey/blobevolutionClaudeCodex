@@ -58,11 +58,13 @@ Ensuite les redémarrages prennent < 2 minutes.
 | Frontend | https://app.blobinfini.local | comptes ci-dessous |
 | API | https://api.blobinfini.local | — |
 | API health | https://api.blobinfini.local/health | — |
-| Mailpit (emails) | http://localhost:8025 | — |
+| Mailpit (emails de qualification locale uniquement) | http://localhost:8025 | — |
 | MinIO (console) | http://localhost:9001 | voir `.env.pre-vps` S3_ACCESS_KEY_ID / SECRET |
 
 **Les ports Postgres et Redis ne sont pas exposés sur l'hôte** (sécurité).
 Pour accéder à la DB depuis l'hôte : `docker compose -f docker-compose.pre-vps.yml exec postgres psql -U blobinfini_pvps`.
+
+Mailpit reste volontairement présent ici pour les liens de vérification/reset et les codes 2FA en qualification locale. Il ne fait pas partie de la cible VPS réelle.
 
 ---
 
@@ -269,7 +271,7 @@ Checklist delta pré-VPS → VPS :
 - [ ] Activer `AUTH_REQUIRE_2FA=true`
 - [ ] Configurer `AUTH_REQUIRE_VERIFIED=true`
 - [ ] Remplacer MinIO par AWS S3 (ou MinIO VPS si auto-hébergé)
-- [ ] Configurer SMTP réel (pas Mailpit)
+- [ ] Configurer Brevo SMTP réel (`smtp-relay.brevo.com`, auth obligatoire, pas Mailpit)
 - [ ] Configurer Sentry DSN production
 - [ ] Générer nouveaux secrets (ne jamais réutiliser les secrets pré-VPS)
 - [ ] Configurer le monitoring `/security/health` avec le token prod

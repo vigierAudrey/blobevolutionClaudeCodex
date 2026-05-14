@@ -1,0 +1,79 @@
+# BlobSurf VPS — Crontab opérationnel
+#
+# Installation sur le VPS :
+#   crontab -e   (en tant que l'utilisateur qui exécute Docker, ex: audrey)
+#
+# Prérequis VPS :
+#   - /home/audrey/blob-app/ : répertoire du projet (repo cloné)
+#   - /home/audrey/backups/blobsurf/ : répertoire backups (chmod 700)
+#   - /home/audrey/blob-app/.env.vps : fichier env avec DISCORD_WEBHOOK_URL
+#
+# Créer la structure :
+#   mkdir -p /home/audrey/backups/blobsurf/{pg,minio,logs,health}
+#   chmod 700 /home/audrey/backups/blobsurf
+#
+# Ajouter DISCORD_WEBHOOK_URL dans .env.vps :
+#   echo "DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/XXX/YYY" >> /home/audrey/blob-app/.env.vps
+#
+# ─── Variables d'environnement cron ──────────────────────────────────────────
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+BLOB_APP=/home/audrey/blob-app
+BACKUP_DIR=/home/audrey/backups/blobsurf
+ENV_FILE=/home/audrey/blob-app/.env.vps
+DC_PROJECT=blobconnect-blobsurf
+
+# ─── Backup PostgreSQL — tous les jours à 3h00 UTC ───────────────────────────
+# Dumps quotidiens + rotation 7 jours
+# Logs dans : /home/audrey/backups/blobsurf/logs/backup-pg.log
+0 3 * * * DC_PROJECT=blobconnect-blobsurf ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=/home/audrey/backups/blobsurf/pg BACKUP_PREFIX=blobsurf_vps BACKUP_RETENTION_DAYS=7 /home/audrey/blob-app/scripts/backup-blobsurf.sh >> /home/audrey/backups/blobsurf/logs/backup-pg.log 2>&1
+
+# ─── Backup MinIO — tous les jours à 4h00 UTC ────────────────────────────────
+# Après le backup PG pour éviter la concurrence disque
+# Logs dans : /home/audrey/backups/blobsurf/logs/backup-minio.log
+0 4 * * * DC_PROJECT=blobconnect-blobsurf ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=/home/audrey/backups/blobsurf /home/audrey/blob-app/scripts/backup-minio.sh >> /home/audrey/backups/blobsurf/logs/backup-minio.log 2>&1
+
+# ─── Surveillance disque — toutes les 15 minutes ─────────────────────────────
+# Alerte Discord à 70%/80%/90% d'utilisation disque
+# Auto-prune images Docker à 80%
+# Logs dans : /home/audrey/backups/blobsurf/logs/disk-guard.log
+*/15 * * * * DC_PROJECT=blobconnect-blobsurf ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=/home/audrey/backups/blobsurf DISK_WARN_PCT=70 DISK_CRIT_PCT=80 DISK_EMERG_PCT=90 /home/audrey/blob-app/scripts/disk-guard.sh >> /home/audrey/backups/blobsurf/logs/disk-guard.log 2>&1
+
+# ─── Health monitoring — toutes les 5 minutes ────────────────────────────────
+# Vérifie containers, PostgreSQL, Redis, MinIO, API
+# N'alerte que sur les changements d'état (anti-spam)
+# Logs dans : /home/audrey/backups/blobsurf/logs/health-monitor.log
+*/5 * * * * DC_PROJECT=blobconnect-blobsurf ENV_FILE=/home/audrey/blob-app/.env.vps HEALTH_STATE_DIR=/home/audrey/backups/blobsurf/health /home/audrey/blob-app/scripts/health-monitor.sh >> /home/audrey/backups/blobsurf/logs/health-monitor.log 2>&1
+
+# ─── Chiffrement + Upload R2 — tous les jours à 4h30 UTC ────────────────────
+# Chiffre les nouveaux backups (PG + MinIO) avec age, uploade sur Cloudflare R2
+# Vérification intégrité post-upload (rclone --checksum)
+# Logs dans : /home/audrey/backups/blobsurf/logs/encrypt-upload.log
+30 4 * * * DC_PROJECT=blobconnect-blobsurf ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=/home/audrey/backups/blobsurf /home/audrey/blob-app/scripts/backup-encrypt-upload.sh >> /home/audrey/backups/blobsurf/logs/encrypt-upload.log 2>&1
+
+# ─── Rotation R2 — tous les jours à 5h00 UTC ─────────────────────────────────
+# Garde 30 backups PG + 14 MinIO sur R2 — supprime les plus anciens
+# Logs dans : /home/audrey/backups/blobsurf/logs/r2-rotate.log
+0 5 * * * ENV_FILE=/home/audrey/blob-app/.env.vps /home/audrey/blob-app/scripts/r2-rotate.sh >> /home/audrey/backups/blobsurf/logs/r2-rotate.log 2>&1
+
+# ─── Test de restore PostgreSQL — dimanche 5h00 UTC ──────────────────────────
+# Test hebdomadaire : dry-run restore du dernier backup PG LOCAL
+# Envoie le résultat (succès/échec) sur Discord
+# Logs dans : /home/audrey/backups/blobsurf/logs/restore-test.log
+0 5 * * 0 DC_PROJECT=blobconnect-blobsurf ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=/home/audrey/backups/blobsurf /home/audrey/blob-app/scripts/weekly-restore-test.sh >> /home/audrey/backups/blobsurf/logs/restore-test.log 2>&1
+
+# ─── Test de restore depuis R2 — dimanche 5h30 UTC ───────────────────────────
+# Télécharge le dernier backup PG depuis R2, vérifie SHA256 + header age
+# (déchiffrement complet : test manuel trimestriel avec clé privée)
+# Logs dans : /home/audrey/backups/blobsurf/logs/r2-restore-test.log
+30 5 * * 0 DC_PROJECT=blobconnect-blobsurf ENV_FILE=/home/audrey/blob-app/.env.vps /home/audrey/blob-app/scripts/r2-restore-test.sh >> /home/audrey/backups/blobsurf/logs/r2-restore-test.log 2>&1
+
+# ─── Nettoyage Docker — dimanche 6h00 UTC ────────────────────────────────────
+# Après le restore test (ne pas nettoyer si un container est down)
+# Supprime images dangling + build cache (JAMAIS les volumes nommés)
+# Logs dans : /home/audrey/backups/blobsurf/logs/docker-cleanup.log
+0 6 * * 0 DC_PROJECT=blobconnect-blobsurf ENV_FILE=/home/audrey/blob-app/.env.vps /home/audrey/blob-app/scripts/docker-cleanup.sh >> /home/audrey/backups/blobsurf/logs/docker-cleanup.log 2>&1
+
+# ─── Rotation des logs cron — 1er du mois à 2h00 UTC ──────────────────────────
+# Supprime les logs > 90 jours pour éviter la croissance infinie
+0 2 1 * * find /home/audrey/backups/blobsurf/logs -name "*.log" -mtime +90 -delete 2>/dev/null; find /home/audrey/backups/blobsurf/logs -name "*.log" -size +50M -delete 2>/dev/null

@@ -201,6 +201,18 @@ export const RATE_LIMIT_PROFILES = {
     }
   },
 
+  PASSWORD_RESET_EMAIL: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 3, // 3 reset email attempts per hour per email
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'PASSWORD_RESET_RATE_LIMIT_EXCEEDED',
+      message: 'Too many password reset requests. Please check your inbox or try again later.',
+      retryAfter: '1 hour'
+    }
+  },
+
   // Global API protection - catch-all
   GLOBAL: {
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -291,7 +303,7 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
     }
   };
 
-  if (!customOptions?.keyGenerator && profile === 'EMAIL_VERIFICATION') {
+  if (!customOptions?.keyGenerator && (profile === 'EMAIL_VERIFICATION' || profile === 'PASSWORD_RESET_EMAIL')) {
     options.keyGenerator = (req: Request) => {
       const fromBody = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
       const fromQuery = typeof req.query?.email === 'string' ? String(req.query.email).trim().toLowerCase() : '';
@@ -527,7 +539,7 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
   if (path === '/auth/login' && method === 'POST') {
     return next();
   }
-  // /auth/2fa/send has its own per-email twoFaSendLimiter — exclude from generic IP bucket
+  // /auth/2fa/send has dedicated IP + email keyed limiters in auth.controller.
   if (path === '/auth/2fa/send' && method === 'POST') {
     return next();
   }
@@ -544,8 +556,8 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
   // Determine appropriate rate limiter based on path and method
   let limiter;
 
-  if (path === '/auth/resend-verification') {
-    // Route has its own limiter configured to guard by email
+  if (path === '/auth/resend-verification' || path === '/auth/forgot-password') {
+    // These routes enforce dedicated IP + email keyed budgets in auth.controller.
     return next();
   }
 

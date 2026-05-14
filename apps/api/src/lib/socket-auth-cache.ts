@@ -186,6 +186,7 @@ let cleanupInterval: NodeJS.Timeout | null = null;
 
 if (ENABLE_CACHE && process.env.NODE_ENV !== 'test') {
   cleanupInterval = setInterval(cleanupExpiredEntries, 60000);
+  cleanupInterval.unref();
 
   secureLogger.info('WS_AUTH_CACHE_ENABLED', {
     ttlMs: CACHE_TTL_MS,

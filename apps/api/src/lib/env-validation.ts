@@ -17,6 +17,8 @@ const INSECURE_DEFAULTS = {
   JWT_SECRET: ['please-change-in-dev', 'change-me', 'secret'],
   JWT_REFRESH_SECRET: ['please-change-in-dev-refresh', 'change-me', 'secret'],
 };
+const BREVO_SMTP_HOST = 'smtp-relay.brevo.com';
+const LOCAL_SMTP_HOSTS = new Set(['mailpit', 'localhost', '127.0.0.1']);
 
 export function validateProductionEnv(): void {
   if (process.env.NODE_ENV !== 'production') {
@@ -53,7 +55,9 @@ export function validateProductionEnv(): void {
   // Check DATABASE_URL SSL in production
   // Exception pré-VPS / VPS : réseau Docker interne, SSL entre containers non nécessaire.
   // APP_ENV=pre-vps ou APP_ENV=vps doit être défini explicitement — jamais en production cloud/managed.
-  const isPreVps = process.env.APP_ENV === 'pre-vps' || process.env.APP_ENV === 'vps';
+  const appEnv = process.env.APP_ENV;
+  const isVps = appEnv === 'vps';
+  const isPreVps = appEnv === 'pre-vps' || isVps;
   if (!process.env.DATABASE_URL) {
     errors.push('DATABASE_URL is not set');
   } else if (
@@ -66,6 +70,51 @@ export function validateProductionEnv(): void {
 
   if (String(process.env.RATE_LIMIT_DISABLED_FOR_BOOKING_REQUESTS ?? '').toLowerCase() === 'true') {
     errors.push('RATE_LIMIT_DISABLED_FOR_BOOKING_REQUESTS=true is NOT allowed in production');
+  }
+
+  if (isVps) {
+    const smtpHost = String(process.env.SMTP_HOST ?? '').trim().toLowerCase();
+    const smtpPort = String(process.env.SMTP_PORT ?? '').trim();
+    const smtpUser = String(process.env.SMTP_USER ?? '').trim();
+    const smtpPass = String(process.env.SMTP_PASS ?? '').trim();
+    const smtpFrom = String(process.env.SMTP_FROM ?? '').trim();
+    const smtpSecure = String(process.env.SMTP_SECURE ?? '').trim().toLowerCase();
+    const smtpAllowNoAuth = String(process.env.SMTP_ALLOW_NO_AUTH ?? '').trim().toLowerCase();
+
+    if (!smtpHost) {
+      errors.push('SMTP_HOST is required when APP_ENV=vps');
+    } else {
+      if (LOCAL_SMTP_HOSTS.has(smtpHost)) {
+        errors.push(`SMTP_HOST="${smtpHost}" is forbidden when APP_ENV=vps`);
+      }
+      if (smtpHost !== BREVO_SMTP_HOST) {
+        errors.push(`SMTP_HOST must be "${BREVO_SMTP_HOST}" when APP_ENV=vps`);
+      }
+    }
+
+    if (!['465', '587'].includes(smtpPort)) {
+      errors.push('SMTP_PORT must be 465 or 587 when APP_ENV=vps');
+    }
+    if (!smtpUser) {
+      errors.push('SMTP_USER is required when APP_ENV=vps');
+    }
+    if (!smtpPass) {
+      errors.push('SMTP_PASS is required when APP_ENV=vps');
+    }
+    if (!smtpFrom) {
+      errors.push('SMTP_FROM is required when APP_ENV=vps');
+    }
+    if (!['true', 'false'].includes(smtpSecure)) {
+      errors.push('SMTP_SECURE must be explicitly set to true or false when APP_ENV=vps');
+    } else if (
+      (smtpPort === '465' && smtpSecure !== 'true') ||
+      (smtpPort === '587' && smtpSecure !== 'false')
+    ) {
+      errors.push('SMTP_SECURE must match SMTP_PORT policy (465=true, 587=false) when APP_ENV=vps');
+    }
+    if (['1', 'true', 'yes', 'on'].includes(smtpAllowNoAuth)) {
+      errors.push('SMTP_ALLOW_NO_AUTH=true is forbidden when APP_ENV=vps');
+    }
   }
 
   const primaryAdminEmailsRaw = String(process.env.PRIMARY_ADMIN_EMAILS ?? '').trim();

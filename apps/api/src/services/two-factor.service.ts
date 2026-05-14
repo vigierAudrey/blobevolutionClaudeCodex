@@ -1,6 +1,6 @@
 import { createHash, randomInt } from 'crypto';
 import { cacheService } from './cache.service';
-import { send2FACode } from '../lib/mailer';
+import { MailDeliveryError, send2FACode } from '../lib/mailer';
 import { secureLogger } from '../utils/secure-logger';
 import { hashIpHmac } from '../lib/hash-ip';
 import { securityEventAlertService } from './security-event-alert.service';
@@ -268,10 +268,9 @@ export class TwoFactorService {
     userId: string,
     email: string,
   ): Promise<{ success: boolean; message: string; tooManyChallenges?: boolean; challengeId?: string }> {
+    const codeKey = this.getCacheKey(userId);
+    const challengeCounterKey = `2fa:challenges:${userId}`;
     try {
-      const codeKey = this.getCacheKey(userId);
-      const challengeCounterKey = `2fa:challenges:${userId}`;
-
       // Concurrent challenge flood guard.
       // Redis path (multi-pod safe): INCR/DECR on 2fa:challenges:{userId}.
       // Memory path (dev/test, single-pod): local Map fallback.
@@ -330,14 +329,6 @@ export class TwoFactorService {
       // Send email
       const emailResult = await send2FACode(email, code);
 
-      if (emailResult.sent === false) {
-        secureLogger.warn('TWO_FACTOR_EMAIL_FAILED', TWO_FACTOR_LOG_CONTEXT);
-        return {
-          success: false,
-          message: 'Erreur lors de l\'envoi de l\'email'
-        };
-      }
-
       if (emailResult.skipped) {
         secureLogger.info('TWO_FACTOR_EMAIL_SKIPPED', TWO_FACTOR_LOG_CONTEXT);
       }
@@ -360,6 +351,20 @@ export class TwoFactorService {
         message: 'Code envoyé par email'
       };
     } catch (error) {
+      if (error instanceof MailDeliveryError) {
+        await cacheService.del(codeKey).catch(() => undefined);
+        memoryStore?.delete(codeKey);
+        secureLogger.warn('TWO_FACTOR_EMAIL_FAILED', {
+          ...TWO_FACTOR_LOG_CONTEXT,
+          provider: error.provider,
+          latencyMs: error.latencyMs,
+          ...(typeof error.smtpCode === 'number' ? { smtpCode: error.smtpCode } : {}),
+        });
+        return {
+          success: false,
+          message: 'Email delivery unavailable'
+        };
+      }
       secureLogger.error('TWO_FACTOR_SEND_ERROR', {
         error: error instanceof Error ? error.message : String(error),
       });
