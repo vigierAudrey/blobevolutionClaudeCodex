@@ -79,6 +79,26 @@ const profileUpdateLimiter = createLazyCustomRateLimiter({
   },
 }, 'pro_profile_update');
 
+// Upload-url rate limiter : 20 req/heure/userId — presigned URL generation
+// Plus généreux que finalize car c'est une opération légère (pas d'I/O S3 réel),
+// mais user-keyed pour éviter l'épuisement du bucket IP global partagé.
+const uploadUrlRateLimiter = createLazyCustomRateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 heure
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test' && !process.env.ENABLE_RATE_LIMIT_IN_TESTS,
+  keyGenerator: (req: any) => {
+    const userId = (req as any).user?.id;
+    if (userId) return `upload_url:user:${userId}`;
+    const ip = getClientIp(req) ?? req.socket?.remoteAddress;
+    return ip ? `upload_url:ip:${ipKeyGenerator(ip)}` : 'upload_url:anonymous';
+  },
+  handler: (_req: any, res: any) => {
+    res.status(429).json({ error: 'RATE_LIMIT_EXCEEDED', message: 'Trop de tentatives. Réessayez dans une heure.' });
+  },
+}, 'pro_upload_url');
+
 // Finalize rate limiter : 10 req/5min/userId — cohérent avec profile.controller.ts
 const finalizeRateLimiter = createLazyCustomRateLimiter({
   windowMs: 5 * 60 * 1000,
@@ -338,7 +358,7 @@ proRouter.patch('/me', requireProRole, profileUpdateLimiter, async (req, res) =>
 });
 
 // Presigned upload URL for pro photo/logo
-proRouter.post('/photo/upload-url', requireProRole, async (req, res) => {
+proRouter.post('/photo/upload-url', requireProRole, uploadUrlRateLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
