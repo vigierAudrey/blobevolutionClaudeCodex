@@ -56,6 +56,7 @@ function sanitizeErrorMessage(error: unknown): string {
       UNAUTHORIZED: 'Veuillez vous reconnecter',
       FILE_TOO_LARGE: 'Le fichier est trop volumineux (max 5 Mo)',
       INVALID_FILE_TYPE: 'Type de fichier non supporté',
+      RATE_LIMIT_EXCEEDED: 'Trop de tentatives. Veuillez patienter quelques minutes avant de réessayer.',
     };
 
     if (error && typeof error === 'object') {
@@ -86,6 +87,7 @@ export default function ProProfilePage() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Geolocation state
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -463,7 +465,9 @@ export default function ProProfilePage() {
 
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     setErr(null);
+    setSaving(true);
 
     try {
       const t = ensureAuthenticated();
@@ -518,6 +522,8 @@ export default function ProProfilePage() {
     } catch (e: unknown) {
       // ✅ CORRIGÉ : Sanitization des erreurs
       setErr(sanitizeErrorMessage(e));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -619,8 +625,19 @@ export default function ProProfilePage() {
                     </p>
                   </div>
                 )}
-                <Button type="submit" className="w-full sm:w-auto bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700">
-                  Enregistrer
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full sm:w-auto bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saving ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Spinner />
+                      Enregistrement…
+                    </span>
+                  ) : (
+                    'Enregistrer'
+                  )}
                 </Button>
               </form>
             </CardContent>

@@ -570,7 +570,14 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
       limiter = rateLimiters.auth;
     }
   } else if (path.includes('/upload') || method === 'POST' && path.includes('/photo')) {
-    limiter = rateLimiters.upload;
+    // /pro/photo/upload-url has its own user-keyed uploadUrlRateLimiter in the route.
+    // Excluding it from the shared IP bucket prevents premature 429 when finalize and
+    // upload-url exhaust the same 10/10min counter. Falls through to apiStandard (POST).
+    if (path.endsWith('/photo/upload-url')) {
+      limiter = rateLimiters.apiStandard;
+    } else {
+      limiter = rateLimiters.upload;
+    }
   } else if (path.includes('/search') || path.includes('/matching')) {
     limiter = rateLimiters.search;
   } else if (path.includes('/messages') || path.includes('/conversations')) {

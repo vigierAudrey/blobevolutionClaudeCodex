@@ -212,7 +212,6 @@ for PLAINTEXT_FILE in "${FILES_TO_UPLOAD[@]}"; do
     --s3-chunk-size 64M \
     --transfers 1 \
     --retries 3 \
-    --retry-wait 10 \
     --checksum \
     > "$RCLONE_LOG" 2>&1 || UPLOAD_EXIT=$?
 
