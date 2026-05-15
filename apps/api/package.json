@@ -12,6 +12,8 @@
     "clean": "rimraf dist",
     "type-check": "tsc -p tsconfig.typecheck.json --noEmit",
     "test": "NODE_ENV=test jest",
+    "test:unit": "NODE_ENV=test jest --config jest.unit.config.cjs",
+    "test:matching": "NODE_ENV=test jest --config jest.matching.config.cjs",
     "gdpr:report": "tsx src/scripts/gdpr-purge-cli.ts report",
     "gdpr:purge": "tsx src/scripts/gdpr-purge-cli.ts purge",
     "gdpr:archive": "tsx src/scripts/gdpr-purge-cli.ts archive",
