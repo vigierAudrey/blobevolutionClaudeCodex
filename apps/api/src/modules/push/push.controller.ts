@@ -27,7 +27,7 @@ const unsubscribeSchema = z.object({
 const testNotificationSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   body: z.string().min(1, 'Body is required'),
-  type: z.enum(['booking_accepted', 'booking_rejected', 'new_message', 'reminder', 'general']).default('general'),
+  type: z.enum(['new_message', 'reminder', 'general']).default('general'),
   url: z.string().optional()
 });
 
@@ -35,7 +35,7 @@ const sendNotificationSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
   title: z.string().min(1, 'Title is required'),
   body: z.string().min(1, 'Body is required'),
-  type: z.enum(['booking_accepted', 'booking_rejected', 'new_message', 'reminder', 'general']),
+  type: z.enum(['new_message', 'reminder', 'general']),
   url: z.string().optional(),
   data: z.record(z.any()).optional()
 });
