@@ -322,12 +322,15 @@ export default function AdminAnalytics() {
         <div className="flex items-center gap-2">
           <Target className="h-5 w-5 text-emerald-600" />
           <h2 className="text-2xl font-semibold">Marketplace Health</h2>
+          <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-700 text-xs font-normal">
+            Données historiques — fonctionnalité retirée
+          </Badge>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Demandes vs offres</CardTitle>
-              <CardDescription>Ratio global</CardDescription>
+              <CardDescription>Ratio global · données figées</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-semibold">
@@ -343,7 +346,7 @@ export default function AdminAnalytics() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Taux d&apos;acceptation</CardTitle>
-              <CardDescription>Bookings acceptés</CardDescription>
+              <CardDescription>Données figées · booking retiré</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-semibold">{formatPercent(marketplace?.acceptance.acceptanceRate ?? null)}</div>
@@ -353,7 +356,7 @@ export default function AdminAnalytics() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Délai de réponse médian</CardTitle>
-              <CardDescription>Pros → Riders</CardDescription>
+              <CardDescription>Données figées · booking retiré</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-semibold">{formatHours(marketplace?.acceptance.medianResponseHours ?? null)}</div>
@@ -368,7 +371,7 @@ export default function AdminAnalytics() {
               <BarChart3 className="h-4 w-4" />
               Supply vs Demand par sport & zone large
             </CardTitle>
-            <CardDescription>Segments masqués si n &lt; {rgpdThreshold}</CardDescription>
+            <CardDescription>Données figées — fonctionnalité booking retirée · segments masqués si n &lt; {rgpdThreshold}</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -399,7 +402,7 @@ export default function AdminAnalytics() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Acceptation par sport</CardTitle>
-            <CardDescription>Masqué si n &lt; {rgpdThreshold}</CardDescription>
+            <CardDescription>Données figées — fonctionnalité booking retirée · masqué si n &lt; {rgpdThreshold}</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
