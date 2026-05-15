@@ -17,6 +17,7 @@ jobs:
   security-guard:
     name: Security Guard - DB Push Protection
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -209,6 +210,7 @@ jobs:
     needs: security-guard
     name: Lint
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -216,8 +218,8 @@ jobs:
       - name: Enforce network guardrails
         run: bash scripts/no-raw-fetch-check.sh
 
-      - name: No insecure logs / secrets (block)
-        run: bash scripts/no-insecure-logs-check.sh
+      # no-insecure-logs-check.sh already ran in security-guard (which we depend on).
+      # Removed here to avoid duplicating ~30s of grep across the lockfile.
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -240,6 +242,7 @@ jobs:
     name: Build and Test API
     runs-on: ubuntu-22.04
     needs: lint
+    timeout-minutes: 40
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -352,6 +355,7 @@ jobs:
     name: Migration Chain — Fresh DB Deploy
     runs-on: ubuntu-22.04
     needs: lint
+    timeout-minutes: 20
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -453,9 +457,57 @@ jobs:
           echo "NOTE: this check detects schema.prisma changes without migrations."
           echo "It does NOT detect db push drift on an existing local DB (fundamental CI limitation)."
 
+  api-unit-fast:
+    name: API Unit Tests (fast — no Postgres)
+    runs-on: ubuntu-22.04
+    needs: [security-guard]
+    timeout-minutes: 8
+    env:
+      NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=2048
+      JWT_SECRET: test-jwt-secret
+      JWT_REFRESH_SECRET: test-jwt-refresh-secret
+      IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: test-log-actor-secret-for-ci-only-min-32-chars
+      WEB_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        # Required for @blobinfini/database imports to resolve — does NOT need a running DB.
+        run: pnpm run db:generate
+
+      - name: Run unit tests (no Postgres, no Redis)
+        run: |
+          pnpm --filter @blobinfini/api exec jest \
+            --config jest.unit.config.cjs \
+            --no-coverage \
+            --forceExit \
+            --detectOpenHandles
+
   type-check:
     name: Type Check
     runs-on: ubuntu-22.04
+    # Depend on security-guard so a security violation doesn't produce a misleading
+    # "Type Check passed" green while the guard is still red.
+    needs: [security-guard]
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -486,6 +538,8 @@ jobs:
   web-tests:
     name: Web Tests
     runs-on: ubuntu-22.04
+    needs: [security-guard]
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -510,6 +564,8 @@ jobs:
   contracts:
     name: API Contracts
     runs-on: ubuntu-22.04
+    needs: [security-guard]
+    timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -545,7 +601,10 @@ jobs:
           - 1025:1025
           - 8025:8025
       postgres:
-        image: postgis/postgis:15-3.4
+        # Aligned with build-and-test and migrate-deploy-fresh (was postgis:15-3.4).
+        # PostGIS SQL behaviour is identical across 15/16 for our usage; harmonizing
+        # eliminates a class of "passes E2E but fails unit" surprises on PostGIS API diffs.
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -620,8 +679,19 @@ jobs:
       - name: Seed database
         run: pnpm run db:reseed
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          # Invalidate when pnpm-lock.yaml changes (Playwright version bump).
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-chromium-${{ runner.os }}-
+
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps
+        # chromium only — the project's playwright.config.ts uses a single chromium project.
+        # --with-deps always installs OS-level browser dependencies (not cached).
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Run Playwright E2E tests
         run: pnpm run test:e2e
