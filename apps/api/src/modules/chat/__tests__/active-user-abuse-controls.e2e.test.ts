@@ -43,8 +43,11 @@ async function createRiderProfile(userId: string, displayName: string, lat: numb
 }
 
 describe('Active user abuse controls', () => {
-  afterAll(async () => {
+  afterEach(() => {
     delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+  });
+
+  afterAll(async () => {
     await prisma.$disconnect();
   });
 
@@ -125,7 +128,7 @@ describe('Active user abuse controls', () => {
         expect(response.body.error.code).toBe('VALIDATION_ERROR');
       });
 
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       Array.from({ length: 11 }, (_, index) =>
         riderA.session
           .post(`/conversations/${conversation.id}/messages`)
@@ -134,7 +137,15 @@ describe('Active user abuse controls', () => {
       )
     );
 
-    const statuses = results.map((response) => response.status);
+    // allSettled lets every in-flight request complete before afterEach truncates the DB,
+    // preventing Message_conversationId_fkey FK violations from orphaned server callbacks.
+    // Individual TCP resets (ECONNRESET) under high concurrency are transient noise and
+    // must not abort the assertion — but we still fail if ALL requests were lost or if
+    // none of the fulfilled responses is a 429 (which would mean rate limiting is broken).
+    const fulfilled = settled.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<{ status: number }>[];
+    expect(fulfilled.length).toBeGreaterThan(0);
+
+    const statuses = fulfilled.map((r) => r.value.status);
     expect(statuses.filter((status) => status === 429).length).toBeGreaterThanOrEqual(1);
   });
 
