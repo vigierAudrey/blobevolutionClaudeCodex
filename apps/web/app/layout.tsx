@@ -4,6 +4,8 @@ import Script from 'next/script';
 import { headers } from 'next/headers';
 import './globals.css';
 import ClientProvider from '@/components/ui/ClientProvider';
+import { RouteAnnouncer } from '@/components/accessibility/RouteAnnouncer';
+import { SkipLink } from '@/components/accessibility/SkipLink';
 import { ThemeScript } from '@/components/theme/ThemeScript';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
@@ -60,9 +62,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       {/* Use design tokens so dark mode can flip background/foreground */}
       <body className="min-h-screen bg-background text-foreground">
+        <SkipLink />
+        <RouteAnnouncer />
         <NextIntlClientProvider locale={locale} messages={messages}>
           <ClientProvider>
-            <main className="container-responsive py-6 sm:py-10">{children}</main>
+            <main id="main-content" tabIndex={-1} className="container-responsive py-6 sm:py-10">
+              {children}
+            </main>
             <CookieConsent />
           </ClientProvider>
         </NextIntlClientProvider>
