@@ -789,8 +789,6 @@ const notificationPreferencesSchema = z.object({
   notifyMatches: z.boolean().optional(),
   notifyInvitations: z.boolean().optional(),
   notifyLessonRequests: z.boolean().optional(),
-  notifyBookingAccepted: z.boolean().optional(),
-  notifyBookingRejected: z.boolean().optional(),
   notifyProMessages: z.boolean().optional(),
   notifyForSurf: z.boolean().optional(),
   notifyForKitesurf: z.boolean().optional(),
@@ -842,8 +840,6 @@ profileRouter.get('/notifications', async (req, res) => {
     // PRO-specific preferences
     const proPreferences = user.role === 'PRO' ? {
       notifyLessonRequests: preferences.notifyLessonRequests,
-      notifyBookingAccepted: preferences.notifyBookingAccepted,
-      notifyBookingRejected: preferences.notifyBookingRejected,
       notifyProMessages: preferences.notifyProMessages,
       notifyForSurf: preferences.notifyForSurf,
       notifyForKitesurf: preferences.notifyForKitesurf,
@@ -901,8 +897,6 @@ profileRouter.put('/notifications', validate(notificationPreferencesSchema), asy
     // PRO-only fields
     if (user.role === 'PRO') {
       if (body.notifyLessonRequests !== undefined) allowedFields.notifyLessonRequests = body.notifyLessonRequests;
-      if (body.notifyBookingAccepted !== undefined) allowedFields.notifyBookingAccepted = body.notifyBookingAccepted;
-      if (body.notifyBookingRejected !== undefined) allowedFields.notifyBookingRejected = body.notifyBookingRejected;
       if (body.notifyProMessages !== undefined) allowedFields.notifyProMessages = body.notifyProMessages;
       if (body.notifyForSurf !== undefined) allowedFields.notifyForSurf = body.notifyForSurf;
       if (body.notifyForKitesurf !== undefined) allowedFields.notifyForKitesurf = body.notifyForKitesurf;
@@ -930,8 +924,6 @@ profileRouter.put('/notifications', validate(notificationPreferencesSchema), asy
 
     const proPreferences = user.role === 'PRO' ? {
       notifyLessonRequests: preferences.notifyLessonRequests,
-      notifyBookingAccepted: preferences.notifyBookingAccepted,
-      notifyBookingRejected: preferences.notifyBookingRejected,
       notifyProMessages: preferences.notifyProMessages,
       notifyForSurf: preferences.notifyForSurf,
       notifyForKitesurf: preferences.notifyForKitesurf,
