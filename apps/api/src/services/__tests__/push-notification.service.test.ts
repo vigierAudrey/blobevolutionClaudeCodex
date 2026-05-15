@@ -269,7 +269,7 @@ describe('PushNotificationService', () => {
       const message = (service as any).buildFCMMessage('token', {
         title: 'Hello',
         body: 'World',
-        type: 'booking_accepted',
+        type: 'new_message',
         userId: 'user-1',
         url: '/test',
         data: { extra: 'value' }
@@ -277,7 +277,7 @@ describe('PushNotificationService', () => {
 
       expect(message).toMatchObject({
         token: 'token',
-        data: expect.objectContaining({ type: 'booking_accepted', extra: 'value' }),
+        data: expect.objectContaining({ type: 'new_message', extra: 'value' }),
         webpush: expect.any(Object)
       });
     });

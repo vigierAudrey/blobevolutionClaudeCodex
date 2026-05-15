@@ -25,7 +25,7 @@ if (!admin.apps.length && firebaseConfig.privateKey && firebaseConfig.clientEmai
 export interface PushNotificationData {
   title: string;
   body: string;
-  type: 'booking_accepted' | 'booking_rejected' | 'new_message' | 'reminder' | 'general' | 'new_lesson_request';
+  type: 'new_message' | 'reminder' | 'general';
   url?: string;
   icon?: string;
   userId?: string;
@@ -313,7 +313,7 @@ export class PushNotificationService {
           icon: notification.icon || '/icons/icon-192x192.png',
           badge: '/icons/icon-72x72.png',
           tag: `blobinfini-${notification.type}`,
-          requireInteraction: notification.type === 'booking_accepted' || notification.type === 'booking_rejected',
+          requireInteraction: false,
           silent: false,
           vibrate: this.getVibrationPattern(notification.type),
           actions: this.getActionsForType(notification.type, notification.data),
@@ -338,12 +338,8 @@ export class PushNotificationService {
    */
   private getUrgencyForType(type: string): string {
     switch (type) {
-      case 'booking_accepted':
-      case 'booking_rejected':
-        return 'high';
       case 'new_message':
       case 'reminder':
-      case 'new_lesson_request':
         return 'normal';
       default:
         return 'low';
@@ -355,16 +351,10 @@ export class PushNotificationService {
    */
   private getVibrationPattern(type: string): number[] {
     switch (type) {
-      case 'booking_accepted':
-        return [200, 100, 200, 100, 200]; // Happy pattern
-      case 'booking_rejected':
-        return [100, 50, 100]; // Short pattern
       case 'new_message':
-        return [150]; // Simple buzz
+        return [150];
       case 'reminder':
-        return [300, 100, 300]; // Attention pattern
-      case 'new_lesson_request':
-        return [200, 100, 200]; // Alert pattern
+        return [300, 100, 300];
       default:
         return [200];
     }
@@ -375,24 +365,10 @@ export class PushNotificationService {
    */
   private getActionsForType(type: string, data?: Record<string, any>): Array<{ action: string; title: string }> {
     switch (type) {
-      case 'booking_accepted':
-        return [
-          { action: 'view', title: '👀 Voir les détails' },
-          { action: 'message', title: '💬 Envoyer un message' }
-        ];
-      case 'booking_rejected':
-        return [
-          { action: 'search', title: '🔍 Chercher d\'autres cours' }
-        ];
       case 'new_message':
         return [
           { action: 'reply', title: '↩️ Répondre' },
           { action: 'view', title: '👀 Voir la conversation' }
-        ];
-      case 'new_lesson_request':
-        return [
-          { action: 'view_map', title: '🗺️ Voir sur la carte' },
-          { action: 'view_requests', title: '📋 Voir mes demandes' }
         ];
       default:
         return [];
