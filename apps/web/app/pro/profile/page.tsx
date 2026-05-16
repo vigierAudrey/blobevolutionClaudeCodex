@@ -485,11 +485,12 @@ export default function ProProfilePage() {
         if (!p.ok) throw new Error(data?.error || 'Upload préparatoire impossible');
 
         // Upload vers S3/storage (pas de CSRF nécessaire - endpoint tiers)
-        await fetch(data.uploadUrl, {
+        const putRes = await fetch(data.uploadUrl, {
           method: 'PUT',
           headers: { 'Content-Type': ct },
-          body: file
+          body: file,
         });
+        if (!putRes.ok) throw new Error(`Échec du téléversement (${putRes.status})`);
 
         // Finalize: valide le contenu côté serveur et retourne la photoUrl officielle
         const finalizeRes = await apiRequest('/pro/photo/finalize', {
