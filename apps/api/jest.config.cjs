@@ -42,6 +42,9 @@ const config = {
     '/modules/auth/__tests__/login-attempt\\.util\\.test\\.ts$',
     // Moved to nightly.yml simulation-tests job (too heavy for per-PR CI)
     '/chat/__tests__/active-user-simulation\\.e2e\\.test\\.ts$',
+    // Moved to socket-tests job (jest.socket.config.cjs) — fixed ports, timing-sensitive, serial-required.
+    // All files matching /lib/__tests__/socket*.test.ts are excluded here.
+    '/lib/__tests__/socket',
   ],
   setupFiles: ['<rootDir>/jest.setup.env.ts', '<rootDir>/jest.setup.secrets.ts'],
   maxWorkers: 1,

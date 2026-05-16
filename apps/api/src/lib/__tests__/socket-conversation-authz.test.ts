@@ -95,6 +95,8 @@ describe('Socket conversation authZ regression', () => {
             'socket-authz-sender@test.com',
             'socket-authz-receiver@test.com',
             'socket-authz-intruder@test.com',
+            'socket-authz-lost-sender@test.com',
+            'socket-authz-lost-receiver@test.com',
           ],
         },
       },

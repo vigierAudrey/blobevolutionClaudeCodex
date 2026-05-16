@@ -43,7 +43,7 @@ describe('Socket Outbound Validation Guard (P1 Critical Events)', () => {
         // Also check if this is the legacy 'error' or 'socket-error' emit (which are allowed without validation)
         const isLegacyErrorEmit = eventName === 'error' || eventName === 'socket-error';
         if (!isLegacyErrorEmit) {
-          fail(
+          throw new Error(
             `Missing Zod validation for event '${eventName}'. ` +
             `Expected '${schemaName}.parse()' before '.emit('${eventName}', ...)' at position ${emitIndex}. ` +
             `Context: ${contextBefore.substring(contextBefore.length - 200)}`
@@ -119,8 +119,7 @@ describe('Socket Outbound Validation Guard (P1 Critical Events)', () => {
         const isInlineObject = emitArg.startsWith('{');
 
         if (isInlineObject) {
-          // Inline object without validation - this is a regression
-          fail(
+          throw new Error(
             `Found direct inline object emit for '${eventName}' at position ${match.index}. ` +
             `All P1 events must use validated payload variables (e.g., 'newMessagePayload'). ` +
             `Found: .emit('${eventName}', ${emitArg.substring(0, 50)}...)`

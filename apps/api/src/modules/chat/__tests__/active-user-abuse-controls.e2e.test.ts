@@ -137,10 +137,8 @@ describe('Active user abuse controls', () => {
       )
     );
 
-    // allSettled lets every in-flight request complete before afterEach truncates the DB,
-    // preventing Message_conversationId_fkey FK violations from orphaned server callbacks.
-    // Individual TCP resets (ECONNRESET) under high concurrency are transient noise and
-    // must not abort the assertion — but we still fail if ALL requests were lost or if
+    // Individual TCP resets (ECONNRESET) under CI resource pressure are transient noise
+    // and must not abort the assertion — but we still fail if ALL requests were lost or if
     // none of the fulfilled responses is a 429 (which would mean rate limiting is broken).
     const fulfilled = settled.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<{ status: number }>[];
     expect(fulfilled.length).toBeGreaterThan(0);

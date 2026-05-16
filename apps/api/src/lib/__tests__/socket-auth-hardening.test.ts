@@ -51,9 +51,7 @@ describe('WebSocket Auth Hardening (P0 Step 2.1)', () => {
     // Setup serveur WebSocket
     httpServer = createServer();
     serverIO = initializeSocket(httpServer);
-    httpServer.listen(TEST_PORT);
-
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise<void>((resolve) => httpServer.listen(TEST_PORT, () => resolve()));
   });
 
   afterAll(async () => {

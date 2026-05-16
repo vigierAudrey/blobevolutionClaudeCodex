@@ -71,6 +71,11 @@ module.exports = async function globalSetup() {
     // CI must never rely on ALLOW_ACCEPT_DATA_LOSS.
     delete setupEnv.ALLOW_ACCEPT_DATA_LOSS;
 
+    // NOTE: JEST_DB_PREPARED=true is set by ci.yml build-and-test/socket-tests jobs to signal
+    // that migrations were already run by an earlier CI step. This globalSetup intentionally
+    // runs migrate:deploy again anyway — prisma migrate deploy is idempotent (no-op when up-to-date).
+    // The ~20s overhead is acceptable; implementing a skip guard here would add complexity for
+    // minimal gain since the CI jobs already run generate+migrate before invoking Jest.
     if (CI === 'true') {
       console.log('\n🗃️  [2/4] CI=true detected: applying schema via migrate deploy...');
       execSync('npm run migrate:deploy --workspace @blobinfini/database', {
