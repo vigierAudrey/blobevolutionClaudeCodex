@@ -47,10 +47,7 @@ describe('WebSocket Connection Limits (P0)', () => {
     // Setup serveur WebSocket
     httpServer = createServer();
     serverIO = initializeSocket(httpServer);
-    httpServer.listen(TEST_PORT);
-
-    // Attendre que le serveur soit prêt
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise<void>((resolve) => httpServer.listen(TEST_PORT, () => resolve()));
   });
 
   afterAll(async () => {

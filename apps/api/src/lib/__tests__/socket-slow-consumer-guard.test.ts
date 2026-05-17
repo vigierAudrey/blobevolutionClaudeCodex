@@ -53,10 +53,16 @@ describe('Socket slow consumer guard', () => {
 
   afterAll(() => {
     jest.useRealTimers();
-    process.env.WS_SLOW_CONSUMER_GUARD = previousEnv.mode;
-    process.env.WS_SLOW_CONSUMER_CHECK_INTERVAL_MS = previousEnv.checkMs;
-    process.env.WS_SLOW_CONSUMER_MAX_STREAK = previousEnv.maxStreak;
-    process.env.WS_SLOW_CONSUMER_MAX_BUFFERED_PACKETS = previousEnv.maxPackets;
+    // Restore or delete — assigning undefined stringifies to "undefined" in process.env,
+    // which breaks strict comparisons (=== 'on') in modules loaded by later test files.
+    const restore = (key: string, value: string | undefined) => {
+      if (value === undefined) delete (process.env as any)[key];
+      else process.env[key] = value;
+    };
+    restore('WS_SLOW_CONSUMER_GUARD', previousEnv.mode);
+    restore('WS_SLOW_CONSUMER_CHECK_INTERVAL_MS', previousEnv.checkMs);
+    restore('WS_SLOW_CONSUMER_MAX_STREAK', previousEnv.maxStreak);
+    restore('WS_SLOW_CONSUMER_MAX_BUFFERED_PACKETS', previousEnv.maxPackets);
   });
 
   it('disconnects on persistent congestion and records metrics', () => {
