@@ -338,8 +338,7 @@ jobs:
         run: pnpm run build
 
       - name: Run API tests
-        # JEST_DB_PREPARED=true: informational signal that migrations ran above.
-        # jest.global-setup.cjs re-runs migrate:deploy anyway (idempotent, ~20s).
+        # JEST_DB_PREPARED=true: migrations ran above; Jest must not run db push.
         env:
           JEST_DB_PREPARED: 'true'
         run: pnpm --filter @blobinfini/api test
@@ -584,6 +583,8 @@ jobs:
         # --runInBand: belt-and-suspenders with maxWorkers:1 in jest.socket.config.cjs.
         # Socket tests bind fixed ports and share in-process rate-limiter state —
         # parallel execution would cause port conflicts and flaky failures.
+        env:
+          JEST_DB_PREPARED: 'true'
         run: |
           pnpm --filter @blobinfini/api exec jest \
             --config jest.socket.config.cjs \

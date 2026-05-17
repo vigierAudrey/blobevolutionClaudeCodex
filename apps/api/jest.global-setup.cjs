@@ -4,14 +4,14 @@
  * RESPONSABILITÉS:
  * 1. Vérifier contexte test (sécurité)
  * 2. Générer Prisma Client (1 fois)
- * 3. Préparer schéma DB (CI: migrate deploy / local: safe-db-push)
+ * 3. Préparer schéma DB (migrate deploy only, unless JEST_DB_PREPARED=true)
  * 4. Vérifier connexion Postgres
  * 5. Seed minimal (2 users test)
  *
  * SÉCURITÉ:
  * - Gardes identiques à jest.setup.db.ts
- * - Local: passe par safe-db-push.mjs (porte unique)
- * - CI: n'utilise jamais ALLOW_ACCEPT_DATA_LOSS
+ * - Jest never uses db push / ALLOW_ACCEPT_DATA_LOSS
+ * - CI jobs can pre-run migrations and set JEST_DB_PREPARED=true
  */
 
 const { execSync } = require('child_process');
@@ -23,7 +23,7 @@ module.exports = async function globalSetup() {
   const repoRoot = path.resolve(__dirname, '..', '..');
 
   // ============================================================================
-  // SECURITY GUARD: Verify test environment before db:push
+  // SECURITY GUARD: Verify test environment before schema setup
   // ============================================================================
   const APP_ENV = process.env.APP_ENV;
   const CI_PROD = process.env.CI_PROD;
@@ -33,7 +33,7 @@ module.exports = async function globalSetup() {
   // Hard deny if production environment
   if (APP_ENV === 'production' || CI_PROD === 'true') {
     throw new Error(
-      '❌ BLOCKED: Cannot run db:push in production context.\n' +
+      '❌ BLOCKED: Cannot prepare test database in production context.\n' +
       `   APP_ENV=${APP_ENV}, CI_PROD=${CI_PROD}\n` +
       '   This is a CRITICAL security violation.'
     );
@@ -59,7 +59,7 @@ module.exports = async function globalSetup() {
     });
 
     // ============================================================================
-    // STEP 2: Prepare schema (CI: migrate deploy / local: safe-db-push)
+    // STEP 2: Prepare schema (migrate deploy only, or skip when pre-prepared)
     // ============================================================================
     const setupEnv = {
       ...process.env,
@@ -68,30 +68,18 @@ module.exports = async function globalSetup() {
       NODE_ENV: 'test' // Ensure test context
     };
 
-    // CI must never rely on ALLOW_ACCEPT_DATA_LOSS.
+    // Jest setup must never rely on ALLOW_ACCEPT_DATA_LOSS.
     delete setupEnv.ALLOW_ACCEPT_DATA_LOSS;
 
-    // NOTE: JEST_DB_PREPARED=true is set by ci.yml build-and-test/socket-tests jobs to signal
-    // that migrations were already run by an earlier CI step. This globalSetup intentionally
-    // runs migrate:deploy again anyway — prisma migrate deploy is idempotent (no-op when up-to-date).
-    // The ~20s overhead is acceptable; implementing a skip guard here would add complexity for
-    // minimal gain since the CI jobs already run generate+migrate before invoking Jest.
-    if (CI === 'true') {
-      console.log('\n🗃️  [2/4] CI=true detected: applying schema via migrate deploy...');
+    // JEST_DB_PREPARED=true is set by CI jobs after db:migrate:deploy has run.
+    if (process.env.JEST_DB_PREPARED === 'true') {
+      console.log('\n🗃️  [2/4] JEST_DB_PREPARED=true: skipping schema preparation.');
+    } else {
+      console.log('\n🗃️  [2/4] Applying schema via migrate deploy...');
       execSync('npm run migrate:deploy --workspace @blobinfini/database', {
         stdio: 'inherit',
         cwd: repoRoot,
         env: setupEnv
-      });
-    } else {
-      console.log('\n🗃️  [2/4] Local test mode: pushing schema to test DB...');
-      execSync('npm run db:push --workspace @blobinfini/database', {
-        stdio: 'inherit',
-        cwd: repoRoot,
-        env: {
-          ...setupEnv,
-          ALLOW_ACCEPT_DATA_LOSS: 'true' // Explicit unlock for local test setup
-        }
       });
     }
 
