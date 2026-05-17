@@ -12,20 +12,20 @@ Le schéma DB est préparé **UNE SEULE FOIS** par run Jest au lieu d'avant chaq
 
 1. **[1/4] Generate Prisma Client** (`npm run generate`)
 2. **[2/4] Prepare schema DB**
-   - **CI (`CI=true`)**: `npm run migrate:deploy` (sans `ALLOW_ACCEPT_DATA_LOSS`)
-   - **Local test**: `npm run db:push` via `safe-db-push.mjs`
+   - **Si `JEST_DB_PREPARED=true`**: aucune préparation de schéma, la DB a déjà été migrée
+   - **Sinon**: `npm run migrate:deploy` (sans `ALLOW_ACCEPT_DATA_LOSS`)
 3. **[3/4] Verify Postgres connection** (query test)
 4. **[4/4] Seed minimal test users** (2 users: admin + rider)
 
 **Gardes de sécurité:**
-- ✅ `db push` n'est autorisé que si `NODE_ENV=test` ou `CI_TEST_DB=true`
-- ✅ En local `db:push`, requiert `ALLOW_ACCEPT_DATA_LOSS=true`
-- ✅ En CI, n'utilise pas `ALLOW_ACCEPT_DATA_LOSS` (migration uniquement)
+- ✅ Le setup Jest n'appelle jamais `db push`
+- ✅ Le setup Jest supprime `ALLOW_ACCEPT_DATA_LOSS` avant toute préparation DB
+- ✅ CI prépare la DB avec `db:migrate:deploy`, puis lance Jest avec `JEST_DB_PREPARED=true`
 - ❌ BLOCKED si `APP_ENV=production` ou `CI_PROD=true`
 
 **Performance:**
-- Avant P1: ~75s (generate + db:push × 3 suites)
-- Après P1: ~7s (generate + db:push × 1) → **10x plus rapide**
+- Avant P1: ~75s (generate + préparation DB × 3 suites)
+- Après P1: ~7s (generate + préparation DB globale × 1) → **10x plus rapide**
 
 ---
 
@@ -133,7 +133,7 @@ TEST_DB_RESET_DEBUG=true pnpm test
 
 **Optimisation**:
 - Prisma generate est rapide si rien n'a changé (~500ms)
-- db:push est instantané si schéma déjà sync
+- `migrate:deploy` est no-op si les migrations sont déjà appliquées
 
 **Note**: Pas d'optimisation watch mode P0 (acceptable pour dev local).
 
@@ -176,7 +176,7 @@ TEST_DB_RESET_DEBUG=true pnpm test socket-connection-limits
 # → Devrait afficher "Seed complete (2 test users)"
 ```
 
-### "Multiple db:push detected"
+### "Multiple DB setup detected"
 
 **Cause**: Global Setup pas activé.
 
@@ -187,7 +187,7 @@ globalSetup: '<rootDir>/jest.global-setup.cjs',
 
 ### Tests lents (>60s)
 
-**Cause**: `generate` + `db:push` exécutés plusieurs fois.
+**Cause**: `generate` + préparation DB exécutés plusieurs fois.
 
 **Solution**: Vérifier logs au démarrage:
 ```
@@ -215,7 +215,7 @@ afterAll(async () => {
 |----------|----------|----------|------|
 | Setup DB | 3× (par suite) | 1× (global) | -66% |
 | Temps total | ~75s | ~7.6s | **10x** |
-| db:push calls | 3 | 1 | -66% |
+| DB setup calls | 3 | 1 | -66% |
 | generate calls | 3 | 1 | -66% |
 
 ---

@@ -1,7 +1,7 @@
 /**
  * Jest Setup DB - Test isolation & cleanup
  *
- * NOTE: DB schema preparation (generate + db:push + seed) is now handled
+ * NOTE: DB schema preparation (generate + safe migration + seed) is now handled
  * by jest.global-setup.cjs (executed ONCE per Jest run).
  *
  * This file only handles:

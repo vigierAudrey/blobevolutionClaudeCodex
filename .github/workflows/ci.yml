@@ -338,8 +338,7 @@ jobs:
         run: pnpm run build
 
       - name: Run API tests
-        # JEST_DB_PREPARED=true: DB already migrated above — skip globalSetup migrate step
-        # and activate the pg_constraint + pg_indexes guard in jest.global-setup.cjs.
+        # JEST_DB_PREPARED=true: migrations ran above; Jest must not run db push.
         env:
           JEST_DB_PREPARED: 'true'
         run: pnpm --filter @blobinfini/api test
@@ -497,6 +496,99 @@ jobs:
         run: |
           pnpm --filter @blobinfini/api exec jest \
             --config jest.unit.config.cjs \
+            --no-coverage \
+            --forceExit \
+            --detectOpenHandles
+
+  socket-tests:
+    name: Socket Tests
+    runs-on: ubuntu-22.04
+    needs: [security-guard]
+    timeout-minutes: 20
+    # Dedicated Postgres — isolated from build-and-test (separate runner).
+    # Each job runs on its own GitHub Actions runner: port 5432 here is NOT
+    # shared with the build-and-test job's postgres service.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blobinfini
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=4096
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
+      JWT_SECRET: test-jwt-secret
+      JWT_REFRESH_SECRET: test-jwt-refresh-secret
+      IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: test-log-actor-secret-for-ci-only-min-32-chars
+      WEB_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for Postgres to be ready
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          deadline=$((SECONDS + 30))
+          until pg_isready -h localhost -U postgres -d blobinfini; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "❌ Postgres not ready after 30s — aborting." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "✅ Postgres TCP ready."
+          psql "$DATABASE_URL" -c "select 1" > /dev/null
+          echo "✅ Postgres auth ready (DATABASE_URL)."
+
+      - name: Enable PostGIS
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d blobinfini -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Generate Prisma Client
+        run: pnpm run db:generate
+
+      - name: Run DB migrations
+        run: pnpm run db:migrate:deploy
+
+      - name: Run socket tests
+        # --runInBand: belt-and-suspenders with maxWorkers:1 in jest.socket.config.cjs.
+        # Socket tests bind fixed ports and share in-process rate-limiter state —
+        # parallel execution would cause port conflicts and flaky failures.
+        env:
+          JEST_DB_PREPARED: 'true'
+        run: |
+          pnpm --filter @blobinfini/api exec jest \
+            --config jest.socket.config.cjs \
+            --runInBand \
             --no-coverage \
             --forceExit \
             --detectOpenHandles

@@ -21,7 +21,7 @@ import { resetReconnectionLimit } from '../socket-reconnection-guard';
 import { resetAuthCache, getAuthCacheMetrics } from '../socket-auth-cache';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
-const TEST_PORT = 4098; // Port différent pour éviter conflits
+const TEST_PORT = 4101; // distinct from socket-cookie-auth (4098) — actual collision fixed
 const TEST_EMAIL = 'ws-storm-test@test.com';
 
 describe('WebSocket Reconnection Storm Protection (P0 Step 2)', () => {
@@ -48,10 +48,7 @@ describe('WebSocket Reconnection Storm Protection (P0 Step 2)', () => {
     // Setup serveur WebSocket
     httpServer = createServer();
     serverIO = initializeSocket(httpServer);
-    httpServer.listen(TEST_PORT);
-
-    // Attendre serveur prêt
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise<void>((resolve) => httpServer.listen(TEST_PORT, () => resolve()));
   });
 
   afterAll(async () => {

@@ -781,13 +781,30 @@ conversationsRouter.post('/:id/messages', conversationMessagesGlobalLimiter, con
       }
     } else {
       // Sans clientMsgId: création classique
-      msg = await prisma.message.create({
-        data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta },
-        select: { id: true, content: true, type: true, createdAt: true },
-      });
+      try {
+        msg = await prisma.message.create({
+          data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta },
+          select: { id: true, content: true, type: true, createdAt: true },
+        });
+      } catch (e: any) {
+        // P2003 = FK violation: conversation deleted between member-check and INSERT.
+        // Return 404 instead of letting the error bubble to the generic 500 handler.
+        if (e?.code === 'P2003') {
+          return envelope
+            ? sendError(res, 404, ERROR_CODES.FORBIDDEN, 'Conversation not found')
+            : res.status(404).json({ error: 'Not found' });
+        }
+        throw e;
+      }
       wasCreated = true;
     }
-    await prisma.conversation.update({ where: { id }, data: { updatedAt: new Date() } });
+    try {
+      await prisma.conversation.update({ where: { id }, data: { updatedAt: new Date() } });
+    } catch (e: any) {
+      // P2025 = record not found: conversation deleted between message insert and update.
+      // Non-fatal: the message was created successfully; skip the timestamp bump.
+      if (e?.code !== 'P2025') throw e;
+    }
 
     const role = (req as any).user?.role as string | undefined;
     if (role === 'RIDER' || role === 'PRO') {
