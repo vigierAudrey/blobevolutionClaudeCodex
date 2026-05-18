@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -14,6 +15,49 @@ env:
   PNPM_VERSION: '10.28.2'
 
 jobs:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 0. Path detection (fast — no pnpm install, no Node setup)
+  #    Runs in parallel with security-guard.
+  #    On push/workflow_dispatch all heavy jobs run unconditionally (fallback
+  #    via "github.event_name != 'pull_request'" in each job's `if:`).
+  # ──────────────────────────────────────────────────────────────────────────
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-22.04
+    timeout-minutes: 3
+    outputs:
+      api:     ${{ steps.filter.outputs.api }}
+      web:     ${{ steps.filter.outputs.web }}
+      db:      ${{ steps.filter.outputs.db }}
+      openapi: ${{ steps.filter.outputs.openapi }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # token: auto-detected from GITHUB_TOKEN — uses REST API, no extra fetch-depth
+          filters: |
+            api:
+              - 'apps/api/**'
+              - 'packages/database/**'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig*.json'
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig*.json'
+            db:
+              - 'packages/database/prisma/**'
+              - 'pnpm-lock.yaml'
+            openapi:
+              - 'docs/openapi/**'
+              - 'apps/api/src/**'
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Security guard — ALWAYS runs, no pnpm install
+  # ──────────────────────────────────────────────────────────────────────────
   security-guard:
     name: Security Guard - DB Push Protection
     runs-on: ubuntu-22.04
@@ -206,6 +250,9 @@ jobs:
           fi
           echo "✅ POISON OK [empty authz-guard-ok rejected]"
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Lint — ALWAYS runs
+  # ──────────────────────────────────────────────────────────────────────────
   lint:
     needs: security-guard
     name: Lint
@@ -238,11 +285,125 @@ jobs:
       - name: Run lint (strict mode, zero warnings)
         run: pnpm run lint:strict
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. API Unit Tests (fast — no Postgres) — ALWAYS runs
+  # ──────────────────────────────────────────────────────────────────────────
+  api-unit-fast:
+    name: API Unit Tests (fast — no Postgres)
+    runs-on: ubuntu-22.04
+    needs: [security-guard]
+    timeout-minutes: 8
+    env:
+      NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=2048
+      JWT_SECRET: test-jwt-secret
+      JWT_REFRESH_SECRET: test-jwt-refresh-secret
+      IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: test-log-actor-secret-for-ci-only-min-32-chars
+      WEB_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        # Required for @blobinfini/database imports to resolve — does NOT need a running DB.
+        run: pnpm run db:generate
+
+      - name: Run unit tests (no Postgres, no Redis)
+        run: |
+          pnpm --filter @blobinfini/api exec jest \
+            --config jest.unit.config.cjs \
+            --no-coverage \
+            --forceExit \
+            --detectOpenHandles
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. Type Check API — ALWAYS runs (no Next.js build needed)
+  # ──────────────────────────────────────────────────────────────────────────
+  type-check-api:
+    name: Type Check API
+    runs-on: ubuntu-22.04
+    needs: [security-guard]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check API
+        run: pnpm --filter @blobinfini/api type-check
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. Type Check Web — conditional: web files changed OR push/dispatch
+  #    Expensive: requires a full Next.js build to generate .next/types.
+  # ──────────────────────────────────────────────────────────────────────────
+  type-check-web:
+    name: Type Check Web
+    runs-on: ubuntu-22.04
+    needs: [security-guard, changes]
+    timeout-minutes: 25
+    if: needs.changes.outputs.web == 'true' || github.event_name != 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Web (prepare .next/types)
+        run: pnpm --filter @blobinfini/web build
+
+      - name: Type check Web
+        run: pnpm --filter @blobinfini/web type-check
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 6. Build and Test API — conditional: API/DB files changed OR push/dispatch
+  # ──────────────────────────────────────────────────────────────────────────
   build-and-test:
     name: Build and Test API
     runs-on: ubuntu-22.04
-    needs: lint
+    needs: [lint, changes]
     timeout-minutes: 40
+    if: needs.changes.outputs.api == 'true' || github.event_name != 'pull_request'
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -346,6 +507,10 @@ jobs:
       - name: Fail on ERL runtime regression signature in logs
         run: bash scripts/check-no-erl-runtime-log.sh
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 7. Migration Chain — conditional: DB/Prisma files changed OR push/dispatch
+  #    Only Prisma schema or lockfile changes warrant a fresh migration replay.
+  # ──────────────────────────────────────────────────────────────────────────
   migrate-deploy-fresh:
     # Rejoue prisma migrate deploy sur DB vide — bloquant.
     # Garantit que la chaîne de migration est valide pour tout nouveau déploiement.
@@ -353,8 +518,9 @@ jobs:
     # bloquant après résolution du drift Prisma (runbook: docs/runbooks/prisma-migration-drift-2026-03.md).
     name: Migration Chain — Fresh DB Deploy
     runs-on: ubuntu-22.04
-    needs: lint
+    needs: [lint, changes]
     timeout-minutes: 20
+    if: needs.changes.outputs.db == 'true' || github.event_name != 'pull_request'
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -456,55 +622,15 @@ jobs:
           echo "NOTE: this check detects schema.prisma changes without migrations."
           echo "It does NOT detect db push drift on an existing local DB (fundamental CI limitation)."
 
-  api-unit-fast:
-    name: API Unit Tests (fast — no Postgres)
-    runs-on: ubuntu-22.04
-    needs: [security-guard]
-    timeout-minutes: 8
-    env:
-      NODE_ENV: test
-      NODE_OPTIONS: --max-old-space-size=2048
-      JWT_SECRET: test-jwt-secret
-      JWT_REFRESH_SECRET: test-jwt-refresh-secret
-      IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
-      LOG_ACTOR_SECRET: test-log-actor-secret-for-ci-only-min-32-chars
-      WEB_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_API_URL: http://localhost:4000
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate Prisma Client
-        # Required for @blobinfini/database imports to resolve — does NOT need a running DB.
-        run: pnpm run db:generate
-
-      - name: Run unit tests (no Postgres, no Redis)
-        run: |
-          pnpm --filter @blobinfini/api exec jest \
-            --config jest.unit.config.cjs \
-            --no-coverage \
-            --forceExit \
-            --detectOpenHandles
-
+  # ──────────────────────────────────────────────────────────────────────────
+  # 8. Socket Tests — conditional: API/DB files changed OR push/dispatch
+  # ──────────────────────────────────────────────────────────────────────────
   socket-tests:
     name: Socket Tests
     runs-on: ubuntu-22.04
-    needs: [security-guard]
+    needs: [security-guard, changes]
     timeout-minutes: 20
+    if: needs.changes.outputs.api == 'true' || github.event_name != 'pull_request'
     # Dedicated Postgres — isolated from build-and-test (separate runner).
     # Each job runs on its own GitHub Actions runner: port 5432 here is NOT
     # shared with the build-and-test job's postgres service.
@@ -593,45 +719,15 @@ jobs:
             --forceExit \
             --detectOpenHandles
 
-  type-check:
-    name: Type Check
-    runs-on: ubuntu-22.04
-    # Depend on security-guard so a security violation doesn't produce a misleading
-    # "Type Check passed" green while the guard is still red.
-    needs: [security-guard]
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Type check API
-        run: pnpm --filter @blobinfini/api type-check
-
-      - name: Build Web (prepare .next/types)
-        run: pnpm --filter @blobinfini/web build
-
-      - name: Type check Web
-        run: pnpm --filter @blobinfini/web type-check
-
+  # ──────────────────────────────────────────────────────────────────────────
+  # 9. Web Tests — conditional: web files changed OR push/dispatch
+  # ──────────────────────────────────────────────────────────────────────────
   web-tests:
     name: Web Tests
     runs-on: ubuntu-22.04
-    needs: [security-guard]
+    needs: [security-guard, changes]
     timeout-minutes: 10
+    if: needs.changes.outputs.web == 'true' || github.event_name != 'pull_request'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -653,11 +749,15 @@ jobs:
       - name: Run web tests
         run: pnpm --filter @blobinfini/web test --detectOpenHandles
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 10. API Contracts — conditional: openapi/api files changed OR push/dispatch
+  # ──────────────────────────────────────────────────────────────────────────
   contracts:
     name: API Contracts
     runs-on: ubuntu-22.04
-    needs: [security-guard]
+    needs: [security-guard, changes]
     timeout-minutes: 8
+    if: needs.changes.outputs.openapi == 'true' || github.event_name != 'pull_request'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -679,11 +779,17 @@ jobs:
       - name: Lint OpenAPI specs
         run: pnpm run openapi:lint
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 11. E2E Tests — push to main or workflow_dispatch ONLY
+  #     Never runs on pull_request (too expensive: 30 min + Playwright + Postgres).
+  #     Trigger manually via workflow_dispatch for pre-merge validation.
+  #     Previously ran on PRs targeting main — removed to save ~30 min/PR.
+  # ──────────────────────────────────────────────────────────────────────────
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-22.04
     timeout-minutes: 30
-    if: github.event_name != 'pull_request' || github.base_ref == 'main'
+    if: github.event_name != 'pull_request'
     services:
       # Mailpit reste en CI pour les scénarios E2E de capture d'email locale.
       # Ce job ne valide pas la parité SMTP VPS/Brevo.
@@ -788,9 +894,14 @@ jobs:
       - name: Run Playwright E2E tests
         run: pnpm run test:e2e
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 12. Verify Import Alias — lightweight standalone (no pnpm install)
+  #     Moved from needs:build-and-test → needs:security-guard so it runs
+  #     early, in parallel with lint, instead of at the very end of the chain.
+  # ──────────────────────────────────────────────────────────────────────────
   verify-import-alias:
     runs-on: ubuntu-22.04
-    needs: build-and-test
+    needs: security-guard
     if: always()
     continue-on-error: true
     steps:
