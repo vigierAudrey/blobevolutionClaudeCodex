@@ -20,7 +20,7 @@ import { apiRequest } from '../../lib/csrf';
 import Link from 'next/link';
 import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, User, Waves, Bell, Settings, Sparkles, Eye } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
+import type { DisciplinePreference, Gender, UserProfile, UserProfileUpdate } from '@/types/user';
 import type { Level } from '@/types/matching';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../components/cookies/CookieConsent';
 import { ChangePasswordCard } from '../../components/profile/ChangePasswordCard';
@@ -39,7 +39,6 @@ type ProfileUpdatePayload = {
   bio?: string;
   sex: Gender;
   emailNotif: boolean;
-  photoUrl?: string | null;
 };
 
 const labelToGender = (label: SexOption): Gender => {
@@ -439,8 +438,9 @@ export default function ProfilePage() {
       bio: bio || undefined,
       sex: labelToGender(sex),
       emailNotif,
-      photoUrl: photoUrl || undefined,
     };
+
+    let nextPhotoUrl = photoUrl;
 
     try {
       // Auth via httpOnly cookie — no hint check, no Authorization header.
@@ -473,6 +473,7 @@ export default function ProfilePage() {
         const { photoUrl: finalizedUrl } = (await finalizeResponse.json()) as { photoUrl: string };
         // photoUrl est déjà sauvée en DB par /finalize — ne pas la repasser à updateProfile
         // (le schéma PUT /profile/me n'accepte que null, pas une string arbitraire)
+        nextPhotoUrl = finalizedUrl;
         setPhotoUrl(finalizedUrl);
         setPhotoPreviewUrl((previous) => {
           if (previous) URL.revokeObjectURL(previous);
@@ -481,7 +482,7 @@ export default function ProfilePage() {
         setPhotoFile(null);
       }
 
-      await apiClient.updateProfile(payload);
+      await apiClient.updateProfile(payload satisfies UserProfileUpdate);
 
       const disciplinesPayload: DisciplinePreference[] = [];
       if (surfLevel) {
@@ -494,7 +495,7 @@ export default function ProfilePage() {
 
       const nextDisplayName = (payload.displayName ?? displayName ?? '').trim();
       const hasDisplayName = nextDisplayName.length > 0;
-      const hasPhoto = Boolean(payload.photoUrl ?? photoUrl);
+      const hasPhoto = Boolean(nextPhotoUrl);
       const hasDisciplines = disciplinesPayload.length > 0;
 
       toast('Profil sauvegardé', 'success');

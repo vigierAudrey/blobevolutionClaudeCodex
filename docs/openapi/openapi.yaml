@@ -4231,8 +4231,12 @@ components:
           type: boolean
         photoUrl:
           type: string
-          format: uri
+          description: >
+            Suppression explicite de la photo uniquement. Les URLs string sont rejetées
+            sur PUT /profile/me; une nouvelle photo doit passer par
+            POST /profile/photo/upload-url puis POST /profile/photo/finalize.
           nullable: true
+          enum: [null]
         lat:
           type: number
         lng:

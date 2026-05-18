@@ -37,6 +37,25 @@ export interface UserProfile {
   updatedAt?: string;
 }
 
+export type UserProfileUpdate = {
+  displayName?: string;
+  bio?: string;
+  sex?: Gender;
+  maxDistanceKm?: number;
+  emailNotif?: boolean;
+  photoUrl?: null;
+  lat?: number;
+  lng?: number;
+  wantsLesson?: boolean;
+  lessonSport?: Sport | null;
+  lessonLevel?: Level | null;
+  lessonDate?: string | null;
+  lessonPlace?: string | null;
+  lessonStudentCount?: number | null;
+  lessonLat?: number | null;
+  lessonLng?: number | null;
+};
+
 export type DisciplinePreference = {
   sport: Sport;
   level: Level;
