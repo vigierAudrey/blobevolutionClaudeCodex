@@ -48,6 +48,7 @@ model User {
   auditLogs              AuditLog[]
   pushTokens             PushToken[]
   notificationPreferences NotificationPreferences?
+  notifications          Notification[]
   loginAttempts          LoginAttempt[]
   createdAlerts          SystemAlert[]            @relation("UserSystemAlerts")
   conversationInvitations ConversationInvitation[] @relation("InvitedToConversation")
@@ -194,6 +195,29 @@ model ProProfile {
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+enum NotificationType {
+  NEW_MESSAGE
+  NEW_MATCH
+  GROUP_INVITATION
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String           @db.Text
+  url       String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
 }
 
 model PushToken {

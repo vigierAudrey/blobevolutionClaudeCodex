@@ -45,6 +45,7 @@ import {
   touchConversationCoalesced
 } from './socket-fanout-control';
 import { runWithWsLogContext } from '../observability/log-context';
+import { createNotificationSilent, NotificationType } from '../services/notification.service';
 
 let io: SocketIOServer | null = null;
 
@@ -841,6 +842,23 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
             secureLogger.warn('WS_PUSH_QUEUE_DROPPED', {
               conversationId: shortId(conversationId),
               targetUserId: shortId(targetUserId)
+            });
+          }
+        }
+
+        // Créer notification in-app pour les membres offline (seulement si message neuf)
+        if (wasCreated) {
+          for (const { userId: targetUserId } of otherMembers) {
+            createNotificationSilent({
+              userId: targetUserId,
+              type: NotificationType.NEW_MESSAGE,
+              title: senderName,
+              body: message.content.slice(0, 200),
+              url: `/messages/${conversationId}`,
+            });
+            notifyUser(targetUserId, 'notification', {
+              type: NotificationType.NEW_MESSAGE,
+              url: `/messages/${conversationId}`,
             });
           }
         }

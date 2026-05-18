@@ -1,5 +1,6 @@
 "use client";
 import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Sparkles, Tag, User } from 'lucide-react';
+import { NotificationBell } from '../../components/NotificationBell';
 import nextDynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -241,6 +242,9 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="text-white [&_button]:text-white [&_button]:hover:bg-white/20">
+              <NotificationBell />
+            </div>
             <Link href="/account">
               <Button variant="secondary" size="sm" className="bg-white/20 hover:bg-white/30 text-white border-white/30">
                 Mon compte

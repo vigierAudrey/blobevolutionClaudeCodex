@@ -119,6 +119,16 @@ export class PushNotificationService {
     }
 
     try {
+      // Enforce NotificationPreferences — respect opt-out before any FCM call
+      const prefs = await prisma.notificationPreferences.findUnique({
+        where: { userId },
+        select: { pushEnabled: true },
+      });
+      if (prefs && !prefs.pushEnabled) {
+        secureLogger.info('PUSH_SKIPPED_BY_PREFERENCE', { userId });
+        return false;
+      }
+
       // Get user's FCM tokens from database
       const tokens = await this.getUserTokens(userId);
 

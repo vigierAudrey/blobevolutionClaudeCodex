@@ -2826,6 +2826,159 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: Liste paginée des notifications
+      description: |
+        Retourne les notifications de l'utilisateur authentifié, triées par `createdAt` DESC.
+        Pagination par curseur (ISO-8601 du dernier `createdAt` reçu).
+        La valeur de `limit` est **clampée à 50 côté serveur** : envoyer `limit=100` retourne 200
+        avec au plus 50 items (pas de 400). Valeurs négatives ou nulles → 400.
+      operationId: notificationsList
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: ISO-8601 avec offset — `createdAt` du dernier item reçu
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 20
+            description: Nombre d'items demandés — clampé à 50 côté serveur
+      responses:
+        '200':
+          description: Liste de notifications
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: private, no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationItem'
+                  nextCursor:
+                    type: string
+                    format: date-time
+                    nullable: true
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Nombre de notifications non lues (badge)
+      operationId: notificationsUnreadCount
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Compte des notifications non lues
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: private, no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    minimum: 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Marque une notification comme lue (idempotent)
+      description: |
+        Opération idempotente et IDOR-safe : le `WHERE` inclut `userId` côté serveur.
+        Un appel sur l'ID d'une notification appartenant à un autre utilisateur retourne 200
+        sans effet (pas de 404 pour éviter l'énumération).
+      operationId: notificationMarkRead
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '200':
+          description: Notification marquée lue (ou déjà lue)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Marque toutes les notifications non lues comme lues
+      description: |
+        Scoped strictement à l'utilisateur authentifié — n'affecte pas les autres utilisateurs.
+      operationId: notificationsReadAll
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Toutes les notifications marquées lues
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -4792,3 +4945,27 @@ components:
           type: string
         dedupeKey:
           type: string
+
+    NotificationItem:
+      type: object
+      required: [id, type, title, body, readAt, createdAt]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [NEW_MESSAGE, NEW_MATCH, GROUP_INVITATION, SYSTEM]
+        title:
+          type: string
+        body:
+          type: string
+        url:
+          type: string
+          nullable: true
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time

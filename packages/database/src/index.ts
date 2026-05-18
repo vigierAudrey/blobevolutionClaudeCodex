@@ -17,6 +17,7 @@ export {
   ConversationBlockSource,
   ConversationType,
   DecisionKind,
+  NotificationType,
   Level,
   MatchStatus,
   MessageType,

@@ -237,6 +237,7 @@ import { blobosphereAdminRouter } from './modules/blobosphere/blobosphere.contro
 import { blobospherePublicRouter } from './modules/blobosphere/blobosphere.public';
 import { contactRouter } from './modules/contact/contact.controller';
 import pushRouter from './modules/push/push.controller';
+import { notificationsRouter } from './modules/notifications/notifications.controller';
 import { consentRouter } from './modules/consent/consent.controller';
 import { analyticsRouter } from './modules/analytics/analytics.controller';
 
@@ -506,6 +507,7 @@ export function createApp() {
   app.use('/security', securityRouter);
   app.use('/contact', contactRouter);
   app.use('/push', pushRouter);
+  app.use('/notifications', notificationsRouter);
 
 
   // Internal metrics endpoint — token auth, never logs the provided value.

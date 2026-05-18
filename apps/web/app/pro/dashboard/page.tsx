@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
 import { User, Map, Info, LogOut, MessageSquare, Gift, Sparkles } from 'lucide-react';
+import { NotificationBell } from '../../../components/NotificationBell';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
 import { useAnalytics } from '@/hooks/useAnalytics';
@@ -85,6 +86,7 @@ export default function ProDashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <NotificationBell />
           <Link href="/account">
             <Button variant="ghost" size="sm">
               Mon compte

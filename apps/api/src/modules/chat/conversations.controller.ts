@@ -8,6 +8,7 @@ import { secureLogger } from '../../utils/secure-logger';
 import { recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 import { notifyGroupInvitation, notifyNewMessage } from '../push/push.controller';
 import { notifyUser } from '../../lib/socket';
+import { createNotificationSilent, NotificationType } from '../../services/notification.service';
 import { sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
 import { ERROR_CODES } from '../../utils/error-codes';
 import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
@@ -1429,6 +1430,19 @@ conversationsRouter.post('/:id/members', async (req, res) => {
       conversationId: id,
       inviterName,
       memberCount
+    });
+
+    // Créer notification in-app persistée
+    createNotificationSilent({
+      userId: body.userId,
+      type: NotificationType.GROUP_INVITATION,
+      title: inviterName,
+      body: `Tu as été invité(e) dans une conversation de groupe`,
+      url: `/messages/${id}`,
+    });
+    notifyUser(body.userId, 'notification', {
+      type: NotificationType.GROUP_INVITATION,
+      url: `/messages/${id}`,
     });
 
     return res.status(201).json({ ok: true, message: 'Invitation envoyée' });
