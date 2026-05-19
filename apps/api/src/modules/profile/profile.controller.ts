@@ -24,6 +24,7 @@ import {
   assertFranceLaunchLocationInput,
   isFranceLaunchGuardError,
 } from '../../lib/france-launch-guard';
+import { notifyNearbyProsForLessonSilent } from '../../services/lesson-notification.service';
 
 export const profileRouter = Router();
 profileRouter.use(requireAuth, requireVerifiedEmail);
@@ -291,11 +292,40 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => { // authz-
         body.lessonLng = null;
       }
 
+      // Snapshot avant upsert : détection des changements métier lesson request.
+      const prevProfile = await prisma.riderProfile.findUnique({
+        where: { userId },
+        select: { wantsLesson: true, lessonLat: true, lessonLng: true, lessonSport: true },
+      });
+
       const rp = await prisma.riderProfile.upsert({
         where: { userId },
         create: { userId, ...body },
         update: { ...body },
       });
+
+      // Déclenche la fanout de notifications uniquement sur :
+      //   1. Activation wantsLesson false → true
+      //   2. Changement de zone (lessonLat ou lessonLng modifiés)
+      //   3. Changement de sport demandé (surf ↔ kitesurf)
+      // Un update de bio/photo/prénom avec wantsLesson=true et mêmes coords
+      // n'entre dans aucune de ces branches → pas de spam.
+      const lessonNowActive = body.wantsLesson === true && body.lessonLat != null && body.lessonLng != null;
+      if (lessonNowActive) {
+        const wasActive = prevProfile?.wantsLesson ?? false;
+        const latChanged = prevProfile?.lessonLat !== body.lessonLat;
+        const lngChanged = prevProfile?.lessonLng !== body.lessonLng;
+        const sportChanged = (prevProfile?.lessonSport ?? null) !== ((body.lessonSport as string | null | undefined) ?? null);
+
+        if (!wasActive || latChanged || lngChanged || sportChanged) {
+          notifyNearbyProsForLessonSilent({
+            riderId: userId,
+            lessonLat: body.lessonLat as number,
+            lessonLng: body.lessonLng as number,
+            lessonSport: (body.lessonSport as 'surf' | 'kitesurf' | null) ?? null,
+          });
+        }
+      }
 
       // Invalidate profile cache after update
       if (cacheService.isAvailable()) {

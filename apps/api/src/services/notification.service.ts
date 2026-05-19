@@ -7,6 +7,7 @@ export const NotificationType = {
   NEW_MATCH: 'NEW_MATCH',
   GROUP_INVITATION: 'GROUP_INVITATION',
   SYSTEM: 'SYSTEM',
+  LESSON_REQUEST_NEARBY: 'LESSON_REQUEST_NEARBY',
 } as const;
 export type NotificationType = (typeof NotificationType)[keyof typeof NotificationType];
 
@@ -16,6 +17,7 @@ export interface CreateNotificationInput {
   title: string;
   body: string;
   url?: string;
+  data?: Record<string, unknown>;
 }
 
 export interface NotificationRow {
@@ -24,6 +26,7 @@ export interface NotificationRow {
   title: string;
   body: string;
   url: string | null;
+  data: Record<string, unknown> | null;
   readAt: Date | null;
   createdAt: Date;
 }
@@ -34,6 +37,7 @@ const NOTIFICATION_SELECT = {
   title: true,
   body: true,
   url: true,
+  data: true,
   readAt: true,
   createdAt: true,
 } as const;

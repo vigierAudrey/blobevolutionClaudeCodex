@@ -202,6 +202,7 @@ enum NotificationType {
   NEW_MATCH
   GROUP_INVITATION
   SYSTEM
+  LESSON_REQUEST_NEARBY
 }
 
 model Notification {
@@ -211,6 +212,7 @@ model Notification {
   title     String
   body      String           @db.Text
   url       String?
+  data      Json?
   readAt    DateTime?
   createdAt DateTime         @default(now())
 
@@ -218,6 +220,7 @@ model Notification {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, readAt])
+  @@index([createdAt])
 }
 
 model PushToken {
