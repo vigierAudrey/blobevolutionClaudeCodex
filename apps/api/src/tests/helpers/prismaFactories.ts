@@ -97,6 +97,7 @@ export async function ensureProProfile(
   return prisma.proProfile.create({
     data: {
       businessName: 'Test Pro Business',
+      countryCode: 'FR',
       ...(profile ?? {}),
       userId: targetUserId,
     },

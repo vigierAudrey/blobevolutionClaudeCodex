@@ -1,6 +1,6 @@
 import { createApp } from '../../../index';
 import { clientPrisma as prisma, Role } from '@blobinfini/database';
-import { getAccessToken, TestSession } from '../../../tests/helpers/auth';
+import { createTestSession, getAccessToken, TestSession } from '../../../tests/helpers/auth';
 import { resetDb } from '../../../test-utils/resetDb';
 import { secureLogger } from '../../../utils/secure-logger';
 
@@ -9,12 +9,10 @@ describe('POST /matching/decisions security & safety', () => {
   const makeMissingProfileId = (n: number) => `ffffffff-ffff-4fff-8fff-${n.toString(16).padStart(12, 'f')}`;
 
   let riderASession: TestSession;
-  let riderAAccessToken = '';
   let riderAUserId = '';
   let riderAProfileId = '';
 
   let riderBSession: TestSession;
-  let riderBAccessToken = '';
   let riderBUserId = '';
   let riderBProfileId = '';
 
@@ -22,7 +20,6 @@ describe('POST /matching/decisions security & safety', () => {
   let riderCProfileId = '';
 
   let proSession: TestSession;
-  let proAccessToken = '';
   let proUserId = '';
 
   beforeEach(async () => {
@@ -32,22 +29,12 @@ describe('POST /matching/decisions security & safety', () => {
     const riderBEmail = `matching-rider-b-${Date.now()}@test.com`;
     const proEmail = `matching-pro-${Date.now()}@test.com`;
 
-    const riderAAuth = await getAccessToken({
-      app,
-      email: riderAEmail,
-      role: Role.RIDER,
-    });
+    const riderAAuth = await getAccessToken({ app, email: riderAEmail, role: Role.RIDER });
     riderASession = riderAAuth.session;
-    riderAAccessToken = riderAAuth.accessToken;
     riderAUserId = riderAAuth.userId;
 
-    const riderBAuth = await getAccessToken({
-      app,
-      email: riderBEmail,
-      role: Role.RIDER,
-    });
+    const riderBAuth = await getAccessToken({ app, email: riderBEmail, role: Role.RIDER });
     riderBSession = riderBAuth.session;
-    riderBAccessToken = riderBAuth.accessToken;
     riderBUserId = riderBAuth.userId;
 
     const riderCAuth = await getAccessToken({
@@ -57,13 +44,8 @@ describe('POST /matching/decisions security & safety', () => {
     });
     riderCUserId = riderCAuth.userId;
 
-    const proAuth = await getAccessToken({
-      app,
-      email: proEmail,
-      role: Role.PRO,
-    });
+    const proAuth = await getAccessToken({ app, email: proEmail, role: Role.PRO });
     proSession = proAuth.session;
-    proAccessToken = proAuth.accessToken;
     proUserId = proAuth.userId;
 
     const riderAProfile = await prisma.riderProfile.upsert({
@@ -95,16 +77,23 @@ describe('POST /matching/decisions security & safety', () => {
     await prisma.$disconnect();
   });
 
+  it('auth: rejects unauthenticated access', async () => {
+    const anonymousSession = await createTestSession(app);
+
+    await anonymousSession
+      .post('/matching/decisions')
+      .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
+      .expect(401);
+  });
+
   it('happy: creates a match and one conversation after reciprocal ACCEPT', async () => {
     await riderBSession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderBAccessToken}`)
       .send({ items: [{ targetProfileId: riderAProfileId, decision: 'ACCEPT' }] })
       .expect(200);
 
     const res = await riderASession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderAAccessToken}`)
       .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
       .expect(200);
 
@@ -142,7 +131,6 @@ describe('POST /matching/decisions security & safety', () => {
   it('abuse/IDOR: forbids non-RIDER role on decisions endpoint', async () => {
     await proSession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${proAccessToken}`)
       .send({ items: [{ targetProfileId: riderAProfileId, decision: 'ACCEPT' }] })
       .expect(403);
 
@@ -152,22 +140,74 @@ describe('POST /matching/decisions security & safety', () => {
     expect(proDecisionCount).toBe(0);
   });
 
+  it('abuse/IDOR: ignores injected actorUserId and stores the decision for the authenticated rider only', async () => {
+    await riderASession
+      .post('/matching/decisions')
+      .send({
+        items: [
+          {
+            targetProfileId: riderBProfileId,
+            decision: 'REFUSE',
+            actorUserId: riderCUserId,
+          },
+        ],
+      })
+      .expect(200);
+
+    const stored = await prisma.matchDecision.findUnique({
+      where: {
+        actorUserId_targetProfileId: {
+          actorUserId: riderAUserId,
+          targetProfileId: riderBProfileId,
+        } as any,
+      },
+      select: { actorUserId: true, decision: true },
+    });
+    expect(stored).toEqual({ actorUserId: riderAUserId, decision: 'REFUSE' });
+
+    const injected = await prisma.matchDecision.findUnique({
+      where: {
+        actorUserId_targetProfileId: {
+          actorUserId: riderCUserId,
+          targetProfileId: riderBProfileId,
+        } as any,
+      },
+      select: { id: true },
+    });
+    expect(injected).toBeNull();
+  });
+
+  it('validation: rejects duplicate targetProfileId values inside the same batch', async () => {
+    await riderASession
+      .post('/matching/decisions')
+      .send({
+        items: [
+          { targetProfileId: riderBProfileId, decision: 'ACCEPT' },
+          { targetProfileId: riderBProfileId, decision: 'REFUSE' },
+        ],
+      })
+      .expect(400);
+
+    const stored = await prisma.matchDecision.findMany({
+      where: { actorUserId: riderAUserId, targetProfileId: riderBProfileId },
+      select: { id: true },
+    });
+    expect(stored).toHaveLength(0);
+  });
+
   it('abuse/replay: repeating same ACCEPT does not duplicate match/conversation rows', async () => {
     await riderBSession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderBAccessToken}`)
       .send({ items: [{ targetProfileId: riderAProfileId, decision: 'ACCEPT' }] })
       .expect(200);
 
     await riderASession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderAAccessToken}`)
       .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
       .expect(200);
 
     await riderASession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderAAccessToken}`)
       .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
       .expect(200);
 
@@ -195,19 +235,16 @@ describe('POST /matching/decisions security & safety', () => {
   it('race: concurrent ACCEPT calls do not create duplicate conversation or 500', async () => {
     await riderBSession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderBAccessToken}`)
       .send({ items: [{ targetProfileId: riderAProfileId, decision: 'ACCEPT' }] })
       .expect(200);
 
     const [res1, res2] = await Promise.all([
       riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] }),
+          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] }),
       riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] }),
+          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] }),
     ]);
 
     expect(res1.status).toBe(200);
@@ -246,7 +283,6 @@ describe('POST /matching/decisions security & safety', () => {
 
     await riderASession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderAAccessToken}`)
       .send({ items: tooManyItems })
       .expect(400);
   });
@@ -261,7 +297,6 @@ describe('POST /matching/decisions security & safety', () => {
 
     const res = await riderASession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderAAccessToken}`)
       .send({ items: [{ targetProfileId: missingProfileId, decision: 'ACCEPT' }] })
       .expect(400);
 
@@ -275,12 +310,10 @@ describe('POST /matching/decisions security & safety', () => {
     const [resA, resB] = await Promise.all([
       riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: missingA, decision: 'ACCEPT' }] }),
+          .send({ items: [{ targetProfileId: missingA, decision: 'ACCEPT' }] }),
       riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: missingB, decision: 'ACCEPT' }] }),
+          .send({ items: [{ targetProfileId: missingB, decision: 'ACCEPT' }] }),
     ]);
 
     expect(resA.status).toBe(400);
@@ -298,14 +331,12 @@ describe('POST /matching/decisions security & safety', () => {
     try {
       await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
+          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
         .expect(200);
 
       const quotaRes = await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderCProfileId, decision: 'REFUSE' }] })
+          .send({ items: [{ targetProfileId: riderCProfileId, decision: 'REFUSE' }] })
         .expect(429);
 
       expect(quotaRes.body).toEqual({ error: 'Too many requests' });
@@ -335,8 +366,7 @@ describe('POST /matching/decisions security & safety', () => {
     try {
       const res = await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
+          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
         .expect(503);
 
       expect(res.body).toEqual({ error: 'Service unavailable' });
@@ -356,12 +386,10 @@ describe('POST /matching/decisions security & safety', () => {
       [resA, resB] = await Promise.all([
         riderASession
           .post('/matching/decisions')
-          .set('Authorization', `Bearer ${riderAAccessToken}`)
-          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] }),
+              .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] }),
         riderBSession
           .post('/matching/decisions')
-          .set('Authorization', `Bearer ${riderBAccessToken}`)
-          .send({ items: [{ targetProfileId: riderAProfileId, decision: 'ACCEPT' }] }),
+              .send({ items: [{ targetProfileId: riderAProfileId, decision: 'ACCEPT' }] }),
       ]);
     } finally {
       if (previousDelay === undefined) {
@@ -407,7 +435,6 @@ describe('POST /matching/decisions security & safety', () => {
   it('abuse/self: self-ACCEPT does not create a match or conversation, and is not stored in DB', async () => {
     const res = await riderASession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderAAccessToken}`)
       .send({ items: [{ targetProfileId: riderAProfileId, decision: 'ACCEPT' }] })
       .expect(200);
 
@@ -442,8 +469,7 @@ describe('POST /matching/decisions security & safety', () => {
     try {
       const res = await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
+          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
         .expect(500);
 
       expect(res.body.error).toBe('Internal error');
@@ -486,8 +512,7 @@ describe('POST /matching/decisions security & safety', () => {
       // RiderA sends 3 ACCEPTs in one batch → 3 reciprocal pairs found post-commit.
       const res = await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({
+          .send({
           items: [
             { targetProfileId: riderBProfileId, decision: 'ACCEPT' },
             { targetProfileId: riderCProfileId, decision: 'ACCEPT' },
@@ -519,7 +544,6 @@ describe('POST /matching/decisions security & safety', () => {
 
     const res = await riderASession
       .post('/matching/decisions')
-      .set('Authorization', `Bearer ${riderAAccessToken}`)
       .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
       .expect(200);
 
@@ -546,8 +570,7 @@ describe('POST /matching/decisions security & safety', () => {
 
       const res = await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
+          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
         .expect(200);
 
       // Request succeeds — guard clamps silently, never throws.
@@ -603,8 +626,7 @@ describe('POST /matching/decisions security & safety', () => {
     try {
       const res = await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
+          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
         .expect(200);
 
       // Despite the transient P1017 on the first mini-TX, the retry succeeds.
@@ -664,8 +686,7 @@ describe('POST /matching/decisions security & safety', () => {
     try {
       const res = await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
+          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
         .expect(200);
 
       expect(res.body.ok).toBe(true);
@@ -744,8 +765,7 @@ describe('POST /matching/decisions security & safety', () => {
 
       const res = await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({
+          .send({
           items: [
             { targetProfileId: riderBProfileId, decision: 'ACCEPT' },
             { targetProfileId: riderCProfileId, decision: 'ACCEPT' },
@@ -793,8 +813,7 @@ describe('POST /matching/decisions security & safety', () => {
     try {
       const res = await riderASession
         .post('/matching/decisions')
-        .set('Authorization', `Bearer ${riderAAccessToken}`)
-        .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
+          .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
         .expect(404);
 
       expect(res.body).toEqual({ error: 'Not found' });

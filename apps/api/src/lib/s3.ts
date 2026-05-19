@@ -1,5 +1,9 @@
-import { S3Client, CreateBucketCommand, HeadBucketCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client, CreateBucketCommand, HeadBucketCommand, PutObjectCommand,
+  GetObjectCommand, DeleteObjectCommand, HeadObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { secureLogger } from '../utils/secure-logger';
 
 function getEnv() {
   return {
@@ -37,7 +41,7 @@ export async function ensureBucket() {
   }
 }
 
-export async function presignPutObject(key: string, contentType: string, expiresSeconds = 900) {
+export async function presignPutObject(key: string, contentType: string, expiresSeconds = 180) {
   const { bucket, endpoint, presignEndpoint, accessKeyId, secretAccessKey } = getEnv();
   const targetEndpoint = presignEndpoint || endpoint;
   if (!bucket || !accessKeyId || !secretAccessKey || !targetEndpoint) {
@@ -52,8 +56,83 @@ export async function presignPutObject(key: string, contentType: string, expires
   return url;
 }
 
+const MAGIC_BYTES_READ = 12; // WebP = 12 octets, la signature la plus longue
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB — cohérent avec nginx client_max_body_size
+
+// Mock injectable en NODE_ENV=test uniquement
+let _testMockFirstBytes: Buffer | null = null;
+
+/** Injecte des bytes fictifs pour les tests. Interdit en dehors de NODE_ENV=test. */
+export function __setTestGetObjectMock(bytes: Buffer | null): void {
+  if (process.env.NODE_ENV !== 'test') throw new Error('__setTestGetObjectMock is test-only');
+  _testMockFirstBytes = bytes;
+}
+
+/**
+ * Lit les 12 premiers octets réels d'un objet S3 via Range header.
+ * Retourne null si l'objet est absent, vide, ou dépasse MAX_UPLOAD_BYTES.
+ * Coût : 1 HeadObject + 1 GetObject Range bytes=0-11.
+ */
+export async function getObjectFirstBytes(key: string): Promise<Buffer | null> {
+  if (process.env.NODE_ENV === 'test') return _testMockFirstBytes;
+
+  const { bucket } = getEnv();
+  if (!bucket) return null;
+  const s3 = getS3();
+
+  try {
+    const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    const size = head.ContentLength ?? 0;
+    if (size === 0 || size > MAX_UPLOAD_BYTES) return null;
+  } catch {
+    return null; // objet absent
+  }
+
+  try {
+    const resp = await s3.send(new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Range: `bytes=0-${MAGIC_BYTES_READ - 1}`,
+    }));
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of resp.Body as AsyncIterable<Uint8Array>) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Supprime un objet S3. Utilisé pour cleanup post-finalize-rejeté.
+ * Non-fatal : log en cas d'erreur, l'objet orphelin sera purgé par lifecycle rule.
+ */
+export async function deleteObject(key: string): Promise<void> {
+  if (process.env.NODE_ENV === 'test') return;
+  const { bucket } = getEnv();
+  if (!bucket) return;
+  const s3 = getS3();
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  } catch (err) {
+    secureLogger.warn('S3_DELETE_OBJECT_FAILED', {
+      keyPrefix: key.slice(0, 40),
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export function publicUrlForKey(key: string) {
   const { publicBase, endpoint, bucket } = getEnv();
   const base = publicBase || (endpoint && bucket ? `${endpoint.replace(/\/$/, '')}/${bucket}` : undefined);
-  return base ? `${base}/${key}` : undefined;
+  if (!base) return undefined;
+  // Guard: refuse internal Docker/localhost URLs from reaching the client in production
+  if (process.env.NODE_ENV === 'production' && /localhost|127\.0\.0\.\d|minio[:/]|::1/.test(base)) {
+    throw new Error(
+      `publicUrlForKey: S3_PUBLIC_URL_BASE resolves to an internal URL (${base}). ` +
+      'Set S3_PUBLIC_URL_BASE explicitly to the public storage domain.'
+    );
+  }
+  return `${base}/${key}`;
 }

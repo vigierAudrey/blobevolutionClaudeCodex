@@ -94,21 +94,21 @@ export function isAuthConnectError(error: Error | unknown): boolean {
 
 ---
 
-### E-REVIEW #3: reconnectSocketWithNewToken fiable ✅ APPLIQUÉ
-**Fichiers**: `apps/web/lib/socket.ts:42-57`
+### E-REVIEW #3: reconnexion cookie-only fiable ✅ APPLIQUÉ
+**Fichiers**: `apps/web/lib/socket.ts`
 
 **Correction**:
-- Force cycle `disconnect()` → `auth update` → `connect()`
-- Garantit que Socket.IO utilise nouveau token dans handshake
+- Force cycle `disconnect()` → `connect()`
+- Garantit que Socket.IO rejoue le handshake avec le cookie httpOnly courant
 - Plus de race condition si socket déjà connecté
 
 **Code**:
 ```typescript
-// apps/web/lib/socket.ts:50-56
+// apps/web/lib/socket.ts
 if (socket.connected) {
   socket.disconnect(); // Force disconnect avant reconnect
 }
-socket.connect(); // Reconnect avec nouveau token dans auth
+socket.connect(); // Reconnect avec le cookie httpOnly courant
 ```
 
 ---
@@ -132,7 +132,7 @@ socket.connect(); // Reconnect avec nouveau token dans auth
 ### E-REVIEW #5: Tests unitaires ✅ AJOUTÉS
 **Fichiers**:
 - `apps/web/lib/__tests__/socketUtils.test.ts` (13 tests)
-- `apps/web/hooks/__tests__/useSocket.retry.test.ts` (2 tests)
+- `apps/web/hooks/__tests__/useSocket.retry.test.ts` (3 tests)
 
 **Tests critiques**:
 1. **isAuthConnectError()**: Détection 401, Unauthorized, JWT, expired, forbidden, case-insensitive
@@ -141,18 +141,18 @@ socket.connect(); // Reconnect avec nouveau token dans auth
 
 ---
 
-### P0 #2: Token WebSocket JAMAIS rafraîchi ✅ CORRIGÉ (PATCH 1)
+### P0 #2: Handshake WebSocket réauthentifié sans token JS ✅ CORRIGÉ (PATCH 1)
 **Gravité**: 🔴 CRITIQUE (RÉSOLU)
 **Fichiers modifiés**:
-- `apps/web/lib/socket.ts:53-65` (reconnectSocketWithNewToken)
+- `apps/web/lib/socket.ts` (reconnectSocket)
 - `apps/web/hooks/useSocket.ts:60-88` (handleConnectError)
 - `apps/web/lib/apiClient.ts:1133` (refreshToken export)
 
 **Solution appliquée**:
-1. Fonction `reconnectSocketWithNewToken(newToken)` pour mettre à jour auth token
+1. Fonction `reconnectSocket()` pour rejouer le handshake Socket.IO
 2. Hook `useSocket` écoute `connect_error` → détecte 401/Unauthorized
 3. Appel `apiClient.refreshToken()` automatique (1 seul retry)
-4. Reconnexion avec nouveau token si refresh réussi
+4. Reconnexion simple si refresh cookie-only réussi
 5. Redirection login si refresh échoue
 
 **Code clé**:
@@ -164,11 +164,8 @@ const handleConnectError = async (error: Error) => {
       refreshAttemptedRef.current = true;
       const refreshed = await apiClient.refreshToken();
       if (refreshed) {
-        const newTokens = apiClient.getTokens();
-        if (newTokens?.accessToken) {
-          reconnectSocketWithNewToken(newTokens.accessToken);
-          return; // ✅ Retry connexion
-        }
+        reconnectSocket();
+        return; // ✅ Retry connexion
       }
       apiClient.clearTokens(); // Refresh failed → logout
     }
@@ -178,6 +175,7 @@ const handleConnectError = async (error: Error) => {
 
 **Garanties**:
 - ✅ 1 seul retry (évite boucles infinies)
+- ✅ Aucun token lu ni réinjecté côté JS
 - ✅ Pas de backoff exponentiel (timeout Socket.IO suffisant)
 - ✅ Session préservée après expiration token (UX améliorée)
 
@@ -321,7 +319,7 @@ if (result.error.code === 'RATE_LIMITED' && result.error.retryAfter) {
 it('should refresh token and reconnect on 401 connect_error', async () => {
   // Mock apiClient.refreshToken() → true
   // Mock socket.on('connect_error', ...) with 401 error
-  // Assert reconnectSocketWithNewToken called with new token
+  // Assert reconnectSocket called after cookie refresh
 });
 
 it('should not retry refresh if already attempted', async () => {

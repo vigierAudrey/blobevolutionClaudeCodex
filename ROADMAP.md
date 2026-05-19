@@ -16,7 +16,7 @@
 - **Positionnement MVP Simplifié :**
   - ✅ **Auth complète** (register, login, 2FA, reset password)
   - ✅ **Matching géospatial** (PostGIS, cartes, swipe)
-  - ✅ **Booking & Messaging** (demandes, chat temps réel)
+  - ✅ **Demandes de cours & Messagerie** (demandes géolocalisées, contact via chat temps réel — organisation du cours hors plateforme)
   - ⏸️ **Pas de paiement** (mis en pause, focus publicité AdSense)
   - ⏸️ **Pas de gamification** (flocons d'avoine retirés du MVP)
 - **Monétisation initiale :** Publicité AdSense uniquement
@@ -48,6 +48,9 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
    Corriger CORS, secrets, logs sensibles, validation Zod, renforcer Helmet/SSL/trust proxy. Voir section « Sécurité & Conformité ».
 2. **🧪 Tests & Qualité**
    Finaliser tests UI (composants de base + matching), nettoyer données Playwright, fiabiliser flux CSRF. Voir section « Tests & Qualité ».
+   - [x] 2026-03-15: Seed locale `active-tests`, scénario Playwright A/B matching→messages, régressions authZ conversation/socket et script `k6` HTTP local.
+   - [x] 2026-03-15: Rééquilibrage load BlobConnect avec réutilisation cookie+CSRF, pagination `GET /conversations`, limitation post-auth plus fine sur matching/chat, et `login` hybride `email+IP` + plafond réseau pour réduire les collisions NAT sans ouvrir la porte aux brute-force.
+   - [x] 2026-03-29: garde-fou France-only initial réellement branché sur l’inscription PRO, `PUT/PATCH /pro/me`, `GET /pro/near/lessons`, `POST /matching/search`, UI informative et tests ciblés API/web.
 3. **📢 Publicité / Monétisation initiale**
    Finaliser déploiement AdSense, bannière RGPD et analytics revenus. Voir section « Monétisation (Publicité) ».
 4. **⚙️ Performance & DX rapides**
@@ -184,8 +187,11 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
   Disponible via `apps/api/src/index.ts` (section « Monitoring & Traçabilité ») + Supertest `apps/api/src/index.security.test.ts`. Les issues listent automatiquement CORS, secrets, proxies et mode trusté ; la doc `SECURITY.md#Surveillance-securityhealth` explique comment peupler `ALLOWED_ORIGINS`/`TRUSTED_PROXY_IPS` et brancher un check HTTP.
 - [x] **Audit logs actions sensibles**  
   `audit()` est désormais branché sur les presets de rôles admin, la modération des signalements et la purge RGPD (`apps/api/src/modules/admin/admin.controller.ts`). Les tests `admin.e2e.test.ts` vérifient la présence d'une trace (`admin:role:apply`, `admin:report:action`, `admin:gdpr:run-purge`) avant de considérer l'action réussie.
+- [x] **2026-05-12 — SMTP VPS durci** : Mailpit retiré de `docker-compose.vps.yml`, `.env.vps.example` basculé sur Brevo SMTP relay, validation/healthcheck SMTP VPS ajoutés et `forgot-password` limité par email comme `resend-verification`.
 - [x] **Cron `/security/health`**  
-  Script `scripts/security-health-check.sh` + workflow planifié `.github/workflows/security-health-monitor.yml` surveillent l'endpoint toutes les 30 min et notifient via webhooks configurable.
+  Script `scripts/security-health-check.sh` + workflow planifié `.github/workflows/security-health-monitor.yml` surveillent l'endpoint toutes les 30 min via `X-Security-Monitor-Token` dédié. Le vieux pattern JWT admin jetable n’est plus accepté.
+  - [x] 2026-03-14: contrat `/security/health` unifié, alias `/api/security` supprimé, workflow réactivé, UI/OpenAPI réalignés.
+  - [x] 2026-03-14: ajout de `/security/observability` branché sur les vraies métriques du transport de logs.
 
 ### Phase 4 — Gouvernance Admin & RGPD (exemple, etat a confirmer)
 
@@ -197,6 +203,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
   Reprendre `packages/database/prisma/migrations/add_legal_consent_archive.sql` (dialecte MySQL) en migration Prisma/PostgreSQL + `ON CONFLICT`. Mettre à jour `gdprPurgeService` (`apps/api/src/services/gdpr-purge.service.ts`, section « Phase 4 — Gouvernance Admin & RGPD ») et `GET /admin/gdpr/legal-archive/:userId` pour utiliser la nouvelle table. Ajouter tests Prisma e2e.
 - [x] **Finaliser purge RGPD & rotation des logs**  
   Implémenter la suppression des logs obsolètes (`oldLogsDeleted` TODO dans `gdprPurgeService`) + s’assurer que les jobs planifiés via `GDPR_PURGE_INTERVAL_HOURS`, `CONV_PURGE_INTERVAL_HOURS` et `GDPR_PURGE_RUN_ON_START` sont documentés/testés (`docs/deployment.md`, `SECURITY.md`). Ajouter un check `/admin/gdpr/compliance-report` qui échoue si les jobs ne tournent pas.
+  - [x] 2026-04-06: audit log purge désormais bloquée sans manifeste d’export rétention `VERIFIED`; ajout des tables `ConversationBlockEvent` et `RetentionExportArtifact`, du backfill legacy `LEGACY_UNKNOWN`, et bascule des historiques métier hors `AuditLog`.
 - [x] **Redis obligatoire pour le 2FA admin**  
   Supprimer le fallback `memoryStore` (`apps/api/src/services/two-factor.service.ts`, section « Phase 4 — Gouvernance Admin & RGPD ») en production : la génération/validation des codes doit dépendre d’un Redis sécurisé (`REDIS_URL` + mot de passe). Ajout d’un health-check Redis + doc mise à jour (`SECURITY.md`, `docs/deployment.md`).
 - [x] **Aligner le backend sur les vues Admin existantes**  
@@ -695,7 +702,7 @@ Phase 3 (exemple, Scale) : Datadog si budget permet (50-150€/mois)
 - [ ] Dashboard métriques logs (volume, taux erreur)
 
 **💰 LONG TERME (si croissance)**
-- [ ] Datadog full-stack observability
+- [ ] Datadog full-stack observability. Hors scope du socle serveur minimal actuel.
 - [ ] Alerting avancé sur patterns d'abus
 
 ### Coûts estimés
@@ -713,6 +720,35 @@ Phase 3 (exemple, Scale) : Datadog si budget permet (50-150€/mois)
 - Démarrer avec **logs fichiers + Sentry Free** (0€)
 - Migrer vers **Grafana Loki** si besoin recherche avancée (0€)
 - Passer à **Datadog** seulement si croissance forte et budget dispo
+
+### Logging serveur sécurisé — clôture du chantier
+
+- [x] Le macro-chantier est fermé sur son vrai scope: `socle serveur minimal d’observabilité / logging sécurisé`.
+- [x] Livré: logs runtime structurés, transport asynchrone borné avec métriques et breaker, endpoints canoniques `/security/health` et `/security/observability`, audit logs des actions admin sensibles, scripts de supervision et gardes CI.
+- [x] Exclu explicitement du scope: full-stack observability, distributed tracing complet, OpenTelemetry complet, migration exhaustive de tous les logs du repo.
+- [x] DONE honnêtement: le scope serveur minimal annoncé est implémenté, documenté et vérifié par des tests ciblés.
+
+### Portée réelle du chantier
+
+Le chantier livre uniquement :
+
+`socle serveur minimal d’observabilité / logging sécurisé`
+
+Il ne livre pas :
+- full-stack observability
+- distributed tracing complet
+- OpenTelemetry complet
+- migration exhaustive de tous les logs du repo
+
+Toute description future du chantier doit utiliser ce wording.
+
+### Ticket P2 — hardening futur
+
+- [ ] Décorréler la pseudonymisation des logs des conventions de clés
+  Contexte : aujourd’hui la pseudonymisation dépend en partie des noms de clés (`userId`, `proUserId`, etc.) dans `apps/api/src/observability/log-serializer.ts`.
+  Risque : une donnée sensible loggée sous une clé non prévue peut ne pas être pseudonymisée.
+  Action minimale : introduire un mécanisme explicite de marquage de champs sensibles indépendant du nom de clé.
+  Critères de done : un mécanisme explicite de pseudonymisation existe ; un test prouve qu’une clé non conventionnelle marquée est bien pseudonymisée ; une règle d’usage est documentée près du logger.
 
 ---
 
@@ -897,7 +933,7 @@ apps/api/
 ### Paiements & Crédit (⏸️ EXCLU DU MVP - Décision Oct 2025)
 
 **Décision stratégique :** Simplifier le MVP en excluant complètement le système de paiement.
-**Rationale :** Focus sur matching/booking + monétisation publicitaire AdSense uniquement.
+**Rationale :** Focus sur la mise en relation locale (matching + demandes géolocalisées + messagerie) + monétisation publicitaire AdSense. Pas de réservation orchestrée ni de paiement intégré dans le scope MVP.
 
 - [ ] Intégration Stripe Connect
 - [ ] Calcul commissions
@@ -932,7 +968,7 @@ apps/api/
   - [x] Cohortes riders/pros + stickiness + TTFV.
   - [x] Marketplace health (supply/demand, acceptation, delai).
   - [x] Trust & Safety + Blobosphere analytics agreges.
-- [ ] Métriques conversion matching→booking.
+- [ ] Métriques conversion matching→contact (matching ayant abouti à une première prise de contact via messagerie).
 - [ ] Analyse géographique utilisateurs.
 - [ ] Reporting pro (revenus, planning).
 - [ ] Grafana/Prometheus self-hosted (objectif 200€/mois économisés).
@@ -952,7 +988,7 @@ apps/api/
 
 - Historique (nov 2025, tel qu'indiqué ici) : Phase 1 (2h, exemple) : CORS, secrets, logs, validation – ✅ livré.
 - Historique (nov 2025, tel qu'indiqué ici) : Phase 2 (3h, exemple) : Helmet, trust proxy, DB SSL, script secrets – ✅ livré.
-- Historique (nov 2025, tel qu'indiqué ici) : Phase 3 (2h, exemple) : `/security/health`, audit logs, alerting – ✅ livré (script + doc monitoring).
+- Historique (nov 2025, tel qu'indiqué ici) : Phase 3 (2h, exemple) : `/security/health`, audit logs, alerting – révisé le 2026-03-14 pour supprimer les faux claims et ajouter `/security/observability`.
 - Tests (2h, exemple) : Checklist sécurité complète – 🔄 à rejouer avant déploiement.
 
 ### Claude (Backend/Performance)
@@ -1008,6 +1044,7 @@ apps/api/
 - Helmet basique, pas d’enforcement SSL, audit logs manquants.
 - Couverture UI faible, flux E2E partiellement cassés.
 - Analytics business limitées, CI/CD manuel.
+- Risque 2026-03-29 : les endpoints géolocalisés booking (`/booking/availability/search`, `/booking/pros/nearby`) restent hors garde-fou France-only initial et doivent être cadrés séparément si le périmètre France-only s’étend au booking.
 
 ### Pistes d’amélioration priorisées
 

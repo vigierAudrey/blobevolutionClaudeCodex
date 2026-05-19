@@ -18,7 +18,7 @@ async function run(command: string, args: string[]) {
 async function globalSetup() {
   if (process.env.SKIP_E2E_RESEED === '1') return;
 
-  await run('npm', ['run', 'db:reseed']);
+  await run('npm', ['run', 'db:reseed:active-tests']);
 }
 
 export default globalSetup;

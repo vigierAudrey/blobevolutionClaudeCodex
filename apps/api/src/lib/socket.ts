@@ -18,10 +18,7 @@ import {
   validateSocketPayload,
   SocketErrorCode,
   newMessageOutboundSchema,
-  userTypingOutboundSchema,
-  newMatchOutboundSchema,
-  matchDecisionOutboundSchema,
-  newMatchingCardOutboundSchema
+  userTypingOutboundSchema
 } from './socket-schemas';
 import {
   RATE_LIMIT_ENABLED,
@@ -47,6 +44,8 @@ import {
   selectPushTargets,
   touchConversationCoalesced
 } from './socket-fanout-control';
+import { runWithWsLogContext } from '../observability/log-context';
+import { createNotificationSilent, NotificationType } from '../services/notification.service';
 
 let io: SocketIOServer | null = null;
 
@@ -103,6 +102,30 @@ const sanitizeRateLimitDetails = (details: unknown) => {
 
 const shortId = (value: string | undefined | null): string =>
   typeof value === 'string' && value.length > 8 ? `${value.slice(0, 8)}...` : String(value ?? '');
+
+/**
+ * Extrait la valeur d'un cookie depuis un header Cookie brut.
+ * Utilisé pour lire le JWT dans le cookie httpOnly lors du handshake WebSocket.
+ * Pas de dépendance externe — parsing minimal suffisant.
+ */
+function extractCookieValue(cookieHeader: string, name: string): string | undefined {
+  for (const part of cookieHeader.split(';')) {
+    const eqIdx = part.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = part.slice(0, eqIdx).trim();
+    if (key === name) {
+      return decodeURIComponent(part.slice(eqIdx + 1).trim());
+    }
+  }
+  return undefined;
+}
+
+const withSocketEventContext = <TArgs extends unknown[]>(
+  socket: AuthenticatedSocket,
+  routeOrJob: string,
+  handler: (...args: TArgs) => void | Promise<void>,
+) => (...args: TArgs) =>
+  runWithWsLogContext(routeOrJob, socket.user?.id, () => handler(...args));
 
 async function assertConversationMember(userId: string, conversationId: string): Promise<boolean> {
   const member = await prisma.conversationMember.findUnique({
@@ -180,7 +203,15 @@ const emitSocketError = (
  */
 async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Error) => void) {
   try {
-    const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
+    // Auth sources (priority order):
+    // 1. handshake.auth.token  — Bearer token (tests, clients SDK non-browser)
+    // 2. Authorization header  — Bearer header fallback
+    // 3. Cookie httpOnly       — sessions navigateur cookie-only (mode normal)
+    const cookieHeader = socket.handshake.headers.cookie ?? '';
+    const cookieToken = extractCookieValue(cookieHeader, 'accessToken');
+    const rawHandshakeToken: unknown = socket.handshake.auth?.token;
+    const handshakeToken = typeof rawHandshakeToken === 'string' && rawHandshakeToken.length > 0 ? rawHandshakeToken : undefined;
+    const token = handshakeToken ?? socket.handshake.headers.authorization?.replace('Bearer ', '') ?? cookieToken;
 
     if (!token) {
       return next(new Error('Authentication required'));
@@ -197,72 +228,103 @@ async function authenticateSocket(socket: AuthenticatedSocket, next: (err?: Erro
     }
 
     // Étape 1: Vérifier le JWT (pas de query DB encore)
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as { sub: string; role: string };
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as { sub: string; role: string; sv?: number };
     const userId = decoded.sub;
-
-    // P0 STEP 2: Vérifier rate limit reconnection AVANT toute query DB
-    const reconnectBlockReason = await checkReconnectionAllowed(userId);
-    if (reconnectBlockReason) {
-      // Erreur publique neutre
-      return next(new Error(reconnectBlockReason));
-    }
-
-    // P0 STEP 1: Vérifier limites connexions simultanées AVANT query DB
-    const connectionBlockReason = checkConnectionAllowed(userId, socket);
-    if (connectionBlockReason) {
-      // Erreur publique neutre
-      return next(new Error(connectionBlockReason));
-    }
-
-    // P0 STEP 2: Vérifier cache auth (évite query DB si hit)
-    const cachedAuth = getCachedAuth(userId);
-
-    let userExists: boolean;
-    let userRole: string;
-
-    if (cachedAuth) {
-      // Cache HIT → pas de query DB
-      if (!cachedAuth.exists) {
-        return next(new Error('User not found'));
+    // sv (sessionVersion) est encodé dans le JWT à l'émission (buildAccessToken).
+    // S'il est absent (token legacy), on skip la comparaison.
+    const tokenSv = typeof decoded.sv === 'number' && decoded.sv >= 1 ? decoded.sv : undefined;
+    await runWithWsLogContext('ws:authenticate', userId, async () => {
+      // P0 STEP 2: Vérifier rate limit reconnection AVANT toute query DB
+      const reconnectBlockReason = await checkReconnectionAllowed(userId);
+      if (reconnectBlockReason) {
+        // Erreur publique neutre
+        next(new Error(reconnectBlockReason));
+        return;
       }
-      userExists = true;
-      userRole = cachedAuth.role!;
-    } else {
-      // Cache MISS → query DB
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          role: true,
-          deletedAt: true // P0 STEP 2.1: Vérifier soft delete
+
+      // P0 STEP 1: Vérifier limites connexions simultanées AVANT query DB
+      const connectionBlockReason = checkConnectionAllowed(userId, socket);
+      if (connectionBlockReason) {
+        // Erreur publique neutre
+        next(new Error(connectionBlockReason));
+        return;
+      }
+
+      // P0 STEP 2: Vérifier cache auth (évite query DB si hit)
+      const cachedAuth = getCachedAuth(userId);
+
+      let userRole: string;
+
+      if (cachedAuth) {
+        // Cache HIT → pas de query DB
+        if (!cachedAuth.exists) {
+          next(new Error('User not found'));
+          return;
         }
-      });
-
-      // P0 STEP 2.1: User soft-deleted = inexistant
-      if (!user || user.deletedAt) {
-        // Mettre en cache l'absence (évite query DB répétées)
-        setCachedAuth(userId, false);
-
-        if (user?.deletedAt) {
-          secureLogger.info('SOCKET_AUTH_DELETED_USER_BLOCKED', {
+        // P1-WS: Vérifier sessionVersion contre la valeur mise en cache depuis la DB.
+        // Si le JWT porte un sv inférieur à celui de la DB (logout / changement de mot de passe),
+        // la reconnexion est refusée même si le JWT est encore cryptographiquement valide.
+        if (tokenSv !== undefined && cachedAuth.sessionVersion !== undefined && tokenSv < cachedAuth.sessionVersion) {
+          secureLogger.warn('SOCKET_AUTH_SESSION_REVOKED_CACHE', {
             userId: shortId(userId),
-            deletedAt: user.deletedAt.toISOString()
+            tokenSv,
+            cachedSv: cachedAuth.sessionVersion
           });
+          next(new Error('Session revoked'));
+          return;
+        }
+        userRole = cachedAuth.role!;
+      } else {
+        // Cache MISS → query DB
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true,
+            role: true,
+            deletedAt: true, // P0 STEP 2.1: Vérifier soft delete
+            sessionVersion: true // P1-WS: Vérifier révocation de session
+          }
+        });
+
+        // P0 STEP 2.1: User soft-deleted = inexistant
+        if (!user || user.deletedAt) {
+          // Mettre en cache l'absence (évite query DB répétées)
+          setCachedAuth(userId, false);
+
+          if (user?.deletedAt) {
+            secureLogger.info('SOCKET_AUTH_DELETED_USER_BLOCKED', {
+              userId: shortId(userId),
+              deletedAt: user.deletedAt.toISOString()
+            });
+          }
+
+          next(new Error('User not found'));
+          return;
         }
 
-        return next(new Error('User not found'));
+        // P1-WS: Si le JWT porte un sv < sessionVersion en DB, la session est révoquée.
+        if (tokenSv !== undefined && tokenSv < user.sessionVersion) {
+          secureLogger.warn('SOCKET_AUTH_SESSION_REVOKED_DB', {
+            userId: shortId(userId),
+            tokenSv,
+            dbSv: user.sessionVersion
+          });
+          // Mettre en cache le refus pour bloquer les reconnexions rapides.
+          setCachedAuth(userId, false);
+          next(new Error('Session revoked'));
+          return;
+        }
+
+        userRole = user.role;
+
+        // P0 STEP 2: Mettre en cache le user avec sessionVersion pour comparaison future.
+        setCachedAuth(userId, true, userRole, user.sessionVersion);
       }
 
-      userExists = true;
-      userRole = user.role;
-
-      // P0 STEP 2: Mettre en cache le user
-      setCachedAuth(userId, true, userRole);
-    }
-
-    // Attacher l'utilisateur au socket
-    socket.user = { id: userId, role: userRole };
-    next();
+      // Attacher l'utilisateur au socket
+      socket.user = { id: userId, role: userRole };
+      next();
+    });
   } catch (error) {
     // Pas de log du token (sécurité PII)
     secureLogger.warn('SOCKET_AUTH_FAILED', {
@@ -350,35 +412,43 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: {
       origin: origins,
-      // WS auth is bearer-token based; no cookie-based auth required.
-      credentials: false
+      // Cookie-based session auth: le navigateur doit envoyer le cookie httpOnly accessToken
+      // sur le handshake WebSocket upgrade. credentials:true est requis à cet effet.
+      // Protection CSRF assurée par la validation d'Origin dans allowRequest().
+      credentials: true
     },
     allowRequest: (req, callback) => {
-      const clientIp = getClientIpFromIncomingRequest(req as any);
-      const preAuthRateLimit = checkPreAuthIpRateLimit(clientIp);
-      if (!preAuthRateLimit.allowed) {
-        secureLogger.warn('WS_PREAUTH_HANDSHAKE_REJECTED', {
-          retryAfterMs: preAuthRateLimit.retryAfterMs,
-          reason: preAuthRateLimit.reason
-        });
-        return callback('Connection temporarily unavailable', false);
-      }
-
-      const origin = req.headers.origin;
-
-      if (!origin) {
-        if (isProduction) {
-          return callback('Origin required', false);
+      return runWithWsLogContext('ws:allow-request', undefined, () => {
+        const clientIp = getClientIpFromIncomingRequest(req as any);
+        const preAuthRateLimit = checkPreAuthIpRateLimit(clientIp);
+        if (!preAuthRateLimit.allowed) {
+          secureLogger.warn('WS_PREAUTH_HANDSHAKE_REJECTED', {
+            retryAfterMs: preAuthRateLimit.retryAfterMs,
+            reason: preAuthRateLimit.reason
+          });
+          callback('Connection temporarily unavailable', false);
+          return;
         }
-        return callback(null, true);
-      }
 
-      if (!originsSet.has(origin)) {
-        secureLogger.warn('WS_ORIGIN_BLOCKED', { origin });
-        return callback('Origin not allowed', false);
-      }
+        const origin = req.headers.origin;
 
-      return callback(null, true);
+        if (!origin) {
+          if (isProduction) {
+            callback('Origin required', false);
+            return;
+          }
+          callback(null, true);
+          return;
+        }
+
+        if (!originsSet.has(origin)) {
+          secureLogger.warn('WS_ORIGIN_BLOCKED', { origin });
+          callback('Origin not allowed', false);
+          return;
+        }
+
+        callback(null, true);
+      });
     },
     transports: ['websocket', 'polling'], // WebSocket en priorité, polling en fallback
     pingTimeout: 60000, // 60 secondes avant timeout
@@ -403,17 +473,18 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
     // P0 FIX: Tracker la connexion (après auth réussie)
     trackConnection(userId, socket);
     attachSlowConsumerGuard(socket);
-
-    secureLogger.info('WS_CONNECTED', {
-      userId: shortId(userId),
-      socketId: shortId(socket.id)
+    runWithWsLogContext('ws:connection', userId, () => {
+      secureLogger.info('WS_CONNECTED', {
+        userId: shortId(userId),
+        socketId: shortId(socket.id)
+      });
     });
 
     // Rejoindre une room personnelle (pour les messages directs)
     socket.join(`user:${userId}`);
 
     // Rejoindre une conversation
-    socket.on('join-conversation', async (rawData: unknown, ackCb?: unknown) => {
+    socket.on('join-conversation', withSocketEventContext(socket, 'ws:join-conversation', async (rawData: unknown, ackCb?: unknown) => {
       const ack = createAckOnce(ensureAck(ackCb));
       const fail = (
         code: (typeof ERROR_CODES)[keyof typeof ERROR_CODES],
@@ -484,10 +555,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         };
         fail(ERROR_CODES.INTERNAL_ERROR, payload.message, payload, payload.code);
       }
-    });
+    }));
 
     // Quitter une conversation
-    socket.on('leave-conversation', (rawData: unknown) => {
+    socket.on('leave-conversation', withSocketEventContext(socket, 'ws:leave-conversation', (rawData: unknown) => {
       // ✅ PR1: Validation permissive (string non vide, pas UUID strict)
       const validation = validateSocketPayload(leaveConversationSchema, rawData);
       if (!validation.success) {
@@ -501,10 +572,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         userId: shortId(userId),
         conversationId: shortId(conversationId)
       });
-    });
+    }));
 
     // Envoyer un message
-    socket.on('send-message', async (rawData: unknown, ackCb?: unknown) => {
+    socket.on('send-message', withSocketEventContext(socket, 'ws:send-message', async (rawData: unknown, ackCb?: unknown) => {
       const ack = createAckOnce(ensureAck(ackCb));
       const fail = (
         code: (typeof ERROR_CODES)[keyof typeof ERROR_CODES],
@@ -775,6 +846,23 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
           }
         }
 
+        // Créer notification in-app pour les membres offline (seulement si message neuf)
+        if (wasCreated) {
+          for (const { userId: targetUserId } of otherMembers) {
+            createNotificationSilent({
+              userId: targetUserId,
+              type: NotificationType.NEW_MESSAGE,
+              title: senderName,
+              body: message.content.slice(0, 200),
+              url: `/messages/${conversationId}`,
+            });
+            notifyUser(targetUserId, 'notification', {
+              type: NotificationType.NEW_MESSAGE,
+              url: `/messages/${conversationId}`,
+            });
+          }
+        }
+
         secureLogger.info('WS_SEND_MESSAGE_OK', {
           userId: shortId(userId),
           conversationId: shortId(conversationId),
@@ -812,10 +900,10 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
         };
         fail(ERROR_CODES.INTERNAL_ERROR, payload.message, payload, payload.code);
       }
-    });
+    }));
 
     // Indicateur de frappe (typing)
-    socket.on('typing', async (rawData: unknown) => {
+    socket.on('typing', withSocketEventContext(socket, 'ws:typing', async (rawData: unknown) => {
       try {
         // ✅ PR1: Validation Zod (silencieuse, typing non critique)
         const validation = validateSocketPayload(typingSchema, rawData);
@@ -871,34 +959,27 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
       } catch (error) {
         // Silencieux (typing non critique)
       }
-    });
+    }));
 
     // Déconnexion
-    socket.on('disconnect', () => {
+    socket.on('disconnect', withSocketEventContext(socket, 'ws:disconnect', () => {
       // P0 FIX: Cleanup tracking garanti
       untrackConnection(socket.id);
       secureLogger.info('WS_DISCONNECTED', {
         userId: shortId(userId),
         socketId: shortId(socket.id)
       });
-    });
+    }));
 
     // Gestion d'erreurs
-    socket.on('error', (error) => {
+    socket.on('error', withSocketEventContext(socket, 'ws:error', (error) => {
       secureLogger.error('WS_SOCKET_ERROR', {
         userId: shortId(userId),
         error: error instanceof Error ? error.message : String(error)
       });
-    });
+    }));
   });
 
-  return io;
-}
-
-/**
- * Récupère l'instance Socket.io (pour utilisation dans d'autres modules)
- */
-export function getSocketIO(): SocketIOServer | null {
   return io;
 }
 
@@ -915,75 +996,16 @@ export function getSocketHardeningMetrics() {
  * Envoie une notification à un utilisateur spécifique
  */
 export function notifyUser(userId: string, event: string, data: any) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_USER', { event });
-    return;
-  }
+  runWithWsLogContext('ws:notify-user', userId, () => {
+    if (!io) {
+      secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_USER', { event });
+      return;
+    }
 
-  io.to(`user:${userId}`).emit(event, data);
-}
-
-/**
- * Envoie une notification à tous les membres d'une conversation
- */
-export function notifyConversation(conversationId: string, event: string, data: any) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_CONVERSATION', { event });
-    return;
-  }
-
-  io.to(`conversation:${conversationId}`).emit(event, data);
-}
-
-/**
- * Notifie un utilisateur qu'il a un nouveau match
- */
-export function notifyNewMatch(userId: string, matchData: {
-  matchId: string;
-  conversationId?: string;
-  otherUser: {
-    id: string;
-    displayName: string;
-    photoUrl?: string | null;
-  };
-}) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCH');
-    return;
-  }
-
-  // ✅ P1: Validate outbound payload with Zod before emit
-  const newMatchPayload = newMatchOutboundSchema.parse(matchData);
-  io.to(`user:${userId}`).emit('new-match', newMatchPayload);
-  secureLogger.info('WS_NOTIFY_NEW_MATCH', { userId: shortId(userId) });
-}
-
-/**
- * Notifie les utilisateurs qu'une nouvelle carte de matching est disponible
- * Envoie à tous les users qui correspondent aux critères (sport, level, zone)
- */
-export function notifyNewMatchingCard(criteria: {
-  sport: string;
-  level: string;
-  location?: { lat: number; lng: number };
-  distanceKm?: number;
-  profileId: string;
-}) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_NEW_MATCHING_CARD');
-    return;
-  }
-
-  // Broadcast à tous les utilisateurs connectés (ils filtreront côté client)
-  // ✅ P1: Validate outbound payload with Zod before emit
-  const newMatchingCardPayload = newMatchingCardOutboundSchema.parse({
-    sport: criteria.sport,
-    level: criteria.level,
-    profileId: criteria.profileId
+    io.to(`user:${userId}`).emit(event, data);
   });
-  io.emit('new-matching-card', newMatchingCardPayload);
-  secureLogger.info('WS_NOTIFY_NEW_MATCHING_CARD', { profileId: shortId(criteria.profileId) });
 }
+
 
 /**
  * Déconnecte de force toutes les connexions WebSocket d'un utilisateur.
@@ -991,42 +1013,21 @@ export function notifyNewMatchingCard(criteria: {
  * No-op si io non initialisé ou si l'utilisateur n'a aucun socket actif.
  */
 export function disconnectUserSockets(userId: string, reason?: string): void {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_DISCONNECT_USER_SOCKETS', {
+  runWithWsLogContext('ws:disconnect-user-sockets', userId, () => {
+    if (!io) {
+      secureLogger.warn('WS_NOT_INITIALIZED_DISCONNECT_USER_SOCKETS', {
+        userId: shortId(userId),
+      });
+      return;
+    }
+
+    // Tous les sockets de l'utilisateur sont dans la room personnelle `user:{userId}`.
+    // disconnectSockets(true) envoie un close immédiat (close=true = pas de polling fallback).
+    io.in(`user:${userId}`).disconnectSockets(true);
+
+    secureLogger.info('WS_USER_SOCKETS_DISCONNECTED', {
       userId: shortId(userId),
+      reason: reason ?? 'admin-forced-disconnect',
     });
-    return;
-  }
-
-  // Tous les sockets de l'utilisateur sont dans la room personnelle `user:{userId}`.
-  // disconnectSockets(true) envoie un close immédiat (close=true = pas de polling fallback).
-  io.in(`user:${userId}`).disconnectSockets(true);
-
-  secureLogger.info('WS_USER_SOCKETS_DISCONNECTED', {
-    userId: shortId(userId),
-    reason: reason ?? 'admin-forced-disconnect',
-  });
-}
-
-/**
- * Notifie qu'une décision de match a été prise (accept/decline)
- */
-export function notifyMatchDecision(targetUserId: string, decision: {
-  actorUserId: string;
-  decision: 'ACCEPT' | 'DECLINE';
-  mutualMatch: boolean;
-  conversationId?: string;
-}) {
-  if (!io) {
-    secureLogger.warn('WS_NOT_INITIALIZED_NOTIFY_MATCH_DECISION');
-    return;
-  }
-
-  // ✅ P1: Validate outbound payload with Zod before emit
-  const matchDecisionPayload = matchDecisionOutboundSchema.parse(decision);
-  io.to(`user:${targetUserId}`).emit('match-decision', matchDecisionPayload);
-  secureLogger.info('WS_NOTIFY_MATCH_DECISION', {
-    targetUserId: shortId(targetUserId),
-    decision: decision.decision
   });
 }

@@ -1,22 +1,29 @@
 "use client";
 
-import type { HTMLAttributes } from 'react';
-import clsx from 'clsx';
+import type { MouseEvent } from 'react';
 
 type SkipLinkProps = {
   targetId?: string;
-  label?: string;
-} & HTMLAttributes<HTMLAnchorElement>;
+};
 
-export function SkipLink({ targetId = 'main-content', label = 'Aller au contenu principal', className, ...rest }: SkipLinkProps) {
+export function SkipLink({ targetId = 'main-content' }: SkipLinkProps) {
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+
+    event.preventDefault();
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: 'start' });
+
+    const hash = `#${targetId}`;
+    if (window.location.hash !== hash) {
+      window.history.pushState(null, '', hash);
+    }
+  };
+
   return (
-    <a
-      href={`#${targetId}`}
-      className={clsx('skip-link', className)}
-      data-testid="skip-link"
-      {...rest}
-    >
-      {label}
+    <a href={`#${targetId}`} className="skip-link" data-testid="skip-link" onClick={handleClick}>
+      Aller au contenu principal
     </a>
   );
 }

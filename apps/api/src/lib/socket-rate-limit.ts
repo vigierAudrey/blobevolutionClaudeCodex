@@ -416,22 +416,3 @@ export async function checkRateLimit(
     }
   }
 }
-
-/**
- * Réinitialise le rate limit pour une clé (utile pour tests)
- * NE PAS UTILISER EN PRODUCTION sauf cas exceptionnels
- */
-export async function resetRateLimit(
-  getLimiter: () => RateLimiterRedis | RateLimiterMemory,
-  key: string
-): Promise<void> {
-  try {
-    const limiter = getLimiter();
-    await limiter.delete(key);
-  } catch (error) {
-    secureLogger.warn('RATE_LIMIT_RESET_FAILED', {
-      key: sanitizeRateLimitLogKey(key),
-      error: error instanceof Error ? error.message : String(error)
-    });
-  }
-}

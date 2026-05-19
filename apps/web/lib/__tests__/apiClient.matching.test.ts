@@ -141,7 +141,6 @@ describe('API Client - Matching Integration', () => {
           method: 'POST',
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer fake-access-token',
           }),
           credentials: 'include',
           body: JSON.stringify(mockSearchRequest),
@@ -173,7 +172,6 @@ describe('API Client - Matching Integration', () => {
           method: 'POST',
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer fake-access-token',
           }),
           credentials: 'include',
           body: JSON.stringify(minimalRequest),
@@ -227,10 +225,10 @@ describe('API Client - Matching Integration', () => {
 
       const result = await apiClient.matchDecisions(mockDecisions);
 
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
       expect(headers.get('Content-Type')).toBe('application/json');
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
       expect(init.credentials).toBe('include');
@@ -330,95 +328,12 @@ describe('API Client - Matching Integration', () => {
         }),
       );
 
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
       expect(headers.get('Content-Type')).toBe('application/json');
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
-    });
-  });
-
-  describe('decideBookingRequest (strict)', () => {
-    const requestId = 'req-123';
-
-    it('envoie les headers (Auth, CSRF, X-API-ENVELOPE) et retourne le succès enveloppé', async () => {
-      fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ csrfToken: 'test-csrf-token' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          url: `${API_BASE_URL}/booking/requests/${requestId}/decision`,
-          text: async () => JSON.stringify({ ok: true, data: { success: true, action: 'accept' } }),
-        });
-
-      const result = await apiClient.decideBookingRequest(requestId, 'ACCEPT');
-
-      expect(result).toEqual({ success: true, action: 'accept' });
-      const [, init] = fetchMock.mock.calls[1];
-      const headers = new Headers(init.headers);
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
-      expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
-      expect(headers.get('X-API-ENVELOPE')).toBe('1');
-      expect(headers.get('Content-Type')).toBe('application/json');
-    });
-
-    it('surface une erreur enveloppée FORBIDDEN', async () => {
-      fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ csrfToken: 'test-csrf-token' }),
-        })
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 403,
-          url: `${API_BASE_URL}/booking/requests/${requestId}/decision`,
-          text: async () => JSON.stringify({ ok: false, error: { code: 'FORBIDDEN', message: 'nope' } }),
-        });
-
-      await expect(apiClient.decideBookingRequest(requestId, 'REJECT')).rejects.toMatchObject({
-        code: 'FORBIDDEN',
-        status: 403,
-      });
-    });
-
-    it('rejette la réponse legacy non enveloppée', async () => {
-      fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ csrfToken: 'test-csrf-token' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          url: `${API_BASE_URL}/booking/requests/${requestId}/decision`,
-          text: async () => JSON.stringify({ success: true, action: 'accept' }),
-        });
-
-      await expect(apiClient.decideBookingRequest(requestId, 'ACCEPT')).rejects.toMatchObject({
-        code: 'INVALID_ENVELOPE',
-      });
-    });
-
-    it('rejette une enveloppe succès avec data invalide', async () => {
-      fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ csrfToken: 'test-csrf-token' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          url: `${API_BASE_URL}/booking/requests/${requestId}/decision`,
-          text: async () => JSON.stringify({ ok: true, data: { success: 'yes' } }),
-        });
-
-      await expect(apiClient.decideBookingRequest(requestId, 'ACCEPT')).rejects.toMatchObject({
-        code: 'INVALID_ENVELOPE',
-      });
     });
   });
 
@@ -440,9 +355,9 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.reportProfile(reportRequest);
 
       expect(result).toEqual({ id: reportRequest.targetProfileId });
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
       expect(headers.get('Content-Type')).toBe('application/json');
@@ -522,9 +437,9 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.openConversation(targetUserId);
 
       expect(result).toEqual({ id: '33333333-3333-3333-3333-333333333333', created: true });
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
       expect(headers.get('Content-Type')).toBe('application/json');
@@ -615,123 +530,6 @@ describe('API Client - Matching Integration', () => {
     });
   });
 
-  describe('createBookingAvailability (strict)', () => {
-    const payload = {
-      sport: 'surf' as const,
-      levels: ['beginner'],
-      startAt: '2030-01-01T10:00:00.000Z',
-      endAt: '2030-01-01T12:00:00.000Z',
-      spotLat: 43.493,
-      spotLng: -1.558,
-      capacity: 5,
-    };
-
-    const successData = {
-      id: '44444444-4444-4444-4444-444444444444',
-      proUserId: '55555555-5555-5555-5555-555555555555',
-      sport: 'surf',
-      levels: ['beginner'],
-      startAt: payload.startAt,
-      endAt: payload.endAt,
-      status: 'OPEN',
-      bookedCount: 0,
-      spotLat: payload.spotLat,
-      spotLng: payload.spotLng,
-      capacity: payload.capacity,
-      createdAt: '2030-01-01T00:00:00.000Z',
-    };
-
-    it('envoie les headers (Auth, CSRF, X-API-ENVELOPE) et retourne le succès enveloppé', async () => {
-      fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ csrfToken: 'test-csrf-token' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 201,
-          url: `${API_BASE_URL}/booking/availability`,
-          text: async () => JSON.stringify({ ok: true, data: successData }),
-        });
-
-      const result = await apiClient.createBookingAvailability(payload);
-
-      expect(result).toEqual(successData);
-      const [, init] = fetchMock.mock.calls[1];
-      const headers = new Headers(init.headers);
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
-      expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
-      expect(headers.get('X-API-ENVELOPE')).toBe('1');
-      expect(headers.get('Content-Type')).toBe('application/json');
-      expect(JSON.parse(init.body as string)).toEqual(payload);
-    });
-
-    it('surface une erreur enveloppée FORBIDDEN', async () => {
-      fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ csrfToken: 'test-csrf-token' }),
-        })
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 403,
-          url: `${API_BASE_URL}/booking/availability`,
-          text: async () => JSON.stringify({ ok: false, error: { code: 'FORBIDDEN', message: 'nope' } }),
-        });
-
-      await expect(apiClient.createBookingAvailability(payload)).rejects.toMatchObject({
-        code: 'FORBIDDEN',
-        status: 403,
-      });
-    });
-
-    it('rejette la réponse legacy non enveloppée', async () => {
-      fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ csrfToken: 'test-csrf-token' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 201,
-          url: `${API_BASE_URL}/booking/availability`,
-          text: async () => JSON.stringify({ id: successData.id }),
-        });
-
-      await expect(apiClient.createBookingAvailability(payload)).rejects.toMatchObject({
-        code: 'INVALID_ENVELOPE',
-      });
-    });
-
-    it('rejette une enveloppe succès avec data invalide', async () => {
-      fetchMock
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ csrfToken: 'test-csrf-token' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 201,
-          url: `${API_BASE_URL}/booking/availability`,
-          text: async () => JSON.stringify({ ok: true, data: { ...successData, levels: 'invalid' } }),
-        });
-
-      await expect(apiClient.createBookingAvailability(payload)).rejects.toMatchObject({
-        code: 'INVALID_ENVELOPE',
-      });
-    });
-
-    it('rejette une entrée invalide côté client', async () => {
-      await expect(
-        apiClient.createBookingAvailability({
-          ...payload,
-          startAt: 'invalid-date',
-        })
-      ).rejects.toBeTruthy();
-      expect(fetchMock).not.toHaveBeenCalled();
-    });
-  });
-
   describe('sendMessage (strict HTTP fallback)', () => {
     const conversationId = '66666666-6666-6666-6666-666666666666';
     const payload = { type: 'TEXT' as const, content: 'Hello' };
@@ -759,9 +557,9 @@ describe('API Client - Matching Integration', () => {
       const result = await apiClient.sendMessage(conversationId, payload);
 
       expect(result).toEqual(successData);
-      const [, init] = fetchMock.mock.calls[1];
+      const [, init] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       const headers = new Headers(init.headers);
-      expect(headers.get('Authorization')).toBe('Bearer fake-access-token');
+      expect(headers.get('Authorization')).toBeNull();
       expect(headers.get('X-CSRF-Token')).toBe('test-csrf-token');
       expect(headers.get('X-API-ENVELOPE')).toBe('1');
       expect(headers.get('Content-Type')).toBe('application/json');
@@ -872,13 +670,86 @@ describe('API Client - Matching Integration', () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer fake-access-token',
         },
         credentials: 'include',
         cache: 'no-store',
       });
 
       expect(result).toEqual(mockConversationsResponse);
+    });
+
+    it('devrait propager limit et cursor sur la pagination conversations', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({
+          items: [],
+          hasMore: false,
+          nextCursor: null,
+        }),
+      });
+
+      await apiClient.listConversations({ limit: 25, cursor: 'cursor-123', includeTrashed: true, type: 'RIDER_TO_PRO' });
+
+      expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/conversations?includeTrashed=true&type=RIDER_TO_PRO&limit=25&cursor=cursor-123`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+    });
+
+    it('devrait agréger toutes les pages de conversations', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({
+            items: [{ id: 'conv-1', unread: 1 }],
+            hasMore: true,
+            nextCursor: 'cursor-1',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({
+            items: [{ id: 'conv-2', unread: 3 }],
+            hasMore: false,
+            nextCursor: null,
+          }),
+        });
+
+      const result = await apiClient.listAllConversations();
+
+      expect(result.items).toEqual([{ id: 'conv-1', unread: 1 }, { id: 'conv-2', unread: 3 }]);
+      expect(result.hasMore).toBe(false);
+      expect(result.nextCursor).toBeNull();
+      expect(fetchMock).toHaveBeenNthCalledWith(1, `${API_BASE_URL}/conversations?limit=100`, expect.any(Object));
+      expect(fetchMock).toHaveBeenNthCalledWith(2, `${API_BASE_URL}/conversations?limit=100&cursor=cursor-1`, expect.any(Object));
+    });
+
+    it('devrait retrouver une conversation au-delà de la première page', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({
+            items: [{ id: 'conv-1', unread: 1 }],
+            hasMore: true,
+            nextCursor: 'cursor-1',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({
+            items: [{ id: 'conv-target', unread: 0 }],
+            hasMore: false,
+            nextCursor: null,
+          }),
+        });
+
+      const result = await apiClient.findConversationById('conv-target');
+
+      expect(result).toEqual({ id: 'conv-target', unread: 0 });
     });
 
     it('devrait calculer correctement le total des messages non lus', async () => {
@@ -895,7 +766,7 @@ describe('API Client - Matching Integration', () => {
   });
 
   describe('Gestion des tokens et authentification', () => {
-    it('devrait inclure le token d\'autorisation dans les requêtes', async () => {
+    it('utilise les cookies httpOnly pour l\'authentification (pas de header Authorization)', async () => {
       queueCsrfSuccess();
       fetchMock.mockResolvedValueOnce({
         ok: true,
@@ -908,10 +779,9 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       });
 
-      const [, options] = fetchMock.mock.calls[1];
-      expect(options.headers).toMatchObject({
-        'Authorization': 'Bearer fake-access-token',
-      });
+      const [, options] = fetchMock.mock.calls[1] as [unknown, RequestInit];
+      expect(options.credentials).toBe('include');
+      expect(options.headers).not.toHaveProperty('Authorization');
     });
 
     it('devrait gérer l\'absence de tokens', async () => {
@@ -930,7 +800,7 @@ describe('API Client - Matching Integration', () => {
         date: 'anytime',
       });
 
-      const [, options] = fetchMock.mock.calls[1];
+      const [, options] = fetchMock.mock.calls[1] as [unknown, RequestInit];
       expect(options.headers).not.toHaveProperty('Authorization');
     });
 
@@ -991,8 +861,8 @@ describe('API Client - Matching Integration', () => {
 
       await apiClient.matchDecisions(manyDecisions);
 
-      const [, options] = fetchMock.mock.calls[1];
-      const body = JSON.parse(options.body);
+      const [, options] = fetchMock.mock.calls[1] as [unknown, RequestInit];
+      const body = JSON.parse(options.body as string);
 
       // Dans une vraie implémentation, on limiterait à 100 éléments max
       expect(body.items).toHaveLength(150); // Pour ce test, on vérifie la structure

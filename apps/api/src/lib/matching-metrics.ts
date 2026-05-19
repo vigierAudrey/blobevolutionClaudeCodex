@@ -6,7 +6,7 @@
  *  - Latency is stored as a bucketed histogram — O(constant) memory regardless of
  *    request volume.  No unbounded arrays, no rolling-window buffers.
  *  - p50/p95/p99 are approximations based on bucket cumulative sums.
- *  - Snapshot exported via GET /internal/metrics (aggregated with other module metrics).
+ *  - Snapshot exported via GET /internal/metrics under the "matching" key (aggregated with http + log_transport + process).
  *  - resetMatchingMetrics() is for tests only — never call in production handlers.
  *
  * Histogram design:

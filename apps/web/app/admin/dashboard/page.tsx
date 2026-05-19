@@ -3,12 +3,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
-import { apiClient, type AdminAvailabilityStatusResponse, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary, type SystemAlert } from '../../../lib/apiClient';
-import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity, BookOpen, PenSquare } from 'lucide-react';
+import { apiClient, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary, type SecurityHealth, type SystemAlert } from '../../../lib/apiClient';
+import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity, BookOpen, PenSquare, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 // Force SSR for admin auth and dynamic stats
 export const dynamic = 'force-dynamic';
+
+// Interval de polling des alertes et de la santé système (ms)
+const POLL_INTERVAL_MS = 60_000;
 
 type AdminUser = {
   email: string;
@@ -36,6 +39,16 @@ const DEFAULT_ADMIN_STATS: AdminStats = {
   reportedProfiles: 0
 };
 
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Label du lien d'alerte selon le contenu de l'URL
+function alertLinkLabel(link: string): string {
+  if (/log/i.test(link)) return 'Voir les logs associés →';
+  return 'Voir les détails →';
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<AdminUser | null>(null);
@@ -50,56 +63,72 @@ export default function AdminDashboard() {
   const [systemAlerts, setSystemAlerts] = useState<SystemAlert[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
-  const [availabilityStatus, setAvailabilityStatus] = useState<AdminAvailabilityStatusResponse | null>(null);
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  // F10 — timestamp du dernier refresh réussi des alertes
+  const [alertsLastUpdated, setAlertsLastUpdated] = useState<Date | null>(null);
+  // F09/F11 — santé système
+  const [healthStatus, setHealthStatus] = useState<SecurityHealth | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  // F10 — timestamp du dernier check santé réussi
+  const [healthLastUpdated, setHealthLastUpdated] = useState<Date | null>(null);
 
   const loadInsights = useCallback(async () => {
     setInsightsLoading(true);
     setInsightsError(null);
-    setAvailabilityError(null);
     try {
-      const [blockedRes, eventsRes, summaryRes, availabilityRes] = await Promise.all([
+      const [blockedRes, eventsRes, summaryRes] = await Promise.all([
         apiClient.getBlockedConversations(5),
         apiClient.getSecurityEvents(5),
         apiClient.getSecurityLogsSummary(7),
-        apiClient.getAdminAvailabilityStatus({ limit: 12 })
       ]);
       setBlockedConversations(blockedRes.blocked || []);
       setSecurityEvents(eventsRes.events || []);
       setSecuritySummary(summaryRes ?? null);
-      setAvailabilityStatus(availabilityRes ?? null);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Impossible de charger les insights sécurité';
       setInsightsError(message);
-      setAvailabilityError(message);
     } finally {
       setInsightsLoading(false);
     }
   }, []);
 
+  // F08 — charge les alertes ; conserve la dernière donnée connue en cas d'erreur
   const loadAlerts = useCallback(async () => {
     setAlertsLoading(true);
     setAlertsError(null);
     try {
       const response = await apiClient.getSystemAlerts({ status: 'OPEN', limit: 3 });
       setSystemAlerts(response.items ?? []);
+      setAlertsLastUpdated(new Date()); // F10 — uniquement en cas de succès
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Impossible de charger les alertes';
       setAlertsError(message);
+      // stale data conservée intentionnellement — pas de setSystemAlerts([])
     } finally {
       setAlertsLoading(false);
+    }
+  }, []);
+
+  // F09/F11 — charge la santé système ; conserve la dernière donnée connue en cas d'erreur
+  const loadHealth = useCallback(async () => {
+    setHealthLoading(true);
+    try {
+      const h = await apiClient.getSecurityHealth();
+      setHealthStatus(h);
+      setHealthLastUpdated(new Date()); // F10
+      setHealthError(null);
+    } catch {
+      setHealthError('Vérification impossible');
+      // stale data conservée intentionnellement
+    } finally {
+      setHealthLoading(false);
     }
   }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-
+        // No local hint check — truth comes from the server session.
         const currentUser = await apiClient.me();
         if (currentUser.role !== 'ADMIN') {
           router.replace('/dashboard');
@@ -108,7 +137,6 @@ export default function AdminDashboard() {
 
         setUser(currentUser);
 
-        // Charger les statistiques depuis l'API admin
         try {
           const adminStats = await apiClient.getAdminStats();
           setStats(adminStats);
@@ -119,6 +147,7 @@ export default function AdminDashboard() {
 
         void loadInsights();
         void loadAlerts();
+        void loadHealth(); // F09/F11
 
       } catch (err: unknown) {
         console.error('Auth check failed:', err);
@@ -131,23 +160,28 @@ export default function AdminDashboard() {
     };
 
     checkAuth();
-  }, [router, loadInsights, loadAlerts]);
+  }, [router, loadInsights, loadAlerts, loadHealth]);
+
+  // F08 — polling alertes toutes les 60s
+  useEffect(() => {
+    const id = setInterval(() => { void loadAlerts(); }, POLL_INTERVAL_MS);
+    return () => clearInterval(id); // cleanup pour éviter les fuites mémoire
+  }, [loadAlerts]);
+
+  // F09/F11 — polling santé système toutes les 60s
+  useEffect(() => {
+    const id = setInterval(() => { void loadHealth(); }, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [loadHealth]);
 
   const handleLogout = async () => {
     try {
       await apiClient.logoutAll();
       apiClient.clearTokens();
-      // Clear admin gating cookie
-      if (typeof document !== 'undefined') {
-        document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
-      }
       router.push('/');
     } catch (error) {
       console.error('Logout error:', error);
       apiClient.clearTokens();
-      if (typeof document !== 'undefined') {
-        document.cookie = 'admin_session=; Path=/; Max-Age=0; SameSite=Lax';
-      }
       router.push('/');
     }
   };
@@ -156,6 +190,17 @@ export default function AdminDashboard() {
   if (error) return <p className="text-red-600">{error}</p>;
 
   const safeStats = stats ?? DEFAULT_ADMIN_STATS;
+
+  // F09 — calcul couleur barre de statut
+  const dbOk = healthStatus?.checks.db === 'ok';
+  const redisOk = healthStatus?.checks.redis === 'ok';
+  const hasHealthData = healthStatus !== null;
+  const allOk = dbOk && redisOk;
+  const statusBarBg = !hasHealthData
+    ? 'bg-slate-50 border-slate-200'
+    : allOk
+      ? 'bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800'
+      : 'bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800';
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -170,6 +215,54 @@ export default function AdminDashboard() {
         <Button onClick={handleLogout} variant="outline">
           Déconnexion
         </Button>
+      </div>
+
+      {/* F09/F11 — Barre de statut système */}
+      <div className={`flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 rounded-md border text-sm ${statusBarBg}`}>
+        <span className="font-medium text-foreground">État système</span>
+
+        {healthLoading && !hasHealthData && (
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Vérification…
+          </span>
+        )}
+
+        {healthError && !hasHealthData && (
+          <span className="text-amber-600">{healthError}</span>
+        )}
+
+        {hasHealthData && (
+          <>
+            {/* Base de données */}
+            <span className={`flex items-center gap-1 ${dbOk ? 'text-green-700 dark:text-green-400' : 'text-red-600'}`}>
+              {dbOk
+                ? <CheckCircle2 className="h-3.5 w-3.5" />
+                : <XCircle className="h-3.5 w-3.5" />}
+              Base de données : {dbOk ? 'OK' : 'Problème'}
+            </span>
+
+            {/* Cache serveur (Redis) */}
+            <span className={`flex items-center gap-1 ${redisOk ? 'text-green-700 dark:text-green-400' : 'text-red-600'}`}>
+              {redisOk
+                ? <CheckCircle2 className="h-3.5 w-3.5" />
+                : <XCircle className="h-3.5 w-3.5" />}
+              Cache serveur : {redisOk ? 'OK' : 'Indisponible'}
+            </span>
+
+            {/* F10 — Timestamp dernière vérification */}
+            {healthLastUpdated && (
+              <span className="text-muted-foreground ml-auto text-xs">
+                Vérifié à {formatTime(healthLastUpdated)}
+              </span>
+            )}
+
+            {/* Lien vers la page détail */}
+            <Link href="/admin/health" className="text-xs text-blue-600 underline underline-offset-2">
+              Détails →
+            </Link>
+          </>
+        )}
       </div>
 
       {/* Statistiques principales */}
@@ -252,7 +345,7 @@ export default function AdminDashboard() {
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/blobosphere/editor">
                   <PenSquare className="mr-2 h-4 w-4" />
-                  Ouvrir l’éditeur interne
+                  Ouvrir l&apos;éditeur interne
                 </Link>
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
@@ -319,22 +412,12 @@ export default function AdminDashboard() {
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/conversations/blocked">
-                  Conversations bloquées
-                </Link>
-              </Button>
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link href="/admin/conversations/history">
-                  Historique blocages
+                  Blocages actifs
                 </Link>
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/conversations/broadcast">
                   Diffusion admin
-                </Link>
-              </Button>
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link href="/admin/reports/history">
-                  Historique modération
                 </Link>
               </Button>
             </div>
@@ -360,7 +443,7 @@ export default function AdminDashboard() {
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
                 <Link href="/admin/gdpr">
-                  Conformité RGPD
+                  Rétention & exports
                 </Link>
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
@@ -500,90 +583,33 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      {/* Offres complètes / ouvertes */}
+      {/* F08/F10/F13 — Alertes système avec polling et timestamp */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
-            Créneaux complets / ouverts
-          </CardTitle>
-          <CardDescription>Visibilité admin sur la capacité des créneaux pros (dates, sports)</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          {insightsLoading && <p className="text-muted-foreground">Chargement…</p>}
-          {availabilityError && !insightsLoading && (
-            <p className="text-red-600">{availabilityError}</p>
-          )}
-          {!insightsLoading && availabilityStatus && (
-            <>
-              <div className="flex flex-wrap gap-3 text-xs">
-                <span className="px-2 py-1 rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200">
-                  Ouverts : {availabilityStatus.summary.open}
-                </span>
-                <span className="px-2 py-1 rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200">
-                  Complets : {availabilityStatus.summary.closed}
-                </span>
-                <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-200">
-                  Total suivis : {availabilityStatus.summary.total}
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="text-left text-muted-foreground">
-                    <tr>
-                      <th className="py-2 pr-3 font-medium">Pro</th>
-                      <th className="py-2 pr-3 font-medium">Sport</th>
-                      <th className="py-2 pr-3 font-medium">Période</th>
-                      <th className="py-2 pr-3 font-medium">Capacité</th>
-                      <th className="py-2 pr-3 font-medium">Statut</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {availabilityStatus.items.slice(0, 10).map((item) => {
-                      const ratio = `${item.bookedCount}/${item.capacity}`;
-                      const isClosed = item.status === 'CLOSED' || item.bookedCount >= item.capacity;
-                      return (
-                        <tr key={item.id} className="border-b last:border-b-0">
-                          <td className="py-2 pr-3">
-                            {item.pro.proProfile?.businessName || item.pro.email}
-                          </td>
-                          <td className="py-2 pr-3 uppercase">{item.sport}</td>
-                          <td className="py-2 pr-3">
-                            {new Date(item.startAt).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' })}
-                            {' → '}
-                            {new Date(item.endAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td className="py-2 pr-3">{ratio}</td>
-                          <td className="py-2 pr-3">
-                            <span className={`px-2 py-1 rounded-full ${isClosed ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'}`}>
-                              {isClosed ? 'Complet' : 'Ouvert'}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-          {!insightsLoading && !availabilityStatus && !availabilityError && (
-            <p className="text-muted-foreground">Aucun créneau référencé pour l’instant.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Alertes et notifications */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle size={20} />
-            Alertes système
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle size={20} />
+              Alertes système
+            </CardTitle>
+            {/* F10 — timestamp dernière mise à jour */}
+            {alertsLastUpdated && (
+              <span className="text-xs text-muted-foreground">
+                Mis à jour à {formatTime(alertsLastUpdated)}
+                {alertsLoading && <Loader2 className="inline ml-1 h-3 w-3 animate-spin" />}
+              </span>
+            )}
+            {alertsLoading && !alertsLastUpdated && (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {alertsLoading && <p className="text-sm text-muted-foreground">Chargement...</p>}
-          {alertsError && <p className="text-sm text-red-600">{alertsError}</p>}
+          {/* Erreur de refresh : indiquée sans effacer la donnée stale */}
+          {alertsError && (
+            <p className="text-xs text-amber-600">
+              Dernier refresh échoué — données possiblement en retard.
+            </p>
+          )}
           {!alertsLoading && !alertsError && systemAlerts.length === 0 && (
             <p className="text-sm text-muted-foreground">Aucune alerte pour le moment.</p>
           )}
@@ -591,9 +617,24 @@ export default function AdminDashboard() {
             <div key={alert.id} className="border rounded-md p-3 text-sm space-y-1">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{alert.type}</span>
-                <span className="text-xs text-muted-foreground">{alert.severity}</span>
+                <span className={`text-xs px-2 py-0.5 rounded ${
+                  alert.severity === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                  alert.severity === 'WARNING'  ? 'bg-yellow-100 text-yellow-800' :
+                  'bg-blue-100 text-blue-800'
+                }`}>{alert.severity}</span>
               </div>
               <p className="text-xs text-muted-foreground line-clamp-2">{alert.message}</p>
+              {/* F13 — lien vers les logs si disponible */}
+              {alert.link && (
+                <Link
+                  href={alert.link}
+                  className="inline-block text-xs text-blue-600 underline underline-offset-2"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {alertLinkLabel(alert.link)}
+                </Link>
+              )}
             </div>
           ))}
           <Button variant="outline" className="w-full justify-start" asChild>

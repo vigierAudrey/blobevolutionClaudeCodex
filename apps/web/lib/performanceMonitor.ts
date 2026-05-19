@@ -212,7 +212,7 @@ export function measurePerformance(
 }
 
 // Development helpers
-if (process.env.NODE_ENV === 'development') {
+if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
   // Expose performance monitor for debugging
   type DebugPerformanceWindow = typeof window & {
     debugPerformance?: {

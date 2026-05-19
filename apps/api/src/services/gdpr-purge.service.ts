@@ -1,5 +1,8 @@
 import { clientPrisma as prisma } from '@blobinfini/database';
 import crypto from 'crypto';
+import { secureLogger } from '../utils/secure-logger';
+import { archiveBookingsBulk } from '../lib/booking-archive';
+import { retentionExportArtifactService } from './retention-export-artifact.service';
 
 export interface GDPRTechnicalStats {
   sessionsDeleted: number;
@@ -29,6 +32,14 @@ export interface GDPRPurgeResult {
   summary: string;
 }
 
+export interface AuditLogPurgeReadiness {
+  requiresVerifiedExport: boolean;
+  exportVerified: boolean;
+  hasEligibleLogs: boolean;
+  threshold: Date;
+  oldestPurgeableLogCreatedAt: Date | null;
+}
+
 /**
  * Service de purge RGPD avec protection juridique
  *
@@ -38,6 +49,51 @@ export interface GDPRPurgeResult {
  * - Anonymiser plutôt que supprimer quand possible
  */
 export class GDPRPurgeService {
+  async getAuditLogPurgeReadiness(now: Date = new Date()): Promise<AuditLogPurgeReadiness> {
+    const logRetentionDays = Number(process.env.AUDIT_LOG_RETENTION_DAYS || '365');
+    const requiresVerifiedExport = String(process.env.AUDIT_LOG_PURGE_REQUIRES_VERIFIED_EXPORT || 'true').toLowerCase() !== 'false';
+    const threshold = new Date(now.getTime() - logRetentionDays * 24 * 60 * 60 * 1000);
+
+    const oldestPurgeableLog = await prisma.auditLog.findFirst({
+      where: { createdAt: { lt: threshold } },
+      orderBy: { createdAt: 'asc' },
+      select: { createdAt: true },
+    });
+
+    if (!oldestPurgeableLog) {
+      return {
+        requiresVerifiedExport,
+        exportVerified: true,
+        hasEligibleLogs: false,
+        threshold,
+        oldestPurgeableLogCreatedAt: null,
+      };
+    }
+
+    if (!requiresVerifiedExport) {
+      return {
+        requiresVerifiedExport,
+        exportVerified: true,
+        hasEligibleLogs: true,
+        threshold,
+        oldestPurgeableLogCreatedAt: oldestPurgeableLog.createdAt,
+      };
+    }
+
+    const exportVerified = await retentionExportArtifactService.hasVerifiedCoverage(
+      'AUDIT_LOG',
+      oldestPurgeableLog.createdAt,
+      threshold,
+    );
+
+    return {
+      requiresVerifiedExport,
+      exportVerified,
+      hasEligibleLogs: true,
+      threshold,
+      oldestPurgeableLogCreatedAt: oldestPurgeableLog.createdAt,
+    };
+  }
 
   /**
    * Anonymise une données sensible en conservant un hash pour identification
@@ -53,8 +109,6 @@ export class GDPRPurgeService {
    */
   async purgeExpiredTechnicalData(): Promise<GDPRTechnicalStats> {
     const now = new Date();
-    const logRetentionDays = Number(process.env.AUDIT_LOG_RETENTION_DAYS || '365');
-    const logThreshold = new Date(now.getTime() - logRetentionDays * 24 * 60 * 60 * 1000);
     const analyticsRetentionDays = Number(process.env.ANALYTICS_EVENT_RETENTION_DAYS || '90');
     const analyticsAggRetentionDays = Number(process.env.ANALYTICS_DAILY_AGG_RETENTION_DAYS || '365');
 
@@ -80,11 +134,21 @@ export class GDPRPurgeService {
 
     const tokensDeleted = passwordTokensResult.count + emailTokensResult.count + refreshTokensResult.count;
 
-    const oldLogsResult = await prisma.auditLog.deleteMany({
-      where: {
-        createdAt: { lt: logThreshold }
-      }
-    });
+    const auditLogReadiness = await this.getAuditLogPurgeReadiness(now);
+    const oldLogsResult = auditLogReadiness.hasEligibleLogs && auditLogReadiness.exportVerified
+      ? await prisma.auditLog.deleteMany({
+        where: {
+          createdAt: { lt: auditLogReadiness.threshold }
+        }
+      })
+      : { count: 0 };
+
+    if (auditLogReadiness.hasEligibleLogs && !auditLogReadiness.exportVerified) {
+      secureLogger.warn('GDPR_PURGE_AUDIT_LOG_BLOCKED_MISSING_VERIFIED_EXPORT', {
+        threshold: auditLogReadiness.threshold.toISOString(),
+        oldestPurgeableLogCreatedAt: auditLogReadiness.oldestPurgeableLogCreatedAt?.toISOString() ?? null,
+      });
+    }
 
     // Purger les LoginAttempts anciens (RGPD Article 5.1.e)
     const loginAttemptsDeleted = await this.purgeOldLoginAttempts();
@@ -107,7 +171,12 @@ export class GDPRPurgeService {
       analyticsDailyAggDeleted = analyticsAggResult.count;
     }
 
-    console.log(`✅ GDPR: Purged ${sessionsResult.count} sessions, ${tokensDeleted} expired tokens, ${loginAttemptsDeleted} login attempts, ${analyticsEventsDeleted} analytics events`);
+    secureLogger.info('GDPR_PURGE_TECHNICAL_COMPLETED', {
+      sessionsDeleted: sessionsResult.count,
+      tokensDeleted,
+      loginAttemptsDeleted,
+      analyticsEventsDeleted,
+    });
 
     return {
       sessionsDeleted: sessionsResult.count,
@@ -120,28 +189,134 @@ export class GDPRPurgeService {
   }
 
   /**
-   * Purge des LoginAttempts après durée de rétention
-   * Conforme RGPD Article 5.1.e (limitation de conservation)
-   * @returns Nombre d'entrées supprimées
+   * Purge des LoginAttempts (appelé par le job RGPD quotidien).
+   * Délègue à purgeOldLoginAttemptsBatched en mode réel.
+   * Conforme RGPD Article 5.1.e (limitation de conservation).
    */
   async purgeOldLoginAttempts(): Promise<number> {
-    const retentionDays = Number(process.env.LOGIN_ATTEMPT_RETENTION_DAYS || '30');
-    const threshold = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const { deleted } = await this.purgeOldLoginAttemptsBatched({ dryRun: false });
+    return deleted;
+  }
 
-    const result = await prisma.loginAttempt.deleteMany({
-      where: {
-        createdAt: { lt: threshold }
-      }
-    });
+  /**
+   * Purge batchée des LoginAttempts avec rétention différenciée.
+   *
+   * WHY batching:
+   *   Un DELETE massif (ex: 1M lignes) pose un lock exclusif sur les pages touchées,
+   *   génère un WAL spike, et peut provoquer un timeout Prisma (30s par défaut).
+   *   Les batches de 2000 lignes limitent la durée de chaque lock à ~10-50ms.
+   *
+   * WHY retention différenciée:
+   *   success=true  → connexion normale, PII minimal → 7 jours (RGPD minimisation).
+   *   success=false → preuve d'attaque, nécessaire pour audit/investigation → 30 jours.
+   *
+   * WHY la sous-requête SELECT id + LIMIT:
+   *   Prisma ORM ne supporte pas DELETE ... LIMIT directement.
+   *   La sous-requête avec LIMIT permet un batch déterministe.
+   *   L'index composite (success, createdAt DESC) est utilisé par le planner.
+   *
+   * @param dryRun   true = COUNT uniquement, aucune suppression.
+   * @returns        { deleted, wouldDelete, dryRun, batches, successRetentionDays, failureRetentionDays }
+   */
+  async purgeOldLoginAttemptsBatched(options: { dryRun: boolean }): Promise<{
+    deleted: number;
+    wouldDelete: number;
+    dryRun: boolean;
+    batches: number;
+    successRetentionDays: number;
+    failureRetentionDays: number;
+  }> {
+    const { dryRun } = options;
 
-    console.log(`✅ GDPR: Purged ${result.count} login attempts older than ${retentionDays} days`);
+    // Use || instead of ?? to also handle empty-string env vars ('' ?? '7' = '' → Number('') = 0).
+    const successRetentionDays = Number(process.env.LOGIN_ATTEMPT_SUCCESS_RETENTION_DAYS || '7');
+    const failureRetentionDays = Number(process.env.LOGIN_ATTEMPT_FAILURE_RETENTION_DAYS || '30');
+    const BATCH_SIZE = 2000;
+    // Safety valve: évite une boucle infinie si les timestamps sont dans le futur ou la DB est corrompue.
+    const MAX_BATCHES = 5000;
 
-    // Alerte si nombre anormal (possible attaque)
-    if (result.count > 100000) {
-      console.error(`⚠️  ALERT: Abnormal number of login attempts purged: ${result.count}`);
+    const successThreshold = new Date(Date.now() - successRetentionDays * 24 * 60 * 60 * 1000);
+    const failureThreshold = new Date(Date.now() - failureRetentionDays * 24 * 60 * 60 * 1000);
+
+    // Dry-run: COUNT uniquement via l'index composite — O(log n + matching_rows)
+    if (dryRun) {
+      type CountRow = { cnt: bigint };
+      const [row] = await prisma.$queryRaw<CountRow[]>`
+        SELECT COUNT(*)::bigint AS cnt
+        FROM "LoginAttempt"
+        WHERE (success = true  AND "createdAt" < ${successThreshold})
+           OR (success = false AND "createdAt" < ${failureThreshold})
+      `;
+      const wouldDelete = Number(row?.cnt ?? 0);
+      secureLogger.info('GDPR_PURGE_LOGIN_ATTEMPTS_DRYRUN', {
+        wouldDelete,
+        successRetentionDays,
+        failureRetentionDays,
+      });
+      return { deleted: 0, wouldDelete, dryRun: true, batches: 0, successRetentionDays, failureRetentionDays };
     }
 
-    return result.count;
+    // Real purge — batched DELETE via subquery
+    let totalDeleted = 0;
+    let batches = 0;
+
+    for (let i = 0; i < MAX_BATCHES; i++) {
+      // DELETE ... WHERE id IN (SELECT id ... LIMIT batch_size)
+      // Uses (success, createdAt DESC) index; processes oldest rows first (ASC).
+      const deletedInBatch = await prisma.$executeRaw`
+        DELETE FROM "LoginAttempt"
+        WHERE id IN (
+          SELECT id FROM "LoginAttempt"
+          WHERE (success = true  AND "createdAt" < ${successThreshold})
+             OR (success = false AND "createdAt" < ${failureThreshold})
+          ORDER BY "createdAt" ASC
+          LIMIT ${BATCH_SIZE}
+        )
+      `;
+
+      batches++;
+      totalDeleted += deletedInBatch;
+
+      secureLogger.info('GDPR_PURGE_LOGIN_ATTEMPTS_BATCH', {
+        batch: batches,
+        deletedInBatch,
+        totalDeleted,
+      });
+
+      // Stop when the batch returned fewer rows than requested — table is clean.
+      if (deletedInBatch < BATCH_SIZE) break;
+    }
+
+    if (batches >= MAX_BATCHES) {
+      secureLogger.error('GDPR_PURGE_LOGIN_ATTEMPTS_MAX_BATCHES_REACHED', {
+        MAX_BATCHES,
+        totalDeleted,
+      });
+    }
+
+    // Alert if volume is abnormally high (possible ongoing attack filling the table)
+    if (totalDeleted > 500_000) {
+      secureLogger.error('GDPR_PURGE_LOGIN_ATTEMPTS_ABNORMAL_VOLUME', {
+        totalDeleted,
+        batches,
+      });
+    }
+
+    secureLogger.info('GDPR_PURGE_LOGIN_ATTEMPTS_COMPLETED', {
+      deleted: totalDeleted,
+      batches,
+      successRetentionDays,
+      failureRetentionDays,
+    });
+
+    return {
+      deleted: totalDeleted,
+      wouldDelete: totalDeleted,
+      dryRun: false,
+      batches,
+      successRetentionDays,
+      failureRetentionDays,
+    };
   }
 
   /**
@@ -260,6 +435,39 @@ export class GDPRPurgeService {
         }
       });
 
+      // Archiver les bookings AVANT la cascade de suppression.
+      // Booking.onDelete = Cascade depuis User ET depuis ProAvailability →
+      // tout sera détruit par user.delete() ci-dessous.
+      // On collecte : bookings en tant que rider + bookings en tant que pro
+      // (via les slots de disponibilité de ce pro).
+      const bookingsToArchive = await prisma.booking.findMany({
+        where: {
+          OR: [
+            { riderUserId: user.id },
+            { availability: { proUserId: user.id } },
+          ],
+        },
+        include: {
+          availability: {
+            select: { proUserId: true, sport: true, startAt: true, price: true },
+          },
+        },
+      });
+
+      if (bookingsToArchive.length > 0) {
+        const archiveResult = await archiveBookingsBulk(
+          bookingsToArchive,
+          new Date(), // closedAt = maintenant (pré-suppression)
+          `gdpr-phase3:${user.id}`
+        );
+        secureLogger.info('GDPR_PHASE3_BOOKINGS_ARCHIVED', {
+          userId: '[redacted]',
+          created: archiveResult.created,
+          skipped: archiveResult.skipped,
+          errors:  archiveResult.errors,
+        });
+      }
+
       // Supprimer définitivement l'utilisateur et ses données
       await prisma.user.delete({
         where: { id: user.id }
@@ -268,7 +476,11 @@ export class GDPRPurgeService {
       phase3Count++;
     }
 
-    console.log(`✅ GDPR: Phase1=${phase1Count}, Phase2=${phase2Count}, Phase3=${phase3Count} users processed`);
+    secureLogger.info('GDPR_USER_ANONYMIZATION_COMPLETED', {
+      phase1Count,
+      phase2Count,
+      phase3Count,
+    });
 
     return {
       phase1Anonymized: phase1Count,
@@ -284,8 +496,9 @@ export class GDPRPurgeService {
   async purgeRelationalData(): Promise<GDPRRelationalStats> {
     const now = new Date();
 
-    // Supprimer les conversations trasher depuis > 30 jours
-    const convThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    // Supprimer les conversations trashées depuis > 90 jours
+    // (porté de 30j à 90j — RGPD Phase 1, meilleure couverture litiges court-terme)
+    const convThreshold = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
     // D'abord supprimer les membres de conversations trashées
     await prisma.conversationMember.deleteMany({
@@ -319,7 +532,11 @@ export class GDPRPurgeService {
       }
     });
 
-    console.log(`✅ GDPR: Conversations=${orphanConversations.count}, Matches=${orphanMatches.count}, Searches=${oldSearches.count} deleted`);
+    secureLogger.info('GDPR_PURGE_RELATIONAL_COMPLETED', {
+      conversationsDeleted: orphanConversations.count,
+      matchesDeleted: orphanMatches.count,
+      oldSearchesDeleted: oldSearches.count,
+    });
 
     return {
       conversationsDeleted: orphanConversations.count,
@@ -332,7 +549,7 @@ export class GDPRPurgeService {
    * Purge complète - À exécuter quotidiennement via CRON
    */
   async performFullPurge(): Promise<GDPRPurgeResult> {
-    console.log('🧹 Starting GDPR purge...');
+    secureLogger.info('GDPR_PURGE_STARTED');
 
     const technicalData = await this.purgeExpiredTechnicalData();
     const userAnonymization = await this.anonymizeDeletedUsers();
@@ -340,7 +557,7 @@ export class GDPRPurgeService {
 
     const summary = `GDPR Purge completed: ${technicalData.sessionsDeleted + technicalData.tokensDeleted} technical items, ${userAnonymization.phase1Anonymized + userAnonymization.phase2Anonymized + userAnonymization.phase3Purged} users processed, ${relationalData.conversationsDeleted + relationalData.matchesDeleted + relationalData.oldSearchesDeleted} relational items deleted`;
 
-    console.log(`✅ ${summary}`);
+    secureLogger.info('GDPR_PURGE_COMPLETED', { summary });
 
     return {
       technicalData,
@@ -389,7 +606,7 @@ export class GDPRPurgeService {
       }
     });
 
-    const convThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const convThreshold = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     const oldTrashedConversations = await prisma.conversationMember.count({
       where: {
         trashedAt: { not: null, lt: convThreshold }

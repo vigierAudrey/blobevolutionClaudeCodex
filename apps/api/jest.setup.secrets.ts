@@ -18,6 +18,14 @@ if (!process.env.IP_HASH_SECRET || process.env.IP_HASH_SECRET.length < 32) {
   process.env.IP_HASH_SECRET = 'i'.repeat(64);
 }
 
+if (!process.env.EMAIL_HASH_SECRET || process.env.EMAIL_HASH_SECRET.length < 32) {
+  process.env.EMAIL_HASH_SECRET = 'e'.repeat(64);
+}
+
+if (!process.env.LOG_ACTOR_SECRET || process.env.LOG_ACTOR_SECRET.length < 32) {
+  process.env.LOG_ACTOR_SECRET = 'l'.repeat(64);
+}
+
 if (!process.env.CSRF_SECRET) {
   process.env.CSRF_SECRET = 'csrf-test-secret'.padEnd(32, 'x');
 }

@@ -2,6 +2,7 @@ import request from 'supertest';
 import { createApp } from './index';
 import { clientPrisma as prisma, Role } from '@blobinfini/database';
 import { getAccessToken, TEST_PASSWORD } from './tests/helpers/auth';
+import type { SecurityHealthResponse } from './modules/security/security.contract';
 
 describe('/security/health endpoint', () => {
   const app = createApp();
@@ -29,40 +30,33 @@ describe('/security/health endpoint', () => {
       .expect(403);
   });
 
+  it('does not expose legacy /api/security/health alias', async () => {
+    await request(app).get('/api/security/health').expect(404);
+  });
+
   it('returns status payload for admin users', async () => {
-    const previousVerbose = process.env.SECURITY_HEALTH_VERBOSE;
-    process.env.SECURITY_HEALTH_VERBOSE = 'true';
+    const { accessToken } = await getAccessToken({
+      app,
+      email: 'security-health-admin@test.com',
+      password: TEST_PASSWORD,
+      role: Role.ADMIN,
+      emailVerified: true,
+    });
 
-    try {
-      const { accessToken } = await getAccessToken({
-        app,
-        email: 'security-health-admin@test.com',
-        password: TEST_PASSWORD,
-        role: Role.ADMIN,
-        emailVerified: true,
-      });
+    const response = await request(app)
+      .get('/security/health')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
 
-      const response = await request(app)
-        .get('/security/health')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(200);
-
-      expect(response.body).toHaveProperty('status');
-      expect(response.body).toHaveProperty('authRequireVerified');
-      expect(Array.isArray(response.body.issues)).toBe(true);
-      expect(response.body).toMatchObject({
-        helmet: true,
-        csrf: true,
-        rateLimit: true,
-      });
-      expect(response.body).toHaveProperty('checks');
-      expect(response.body.checks).toHaveProperty('authRequireVerified');
-    } finally {
-      if (previousVerbose === undefined) {
-        delete process.env.SECURITY_HEALTH_VERBOSE;
-      } else {
-        process.env.SECURITY_HEALTH_VERBOSE = previousVerbose;
-      }
-    }
+    const body = response.body as SecurityHealthResponse;
+    expect(['SECURE', 'DEGRADED', 'UNSAFE']).toContain(body.status);
+    expect(typeof body.timestamp).toBe('string');
+    expect(body.checks).toEqual({
+      config: expect.stringMatching(/^(ok|fail)$/),
+      env: expect.stringMatching(/^(ok|fail)$/),
+      db: expect.stringMatching(/^(ok|fail)$/),
+      redis: expect.stringMatching(/^(ok|fail)$/),
+      smtp: expect.stringMatching(/^(ok|fail)$/),
+    });
   });
 });

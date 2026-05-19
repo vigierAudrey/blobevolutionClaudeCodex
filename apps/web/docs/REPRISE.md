@@ -69,9 +69,10 @@ module.exports = {
 **Test**: Injecter `<script>alert(1)</script>` dans message chat → doit être bloqué
 
 ### 2. Token Storage (localStorage → httpOnly cookie) - **LONG TERME**
-**État**: ⚠️ localStorage = vulnérable XSS
-**Mitigation court terme**: CSP strict (voir ci-dessus)
+**État**: ⚠️ historique front localStorage/session hint encore présent par endroits
+**Mitigation court terme**: CSP strict (voir ci-dessus) + ne jamais traiter `blob_session_hint` comme preuve d’auth
 **Mitigation long terme**: Migration httpOnly cookie (backend + frontend refactor)
+**Mise à jour 2026-04-14**: les pages PRO protégées (`/pro/onboarding`, `/pro/dashboard`, `/pro/messages`, `/pro/profile`, `/pro/map`) valident désormais d’abord la session réelle via `/auth/me`; le hint local reste un indice UX, plus un prérequis de redirection.
 **Roadmap**: Q2 2026 (estimé 2-3 semaines)
 
 ---
@@ -106,7 +107,7 @@ npm run build
 - `docs/REPRISE.md` - ce fichier
 
 ### Modifiés
-- `lib/socket.ts` - reconnectSocketWithNewToken() + currentToken
+- `lib/socket.ts` - reconnectSocket() cookie-only
 - `lib/apiClient.ts` - expose refreshToken pour WebSocket
 - `hooks/useSocket.ts` - guard double reconnect + isAuthConnectError()
 - `hooks/useChat.ts` - ACK callbacks + lastError UI

@@ -2,6 +2,11 @@
   "name": "blobevolution-claude-codex",
   "private": true,
   "packageManager": "pnpm@10.28.2",
+  "pnpm": {
+    "overrides": {
+      "fast-xml-parser": "5.3.6"
+    }
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -25,8 +30,6 @@
     "build:api": "pnpm --filter @blobinfini/api build",
     "build:web": "pnpm run db:generate && pnpm --filter @blobinfini/web build",
     "type-check": "pnpm --filter @blobinfini/api type-check && pnpm --filter @blobinfini/web type-check",
-    "type-check:legacy": "tsc -p tsconfig.base.json && tsc -p apps/api/tsconfig.json",
-    "//": "⚠️  DO NOT use type-check:legacy in CI. Use workspace-specific scripts instead: pnpm --filter @blobinfini/web type-check && pnpm --filter @blobinfini/api type-check",
     "db:generate": "pnpm --filter @blobinfini/database generate",
     "db:migrate": "pnpm --filter @blobinfini/database migrate",
     "db:migrate:deploy": "pnpm --filter @blobinfini/database migrate:deploy",
@@ -35,15 +38,26 @@
     "db:migrate:nolock": "PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 pnpm --filter @blobinfini/database migrate",
     "db:studio": "pnpm --filter @blobinfini/database studio",
     "db:seed": "pnpm --filter @blobinfini/database seed",
+    "db:seed:active-tests": "pnpm --filter @blobinfini/database seed:active-tests",
+    "db:seed:pre-vps": "APP_ENV=pre-vps pnpm --filter @blobinfini/database seed:pre-vps",
+    "pre-vps:bootstrap": "bash scripts/pre-vps-bootstrap.sh",
+    "pre-vps:smoke": "bash scripts/smoke-test.sh",
+    "pre-vps:check-env": "bash scripts/check-pre-vps-env.sh",
     "db:reset": "pnpm --filter @blobinfini/database reset",
     "db:reset:seedless": "pnpm --filter @blobinfini/database reset:seedless",
     "db:reseed": "pnpm --filter @blobinfini/database reseed",
+    "db:reseed:active-tests": "pnpm --filter @blobinfini/database reseed:active-tests",
     "purge:consent-ip": "tsx apps/api/src/jobs/purgeConsent.ts",
     "test:security": "bash scripts/no-raw-ip-check.sh",
     "migrate:ip-to-hash": "tsx scripts/migrate-ip-to-hash-v2.ts --execute",
     "migrate:ip-to-hash:dry-run": "tsx scripts/migrate-ip-to-hash-v2.ts --dry-run",
     "test": "pnpm --filter @blobinfini/api test",
     "test:e2e": "node scripts/run-e2e.mjs",
+    "test:active-users:api": "pnpm --filter @blobinfini/api test -- --runTestsByPath src/modules/chat/__tests__/active-user-simulation.e2e.test.ts src/modules/chat/__tests__/active-user-abuse-controls.e2e.test.ts src/modules/auth/__tests__/active-user-login-rate-limit.e2e.test.ts src/lib/__tests__/socket-conversation-authz.test.ts src/lib/__tests__/socket-reconnection-storm.test.ts src/lib/__tests__/socket-sendmessage-burst-rl.test.ts src/lib/__tests__/socket-fanout-budget.test.ts src/lib/__tests__/socket-sendmessage-global-rl.test.ts",
+    "test:active-users:bootstrap": "node scripts/run-e2e.mjs apps/web/tests/e2e/active-bootstrap.spec.ts",
+    "test:active-users:e2e": "node scripts/run-e2e.mjs apps/web/tests/e2e/active-users.spec.ts",
+    "test:active-users:load": "node scripts/run-active-user-load.mjs",
+    "test:active-users": "npm-run-all db:reseed:active-tests test:active-users:api test:active-users:e2e",
     "postinstall": "patch-package",
     "prepare": "pnpm --filter @blobinfini/database generate && (pnpm --filter @blobinfini/database build || true)",
     "lint": "pnpm --filter @blobinfini/web lint",

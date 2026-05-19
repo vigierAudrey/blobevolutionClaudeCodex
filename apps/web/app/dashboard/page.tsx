@@ -1,5 +1,6 @@
 "use client";
-import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Search, Sparkles, Tag, User } from 'lucide-react';
+import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Sparkles, Tag, User } from 'lucide-react';
+import { NotificationBell } from '../../components/NotificationBell';
 import nextDynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -9,6 +10,7 @@ import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { apiClient } from '../../lib/apiClient';
+import { requireClientSession, SessionRequiredError } from '../../lib/clientSession';
 import loadingBlob from '../../public/images/loading/favicon-96x96.png';
 
 const AdBannerSidebar = nextDynamic(
@@ -51,13 +53,8 @@ export default function DashboardPage() {
   const [hasMatchingShortcut, setHasMatchingShortcut] = useState(false);
 
   useEffect(() => {
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) {
-      router.replace('/login');
-      return;
-    }
-    apiClient
-      .me()
+    // No local hint check — truth comes from the server session.
+    requireClientSession()
       .then((u) => {
         setUser(u as DashboardUser);
         // First-login banner heuristic: show once per user until dismissed
@@ -65,6 +62,11 @@ export default function DashboardPage() {
         const visited = typeof window !== 'undefined' ? localStorage.getItem(key) : '1';
         if (!visited) setShowProfilePrompt(true);
         if (typeof window !== 'undefined') localStorage.setItem(key, '1');
+      })
+      .catch((err) => {
+        if (err instanceof SessionRequiredError) {
+          router.replace('/login');
+        }
       })
       .finally(() => setLoading(false));
   }, [router]);
@@ -107,7 +109,7 @@ export default function DashboardPage() {
 
     const loadUnread = async () => {
       try {
-        const data = await apiClient.listConversations();
+        const data = await apiClient.listAllConversations();
         if (!active) return;
         const response = data as { items?: Array<{ unread?: number }> };
         const total = (response.items ?? []).reduce((acc, it) => acc + Number(it.unread ?? 0), 0);
@@ -240,6 +242,9 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="text-white [&_button]:text-white [&_button]:hover:bg-white/20">
+              <NotificationBell />
+            </div>
             <Link href="/account">
               <Button variant="secondary" size="sm" className="bg-white/20 hover:bg-white/30 text-white border-white/30">
                 Mon compte
@@ -410,19 +415,8 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* Bouton 1 : Chercher un pro */}
-              <Link href="/booking/search" className="group">
-                <Button
-                  size="lg"
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg group-hover:shadow-xl group-hover:scale-105 transition-all duration-200 text-base font-semibold"
-                >
-                  <Search size={18} className="mr-2" />
-                  🔍 Chercher un pro
-                </Button>
-              </Link>
-
-              {/* Bouton 2 : Demander un cours - AVEC TOOLTIP */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Bouton 1 : Demander un cours - AVEC TOOLTIP */}
               <div className="relative group/tooltip">
               <Link href="/lesson-request" className="block">
                 <Button

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 // Fix pour les icônes Leaflet dans Next.js
 // Type assertion pour accéder à la propriété privée _getIconUrl de Leaflet
@@ -59,18 +60,10 @@ export default function MapComponent({
   const legendRef = useRef<HTMLDivElement | null>(null);
   const legendButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Cache CSS loading to avoid reloading on every component mount
   useEffect(() => {
-    if (typeof window !== 'undefined' && !document.querySelector('link[href*="leaflet.css"]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      link.crossOrigin = '';
-      link.as = 'style';
-      document.head.appendChild(link);
-
-      // Add mobile-specific styles for better touch interaction
+    if (typeof window !== 'undefined' && !document.querySelector('style[data-leaflet-mobile]')) {
       const style = document.createElement('style');
+      style.setAttribute('data-leaflet-mobile', '');
       style.textContent = `
         /* Mobile optimizations for Leaflet map */
         .leaflet-container {
@@ -142,12 +135,12 @@ export default function MapComponent({
     const size = isMobile ? 28 : 20; // Bigger markers for touch
     const border = isMobile ? 3 : 2;
 
-    const createIcon = (color: string, highlighted = false) => {
+    const createIcon = (color: string, highlighted = false, extraClass = '') => {
       const finalSize = highlighted ? size * 1.8 : size;
       const finalBorder = highlighted ? border * 1.5 : border;
 
       return L.divIcon({
-        className: 'map-marker-icon',
+        className: extraClass ? `map-marker-icon ${extraClass}` : 'map-marker-icon',
         html: `
           <div style="
             width: ${finalSize}px;
@@ -177,13 +170,13 @@ export default function MapComponent({
     };
 
     return {
-      availability: createIcon('#2563eb'),
-      rider: createIcon('#16a34a'),
-      default: createIcon('#f97316'),
+      availability: createIcon('#2563eb', false, 'map-marker-item'),
+      rider: createIcon('#16a34a', false, 'map-marker-item'),
+      default: createIcon('#f97316', false, 'map-marker-item'),
       center: createIcon('#0ea5e9'),
-      availabilityHighlighted: createIcon('#2563eb', true),
-      riderHighlighted: createIcon('#16a34a', true),
-      defaultHighlighted: createIcon('#f97316', true),
+      availabilityHighlighted: createIcon('#2563eb', true, 'map-marker-item'),
+      riderHighlighted: createIcon('#16a34a', true, 'map-marker-item'),
+      defaultHighlighted: createIcon('#f97316', true, 'map-marker-item'),
     } satisfies Record<'availability' | 'rider' | 'default' | 'center' | 'availabilityHighlighted' | 'riderHighlighted' | 'defaultHighlighted', L.DivIcon>;
   }, []);
 

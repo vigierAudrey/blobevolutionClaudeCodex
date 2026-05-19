@@ -95,6 +95,20 @@ describe('Analytics events endpoint', () => {
   });
 
   it('enforces rate limits', async () => {
+    // afterEach resetDb() truncates UserConsent — recreate for this test
+    await prisma.userConsent.upsert({
+      where: { userHash: CONSENT_HASH },
+      update: {},
+      create: {
+        userHash: CONSENT_HASH,
+        consentLevel: 'personalized',
+        ad_storage: 'granted',
+        ad_user_data: 'granted',
+        ad_personalization: 'granted',
+        cmpVersion: 'test',
+      },
+    });
+
     // Use agent to maintain consistent connection and headers
     const agent = request.agent(app);
     const headers = {

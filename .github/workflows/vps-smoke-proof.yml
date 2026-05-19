@@ -1,0 +1,184 @@
+name: VPS Smoke Proof — GO/NO-GO réel
+
+# Déclenchement manuel uniquement — jamais sur push/PR
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke-proof:
+    name: Preuve finale prod — api.blobinfini.fr
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      API_BASE_URL: https://api.blobinfini.fr
+
+    steps:
+      # ──────────────────────────────────────────────────────────────────────────
+      # ÉTAPE 0 — Contexte runner (preuve d'environnement)
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: "0 — Contexte runner"
+        run: |
+          set -euo pipefail
+          echo "=== Contexte runner ==="
+          echo "hostname : $(hostname)"
+          echo "pwd      : $(pwd)"
+          echo "API_BASE_URL : $API_BASE_URL"
+          echo ""
+          echo "--- CURL_RESOLVE dans l'env ---"
+          env | grep -i CURL_RESOLVE || echo "(absent — attendu)"
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # ÉTAPE 1 — Checkout
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: "1 — Checkout"
+        uses: actions/checkout@v6
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # ÉTAPE 2 — Injection /etc/hosts (empêche l'auto-set de CURL_RESOLVE)
+      #
+      # Le script fait : if ! getent hosts api.blobinfini.local → CURL_RESOLVE=...
+      # → si CURL_RESOLVE non-vide, check [5b] est SKIP → EXIT 2 (pas EXIT 0).
+      #
+      # Solution : ajouter les domaines .local pointant sur le VPS réel.
+      # Ainsi CURL_RESOLVE reste "" et [5b] teste TLS sur api.blobinfini.fr.
+      # Les appels .local dans le script (WEB, STORAGE avec -sk) atteignent le VPS.
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: "2 — Injection /etc/hosts (domaines .local → VPS IP)"
+        run: |
+          set -euo pipefail
+          VPS_IP="${{ secrets.VPS_IP }}"
+          if [ -z "$VPS_IP" ]; then
+            echo "ERREUR BLOQUANTE : secret VPS_IP absent"
+            exit 1
+          fi
+          echo "$VPS_IP api.blobinfini.local" | sudo tee -a /etc/hosts
+          echo "$VPS_IP app.blobinfini.local" | sudo tee -a /etc/hosts
+          echo "$VPS_IP storage.blobinfini.local" | sudo tee -a /etc/hosts
+          echo "Entrées /etc/hosts ajoutées :"
+          grep "blobinfini" /etc/hosts
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # ÉTAPE 3 — Preuve DNS réel (api.blobinfini.fr)
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: "3 — Preuve DNS réel : api.blobinfini.fr"
+        run: |
+          set -euo pipefail
+          echo "=== DNS ==="
+          # getent d'abord (toujours présent), fallback host/nslookup
+          DNS_RESULT=""
+          if getent hosts api.blobinfini.fr 2>/dev/null; then
+            DNS_RESULT="$(getent hosts api.blobinfini.fr)"
+          elif command -v host >/dev/null 2>&1; then
+            DNS_RESULT="$(host api.blobinfini.fr)"
+          elif command -v nslookup >/dev/null 2>&1; then
+            DNS_RESULT="$(nslookup api.blobinfini.fr)"
+          else
+            echo "ERREUR : aucun outil DNS disponible"
+            exit 1
+          fi
+          echo "Résolution DNS : $DNS_RESULT"
+          # Vérification que la résolution a retourné quelque chose
+          if [ -z "$DNS_RESULT" ]; then
+            echo "ERREUR BLOQUANTE : DNS non résolu pour api.blobinfini.fr"
+            exit 1
+          fi
+          echo "DNS OK"
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # ÉTAPE 4 — Preuve TLS réelle (SANS -k)
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: "4 — Preuve TLS réelle : https://api.blobinfini.fr/health"
+        run: |
+          set -euo pipefail
+          echo "=== TLS strict (sans -k) ==="
+          RESULT=$(curl -s -o /dev/null -w "%{http_code} ssl_verify=%{ssl_verify_result}" \
+            https://api.blobinfini.fr/health)
+          echo "Résultat : $RESULT"
+
+          HTTP_CODE=$(echo "$RESULT" | awk '{print $1}')
+          SSL_CODE=$(echo "$RESULT" | grep -oP 'ssl_verify=\K[0-9]+')
+
+          if [ "$SSL_CODE" != "0" ]; then
+            echo "ERREUR BLOQUANTE : ssl_verify_result=$SSL_CODE (≠0 → TLS invalide)"
+            echo "Un attaquant MitM peut intercepter le trafic"
+            exit 1
+          fi
+          echo "ssl_verify_result=0 — certificat valide ✓"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERREUR BLOQUANTE : HTTP $HTTP_CODE (attendu 200)"
+            exit 1
+          fi
+          echo "HTTP 200 ✓"
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # ÉTAPE 5 — Détail certificat (niveau SRE)
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: "5 — Certificat : issuer / subject / dates"
+        run: |
+          set -euo pipefail
+          echo "=== Certificat TLS ==="
+          echo | openssl s_client \
+            -connect api.blobinfini.fr:443 \
+            -servername api.blobinfini.fr \
+            2>/dev/null \
+          | openssl x509 -noout -issuer -subject -dates
+          echo "Certificat lu sans erreur ✓"
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # ÉTAPE 6 — Exécution réelle du smoke-test VPS
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: "6 — Smoke-test VPS réel"
+        env:
+          SECURITY_MONITOR_TOKEN: ${{ secrets.SECURITY_MONITOR_TOKEN }}
+          # Optionnels — décommentez si définis en secrets :
+          # STORAGE_BASE_URL: ${{ secrets.STORAGE_BASE_URL }}
+          # STORAGE_DOMAIN:   ${{ secrets.STORAGE_DOMAIN }}
+          # S3_BUCKET:        ${{ secrets.S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          echo "=== Smoke-test VPS ==="
+          echo "API_BASE_URL=$API_BASE_URL"
+          echo "CURL_RESOLVE env avant script : '${CURL_RESOLVE:-}'"
+          echo ""
+
+          chmod +x ./scripts/smoke-test-vps.sh
+
+          # set +e : empêche pipefail de court-circuiter avant RET=$?
+          set +e
+          ./scripts/smoke-test-vps.sh
+          RET=$?
+          set -e
+          printf '\nEXIT:%s\n' "$RET"
+
+          # Vérification explicite : exit 2 = SKIP actif = TLS non validé → NO-GO
+          if [ "$RET" -eq 2 ]; then
+            echo "ERREUR BLOQUANTE : exit 2 = checks SKIP actifs (TLS non validé)"
+            echo "CURL_RESOLVE a été activé automatiquement — /etc/hosts injection insuffisante"
+            exit 1
+          fi
+
+          if [ "$RET" -ne 0 ]; then
+            echo "ERREUR BLOQUANTE : smoke-test exit $RET ≠ 0"
+            exit 1
+          fi
+
+          echo ""
+          echo "EXIT:0 — VERDICT : GO VPS ✓"
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # ÉTAPE 7 — Résumé final (toujours affiché, succès ou échec)
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: "7 — Résumé audit"
+        if: always()
+        run: |
+          echo "============================================"
+          echo "Récapitulatif des preuves :"
+          echo "  Étape 3 — DNS api.blobinfini.fr    : voir logs ci-dessus"
+          echo "  Étape 4 — TLS strict (sans -k)     : voir logs ci-dessus"
+          echo "  Étape 5 — Certificat issuer/dates  : voir logs ci-dessus"
+          echo "  Étape 6 — smoke-test exit code     : voir logs ci-dessus"
+          echo ""
+          echo "Verdict final : voir conclusion étape 6"
+          echo "============================================"

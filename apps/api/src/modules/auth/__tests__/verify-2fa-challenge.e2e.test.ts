@@ -34,6 +34,9 @@ jest.mock('../../../services/cache.service', () => {
         store.delete(key);
         return true;
       }),
+      // Typed 2FA hash methods — client_unavailable triggers memory fallback in two-factor.service
+      setTwoFactorCodeHash: jest.fn(async () => ({ ok: false, reason: 'client_unavailable' })),
+      getTwoFactorCodeHash: jest.fn(async () => ({ ok: false, reason: 'client_unavailable' })),
       initialize: jest.fn(async () => undefined),
       __reset: () => store.clear(),
     },

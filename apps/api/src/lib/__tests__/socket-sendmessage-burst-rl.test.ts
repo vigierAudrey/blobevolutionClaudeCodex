@@ -163,4 +163,73 @@ describe('Socket send-message burst limiter (P1)', () => {
 
     membershipSpy.mockRestore();
   }, 30000);
+
+  it('rate-limits a coordinated burst from two clients in the same conversation', async () => {
+    const senderASession = await createTestSession(app);
+    const senderBSession = await createTestSession(app);
+
+    const senderA = await getAccessToken({
+      app,
+      session: senderASession,
+      email: `burst-a-${RUN_TAG}@test.com`,
+      role: Role.RIDER,
+      emailVerified: true
+    });
+    const senderB = await getAccessToken({
+      app,
+      session: senderBSession,
+      email: `burst-b-${RUN_TAG}@test.com`,
+      role: Role.RIDER,
+      emailVerified: true
+    });
+
+    await prisma.riderProfile.createMany({
+      data: [
+        { userId: senderA.userId, displayName: 'Burst Sender A' },
+        { userId: senderB.userId, displayName: 'Burst Sender B' },
+      ],
+      skipDuplicates: true,
+    });
+
+    const conversation = await prisma.conversation.create({
+      data: {
+        id: randomUUID(),
+        type: 'RIDER_TO_RIDER',
+        members: {
+          create: [{ userId: senderA.userId }, { userId: senderB.userId }],
+        },
+      },
+      select: { id: true },
+    });
+
+    const socketA = await connectClient(TEST_PORT, senderA.accessToken);
+    const socketB = await connectClient(TEST_PORT, senderB.accessToken);
+    clients.push(socketA, socketB);
+
+    await emitWithAck(socketA, 'join-conversation', { conversationId: conversation.id });
+    await emitWithAck(socketB, 'join-conversation', { conversationId: conversation.id });
+
+    const tasks: Array<Promise<SocketAck>> = [];
+    for (let i = 0; i < 40; i += 1) {
+      tasks.push(
+        emitWithAck(socketA, 'send-message', {
+          conversationId: conversation.id,
+          content: `burst-a-${i}`,
+          type: 'TEXT'
+        }),
+        emitWithAck(socketB, 'send-message', {
+          conversationId: conversation.id,
+          content: `burst-b-${i}`,
+          type: 'TEXT'
+        })
+      );
+    }
+
+    const acks = await Promise.all(tasks);
+    const rateLimitedCount = acks.filter((ack) => !ack.ok && ack.error?.code === 'RATE_LIMITED').length;
+    const successCount = acks.filter((ack) => ack.ok).length;
+
+    expect(successCount).toBeGreaterThan(0);
+    expect(rateLimitedCount).toBeGreaterThan(0);
+  }, 30000);
 });

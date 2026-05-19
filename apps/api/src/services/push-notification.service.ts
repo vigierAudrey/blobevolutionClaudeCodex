@@ -25,7 +25,7 @@ if (!admin.apps.length && firebaseConfig.privateKey && firebaseConfig.clientEmai
 export interface PushNotificationData {
   title: string;
   body: string;
-  type: 'booking_accepted' | 'booking_rejected' | 'new_message' | 'reminder' | 'general' | 'new_lesson_request';
+  type: 'new_message' | 'reminder' | 'general';
   url?: string;
   icon?: string;
   userId?: string;
@@ -119,6 +119,16 @@ export class PushNotificationService {
     }
 
     try {
+      // Enforce NotificationPreferences — respect opt-out before any FCM call
+      const prefs = await prisma.notificationPreferences.findUnique({
+        where: { userId },
+        select: { pushEnabled: true },
+      });
+      if (prefs && !prefs.pushEnabled) {
+        secureLogger.info('PUSH_SKIPPED_BY_PREFERENCE', { userId });
+        return false;
+      }
+
       // Get user's FCM tokens from database
       const tokens = await this.getUserTokens(userId);
 
@@ -167,56 +177,6 @@ export class PushNotificationService {
       }
       return false;
     }
-  }
-
-  /**
-   * Send booking acceptance notification
-   */
-  async sendBookingAccepted(userId: string, bookingData: {
-    proName: string;
-    spotName: string;
-    dateTime: string;
-    conversationId?: string;
-  }): Promise<boolean> {
-    const notification: PushNotificationData = {
-      title: '🎉 Demande acceptée !',
-      body: `${bookingData.proName} a accepté ton cours à ${bookingData.spotName}`,
-      type: 'booking_accepted',
-      url: `/reservations/confirmed`,
-      userId,
-      data: {
-        bookingId: bookingData,
-        conversationId: bookingData.conversationId,
-        viewUrl: '/reservations/confirmed',
-        messageUrl: bookingData.conversationId ? `/messages/${bookingData.conversationId}` : undefined
-      }
-    };
-
-    return this.sendToUser(userId, notification);
-  }
-
-  /**
-   * Send booking rejection notification
-   */
-  async sendBookingRejected(userId: string, bookingData: {
-    proName: string;
-    spotName: string;
-    reason?: string;
-  }): Promise<boolean> {
-    const notification: PushNotificationData = {
-      title: '😔 Demande refusée',
-      body: `${bookingData.proName} ne peut pas donner le cours à ${bookingData.spotName}`,
-      type: 'booking_rejected',
-      url: `/reservations/start`,
-      userId,
-      data: {
-        bookingData,
-        reason: bookingData.reason,
-        searchUrl: '/reservations/start'
-      }
-    };
-
-    return this.sendToUser(userId, notification);
   }
 
   /**
@@ -279,43 +239,6 @@ export class PushNotificationService {
       type: 'general',
       url: '/dashboard',
       userId
-    };
-
-    return this.sendToUser(userId, notification);
-  }
-
-  /**
-   * Send new lesson request notification to PRO
-   */
-  async sendNewLessonRequest(userId: string, requestData: {
-    riderName: string;
-    sport: string;
-    distanceKm: number;
-    lessonDate?: string;
-    spotName?: string;
-  }): Promise<boolean> {
-    const sportEmoji = requestData.sport === 'surf' ? '🏄' : '🪁';
-    const distance = Math.round(requestData.distanceKm);
-
-    let bodyText = `${requestData.riderName} cherche un cours de ${requestData.sport} à ${distance} km de toi`;
-    if (requestData.spotName) {
-      bodyText += ` près de ${requestData.spotName}`;
-    }
-
-    const notification: PushNotificationData = {
-      title: `${sportEmoji} Nouvelle demande de cours !`,
-      body: bodyText,
-      type: 'new_lesson_request',
-      url: `/pro/map`,
-      userId,
-      data: {
-        sport: requestData.sport,
-        distanceKm: requestData.distanceKm,
-        lessonDate: requestData.lessonDate,
-        spotName: requestData.spotName,
-        riderName: requestData.riderName,
-        mapUrl: '/pro/map'
-      }
     };
 
     return this.sendToUser(userId, notification);
@@ -400,7 +323,7 @@ export class PushNotificationService {
           icon: notification.icon || '/icons/icon-192x192.png',
           badge: '/icons/icon-72x72.png',
           tag: `blobinfini-${notification.type}`,
-          requireInteraction: notification.type === 'booking_accepted' || notification.type === 'booking_rejected',
+          requireInteraction: false,
           silent: false,
           vibrate: this.getVibrationPattern(notification.type),
           actions: this.getActionsForType(notification.type, notification.data),
@@ -425,12 +348,8 @@ export class PushNotificationService {
    */
   private getUrgencyForType(type: string): string {
     switch (type) {
-      case 'booking_accepted':
-      case 'booking_rejected':
-        return 'high';
       case 'new_message':
       case 'reminder':
-      case 'new_lesson_request':
         return 'normal';
       default:
         return 'low';
@@ -442,16 +361,10 @@ export class PushNotificationService {
    */
   private getVibrationPattern(type: string): number[] {
     switch (type) {
-      case 'booking_accepted':
-        return [200, 100, 200, 100, 200]; // Happy pattern
-      case 'booking_rejected':
-        return [100, 50, 100]; // Short pattern
       case 'new_message':
-        return [150]; // Simple buzz
+        return [150];
       case 'reminder':
-        return [300, 100, 300]; // Attention pattern
-      case 'new_lesson_request':
-        return [200, 100, 200]; // Alert pattern
+        return [300, 100, 300];
       default:
         return [200];
     }
@@ -462,24 +375,10 @@ export class PushNotificationService {
    */
   private getActionsForType(type: string, data?: Record<string, any>): Array<{ action: string; title: string }> {
     switch (type) {
-      case 'booking_accepted':
-        return [
-          { action: 'view', title: '👀 Voir les détails' },
-          { action: 'message', title: '💬 Envoyer un message' }
-        ];
-      case 'booking_rejected':
-        return [
-          { action: 'search', title: '🔍 Chercher d\'autres cours' }
-        ];
       case 'new_message':
         return [
           { action: 'reply', title: '↩️ Répondre' },
           { action: 'view', title: '👀 Voir la conversation' }
-        ];
-      case 'new_lesson_request':
-        return [
-          { action: 'view_map', title: '🗺️ Voir sur la carte' },
-          { action: 'view_requests', title: '📋 Voir mes demandes' }
         ];
       default:
         return [];

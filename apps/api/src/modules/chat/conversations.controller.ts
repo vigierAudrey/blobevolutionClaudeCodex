@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { createHash } from 'crypto';
 import { z, ZodError } from 'zod';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
@@ -7,8 +8,16 @@ import { secureLogger } from '../../utils/secure-logger';
 import { recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 import { notifyGroupInvitation, notifyNewMessage } from '../push/push.controller';
 import { notifyUser } from '../../lib/socket';
+import { createNotificationSilent, NotificationType } from '../../services/notification.service';
 import { sendError, sendOk, wantsEnvelope } from '../../utils/api-response';
 import { ERROR_CODES } from '../../utils/error-codes';
+import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { getClientIp } from '../../lib/client-ip';
+import { pollingRateLimit } from '../../middleware/polling-rate-limit';
+import {
+  conversationBlockEventService,
+  ConversationBlockEventServiceError,
+} from '../../services/conversation-block-event.service';
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth, requireVerifiedEmail);
@@ -37,6 +46,8 @@ const conversationMemberSelect = {
   },
   lastReadAt: true,
   trashedAt: true,
+  archivedAt: true,
+  purgeAt: true,
   favoritedAt: true,
   blockedAt: true,
 } as const;
@@ -53,24 +64,362 @@ type RiderProfileSummary = Prisma.RiderProfileGetPayload<{
   select: { userId: true; displayName: true; photoUrl: true };
 }>;
 
+const CONVERSATIONS_DEFAULT_LIMIT = 50;
+const CONVERSATIONS_MAX_LIMIT = 100;
+const MESSAGE_COOLDOWN_MS = 30_000;
+const MESSAGE_RATE_LIMIT_WINDOW_MS = 60_000;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function buildDirectConversationKey(userA: string, userB: string, conversationType: string): string {
+  const participants = [userA, userB].sort();
+  return `direct:${participants[0]}:${participants[1]}:${conversationType}`;
+}
+
+type ConversationListCursorPayload = {
+  updatedAt: string;
+  conversationId: string;
+};
+
+const conversationsListQuerySchema = z.object({
+  // Legacy param — preserved for backwards compat. `scope` takes precedence if both present.
+  includeTrashed: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((value) => String(value ?? 'false').toLowerCase() === 'true'),
+  // New param: explicit scope filter.
+  scope: z.enum(['active', 'archived', 'trashed', 'all']).optional(),
+  type: z.enum(['RIDER_TO_RIDER', 'RIDER_TO_PRO', 'PRO_TO_PRO']).optional(),
+  limit: z.coerce.number().int().min(1).max(CONVERSATIONS_MAX_LIMIT).optional().default(CONVERSATIONS_DEFAULT_LIMIT),
+  cursor: z.string().optional(),
+});
+
+function encodeConversationCursor(updatedAt: Date, conversationId: string): string {
+  return Buffer.from(
+    JSON.stringify({
+      updatedAt: updatedAt.toISOString(),
+      conversationId,
+    } satisfies ConversationListCursorPayload),
+    'utf8',
+  ).toString('base64url');
+}
+
+function decodeConversationCursor(cursor: string | undefined): { updatedAt: Date; conversationId: string } | null {
+  if (!cursor) {
+    return null;
+  }
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+  } catch {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  if (!decoded || typeof decoded !== 'object') {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  const raw = decoded as Partial<ConversationListCursorPayload>;
+  if (typeof raw.updatedAt !== 'string' || typeof raw.conversationId !== 'string' || !UUID_REGEX.test(raw.conversationId)) {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  const updatedAt = new Date(raw.updatedAt);
+  if (Number.isNaN(updatedAt.getTime())) {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+
+  return { updatedAt, conversationId: raw.conversationId };
+}
+
+// ─── Archive / purge policy ────────────────────────────────────────────────────
+
+/** Maximum active conversations per user before auto-archiving the oldest ones. */
+export const ACTIVE_CONVERSATIONS_MAX = 100;
+
+/** Months before an auto-archived conversation member is hard-deleted by the purge job. */
+const ARCHIVE_PURGE_MONTHS = 18;
+
+/**
+ * Max conversations archived per single auto-archive pass.
+ * Bounds the findMany + updateMany to at most 500 rows per GET /conversations call.
+ * Users far above the limit converge progressively across successive calls.
+ */
+export const ARCHIVE_BATCH_CAP = 500;
+
+type ConversationListScope = 'active' | 'archived' | 'trashed' | 'all';
+
+/**
+ * Resolves explicit `scope` param, falling back to legacy `includeTrashed` boolean.
+ * Explicit `scope` always wins.
+ */
+function normalizeConversationScope(
+  scope: ConversationListScope | undefined,
+  includeTrashedLegacy: boolean,
+): ConversationListScope {
+  if (scope) return scope;
+  return includeTrashedLegacy ? 'all' : 'active';
+}
+
+/** WHERE clause fragment for ConversationMember based on scope. */
+function memberScopeWhere(scope: ConversationListScope): Prisma.ConversationMemberWhereInput {
+  switch (scope) {
+    case 'active':   return { archivedAt: null, trashedAt: null };
+    case 'archived': return { archivedAt: { not: null }, trashedAt: null };
+    case 'trashed':  return { trashedAt: { not: null } };
+    case 'all':      return {};
+  }
+}
+
+/**
+ * Auto-archive the oldest active conversations when the user exceeds ACTIVE_CONVERSATIONS_MAX.
+ *
+ * Transaction + double-guard (archivedAt: null, trashedAt: null) prevents TOCTOU races.
+ * ARCHIVE_BATCH_CAP bounds latency: at most 500 rows per call.
+ */
+export async function maybeAutoArchive(userId: string): Promise<number> {
+  const archivedCount = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const activeCount = await tx.conversationMember.count({
+      where: { userId, trashedAt: null, archivedAt: null },
+    });
+    if (activeCount <= ACTIVE_CONVERSATIONS_MAX) return 0;
+
+    const toArchive = Math.min(activeCount - ACTIVE_CONVERSATIONS_MAX, ARCHIVE_BATCH_CAP);
+
+    const oldest = await tx.conversationMember.findMany({
+      where: { userId, trashedAt: null, archivedAt: null },
+      orderBy: [{ conversation: { updatedAt: 'asc' } }, { conversation: { id: 'asc' } }],
+      take: toArchive,
+      select: { id: true },
+    });
+
+    if (oldest.length === 0) return 0;
+
+    const now = new Date();
+    const purgeAt = new Date(now);
+    purgeAt.setMonth(purgeAt.getMonth() + ARCHIVE_PURGE_MONTHS);
+
+    const result = await tx.conversationMember.updateMany({
+      where: { id: { in: oldest.map((m: { id: string }) => m.id) }, archivedAt: null, trashedAt: null },
+      data: { archivedAt: now, purgeAt },
+    });
+    return result.count;
+  });
+
+  if (archivedCount > 0) {
+    secureLogger.info('chat.auto_archive.run', { archived_count: archivedCount });
+  }
+  return archivedCount;
+}
+
+// ─── ETag helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Computes a lightweight ETag fingerprint for GET /conversations.
+ * Uses MAX(updatedAt) + COUNT from ConversationMember — scoped strictly to userId.
+ * Always includes userId in the hash to prevent cross-user collisions.
+ *
+ * Cache-Control: private, no-store is set alongside — CDNs must never cache this.
+ */
+async function computeConversationListETag(
+  userId: string,
+  scope: ConversationListScope,
+  convType: string | undefined,
+): Promise<string> {
+  // Two queries via Prisma ORM — avoids raw SQL fragment nesting ($N numbering bug).
+  // Both queries are scoped strictly to userId — ETags cannot be shared across users.
+  const scopeWhere = memberScopeWhere(scope);
+  const typeWhere = convType
+    ? { conversation: { is: { type: convType as 'RIDER_TO_RIDER' | 'RIDER_TO_PRO' | 'PRO_TO_PRO' } } }
+    : {};
+
+  const [cnt, latest] = await Promise.all([
+    prisma.conversationMember.count({ where: { userId, ...scopeWhere, ...typeWhere } }),
+    prisma.conversationMember.findFirst({
+      where: { userId, ...scopeWhere, ...typeWhere },
+      orderBy: { conversation: { updatedAt: 'desc' } },
+      select: { conversation: { select: { updatedAt: true } } },
+    }),
+  ]);
+
+  const maxTs = latest?.conversation?.updatedAt;
+  const fingerprint = `${userId}:${scope}:${convType ?? ''}:${maxTs?.getTime() ?? 0}:${cnt}`;
+  return `W/"${createHash('sha256').update(fingerprint).digest('hex').slice(0, 32)}"`;
+}
+
+// ─── End archive / ETag helpers ───────────────────────────────────────────────
+
+function buildEnvelopeAwareRateLimitHandler(message: string, code: string, reason: string) {
+  return (req: Request, res: Response) => {
+    const rateLimitInfo = (req as { rateLimit?: { resetTime?: Date } }).rateLimit;
+    const retryAfterSeconds =
+      typeof rateLimitInfo?.resetTime?.getTime === 'function'
+        ? Math.max(1, Math.ceil((rateLimitInfo.resetTime.getTime() - Date.now()) / 1000))
+        : Math.ceil(MESSAGE_RATE_LIMIT_WINDOW_MS / 1000);
+    res.setHeader('Retry-After', retryAfterSeconds.toString());
+
+    if (wantsEnvelope(req)) {
+      return sendError(res, 429, ERROR_CODES.RATE_LIMITED, message, {
+        reason,
+        retryAfterSeconds,
+      });
+    }
+
+    return res.status(429).json({
+      code,
+      error: code,
+      message,
+      retryAfterSeconds,
+    });
+  };
+}
+
+const conversationsListLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60_000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      const ipToken = ipKeyGenerator(canonicalIp);
+      return userId ? `conversation_list:user:${userId}` : `conversation_list:ip:${ipToken}`;
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Trop de rafraîchissements de conversations. Réessaie dans quelques instants.',
+      'CONVERSATIONS_LIST_RATE_LIMITED',
+      'CONVERSATIONS_LIST_RATE_LIMIT',
+    ),
+  },
+  'conversation_list',
+);
+
+const conversationMessagesReadLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60_000,
+    max: 90,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      const conversationId = req.params.id ?? 'unknown';
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      const ipToken = ipKeyGenerator(canonicalIp);
+      return userId
+        ? `conversation_messages_read:user:${userId}:conversation:${conversationId}`
+        : `conversation_messages_read:ip:${ipToken}:conversation:${conversationId}`;
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Trop de lectures de messages en peu de temps. Réessaie dans quelques instants.',
+      'CONVERSATION_MESSAGES_READ_RATE_LIMITED',
+      'CONVERSATION_MESSAGES_READ_RATE_LIMIT',
+    ),
+  },
+  'conversation_messages_read',
+);
+
+const conversationMessagesGlobalLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: MESSAGE_RATE_LIMIT_WINDOW_MS,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      const ipToken = ipKeyGenerator(canonicalIp);
+      return userId ? `conversation_messages_global:user:${userId}` : `conversation_messages_global:ip:${ipToken}`;
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Trop de messages envoyés en peu de temps. Réessaie dans quelques instants.',
+      'CONVERSATION_MESSAGES_GLOBAL_RATE_LIMITED',
+      'CONVERSATION_MESSAGES_GLOBAL_RATE_LIMIT',
+    ),
+  },
+  'conversation_messages_global',
+);
+
+const conversationMessagesPerConversationLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: MESSAGE_RATE_LIMIT_WINDOW_MS,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      const conversationId = req.params.id ?? 'unknown';
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      const ipToken = ipKeyGenerator(canonicalIp);
+      return userId
+        ? `conversation_messages:user:${userId}:conversation:${conversationId}`
+        : `conversation_messages:ip:${ipToken}:conversation:${conversationId}`;
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Trop de messages envoyés dans cette conversation. Réessaie dans quelques instants.',
+      'CONVERSATION_MESSAGES_RATE_LIMITED',
+      'CONVERSATION_MESSAGES_RATE_LIMIT',
+    ),
+  },
+  'conversation_messages',
+);
+
 // List conversations with last message + unread count (excludes trashed by default)
-conversationsRouter.get('/', async (req, res) => {
+// Polling rate limit applied first — avoids requireVerifiedEmail DB lookup on 429.
+conversationsRouter.get('/', pollingRateLimit, conversationsListLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const includeTrashed = String(req.query.includeTrashed || 'false').toLowerCase() === 'true';
-    const convType = req.query.type as string | undefined; // 'RIDER_TO_RIDER' | 'RIDER_TO_PRO'
+    const { includeTrashed, scope: rawScope, type: convType, limit, cursor } = conversationsListQuerySchema.parse(req.query);
+
+    const scope = normalizeConversationScope(rawScope, includeTrashed);
+
+    // Auto-archive on active scope: keeps active count ≤ ACTIVE_CONVERSATIONS_MAX.
+    // No-op if count is within limit (fast COUNT-only path).
+    if (scope === 'active') {
+      await maybeAutoArchive(userId);
+    }
+
+    // ETag: computed after auto-archive so the fingerprint reflects current state.
+    // Cache-Control: private — must never be cached by proxies or CDNs.
+    const etag = await computeConversationListETag(userId, scope, convType);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+
+    const decodedCursor = decodeConversationCursor(cursor);
+
+    const conversationFilters: Prisma.ConversationWhereInput = {};
+    if (convType) {
+      conversationFilters.type = convType as any;
+    }
+    if (decodedCursor) {
+      conversationFilters.OR = [
+        { updatedAt: { lt: decodedCursor.updatedAt } },
+        {
+          AND: [
+            { updatedAt: decodedCursor.updatedAt },
+            { id: { lt: decodedCursor.conversationId } },
+          ],
+        },
+      ];
+    }
 
     const convs: ConversationMemberWithRelations[] = await prisma.conversationMember.findMany({
-      where: { userId, ...(includeTrashed ? {} : { trashedAt: null }) },
+      where: {
+        userId,
+        ...memberScopeWhere(scope),
+        ...(Object.keys(conversationFilters).length > 0 ? { conversation: { is: conversationFilters } } : {}),
+      },
       select: conversationMemberSelect,
-      orderBy: { conversation: { updatedAt: 'desc' } },
+      orderBy: [{ conversation: { updatedAt: 'desc' } }, { conversationId: 'desc' }],
+      take: limit + 1,
     });
 
-    // Filter by conversation type if specified
-    const filteredConvs: ConversationMemberWithRelations[] = convType
-      ? convs.filter((cm: ConversationMemberWithRelations) => cm.conversation.type === convType)
-      : convs;
+    const hasMore = convs.length > limit;
+    const filteredConvs: ConversationMemberWithRelations[] = convs.slice(0, limit);
 
     // === QUERY BATCHING: Load all data in 4 queries instead of N×4 ===
 
@@ -182,6 +531,7 @@ conversationsRouter.get('/', async (req, res) => {
         lastAt: conv.messages[0]?.createdAt ?? conv.updatedAt,
         unread,
         trashed: !!cm.trashedAt,
+        archived: !!cm.archivedAt,
         favorite: !!cm.favoritedAt,
         blocked: !!cm.blockedAt,
         memberCount,
@@ -190,27 +540,88 @@ conversationsRouter.get('/', async (req, res) => {
       };
     });
 
-    return res.json({ items: results });
+    const lastConversation = filteredConvs[filteredConvs.length - 1]?.conversation;
+    const nextCursor = hasMore && lastConversation
+      ? encodeConversationCursor(lastConversation.updatedAt, lastConversation.id)
+      : null;
+
+    return res.json({ items: results, hasMore, nextCursor });
   } catch (e) {
-    console.error('Conversations list error:', e);
+    if ((e as { status?: number })?.status === 400) {
+      return res.status(400).json({ error: 'Invalid cursor' });
+    }
+    secureLogger.error('CONVERSATIONS_LIST_FAILED', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
 
-// Fetch messages (paginated by createdAt)
-conversationsRouter.get('/:id/messages', async (req, res) => {
+// ── Cursor composite pour messages ─────────────────────────────────────────────
+// Cursor = base64url({ createdAt: ISO, messageId: UUID })
+// Ordre stable : (createdAt DESC, id DESC) → résistant aux collisions de timestamp.
+// Rétrocompatibilité : si le cursor est un ISO datetime brut (ancienne API),
+// on le parse comme cursor "createdAt seulement" avec messageId vide.
+// ───────────────────────────────────────────────────────────────────────────────
+
+type MessageCursor = { createdAt: Date; messageId: string };
+
+function encodeMessageCursor(createdAt: Date, messageId: string): string {
+  return Buffer.from(
+    JSON.stringify({ createdAt: createdAt.toISOString(), messageId }),
+    'utf8',
+  ).toString('base64url');
+}
+
+function decodeMessageCursor(raw: string): MessageCursor | null {
+  // Essayer d'abord le format composite base64url
+  try {
+    const decoded = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    if (decoded && typeof decoded.createdAt === 'string' && typeof decoded.messageId === 'string') {
+      const createdAt = new Date(decoded.createdAt);
+      if (!Number.isNaN(createdAt.getTime()) && UUID_REGEX.test(decoded.messageId)) {
+        return { createdAt, messageId: decoded.messageId };
+      }
+    }
+  } catch {
+    // pas du JSON base64url — continuer
+  }
+
+  // Rétrocompatibilité : ancien cursor = ISO datetime brut
+  const asDate = new Date(raw);
+  if (!Number.isNaN(asDate.getTime())) {
+    // messageId vide → la condition (id < '') sera toujours false → équivalent à (createdAt < cursor) only
+    return { createdAt: asDate, messageId: '' };
+  }
+
+  return null;
+}
+
+// Fetch messages (paginated by composite cursor createdAt+messageId — stable sur collisions de timestamp)
+conversationsRouter.get('/:id/messages', conversationMessagesReadLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     const id = req.params.id;
-    const cursor = req.query.cursor ? new Date(String(req.query.cursor)) : null;
     const limit = Math.min(Number(req.query.limit || 50), 100);
     const member = await prisma.conversationMember.findFirst({ where: { conversationId: id, userId } });
     if (!member) return res.status(404).json({ error: 'Not found' });
 
+    const cursor = req.query.cursor ? decodeMessageCursor(String(req.query.cursor)) : null;
+
+    // Filtre keyset composite : (createdAt < cur) OU (createdAt = cur AND id < cur.messageId)
+    const cursorWhere: Prisma.MessageWhereInput | undefined = cursor
+      ? {
+          OR: [
+            { createdAt: { lt: cursor.createdAt } },
+            ...(cursor.messageId
+              ? [{ AND: [{ createdAt: cursor.createdAt }, { id: { lt: cursor.messageId } }] }]
+              : []),
+          ],
+        }
+      : undefined;
+
     const msgs = await prisma.message.findMany({
-      where: { conversationId: id, createdAt: cursor ? { lt: cursor } : undefined },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
+      where: { conversationId: id, ...cursorWhere },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1, // +1 to detect whether a next page exists without a COUNT query
       select: {
         id: true,
         senderId: true,
@@ -270,15 +681,23 @@ conversationsRouter.get('/:id/messages', async (req, res) => {
 
     // mark read
     await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId: id, userId } as any }, data: { lastReadAt: new Date() } });
-    return res.json({ items: messagesWithSenders.reverse(), nextCursor: msgs.length === limit ? msgs[msgs.length - 1].createdAt : null });
+
+    const hasMore = msgs.length > limit;
+    const pageItems = hasMore ? msgs.slice(0, limit) : msgs;
+    const lastMsg = pageItems[pageItems.length - 1];
+    const nextCursor = hasMore && lastMsg
+      ? encodeMessageCursor(lastMsg.createdAt, lastMsg.id)
+      : null;
+
+    return res.json({ items: messagesWithSenders.slice(0, limit).reverse(), nextCursor });
   } catch (e) {
-    console.error('Fetch messages error:', e);
+    secureLogger.error('CONVERSATIONS_MESSAGES_FETCH_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
 
 // Send message
-conversationsRouter.post('/:id/messages', async (req, res) => {
+conversationsRouter.post('/:id/messages', conversationMessagesGlobalLimiter, conversationMessagesPerConversationLimiter, async (req, res) => {
   const envelope = wantsEnvelope(req);
   try {
     const userId = (req as any).user?.id as string | undefined;
@@ -363,13 +782,30 @@ conversationsRouter.post('/:id/messages', async (req, res) => {
       }
     } else {
       // Sans clientMsgId: création classique
-      msg = await prisma.message.create({
-        data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta },
-        select: { id: true, content: true, type: true, createdAt: true },
-      });
+      try {
+        msg = await prisma.message.create({
+          data: { conversationId: id, senderId: userId as string, type: body.type as any, content: body.content, meta: body.meta },
+          select: { id: true, content: true, type: true, createdAt: true },
+        });
+      } catch (e: any) {
+        // P2003 = FK violation: conversation deleted between member-check and INSERT.
+        // Return 404 instead of letting the error bubble to the generic 500 handler.
+        if (e?.code === 'P2003') {
+          return envelope
+            ? sendError(res, 404, ERROR_CODES.FORBIDDEN, 'Conversation not found')
+            : res.status(404).json({ error: 'Not found' });
+        }
+        throw e;
+      }
       wasCreated = true;
     }
-    await prisma.conversation.update({ where: { id }, data: { updatedAt: new Date() } });
+    try {
+      await prisma.conversation.update({ where: { id }, data: { updatedAt: new Date() } });
+    } catch (e: any) {
+      // P2025 = record not found: conversation deleted between message insert and update.
+      // Non-fatal: the message was created successfully; skip the timestamp bump.
+      if (e?.code !== 'P2025') throw e;
+    }
 
     const role = (req as any).user?.role as string | undefined;
     if (role === 'RIDER' || role === 'PRO') {
@@ -439,12 +875,31 @@ conversationsRouter.post('/:id/unmatch', async (req, res) => {
 conversationsRouter.post('/:id/block', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const id = req.params.id;
     const action = String((req.body?.action || 'block')).toLowerCase();
-    const blockedAt = action === 'unblock' ? null : new Date();
-    await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId: id, userId } as any }, data: { blockedAt } });
+    if (action !== 'block' && action !== 'unblock') {
+      return res.status(400).json({ error: 'Invalid input' });
+    }
+
+    await conversationBlockEventService.setConversationBlock({
+      conversationId: id,
+      targetUserIds: [userId],
+      action,
+      actorUserId: userId,
+      actorType: 'USER',
+      source: 'USER_SELF',
+    });
     return res.json({ ok: true, blocked: action === 'block' });
-  } catch { return res.status(500).json({ error: 'Internal error' }); }
+  } catch (error) {
+    if (error instanceof ConversationBlockEventServiceError && error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (error instanceof ConversationBlockEventServiceError && error.code === 'STATE_CONFLICT') {
+      return res.status(409).json({ error: 'State conflict' });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // Trash / untrash
@@ -490,51 +945,33 @@ conversationsRouter.post('/empty-trash', async (req, res) => {
 
     return res.json({ ok: true, count: result.count });
   } catch (e) {
-    console.error('Empty trash error:', e);
+    secureLogger.error('CONVERSATIONS_EMPTY_TRASH_FAILED', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
 
 // Ensure a direct conversation exists with target user and return its id
-const MESSAGE_COOLDOWN_MS = 30_000;
-const openConversationLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests', message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.' },
-  keyGenerator: (req, res) => {
-    const userId = (req as any).user?.id as string | undefined;
-    return userId ? `user:${userId}` : ipKeyGenerator(req.ip ?? '');
+const openConversationLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60_000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      return userId ? `conversation_open:user:${userId}` : ipKeyGenerator(req.ip ?? '');
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
+      'RATE_LIMIT',
+      'RATE_LIMIT',
+    ),
   },
-  handler: (req, res) => {
-    const rateLimitInfo = (req as { rateLimit?: { resetTime?: Date } }).rateLimit;
-    const retryAfterSeconds =
-      typeof rateLimitInfo?.resetTime?.getTime === 'function'
-        ? Math.max(1, Math.ceil((rateLimitInfo.resetTime.getTime() - Date.now()) / 1000))
-        : 60;
-    res.setHeader('Retry-After', retryAfterSeconds.toString());
-    const envelope = wantsEnvelope(req as Request);
-    if (envelope) {
-      return sendError(
-        res,
-        429,
-        ERROR_CODES.RATE_LIMITED,
-        'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
-        { reason: 'RATE_LIMIT', retryAfterSeconds }
-      );
-    }
-    return res.status(429).json({
-      code: 'RATE_LIMIT',
-      message: 'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
-      retryAfterSeconds,
-    });
-  },
-});
+  'conversation_open',
+);
 
 conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
   const envelope = wantsEnvelope(req);
-  let directKey: string | null = null;
   try {
     const meId = (req as any).user?.id as string | undefined;
     if (!meId) {
@@ -543,6 +980,11 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
         : res.status(401).json({ error: 'Unauthorized' });
     }
     const body = z.object({ targetUserId: z.string().uuid() }).parse(req.body);
+    if (body.targetUserId === meId) {
+      return envelope
+        ? sendError(res, 400, ERROR_CODES.VALIDATION_ERROR, 'Invalid input')
+        : res.status(400).json({ error: 'Invalid input' });
+    }
 
     // Determine conversation type based on target user's role
     const targetUser = await prisma.user.findUnique({
@@ -574,18 +1016,38 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
     }
 
     const now = new Date();
-    const participants = [meId, body.targetUserId].sort();
-    directKey = `direct:${participants[0]}:${participants[1]}:${conversationType}`;
+    const directKey = buildDirectConversationKey(meId, body.targetUserId, conversationType);
+    let requiredMatchId: string | null = null;
+
+    if (conversationType === 'RIDER_TO_RIDER') {
+      const [userOneId, userTwoId] = [meId, body.targetUserId].sort();
+      const activeMatch = await prisma.match.findUnique({
+        where: {
+          userOneId_userTwoId: { userOneId, userTwoId } as any,
+        },
+        select: { id: true, status: true },
+      });
+
+      if (!activeMatch || activeMatch.status !== 'ACTIVE') {
+        return envelope
+          ? sendError(res, 403, ERROR_CODES.FORBIDDEN, 'Forbidden')
+          : res.status(403).json({ error: 'Forbidden' });
+      }
+
+      requiredMatchId = activeMatch.id;
+    }
+
+    const existingConversationWhere: Prisma.ConversationWhereInput = requiredMatchId
+      ? {
+          OR: [{ matchId: requiredMatchId }, { directKey, type: conversationType as any }],
+        }
+      : {
+          directKey,
+          type: conversationType as any,
+        };
 
     const existingForCooldown = await prisma.conversation.findFirst({
-      where: {
-        type: conversationType as any,
-        AND: [
-          { members: { some: { userId: meId } } },
-          { members: { some: { userId: body.targetUserId } } },
-          { members: { every: { userId: { in: [meId, body.targetUserId] } } } },
-        ],
-      },
+      where: existingConversationWhere,
       select: { id: true },
     });
 
@@ -613,19 +1075,39 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
     }
 
     const conv = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      if (requiredMatchId) {
+        const lockedActiveMatches = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT id
+          FROM "Match"
+          WHERE id = ${requiredMatchId}
+            AND status::text = 'ACTIVE'
+          FOR UPDATE
+        `);
+        if (lockedActiveMatches.length === 0) {
+          return { forbidden: true as const };
+        }
+      }
+
       const existing = await tx.conversation.findFirst({
-        where: {
-          type: conversationType as any,
-          AND: [
-            { members: { some: { userId: meId } } },
-            { members: { some: { userId: body.targetUserId } } },
-            { members: { every: { userId: { in: [meId, body.targetUserId] } } } },
-          ],
-        },
-        select: { id: true },
+        where: existingConversationWhere,
+        select: { id: true, matchId: true, directKey: true, type: true },
       });
 
       if (existing) {
+        const data: Prisma.ConversationUpdateInput = {};
+        if (requiredMatchId && !existing.matchId) data.match = { connect: { id: requiredMatchId } };
+        if (!existing.directKey) data.directKey = directKey;
+        if (existing.type !== conversationType) data.type = conversationType as any;
+        if (Object.keys(data).length > 0) {
+          await tx.conversation.update({ where: { id: existing.id }, data });
+        }
+        await tx.conversationMember.createMany({
+          data: [
+            { userId: meId, conversationId: existing.id },
+            { userId: body.targetUserId, conversationId: existing.id },
+          ],
+          skipDuplicates: true,
+        });
         return { id: existing.id, isNew: false };
       }
 
@@ -633,6 +1115,7 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
         data: {
           type: conversationType as any,
           directKey,
+          ...(requiredMatchId ? { matchId: requiredMatchId } : {}),
           members: {
             createMany: {
               data: [
@@ -647,7 +1130,28 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
       });
 
       return { id: created.id, isNew: true };
+    }).catch(async (error: any) => {
+      if (error?.code !== 'P2002') {
+        throw error;
+      }
+
+      const existingAfterRace = await prisma.conversation.findFirst({
+        where: existingConversationWhere,
+        select: { id: true },
+      });
+
+      if (existingAfterRace) {
+        return { id: existingAfterRace.id, isNew: false };
+      }
+
+      throw error;
     });
+
+    if ('forbidden' in conv) {
+      return envelope
+        ? sendError(res, 403, ERROR_CODES.FORBIDDEN, 'Forbidden')
+        : res.status(403).json({ error: 'Forbidden' });
+    }
 
     return envelope
       ? sendOk(res, conv.isNew ? 201 : 200, { id: conv.id, created: conv.isNew })
@@ -731,7 +1235,7 @@ conversationsRouter.get('/:id/members', async (req, res) => {
 
     return res.json({ items: results });
   } catch (e) {
-    console.error('Get members error:', e);
+    secureLogger.error('CONVERSATIONS_MEMBERS_FETCH_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -793,7 +1297,7 @@ conversationsRouter.get('/users/search', async (req, res) => {
 
     return res.json({ items: results });
   } catch (e) {
-    console.error('User search error:', e);
+    secureLogger.error('CONVERSATIONS_USER_SEARCH_FAILED', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -928,10 +1432,23 @@ conversationsRouter.post('/:id/members', async (req, res) => {
       memberCount
     });
 
+    // Créer notification in-app persistée
+    createNotificationSilent({
+      userId: body.userId,
+      type: NotificationType.GROUP_INVITATION,
+      title: inviterName,
+      body: `Tu as été invité(e) dans une conversation de groupe`,
+      url: `/messages/${id}`,
+    });
+    notifyUser(body.userId, 'notification', {
+      type: NotificationType.GROUP_INVITATION,
+      url: `/messages/${id}`,
+    });
+
     return res.status(201).json({ ok: true, message: 'Invitation envoyée' });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
-    console.error('Send invitation error:', e);
+    secureLogger.error('CONVERSATIONS_INVITATION_SEND_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -1015,18 +1532,18 @@ conversationsRouter.get('/invitations/pending', async (req, res) => {
 
     return res.json({ items: results });
   } catch (e) {
-    console.error('Get pending invitations error:', e);
+    secureLogger.error('CONVERSATIONS_PENDING_INVITATIONS_FAILED', { error: e });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
 
 // Accept or reject a conversation invitation
 conversationsRouter.post('/invitations/:invitationId/respond', async (req, res) => {
+  const invitationId = req.params.invitationId;
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const invitationId = req.params.invitationId;
     const body = z.object({ action: z.enum(['ACCEPT', 'REJECT']) }).parse(req.body);
 
     // Get the invitation
@@ -1113,7 +1630,7 @@ conversationsRouter.post('/invitations/:invitationId/respond', async (req, res) 
     });
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input' });
-    console.error('Respond to invitation error:', e);
+    secureLogger.error('CONVERSATIONS_INVITATION_RESPONSE_FAILED', { error: e, invitationId });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -1210,7 +1727,71 @@ conversationsRouter.delete('/:id/members/:targetUserId', async (req, res) => {
 
     return res.json({ ok: true });
   } catch (e) {
-    console.error('Remove member error:', e);
+    secureLogger.error('CONVERSATIONS_MEMBER_REMOVE_FAILED', { error: e, conversationId: req.params.id });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ─── Archive / restore ────────────────────────────────────────────────────────
+
+// Manually archive a conversation (user's membership only — not the other participant's).
+conversationsRouter.patch('/:id/archive', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const conversationId = req.params.id;
+
+    // Verify membership (prevents IDOR: only archive your own membership)
+    const member = await prisma.conversationMember.findUnique({
+      where: { conversationId_userId: { conversationId, userId } },
+      select: { id: true, archivedAt: true, trashedAt: true },
+    });
+
+    if (!member) return res.status(404).json({ error: 'Conversation not found' });
+    if (member.trashedAt) return res.status(400).json({ error: 'Cannot archive a trashed conversation' });
+    if (member.archivedAt) return res.status(409).json({ error: 'Already archived' });
+
+    const now = new Date();
+    const purgeAt = new Date(now);
+    purgeAt.setMonth(purgeAt.getMonth() + 18);
+
+    await prisma.conversationMember.update({
+      where: { id: member.id },
+      data: { archivedAt: now, purgeAt },
+    });
+
+    return res.json({ ok: true, archivedAt: now });
+  } catch (e) {
+    secureLogger.error('CONVERSATIONS_ARCHIVE_FAILED', { error: e, conversationId: req.params.id });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Restore an archived conversation back to active.
+conversationsRouter.patch('/:id/restore', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const conversationId = req.params.id;
+
+    const member = await prisma.conversationMember.findUnique({
+      where: { conversationId_userId: { conversationId, userId } },
+      select: { id: true, archivedAt: true, trashedAt: true },
+    });
+
+    if (!member) return res.status(404).json({ error: 'Conversation not found' });
+    if (!member.archivedAt && !member.trashedAt) return res.status(409).json({ error: 'Conversation is already active' });
+
+    await prisma.conversationMember.update({
+      where: { id: member.id },
+      data: { archivedAt: null, trashedAt: null, purgeAt: null },
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    secureLogger.error('CONVERSATIONS_RESTORE_FAILED', { error: e, conversationId: req.params.id });
     return res.status(500).json({ error: 'Internal error' });
   }
 });

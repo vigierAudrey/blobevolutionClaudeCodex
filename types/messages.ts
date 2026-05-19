@@ -18,6 +18,7 @@ export interface ThreadSummary {
   lastAt: string;
   unread: number;
   trashed?: boolean;
+  archived?: boolean;
   favorite?: boolean;
   blocked?: boolean;
   memberCount?: number;
@@ -25,13 +26,20 @@ export interface ThreadSummary {
   matchedAt?: Date | string | null;
 }
 
+export type ConversationListScope = 'active' | 'archived' | 'trashed' | 'all';
+
 export interface ThreadListResponse {
   items: ThreadSummary[];
+  hasMore?: boolean;
+  nextCursor?: string | null;
 }
 
 export interface ThreadListQuery {
   includeTrashed?: boolean;
+  scope?: ConversationListScope;
   type?: Extract<ConversationType, 'RIDER_TO_RIDER' | 'RIDER_TO_PRO'>;
+  limit?: number;
+  cursor?: string;
 }
 
 export type MessageKind = 'TEXT' | 'PROPOSAL';

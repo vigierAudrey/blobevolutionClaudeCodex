@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { createSign } from 'node:crypto';
+import { secureLogger } from '../utils/secure-logger';
 
 type Mode = 'app' | 'token';
 
@@ -148,7 +149,7 @@ async function decoratePr(owner: string, repo: string, token: string, prNumber: 
     });
     if (!res.ok) {
       const text = await res.text();
-      console.warn(`[github] add labels failed: ${res.status} ${text}`);
+      secureLogger.warn('GITHUB_ADD_LABELS_FAILED', { status: res.status, response: text });
     }
   }
 
@@ -162,7 +163,7 @@ async function decoratePr(owner: string, repo: string, token: string, prNumber: 
     });
     if (!res.ok) {
       const text = await res.text();
-      console.warn(`[github] add assignees failed: ${res.status} ${text}`);
+      secureLogger.warn('GITHUB_ADD_ASSIGNEES_FAILED', { status: res.status, response: text });
     }
   }
 }
@@ -195,7 +196,7 @@ export async function pushBlobosphereChange({
   try {
     await decoratePr(owner, repo, token, pr.number);
   } catch (e) {
-    console.warn('[github] decorate PR skipped', (e as Error)?.message);
+    secureLogger.warn('GITHUB_DECORATE_PR_SKIPPED', { error: (e as Error)?.message });
   }
   return { prUrl: pr.html_url, prNumber: pr.number, branchName };
 }

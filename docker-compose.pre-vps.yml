@@ -1,0 +1,224 @@
+# docker-compose.pre-vps.yml — Environnement pré-VPS BlobConnect
+#
+# But : simuler au plus près un déploiement VPS réel.
+# Différences majeures avec docker-compose.yml (dev) :
+#   - Build production (binaires compilés, pas de live reload)
+#   - Nginx TLS (cookies secure, CORS réaliste)
+#   - Réseau Docker dédié isolé (172.20.0.0/16)
+#   - Ports DB/Redis non exposés hôte (accès interne uniquement)
+#   - prisma migrate deploy obligatoire (voir bootstrap.sh)
+#   - APP_ENV=pre-vps actif
+#
+# INTERDIT en production réelle.
+# Vérifier: APP_ENV=pre-vps doit toujours être présent dans .env.pre-vps
+#
+# Usage :
+#   cp .env.pre-vps.example .env.pre-vps
+#   ./scripts/pre-vps-bootstrap.sh
+#
+# Ou manuellement :
+#   docker compose -f docker-compose.pre-vps.yml --env-file .env.pre-vps up -d
+
+# Nom de projet explicite — évite la collision avec docker-compose.yml (dev)
+# Sans ceci, Docker dérive le project name du répertoire courant et les deux
+# compose files partagent le même préfixe → down -v peut tuer des containers dev.
+name: blobconnect-pre-vps
+
+services:
+
+  # ─── Base de données ────────────────────────────────────────────────────────
+  postgres:
+    image: postgis/postgis:15-3.4
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-blobinfini_pvps}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${POSTGRES_DB:-blobinfini_pvps}
+    networks:
+      - pre-vps
+    volumes:
+      - pgdata-prevps:/var/lib/postgresql/data
+    # PAS de port exposé sur l'hôte : accès interne uniquement (sécurité)
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-blobinfini_pvps}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  # ─── Cache / Rate-limit / Sessions ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+    networks:
+      - pre-vps
+    # PAS de port exposé : accès interne uniquement
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─── Stockage objet (S3-compatible) ─────────────────────────────────────────
+  minio:
+    # quay.io/minio/minio — registry officiel Red Hat, pérenne, sans limite Docker Hub.
+    # RELEASE.2025-09-07T16-13-09Z — dernier tag stable (quay.io API + docker pull vérifiés).
+    # Digest sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # (identique au tag docker.io/minio/minio — même binaire, registry différent)
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER:     ${S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
+    command: server /data --console-address ":9001"
+    networks:
+      - pre-vps
+    volumes:
+      - miniodata-prevps:/data
+    # Port 9000 : URLs présignées accessibles depuis le navigateur hôte
+    # Port 9001 : console d'administration MinIO
+    # ⚠️  VPS RÉEL : supprimer ces ports + router MinIO derrière nginx avec TLS.
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─── Capture emails de test (pré-VPS local uniquement) ─────────────────────
+  # Justification : boîte locale pour les flux email-link/2FA de qualification
+  # sans dépendance Brevo ni émission de vrais emails.
+  mailpit:
+    # Pin v1.29.4 (mars 2026) — suivi des releases : https://github.com/axllent/mailpit/releases
+    image: axllent/mailpit:v1.29.4
+    restart: unless-stopped
+    networks:
+      - pre-vps
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  # ─── API Node.js (build production) ─────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.production.Dockerfile
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file: .env.pre-vps
+    environment:
+      # Ces variables surchargent .env.pre-vps avec les noms d'hôtes Docker internes
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-blobinfini_pvps}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-blobinfini_pvps}"
+      REDIS_URL:    "redis://default:${REDIS_PASSWORD}@redis:6379/0"
+      SMTP_HOST:    mailpit
+      SMTP_PORT:    "1025"
+      S3_ENDPOINT:  "http://minio:9000"
+      # URL présignée accessible de l'hôte dev uniquement via port 9000 (non exposé ici — utiliser minio direct)
+      S3_PRESIGN_ENDPOINT:  "http://localhost:9000"
+      S3_PUBLIC_URL_BASE:   "http://localhost:9000/${S3_BUCKET:-blobinfini-pvps}"
+      # Injection explicite — resolveConfigCheck() retourne 'fail' si absent en production
+      # Doit être défini dans .env.pre-vps (≥32 chars, pas CHANGEME)
+      SECURITY_MONITOR_TOKEN: "${SECURITY_MONITOR_TOKEN}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - pre-vps
+    # PAS de port exposé : accès via nginx uniquement (simule VPS)
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ─── Frontend Next.js (build production) ────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.production.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "https://api.blobinfini.local"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file: .env.pre-vps
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - pre-vps
+    # PAS de port exposé : accès via nginx uniquement
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+  # ─── Reverse proxy TLS (simule nginx VPS) ───────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - pre-vps
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.pre-vps.conf:/etc/nginx/nginx.conf:ro
+      # Certs générés par mkcert via pre-vps-bootstrap.sh
+      - ${MKCERT_CERTS_DIR:-./docker/certs/pre-vps}:/etc/nginx/certs:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+# ─── Réseau isolé ────────────────────────────────────────────────────────────
+networks:
+  pre-vps:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ─── Volumes persistants ─────────────────────────────────────────────────────
+volumes:
+  pgdata-prevps:
+  miniodata-prevps:

@@ -1,7 +1,7 @@
-import { createHash } from 'crypto';
+import { hashEmailHmac } from '../../lib/hash-email';
 
 export function hashEmail(email: string): string {
-  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+  return hashEmailHmac(email);
 }
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -15,8 +15,11 @@ function parseBoolean(value: string | undefined, defaultValue: boolean): boolean
 }
 
 function shouldStorePlaintextEmail(): boolean {
-  // Secure default: never store plaintext email in LoginAttempt.
-  // Dev/test can opt-in explicitly with LOGINATTEMPT_STORE_PLAINTEXT_EMAIL=true.
+  // Production must never persist plaintext email in LoginAttempt.
+  // Dev/test can still opt-in explicitly for local debugging.
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
   return parseBoolean(process.env.LOGINATTEMPT_STORE_PLAINTEXT_EMAIL, false);
 }
 

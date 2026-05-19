@@ -1,101 +1,131 @@
 import request from 'supertest';
-import { createApp } from '../../../index';
-import { AuthService } from '../../auth/auth.service';
 import { clientPrisma as prisma } from '@blobinfini/database';
+import { createApp } from '../../../index';
+import {
+  flushLogTransport,
+  resetLogTransportForTests,
+  setLogWriterForTests,
+} from '../../../observability/log-transport';
+import { secureLogger } from '../../../utils/secure-logger';
 
 describe('Security Controller', () => {
-  let app: Express.Application;
-  let adminToken: string;
+  const app = createApp();
 
-  beforeAll(async () => {
-    app = createApp();
-
-    // Créer un utilisateur admin pour les tests
-    const authService = new AuthService();
-    const adminUser = await prisma.user.findFirst({
-      where: { role: 'ADMIN', email: 'dev+admin@test.com' }
-    });
-
-    if (!adminUser) {
-      throw new Error('Admin user not found. Run seed first.');
-    }
-
-    // Générer un token admin
-    const tokens = await authService.generateTokens(adminUser);
-    adminToken = tokens.accessToken;
+  afterEach(async () => {
+    setLogWriterForTests(async () => undefined);
+    await flushLogTransport(200);
+    resetLogTransportForTests();
+    setLogWriterForTests(null);
   });
 
-  describe('GET /api/security/health', () => {
-    it('devrait rejeter les requêtes non authentifiées', async () => {
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  it('allows monitor-token access without admin JWT', async () => {
+    const previous = process.env.SECURITY_MONITOR_TOKEN;
+    process.env.SECURITY_MONITOR_TOKEN = 'monitor-token-test';
+
+    try {
       const response = await request(app)
-        .get('/api/security/health')
-        .expect(401);
-
-      expect(response.body).toHaveProperty('error');
-    });
-
-    it('devrait rejeter les utilisateurs non-admin', async () => {
-      // Créer un utilisateur RIDER
-      const riderUser = await prisma.user.findFirst({
-        where: { role: 'RIDER' }
-      });
-
-      if (!riderUser) {
-        throw new Error('Rider user not found. Run seed first.');
-      }
-
-      const authService = new AuthService();
-      const tokens = await authService.generateTokens(riderUser);
-
-      const response = await request(app)
-        .get('/api/security/health')
-        .set('Authorization', `Bearer ${tokens.accessToken}`)
-        .expect(403);
-
-      expect(response.body).toHaveProperty('error');
-    });
-
-    it('devrait retourner le health status pour un admin', async () => {
-      const response = await request(app)
-        .get('/api/security/health')
-        .set('Authorization', `Bearer ${adminToken}`)
+        .get('/security/health')
+        .set('X-Security-Monitor-Token', 'monitor-token-test')
         .expect(200);
 
       expect(response.body).toHaveProperty('status');
-      expect(response.body).toHaveProperty('helmet');
-      expect(response.body).toHaveProperty('csrf');
-      expect(response.body).toHaveProperty('rateLimit');
-      expect(response.body).toHaveProperty('corsWhitelist');
-      expect(response.body).toHaveProperty('issues');
       expect(response.body).toHaveProperty('checks');
-      expect(response.body).toHaveProperty('environment');
-      expect(response.body).toHaveProperty('timestamp');
+      expect(response.body.checks).toHaveProperty('smtp');
+    } finally {
+      if (previous === undefined) {
+        delete process.env.SECURITY_MONITOR_TOKEN;
+      } else {
+        process.env.SECURITY_MONITOR_TOKEN = previous;
+      }
+    }
+  });
 
-      // Vérifier les valeurs
-      expect(response.body.helmet).toBe(true);
-      expect(response.body.csrf).toBe(true);
-      expect(response.body.rateLimit).toBe(true);
-      expect(Array.isArray(response.body.corsWhitelist)).toBe(true);
-      expect(Array.isArray(response.body.issues)).toBe(true);
-      expect(['SECURE', 'VULNERABLE']).toContain(response.body.status);
-    });
+  it('reports UNSAFE when production security configuration is incomplete', async () => {
+    const previousEnv = process.env.NODE_ENV;
+    const previousOrigins = process.env.ALLOWED_ORIGINS;
+    const previousProxies = process.env.TRUSTED_PROXY_IPS;
+    const previousVerified = process.env.AUTH_REQUIRE_VERIFIED;
+    const previousMonitorToken = process.env.SECURITY_MONITOR_TOKEN;
 
-    it('devrait détecter les problèmes de sécurité en production', async () => {
-      // Temporairement passer en mode production
-      const originalEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'production';
-      process.env.ALLOWED_ORIGINS = ''; // Simuler un problème CORS
+    process.env.NODE_ENV = 'production';
+    process.env.ALLOWED_ORIGINS = '';
+    process.env.TRUSTED_PROXY_IPS = '';
+    process.env.AUTH_REQUIRE_VERIFIED = 'false';
+    process.env.SECURITY_MONITOR_TOKEN = 'monitor-token-test';
 
+    try {
       const response = await request(app)
-        .get('/api/security/health')
-        .set('Authorization', `Bearer ${adminToken}`)
+        .get('/security/health')
+        .set('X-Security-Monitor-Token', 'monitor-token-test')
         .expect(200);
 
-      // Restaurer l'environnement
-      process.env.NODE_ENV = originalEnv;
+      expect(response.body.status).toBe('UNSAFE');
+      expect(response.body.checks.config).toBe('fail');
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+      process.env.ALLOWED_ORIGINS = previousOrigins;
+      process.env.TRUSTED_PROXY_IPS = previousProxies;
+      process.env.AUTH_REQUIRE_VERIFIED = previousVerified;
+      process.env.SECURITY_MONITOR_TOKEN = previousMonitorToken;
+    }
+  });
 
-      expect(response.body.status).toBe('VULNERABLE');
-      expect(response.body.issues.length).toBeGreaterThan(0);
+  it('exposes real transport metrics on /security/observability', async () => {
+    let releaseWriter: (() => void) | undefined;
+    const writerGate = new Promise<void>((resolve) => {
+      releaseWriter = resolve;
     });
+
+    setLogWriterForTests(async () => {
+      await writerGate;
+    });
+
+    const previous = process.env.SECURITY_MONITOR_TOKEN;
+    process.env.SECURITY_MONITOR_TOKEN = 'monitor-token-test';
+
+    try {
+      secureLogger.warn('OBSERVABILITY_TEST_PENDING', { marker: 'queued' });
+      secureLogger.warn('OBSERVABILITY_TEST_PENDING', { marker: 'queued-2' });
+      secureLogger.warn('OBSERVABILITY_TEST_PENDING', { marker: 'queued-3' });
+
+      const response = await request(app)
+        .get('/security/observability')
+        .set('X-Security-Monitor-Token', 'monitor-token-test')
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        status: expect.stringMatching(/^(healthy|degraded|failing)$/),
+        pipeline: {
+          queued: expect.any(Number),
+          sent: expect.any(Number),
+          dropped: expect.any(Number),
+          failed: expect.any(Number),
+          breakerState: expect.stringMatching(/^(closed|open|half-open)$/),
+        },
+        email: {
+          email_sent_total: expect.any(Number),
+          email_failed_total: expect.any(Number),
+          email_timeout_total: expect.any(Number),
+          email_latency_ms: {
+            p50: expect.any(Number),
+            p95: expect.any(Number),
+            p99: expect.any(Number),
+          },
+          by_type: expect.any(Object),
+        },
+      });
+      expect(response.body.pipeline.queued).toBeGreaterThan(0);
+    } finally {
+      releaseWriter?.();
+      if (previous === undefined) {
+        delete process.env.SECURITY_MONITOR_TOKEN;
+      } else {
+        process.env.SECURITY_MONITOR_TOKEN = previous;
+      }
+    }
   });
 });

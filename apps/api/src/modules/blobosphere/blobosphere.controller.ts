@@ -8,6 +8,7 @@ import { pushBlobosphereChange } from '../../services/github.service';
 import { requireAuth, requireAdmin, requireVerifiedEmail } from '../auth/auth.guard';
 import { validate } from '../../middleware/validate';
 import { audit } from '../../middleware/audit';
+import { secureLogger } from '../../utils/secure-logger';
 
 const CONTENT_ROOT = path.join(process.cwd(), 'apps', 'web', 'content', 'blobosphere');
 const exec = promisify(_exec);
@@ -69,7 +70,7 @@ async function maybeCommit(fileRelPath: string, message: string) {
     await exec(`git commit -m ${JSON.stringify(message)}`, { cwd });
   } catch (e) {
     // swallow commit errors to not block API
-    console.warn('[blobosphere] git commit skipped or failed', e);
+    secureLogger.warn('BLOBOSPHERE_GIT_COMMIT_SKIPPED', { error: e });
   }
 }
 
@@ -167,7 +168,7 @@ blobosphereAdminRouter.post(
       });
       res.status(201).json({ success: true, path: `apps/web/content/blobosphere/${data.category}/${slug}.mdx`, pr: result ?? undefined });
     } catch (e) {
-      console.warn('[blobosphere] GitHub push skipped', (e as Error)?.message);
+      secureLogger.warn('BLOBOSPHERE_GITHUB_PUSH_SKIPPED', { error: (e as Error)?.message });
       res.status(201).json({ success: true, path: `apps/web/content/blobosphere/${data.category}/${slug}.mdx` });
     }
   }
@@ -236,7 +237,7 @@ blobosphereAdminRouter.put(
       });
       res.json({ success: true, path: `apps/web/content/blobosphere/${nextCategory}/${nextSlug}.mdx`, pr: result ?? undefined });
     } catch (e) {
-      console.warn('[blobosphere] GitHub push skipped', (e as Error)?.message);
+      secureLogger.warn('BLOBOSPHERE_GITHUB_PUSH_SKIPPED', { error: (e as Error)?.message });
       res.json({ success: true, path: `apps/web/content/blobosphere/${nextCategory}/${nextSlug}.mdx` });
     }
   }

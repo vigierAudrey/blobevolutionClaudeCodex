@@ -2,6 +2,7 @@
  * Utility function to retry database transactions on serialization failures
  * PostgreSQL error codes reference: https://www.postgresql.org/docs/current/errcodes-appendix.html
  */
+import { secureLogger } from './secure-logger';
 
 export async function withTransactionRetry<T>(
   fn: () => Promise<T>,
@@ -31,7 +32,12 @@ export async function withTransactionRetry<T>(
       const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 100;
       await new Promise(resolve => setTimeout(resolve, delay));
 
-      console.warn(`Transaction retry ${attempt}/${maxRetries} due to serialization error:`, error.message);
+      secureLogger.warn('TRANSACTION_RETRY', {
+        attempt,
+        maxRetries,
+        delay,
+        error: error.message,
+      });
     }
   }
 

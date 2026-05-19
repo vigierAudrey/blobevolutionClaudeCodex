@@ -1,4 +1,8 @@
-# Architecture – Module « Booking » (Checkpoint 2)
+# Architecture – Module « Booking » (DÉPRÉCIÉ — supprimé dans refactor/remove-pro-booking-planning)
+
+> ⚠️ Ce module a été supprimé. Ce document est conservé pour référence historique uniquement.
+> Les données historiques (`ProAvailability`, `BookingRequest`, `Booking`, `BookingLegalArchive`) restent en DB pour des raisons RGPD.
+> Voir la dette technique dans `TECH_DEBT.md` pour le plan de migration DB à venir.
 
 ## Positionnement dans le monorepo
 
@@ -73,8 +77,7 @@ User
 4. **Refus**
    - Mettre `BookingRequest` à REJECTED + `respondedAt`.
    - Notifier rider.
-5. **Ajout manuel rider (pro)**
-   - Même transaction que acceptation, sans `BookingRequest`.
+5. ~~Ajout manuel rider (admin)~~ — **supprimé** (décision produit 2026-03-24). Les bookings sont créés uniquement via le flow normal (demande rider → acceptation pro).
 6. **Fermeture créneau**
    - Status ` CLOSED`, empêche nouvelles demandes. Si déjà des réservations → avertissement / action manuelle.
 
@@ -93,7 +96,6 @@ Base path `/booking`
 | GET | `/requests/inbox` | PRO | Demandes entrantes (status PENDING). |
 | POST | `/requests/:id/accept` | PRO | Accepter une demande. |
 | POST | `/requests/:id/reject` | PRO | Refuser. |
-| POST | `/bookings/manual` | PRO | Ajouter un rider manuellement. |
 | GET | `/bookings/me` | PRO | Liste bookings confirmés. |
 
 Notes :

@@ -2,44 +2,24 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { optimizedApiClient, measureApiPerformance } from '../../../lib/optimizedApiClient';
+import { optimizedApiClient } from '../../../lib/optimizedApiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
-import { Badge } from '../../../components/ui/badge';
-import { User, Map, Calendar, Info, LogOut, MessageSquare, Gift, Sparkles } from 'lucide-react';
+import { User, Map, Info, LogOut, MessageSquare, Gift, Sparkles } from 'lucide-react';
+import { NotificationBell } from '../../../components/NotificationBell';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
 import { useAnalytics } from '@/hooks/useAnalytics';
-
-const DEFAULT_PLANNING_STATS = { availabilityCount: 0, pendingCount: 0 };
 
 export default function ProDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<DashboardUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [planningStats, setPlanningStats] = useState<{ availabilityCount: number; pendingCount: number } | null>(null);
   const { trackEvent } = useAnalytics();
   const trackedRef = useRef(false);
-
-  const loadPlanningStats = useCallback(async () => {
-    try {
-      const perf = measureApiPerformance('Pro Dashboard Data');
-
-      // Use optimized parallel initialization
-      const { availabilities, inbox } = await optimizedApiClient.initializePro();
-
-      const pendingCount = inbox.requests.filter((req) => req.status === 'PENDING').length;
-      setPlanningStats({ availabilityCount: availabilities.availabilities.length, pendingCount });
-
-      perf.end();
-    } catch (error: unknown) {
-      console.error('Pro dashboard initialization failed:', error);
-      setPlanningStats({ ...DEFAULT_PLANNING_STATS });
-    }
-  }, []);
 
   useEffect(() => {
     const t = optimizedApiClient.getTokens();
@@ -50,19 +30,17 @@ export default function ProDashboardPage() {
     optimizedApiClient
       .me()
       .then((u) => {
-        // Vérifier que l'utilisateur est bien un PRO
         if (u.role !== 'PRO') {
           router.replace('/dashboard');
           return;
         }
         setUser(u);
-        void loadPlanningStats();
       })
       .catch(() => {
         router.replace('/login');
       })
       .finally(() => setLoading(false));
-  }, [loadPlanningStats, router]);
+  }, [router]);
 
   useEffect(() => {
     if (!user || trackedRef.current) return;
@@ -94,15 +72,6 @@ export default function ProDashboardPage() {
   }
   if (!user) return null;
 
-  const safePlanningStats = planningStats ?? DEFAULT_PLANNING_STATS;
-  const availabilityLabel = planningStats
-    ? `${safePlanningStats.availabilityCount} créneau${safePlanningStats.availabilityCount > 1 ? 'x' : ''}`
-    : '-- créneaux';
-  const pendingLabel = planningStats
-    ? `${safePlanningStats.pendingCount} demande${safePlanningStats.pendingCount > 1 ? 's' : ''} en attente`
-    : '-- demandes';
-  const hasPendingRequests = safePlanningStats.pendingCount > 0;
-
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-8">
       {/* Header compact avec style océan */}
@@ -117,6 +86,7 @@ export default function ProDashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <NotificationBell />
           <Link href="/account">
             <Button variant="ghost" size="sm">
               Mon compte
@@ -224,56 +194,8 @@ export default function ProDashboardPage() {
         </Link>
       </div>
 
-      {/* Ligne 2 : Mes créneaux & réservations + BloboMap */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Mes créneaux & réservations - Hero Card */}
-        <Link href="/pro/planning" className="group block">
-          <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-emerald-200/70 dark:border-white/10 bg-gradient-to-br from-white via-emerald-50 to-teal-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="relative p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg group-hover:scale-110 transition-transform">
-                    <Calendar size={24}/>
-                    {hasPendingRequests && (
-                      <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-white animate-pulse">
-                        {safePlanningStats.pendingCount}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <CardTitle className="text-2xl flex items-center gap-2">
-                      Mes créneaux & réservations
-                      {hasPendingRequests && (
-                        <span className="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5 text-xs font-semibold text-red-700 dark:text-red-400">
-                          {safePlanningStats.pendingCount} en attente
-                        </span>
-                      )}
-                    </CardTitle>
-                    <CardDescription className="text-base mt-1">Publier, suivre et gérer tes disponibilités</CardDescription>
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2 mb-4">
-                <Badge variant="outline" className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200">
-                  {availabilityLabel}
-                </Badge>
-                {hasPendingRequests && (
-                  <Badge variant="secondary" className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
-                    {pendingLabel}
-                  </Badge>
-                )}
-              </div>
-              <div className="inline-flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-medium group-hover:gap-3 transition-all">
-                Ouvrir mon planning
-                <span className="group-hover:translate-x-1 transition-transform">→</span>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-
-        {/* BloboMap - Hero Card */}
+      {/* BloboMap */}
+      <div className="grid grid-cols-1 gap-4">
         <Link href="/pro/map" className="group block">
           <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-cyan-200/70 dark:border-white/10 bg-gradient-to-br from-white via-cyan-50 to-blue-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
             <CardHeader>

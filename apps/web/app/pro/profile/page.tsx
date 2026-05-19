@@ -11,7 +11,7 @@ import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText, Bell } from 'lucide-react';
+import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText, Bell, Eye } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { apiClient } from '../../../lib/apiClient';
@@ -20,6 +20,7 @@ import { useToast } from '../../../components/ui/toast';
 import { Spinner } from '../../../components/ui/spinner';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../../components/cookies/CookieConsent';
 import { ChangePasswordCard } from '../../../components/profile/ChangePasswordCard';
+import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
 
 // Configuration de sécurité pour l'upload de fichiers
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
@@ -55,6 +56,7 @@ function sanitizeErrorMessage(error: unknown): string {
       UNAUTHORIZED: 'Veuillez vous reconnecter',
       FILE_TOO_LARGE: 'Le fichier est trop volumineux (max 5 Mo)',
       INVALID_FILE_TYPE: 'Type de fichier non supporté',
+      RATE_LIMIT_EXCEEDED: 'Trop de tentatives. Veuillez patienter quelques minutes avant de réessayer.',
     };
 
     if (error && typeof error === 'object') {
@@ -85,6 +87,7 @@ export default function ProProfilePage() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Geolocation state
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -100,8 +103,6 @@ export default function ProProfilePage() {
     pushEnabled: true,
     emailEnabled: false,
     notifyLessonRequests: true,
-    notifyBookingAccepted: true,
-    notifyBookingRejected: true,
     notifyProMessages: true,
     notifyForSurf: true,
     notifyForKitesurf: true,
@@ -202,6 +203,13 @@ export default function ProProfilePage() {
       try {
         const t = ensureAuthenticated();
 
+        // Server-side role is the source of truth — RIDER must not stay on PRO-only page.
+        const me = await apiClient.me();
+        if (me.role !== 'PRO') {
+          router.replace('/dashboard');
+          return;
+        }
+
         // ✅ CORRIGÉ : Utiliser apiRequest avec protection CSRF
         const response = await apiRequest('/pro/me', {
           method: 'GET',
@@ -211,7 +219,7 @@ export default function ProProfilePage() {
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data?.error || 'Erreur chargement');
+          throw new Error(data?.message || data?.error || 'Erreur chargement');
         }
 
         setBusinessName(data.businessName || '');
@@ -233,7 +241,7 @@ export default function ProProfilePage() {
     };
 
     loadProfile();
-  }, [ensureAuthenticated]);
+  }, [ensureAuthenticated, router]);
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -363,13 +371,13 @@ export default function ProProfilePage() {
 
       const response = await apiRequest('/pro/me', {
         method: 'PUT',
-        body: JSON.stringify({ lat: undefined, lng: undefined }),
+        body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat: undefined, lng: undefined }),
         headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data?.error || 'Erreur lors de la suppression');
+        throw new Error(data?.message || data?.error || 'Erreur lors de la suppression');
       }
 
       setUserLocation(null);
@@ -457,12 +465,12 @@ export default function ProProfilePage() {
 
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     setErr(null);
+    setSaving(true);
 
     try {
       const t = ensureAuthenticated();
-      let finalUrl = photoUrl || undefined;
-
       if (file) {
         const ct = file.type || 'image/jpeg';
 
@@ -477,13 +485,22 @@ export default function ProProfilePage() {
         if (!p.ok) throw new Error(data?.error || 'Upload préparatoire impossible');
 
         // Upload vers S3/storage (pas de CSRF nécessaire - endpoint tiers)
-        await fetch(data.uploadUrl, {
+        const putRes = await fetch(data.uploadUrl, {
           method: 'PUT',
           headers: { 'Content-Type': ct },
-          body: file
+          body: file,
         });
+        if (!putRes.ok) throw new Error(`Échec du téléversement (${putRes.status})`);
 
-        if (data.fileUrl) finalUrl = data.fileUrl;
+        // Finalize: valide le contenu côté serveur et retourne la photoUrl officielle
+        const finalizeRes = await apiRequest('/pro/photo/finalize', {
+          method: 'POST',
+          body: JSON.stringify({ key: data.key }),
+          headers: { Authorization: `Bearer ${t.accessToken}` },
+        });
+        if (!finalizeRes.ok) throw new Error('Échec de la validation de la photo');
+        const { photoUrl: finalizedUrl } = (await finalizeRes.json()) as { photoUrl: string };
+        setPhotoUrl(finalizedUrl);
       }
 
       // ✅ CORRIGÉ : Utiliser apiRequest avec protection CSRF
@@ -493,19 +510,21 @@ export default function ProProfilePage() {
           businessName: businessName || undefined,
           bio: bio || undefined,
           emailNotif,
-          photoUrl: finalUrl,
+          countryCode: FRANCE_ONLY_COUNTRY_CODE,
         }),
         headers: { Authorization: `Bearer ${t.accessToken}` },
       });
 
       const body = await res.json();
-      if (!res.ok) throw new Error(body?.error || 'Sauvegarde impossible');
+      if (!res.ok) throw new Error(body?.message || body?.error || 'Sauvegarde impossible');
 
       // Rediriger vers l'onboarding avec un timestamp pour forcer le rechargement
       router.push(`/pro/onboarding?refresh=${Date.now()}`);
     } catch (e: unknown) {
       // ✅ CORRIGÉ : Sanitization des erreurs
       setErr(sanitizeErrorMessage(e));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -524,6 +543,12 @@ export default function ProProfilePage() {
           <h1 className="text-xl font-bold text-foreground">Profil Professionnel 💼</h1>
           <p className="text-sm text-muted-foreground">Gère tes informations visibles par les clients</p>
         </div>
+        <Button asChild variant="outline" size="sm" className="flex-shrink-0 gap-1.5" data-testid="preview-button">
+          <Link href="/pro/profile/preview">
+            <Eye className="h-4 w-4" />
+            Voir mon profil
+          </Link>
+        </Button>
       </div>
 
       {loading ? (
@@ -538,10 +563,14 @@ export default function ProProfilePage() {
               <CardDescription>Ces informations seront visibles par les clients.</CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                {FRANCE_ONLY_INFO_MESSAGE}
+              </div>
               <form onSubmit={onSave} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Nom commercial</Label>
+                  <Label htmlFor="businessName">Nom commercial</Label>
                   <Input
+                    id="businessName"
                     value={businessName}
                     onChange={(e) => setBusinessName(e.target.value)}
                     placeholder="Ex: BlobPro School"
@@ -549,8 +578,9 @@ export default function ProProfilePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Présentation</Label>
+                  <Label htmlFor="bio">Présentation</Label>
                   <Textarea
+                    id="bio"
                     value={bio}
                     onChange={(e)=>setBio(e.target.value)}
                     placeholder="Ce que tu proposes, ton expérience, ton spot préféré…"
@@ -596,8 +626,19 @@ export default function ProProfilePage() {
                     </p>
                   </div>
                 )}
-                <Button type="submit" className="w-full sm:w-auto bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700">
-                  Enregistrer
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full sm:w-auto bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saving ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Spinner />
+                      Enregistrement…
+                    </span>
+                  ) : (
+                    'Enregistrer'
+                  )}
                 </Button>
               </form>
             </CardContent>
@@ -767,62 +808,6 @@ export default function ProProfilePage() {
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                                 notificationPrefs.notifyLessonRequests && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-
-                        {/* Booking Accepted */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-green-300 dark:hover:border-green-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">✅</span>
-                            <div>
-                              <p className="text-sm font-medium">Réservations acceptées</p>
-                              <p className="text-xs text-muted-foreground">Quand un rider accepte ta dispo</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleNotificationPref('notifyBookingAccepted')}
-                            disabled={!notificationPrefs.pushEnabled}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              notificationPrefs.notifyBookingAccepted && notificationPrefs.pushEnabled
-                                ? 'bg-green-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle booking accepted notifications"
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyBookingAccepted && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-
-                        {/* Booking Rejected */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-red-300 dark:hover:border-red-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">❌</span>
-                            <div>
-                              <p className="text-sm font-medium">Réservations refusées</p>
-                              <p className="text-xs text-muted-foreground">Quand un rider refuse ta dispo</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleNotificationPref('notifyBookingRejected')}
-                            disabled={!notificationPrefs.pushEnabled}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              notificationPrefs.notifyBookingRejected && notificationPrefs.pushEnabled
-                                ? 'bg-red-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle booking rejected notifications"
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyBookingRejected && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
                               }`}
                             />
                           </button>

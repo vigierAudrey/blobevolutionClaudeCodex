@@ -66,6 +66,7 @@ class SystemAlertService {
           ? Prisma.JsonNull
           : (input.metadata as Prisma.InputJsonValue);
 
+    const now = new Date();
     const alert = await prisma.systemAlert.create({
       data: {
         type: input.type,
@@ -75,7 +76,10 @@ class SystemAlertService {
         link: input.link ?? null,
         metadata: metadataValue,
         dedupeKey: input.dedupeKey ?? null,
-        createdById: input.createdById ?? null
+        createdById: input.createdById ?? null,
+        occurrenceCount: 1,
+        firstSeenAt: now,
+        lastSeenAt: now
       }
     });
     return alert;
@@ -92,7 +96,14 @@ class SystemAlertService {
     });
 
     if (existing) {
-      return existing;
+      return prisma.systemAlert.update({
+        where: { id: existing.id },
+        data: {
+          occurrenceCount: { increment: 1 },
+          lastSeenAt: new Date()
+          // firstSeenAt intentionally NOT updated — it tracks the original creation
+        }
+      });
     }
 
     const metadataValue: Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue | undefined =
@@ -102,6 +113,7 @@ class SystemAlertService {
           ? Prisma.JsonNull
           : (input.metadata as Prisma.InputJsonValue);
 
+    const ensureNow = new Date();
     return prisma.systemAlert.create({
       data: {
         type: input.type,
@@ -111,7 +123,10 @@ class SystemAlertService {
         link: input.link ?? null,
         metadata: metadataValue,
         dedupeKey,
-        createdById: input.createdById ?? null
+        createdById: input.createdById ?? null,
+        occurrenceCount: 1,
+        firstSeenAt: ensureNow,
+        lastSeenAt: ensureNow
       }
     });
   }

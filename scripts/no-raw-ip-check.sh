@@ -87,9 +87,14 @@ echo ""
 echo "📋 Logging Checks"
 echo "-----------------"
 check_pattern \
-  "secureLogger\.(info|warn|error).*\{[^}]*\bip:" \
+  "secureLogger\.(info|warn|error|security).*\{[^}]*\bip:" \
   "Raw IP in secureLogger (use ipHash instead)" \
   "ipHash:|ip:.*(Hash|hash)"
+
+check_pattern \
+  "\bip:\s*(req\.ip|getClientIp\(|[^,]*remoteAddress|[^,]*canonicalIp)" \
+  "Raw IP sourced from request context in runtime code" \
+  "allowedIPs"
 
 # CHECK 3: Prevent consentIp in selects returned to client
 echo ""
@@ -142,7 +147,8 @@ else
   echo ""
   echo "Forbidden patterns:"
   echo "  ✗ clientIP / clientIp / ipAddress in res.json()"
-  echo "  ✗ ip: in secureLogger (use ipHash:)"
+  echo "  ✗ ip: in secureLogger.* including secureLogger.security (use ipHash:)"
+  echo "  ✗ ip: req.ip|getClientIp(... )|remoteAddress|canonicalIp in runtime code"
   echo "  ✗ consentIp: true in select"
   echo "  ✗ LoginAttempt.ip in queries"
   echo "  ✗ hashIp() from client-ip (use hashIpHmac())"

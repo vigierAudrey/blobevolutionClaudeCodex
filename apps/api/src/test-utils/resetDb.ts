@@ -1,76 +1,85 @@
 /**
  * Test Database Reset Utility
  *
- * STRATÉGIE: deleteMany avec ordre FK-safe
+ * STRATEGIE:
+ * - Truncate l'ensemble des tables metier connues par Postgres
+ * - Exclut uniquement les tables systeme a conserver (_prisma_migrations, spatial_ref_sys)
+ * - Rehydrate les deux users seed requis par certains tests
  *
- * RAISON DU CHOIX (vs TRUNCATE):
- * - Prisma ne supporte pas bien TRUNCATE CASCADE avec sequences
- * - deleteMany respecte les FK et triggers Prisma
- * - Plus sûr pour les tests WebSocket (pas de restart sequences)
- * - Performance acceptable avec maxWorkers: 1
- *
- * ISOLATION:
- * - Supprime toutes les données métier entre tests
- * - Préserve les 2 users de seed (dev+admin@test.com, dev+rider@test.com)
- * - Ordre strict pour respecter les foreign keys
+ * Pourquoi ce choix:
+ * - Une liste statique de deleteMany derive du schema et finit par diverger
+ * - Les oublis de tables produisent des faux verts/faux rouges inter-suites
+ * - TRUNCATE ... CASCADE supprime l'etat complet, y compris les tables ajoutees apres coup
  *
  * CONFIGURATION:
- * - TEST_DB_RESET_DEBUG=true : Affiche logs détaillés
- * - TEST_DB_RESET=false : Désactive le reset (debug uniquement)
+ * - TEST_DB_RESET_DEBUG=true : Affiche logs detailles
+ * - TEST_DB_RESET=false : Desactive le reset (debug uniquement)
  */
 
 import { clientPrisma as prisma } from '@blobinfini/database';
 
-/**
- * Liste des tables à nettoyer (ordre important pour FK)
- *
- * Ordre: enfants → parents
- * - Message dépend de Conversation
- * - ConversationMember dépend de Conversation
- * - Conversation dépend de User
- * - Booking dépend de BookingRequest
- * - Match dépend de User
- * - Profiles dépendent de User
- * - User en dernier (sauf les 2 seeds)
- */
-const CLEANUP_ORDER = [
-  'message',
-  'conversationMember',
-  'conversation',
-  'matchDecision',
-  'match',
-  'booking',
-  'bookingRequest',
-  'proAvailability',
-  'lastSearch',
-  'riderDiscipline',
-  'proOffer',
-  'profileReport',
-  'passwordResetToken',
-  'emailVerificationToken',
-  'session',
-  'refreshToken',
-  'adminProfile',
-  'riderProfile',
-  'proProfile',
-  'user' // Spécial: préserve les seeds
-] as const;
+const EXCLUDED_TABLES = ['_prisma_migrations', 'spatial_ref_sys'] as const;
 
 /**
- * Emails des users de seed à préserver
+ * Emails des users de seed a restaurer apres reset complet
  */
 const SEED_USER_EMAILS = [
   'dev+admin@test.com',
   'dev+rider@test.com'
 ] as const;
 
+const TEST_SEED_USERS = [
+  {
+    email: SEED_USER_EMAILS[0],
+    role: 'ADMIN' as const,
+  },
+  {
+    email: SEED_USER_EMAILS[1],
+    role: 'RIDER' as const,
+  },
+] as const;
+
+type TableRow = { tablename: string };
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+async function getResettableTables(): Promise<string[]> {
+  const rows = await prisma.$queryRawUnsafe<TableRow[]>(`
+    SELECT tablename
+    FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename NOT IN (${EXCLUDED_TABLES.map((table) => `'${table}'`).join(', ')})
+    ORDER BY tablename ASC
+  `);
+
+  return rows.map((row: TableRow) => row.tablename);
+}
+
+async function ensureSeedUsers(): Promise<void> {
+  for (const seedUser of TEST_SEED_USERS) {
+    await prisma.user.upsert({
+      where: { email: seedUser.email },
+      update: {},
+      create: {
+        email: seedUser.email,
+        password: 'hash',
+        role: seedUser.role,
+        emailVerified: true,
+        consentedAt: new Date(),
+        consentVersion: 'v1.0.0',
+      },
+    });
+  }
+}
+
 /**
  * Reset la DB entre les tests
  *
- * @returns Nombre de records supprimés (pour logs debug)
+ * @returns Nombre de tables truncatees
  */
 export async function resetDb(): Promise<number> {
-  // Allow disabling reset for debugging
   if (process.env.TEST_DB_RESET === 'false') {
     if (process.env.TEST_DB_RESET_DEBUG === 'true') {
       console.log('⏸️  [resetDb] Skipped (TEST_DB_RESET=false)');
@@ -82,47 +91,31 @@ export async function resetDb(): Promise<number> {
   let totalDeleted = 0;
 
   try {
-    if (debug) {
-      console.log('♻️  [resetDb] Starting cleanup...');
-    }
-
-    // Cleanup dans l'ordre strict
-    for (const table of CLEANUP_ORDER) {
-      let deleted = 0;
-
-      // Cas spécial: User (préserver les seeds)
-      if (table === 'user') {
-        const result = await prisma.user.deleteMany({
-          where: {
-            email: {
-              notIn: [...SEED_USER_EMAILS]
-            }
-          }
-        });
-        deleted = result.count;
-      } else {
-        // Tables standards: tout supprimer
-        const result = await (prisma[table] as any).deleteMany({});
-        deleted = result.count;
-      }
-
-      totalDeleted += deleted;
-
-      if (debug && deleted > 0) {
-        console.log(`   ✓ ${table}: ${deleted} deleted`);
-      }
-    }
+    const tables = await getResettableTables();
 
     if (debug) {
-      console.log(`♻️  [resetDb] Complete (${totalDeleted} total deleted)`);
+      console.log(`♻️  [resetDb] Starting cleanup (${tables.length} tables)...`);
+    }
+
+    if (tables.length > 0) {
+      const truncateSql = `TRUNCATE TABLE ${tables
+        .map((table) => `${quoteIdentifier('public')}.${quoteIdentifier(table)}`)
+        .join(', ')} RESTART IDENTITY CASCADE`;
+
+      await prisma.$executeRawUnsafe(truncateSql);
+      totalDeleted = tables.length;
+    }
+
+    await ensureSeedUsers();
+
+    if (debug) {
+      console.log(`♻️  [resetDb] Complete (${totalDeleted} tables truncated, seeds restored)`);
     }
 
     return totalDeleted;
-
   } catch (error) {
-    // Non-fatal: logger mais ne pas faire échouer le test
-    console.error('⚠️  [resetDb] Cleanup error (non-fatal):', error);
-    return 0;
+    console.error('❌ [resetDb] Cleanup error:', error);
+    throw error;
   }
 }
 

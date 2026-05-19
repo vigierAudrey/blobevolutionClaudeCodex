@@ -1,0 +1,143 @@
+# docker/Caddyfile — Reverse proxy BlobSurf production (Caddy + Let's Encrypt)
+#
+# Variables d'environnement injectées par docker-compose.blobsurf.yml :
+#   CADDY_ACME_EMAIL — email ACME pour Let's Encrypt (obligatoire)
+#   APP_DOMAIN       — domaine frontend  (ex: blobsurf.com)
+#   API_DOMAIN       — domaine API       (ex: api.blobsurf.com)
+#   STORAGE_DOMAIN   — domaine MinIO     (ex: storage.blobsurf.com)
+#
+# Let's Encrypt émet et renouvelle automatiquement les certificats TLS.
+# Le volume caddy-data (docker-compose.blobsurf.yml) persiste les certificats.
+#
+# CORS storage :
+#   - Origin stricte : https://{env.APP_DOMAIN} uniquement (pas de wildcard)
+#   - OPTIONS preflight : retourné par Caddy, ne reach pas MinIO
+#   - PUT/GET : proxy MinIO avec header ACAO ajouté si Origin correspond
+#   - MinIO CORS headers strippés (header_down) pour éviter les doublons
+#
+# Header Host vers MinIO :
+#   CRITIQUE — MinIO valide la signature HMAC des URLs présignées sur le Host.
+#   header_up Host {host} transmet storage.blobsurf.com (pas "minio:9000").
+#   Sans cela, toutes les requêtes présignées retournent 403 SignatureDoesNotMatch.
+
+{
+    email {env.CADDY_ACME_EMAIL}
+    # Désactiver l'interface d'administration Caddy (non nécessaire en prod)
+    admin off
+}
+
+# ─── Frontend Next.js ──────────────────────────────────────────────────────────
+{env.APP_DOMAIN} {
+    encode gzip
+
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+    reverse_proxy web:3000 {
+        header_up Host              {host}
+        header_up X-Real-IP         {remote_host}
+        header_up X-Forwarded-For   {header.X-Forwarded-For}
+
+    }
+}
+
+# ─── API Node.js ───────────────────────────────────────────────────────────────
+{env.API_DOMAIN} {
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+    # Limite upload corps de requête (photos profil, fichiers)
+    request_body {
+        max_size 10MB
+    }
+
+    reverse_proxy api:4000 {
+        header_up Host              {host}
+        header_up X-Real-IP         {remote_host}
+        header_up X-Forwarded-For   {header.X-Forwarded-For}
+
+
+        transport http {
+            # read_timeout >> pingInterval (25s) + pingTimeout (60s) pour WebSocket Socket.IO
+            read_timeout  3600s
+            write_timeout 60s
+        }
+    }
+}
+
+# ─── Stockage MinIO ────────────────────────────────────────────────────────────
+#
+# Flux presigned PUT (upload photo profil) :
+#   1. API génère URL présignée : S3_PRESIGN_ENDPOINT = https://{env.STORAGE_DOMAIN}
+#   2. Navigateur envoie OPTIONS (preflight CORS) → Caddy répond 204, MinIO non touché
+#   3. Navigateur envoie PUT avec X-Amz-Signature dans la query string
+#   4. Caddy proxifie vers minio:9000 en préservant Host: {env.STORAGE_DOMAIN}
+#   5. MinIO valide la signature via MINIO_SERVER_URL = https://{env.STORAGE_DOMAIN}
+#
+{env.STORAGE_DOMAIN} {
+    # Limite taille upload (10 MB = max raisonnable pour photo profil JPEG/PNG/WebP)
+    request_body {
+        max_size 10MB
+    }
+
+    # ─── Security headers (s'appliquent à toutes les réponses) ────────────────
+    header X-Content-Type-Options    "nosniff"
+    header X-Frame-Options           "DENY"
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    header Cache-Control             "private, no-store"
+
+    route {
+        # ── 1. Preflight CORS ─────────────────────────────────────────────────
+        # OPTIONS retourné directement par Caddy — MinIO n'est pas contacté.
+        # Origin stricte : seul {env.APP_DOMAIN} est autorisé.
+        # Valeur vide (origine non listée) = aucun header ACAO = rejet navigateur.
+        @preflight method OPTIONS
+        handle @preflight {
+            header Access-Control-Allow-Origin  "https://{env.APP_DOMAIN}"
+            header Access-Control-Allow-Methods "GET, PUT, OPTIONS"
+            header Access-Control-Allow-Headers "Content-Type"
+            header Access-Control-Max-Age       "3600"
+            respond "" 204
+        }
+
+        # ── 2. Bloquer les PUT avec Content-Type non-image ────────────────────
+        # Defense-in-depth : AWS SDK v3 s3-request-presigner place Content-Type
+        # en unsignable header → la signature HMAC ne couvre pas le type effectif.
+        # Le backend valide aussi via magic bytes (finalize), mais ce filtre
+        # empêche les writes de types arbitraires avant qu'ils atteignent MinIO.
+        # Requis : Caddy v2.7+. Retirer ce bloc si erreur de parsing sur version antérieure.
+        @bad_put {
+            method PUT
+            not header_regexp Content-Type "^image/(jpeg|png|webp)"
+        }
+        respond @bad_put "" 415
+
+        # ── 3. Proxy vers MinIO avec CORS conditionnel ────────────────────────
+        handle {
+            # Ajouter ACAO uniquement si l'origin correspond — pas de wildcard.
+            @from_app header Origin "https://{env.APP_DOMAIN}"
+            header @from_app Access-Control-Allow-Origin "https://{env.APP_DOMAIN}"
+
+            reverse_proxy minio:9000 {
+                # CRITIQUE : MinIO valide la signature HMAC sur le Host header.
+                # {host} = valeur du Host header entrant = storage.blobsurf.com.
+                header_up Host              {host}
+                header_up X-Real-IP         {remote_host}
+                header_up X-Forwarded-For   {header.X-Forwarded-For}
+        
+
+                # Supprimer les headers CORS de MinIO pour éviter les doublons
+                # (MinIO peut ajouter ses propres ACAO si bucket CORS configuré)
+                header_down -Access-Control-Allow-Origin
+                header_down -Access-Control-Allow-Methods
+                header_down -Access-Control-Allow-Headers
+                header_down -Access-Control-Expose-Headers
+                header_down -Access-Control-Allow-Credentials
+
+                transport http {
+                    # Timeout généreux pour les uploads photo (10 MB max)
+                    read_timeout  120s
+                    write_timeout 120s
+                }
+            }
+        }
+    }
+}

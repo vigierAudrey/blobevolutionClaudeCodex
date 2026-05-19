@@ -5,6 +5,7 @@ import {
   createOrUpdateConsent,
   getConsent,
   purgeOldConsents,
+  getConsentCacheSize,
 } from '../consent.service';
 
 const HEX_HASH = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -65,5 +66,57 @@ describe('consent.service', () => {
 
     const remaining = await getConsent(HEX_HASH);
     expect(remaining).toBeNull();
+  });
+
+  describe('sanitizeHash — invalid inputs rejected without DB access', () => {
+    it('rejects a single character hash', async () => {
+      await expect(getConsent('a')).rejects.toThrow('Invalid user hash');
+    });
+
+    it('rejects an empty string', async () => {
+      await expect(getConsent('')).rejects.toThrow('Invalid user hash');
+    });
+
+    it('rejects a 63-char hex string (too short)', async () => {
+      await expect(
+        getConsent('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde'),
+      ).rejects.toThrow('Invalid user hash');
+    });
+
+    it('rejects a 65-char hex string (too long)', async () => {
+      await expect(
+        getConsent('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0'),
+      ).rejects.toThrow('Invalid user hash');
+    });
+
+    it('rejects uppercase hex (strict lowercase policy)', async () => {
+      await expect(
+        getConsent('0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF'),
+      ).rejects.toThrow('Invalid user hash');
+    });
+
+    it('rejects a hash with non-hex characters', async () => {
+      await expect(
+        getConsent('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg'),
+      ).rejects.toThrow('Invalid user hash');
+    });
+
+    it('does not populate the cache on invalid input', async () => {
+      const sizeBefore = getConsentCacheSize();
+      await expect(getConsent('bad')).rejects.toThrow();
+      expect(getConsentCacheSize()).toBe(sizeBefore);
+    });
+
+    it('accepts a valid lowercase 64-char hex hash and returns null when absent from DB', async () => {
+      const result = await getConsent(HEX_HASH);
+      expect(result).toBeNull();
+    });
+
+    it('accepts a valid lowercase 64-char hex hash and returns the record when present', async () => {
+      await createOrUpdateConsent(buildPayload('none'));
+      const result = await getConsent(HEX_HASH);
+      expect(result).not.toBeNull();
+      expect(result?.userHash).toBe(HEX_HASH);
+    });
   });
 });

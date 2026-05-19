@@ -1,19 +1,79 @@
 import { createClient } from 'redis';
 import { resolveRedisUrl } from '../lib/redisConfig';
 import { gridCell, DEFAULT_GRID_CELL_KM } from '../lib/geoGrid';
+import { secureLogger } from '../utils/secure-logger';
 
 // Redis client for caching (separate from rate limiting)
 let cacheClient: any = null;
 const shouldLogCache = process.env.NODE_ENV !== 'test' || process.env.ENABLE_TEST_LOGS === 'true';
-const logInfo = (...args: Parameters<typeof console.log>) => { if (shouldLogCache) console.log(...args); };
-const logWarn = (...args: Parameters<typeof console.warn>) => { if (shouldLogCache) console.warn(...args); };
-const logError = (...args: Parameters<typeof console.error>) => console.error(...args);
+const logInfo = (event: string, context?: Record<string, unknown>) => {
+  if (shouldLogCache) secureLogger.info(event, context);
+};
+const logWarn = (event: string, context?: Record<string, unknown>) => {
+  if (shouldLogCache) secureLogger.warn(event, context);
+};
+const logError = (event: string, context?: Record<string, unknown>) => secureLogger.error(event, context);
 const isDevelopment = process.env.NODE_ENV === 'development';
 const REDIS_DEV_HINT_THROTTLE_MS = 30000;
+const SAFE_CACHE_ID_REGEX = /^[A-Za-z0-9_-]+$/;
+const SHA256_HEX_REGEX = /^[a-f0-9]{64}$/i;
+
+export type CacheReadResult<T> =
+  | { ok: true; found: true; value: T }
+  | { ok: true; found: false }
+  | { ok: false; reason: 'client_unavailable' | 'read_error' | 'invalid_identifier' };
+
+export type CacheWriteResult =
+  | { ok: true }
+  | { ok: false; reason: 'client_unavailable' | 'write_error' | 'invalid_identifier' | 'invalid_value' };
 
 type RedisDevHintState = {
   nextLogAtMs: number;
 };
+
+function sanitizeRedisUrl(redisUrl: string): string {
+  try {
+    const url = new URL(redisUrl);
+    const port = url.port ? `:${url.port}` : '';
+    return `${url.protocol}//${url.hostname}${port}${url.pathname}`;
+  } catch {
+    return 'configured';
+  }
+}
+
+function sanitizeErrorDetail(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/(redis:\/\/[^:\s/]+:)[^@\s]+@/gi, '$1***@');
+}
+
+function cacheErrorType(error: unknown): string {
+  if (error instanceof Error && error.name) {
+    return error.name;
+  }
+
+  return 'CacheError';
+}
+
+function cacheNamespaceFromKey(key: string): string {
+  const trimmed = key.trim();
+  if (!trimmed) return 'unknown';
+
+  const parts = trimmed.split(':').filter(Boolean);
+  if (parts.length === 0) return 'unknown';
+
+  const first = parts[0].replace(/[^A-Za-z0-9_-]/g, '');
+  const second = parts[1]?.replace(/[^A-Za-z0-9_-]/g, '');
+
+  if (first === 'tag' && second) {
+    return `tag:${second}`;
+  }
+
+  return first || 'unknown';
+}
+
+function isSafeOpaqueCacheId(identifier: string): boolean {
+  return SAFE_CACHE_ID_REGEX.test(identifier);
+}
 
 function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
   if (!isDevelopment) {
@@ -33,9 +93,7 @@ function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
 
   if (now >= state.nextLogAtMs) {
     state.nextLogAtMs = now + REDIS_DEV_HINT_THROTTLE_MS;
-    logWarn(
-      `⚠️ Redis non démarré (localhost:6379): ${errorMessage}. Lance "pnpm run dev:infra". Les retries continuent silencieusement.`
-    );
+    logWarn('CACHE_REDIS_DEV_HINT', { error: errorMessage });
   }
 
   return true;
@@ -47,11 +105,11 @@ export async function initializeCache(): Promise<any> {
   const redisUrl = resolveRedisUrl();
 
   if (redisUrl == null) {
-    logWarn('⚠️ Redis URL not provided, cache disabled');
+    logWarn('CACHE_REDIS_URL_MISSING');
     return null;
   }
 
-  logInfo('🔗 Connecting to Redis at:', redisUrl);
+  logInfo('CACHE_REDIS_CONNECTING', { redisEndpoint: sanitizeRedisUrl(redisUrl) });
 
   try {
     const client = createClient({
@@ -64,21 +122,21 @@ export async function initializeCache(): Promise<any> {
     });
 
     client.on('error', (error: Error) => {
-      if (shouldSuppressRedisErrorLogInDev(error.message)) {
+      if (shouldSuppressRedisErrorLogInDev(sanitizeErrorDetail(error))) {
         return;
       }
-      logError('❌ Redis error:', error.message);
+      logError('CACHE_REDIS_ERROR', { error: sanitizeErrorDetail(error) });
     });
 
     await client.connect();
     await client.ping();
-    logInfo('✅ Redis cache connected');
+    logInfo('CACHE_REDIS_CONNECTED');
     return client;
   } catch (error) {
-    if (shouldSuppressRedisErrorLogInDev(error instanceof Error ? error.message : String(error))) {
+    if (shouldSuppressRedisErrorLogInDev(sanitizeErrorDetail(error))) {
       return null;
     }
-    logError('❌ Redis cache connection failed:', error);
+    logError('CACHE_REDIS_CONNECT_FAILED', { error: sanitizeErrorDetail(error) });
     return null;
   }
 }
@@ -111,27 +169,99 @@ export class CacheService {
     return this.client;
   }
 
-  // Generic get/set with TTL
-  public async get<T>(key: string): Promise<T | null> {
-    if (!this.client) return null;
+  private normalizeRedisValue(value: unknown): string | null {
+    return typeof value === 'string'
+      ? value
+      : value instanceof Uint8Array
+        ? Buffer.from(value).toString('utf8')
+        : null;
+  }
+
+  private async readJsonValueWithStatus<T>(key: string): Promise<CacheReadResult<T>> {
+    if (!this.client) {
+      return { ok: false, reason: 'client_unavailable' };
+    }
 
     try {
       const value = await this.client.get(key);
       if (!value) {
-        return null;
+        return { ok: true, found: false };
       }
 
-      const normalizedValue =
-        typeof value === 'string'
-          ? value
-          : value instanceof Uint8Array
-            ? Buffer.from(value).toString('utf8')
-            : null;
+      const normalizedValue = this.normalizeRedisValue(value);
+      if (!normalizedValue) {
+        throw new Error('Unexpected Redis value type');
+      }
 
-      return normalizedValue ? JSON.parse(normalizedValue) : null;
+      return {
+        ok: true,
+        found: true,
+        value: JSON.parse(normalizedValue) as T,
+      };
     } catch (error) {
-      logError(`Cache get error for key ${key}:`, error);
+      logError('CACHE_GET_FAILED', {
+        cacheNamespace: cacheNamespaceFromKey(key),
+        errorType: cacheErrorType(error),
+      });
+      return { ok: false, reason: 'read_error' };
+    }
+  }
+
+  private async writeRawValueWithStatus(key: string, value: string, ttlSeconds: number): Promise<CacheWriteResult> {
+    if (!this.client) {
+      return { ok: false, reason: 'client_unavailable' };
+    }
+
+    try {
+      await this.client.setEx(key, ttlSeconds, value);
+      return { ok: true };
+    } catch (error) {
+      logError('CACHE_2FA_RAW_WRITE_FAILED', {
+        cacheNamespace: cacheNamespaceFromKey(key),
+        errorType: cacheErrorType(error),
+      });
+      return { ok: false, reason: 'write_error' };
+    }
+  }
+
+  // Generic get/set with TTL
+  public async get<T>(key: string): Promise<T | null> {
+    const result = await this.readJsonValueWithStatus<T>(key);
+    if (!result.ok || !result.found) {
       return null;
+    }
+
+    return result.value;
+  }
+
+  public async getTwoFactorCodeHash(userId: string): Promise<CacheReadResult<string>> {
+    if (!isSafeOpaqueCacheId(userId)) {
+      return { ok: false, reason: 'invalid_identifier' };
+    }
+
+    const key = `2fa:${userId}`;
+    if (!this.client) {
+      return { ok: false, reason: 'client_unavailable' };
+    }
+
+    try {
+      const value = await this.client.get(key);
+      if (!value) {
+        return { ok: true, found: false };
+      }
+
+      const normalizedValue = this.normalizeRedisValue(value);
+      if (!normalizedValue) {
+        throw new Error('Unexpected Redis value type');
+      }
+
+      return { ok: true, found: true, value: normalizedValue };
+    } catch (error) {
+      logError('CACHE_2FA_RAW_READ_FAILED', {
+        cacheNamespace: '2fa',
+        errorType: cacheErrorType(error),
+      });
+      return { ok: false, reason: 'read_error' };
     }
   }
 
@@ -142,9 +272,23 @@ export class CacheService {
       await this.client.setEx(key, ttlSeconds, JSON.stringify(value));
       return true;
     } catch (error) {
-      logError(`Cache set error for key ${key}:`, error);
+      logError('CACHE_SET_FAILED', {
+        cacheNamespace: cacheNamespaceFromKey(key),
+        errorType: cacheErrorType(error),
+      });
       return false;
     }
+  }
+
+  public async setTwoFactorCodeHash(userId: string, codeHash: string, ttlSeconds: number = 300): Promise<CacheWriteResult> {
+    if (!isSafeOpaqueCacheId(userId)) {
+      return { ok: false, reason: 'invalid_identifier' };
+    }
+    if (!SHA256_HEX_REGEX.test(codeHash)) {
+      return { ok: false, reason: 'invalid_value' };
+    }
+
+    return this.writeRawValueWithStatus(`2fa:${userId}`, codeHash, ttlSeconds);
   }
 
   public async del(key: string): Promise<boolean> {
@@ -154,7 +298,10 @@ export class CacheService {
       await this.client.del(key);
       return true;
     } catch (error) {
-      logError(`Cache delete error for key ${key}:`, error);
+      logError('CACHE_DELETE_FAILED', {
+        cacheNamespace: cacheNamespaceFromKey(key),
+        errorType: cacheErrorType(error),
+      });
       return false;
     }
   }
@@ -174,7 +321,7 @@ export class CacheService {
       const version = await this.client.get(versionKey);
       return version ? parseInt(version, 10) : 1;
     } catch (error) {
-      logError(`Cache version get error for namespace ${namespace}:`, error);
+      logError('CACHE_VERSION_GET_FAILED', { namespace, error: sanitizeErrorDetail(error) });
       return 1;
     }
   }
@@ -195,10 +342,10 @@ export class CacheService {
     try {
       const versionKey = `cache:version:${namespace}`;
       const newVersion = await this.client.incr(versionKey);
-      logInfo(`🔄 Incremented ${namespace} cache version to ${newVersion}`);
+      logInfo('CACHE_VERSION_INCREMENTED', { namespace, newVersion });
       return newVersion;
     } catch (error) {
-      logError(`Cache version increment error for namespace ${namespace}:`, error);
+      logError('CACHE_VERSION_INCREMENT_FAILED', { namespace, error: sanitizeErrorDetail(error) });
       return 1;
     }
   }
@@ -221,7 +368,10 @@ export class CacheService {
       // Set TTL on tag to auto-cleanup (slightly longer than cache TTL)
       await this.client.expire(tagKey, ttlSeconds + 60);
     } catch (error) {
-      logError(`Failed to add ${cacheKey} to tag ${tagKey}:`, error);
+      logError('CACHE_TAG_ADD_FAILED', {
+        cacheNamespace: cacheNamespaceFromKey(tagKey),
+        errorType: cacheErrorType(error),
+      });
     }
   }
 
@@ -251,10 +401,13 @@ export class CacheService {
       // Remove tag itself
       await this.client.del(tagKey);
 
-      logInfo(`🗑️ Invalidated ${keys.length} keys via tag ${tagKey}`);
+      logInfo('CACHE_TAG_INVALIDATED', { cacheNamespace: cacheNamespaceFromKey(tagKey), count: keys.length });
       return keys.length;
     } catch (error) {
-      logError(`Failed to invalidate tag ${tagKey}:`, error);
+      logError('CACHE_TAG_INVALIDATE_FAILED', {
+        cacheNamespace: cacheNamespaceFromKey(tagKey),
+        errorType: cacheErrorType(error),
+      });
       return 0;
     }
   }
@@ -335,9 +488,9 @@ export class CacheService {
     try {
       // O(1) global invalidation via version increment
       const newVersion = await this.incrementVersion('matching');
-      logInfo(`🔄 Invalidated all matching caches (version ${newVersion})`);
+      logInfo('CACHE_MATCHING_INVALIDATED', { version: newVersion });
     } catch (error) {
-      logError('Cache invalidation error:', error);
+      logError('CACHE_INVALIDATION_FAILED', { error: sanitizeErrorDetail(error), namespace: 'matching' });
     }
   }
 
@@ -363,16 +516,16 @@ export class CacheService {
         const count = await this.invalidateByTag(tagKey);
 
         if (count > 0) {
-          logInfo(`🗑️ Invalidated ${count} availability caches near ${cell.cellId}`);
+          logInfo('CACHE_AVAILABILITIES_INVALIDATED_TARGETED', { cellId: cell.cellId, count });
         }
       } else {
         // Global invalidation fallback (rare case, e.g., admin bulk update)
         // Use SCAN instead of KEYS for safety
-        logInfo('⚠️ Global availability invalidation (no coordinates provided)');
+        logWarn('CACHE_AVAILABILITIES_INVALIDATED_GLOBAL');
         await this.scanAndDelete('availabilities:*');
       }
     } catch (error) {
-      logError('Cache invalidation error:', error);
+      logError('CACHE_INVALIDATION_FAILED', { error: sanitizeErrorDetail(error), namespace: 'availabilities' });
     }
   }
 
@@ -408,12 +561,18 @@ export class CacheService {
       } while (cursor !== 0);
 
       if (totalDeleted > 0) {
-        logInfo(`🗑️ Scanned and deleted ${totalDeleted} keys matching ${pattern}`);
+        logInfo('CACHE_SCAN_DELETE_COMPLETED', {
+          cacheNamespace: cacheNamespaceFromKey(pattern),
+          totalDeleted,
+        });
       }
 
       return totalDeleted;
     } catch (error) {
-      logError(`Failed to scan and delete pattern ${pattern}:`, error);
+      logError('CACHE_SCAN_DELETE_FAILED', {
+        cacheNamespace: cacheNamespaceFromKey(pattern),
+        errorType: cacheErrorType(error),
+      });
       return 0;
     }
   }
@@ -438,7 +597,7 @@ export class CacheService {
   public async close(): Promise<void> {
     if (this.client) {
       await this.client.quit();
-      logInfo('✅ Redis cache client closed');
+      logInfo('CACHE_REDIS_CLIENT_CLOSED');
     }
   }
 }
@@ -448,7 +607,9 @@ export const cacheService = CacheService.getInstance();
 
 // Initialize cache on module load (except in tests)
 if (process.env.NODE_ENV !== 'test') {
-  cacheService.initialize().catch(console.error);
+  cacheService.initialize().catch((error) => {
+    secureLogger.error('CACHE_SERVICE_INIT_FAILED', { error: sanitizeErrorDetail(error) });
+  });
 }
 
 // Helper functions for cache key generation (using geographic grid for stability)

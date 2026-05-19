@@ -10,8 +10,9 @@ analyticsRouter.use(optionalAuth);
 
 type RateEntry = { count: number; resetAt: number };
 
-const RATE_LIMIT_WINDOW_MS = Number(process.env.ANALYTICS_RATE_LIMIT_WINDOW_MS || '60000');
-const RATE_LIMIT_MAX = Number(process.env.ANALYTICS_RATE_LIMIT_MAX || '20');
+// Read at request time so tests can set env vars after module load
+const getRateLimitWindowMs = () => Number(process.env.ANALYTICS_RATE_LIMIT_WINDOW_MS || '60000');
+const getRateLimitMax = () => Number(process.env.ANALYTICS_RATE_LIMIT_MAX || '20');
 const RATE_LIMIT_SALT = process.env.ANALYTICS_RATE_LIMIT_SALT || 'blobinfini-analytics-rate';
 
 const rateMap = new Map<string, RateEntry>();
@@ -28,10 +29,10 @@ const analyticsRateLimit = (req: Request, res: Response, next: NextFunction) => 
   const now = Date.now();
   const entry = rateMap.get(key);
   if (!entry || entry.resetAt <= now) {
-    rateMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    rateMap.set(key, { count: 1, resetAt: now + getRateLimitWindowMs() });
     return next();
   }
-  if (entry.count < RATE_LIMIT_MAX) {
+  if (entry.count < getRateLimitMax()) {
     entry.count += 1;
     return next();
   }

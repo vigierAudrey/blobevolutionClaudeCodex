@@ -1,8 +1,10 @@
 import { createApp } from '../../../index';
 import request, { SuperAgentTest } from 'supertest';
 import type { Response as SupertestResponse } from 'supertest';
-import { ensureProProfile, ensureRiderProfile, createUser } from '../../../tests/helpers/prismaFactories';
+import { ensureRiderProfile, createUser } from '../../../tests/helpers/prismaFactories';
+import { createTestSession, readCookieValue } from '../../../tests/helpers/auth';
 import { Role, clientPrisma as prisma } from '@blobinfini/database';
+import { resetDb } from '../../../test-utils/resetDb';
 
 describe('Conversations E2E', () => {
   const app = createApp();
@@ -11,11 +13,19 @@ describe('Conversations E2E', () => {
   let post: (path: string) => request.Test;
   let riderAccessToken: string;
   let proAccessToken: string;
+  let otherRiderAccessToken: string;
   let otherProAccessToken: string;
   let riderId: string;
   let proId: string;
   let otherRiderId: string;
   let otherProId: string;
+  let riderEmail: string;
+  let proEmail: string;
+  let otherRiderEmail: string;
+  let otherProEmail: string;
+
+  const uniqueEmail = (prefix: string) =>
+    `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
 
   const resolveUserId = async (
     response: SupertestResponse,
@@ -40,39 +50,37 @@ describe('Conversations E2E', () => {
   };
 
   const seedBaseData = async () => {
+    await resetDb();
+
     agent = request.agent(app);
     const csrfRes = await agent.get('/csrf-token').expect(200);
     csrfToken = csrfRes.body.csrfToken as string;
     post = (path: string) => agent.post(path).set('X-CSRF-Token', csrfToken);
 
-    await prisma.message.deleteMany();
-    await prisma.conversationMember.deleteMany();
-    await prisma.conversation.deleteMany();
-    await prisma.riderProfile.deleteMany();
-    await prisma.proProfile.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.user.deleteMany();
+    riderEmail = uniqueEmail('conversation-rider');
+    otherRiderEmail = uniqueEmail('conversation-rider-peer');
+    proEmail = uniqueEmail('conversation-pro');
+    otherProEmail = uniqueEmail('conversation-pro-peer');
 
     const riderRes = await post('/auth/register')
-      .send({ email: 'rider@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
+      .send({ email: riderEmail, password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
       .expect(201);
-    riderId = await resolveUserId(riderRes, 'rider@test.com', Role.RIDER);
+    riderId = await resolveUserId(riderRes, riderEmail, Role.RIDER);
 
     const otherRiderRes = await post('/auth/register')
-      .send({ email: 'rider2@test.com', password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
+      .send({ email: otherRiderEmail, password: 'Passw0rd!', role: 'RIDER', consentAccepted: true })
       .expect(201);
-    otherRiderId = await resolveUserId(otherRiderRes, 'rider2@test.com', Role.RIDER);
+    otherRiderId = await resolveUserId(otherRiderRes, otherRiderEmail, Role.RIDER);
 
     const proRes = await post('/auth/register')
-      .send({ email: 'pro@test.com', password: 'Passw0rd!', role: 'PRO', consentAccepted: true })
+      .send({ email: proEmail, password: 'Passw0rd!', role: 'PRO', countryCode: 'FR', consentAccepted: true })
       .expect(201);
-    proId = await resolveUserId(proRes, 'pro@test.com', Role.PRO);
+    proId = await resolveUserId(proRes, proEmail, Role.PRO);
 
     const otherProRes = await post('/auth/register')
-      .send({ email: 'pro2@test.com', password: 'Passw0rd!', role: 'PRO', consentAccepted: true })
+      .send({ email: otherProEmail, password: 'Passw0rd!', role: 'PRO', countryCode: 'FR', consentAccepted: true })
       .expect(201);
-    otherProId = await resolveUserId(otherProRes, 'pro2@test.com', Role.PRO);
+    otherProId = await resolveUserId(otherProRes, otherProEmail, Role.PRO);
 
     // Les actions de conversation exigent un email vérifié
     await prisma.user.updateMany({
@@ -80,20 +88,20 @@ describe('Conversations E2E', () => {
       data: { emailVerified: true }
     });
 
-    const riderLogin = await post('/auth/login')
-      .send({ email: 'rider@test.com', password: 'Passw0rd!' })
-      .expect(200);
-    riderAccessToken = riderLogin.body.accessToken;
+    const loginForAccessToken = async (email: string) => {
+      const session = await createTestSession(app);
+      const login = await session
+        .post('/auth/login')
+        .send({ email, password: 'Passw0rd!', consentAccepted: true })
+        .expect(200);
+      const setCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+      return readCookieValue(setCookies, 'accessToken');
+    };
 
-    const proLogin = await post('/auth/login')
-      .send({ email: 'pro@test.com', password: 'Passw0rd!' })
-      .expect(200);
-    proAccessToken = proLogin.body.accessToken;
-
-    const otherProLogin = await post('/auth/login')
-      .send({ email: 'pro2@test.com', password: 'Passw0rd!' })
-      .expect(200);
-    otherProAccessToken = otherProLogin.body.accessToken;
+    riderAccessToken = await loginForAccessToken(riderEmail);
+    otherRiderAccessToken = await loginForAccessToken(otherRiderEmail);
+    proAccessToken = await loginForAccessToken(proEmail);
+    otherProAccessToken = await loginForAccessToken(otherProEmail);
 
     await ensureRiderProfile(prisma, {
       userId: riderId,
@@ -105,23 +113,28 @@ describe('Conversations E2E', () => {
       profile: { displayName: 'Other Rider' }
     });
 
-    await ensureProProfile(prisma, {
-      userId: proId,
-      profile: { businessName: 'Pro Business' }
+    await prisma.proProfile.update({
+      where: { userId: proId },
+      data: { businessName: 'Pro Business' },
     });
 
-    await ensureProProfile(prisma, {
-      userId: otherProId,
-      profile: { businessName: 'Other Pro Business' }
+    await prisma.proProfile.update({
+      where: { userId: otherProId },
+      data: { businessName: 'Other Pro Business' },
+    });
+
+    const [userOneId, userTwoId] = [riderId, otherRiderId].sort();
+    await prisma.match.create({
+      data: {
+        userOneId,
+        userTwoId,
+        status: 'ACTIVE',
+      },
     });
   };
 
   beforeEach(async () => {
     await seedBaseData();
-  });
-
-  afterAll(async () => {
-    await prisma.$disconnect();
   });
 
   afterAll(async () => {
@@ -459,12 +472,8 @@ describe('Conversations E2E', () => {
         .expect(200);
 
       // L'autre rider (qui est bloqué) ne peut plus envoyer de messages
-      const otherRiderLogin = await post('/auth/login')
-        .send({ email: 'rider2@test.com', password: 'Passw0rd!' });
-      const otherRiderToken = otherRiderLogin.body.accessToken;
-
       await post(`/conversations/${conversationId}/messages`)
-        .set('Authorization', `Bearer ${otherRiderToken}`)
+        .set('Authorization', `Bearer ${otherRiderAccessToken}`)
         .send({ content: 'This should be blocked!' })
         .expect(403);
     });
@@ -504,12 +513,8 @@ describe('Conversations E2E', () => {
         .expect(200);
 
       // L'autre rider peut maintenant envoyer des messages
-      const otherRiderLogin = await post('/auth/login')
-        .send({ email: 'rider2@test.com', password: 'Passw0rd!' });
-      const otherRiderToken = otherRiderLogin.body.accessToken;
-
       await post(`/conversations/${conversationId}/messages`)
-        .set('Authorization', `Bearer ${otherRiderToken}`)
+        .set('Authorization', `Bearer ${otherRiderAccessToken}`)
         .send({ content: 'Message after unblock' })
         .expect(201);
     });
@@ -672,12 +677,8 @@ describe('Conversations E2E', () => {
         .set('Authorization', `Bearer ${riderAccessToken}`);
 
       // Simuler qu'un autre user envoie un message
-      const otherRiderLogin = await post('/auth/login')
-        .send({ email: 'rider2@test.com', password: 'Passw0rd!' });
-      const otherRiderToken = otherRiderLogin.body.accessToken;
-
       await post(`/conversations/${conversationId}/messages`)
-        .set('Authorization', `Bearer ${otherRiderToken}`)
+        .set('Authorization', `Bearer ${otherRiderAccessToken}`)
         .send({ content: 'Unread message!' });
 
       // Vérifier le count non lu
@@ -690,4 +691,5 @@ describe('Conversations E2E', () => {
       expect(conv.unread).toBe(1);
     });
   });
+
 });

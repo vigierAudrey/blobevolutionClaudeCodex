@@ -37,7 +37,7 @@ const child = spawn(playwrightBin, ['test', ...process.argv.slice(2)], {
   stdio: 'inherit',
   env: {
     ...process.env,
-    NODE_ENV: 'test',
+    NODE_ENV: process.env.E2E_NODE_ENV ?? 'development',
     E2E_WEB_PORT: String(web),
     E2E_API_PORT: String(api),
   },

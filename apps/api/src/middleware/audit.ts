@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { getClientIp } from '../lib/client-ip';
 import { hashIpHmac } from '../lib/hash-ip';
+import { secureLogger } from '../utils/secure-logger';
 
 export type AuditResourceResolver = (req: Request, res: Response) => string;
 
@@ -19,10 +20,13 @@ export const audit = (action: string, resolveResource?: AuditResourceResolver) =
       // HMAC-SHA256 with IP_HASH_SECRET (v2) - replaces SHA-256 (v1)
       const ipHash = hashIpHmac(ip ?? undefined);
 
+      const requestId = (req as any).requestId as string | undefined;
+
       const metadata = {
         method: req.method,
         statusCode: res.statusCode,
         params: req.params,
+        requestId, // requestIdMiddleware stamps this; undefined if middleware not mounted
         hashVersion: 'v2', // HMAC-SHA256 (24 hex chars) for rainbow table protection
         ...(extraMetadata || {})
       };
@@ -36,7 +40,7 @@ export const audit = (action: string, resolveResource?: AuditResourceResolver) =
           ip: ipHash ?? undefined,
         }
       }).catch((error: unknown) => {
-        console.error('Audit log error:', error);
+        secureLogger.error('AUDIT_LOG_WRITE_FAILED', { error, action });
       });
     });
 

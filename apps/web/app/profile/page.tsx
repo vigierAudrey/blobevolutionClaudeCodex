@@ -18,7 +18,7 @@ import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { apiRequest } from '../../lib/csrf';
 import Link from 'next/link';
-import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, User, Waves, Bell, Settings, Sparkles } from 'lucide-react';
+import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, User, Waves, Bell, Settings, Sparkles, Eye } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { DisciplinePreference, Gender, UserProfile } from '@/types/user';
 import type { Level } from '@/types/matching';
@@ -174,12 +174,9 @@ export default function ProfilePage() {
   useEffect(() => {
     const loadNotificationPreferences = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) return;
-
+        // Auth via httpOnly cookie — no hint check, no Authorization header.
         const response = await apiRequest('/profile/notifications', {
           method: 'GET',
-          headers: { Authorization: `Bearer ${tokens.accessToken}` },
         });
 
         if (response.ok) {
@@ -269,7 +266,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
 
   const handleDeleteLocation = async () => {
-    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver pour utiliser le matching et voir les offres à proximité.')) {
+    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver pour utiliser le matching géolocalisé.')) {
       return;
     }
 
@@ -309,12 +306,9 @@ export default function ProfilePage() {
 
   const checkDeletionStatus = async () => {
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) return;
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       const response = await apiRequest('/profile/deletion-status', {
         method: 'GET',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
       });
 
       if (response.ok) {
@@ -329,15 +323,9 @@ export default function ProfilePage() {
   const handleRequestDeletion = async () => {
     setLoadingDeletion(true);
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) {
-        toast('Session expirée, veuillez vous reconnecter', 'error');
-        return;
-      }
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       const response = await apiRequest('/profile/delete-account', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
       });
 
       const data = await response.json();
@@ -366,15 +354,9 @@ export default function ProfilePage() {
   const handleCancelDeletion = async () => {
     setLoadingDeletion(true);
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) {
-        toast('Session expirée, veuillez vous reconnecter', 'error');
-        return;
-      }
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       const response = await apiRequest('/profile/cancel-deletion', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
       });
 
       const data = await response.json();
@@ -426,15 +408,9 @@ export default function ProfilePage() {
     setSavingNotifPrefs(true);
 
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) {
-        toast('Session expirée, veuillez vous reconnecter', 'error');
-        return;
-      }
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       const response = await apiRequest('/profile/notifications', {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
         body: JSON.stringify(notificationPrefs),
       });
 
@@ -467,22 +443,17 @@ export default function ProfilePage() {
     };
 
     try {
-      const tokens = apiClient.getTokens();
-      if (!tokens?.accessToken) {
-        throw new Error('Session expirée, veuillez vous reconnecter.');
-      }
-
+      // Auth via httpOnly cookie — no hint check, no Authorization header.
       if (photoFile) {
         const contentType = photoFile.type || 'image/jpeg';
         const uploadResponse = await apiRequest('/profile/photo/upload-url', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${tokens.accessToken}` },
           body: JSON.stringify({ contentType }),
         });
         if (!uploadResponse.ok) {
           throw new Error('Impossible de préparer le téléversement');
         }
-        const uploadData = (await uploadResponse.json()) as { uploadUrl: string; fileUrl?: string };
+        const uploadData = (await uploadResponse.json()) as { uploadUrl: string; key: string; fileUrl?: string };
         const putResponse = await fetch(uploadData.uploadUrl, {
           method: 'PUT',
           headers: { 'Content-Type': contentType },
@@ -491,10 +462,18 @@ export default function ProfilePage() {
         if (!putResponse.ok) {
           throw new Error('Échec du téléversement');
         }
-        if (uploadData.fileUrl) {
-          payload.photoUrl = uploadData.fileUrl;
-          setPhotoUrl(uploadData.fileUrl);
+        // Finalize: valide le contenu côté serveur et retourne la photoUrl officielle
+        const finalizeResponse = await apiRequest('/profile/photo/finalize', {
+          method: 'POST',
+          body: JSON.stringify({ key: uploadData.key }),
+        });
+        if (!finalizeResponse.ok) {
+          throw new Error('Échec de la validation de la photo');
         }
+        const { photoUrl: finalizedUrl } = (await finalizeResponse.json()) as { photoUrl: string };
+        // photoUrl est déjà sauvée en DB par /finalize — ne pas la repasser à updateProfile
+        // (le schéma PUT /profile/me n'accepte que null, pas une string arbitraire)
+        setPhotoUrl(finalizedUrl);
         setPhotoPreviewUrl((previous) => {
           if (previous) URL.revokeObjectURL(previous);
           return null;
@@ -538,14 +517,23 @@ export default function ProfilePage() {
         <BackBar fallbackHref="/dashboard" />
 
         {/* Page Header */}
-        <div className="flex items-center gap-3 pb-2 border-b">
-          <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-            <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+        <div className="flex items-center justify-between gap-3 pb-2 border-b">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+              <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Mon Profil</h1>
+              <p className="text-sm text-muted-foreground">Personnalise ton profil pour un matching optimal</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Mon Profil</h1>
-            <p className="text-sm text-muted-foreground">Personnalise ton profil pour un matching optimal</p>
-          </div>
+          <Button asChild variant="outline" size="sm" className="flex-shrink-0 gap-1.5">
+            <Link href="/profile/preview">
+              <Eye className="h-4 w-4" />
+              <span className="hidden sm:inline">Voir mon profil</span>
+              <span className="sm:hidden">Aperçu</span>
+            </Link>
+          </Button>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-6">
@@ -786,9 +774,7 @@ export default function ProfilePage() {
                           <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
                             Lat: {userLocation.lat.toFixed(4)}, Lng: {userLocation.lng.toFixed(4)}
                           </p>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            Utilisée pour le matching et la recherche d&apos;offres à proximité
-                          </p>
+                          <p className="text-xs text-muted-foreground mt-2">Utilisée pour le matching géolocalisé</p>
                         </div>
                       </div>
                       <Button
@@ -807,7 +793,7 @@ export default function ProfilePage() {
                     <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:bg-slate-900/20 p-4">
                       <p className="text-sm text-muted-foreground flex items-start gap-2">
                         <span>ℹ️</span>
-                        <span>Aucune géolocalisation enregistrée. Active-la depuis Matching ou Offres pour trouver des partenaires près de toi.</span>
+                        <span>Aucune géolocalisation enregistrée. Active-la depuis Matching pour trouver des partenaires près de toi.</span>
                       </p>
                     </div>
                   )}
@@ -1043,17 +1029,11 @@ export default function ProfilePage() {
                       type="button"
                       onClick={async () => {
                         try {
-                          const tokens = apiClient.getTokens();
-                          if (!tokens?.accessToken) {
-                            toast('Session expirée, veuillez vous reconnecter', 'error');
-                            return;
-                          }
-
+                          // Auth via httpOnly cookie — no hint check, no Authorization header.
                           toast('Génération de l\'export en cours...', 'info');
 
                           const response = await apiRequest('/profile/export', {
                             method: 'GET',
-                            headers: { Authorization: `Bearer ${tokens.accessToken}` },
                           });
 
                           if (!response.ok) {

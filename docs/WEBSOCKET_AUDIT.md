@@ -441,7 +441,7 @@ chore(ci): add ESLint rule no-unvalidated-socket-emit (warn)
 
 #### Client
 - `getSocket` : singleton Socket.IO client
-- `reconnectSocketWithNewToken` : reconnexion avec nouveau token JWT
+- `reconnectSocket` : reconnexion simple avec handshake cookie-only
 - `useSocket` : hook React gestion connexion + auto-refresh
 - `useChat` : hook métier messagerie
 - `useMatching` : hook métier matching

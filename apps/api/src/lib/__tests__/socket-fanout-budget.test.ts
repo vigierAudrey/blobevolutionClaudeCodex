@@ -121,9 +121,12 @@ describe('Socket send-message fanout budget (P1)', () => {
       });
     }
 
-    process.env.WS_PUSH_PER_MESSAGE_MAX = previousEnv.pushPerMessageMax;
-    process.env.WS_PUSH_QUEUE_MAX_PENDING = previousEnv.pushQueueMaxPending;
-    process.env.WS_PUSH_QUEUE_CONCURRENCY = previousEnv.pushQueueConcurrency;
+    // Restore or delete — assigning undefined stringifies to "undefined" (truthy), which
+    // breaks Number(...) parsing in modules loaded after this test via jest.resetModules().
+    Object.entries(previousEnv).forEach(([key, value]) => {
+      if (value === undefined) delete (process.env as any)[key];
+      else process.env[key] = value;
+    });
     notifyNewMessageSpy.mockRestore();
 
     await prisma.user.deleteMany({

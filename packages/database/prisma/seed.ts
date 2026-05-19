@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { resolve } from 'path';
-import { PrismaClient, Role, Sex, Level, Sport, DecisionKind, MatchStatus, BookingRequestStatus } from '@prisma/client';
+import { createHash } from 'crypto';
+import { PrismaClient, Role, Sex, Level, Sport, DecisionKind, MatchStatus, BookingRequestStatus, InteractionType, AnalyticsActorType, AnalyticsEventType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 // Ensure env is loaded from repo root .env (fallback prisma/.env)
@@ -127,6 +128,10 @@ export async function runSeed(client?: PrismaClient) {
     return copy;
   };
 
+  const ANALYTICS_SALT = process.env.ANALYTICS_HASH_SALT || 'blobinfini-analytics-dev-salt';
+  const hashId = (id: string) => createHash('sha256').update(`${id}:${ANALYTICS_SALT}`).digest('hex');
+  const zoneOf = (lat: number, lng: number) => `Z${Math.floor(lat)}:${Math.floor(lng)}`;
+
   const riderNames = [
     'Alex Surf', 'Sam Rider', 'Jordan Wave', 'Casey Ocean', 'Taylor Beach',
     'Morgan Sea', 'Riley Tide', 'Sage Storm', 'Quinn Current', 'Blake Shore',
@@ -189,7 +194,14 @@ export async function runSeed(client?: PrismaClient) {
             wantsLesson: wantsLessonFlag,
             lessonSport: preferredLessonSport,
             lessonStudentCount: lessonStudents,
-            lat: location.lat + (Math.random() - 0.5) * 0.1, // Petit décalage aléatoire
+            ...(wantsLessonFlag ? {
+              lessonLat: location.lat + (Math.random() - 0.5) * 0.05,
+              lessonLng: location.lng + (Math.random() - 0.5) * 0.05,
+              lessonLevel: levels[Math.floor(Math.random() * levels.length)],
+              lessonDate: addHours(new Date(), Math.floor(Math.random() * 14 + 3) * 24),
+              lessonPlace: location.name,
+            } : {}),
+            lat: location.lat + (Math.random() - 0.5) * 0.1,
             lng: location.lng + (Math.random() - 0.5) * 0.1,
           },
         },
@@ -482,6 +494,13 @@ export async function runSeed(client?: PrismaClient) {
             wantsLesson: seed.wantsLesson,
             lessonSport: seed.lessonSport ?? seed.disciplines[0].sport,
             lessonStudentCount: seed.wantsLesson ? seed.lessonStudentCount ?? 2 : null,
+            ...(seed.wantsLesson ? {
+              lessonLat: seed.location.lat + (Math.random() - 0.5) * 0.03,
+              lessonLng: seed.location.lng + (Math.random() - 0.5) * 0.03,
+              lessonLevel: seed.disciplines[0].level,
+              lessonDate: addHours(new Date(), Math.floor(Math.random() * 14 + 3) * 24),
+              lessonPlace: `Spot ${seed.displayName.split(' ')[1] ?? 'local'}`,
+            } : {}),
             lat: seed.location.lat,
             lng: seed.location.lng,
           },
@@ -608,7 +627,9 @@ export async function runSeed(client?: PrismaClient) {
         bio: proBios[i],
         pricePerHour: [45, 55, 60, 70, 80][i], // Tarifs variés
         emailNotif: true,
-        verified: i < 3, // Les 3 premiers sont vérifiés
+        verified: i < 3,
+        verifiedAt: i < 3 ? randomDateWithin(180) : null,
+        countryCode: 'FR',
         lat: location.lat + (Math.random() - 0.5) * 0.05,
         lng: location.lng + (Math.random() - 0.5) * 0.05,
       },
@@ -717,6 +738,8 @@ export async function runSeed(client?: PrismaClient) {
         pricePerHour: seed.pricePerHour,
         emailNotif: true,
         verified: seed.verified,
+        verifiedAt: seed.verified ? randomDateWithin(180) : null,
+        countryCode: 'FR',
         lat: seed.location.lat,
         lng: seed.location.lng,
       },
@@ -739,6 +762,76 @@ export async function runSeed(client?: PrismaClient) {
 
     pros.push(pro);
   }
+
+  // Availability slots for SW pros (pros[5-8])
+  console.log('Creating availability slots for south-west pros...');
+  const swProAvailabilityStart = addHours(new Date(), 6);
+  const swProAvailabilities = await Promise.all([
+    prisma.proAvailability.create({
+      data: {
+        proUserId: pros[5].id,
+        sport: Sport.surf,
+        levels: ['beginner', 'intermediate'],
+        startAt: swProAvailabilityStart,
+        endAt: addHours(swProAvailabilityStart, 2),
+        capacity: 4,
+        bookedCount: 0,
+        status: 'OPEN',
+        spotName: 'Plage Nord Lacanau',
+        spotLat: 44.981,
+        spotLng: -1.207,
+        price: '70.00',
+      }
+    }),
+    prisma.proAvailability.create({
+      data: {
+        proUserId: pros[6].id,
+        sport: Sport.kitesurf,
+        levels: ['beginner'],
+        startAt: addHours(swProAvailabilityStart, 24),
+        endAt: addHours(swProAvailabilityStart, 26),
+        capacity: 3,
+        bookedCount: 1,
+        status: 'OPEN',
+        spotName: 'Lac Hourtin Rive Nord',
+        spotLat: 45.189,
+        spotLng: -1.147,
+        price: '65.00',
+      }
+    }),
+    prisma.proAvailability.create({
+      data: {
+        proUserId: pros[7].id,
+        sport: Sport.surf,
+        levels: ['intermediate'],
+        startAt: addHours(swProAvailabilityStart, 48),
+        endAt: addHours(swProAvailabilityStart, 50),
+        capacity: 4,
+        bookedCount: 0,
+        status: 'OPEN',
+        spotName: 'Grande Plage Biscarrosse',
+        spotLat: 44.421,
+        spotLng: -1.260,
+        price: '60.00',
+      }
+    }),
+    prisma.proAvailability.create({
+      data: {
+        proUserId: pros[8].id,
+        sport: Sport.surf,
+        levels: ['advanced'],
+        startAt: addHours(swProAvailabilityStart, 4),
+        endAt: addHours(swProAvailabilityStart, 6),
+        capacity: 2,
+        bookedCount: 0,
+        status: 'OPEN',
+        spotName: 'La Gravière Hossegor',
+        spotLat: 43.665,
+        spotLng: -1.391,
+        price: '95.00',
+      }
+    }),
+  ]);
 
   // Create admin user
   console.log('Creating admin user...');
@@ -1114,7 +1207,7 @@ export async function runSeed(client?: PrismaClient) {
     )
   );
 
-  await prisma.bookingRequest.create({
+  const bookingRequest1 = await prisma.bookingRequest.create({
     data: {
       riderUserId: riders[0].id,
       availabilityId: availabilityRecords[0].id,
@@ -1128,6 +1221,7 @@ export async function runSeed(client?: PrismaClient) {
     data: {
       availabilityId: availabilityRecords[0].id,
       riderUserId: riders[0].id,
+      bookingRequestId: bookingRequest1.id,
       status: 'CONFIRMED'
     }
   });
@@ -1140,9 +1234,131 @@ export async function runSeed(client?: PrismaClient) {
       message: 'Intéressé pour progresser en kite !'
     }
   });
+
+  console.log('Creating availability interactions (VIEW/CLICK)...');
+
+  const allAvailabilities = [...availabilityRecords, ...swProAvailabilities];
+  for (let avIdx = 0; avIdx < allAvailabilities.length; avIdx++) {
+    const av = allAvailabilities[avIdx];
+    for (let v = 0; v < 5; v++) {
+      const rider = riders[(avIdx * 5 + v) % riders.length];
+      await prisma.proAvailabilityInteraction.upsert({
+        where: { availabilityId_riderUserId_eventType: { availabilityId: av.id, riderUserId: rider.id, eventType: InteractionType.VIEW } },
+        update: {},
+        create: { availabilityId: av.id, riderUserId: rider.id, eventType: InteractionType.VIEW },
+      });
+      if (v % 2 === 0) {
+        await prisma.proAvailabilityInteraction.upsert({
+          where: { availabilityId_riderUserId_eventType: { availabilityId: av.id, riderUserId: rider.id, eventType: InteractionType.CLICK } },
+          update: {},
+          create: { availabilityId: av.id, riderUserId: rider.id, eventType: InteractionType.CLICK },
+        });
+      }
+    }
+  }
+
+  console.log('Creating analytics events...');
+
+  type AnalyticsEventInput = {
+    actorType: AnalyticsActorType;
+    actorHash: string;
+    eventType: AnalyticsEventType;
+    occurredAt: Date;
+    sport?: Sport;
+    zoneLarge?: string | null;
+    consented: boolean;
+  };
+  const analyticsEvents: AnalyticsEventInput[] = [];
+
+  riders.slice(0, 20).forEach((rider, i) => {
+    if (!rider.riderProfile) return;
+    const hash = hashId(rider.id);
+    const lat = rider.riderProfile.lat;
+    const lng = rider.riderProfile.lng;
+    const zone = lat != null && lng != null ? zoneOf(lat, lng) : null;
+    const sport = i % 2 === 0 ? Sport.surf : Sport.kitesurf;
+
+    Array.from({ length: 3 + (i % 5) }).forEach(() => {
+      analyticsEvents.push({ actorType: AnalyticsActorType.RIDER, actorHash: hash, eventType: AnalyticsEventType.RIDER_SEARCH_PROS, occurredAt: randomDateWithin(90), sport, zoneLarge: zone, consented: true });
+    });
+    Array.from({ length: 2 + (i % 3) }).forEach(() => {
+      analyticsEvents.push({ actorType: AnalyticsActorType.RIDER, actorHash: hash, eventType: AnalyticsEventType.RIDER_MATCH_DECISION, occurredAt: randomDateWithin(60), zoneLarge: zone, consented: true });
+    });
+    Array.from({ length: 1 + (i % 2) }).forEach(() => {
+      analyticsEvents.push({ actorType: AnalyticsActorType.RIDER, actorHash: hash, eventType: AnalyticsEventType.MESSAGE_SENT, occurredAt: randomDateWithin(45), consented: true });
+    });
+  });
+
+  pros.forEach((pro, i) => {
+    const hash = hashId(pro.id);
+    Array.from({ length: 3 + (i % 4) }).forEach(() => {
+      analyticsEvents.push({ actorType: AnalyticsActorType.PRO, actorHash: hash, eventType: AnalyticsEventType.PRO_DASHBOARD_OPEN, occurredAt: randomDateWithin(30), consented: true });
+    });
+    analyticsEvents.push({ actorType: AnalyticsActorType.PRO, actorHash: hash, eventType: AnalyticsEventType.PRO_PROFILE_UPDATE, occurredAt: randomDateWithin(60), consented: true });
+    analyticsEvents.push({ actorType: AnalyticsActorType.PRO, actorHash: hash, eventType: AnalyticsEventType.PRO_SLOTS_UPDATE, occurredAt: randomDateWithin(30), consented: true });
+    Array.from({ length: 1 + (i % 3) }).forEach(() => {
+      analyticsEvents.push({ actorType: AnalyticsActorType.PRO, actorHash: hash, eventType: AnalyticsEventType.MESSAGE_SENT, occurredAt: randomDateWithin(30), consented: true });
+    });
+  });
+
+  await prisma.analyticsEvent.createMany({ data: analyticsEvents, skipDuplicates: true });
+
+  console.log('Creating lesson contact requests...');
+
+  const swRidersWithLesson = riders.slice(20).filter(r => r.riderProfile?.wantsLesson === true);
+  for (let i = 0; i < Math.min(swRidersWithLesson.length, 5); i++) {
+    const rider = swRidersWithLesson[i];
+    const pro = pros[i];
+
+    let lessonMatch = await prisma.match.findFirst({
+      where: {
+        OR: [
+          { userOneId: pro.id, userTwoId: rider.id },
+          { userOneId: rider.id, userTwoId: pro.id },
+        ]
+      }
+    });
+    if (!lessonMatch) {
+      lessonMatch = await prisma.match.create({
+        data: { userOneId: pro.id, userTwoId: rider.id },
+      });
+    }
+
+    const lessonConv = await prisma.conversation.create({
+      data: { matchId: lessonMatch.id, type: 'RIDER_TO_PRO', createdAt: randomDateWithin(15) },
+    });
+    await prisma.conversationMember.createMany({
+      data: [
+        { conversationId: lessonConv.id, userId: pro.id },
+        { conversationId: lessonConv.id, userId: rider.id },
+      ],
+      skipDuplicates: true,
+    });
+
+    const contactReq = await prisma.contactRequest.create({
+      data: {
+        proUserId: pro.id,
+        conversationId: lessonConv.id,
+        message: `Bonjour ${rider.riderProfile?.displayName?.split(' ')[0] ?? 'rider'} ! Je vois que vous cherchez des cours, je peux vous aider.`,
+        status: 'PENDING',
+        createdAt: randomDateWithin(10),
+      }
+    });
+
+    if (i % 2 === 0) {
+      await prisma.contactRequestResponse.create({
+        data: { contactRequestId: contactReq.id, riderUserId: rider.id, response: 'ACCEPT' }
+      });
+      await prisma.contactRequest.update({
+        where: { id: contactReq.id },
+        data: { status: 'ACCEPTED' }
+      });
+    }
+  }
+
   console.log('✅ Seed completed successfully!');
-  console.log('📧 20 riders: dev+rider1@test.com to dev+rider20@test.com');
-  console.log('🏄 5 pros: dev+pro1@test.com to dev+pro5@test.com');
+  console.log('📧 32 riders: dev+rider1@test.com to dev+rider32@test.com');
+  console.log('🏄 9 pros: dev+pro1@test.com to dev+pro9@test.com');
   console.log('👨‍💼 1 admin: dev+admin@test.com');
   console.log('🔑 Password for all accounts: Passw0rd!');
   console.log('📍 Users spread across 15 French locations');

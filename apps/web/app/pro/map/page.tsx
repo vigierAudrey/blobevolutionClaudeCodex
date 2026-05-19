@@ -7,9 +7,11 @@ import { Input } from '../../../components/ui/input';
 import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
 import { useRouter } from 'next/navigation';
+import { useToast } from '../../../components/ui/toast';
 
 import { MapSkeleton } from '../../../components/ui/skeleton';
 import type { LessonRequest, LessonRequestResponse } from '@/types/pro';
+import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
 
 // Force SSR due to Leaflet map (dynamic import with ssr:false)
 export const dynamic = 'force-dynamic';
@@ -92,13 +94,23 @@ const getBrowserInstructions = (browser: BrowserType): { title: string; steps: s
   }
 };
 
+const getApiMessage = (body: unknown, fallback: string) => {
+  if (body && typeof body === 'object') {
+    const data = body as { message?: unknown; error?: unknown };
+    if (typeof data.message === 'string' && data.message.trim()) return data.message;
+    if (typeof data.error === 'string' && data.error.trim()) return data.error;
+  }
+  return fallback;
+};
+
 export default function ProMapPage() {
   const router = useRouter();
+  const toast = useToast();
   const [radiusKm, setRadiusKm] = useState<number | null>(null);
   const [sport, setSport] = useState<'surf' | 'kitesurf'>('surf');
   const [items, setItems] = useState<LessonRequest[]>([]);
   const [center, setCenter] = useState<[number, number] | null>(null);
-  const [hasGeolocPermission, setHasGeolocPermission] = useState(false);
+  const [hasGeolocPermission, setHasGeolocPermission] = useState<boolean | null>(null);
   const [geolocEnabled, setGeolocEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [browserType, setBrowserType] = useState<BrowserType>('other');
@@ -106,28 +118,31 @@ export default function ProMapPage() {
   const radiusPersistRef = useRef<ReturnType<typeof setTimeout>>();
   const lastSavedRadiusRef = useRef<number | null>(null);
   const [radiusSaving, setRadiusSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     // Détecter le navigateur au montage du composant
     setBrowserType(detectBrowser());
 
-    // Load pro location via /pro/me
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) return;
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, { headers: { Authorization: `Bearer ${t.accessToken}` }})
-      .then(async r => ({ ok: r.ok, body: await r.json() }))
-      .then(({ ok, body }) => {
+    // Load pro location via /pro/me (cookie auth)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, { credentials: 'include' })
+      .then(async r => ({ ok: r.ok, status: r.status, body: await r.json() }))
+      .then(({ ok, status, body }) => {
+        if (status === 401) { router.replace('/login'); return; }
+        if (status === 403) { router.replace('/dashboard'); return; }
         if (ok && body?.lat && body?.lng) {
           setCenter([body.lat, body.lng]);
           setGeolocEnabled(true);
           setHasGeolocPermission(true);
         }
         if (ok) {
+          setApiError(null);
           const storedRadius = typeof body?.radiusKm === 'number' ? body.radiusKm : 25;
           const clamped = Math.max(1, Math.min(200, storedRadius));
           setRadiusKm(clamped);
           lastSavedRadiusRef.current = clamped;
         } else {
+          setApiError(getApiMessage(body, 'Impossible de charger votre profil pro.'));
           setRadiusKm(25);
           lastSavedRadiusRef.current = 25;
         }
@@ -136,7 +151,7 @@ export default function ProMapPage() {
         setRadiusKm(25);
         lastSavedRadiusRef.current = 25;
       });
-  }, []);
+  }, [router]);
 
   const enableGeolocation = () => {
     if (!navigator.geolocation) {
@@ -154,18 +169,23 @@ export default function ProMapPage() {
 
         // Sauvegarder la position dans le profil pro
         try {
-          const t = apiClient.getTokens();
-          if (t?.accessToken) {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
-              method: 'PUT',
-              headers: {
-                'Authorization': `Bearer ${t.accessToken}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ lat, lng })
-            });
+          const csrfRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/csrf-token`, { credentials: 'include' });
+          const { csrfToken = '' } = await csrfRes.json().catch(() => ({})) as { csrfToken?: string };
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+            method: 'PUT',
+            headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat, lng })
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(getApiMessage(body, 'Impossible de sauvegarder votre position.'));
           }
+          setApiError(null);
         } catch (error) {
+          const message = error instanceof Error ? error.message : 'Impossible de sauvegarder votre position.';
+          setApiError(message);
+          toast(message, 'error');
           console.error('Erreur lors de la sauvegarde de la position :', error);
         }
       },
@@ -186,24 +206,29 @@ export default function ProMapPage() {
     if (!geolocEnabled || radiusKm === null) return;
 
     setLoading(true);
+    setApiError(null);
     try {
-      const t = apiClient.getTokens();
-      if (!t?.accessToken) return;
-
       const r = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/near/lessons?radiusKm=${radiusKm}&sport=${sport}`,
-        { headers: { Authorization: `Bearer ${t.accessToken}` } },
+        { credentials: 'include' },
       );
       const data = (await r.json()) as LessonRequestResponse;
       if (r.ok) {
         setItems(data.items ?? []);
+      } else {
+        const message = getApiMessage(data, 'Impossible de charger les demandes autour de vous.');
+        setItems([]);
+        setApiError(message);
+        toast(message, 'error');
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Impossible de charger les demandes autour de vous.';
+      setApiError(message);
       console.error('Error loading lesson requests:', error);
     } finally {
       setLoading(false);
     }
-  }, [radiusKm, sport, geolocEnabled]);
+  }, [radiusKm, sport, geolocEnabled, toast]);
 
   // Debounced loading for better performance
   const debouncedLoad = useCallback(() => {
@@ -234,19 +259,25 @@ export default function ProMapPage() {
 
     const persist = async () => {
       try {
-        const t = apiClient.getTokens();
-        if (!t?.accessToken) return;
+        const csrfRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/csrf-token`, { credentials: 'include' });
+        const { csrfToken = '' } = await csrfRes.json().catch(() => ({})) as { csrfToken?: string };
         setRadiusSaving(true);
-        await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
           method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${t.accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ radiusKm })
+          headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, radiusKm })
         });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(getApiMessage(body, 'Impossible de sauvegarder votre rayon.'));
+        }
         lastSavedRadiusRef.current = radiusKm;
+        setApiError(null);
       } catch (error) {
+        const message = error instanceof Error ? error.message : 'Impossible de sauvegarder votre rayon.';
+        setApiError(message);
+        toast(message, 'error');
         console.error('Erreur lors de la sauvegarde du rayon :', error);
       } finally {
         setRadiusSaving(false);
@@ -263,7 +294,7 @@ export default function ProMapPage() {
         clearTimeout(radiusPersistRef.current);
       }
     };
-  }, [radiusKm]);
+  }, [radiusKm, toast]);
 
 
   return (
@@ -288,6 +319,14 @@ export default function ProMapPage() {
           <CardTitle className="text-foreground">Carte interactive des demandes</CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+            {FRANCE_ONLY_INFO_MESSAGE}
+          </div>
+          {apiError && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-300" role="alert">
+              {apiError}
+            </div>
+          )}
           {!geolocEnabled && (
             <div className="mb-4 rounded-2xl border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-4">
               <div className="flex items-start gap-3">
@@ -365,8 +404,9 @@ export default function ProMapPage() {
 
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Rayon :</label>
+                <label htmlFor="radiusKm" className="text-sm font-medium">Rayon :</label>
                 <Input
+                  id="radiusKm"
                   type="number"
                   min={1}
                   max={200}
@@ -408,12 +448,17 @@ export default function ProMapPage() {
               </div>
               <MapComponent
                 center={center}
-                items={items.map((item) => ({
-                  ...item,
-                  displayName: item.displayName ?? undefined,
-                  distanceKm: item.distanceKm ?? undefined,
-                  type: 'rider' as const
-                }))}
+                items={items
+                  .filter((item) => item.lessonLatApprox != null && item.lessonLngApprox != null)
+                  .map((item) => ({
+                    ...item,
+                    // Le pin est positionné sur le lieu demandé pour le cours,
+                    // pas sur les coordonnées du profil rider.
+                    lat: item.lessonLatApprox as number,
+                    lng: item.lessonLngApprox as number,
+                    displayName: item.displayName ?? undefined,
+                    type: 'rider' as const,
+                  }))}
                 legend={[
                   { label: 'Votre position', color: '#0ea5e9' },
                   { label: 'Demandes de riders', color: '#16a34a' },

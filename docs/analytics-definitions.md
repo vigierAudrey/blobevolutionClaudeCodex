@@ -8,7 +8,7 @@
 ## Consentement
 - Tracking uniquement si consent analytics explicite (consentLevel = personalized ou npa).
 - Events publics recus via `POST /analytics/events` avec `consentHash`.
-- Events critiques emis cote serveur (booking, matching, messages, slots, verification).
+- Events critiques emis cote serveur (demandes de cours, matching, messages, verification).
 
 ## Minimisation des donnees
 - Pas d'IP, pas de lat/lng brut, pas de PII.
@@ -44,16 +44,17 @@ Deduplication: un meme acteur ne compte qu'une fois par jour et par event.
 
 ## Time-to-first-value (TTFV)
 - Rider TTFV = temps entre signup et premiere action de valeur:
-  - booking request, conversation demarree, ou match accepte.
+  - demande de cours soumise (event RIDER_BOOKING_REQUEST), conversation demarree, ou match accepte.
 - Pro TTFV = temps entre verification/published et:
   - premiere demande recue, ou premiere conversation.
 - Affiche mediane + P90, masque si n < 20.
 
 ## Marketplace health
-- Supply vs demand = demandes (booking/match) vs disponibilites pro par sport + zone large.
+- Supply vs demand = demandes de cours (riders) vs presence pro active par sport + zone large.
 - Zone large = grille (par defaut 1 degre) pour eviter toute precision fine.
-- KPIs: taux d'acceptation booking, delai de reponse median.
+- KPIs: taux de mise en relation (demandes ayant abouti a un premier contact), delai de reponse median.
 - Masquage des segments si n < 20.
+- Note: les noms d'events serveur (RIDER_BOOKING_REQUEST, PRO_BOOKING_RESPONSE) sont des noms techniques historiques conserves pour compatibilite code. Ils designent respectivement "demande de cours soumise" et "reponse pro a une demande de cours".
 
 ## Trust & Safety
 - % pros verifies.

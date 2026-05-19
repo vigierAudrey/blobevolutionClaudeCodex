@@ -13,6 +13,7 @@ import { apiClient } from '../../../lib/apiClient';
 import type { DashboardUser } from '@/types/user';
 import type { Level, Sport } from '@/types/matching';
 import { CalendarDays, MapPin, AlertTriangle, GraduationCap } from 'lucide-react';
+import { FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
 
 // Fonction pour détecter le navigateur de l'utilisateur
 const detectBrowser = (): 'chrome' | 'firefox' | 'safari' | 'edge' | 'other' => {
@@ -119,12 +120,7 @@ function DateInner() {
   useEffect(() => {
     (async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-
+        // No local hint check — truth comes from the server session.
         const currentUser = await apiClient.me() as DashboardUser;
 
         if (currentUser.role === 'PRO') {
@@ -221,8 +217,12 @@ function DateInner() {
           <div>
             <h1 className="text-xl font-bold text-foreground">Date & Options</h1>
             <p className="text-sm text-muted-foreground">Étape 2 sur 3 : Choisis ta date</p>
-          </div>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+        {FRANCE_ONLY_INFO_MESSAGE}
+      </div>
         <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400">
           Étape 2/3
         </Badge>

@@ -3,17 +3,21 @@ import bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { sendPasswordResetEmail, sendVerificationEmail } from '../../lib/mailer';
+import { MailDeliveryError, sendPasswordResetEmail, sendVerificationEmail } from '../../lib/mailer';
 import { secureLogger } from '../../utils/secure-logger';
 import { AVAILABLE_PERMISSIONS } from '../admin/permissions';
 import { hashIpHmac } from '../../lib/hash-ip';
+import { hashEmailHmac } from '../../lib/hash-email';
 import type { AuthenticatedSessionContext } from './auth-session-context';
 import { invalidateSessionCache } from '../../lib/auth-session-store';
+import { assertFranceLaunchProProfile } from '../../lib/france-launch-guard';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL_DAYS = 30; // pour calculer l'expiration effective
 const EMAIL_VERIFY_TTL_HOURS = 24;
 const MIN_SECRET_LENGTH = 64;
+const FORGOT_PASSWORD_GENERIC_MESSAGE = 'If the email exists, the request has been processed';
+const RESEND_VERIFICATION_GENERIC_MESSAGE = 'If the account exists, the request has been processed';
 
 // bcrypt cost factor: balance between security and performance
 // Min: 10 (fast, minimum secure), Max: 14 (slow, very secure)
@@ -137,32 +141,64 @@ export class AuthService {
   }
 
   async register(
-    data: { email: string; password: string; role: 'RIDER' | 'PRO'; consentAccepted?: boolean },
+    data: {
+      email: string;
+      password: string;
+      role: 'RIDER' | 'PRO';
+      consentAccepted?: boolean;
+      countryCode?: string | null;
+    },
     opts?: { consentIp?: string },
   ) {
     try {
       const hashed = await bcrypt.hash(data.password, BCRYPT_COST);
-      const user = await prisma.user.create({
-        data: {
-          email: data.email,
-          password: hashed,
-          role: data.role,
-          consentedAt: new Date(),
-          consentVersion: AuthService.CONSENT_VERSION,
-          consentIpHash: hashIpHmac(opts?.consentIp) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
-        },
+      const proCountryCode = data.role === 'PRO'
+        ? assertFranceLaunchProProfile({ countryCode: data.countryCode })
+        : null;
+      const user = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const createdUser = await tx.user.create({
+          data: {
+            email: data.email,
+            password: hashed,
+            role: data.role,
+            consentedAt: new Date(),
+            consentVersion: AuthService.CONSENT_VERSION,
+            consentIpHash: hashIpHmac(opts?.consentIp) ?? undefined, // RGPD compliant: HMAC-SHA256 hash
+          },
+        });
+
+        if (data.role === 'PRO') {
+          await tx.proProfile.create({
+            data: {
+              userId: createdUser.id,
+              countryCode: proCountryCode,
+            },
+          });
+        }
+
+        return createdUser;
       });
       // Génère un token de vérification email
       const verification = await this.createEmailVerification(user.id);
-      // Envoi d'email (meilleure-effort)
       try {
         await sendVerificationEmail(user.email, verification.token);
       } catch (error) {
-        secureLogger.warn('EMAIL_SEND_FAILED', {
-          type: 'verification',
-          email: user.email,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        if (error instanceof MailDeliveryError) {
+          secureLogger.warn('REGISTER_EMAIL_DELIVERY_FAILED', {
+            userId: user.id,
+            emailHash: hashEmailHmac(user.email),
+            provider: error.provider,
+            latencyMs: error.latencyMs,
+            ...(typeof error.smtpCode === 'number' ? { smtpCode: error.smtpCode } : {}),
+          });
+          try {
+            await prisma.user.delete({ where: { id: user.id } });
+          } catch {
+            secureLogger.error('REGISTER_EMAIL_ROLLBACK_FAILED', { userId: user.id });
+          }
+          throw { code: 'EMAIL_DELIVERY_UNAVAILABLE' };
+        }
+        throw error;
       }
       return {
         message: 'Account created. Please verify your email.',
@@ -338,7 +374,7 @@ export class AuthService {
   async forgotPassword(email: string) {
     const user = await prisma.user.findUnique({ where: { email } });
     // Toujours répondre pareil pour ne pas divulguer si l'email existe
-    const generic = { message: 'If the email exists, a reset link was sent' } as any;
+    const generic = { message: FORGOT_PASSWORD_GENERIC_MESSAGE } as any;
     if (!user) return generic;
 
     const rawToken = crypto.randomBytes(32).toString('hex');
@@ -352,15 +388,19 @@ export class AuthService {
       // En test, renvoyer le token brut pour pouvoir lutiliser dans les tests
       return { ...generic, resetToken: rawToken };
     }
-    // Envoi d'email (meilleure-effort)
     try {
       await sendPasswordResetEmail(user.email, rawToken);
     } catch (error) {
-      secureLogger.warn('EMAIL_SEND_FAILED', {
-        type: 'password_reset',
-        email: user.email,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (error instanceof MailDeliveryError) {
+        secureLogger.warn('FORGOT_PASSWORD_EMAIL_DELIVERY_FAILED', {
+          emailHash: hashEmailHmac(user.email),
+          provider: error.provider,
+          latencyMs: error.latencyMs,
+          ...(typeof error.smtpCode === 'number' ? { smtpCode: error.smtpCode } : {}),
+        });
+      } else {
+        throw error;
+      }
     }
     return generic;
   }
@@ -397,7 +437,10 @@ export class AuthService {
           sessionVersion: { increment: 1 },
         },
       }),
-      prisma.passwordResetToken.update({ where: { id: match.id }, data: { usedAt: now } }),
+      prisma.passwordResetToken.updateMany({
+        where: { userId: match.userId, usedAt: null },
+        data: { usedAt: now },
+      }),
       // Optionnel: révoquer tous les refresh tokens existants
       prisma.refreshToken.updateMany({
         where: { userId: match.userId, revokedAt: null },
@@ -406,7 +449,7 @@ export class AuthService {
     ]);
     await invalidateSessionCache(match.userId);
     secureLogger.info('PASSWORD_RESET_SUCCESS', { userId: match.userId, via: 'token' });
-    return { message: 'Password updated' };
+    return { message: 'Password updated', userId: match.userId };
   }
 
   async changePassword(userId: string, currentPassword: string, newPassword: string) {
@@ -457,6 +500,7 @@ export class AuthService {
     const tok = await prisma.emailVerificationToken.findFirst({
       where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
+      include: { user: { select: { role: true } } },
     });
     if (!tok) throw { code: 'UNAUTHORIZED', message: 'Invalid or expired token' };
 
@@ -470,11 +514,11 @@ export class AuthService {
       }),
     ]);
 
-    return { message: 'Email verified' };
+    return { message: 'Email verified', role: tok.user.role };
   }
 
   async resendEmailVerification(email: string) {
-    const generic = { message: 'If the account exists, a verification email was sent' } as any;
+    const generic = { message: RESEND_VERIFICATION_GENERIC_MESSAGE } as any;
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return generic;
     if (user.emailVerified) return generic;
@@ -487,13 +531,18 @@ export class AuthService {
 
     const res = await this.createEmailVerification(user.id);
     try {
-      await sendVerificationEmail(user.email, res.token);
+      await sendVerificationEmail(user.email, res.token, 'email_verification_resend');
     } catch (error) {
-      secureLogger.warn('EMAIL_SEND_FAILED', {
-        type: 'verification_resend',
-        email: user.email,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (error instanceof MailDeliveryError) {
+        secureLogger.warn('RESEND_VERIFICATION_EMAIL_DELIVERY_FAILED', {
+          emailHash: hashEmailHmac(user.email),
+          provider: error.provider,
+          latencyMs: error.latencyMs,
+          ...(typeof error.smtpCode === 'number' ? { smtpCode: error.smtpCode } : {}),
+        });
+      } else {
+        throw error;
+      }
     }
     if (process.env.NODE_ENV === 'test') {
       return { ...generic, verificationToken: res.token };

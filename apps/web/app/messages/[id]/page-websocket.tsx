@@ -6,7 +6,6 @@ import type {
   Message,
   MessageListResponse,
   MessageMeta,
-  ThreadListResponse,
   ThreadSummary
 } from '@/types/messages';
 import { MoreVertical, Shield, ShieldOff, Wifi, WifiOff } from 'lucide-react';
@@ -89,7 +88,9 @@ export default function ConversationPage() {
   const [pNote, setPNote] = useState('');
   const [conversationInfo, setConversationInfo] = useState<ThreadSummary | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const [accessToken, setAccessToken] = useState<string>('');
+  // Socket gate: set to true once me() confirms session, so the websocket can connect.
+  // Auth is via httpOnly cookie (withCredentials); this is a presence flag only.
+  const [sessionReady, setSessionReady] = useState(false);
   const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
   const [optimisticMessages, setOptimisticMessages] = useState<OptimisticMessage[]>([]);
@@ -102,7 +103,7 @@ export default function ConversationPage() {
   // ✨ WebSocket chat integration
   const { connected, sendMessage, setTyping, otherUserTyping, lastError } = useChat({
     conversationId: id,
-    token: accessToken,
+    token: sessionReady ? '1' : '',
     onNewMessage: (newMessage) => {
       // Convertir le format du message WebSocket vers le format attendu
       const formattedMessage: Message = {
@@ -197,8 +198,7 @@ export default function ConversationPage() {
 
   const refreshConversationInfo = useCallback(async () => {
     try {
-      const conversations = await apiClient.listConversations() as ThreadListResponse;
-      const convInfo = (conversations.items ?? []).find((c: ThreadSummary) => c.id === id) ?? null;
+      const convInfo = await apiClient.findConversationById(id);
       setConversationInfo(convInfo);
     } catch (err) {
       // ✅ E-REVIEW P0 #4: Pas de console.error, erreur silencieuse ou UI
@@ -212,14 +212,15 @@ export default function ConversationPage() {
     const initialize = async () => {
       try {
         await apiClient.me();
-
-        // Récupérer le token d'accès depuis localStorage
-        const token = localStorage.getItem('accessToken');
-        if (token) {
-          setAccessToken(token);
+        setSessionReady(true); // opens the websocket gate (auth via httpOnly cookie)
+      } catch (err) {
+        const code = typeof (err as { code?: unknown })?.code === 'string'
+          ? (err as { code: string }).code : null;
+        const status = typeof (err as { status?: unknown })?.status === 'number'
+          ? (err as { status: number }).status : null;
+        if (code === 'SESSION_EXPIRED' || status === 401) {
+          router.replace('/login');
         }
-      } catch {
-        router.replace('/login');
         return;
       }
 

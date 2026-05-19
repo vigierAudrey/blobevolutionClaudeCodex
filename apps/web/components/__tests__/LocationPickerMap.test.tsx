@@ -3,9 +3,11 @@ import React from 'react';
 import LocationPickerMap from '../LocationPickerMap';
 
 jest.mock('leaflet', () => {
-  class FakeIconDefault {}
-  Object.assign(FakeIconDefault.prototype, { _getIconUrl: jest.fn() });
-  (FakeIconDefault as unknown).mergeOptions = jest.fn();
+  class FakeIconDefault {
+    static mergeOptions = jest.fn();
+
+    _getIconUrl = jest.fn();
+  }
 
   class FakeMarker {
     getLatLng() {
@@ -30,9 +32,31 @@ jest.mock('leaflet', () => {
   };
 });
 
+type MapContainerProps = React.PropsWithChildren<{
+  center: [number, number];
+  zoom: number;
+  scrollWheelZoom?: boolean;
+}> &
+  React.HTMLAttributes<HTMLDivElement>;
+
+type MarkerProps = React.PropsWithChildren<{
+  position: [number, number];
+  eventHandlers?: Record<string, (...args: unknown[]) => void>;
+}> &
+  React.HTMLAttributes<HTMLDivElement>;
+
+type ReactLeafletMockState = {
+  mapInstance: {
+    setView: jest.Mock;
+    flyTo: jest.Mock;
+    getZoom: jest.Mock;
+  };
+  mapEventsHandlers: { current: Record<string, (...args: unknown[]) => void> | null };
+  markerInstances: Array<{ eventHandlers?: Record<string, (...args: unknown[]) => void>; position?: [number, number] }>;
+};
+
 jest.mock('react-leaflet', () => {
-  const MapContainer = ({ children, center, zoom, ...rest }: unknown) => {
-    const { scrollWheelZoom, ...divProps } = rest;
+  const MapContainer = ({ children, center, zoom, scrollWheelZoom, ...divProps }: MapContainerProps) => {
     return (
       <div
         data-testid="map-container"
@@ -45,7 +69,7 @@ jest.mock('react-leaflet', () => {
       </div>
     );
   };
-  const TileLayer = (props: unknown) => <div data-testid="tile-layer" {...props} />;
+  const TileLayer = (props: React.HTMLAttributes<HTMLDivElement>) => <div data-testid="tile-layer" {...props} />;
   const mapInstance = {
     setView: jest.fn(),
     flyTo: jest.fn(),
@@ -55,7 +79,7 @@ jest.mock('react-leaflet', () => {
     current: null,
   };
   const markerInstances: Array<{ eventHandlers?: Record<string, (...args: unknown[]) => void>; position?: unknown }> = [];
-  const Marker = ({ children, position, eventHandlers, ...rest }: unknown) => {
+  const Marker = ({ children, position, eventHandlers, ...rest }: MarkerProps) => {
     markerInstances.push({ eventHandlers, position });
     return (
       <div data-testid="marker" data-position={JSON.stringify(position)} {...rest}>
@@ -83,15 +107,16 @@ jest.mock('react-leaflet', () => {
 });
 
 const getReactLeafletMocks = () =>
-  (jest.requireMock('react-leaflet') as unknown).__mock as {
-    mapInstance: {
-      setView: jest.Mock;
-      flyTo: jest.Mock;
-      getZoom: jest.Mock;
-    };
-    mapEventsHandlers: { current: Record<string, (...args: unknown[]) => void> | null };
-    markerInstances: Array<{ eventHandlers?: Record<string, (...args: unknown[]) => void>; position?: unknown }>;
-  };
+  (jest.requireMock('react-leaflet') as { __mock: ReactLeafletMockState }).__mock;
+
+type LeafletMarkerConstructor = new () => {
+  getLatLng: () => { lat: number; lng: number };
+};
+
+type LeafletMockModule = {
+  default?: { Marker?: LeafletMarkerConstructor };
+  Marker?: LeafletMarkerConstructor;
+};
 
 describe('LocationPickerMap', () => {
   beforeEach(() => {
@@ -144,8 +169,12 @@ describe('LocationPickerMap', () => {
     expect(instance).toBeDefined();
 
     act(() => {
-      const leafletModule: unknown = jest.requireMock('leaflet');
+      const leafletModule = jest.requireMock('leaflet') as LeafletMockModule;
       const MarkerClass = leafletModule.default?.Marker || leafletModule.Marker;
+      expect(MarkerClass).toBeDefined();
+      if (!MarkerClass) {
+        throw new Error('Leaflet marker mock is missing');
+      }
       const target = new MarkerClass();
       target.getLatLng = () => ({ lat: 44.1234567, lng: -1.6543219 });
       instance?.eventHandlers?.dragend?.({ target } as unknown);

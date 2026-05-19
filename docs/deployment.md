@@ -7,7 +7,7 @@
 - PostgreSQL + Redis accessibles via réseau privé/SSL (`sslmode=require` obligatoires).
 - Reverse proxy (Clever Cloud/Nginx) qui propage `X-Forwarded-*` et termine le TLS.
 - Secrets générés avec `./scripts/generate-secrets.sh` (openssl ≥1.1).
-- Accès à un compte admin pour déclencher le script `/security/health`.
+- Un secret dédié `SECURITY_MONITOR_TOKEN` pour la supervision automatisée.
 
 ## 2. Variables d’environnement
 
@@ -22,6 +22,7 @@
 | `JWT_REFRESH_SECRET` | ≥64 chars (refresh token). |
 | `DATABASE_URL` | Doit contenir `sslmode=require` (ou `sslmode=verify-full`) + **paramètres connection pooling recommandés** : `connection_limit=20&pool_timeout=20&connect_timeout=10`. Sans pooling, limite à ~10 connexions (risque d'erreurs en prod sous charge). Avec pooling optimisé : gère ~2000 req/min sans erreur "too many connections". |
 | `REDIS_URL` | URL Redis avec mot de passe fort (`rediss://` si fournisseur supporte TLS). |
+| `LOG_ACTOR_SECRET` | Secret HMAC dédié à la pseudonymisation `actorRef` dans les logs runtime. Doit être distinct des secrets JWT. |
 | `AUTH_REQUIRE_VERIFIED` | `true` en production pour forcer email vérifié (riders & pros bloqués tant qu'ils n'ont pas validé). |
 
 ### Bloc opération (recommandé)
@@ -30,24 +31,34 @@
 | `GDPR_PURGE_INTERVAL_HOURS` / `GDPR_PURGE_RUN_ON_START` | Planification purge RGPD. |
 | `CONV_PURGE_INTERVAL_HOURS` / `CONV_TRASH_RETENTION_DAYS` | Nettoyage conversations archivées. |
 | `AUDIT_LOG_RETENTION_DAYS` | Conservation des audit logs (par défaut 365j). |
+| `AUDIT_LOG_PURGE_REQUIRES_VERIFIED_EXPORT` | Empêche la suppression des `AuditLog` sans manifeste d’export `VERIFIED` couvrant la fenêtre purgeable. |
+| `LOGIN_ATTEMPT_RETENTION_DAYS` | Conservation des empreintes de tentatives de connexion. |
 | `CSP_REPORT_ONLY` | Laisser à `false` en prod (mode blocage). |
 | `S3_*` | Uploads (photos) via MinIO/S3. |
 | `FIREBASE_*` | Notifications push (optionnel). |
-| `SECURITY_HEALTH_URL` / `SECURITY_HEALTH_TOKEN` | Utilisés par le cron de supervision (cf. §6). |
+| `SECURITY_HEALTH_URL` / `SECURITY_MONITOR_TOKEN` | Utilisés par le cron de supervision (cf. §6). |
 
 > ⚠️ Les secrets sont validés au démarrage (`apps/api/src/index.ts`). Toute valeur manquante/faible arrête l’API immédiatement.
 >
 > ℹ️ **Redis obligatoire** : le 2FA admin repose désormais uniquement sur Redis (pas de fallback mémoire en production). Vérifier `REDIS_URL`, mot de passe et connectivité avant le déploiement.
+
+### Backfill legacy blocages
+- Après déploiement de la migration `20260406110000_add_conversation_block_event_and_retention_export_artifact`, exécuter une seule fois :
+  - `tsx scripts/backfill-conversation-block-events.ts`
+- En cas d’échec partiel ou pour compléter uniquement les lignes encore actives sans événement legacy :
+  - `tsx scripts/backfill-conversation-block-events.ts --repair`
+- Le script écrit des événements `ConversationBlockEvent` avec `source=LEGACY_UNKNOWN` et `batchId=legacy-backfill-20260406`.
+- Tant que des lignes `LEGACY_UNKNOWN` existent, l’UI admin affiche un avertissement indiquant que l’historique complet n’est garanti qu’à partir du `2026-04-06`.
 
 ## 3. Checklist pré-déploiement
 1. Générer de nouveaux secrets (`./scripts/generate-secrets.sh`) et mettre à jour les variables correspondantes.
 2. Compléter `ALLOWED_ORIGINS`, `TRUSTED_PROXY_IPS`, `DATABASE_URL?...sslmode=require`.
 3. Mettre `AUTH_REQUIRE_VERIFIED=true` et `NODE_ENV=production` (bloque riders & pros tant que l'email n'est pas confirmé).
 4. Vérifier `REDIS_URL` (mot de passe non trivial) + certificats si fournis.
-5. Préparer un token admin jetable (voir SECURITY.md §Surveillance) pour tester `/security/health`.
+5. Générer un secret dédié `SECURITY_MONITOR_TOKEN` pour tester `/security/health` sans dépendre d’un JWT admin éphémère.
 6. Exporter toutes les variables dans un fichier `apps/api/.env.production` (jamais commité) puis sourcer avant build.
-7. Configurer le monitoring : générer `SECURITY_HEALTH_TOKEN` (JWT admin ≤5 min de validité), définir `SECURITY_HEALTH_URL=https://api....`, renseigner `SECURITY_HEALTH_FAIL_WEBHOOK`/`SECURITY_HEALTH_OK_WEBHOOK` (Slack/Healthchecks) dans GitHub Secrets **et** dans Clever Cloud si un cron externe est utilisé.
-8. Vérifier que `CSP_REPORT_ONLY=false` et que `SECURITY_HEALTH_TOKEN` sera renouvelé automatiquement (script cron ou secret roté manuellement chaque semaine).
+7. Configurer le monitoring : générer `SECURITY_MONITOR_TOKEN`, définir `SECURITY_HEALTH_URL=https://api....`, renseigner `SECURITY_HEALTH_FAIL_WEBHOOK`/`SECURITY_HEALTH_OK_WEBHOOK` (Slack/Healthchecks) dans GitHub Secrets **et** dans Clever Cloud si un cron externe est utilisé.
+8. Vérifier que `CSP_REPORT_ONLY=false` et que le secret de supervision est présent côté GitHub Actions.
 
 ## 4. Procédure de déploiement
 ```bash
@@ -83,9 +94,14 @@ pnpm --filter @blobinfini/web start
 - [ ] `curl -I https://api.../health` → `200` + headers `Strict-Transport-Security`, `Content-Security-Policy`, `Referrer-Policy`.
 - [ ] Script `/security/health` :
   ```bash
-  curl -H "Authorization: Bearer ${SECURITY_HEALTH_TOKEN}" "${SECURITY_HEALTH_URL}" | jq
+  curl -H "X-Security-Monitor-Token: ${SECURITY_MONITOR_TOKEN}" "${SECURITY_HEALTH_URL}" | jq
   ```
-  Résultat attendu : `status:"SECURE"` et `issues:[]`. Toute entrée dans `issues` = blocage prod.
+  Résultat attendu : `status:"SECURE"` et `checks.*="ok"`. Cet endpoint décrit la posture/configuration; il ne doit pas être utilisé pour prétendre exposer le pipeline de logs.
+- [ ] Script `/security/observability` :
+  ```bash
+  curl -H "X-Security-Monitor-Token: ${SECURITY_MONITOR_TOKEN}" https://api.../security/observability | jq
+  ```
+  Résultat attendu : payload parsable avec `pipeline.queued|sent|dropped|failed|breakerState`.
 - [ ] `scripts/security-health-check.sh` avec les variables d’environnement réelles → sortie `"[security-health] OK – statut SECURE"` (garantit que le cron utilisera des secrets valides).
 - [ ] CORS positif : `curl -H "Origin: https://front.prod" https://api.../health -I` → header `Access-Control-Allow-Origin` égal à l’origine.
 - [ ] CORS négatif : `curl -H "Origin: https://evil.com" https://api.../health -I` → `403`.
@@ -104,11 +120,11 @@ pnpm --filter @blobinfini/web start
 
 ### Script CLI
 - Utiliser `scripts/security-health-check.sh` (bash + curl + jq).
-- Variables requises : `SECURITY_HEALTH_URL`, `SECURITY_HEALTH_TOKEN`. Optionnelles : `HC_FAIL_URL`, `HC_OK_URL`.
+- Variables requises : `SECURITY_HEALTH_URL`, `SECURITY_MONITOR_TOKEN`. Optionnelles : `HC_FAIL_URL`, `HC_OK_URL`.
 - Exemple :
   ```bash
   SECURITY_HEALTH_URL=https://api.blobinfini.com/security/health \
-  SECURITY_HEALTH_TOKEN="..." \
+  SECURITY_MONITOR_TOKEN="..." \
   HC_FAIL_URL="https://hc-ping.com/fail" \
   HC_OK_URL="https://hc-ping.com/ok" \
   scripts/security-health-check.sh
@@ -118,13 +134,31 @@ pnpm --filter @blobinfini/web start
 - Workflow `.github/workflows/security-health-monitor.yml` exécute le script toutes les 30 minutes (et via `workflow_dispatch`).
 - Secrets à configurer dans GitHub :
   - `SECURITY_HEALTH_URL`
-  - `SECURITY_HEALTH_TOKEN`
+  - `SECURITY_MONITOR_TOKEN`
   - `SECURITY_HEALTH_FAIL_WEBHOOK` (optionnel)
   - `SECURITY_HEALTH_OK_WEBHOOK` (optionnel)
 - Pour déployer sur Clever Cloud, créer une tâche planifiée qui exécute la même commande en injectant les variables d’environnement.
 - **Rôle du cron** : détecter rapidement toute dérive de configuration (origins non déclarés, secrets raccourcis, proxies non confiés). À chaque exécution, le workflow déclenche les webhooks adaptés (`HC_FAIL_URL`/`HC_OK_URL`) de façon à alerter l’équipe en <30 min sans intervention humaine.
+- La supervision détaillée du pipeline de logs s’appuie sur `/security/observability` côté admin/interne, pas sur `/security/health`.
 
-## 7. Notes & dépannage
+## 7. Scope observability
+
+Ce socle livre une observabilité serveur minimale et honnête: logs sécurisés, audit, posture `/security/health`, puis endpoint dédié au pipeline de logs.
+Il ne promet pas dans ce chantier:
+- OpenTelemetry complet
+- Datadog full stack
+- distributed tracing complet
+- observabilité full-stack front+back
+- migration exhaustive des logs browser/service worker
+
+## Logging serveur sécurisé — clôture du chantier
+
+Résumé honnête:
+- livraison limitée au socle serveur minimal d’observabilité / logging sécurisé
+- livré: logging runtime structuré, transport borné, endpoints `/security/health` et `/security/observability`, audit admin sensible, supervision scriptée
+- exclu: full-stack observability, distributed tracing complet, OpenTelemetry complet, nettoyage exhaustif des logs du repo
+- dette P2 restante: pseudonymisation encore partiellement dépendante des conventions de clés
+## 8. Notes & dépannage
 - L’API refuse de démarrer si l’un des secrets/`ALLOWED_ORIGINS`/`TRUSTED_PROXY_IPS` est absent en production. Corriger l’environnement plutôt que contourner.
 - `DATABASE_URL` sans SSL → exception `DATABASE_URL must include "?sslmode=require"`.
 - Pas de credentials Firebase ? Les endpoints push restent inactifs mais stables (logs `secureLogger` uniquement).

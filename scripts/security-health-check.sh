@@ -12,10 +12,10 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 : "${SECURITY_HEALTH_URL:?Variable SECURITY_HEALTH_URL manquante}"
-: "${SECURITY_HEALTH_TOKEN:?Variable SECURITY_HEALTH_TOKEN manquante}"
+: "${SECURITY_MONITOR_TOKEN:?Variable SECURITY_MONITOR_TOKEN manquante}"
 
 response=$(curl -fsS \
-  -H "Authorization: Bearer ${SECURITY_HEALTH_TOKEN}" \
+  -H "X-Security-Monitor-Token: ${SECURITY_MONITOR_TOKEN}" \
   -H "Accept: application/json" \
   "${SECURITY_HEALTH_URL}" \
   || true)
@@ -27,11 +27,18 @@ if [[ -z "${response}" ]]; then
 fi
 
 status=$(echo "${response}" | jq -r '.status // "UNKNOWN"')
-issues=$(echo "${response}" | jq -r '.issues | join(", ") // ""')
+failed_checks=$(
+  echo "${response}" | jq -r '
+    (.checks // {})
+    | to_entries
+    | map(select(.value != "ok") | .key)
+    | join(",")
+  '
+)
 
 if [[ "${status}" != "SECURE" ]]; then
-  echo "[security-health] statut=${status} issues=${issues}" >&2
-  [[ -n "${HC_FAIL_URL:-}" ]] && curl -fsS -X POST "${HC_FAIL_URL}" -d "status=${status}&issues=${issues}" >/dev/null || true
+  echo "[security-health] statut=${status} failed_checks=${failed_checks:-none}" >&2
+  [[ -n "${HC_FAIL_URL:-}" ]] && curl -fsS -X POST "${HC_FAIL_URL}" -d "status=${status}&failed_checks=${failed_checks}" >/dev/null || true
   exit 1
 fi
 

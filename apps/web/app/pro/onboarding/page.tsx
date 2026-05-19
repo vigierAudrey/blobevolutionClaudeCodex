@@ -5,10 +5,11 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { apiClient } from '../../../lib/apiClient';
+import { apiRequest } from '../../../lib/csrf';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
+import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../../../lib/clientSession';
 
 type ProProfile = {
   id: string;
@@ -30,49 +31,57 @@ function ProOnboardingInner() {
   const refreshTrigger = searchParams.get('refresh');
 
   useEffect(() => {
+    let active = true;
+
     // Reset les états avant de recharger
     setLoading(true);
     setError(null);
     setRedirecting(false);
 
-    const t = apiClient.getTokens();
-    if (!t?.accessToken) {
-      router.replace('/login');
-      return;
-    }
+    const load = async () => {
+      try {
+        await requireClientRole('PRO');
 
-    // Vérifier que l'utilisateur est bien un PRO
-    apiClient.me()
-      .then((user) => {
-        if (user.role !== 'PRO') {
-          router.replace('/onboarding');
-          return null;
-        }
-
-        // ✅ CORRIGÉ : Appeler /pro/me au lieu de /profile/me
-        return fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, {
+        const res = await apiRequest('/pro/me', {
           method: 'GET',
-          headers: {
-            Authorization: `Bearer ${t.accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include',
-        }).then(async (res) => {
-          if (!res.ok) throw new Error('Failed to load profile');
-          return res.json();
         });
-      })
-      .then((p) => {
-        if (p) {
-          console.log('📋 ProProfile loaded:', p);
-          setProfile(p);
+        const body = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(
+            (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string' && body.message)
+              || (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' && body.error)
+              || 'Failed to load profile'
+          );
         }
-      })
-      .catch((e) => {
+
+        if (!active) return;
+        console.log('📋 ProProfile loaded:', body);
+        setProfile(body as ProProfile);
+      } catch (e) {
+        if (!active) return;
+        if (e instanceof RoleMismatchError) {
+          router.replace('/onboarding');
+          return;
+        }
+        if (e instanceof SessionRequiredError) {
+          router.replace('/login');
+          return;
+        }
         console.error('❌ Error loading profile:', e);
-        setError(e?.message || 'Erreur');
-      })
-      .finally(() => setLoading(false));
+        setError(e instanceof Error ? e.message : 'Erreur');
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      active = false;
+    };
   }, [router, refreshTrigger]);
 
   const hasBusinessName = !!profile?.businessName;

@@ -25,7 +25,6 @@ function getSeverity(code: string, kind: AppError['kind']): Severity {
   if (
     code === ERROR_CODES.VALIDATION_ERROR ||
     code === ERROR_CODES.UNIQUE_CONSTRAINT ||
-    code === ERROR_CODES.BOOKING_CONFLICT ||
     code === ERROR_CODES.MATCHING_CONFLICT
   ) {
     return 'error';
@@ -62,9 +61,6 @@ function getTitle(code: string, _context: ErrorContext): string {
     case ERROR_CODES.UNIQUE_CONSTRAINT:
       return 'Élément déjà existant';
 
-    case ERROR_CODES.BOOKING_CONFLICT:
-      return 'Conflit de réservation';
-
     case ERROR_CODES.MATCHING_CONFLICT:
       return 'Profil déjà traité';
 
@@ -93,7 +89,7 @@ function getTitle(code: string, _context: ErrorContext): string {
  * Get user-facing text for error code
  */
 function getText(code: string, context: ErrorContext, retryAfterSeconds?: number): string {
-  const { domain, action, role } = context;
+  const { domain, action } = context;
 
   switch (code) {
     case ERROR_CODES.RATE_LIMITED:
@@ -110,17 +106,11 @@ function getText(code: string, context: ErrorContext, retryAfterSeconds?: number
       if (domain === 'chat' && action === 'send-message') {
         return 'Vous n\'avez pas l\'autorisation d\'envoyer des messages à ce contact.';
       }
-      if (domain === 'booking' && role === 'pro') {
-        return 'Vous n\'avez pas l\'autorisation de modifier cette disponibilité.';
-      }
       return 'Vous n\'avez pas l\'autorisation d\'effectuer cette action.';
 
     case ERROR_CODES.VALIDATION_ERROR:
       if (domain === 'chat') {
         return 'Le message ne peut pas être vide ou dépasse la longueur maximale.';
-      }
-      if (domain === 'booking') {
-        return 'Vérifiez les informations saisies (dates, lieu, capacité).';
       }
       if (domain === 'matching') {
         return 'Vérifiez les critères de recherche.';
@@ -128,13 +118,7 @@ function getText(code: string, context: ErrorContext, retryAfterSeconds?: number
       return 'Veuillez vérifier les informations saisies.';
 
     case ERROR_CODES.UNIQUE_CONSTRAINT:
-      if (domain === 'booking') {
-        return 'Une disponibilité existe déjà pour cette période.';
-      }
       return 'Cet élément existe déjà.';
-
-    case ERROR_CODES.BOOKING_CONFLICT:
-      return 'Cette disponibilité est déjà réservée ou fermée.';
 
     case ERROR_CODES.MATCHING_CONFLICT:
       return 'Vous avez déjà traité ce profil.';

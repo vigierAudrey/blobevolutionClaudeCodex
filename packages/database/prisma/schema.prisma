@@ -48,11 +48,14 @@ model User {
   auditLogs              AuditLog[]
   pushTokens             PushToken[]
   notificationPreferences NotificationPreferences?
+  notifications          Notification[]
   loginAttempts          LoginAttempt[]
   createdAlerts          SystemAlert[]            @relation("UserSystemAlerts")
   conversationInvitations ConversationInvitation[] @relation("InvitedToConversation")
   sentConversationInvitations ConversationInvitation[] @relation("ConversationInviter")
-  uploadJobs              UploadJob[]
+  conversationBlockEventsTarget ConversationBlockEvent[] @relation("ConversationBlockEventTargetUser")
+  conversationBlockEventsActor  ConversationBlockEvent[] @relation("ConversationBlockEventActorUser")
+  retentionExportArtifacts      RetentionExportArtifact[] @relation("RetentionExportArtifactCreatedBy")
 }
 
 model Session {
@@ -116,12 +119,14 @@ model LoginAttempt {
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([email])
-  @@index([emailHash])
-  @@index([ip])
-  @@index([ipHash])
-  @@index([createdAt])
-  @@index([success])
+  // Composite indexes aligned with actual query patterns.
+  // (success, createdAt DESC) covers the main admin list query.
+  // (success, ipHash, createdAt DESC) covers suspiciousOnly GROUP BY on ipHash.
+  // (success, emailHash, createdAt DESC) covers suspiciousOnly GROUP BY on emailHash.
+  // Individual indexes on email/ip dropped: always NULL in production (RGPD design), pure write overhead.
+  @@index([success, createdAt(sort: Desc)])
+  @@index([success, ipHash, createdAt(sort: Desc)])
+  @@index([success, emailHash, createdAt(sort: Desc)])
 }
 
 model LastSearch {
@@ -157,6 +162,10 @@ model RiderProfile {
   lessonDate        DateTime?
   lessonPlace       String?
   lessonStudentCount Int?            @default(1)
+  // Coordonnées du lieu demandé pour le cours — source de vérité pour le pin BloboMap.
+  // Indépendantes de lat/lng (position du profil rider).
+  lessonLat         Float?
+  lessonLng         Float?
   incomingDecisions MatchDecision[]   @relation("ProfileAsTarget")
   reports           ProfileReport[]   @relation("ProfileAsReported")
   disciplines       RiderDiscipline[]
@@ -168,6 +177,7 @@ model RiderProfile {
 model ProProfile {
   id           String     @id @default(uuid())
   userId       String     @unique
+  countryCode  String?
   businessName String?
   bio          String?
   pricePerHour Int?
@@ -185,6 +195,32 @@ model ProProfile {
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+enum NotificationType {
+  NEW_MESSAGE
+  NEW_MATCH
+  GROUP_INVITATION
+  SYSTEM
+  LESSON_REQUEST_NEARBY
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String           @db.Text
+  url       String?
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
+  @@index([createdAt])
 }
 
 model PushToken {
@@ -275,16 +311,21 @@ model MatchDecision {
 }
 
 model ProfileReport {
-  id                String       @id @default(uuid())
-  reporterUserId    String
-  reportedProfileId String
-  reason            String?
-  createdAt         DateTime     @default(now())
-  reportedProfile   RiderProfile @relation("ProfileAsReported", fields: [reportedProfileId], references: [id], onDelete: Cascade)
-  reporter          User         @relation("UserAsReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
+  id                  String       @id @default(uuid())
+  reporterUserId      String
+  reportedProfileId   String
+  reason              String?
+  createdAt           DateTime     @default(now())
+  // F07 — Review fields: set on moderation action instead of deleting the record
+  reviewedAt          DateTime?
+  reviewedByAdminId   String?
+  reviewedAction      String?      // 'approve' | 'dismiss' | 'ban'
+  reportedProfile     RiderProfile @relation("ProfileAsReported", fields: [reportedProfileId], references: [id], onDelete: Cascade)
+  reporter            User         @relation("UserAsReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
 
   @@index([reporterUserId])
   @@index([reportedProfileId])
+  @@index([reviewedAt])
 }
 
 model ProAvailability {
@@ -333,16 +374,17 @@ model BookingRequest {
 }
 
 model Booking {
-  id             String          @id @default(uuid())
-  availabilityId String
-  riderUserId    String
-  bookingRequestId String?       @unique
-  status         BookingStatus   @default(CONFIRMED)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  availability   ProAvailability @relation("BookingOnAvailability", fields: [availabilityId], references: [id], onDelete: Cascade)
-  rider          User            @relation("BookingOnUser", fields: [riderUserId], references: [id], onDelete: Cascade)
-  bookingRequest BookingRequest? @relation(fields: [bookingRequestId], references: [id], onDelete: SetNull)
+  id               String          @id @default(uuid())
+  availabilityId   String
+  riderUserId      String
+  bookingRequestId String?         @unique
+  status           BookingStatus   @default(CONFIRMED)
+  cancelledAt      DateTime?       // audit/traçabilité : date effective d'annulation (≠ source de décision fenêtre métier)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  availability     ProAvailability @relation("BookingOnAvailability", fields: [availabilityId], references: [id], onDelete: Cascade)
+  rider            User            @relation("BookingOnUser", fields: [riderUserId], references: [id], onDelete: Cascade)
+  bookingRequest   BookingRequest? @relation(fields: [bookingRequestId], references: [id], onDelete: SetNull)
 
   @@index([availabilityId])
   @@index([riderUserId])
@@ -412,11 +454,13 @@ model Conversation {
   directKey      String?              @unique
   match          Match?               @relation(fields: [matchId], references: [id])
   members        ConversationMember[]
+  blockEvents    ConversationBlockEvent[]
   messages       Message[]
   contactRequests ContactRequest[]
   invitations    ConversationInvitation[]
 
   @@index([type])
+  @@index([updatedAt(sort: Desc), id(sort: Desc)])
 }
 
 model ConversationMember {
@@ -427,11 +471,42 @@ model ConversationMember {
   lastReadAt     DateTime?
   trashedAt      DateTime?
   favoritedAt    DateTime?
+  /// Null = active. Set by auto-archive when user exceeds 100 active conversations.
+  archivedAt     DateTime?
+  /// Purge deadline: archivedAt + 18 months, or trashedAt + 30 days. Null on active rows.
+  purgeAt        DateTime?
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
   @@index([userId])
+  @@index([userId, trashedAt, conversationId])
+  @@index([blockedAt, id])
+  @@index([userId, archivedAt])
+  // purgeAt: partial index managed via migration SQL (WHERE purgeAt IS NOT NULL).
+  // Prisma does not support partial index syntax in schema.prisma — declaring @@index([purgeAt])
+  // here would cause migrate diff to report a spurious drift (full vs partial index mismatch).
+}
+
+model ConversationBlockEvent {
+  id             String                     @id @default(uuid())
+  conversationId String
+  userId         String
+  actorUserId    String?
+  actorType      ConversationBlockActorType
+  action         ConversationBlockAction
+  source         ConversationBlockSource
+  batchId        String?
+  reason         String?
+  createdAt      DateTime                   @default(now())
+  conversation   Conversation               @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User                       @relation("ConversationBlockEventTargetUser", fields: [userId], references: [id], onDelete: Cascade)
+  actorUser      User?                      @relation("ConversationBlockEventActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([source, createdAt])
+  @@index([batchId])
 }
 
 model ConversationInvitation {
@@ -466,6 +541,7 @@ model Message {
 
   @@unique([conversationId, clientMsgId], name: "conversation_client_msg_unique")
   @@index([conversationId, createdAt])
+  @@index([conversationId, senderId, createdAt(sort: Desc)])
 }
 
 model ProOffer {
@@ -485,7 +561,6 @@ model ProOffer {
   clicks       ProOfferClick[]
 
   @@index([sport, level])
-  @@index([lat, lng])
   @@index([isActive])
 }
 
@@ -557,20 +632,43 @@ model AuditLog {
   @@index([userId])
 }
 
+model RetentionExportArtifact {
+  id               String                @id @default(uuid())
+  scope            RetentionExportScope
+  format           RetentionExportFormat @default(NDJSON)
+  fromDate         DateTime
+  toDate           DateTime
+  rowCount         Int                   @default(0)
+  sha256           String?
+  storageKey       String?
+  status           RetentionExportStatus @default(GENERATING)
+  error            String?
+  createdByAdminId String
+  createdAt        DateTime              @default(now())
+  verifiedAt       DateTime?
+  createdByAdmin   User                  @relation("RetentionExportArtifactCreatedBy", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+
+  @@index([scope, status, createdAt])
+  @@index([createdByAdminId, createdAt])
+}
+
 model SystemAlert {
-  id             String        @id @default(uuid())
-  type           String
-  message        String
-  severity       AlertSeverity @default(INFO)
-  status         AlertStatus   @default(OPEN)
-  link           String?
-  dedupeKey      String?
-  metadata       Json?
-  createdById    String?
-  acknowledgedAt DateTime?
-  resolvedAt     DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id              String        @id @default(uuid())
+  type            String
+  message         String
+  severity        AlertSeverity @default(INFO)
+  status          AlertStatus   @default(OPEN)
+  link            String?
+  dedupeKey       String?
+  metadata        Json?
+  createdById     String?
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  occurrenceCount Int           @default(1)
+  firstSeenAt     DateTime      @default(now())
+  lastSeenAt      DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   createdBy User? @relation("UserSystemAlerts", fields: [createdById], references: [id], onDelete: SetNull)
 
@@ -595,10 +693,78 @@ model LegalConsentArchive {
   @@index([archivedAt])
 }
 
+/// Archive légale minimale d'un booking — sans FK vers User/Pro/Availability.
+/// Survit aux cascades. Conservée 10 ans à partir de l'archivage.
+/// PII directes exclues : riderHash / proHash sont des SHA-256 pseudonymisés.
+model BookingLegalArchive {
+  id           String   @id @default(uuid())
+  /// UUID du booking source (sans FK active — survit à la cascade)
+  bookingId    String   @unique
+  /// SHA-256(riderUserId + ':' + ANONYMIZATION_SALT) — non réversible
+  riderHash    String
+  /// SHA-256(proUserId + ':' + ANONYMIZATION_SALT) — non réversible
+  proHash      String
+  /// Sport de la disponibilité (enum stable, pas de PII)
+  sport        Sport
+  /// Date/heure de début de la prestation (ProAvailability.startAt)
+  bookedAt     DateTime
+  /// Date de création du booking original
+  createdAt    DateTime
+  /// Moment où l'archive a été scellée (clôture ou pré-suppression compte)
+  closedAt     DateTime
+  /// Statut final du booking au moment de l'archivage
+  finalStatus  String
+  /// Prix de la disponibilité au moment de l'archive (ProAvailability.price — nullable)
+  priceDecimal Decimal? @db.Decimal(8, 2)
+  /// Horodatage de création de l'archive
+  archivedAt   DateTime @default(now())
+  /// Date de purge automatique (archivedAt + 10 ans)
+  purgeAt      DateTime
+
+  @@index([riderHash])
+  @@index([proHash])
+  @@index([purgeAt])
+  @@index([archivedAt])
+}
+
 enum Role {
   RIDER
   PRO
   ADMIN
+}
+
+enum ConversationBlockAction {
+  BLOCK
+  UNBLOCK
+}
+
+enum ConversationBlockSource {
+  USER_SELF
+  ADMIN_SINGLE
+  ADMIN_BULK
+  LEGACY_UNKNOWN
+}
+
+enum ConversationBlockActorType {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+enum RetentionExportScope {
+  AUDIT_LOG
+}
+
+enum RetentionExportFormat {
+  NDJSON
+}
+
+enum RetentionExportStatus {
+  GENERATING
+  READY
+  VERIFIED
+  FAILED
+  EXPIRED
 }
 
 enum Sex {
@@ -744,29 +910,6 @@ model AnalyticsEvent {
   @@index([zoneLarge])
 }
 
-// ---------------------------------------------------------------------------
-// Upload idempotency (IDP-1 / IDP-2 / IDP-3)
-// ---------------------------------------------------------------------------
-
-enum UploadJobStatus {
-  PENDING
-  FINALIZED
-  FAILED
-}
-
-model UploadJob {
-  id            String          @id @default(uuid())
-  quarantineKey String          @unique  // quarantine S3 key — one job per upload attempt
-  userId        String
-  status        UploadJobStatus @default(PENDING)
-  publishedKey  String?         // set on successful finalization
-  attempts      Int             @default(0)
-  createdAt     DateTime        @default(now())
-  finalizedAt   DateTime?
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
 
 model AnalyticsDailyAgg {
   id         String             @id @default(uuid())

@@ -1,0 +1,210 @@
+# docker-compose.vps.yml — Environnement VPS Runtime BlobConnect
+#
+# Objectif : déploiement réel sur VPS auto-hébergé.
+#
+# Différences structurelles par rapport à docker-compose.pre-vps.yml :
+#   - MinIO : ZERO port exposé sur l'hôte (ni 9000 ni 9001)
+#     → accès uniquement via nginx TLS (storage.$STORAGE_DOMAIN)
+#   - MINIO_SERVER_URL : indique à MinIO son URL publique pour valider
+#     les URLs présignées (HMAC host check)
+#   - APP_ENV=vps : remplace APP_ENV=pre-vps (même exception SSL interne Docker,
+#     mais identification distincte de l'environnement)
+#   - Sous-réseau dédié 172.21.0.0/16 (évite collision avec pre-vps 172.20.0.0/16)
+#   - Volumes nommés *-vps (indépendants des volumes pre-vps)
+#   - S3_PRESIGN_ENDPOINT et S3_PUBLIC_URL_BASE pointent vers le domaine public
+#     TLS géré par nginx — plus de localhost
+#
+# Ce qui reste partagé avec pre-vps :
+#   - Images Docker identiques (api.production.Dockerfile, web.production.Dockerfile)
+#   - Images infra identiques (postgres, redis, minio, nginx:alpine)
+#   - Réseau interne isolé (services non exposés directement)
+#   - Patterns healthcheck / depends_on
+#
+# Pourquoi la séparation évite les erreurs opérateur :
+#   - Un `docker compose -f docker-compose.vps.yml` ne touche pas les volumes pre-vps
+#   - APP_ENV=vps différencie les logs et les checks env
+#   - Un grepping de 'localhost' dans ce fichier ne doit JAMAIS retourner de S3_PRESIGN_ENDPOINT
+#
+# Usage :
+#   cp .env.vps.example .env.vps && vim .env.vps
+#   ./scripts/vps-bootstrap.sh
+#
+# Ou manuellement :
+#   docker compose -f docker-compose.vps.yml --env-file .env.vps up -d
+
+name: blobconnect-vps
+
+services:
+
+  # ─── Base de données ────────────────────────────────────────────────────────
+  postgres:
+    image: postgis/postgis:15-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-blobinfini_vps}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${POSTGRES_DB:-blobinfini_vps}
+    networks:
+      - vps
+    volumes:
+      - pgdata-vps:/var/lib/postgresql/data
+    # PAS de port exposé : accès interne uniquement
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-blobinfini_vps}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  # ─── Cache / Rate-limit / Sessions ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+    networks:
+      - vps
+    # PAS de port exposé : accès interne uniquement
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─── Stockage objet (S3-compatible) ─────────────────────────────────────────
+  minio:
+    # Même image que pre-vps — image officielle quay.io, digest vérifié.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER:     ${S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
+      # CRITIQUE VPS : indique à MinIO son URL publique TLS.
+      # Sans cette variable, MinIO ne peut pas valider les URLs présignées
+      # générées avec S3_PRESIGN_ENDPOINT=https://storage.$DOMAIN car
+      # le HMAC du header Host ne correspondrait pas (host=storage.$DOMAIN
+      # vs host=minio:9000 attendu par MinIO par défaut).
+      MINIO_SERVER_URL: "https://${STORAGE_DOMAIN:-storage.blobinfini.local}"
+    command: server /data --console-address ":9001"
+    networks:
+      - vps
+    volumes:
+      - miniodata-vps:/data
+    # AUCUN port exposé sur l'hôte — différence clé avec pre-vps.
+    # Accès admin console : via tunnel SSH (ssh -L 9001:localhost:9001 user@vps)
+    # Accès API : uniquement via nginx (storage.$STORAGE_DOMAIN)
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─── API Node.js (build production) ─────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.production.Dockerfile
+    restart: unless-stopped
+    env_file: .env.vps
+    environment:
+      # Variables Docker internes — surchargent .env.vps
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-blobinfini_vps}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-blobinfini_vps}"
+      REDIS_URL:    "redis://default:${REDIS_PASSWORD}@redis:6379/0"
+      # SMTP: la cible réelle est fournie par .env.vps (Brevo en VPS/pré-prod réelle).
+      # AUCUN override Docker vers Mailpit ici : tout fallback silencieux est interdit.
+      # S3_ENDPOINT : connexion interne API → MinIO (réseau Docker)
+      S3_ENDPOINT:  "http://minio:9000"
+      # S3_PRESIGN_ENDPOINT : URL utilisée par le SDK pour générer les URLs présignées.
+      # DOIT correspondre à MINIO_SERVER_URL sur le conteneur MinIO.
+      # Le client (navigateur) appellera cette URL → doit être l'URL nginx publique.
+      S3_PRESIGN_ENDPOINT:  "https://${STORAGE_DOMAIN:-storage.blobinfini.local}"
+      # S3_PUBLIC_URL_BASE : URL de base pour les accès direct (avatars, assets).
+      # Bucket configuré en lecture anonyme (GET-only, pas de list).
+      S3_PUBLIC_URL_BASE:   "https://${STORAGE_DOMAIN:-storage.blobinfini.local}/${S3_BUCKET:-blobinfini-vps}"
+      SECURITY_MONITOR_TOKEN: "${SECURITY_MONITOR_TOKEN}"
+      APP_ENV: "vps"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - vps
+    # PAS de port exposé : accès via nginx uniquement
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ─── Frontend Next.js (build production) ────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.production.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "https://${API_DOMAIN:-api.blobinfini.local}"
+    restart: unless-stopped
+    env_file: .env.vps
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - vps
+    # PAS de port exposé : accès via nginx uniquement
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+  # ─── Reverse proxy TLS ───────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    networks:
+      - vps
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.vps.conf:/etc/nginx/nginx.conf:ro
+      # Certs VPS : mkcert (local) ou Let's Encrypt (prod)
+      # Structure attendue :
+      #   $VPS_CERTS_DIR/api.$DOMAIN.pem + -key.pem
+      #   $VPS_CERTS_DIR/app.$DOMAIN.pem + -key.pem
+      #   $VPS_CERTS_DIR/storage.$DOMAIN.pem + -key.pem
+      - ${VPS_CERTS_DIR:-./docker/certs/vps}:/etc/nginx/certs:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+# ─── Réseau isolé (sous-réseau distinct de pre-vps 172.20.0.0/16) ────────────
+networks:
+  vps:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+
+# ─── Volumes persistants (indépendants des volumes pre-vps) ──────────────────
+volumes:
+  pgdata-vps:
+  miniodata-vps:

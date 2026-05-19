@@ -248,20 +248,6 @@ describe('PushNotificationService', () => {
       sendSpy.mockRestore();
     });
 
-    it('sends booking accepted payload', async () => {
-      await service.sendBookingAccepted('user-1', {
-        proName: 'Jean Surf',
-        spotName: 'La Gravière',
-        dateTime: '2024-02-10T09:00:00Z',
-        conversationId: 'conv-1'
-      });
-
-      expect(sendSpy).toHaveBeenCalledWith('user-1', expect.objectContaining({
-        type: 'booking_accepted',
-        data: expect.objectContaining({ conversationId: 'conv-1' })
-      }));
-    });
-
     it('truncates long messages in sendNewMessage', async () => {
       await service.sendNewMessage('user-1', {
         senderName: 'Jean',
@@ -283,7 +269,7 @@ describe('PushNotificationService', () => {
       const message = (service as any).buildFCMMessage('token', {
         title: 'Hello',
         body: 'World',
-        type: 'booking_accepted',
+        type: 'new_message',
         userId: 'user-1',
         url: '/test',
         data: { extra: 'value' }
@@ -291,7 +277,7 @@ describe('PushNotificationService', () => {
 
       expect(message).toMatchObject({
         token: 'token',
-        data: expect.objectContaining({ type: 'booking_accepted', extra: 'value' }),
+        data: expect.objectContaining({ type: 'new_message', extra: 'value' }),
         webpush: expect.any(Object)
       });
     });

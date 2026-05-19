@@ -1,7 +1,7 @@
 {
   "name": "BlobConnect - Cours de Surf & Kitesurf",
   "short_name": "BlobConnect",
-  "description": "Trouve et réserve tes cours de surf et kitesurf avec les meilleurs instructeurs",
+  "description": "Trouve et contacte les meilleurs instructeurs de surf et kitesurf",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -61,23 +61,16 @@
   ],
   "shortcuts": [
     {
-      "name": "Rechercher un cours",
+      "name": "Rechercher",
       "short_name": "Rechercher",
-      "description": "Trouve rapidement un cours près de toi",
-      "url": "/reservations/start",
+      "description": "Trouver une mise en relation près de toi",
+      "url": "/matching",
       "icons": [{ "src": "/icons/shortcut-search.png", "sizes": "96x96" }]
-    },
-    {
-      "name": "Mes réservations",
-      "short_name": "Réservations",
-      "description": "Voir mes cours réservés",
-      "url": "/reservations/requests",
-      "icons": [{ "src": "/icons/shortcut-bookings.png", "sizes": "96x96" }]
     },
     {
       "name": "Messages",
       "short_name": "Messages",
-      "description": "Discuter avec mes instructeurs",
+      "description": "Discuter avec mes contacts",
       "url": "/messages",
       "icons": [{ "src": "/icons/shortcut-messages.png", "sizes": "96x96" }]
     }

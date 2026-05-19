@@ -218,12 +218,6 @@ const computeTtfvRiders = async (period: AnalyticsPeriod) => {
 
   const riderIds = riders.map((r: { id: string; createdAt: Date }) => r.id);
 
-  const bookingRequests = await prisma.bookingRequest.groupBy({
-    by: ['riderUserId'],
-    where: { riderUserId: { in: riderIds } },
-    _min: { createdAt: true },
-  });
-
   const messages = await prisma.message.groupBy({
     by: ['senderId'],
     where: { senderId: { in: riderIds } },
@@ -236,13 +230,12 @@ const computeTtfvRiders = async (period: AnalyticsPeriod) => {
     _min: { createdAt: true },
   });
 
-  const bookingMap = new Map(bookingRequests.map((row: { riderUserId: string | null; _min: { createdAt: Date | null } | null }) => [row.riderUserId, row._min?.createdAt]));
   const messageMap = new Map(messages.map((row: { senderId: string | null; _min: { createdAt: Date | null } | null }) => [row.senderId, row._min?.createdAt]));
   const decisionMap = new Map(decisions.map((row: { actorUserId: string | null; _min: { createdAt: Date | null } | null }) => [row.actorUserId, row._min?.createdAt]));
 
   const durations: number[] = [];
   for (const rider of riders) {
-    const first = [bookingMap.get(rider.id), messageMap.get(rider.id), decisionMap.get(rider.id)]
+    const first = [messageMap.get(rider.id), decisionMap.get(rider.id)]
       .filter((value): value is Date => value instanceof Date)
       .filter((value) => value >= rider.createdAt)
       .sort((a, b) => a.getTime() - b.getTime())[0];
@@ -280,26 +273,6 @@ const computeTtfvPros = async (period: AnalyticsPeriod) => {
 
   const proIds = pros.map((p: { userId: string; verifiedAt: Date | null }) => p.userId);
 
-  const requests = await prisma.bookingRequest.findMany({
-    where: {
-      availability: { proUserId: { in: proIds } },
-    },
-    select: {
-      createdAt: true,
-      availability: { select: { proUserId: true } },
-    },
-  });
-
-  const requestMap = new Map<string, Date>();
-  for (const request of requests) {
-    const proId = request.availability?.proUserId;
-    if (!proId) continue;
-    const existing = requestMap.get(proId);
-    if (!existing || request.createdAt < existing) {
-      requestMap.set(proId, request.createdAt);
-    }
-  }
-
   const messages = await prisma.message.groupBy({
     by: ['senderId'],
     where: { senderId: { in: proIds } },
@@ -310,7 +283,7 @@ const computeTtfvPros = async (period: AnalyticsPeriod) => {
   const durations: number[] = [];
   for (const pro of pros) {
     if (!pro.verifiedAt) continue;
-    const first = [requestMap.get(pro.userId), messageMap.get(pro.userId)]
+    const first = [messageMap.get(pro.userId)]
       .filter((value): value is Date => value instanceof Date)
       .filter((value) => value >= pro.verifiedAt)
       .sort((a, b) => a.getTime() - b.getTime())[0];
@@ -330,122 +303,34 @@ const computeTtfvPros = async (period: AnalyticsPeriod) => {
   };
 };
 
-const computeMarketplaceHealth = async (period: AnalyticsPeriod) => {
-  const now = new Date();
-  const startDate = getPeriodStart(period, now);
-
-  const bookingRequests = await prisma.bookingRequest.findMany({
-    where: { createdAt: { gte: startDate, lte: now } },
-    select: {
-      status: true,
-      createdAt: true,
-      respondedAt: true,
-      availability: { select: { sport: true, spotLat: true, spotLng: true } },
-    },
-  });
-
-  const availabilitySupply = await prisma.proAvailability.findMany({
-    where: {
-      createdAt: { gte: startDate, lte: now },
-      status: 'OPEN',
-      endAt: { gt: now },
-    },
-    select: { sport: true, spotLat: true, spotLng: true },
-  });
-
-  const demandMap = new Map<string, { sport: string; zoneLarge: string; count: number }>();
-  for (const request of bookingRequests) {
-    const sport = request.availability?.sport ?? null;
-    const zoneLarge = computeZoneLarge(request.availability?.spotLat ?? null, request.availability?.spotLng ?? null);
-    if (!sport || !zoneLarge) continue;
-    const key = `${sport}|${zoneLarge}`;
-    const entry = demandMap.get(key) ?? { sport, zoneLarge, count: 0 };
-    entry.count += 1;
-    demandMap.set(key, entry);
-  }
-
-  const supplyMap = new Map<string, { sport: string; zoneLarge: string; count: number }>();
-  for (const availability of availabilitySupply) {
-    const sport = availability.sport ?? null;
-    const zoneLarge = computeZoneLarge(availability.spotLat ?? null, availability.spotLng ?? null);
-    if (!sport || !zoneLarge) continue;
-    const key = `${sport}|${zoneLarge}`;
-    const entry = supplyMap.get(key) ?? { sport, zoneLarge, count: 0 };
-    entry.count += 1;
-    supplyMap.set(key, entry);
-  }
-
-  const segmentKeys = new Set<string>([...demandMap.keys(), ...supplyMap.keys()]);
-  const segments = Array.from(segmentKeys).map((key) => {
-    const demand = demandMap.get(key);
-    const supply = supplyMap.get(key);
-    const total = (demand?.count ?? 0) + (supply?.count ?? 0);
-    const masked = total < PRIVACY_THRESHOLD;
-    return {
-      sport: demand?.sport ?? supply?.sport ?? 'unknown',
-      zoneLarge: demand?.zoneLarge ?? supply?.zoneLarge ?? 'unknown',
-      demandRequests: masked ? null : demand?.count ?? 0,
-      supplyAvailabilities: masked ? null : supply?.count ?? 0,
-      ratio: masked
-        ? null
-        : (supply?.count ?? 0) > 0
-          ? (demand?.count ?? 0) / (supply?.count ?? 1)
-          : null,
-      sampleSize: total,
-      masked,
-    };
-  });
-
-  const totalRequests = bookingRequests.length;
-  const acceptedRequests = bookingRequests.filter((request: { status: string; createdAt: Date; respondedAt: Date | null }) => request.status === 'ACCEPTED').length;
-  const responseDurations = bookingRequests
-    .filter((request: { status: string; createdAt: Date; respondedAt: Date | null }) => request.respondedAt)
-    .map((request: { status: string; createdAt: Date; respondedAt: Date | null }) => (request.respondedAt!.getTime() - request.createdAt.getTime()) / (60 * 60 * 1000));
-
-  const acceptanceMasked = totalRequests < PRIVACY_THRESHOLD;
-  const medianResponseHours = responseDurations.length
-    ? computePercentile(responseDurations, 50)
-    : 0;
-
-  const acceptanceBySportMap = new Map<string, { total: number; accepted: number; responseTimes: number[] }>();
-  for (const request of bookingRequests) {
-    const sport = request.availability?.sport ?? 'unknown';
-    const entry = acceptanceBySportMap.get(sport) ?? { total: 0, accepted: 0, responseTimes: [] };
-    entry.total += 1;
-    if (request.status === 'ACCEPTED') entry.accepted += 1;
-    if (request.respondedAt) {
-      entry.responseTimes.push((request.respondedAt.getTime() - request.createdAt.getTime()) / (60 * 60 * 1000));
-    }
-    acceptanceBySportMap.set(sport, entry);
-  }
-
-  const acceptanceBySport = Array.from(acceptanceBySportMap.entries()).map(([sport, entry]) => {
-    const masked = entry.total < PRIVACY_THRESHOLD;
-    return {
-      sport,
-      totalRequests: entry.total,
-      acceptedRequests: masked ? null : entry.accepted,
-      acceptanceRate: masked ? null : entry.total > 0 ? (entry.accepted / entry.total) * 100 : 0,
-      medianResponseHours: masked
-        ? null
-        : entry.responseTimes.length
-          ? computePercentile(entry.responseTimes, 50)
-          : 0,
-      masked,
-    };
-  });
-
+// Booking feature removed in PR #137. Returns frozen empty shape — no DB queries.
+const computeMarketplaceHealth = async (_period: AnalyticsPeriod) => {
   return {
-    supplyDemand: segments,
+    supplyDemand: [] as Array<{
+      sport: string;
+      zoneLarge: string;
+      demandRequests: number | null;
+      supplyAvailabilities: number | null;
+      ratio: number | null;
+      sampleSize: number;
+      masked: boolean;
+    }>,
     acceptance: {
-      totalRequests,
-      acceptedRequests: acceptanceMasked ? null : acceptedRequests,
-      acceptanceRate: acceptanceMasked ? null : totalRequests > 0 ? (acceptedRequests / totalRequests) * 100 : 0,
-      medianResponseHours: acceptanceMasked ? null : medianResponseHours,
-      responseSampleSize: responseDurations.length,
-      masked: acceptanceMasked,
+      totalRequests: 0,
+      acceptedRequests: null as number | null,
+      acceptanceRate: null as number | null,
+      medianResponseHours: null as number | null,
+      responseSampleSize: 0,
+      masked: true,
     },
-    acceptanceBySport,
+    acceptanceBySport: [] as Array<{
+      sport: string;
+      totalRequests: number;
+      acceptedRequests: number | null;
+      acceptanceRate: number | null;
+      medianResponseHours: number | null;
+      masked: boolean;
+    }>,
   };
 };
 
@@ -644,6 +529,138 @@ export const analyticsReportService = {
       },
       riders: rider,
       pros: pro,
+    };
+  },
+
+  async getLessonRequests(period: AnalyticsPeriod) {
+    const now = new Date();
+    const startDate = getPeriodStart(period, now);
+
+    type LessonProfile = {
+      lessonSport: string | null;
+      lessonStudentCount: number | null;
+      lessonLat: number | null;
+      lessonLng: number | null;
+      updatedAt: Date;
+    };
+
+    type ContactRow = {
+      contactId: string;
+      contactCreatedAt: Date;
+      profileUpdatedAt: Date;
+      riderId: string;
+    };
+
+    // Snapshot: all active lesson requests (not period-filtered — current state)
+    const activeProfiles: LessonProfile[] = await prisma.riderProfile.findMany({
+      where: { wantsLesson: true },
+      select: {
+        lessonSport: true,
+        lessonStudentCount: true,
+        lessonLat: true,
+        lessonLng: true,
+        updatedAt: true,
+      },
+    });
+
+    const totalActive = activeProfiles.length;
+
+    // By sport
+    const sportMap = new Map<string, number>();
+    for (const p of activeProfiles) {
+      const sport = p.lessonSport?.toLowerCase() ?? 'inconnu';
+      sportMap.set(sport, (sportMap.get(sport) ?? 0) + 1);
+    }
+    const bySport = {
+      surf: sportMap.get('surf') ?? 0,
+      kitesurf: sportMap.get('kitesurf') ?? 0,
+      other: totalActive - (sportMap.get('surf') ?? 0) - (sportMap.get('kitesurf') ?? 0),
+    };
+
+    // By student count (1 / 2 / 3+)
+    let solo = 0, duo = 0, group = 0;
+    for (const p of activeProfiles) {
+      const n = p.lessonStudentCount ?? 1;
+      if (n <= 1) solo++;
+      else if (n === 2) duo++;
+      else group++;
+    }
+    const byStudentCount = { solo, duo, group };
+
+    // By geo zone — bucket lessonLat/lessonLng; mask if < PRIVACY_THRESHOLD
+    const zoneMap = new Map<string, number>();
+    for (const p of activeProfiles) {
+      const zone = computeZoneLarge(p.lessonLat, p.lessonLng);
+      if (zone) zoneMap.set(zone, (zoneMap.get(zone) ?? 0) + 1);
+    }
+    const byZone = Array.from(zoneMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([zone, count]) => ({
+        zone,
+        count: count < PRIVACY_THRESHOLD ? null : count,
+        sampleSize: count,
+        masked: count < PRIVACY_THRESHOLD,
+      }));
+
+    // New in period: riders who (re)activated wantsLesson within the window
+    const newInPeriod = activeProfiles.filter(
+      (p) => p.updatedAt >= startDate && p.updatedAt <= now
+    ).length;
+
+    // Pro contacts in period: ContactRequests sent to lesson-seeking riders
+    const contactsRaw = await prisma.$queryRaw<ContactRow[]>`
+      SELECT
+        cr.id            AS "contactId",
+        cr."createdAt"   AS "contactCreatedAt",
+        rp."updatedAt"   AS "profileUpdatedAt",
+        rp."userId"      AS "riderId"
+      FROM "ContactRequest" cr
+      JOIN "ConversationMember" cm
+        ON cm."conversationId" = cr."conversationId"
+        AND cm."userId" != cr."proUserId"
+      JOIN "RiderProfile" rp
+        ON rp."userId" = cm."userId"
+      WHERE rp."wantsLesson" = true
+        AND cr."createdAt" >= ${startDate}::timestamptz
+        AND cr."createdAt" <= ${now}::timestamptz`;
+
+    const totalContacts = contactsRaw.length;
+    const distinctRidersContacted = new Set(contactsRaw.map((r: ContactRow) => r.riderId)).size;
+
+    const contactRatePct =
+      totalActive > 0 ? Math.round((distinctRidersContacted / totalActive) * 1000) / 10 : 0;
+
+    // Median first-contact delay: contactCreatedAt - profileUpdatedAt (hours)
+    const delayHours = contactsRaw
+      .map((r: ContactRow) => (r.contactCreatedAt.getTime() - r.profileUpdatedAt.getTime()) / (60 * 60 * 1000))
+      .filter((h: number) => h >= 0);
+    const medianFirstContactHours =
+      delayHours.length > 0 ? computePercentile(delayHours, 50) : null;
+
+    const proContactSampleSize = distinctRidersContacted;
+    const proContactMasked = proContactSampleSize < PRIVACY_THRESHOLD;
+
+    return {
+      period,
+      privacyThreshold: PRIVACY_THRESHOLD,
+      definitions: {
+        lessonRequests: ANALYTICS_DEFINITIONS.lessonRequests,
+      },
+      snapshot: {
+        totalActive,
+        newInPeriod,
+        bySport,
+        byStudentCount,
+      },
+      byZone,
+      proContactStats: {
+        totalContacts,
+        distinctRidersContacted: proContactMasked ? null : distinctRidersContacted,
+        contactRatePct: proContactMasked ? null : contactRatePct,
+        medianFirstContactHours: proContactMasked ? null : medianFirstContactHours,
+        sampleSize: proContactSampleSize,
+        masked: proContactMasked,
+      },
     };
   },
 };

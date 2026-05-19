@@ -6,8 +6,10 @@
 #
 # Exclusions autorisées:
 #   - packages/database/scripts/safe-db-push.mjs  (wrapper local avec garde-fous)
-#   - packages/database/package.json              (script npm déclaratif, pas exécuté en CI)
 #   - .github/workflows/** et .github/actions/**  (scanné par ci-block-db-push.sh)
+#
+# NOTE: packages/database/package.json n'est plus exclu — db:push:unsafe a été
+# supprimé du package.json. Si ce pattern réapparaît, ce script doit le bloquer.
 #
 # Usage:
 #   bash scripts/no-unsafe-db-push-check.sh
@@ -33,7 +35,6 @@ UNSAFE_HITS="$(
     ! -path './apps/web/.next/*' \
     ! -path './apps/web/storybook-static/*' \
     ! -path './packages/database/scripts/safe-db-push.mjs' \
-    ! -path './packages/database/package.json' \
     ! -path './scripts/no-unsafe-db-push-check.sh' \
     ! -path './scripts/ci-block-db-push.sh' \
     -print0 \

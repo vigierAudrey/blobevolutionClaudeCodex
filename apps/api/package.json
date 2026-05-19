@@ -12,11 +12,14 @@
     "clean": "rimraf dist",
     "type-check": "tsc -p tsconfig.typecheck.json --noEmit",
     "test": "NODE_ENV=test jest",
+    "test:unit": "NODE_ENV=test jest --config jest.unit.config.cjs",
+    "test:matching": "NODE_ENV=test jest --config jest.matching.config.cjs",
     "gdpr:report": "tsx src/scripts/gdpr-purge-cli.ts report",
     "gdpr:purge": "tsx src/scripts/gdpr-purge-cli.ts purge",
     "gdpr:archive": "tsx src/scripts/gdpr-purge-cli.ts archive",
     "cleanup:phantom-riders": "tsx scripts/cleanup-phantom-rider-profiles.ts",
-    "cleanup:phantom-riders:force": "tsx scripts/cleanup-phantom-rider-profiles.ts --force"
+    "cleanup:phantom-riders:force": "tsx scripts/cleanup-phantom-rider-profiles.ts --force",
+    "job:purge-notifications": "tsx src/jobs/purgeNotifications.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.616.0",
@@ -32,6 +35,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^8.1.0",
+    "connect-redis": "^7.1.1",
     "express-session": "^1.18.2",
     "firebase-admin": "^13.5.0",
     "helmet": "^8.1.0",

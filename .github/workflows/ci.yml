@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -14,18 +15,68 @@ env:
   PNPM_VERSION: '10.28.2'
 
 jobs:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 0. Path detection (fast — no pnpm install, no Node setup)
+  #    Runs in parallel with security-guard.
+  #    On push/workflow_dispatch all heavy jobs run unconditionally (fallback
+  #    via "github.event_name != 'pull_request'" in each job's `if:`).
+  # ──────────────────────────────────────────────────────────────────────────
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-22.04
+    timeout-minutes: 3
+    outputs:
+      api:     ${{ steps.filter.outputs.api }}
+      web:     ${{ steps.filter.outputs.web }}
+      db:      ${{ steps.filter.outputs.db }}
+      openapi: ${{ steps.filter.outputs.openapi }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # token: auto-detected from GITHUB_TOKEN — uses REST API, no extra fetch-depth
+          filters: |
+            api:
+              - 'apps/api/**'
+              - 'packages/database/**'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig*.json'
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig*.json'
+            db:
+              - 'packages/database/prisma/**'
+              - 'pnpm-lock.yaml'
+            openapi:
+              - 'docs/openapi/**'
+              - 'apps/api/src/**'
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Security guard — ALWAYS runs, no pnpm install
+  # ──────────────────────────────────────────────────────────────────────────
   security-guard:
     name: Security Guard - DB Push Protection
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: No skipped tests in critical API suites (block)
         run: bash scripts/no-skip-critical-check.sh
 
       - name: No insecure logs / secrets (block)
         run: bash scripts/no-insecure-logs-check.sh
+
+      - name: Enforce canonical security routes
+        run: node scripts/check-security-routes.mjs
+
+      - name: Forbid runtime console calls in API
+        run: node scripts/check-api-runtime-console.mjs
 
       - name: No bare db push in CI paths (block)
         run: bash scripts/ci-block-db-push.sh
@@ -72,6 +123,9 @@ jobs:
 
       - name: Enforce DB push guardrails
         run: bash scripts/no-unsafe-db-push-check.sh
+
+      - name: Verify /internal/metrics is not a stub
+        run: bash scripts/check-metrics-not-stub.sh
 
       - name: Verify Prisma supply-chain (single version in lockfile)
         # Checks pnpm-lock.yaml for unexpected prisma/@prisma/client versions.
@@ -134,27 +188,93 @@ jobs:
           echo "✅ Security check passed: No forbidden flags detected."
           echo "   ALLOW_ACCEPT_DATA_LOSS: ${ALLOW_ACCEPT_DATA_LOSS:-not set}"
 
+      - name: Booking status mutation guards (filet complémentaire — ne remplace pas la revue de code)
+        run: bash scripts/check-booking-status-mutations.sh
+
+      - name: No unguarded destructive DDL in new migrations (block)
+        # Scans migration files added in this PR/push for DROP TABLE, DROP COLUMN,
+        # DROP TYPE, TRUNCATE without an explicit -- DANGEROUS-DDL-APPROVED: comment.
+        # Historical migrations are exempt (not retroactively checked).
+        run: bash scripts/check-dangerous-migrations.sh
+
+      - name: No unjustified SELECT 1 stubs in migrations (block)
+        # All migration stubs (SELECT 1 only) must have a comment explaining why.
+        # A stub without justification silently hides a missing schema object.
+        run: bash scripts/check-migration-stubs.sh
+
+      - name: No E2E anti-patterns (false greens / fragile auth) (block)
+        # Blocks: loginViaApi, localStorage token storage, waitForTimeout,
+        # .divide-y selectors, conditional count() assertions, addCookies in specs.
+        # Inline "// e2e-lint-ok" suppresses a single flagged line.
+        run: bash scripts/check-e2e-antipatterns.sh
+
+      - name: AuthZ route guard — no sensitive routes without explicit guard (block)
+        # Scans pro.controller.ts and profile.controller.ts for sensitive routes
+        # (POST/PUT/PATCH/DELETE or paths containing delete/photo/export/disciplines/me/near/lessons)
+        # without requireProRole, requireRiderRole, requireRole(...), or // authz-guard-ok: <reason>.
+        # Catches silent AuthZ regressions when a new route is added without a guard.
+        run: bash scripts/check-authz-route-guards.sh
+
+      - name: Self-test check-authz-route-guards (poison pill)
+        # Proves the guard blocks an unguarded sensitive route and accepts a valid annotation.
+        run: |
+          set -euo pipefail
+          TMPFILE="$(mktemp /tmp/authz_poison_XXXXXX.ts)"
+          trap 'rm -f "$TMPFILE"' EXIT
+
+          # Poison files use profileRouter to match the guard's router pattern.
+          # AUTHZ_OVERRIDE_FILES redirects the script to scan only the temp file.
+
+          # ── Test 1: unguarded sensitive route → must FAIL ────────────────────
+          printf 'const profileRouter = { post: () => {} };\nprofileRouter.post("/delete-account", async (req, res) => {\n});\n' > "$TMPFILE"
+          code=0
+          AUTHZ_OVERRIDE_FILES="$TMPFILE" bash scripts/check-authz-route-guards.sh 2>&1 || code=$?
+          if [ "$code" -eq 0 ]; then
+            echo "❌ POISON FAILED: guard did not block unguarded POST /delete-account" >&2
+            exit 1
+          fi
+          echo "✅ POISON OK [unguarded sensitive route blocked]"
+
+          # ── Test 2: annotated exception with justification → must PASS ───────
+          printf 'const profileRouter = { post: () => {} };\nprofileRouter.post("/delete-account", async (req, res) => { // authz-guard-ok: test-only justification\n});\n' > "$TMPFILE"
+          AUTHZ_OVERRIDE_FILES="$TMPFILE" bash scripts/check-authz-route-guards.sh
+          echo "✅ POISON OK [annotated exception accepted]"
+
+          # ── Test 3: annotation without justification → must FAIL ─────────────
+          printf 'const profileRouter = { post: () => {} };\nprofileRouter.post("/delete-account", async (req, res) => { // authz-guard-ok:\n});\n' > "$TMPFILE"
+          code=0
+          AUTHZ_OVERRIDE_FILES="$TMPFILE" bash scripts/check-authz-route-guards.sh 2>&1 || code=$?
+          if [ "$code" -eq 0 ]; then
+            echo "❌ POISON FAILED: guard accepted authz-guard-ok annotation without justification" >&2
+            exit 1
+          fi
+          echo "✅ POISON OK [empty authz-guard-ok rejected]"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Lint — ALWAYS runs
+  # ──────────────────────────────────────────────────────────────────────────
   lint:
     needs: security-guard
     name: Lint
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Enforce network guardrails
         run: bash scripts/no-raw-fetch-check.sh
 
-      - name: No insecure logs / secrets (block)
-        run: bash scripts/no-insecure-logs-check.sh
+      # no-insecure-logs-check.sh already ran in security-guard (which we depend on).
+      # Removed here to avoid duplicating ~30s of grep across the lockfile.
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -165,10 +285,125 @@ jobs:
       - name: Run lint (strict mode, zero warnings)
         run: pnpm run lint:strict
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. API Unit Tests (fast — no Postgres) — ALWAYS runs
+  # ──────────────────────────────────────────────────────────────────────────
+  api-unit-fast:
+    name: API Unit Tests (fast — no Postgres)
+    runs-on: ubuntu-22.04
+    needs: [security-guard]
+    timeout-minutes: 8
+    env:
+      NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=2048
+      JWT_SECRET: test-jwt-secret
+      JWT_REFRESH_SECRET: test-jwt-refresh-secret
+      IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: test-log-actor-secret-for-ci-only-min-32-chars
+      WEB_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        # Required for @blobinfini/database imports to resolve — does NOT need a running DB.
+        run: pnpm run db:generate
+
+      - name: Run unit tests (no Postgres, no Redis)
+        run: |
+          pnpm --filter @blobinfini/api exec jest \
+            --config jest.unit.config.cjs \
+            --no-coverage \
+            --forceExit \
+            --detectOpenHandles
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. Type Check API — ALWAYS runs (no Next.js build needed)
+  # ──────────────────────────────────────────────────────────────────────────
+  type-check-api:
+    name: Type Check API
+    runs-on: ubuntu-22.04
+    needs: [security-guard]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check API
+        run: pnpm --filter @blobinfini/api type-check
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. Type Check Web — conditional: web files changed OR push/dispatch
+  #    Expensive: requires a full Next.js build to generate .next/types.
+  # ──────────────────────────────────────────────────────────────────────────
+  type-check-web:
+    name: Type Check Web
+    runs-on: ubuntu-22.04
+    needs: [security-guard, changes]
+    timeout-minutes: 25
+    if: needs.changes.outputs.web == 'true' || github.event_name != 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Web (prepare .next/types)
+        run: pnpm --filter @blobinfini/web build
+
+      - name: Type check Web
+        run: pnpm --filter @blobinfini/web type-check
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 6. Build and Test API — conditional: API/DB files changed OR push/dispatch
+  # ──────────────────────────────────────────────────────────────────────────
   build-and-test:
     name: Build and Test API
     runs-on: ubuntu-22.04
-    needs: lint
+    needs: [lint, changes]
+    timeout-minutes: 40
+    if: needs.changes.outputs.api == 'true' || github.event_name != 'pull_request'
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -191,19 +426,20 @@ jobs:
       JWT_SECRET: test-jwt-secret
       JWT_REFRESH_SECRET: test-jwt-refresh-secret
       IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: test-log-actor-secret-for-ci-only-min-32-chars
       WEB_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -263,8 +499,7 @@ jobs:
         run: pnpm run build
 
       - name: Run API tests
-        # JEST_DB_PREPARED=true: DB already migrated above — skip globalSetup migrate step
-        # and activate the pg_constraint + pg_indexes guard in jest.global-setup.cjs.
+        # JEST_DB_PREPARED=true: migrations ran above; Jest must not run db push.
         env:
           JEST_DB_PREPARED: 'true'
         run: pnpm --filter @blobinfini/api test
@@ -272,11 +507,20 @@ jobs:
       - name: Fail on ERL runtime regression signature in logs
         run: bash scripts/check-no-erl-runtime-log.sh
 
-  migrate-test-derived:
-    name: Advisory Derived Migration Replay
+  # ──────────────────────────────────────────────────────────────────────────
+  # 7. Migration Chain — conditional: DB/Prisma files changed OR push/dispatch
+  #    Only Prisma schema or lockfile changes warrant a fresh migration replay.
+  # ──────────────────────────────────────────────────────────────────────────
+  migrate-deploy-fresh:
+    # Rejoue prisma migrate deploy sur DB vide — bloquant.
+    # Garantit que la chaîne de migration est valide pour tout nouveau déploiement.
+    # Historique : était advisory (continue-on-error: true) avant 2026-04-03 ; rendu
+    # bloquant après résolution du drift Prisma (runbook: docs/runbooks/prisma-migration-drift-2026-03.md).
+    name: Migration Chain — Fresh DB Deploy
     runs-on: ubuntu-22.04
-    needs: lint
-    continue-on-error: true
+    needs: [lint, changes]
+    timeout-minutes: 20
+    if: needs.changes.outputs.db == 'true' || github.event_name != 'pull_request'
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -296,15 +540,15 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -326,23 +570,106 @@ jobs:
           done
           echo "✅ Postgres ready."
 
-      - name: Run advisory derived migration replay
+      - name: Run full migration chain on empty DB
         run: pnpm --filter @blobinfini/database migrate:test:derived
 
-  type-check:
-    name: Type Check
+      - name: Verify schema.prisma ↔ migration chain (prisma migrate diff)
+        # Compares what the migrations produced (DATABASE_URL) against what
+        # schema.prisma declares. Exit 2 = drift exists = CI fails.
+        #
+        # This catches the most dangerous case: schema.prisma was modified
+        # without running prisma migrate dev (no migration generated).
+        # On a fresh DB the migrations run fine but schema.prisma declares
+        # objects that don't exist in any migration file.
+        #
+        # Also catches: migration SQL that doesn't match what Prisma generated
+        # (hand-edited migration diverging from schema.prisma intent).
+        working-directory: packages/database
+        run: |
+          set -euo pipefail
+          echo "⏳ Comparing deployed DB schema vs schema.prisma..."
+          # --exit-code: exit 0 = no diff, exit 1 = error, exit 2 = diff exists.
+          # --script: output SQL so the diff is visible in CI logs on failure.
+          # IMPORTANT: set +e before the command — with set -e active, a non-zero exit
+          # from a command substitution aborts the script before we can capture $?.
+          set +e
+          DIFF_SQL=$(npx prisma migrate diff \
+            --from-schema-datasource prisma/schema.prisma \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code \
+            --script 2>&1)
+          DRIFT_EXIT=$?
+          set -e
+          if [ "$DRIFT_EXIT" -eq 2 ]; then
+            echo "❌ SCHEMA DRIFT DETECTED"
+            echo ""
+            echo "   The deployed migration chain does not produce the schema declared in schema.prisma."
+            echo "   Scenario: schema.prisma was modified without running 'prisma migrate dev'."
+            echo ""
+            echo "   SQL needed to bring DB to match schema.prisma:"
+            echo "$DIFF_SQL"
+            echo ""
+            echo "   Fix: run 'pnpm --filter @blobinfini/database migrate' to generate the missing migration."
+            echo "   NEVER fix with db push or psql direct."
+            exit 1
+          elif [ "$DRIFT_EXIT" -ne 0 ]; then
+            echo "❌ prisma migrate diff command failed (exit $DRIFT_EXIT)"
+            echo "$DIFF_SQL"
+            exit 1
+          fi
+          echo "✅ Schema sync confirmed: deployed DB matches schema.prisma."
+          echo ""
+          echo "NOTE: this check detects schema.prisma changes without migrations."
+          echo "It does NOT detect db push drift on an existing local DB (fundamental CI limitation)."
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 8. Socket Tests — conditional: API/DB files changed OR push/dispatch
+  # ──────────────────────────────────────────────────────────────────────────
+  socket-tests:
+    name: Socket Tests
     runs-on: ubuntu-22.04
+    needs: [security-guard, changes]
+    timeout-minutes: 20
+    if: needs.changes.outputs.api == 'true' || github.event_name != 'pull_request'
+    # Dedicated Postgres — isolated from build-and-test (separate runner).
+    # Each job runs on its own GitHub Actions runner: port 5432 here is NOT
+    # shared with the build-and-test job's postgres service.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blobinfini
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=4096
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
+      JWT_SECRET: test-jwt-secret
+      JWT_REFRESH_SECRET: test-jwt-refresh-secret
+      IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: test-log-actor-secret-for-ci-only-min-32-chars
+      WEB_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -350,29 +677,68 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Type check API
-        run: pnpm --filter @blobinfini/api type-check
+      - name: Wait for Postgres to be ready
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          deadline=$((SECONDS + 30))
+          until pg_isready -h localhost -U postgres -d blobinfini; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "❌ Postgres not ready after 30s — aborting." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "✅ Postgres TCP ready."
+          psql "$DATABASE_URL" -c "select 1" > /dev/null
+          echo "✅ Postgres auth ready (DATABASE_URL)."
 
-      - name: Build Web (prepare .next/types)
-        run: pnpm --filter @blobinfini/web build
+      - name: Enable PostGIS
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d blobinfini -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 
-      - name: Type check Web
-        run: pnpm --filter @blobinfini/web type-check
+      - name: Generate Prisma Client
+        run: pnpm run db:generate
 
+      - name: Run DB migrations
+        run: pnpm run db:migrate:deploy
+
+      - name: Run socket tests
+        # --runInBand: belt-and-suspenders with maxWorkers:1 in jest.socket.config.cjs.
+        # Socket tests bind fixed ports and share in-process rate-limiter state —
+        # parallel execution would cause port conflicts and flaky failures.
+        env:
+          JEST_DB_PREPARED: 'true'
+        run: |
+          pnpm --filter @blobinfini/api exec jest \
+            --config jest.socket.config.cjs \
+            --runInBand \
+            --no-coverage \
+            --forceExit \
+            --detectOpenHandles
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 9. Web Tests — conditional: web files changed OR push/dispatch
+  # ──────────────────────────────────────────────────────────────────────────
   web-tests:
     name: Web Tests
     runs-on: ubuntu-22.04
+    needs: [security-guard, changes]
+    timeout-minutes: 10
+    if: needs.changes.outputs.web == 'true' || github.event_name != 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -383,20 +749,26 @@ jobs:
       - name: Run web tests
         run: pnpm --filter @blobinfini/web test --detectOpenHandles
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 10. API Contracts — conditional: openapi/api files changed OR push/dispatch
+  # ──────────────────────────────────────────────────────────────────────────
   contracts:
     name: API Contracts
     runs-on: ubuntu-22.04
+    needs: [security-guard, changes]
+    timeout-minutes: 8
+    if: needs.changes.outputs.openapi == 'true' || github.event_name != 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -407,13 +779,30 @@ jobs:
       - name: Lint OpenAPI specs
         run: pnpm run openapi:lint
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 11. E2E Tests — push to main or workflow_dispatch ONLY
+  #     Never runs on pull_request (too expensive: 30 min + Playwright + Postgres).
+  #     Trigger manually via workflow_dispatch for pre-merge validation.
+  #     Previously ran on PRs targeting main — removed to save ~30 min/PR.
+  # ──────────────────────────────────────────────────────────────────────────
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-22.04
-    if: github.event_name != 'pull_request' || github.base_ref == 'main'
+    timeout-minutes: 30
+    if: github.event_name != 'pull_request'
     services:
+      # Mailpit reste en CI pour les scénarios E2E de capture d'email locale.
+      # Ce job ne valide pas la parité SMTP VPS/Brevo.
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
       postgres:
-        image: postgis/postgis:15-3.4
+        # Aligned with build-and-test and migrate-deploy-fresh (was postgis:15-3.4).
+        # PostGIS SQL behaviour is identical across 15/16 for our usage; harmonizing
+        # eliminates a class of "passes E2E but fails unit" surprises on PostGIS API diffs.
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -433,19 +822,24 @@ jobs:
       JWT_SECRET: ci-jwt-secret
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret
       IP_HASH_SECRET: ci-ip-hash-secret-for-e2e-only-min-32-chars
+      LOG_ACTOR_SECRET: ci-log-actor-secret-for-e2e-only-min-32-chars
+      EMAIL_HASH_SECRET: ci-email-hash-secret-for-e2e-only-min-32-chars
+      MAILPIT_URL: http://localhost:8025
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4000
       WEB_BASE_URL: http://127.0.0.1:3002
+      NEXT_PUBLIC_ADSENSE_ENABLED: 'true'
+      NEXT_PUBLIC_ADSENSE_CLIENT_ID: 'ca-pub-0000000000000000'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -483,20 +877,36 @@ jobs:
       - name: Seed database
         run: pnpm run db:reseed
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          # Invalidate when pnpm-lock.yaml changes (Playwright version bump).
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-chromium-${{ runner.os }}-
+
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps
+        # chromium only — the project's playwright.config.ts uses a single chromium project.
+        # --with-deps always installs OS-level browser dependencies (not cached).
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Run Playwright E2E tests
         run: pnpm run test:e2e
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # 12. Verify Import Alias — lightweight standalone (no pnpm install)
+  #     Moved from needs:build-and-test → needs:security-guard so it runs
+  #     early, in parallel with lint, instead of at the very end of the chain.
+  # ──────────────────────────────────────────────────────────────────────────
   verify-import-alias:
     runs-on: ubuntu-22.04
-    needs: build-and-test
+    needs: security-guard
     if: always()
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       # Non-bloquant: vérifie que les alias import respectent la casse (App Router casse sensible sur Linux)
       - name: Verify imports alias (case-sensitive)
         run: |

@@ -11,6 +11,7 @@ import { secureLogger } from '../../utils/secure-logger';
 import * as matchingMetrics from '../../lib/matching-metrics';
 import { checkDecisionsQuota, refundDecisionsQuota } from '../../lib/matching-quota';
 import { createGeoEndpointLimiter } from '../../middleware/enhanced-rate-limit';
+import { assertFranceLaunchLocation } from '../../lib/france-launch-guard';
 
 export const matchingRouter = Router();
 matchingRouter.use(requireAuth, requireVerifiedEmail);
@@ -257,8 +258,14 @@ export function isServerError(err: unknown): boolean {
 
 type PairResult = { type: 'success'; conversationId: string } | { type: 'pending' } | { type: 'skip' };
 
+function buildRiderDirectKey(userId: string, targetUserId: string): string {
+  const [one, two] = userId < targetUserId ? [userId, targetUserId] : [targetUserId, userId];
+  return `direct:${one}:${two}:RIDER_TO_RIDER`;
+}
+
 async function processMutualPair(userId: string, targetUserId: string): Promise<PairResult> {
   const [one, two] = userId < targetUserId ? [userId, targetUserId] : [targetUserId, userId];
+  const directKey = buildRiderDirectKey(userId, targetUserId);
 
   const runMiniTx = async (): Promise<string> => {
     let convId = '';
@@ -268,17 +275,45 @@ async function processMutualPair(userId: string, targetUserId: string): Promise<
         update: { status: 'ACTIVE' },
         create: { userOneId: one, userTwoId: two, status: 'ACTIVE' },
       });
-      let conv = await tx.conversation.findFirst({ where: { matchId: match.id } });
-      if (!conv) {
-        conv = await tx.conversation.create({ data: { matchId: match.id } });
-        await tx.conversationMember.createMany({
-          data: [
-            { conversationId: conv.id, userId },
-            { conversationId: conv.id, userId: targetUserId },
-          ],
-          skipDuplicates: true,
+
+      let conv = await tx.conversation.findFirst({
+        where: {
+          OR: [{ matchId: match.id }, { directKey }],
+        },
+        select: { id: true, matchId: true, directKey: true, type: true },
+      });
+
+      if (conv) {
+        const data: Prisma.ConversationUpdateInput = {};
+        if (!conv.matchId) data.match = { connect: { id: match.id } };
+        if (!conv.directKey) data.directKey = directKey;
+        if (conv.type !== 'RIDER_TO_RIDER') data.type = 'RIDER_TO_RIDER';
+        if (Object.keys(data).length > 0) {
+          conv = await tx.conversation.update({
+            where: { id: conv.id },
+            data,
+            select: { id: true, matchId: true, directKey: true, type: true },
+          });
+        }
+      } else {
+        conv = await tx.conversation.create({
+          data: {
+            matchId: match.id,
+            type: 'RIDER_TO_RIDER',
+            directKey,
+          },
+          select: { id: true, matchId: true, directKey: true, type: true },
         });
       }
+
+      await tx.conversationMember.createMany({
+        data: [
+          { conversationId: conv.id, userId },
+          { conversationId: conv.id, userId: targetUserId },
+        ],
+        skipDuplicates: true,
+      });
+
       convId = conv.id;
     });
     return convId;
@@ -309,7 +344,9 @@ async function processMutualPair(userId: string, targetUserId: string): Promise<
         });
         if (!match) return { type: 'skip' };
         const conv = await prisma.conversation.findFirst({
-          where: { matchId: match.id },
+          where: {
+            OR: [{ matchId: match.id }, { directKey }],
+          },
           select: { id: true },
         });
         if (!conv) return { type: 'skip' };
@@ -363,6 +400,7 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
     // P1 fix: excludeIds validated/normalised/bounded by Zod schema (not req.body raw)
     const { sport, level, date, distanceKm, location, cursor, limit, page, pageSize, sortBy, excludeIds } =
       searchSchema.parse(req.body);
+    assertFranceLaunchLocation(location);
 
     // Ensure we have a profile to read preferences from
     let profile = await prisma.riderProfile.findUnique({ where: { userId } });
@@ -603,7 +641,8 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
       : res
           .status(mapped.status)
           .json({
-            error: mapped.message,
+            error: mapped.code,
+            message: mapped.message,
             ...(mapped.details ? { details: mapped.details } : {}),
           });
   }
@@ -720,8 +759,15 @@ matchingRouter.post('/decisions', async (req, res) => {
         : res.json({ ok: true, ...payload });
     }
 
+    const safeTargetProfileIds = safeItems.map((it) => it.targetProfileId);
+    if (new Set(safeTargetProfileIds).size !== safeTargetProfileIds.length) {
+      return envelope
+        ? sendError(res, 400, ERROR_CODES.VALIDATION_ERROR, 'Invalid input')
+        : res.status(400).json({ error: 'Invalid input' });
+    }
+
     // P1: validate all targetProfileIds exist in DB (400 — oracle-hardened, same body for all)
-    const targetProfileIds = [...new Set(safeItems.map((it) => it.targetProfileId))];
+    const targetProfileIds = [...new Set(safeTargetProfileIds)];
     const existingProfiles = await prisma.riderProfile.findMany({
       where: { id: { in: targetProfileIds } },
       select: { id: true, userId: true },

@@ -340,8 +340,8 @@ describe('Security Alerts System E2E Tests', () => {
       expect(metadata).toHaveProperty('action');
       expect(metadata).toHaveProperty('attemptedAction');
       expect(metadata).toHaveProperty('timestamp');
-      // IP et User-Agent peuvent être null en environnement de test
-      expect(metadata).toHaveProperty('ip');
+      // IP est stocké haché (ipHash) — peut être null en environnement de test
+      expect(metadata).toHaveProperty('ipHash');
       expect(metadata).toHaveProperty('userAgent');
     });
   });

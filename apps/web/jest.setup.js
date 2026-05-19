@@ -72,6 +72,7 @@ jest.mock('./lib/apiClient', () => ({
     listConversations: jest.fn(),
     matchDecisions: jest.fn(),
     reportProfile: jest.fn(),
+    getProProfile: jest.fn(),
   },
 }));
 

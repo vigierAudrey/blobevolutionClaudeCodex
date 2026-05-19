@@ -107,12 +107,17 @@ describe('Socket pre-auth handshake rate limit (P0)', () => {
       });
     }
 
-    process.env.ALLOWED_ORIGINS = previousEnv.allowedOrigins;
-    process.env.WS_PREAUTH_RL_ENABLED = previousEnv.preAuthEnabled;
-    process.env.WS_PREAUTH_RL_POINTS = previousEnv.preAuthPoints;
-    process.env.WS_PREAUTH_RL_WINDOW_MS = previousEnv.preAuthWindowMs;
-    process.env.WS_PREAUTH_RL_BASE_BAN_MS = previousEnv.preAuthBaseBanMs;
-    process.env.WS_PREAUTH_RL_MAX_BAN_MS = previousEnv.preAuthMaxBanMs;
+    // Restore or delete — assigning undefined stringifies to "undefined" in process.env.
+    const restore = (key: string, value: string | undefined) => {
+      if (value === undefined) delete (process.env as any)[key];
+      else process.env[key] = value;
+    };
+    restore('ALLOWED_ORIGINS', previousEnv.allowedOrigins);
+    restore('WS_PREAUTH_RL_ENABLED', previousEnv.preAuthEnabled);
+    restore('WS_PREAUTH_RL_POINTS', previousEnv.preAuthPoints);
+    restore('WS_PREAUTH_RL_WINDOW_MS', previousEnv.preAuthWindowMs);
+    restore('WS_PREAUTH_RL_BASE_BAN_MS', previousEnv.preAuthBaseBanMs);
+    restore('WS_PREAUTH_RL_MAX_BAN_MS', previousEnv.preAuthMaxBanMs);
   });
 
   beforeEach(() => {

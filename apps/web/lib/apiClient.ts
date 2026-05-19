@@ -1,15 +1,6 @@
 import type { MessageListResponse, SendMessagePayload, ThreadListQuery, ThreadListResponse } from '@/types/messages';
 import { z } from 'zod';
 import { requestStrict, requestStrictWithStatus } from './requestStrict';
-import type {
-  AvailabilityLevel,
-  AvailabilitySport,
-  AvailabilityStatus,
-  BookingAvailability,
-  BookingRequestInboxItem,
-  CreateBookingAvailabilityPayload,
-  RiderBookingRequest,
-} from './types/booking';
 
 export interface AuditLogEntry {
   id: string;
@@ -61,6 +52,8 @@ export interface GDPRPurgeResponse {
   timestamp: string;
   durationMs: number;
   message: string;
+  error?: string;
+  blockedReason?: string;
   result: {
     summary: string;
     technicalData: {
@@ -83,13 +76,56 @@ export interface GDPRPurgeResponse {
   };
 }
 
+export interface RetentionExportArtifactSummary {
+  id: string;
+  scope: 'AUDIT_LOG';
+  format: 'NDJSON';
+  status: 'GENERATING' | 'READY' | 'VERIFIED' | 'FAILED' | 'EXPIRED';
+  rowCount: number;
+  sha256: string | null;
+  createdAt: string;
+  verifiedAt: string | null;
+  fromDate: string;
+  toDate: string;
+  createdByAdmin?: { id: string; email: string; role: string } | null;
+}
+
+export interface RetentionExportListResponse {
+  exports: RetentionExportArtifactSummary[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export interface RetentionExportGenerateResponse {
+  artifact: RetentionExportArtifactSummary;
+  download: {
+    fileName: string;
+    mimeType: string;
+    encoding: 'base64';
+    content: string;
+  };
+}
+
 export interface SecurityHealth {
-  status: 'SECURE' | 'VULNERABLE';
-  helmet: boolean;
-  csrf: boolean;
-  rateLimit: boolean;
-  corsWhitelist: string[];
-  issues: string[];
+  status: 'SECURE' | 'DEGRADED' | 'UNSAFE';
+  timestamp: string;
+  checks: {
+    config: 'ok' | 'fail';
+    env: 'ok' | 'fail';
+    db: 'ok' | 'fail';
+    redis: 'ok' | 'fail';
+  };
+}
+
+export interface SecurityObservability {
+  status: 'healthy' | 'degraded' | 'failing';
+  timestamp: string;
+  pipeline: {
+    queued: number;
+    sent: number;
+    dropped: number;
+    failed: number;
+    breakerState: 'closed' | 'open' | 'half-open';
+  };
 }
 
 /**
@@ -237,6 +273,32 @@ export interface AdminBehaviorAnalytics {
   };
 }
 
+export interface AdminLessonRequestsAnalytics {
+  period: AdminAnalyticsPeriod;
+  privacyThreshold: number;
+  definitions: { lessonRequests: string };
+  snapshot: {
+    totalActive: number;
+    newInPeriod: number;
+    bySport: { surf: number; kitesurf: number; other: number };
+    byStudentCount: { solo: number; duo: number; group: number };
+  };
+  byZone: Array<{
+    zone: string;
+    count: number | null;
+    sampleSize: number;
+    masked: boolean;
+  }>;
+  proContactStats: {
+    totalContacts: number;
+    distinctRidersContacted: number | null;
+    contactRatePct: number | null;
+    medianFirstContactHours: number | null;
+    sampleSize: number;
+    masked: boolean;
+  };
+}
+
 export interface AdminBlockedConversation {
   conversationId: string;
   blockedAt: string | null;
@@ -267,8 +329,61 @@ export interface AdminConversationBlockActionResult {
   }>;
 }
 
+export interface ReportHistoryItem {
+  id: string;
+  reason?: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewedByAdminId: string | null;
+  reviewedAction: string | null;
+  reporter: {
+    email: string;
+    role: string;
+  };
+  reportedProfile: {
+    id: string;
+    displayName: string | null;
+    user: {
+      id: string;
+      email: string;
+      role: string;
+    };
+  };
+  reviewedByAdmin?: {
+    id: string;
+    email: string;
+    role: string;
+  } | null;
+}
+
+export interface ReportHistoryResponse {
+  items: ReportHistoryItem[];
+  pagination?: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export interface ConversationBlockHistoryItem {
+  id: string;
+  conversationId: string;
+  userId: string;
+  actorUserId?: string | null;
+  actorType: 'USER' | 'ADMIN' | 'SYSTEM';
+  action: 'BLOCK' | 'UNBLOCK';
+  source: 'USER_SELF' | 'ADMIN_SINGLE' | 'ADMIN_BULK' | 'LEGACY_UNKNOWN';
+  batchId?: string | null;
+  reason?: string | null;
+  createdAt: string;
+  user?: { id: string; email: string; role: string | null };
+  actorUser?: { id: string; email: string; role: string | null } | null;
+  conversation?: { id: string; type: string; createdAt: string };
+}
+
 export interface ConversationBlockHistoryResponse {
-  items: AuditLogEntry[];
+  items: ConversationBlockHistoryItem[];
+  historyReliability: {
+    hasLegacyRows: boolean;
+    reliableSinceDate: string;
+    reliableSinceVersion: string;
+  };
   pagination?: { page: number; limit: number; total: number; totalPages: number };
 }
 
@@ -292,6 +407,9 @@ export interface SystemAlert {
   acknowledgedAt?: string | null;
   resolvedAt?: string | null;
   createdBy?: { id: string; email: string | null } | null;
+  occurrenceCount?: number;
+  firstSeenAt?: string | null;
+  lastSeenAt?: string | null;
 }
 
 export interface SystemAlertListResponse {
@@ -313,35 +431,6 @@ export interface AdminSecuritySummary {
   items: Array<{ action: string; count: number }>;
 }
 
-export interface AdminAvailabilityStatusItem {
-  id: string;
-  startAt: string;
-  endAt: string;
-  sport: 'surf' | 'kitesurf';
-  levels: string[];
-  capacity: number;
-  bookedCount: number;
-  status: 'OPEN' | 'CLOSED';
-  spotName: string | null;
-  pro: {
-    id: string;
-    email: string;
-    proProfile?: {
-      businessName: string | null;
-    } | null;
-  };
-}
-
-export interface AdminAvailabilityStatusResponse {
-  summary: {
-    total: number;
-    open: number;
-    closed: number;
-    bySport: Array<{ sport: string | null; status: 'OPEN' | 'CLOSED'; count: number }>;
-  };
-  items: AdminAvailabilityStatusItem[];
-}
-
 export interface LoginAttempt {
   id: string;
   email: string | null;
@@ -358,6 +447,8 @@ export interface LoginAttempt {
 
 export interface LoginAttemptsResponse {
   attempts: LoginAttempt[];
+  /** Opaque base64url cursor for the next page. Null when no further pages. */
+  nextCursor: string | null;
   stats: {
     total: number;
     failed: number;
@@ -431,8 +522,8 @@ export interface AdminUserDetail {
       maxDistanceKm: number | null;
       emailNotif: boolean;
       photoUrl: string | null;
-      lat: number | null;
-      lng: number | null;
+      /** F03: precise coordinates removed (RGPD minimisation) — use hasLocation for display */
+      hasLocation: boolean;
       wantsLesson: boolean;
       lessonSport: string | null;
       createdAt: string;
@@ -445,8 +536,8 @@ export interface AdminUserDetail {
       bio: string | null;
       pricePerHour: string | null;
       verified: boolean;
-      lat: number | null;
-      lng: number | null;
+      /** F03: precise coordinates removed (RGPD minimisation) — use hasLocation for display */
+      hasLocation: boolean;
       createdAt: string;
       updatedAt: string;
       offers: Array<{
@@ -469,8 +560,7 @@ export interface AdminUserDetail {
       sport: string;
       level: string;
       distanceKm: number | null;
-      lat: number | null;
-      lng: number | null;
+      // F03: lat/lng supprimés — inutiles pour l'admin, minimisation RGPD
       updatedAt: string;
     } | null;
   };
@@ -481,112 +571,6 @@ export interface AdminUserDetail {
   };
 }
 
-export interface BookingAvailabilityResult {
-  id: string;
-  pro: {
-    userId: string;
-    businessName: string | null;
-  };
-  sport: 'surf' | 'kitesurf';
-  levels: string[];
-  startAt: string;
-  endAt: string;
-  capacity: number;
-  bookedCount: number;
-  status: 'OPEN' | 'CLOSED';
-  spotName: string | null;
-  spotLat: number | null;
-  spotLng: number | null;
-  distanceKm: number | null;
-  riders: Array<{ id: string; displayName: string; avatarUrl: string | null }>;
-}
-
-export interface NearbyProResult {
-  proId: string;
-  proPublicId: string;
-  businessName: string | null;
-  photoUrl: string | null;
-  verified: boolean;
-  /** Gate B: no precise GPS. Use distanceBucket for display only. */
-  distanceBucket: '<5km' | '5-15km' | '15-30km' | '>30km';
-  distanceKm: number;
-  sports: Array<'surf' | 'kitesurf'>;
-  openAvailabilityCount: number;
-}
-
-export type ProBooking = {
-  id: string;
-  availability: BookingAvailability;
-  rider: {
-    id: string;
-    riderProfile: {
-      id: string;
-      displayName: string | null;
-      photoUrl: string | null;
-      sex: 'FEMALE' | 'MALE' | 'OTHER' | 'UNSPECIFIED';
-    } | null;
-  };
-};
-
-export type RiderBooking = {
-  id: string;
-  availability: BookingAvailability & {
-    pro: {
-      id: string;
-      proProfile: {
-        businessName: string | null;
-        photoUrl: string | null;
-      } | null;
-    };
-  };
-};
-
-type BookingRequestInboxApiItem = {
-  id: string;
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
-  message?: string | null;
-  createdAt: string;
-  respondedAt?: string | null;
-  availability: {
-    id: string;
-    startAt: string;
-    endAt: string;
-    spotName: string | null;
-    sport: AvailabilitySport;
-    levels: AvailabilityLevel[];
-    capacity: number;
-    bookedCount: number;
-    status: AvailabilityStatus;
-  };
-  rider: {
-    id: string;
-    email: string;
-    riderProfile?: {
-      displayName?: string | null;
-      photoUrl?: string | null;
-    } | null;
-  };
-};
-
-type BookingRequestMeApiItem = {
-  id: string;
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
-  message?: string | null;
-  createdAt: string;
-  respondedAt?: string | null;
-  availability: {
-    id: string;
-    sport: AvailabilitySport;
-    levels: AvailabilityLevel[];
-    spotName: string | null;
-    startAt: string;
-    endAt: string;
-    pro: {
-      proPublicId: string | null;
-      businessName: string | null;
-    };
-  };
-};
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 let cachedCsrfToken: string | null = null;
@@ -634,8 +618,8 @@ async function ensureCsrfToken(): Promise<string | null> {
  * Session hint key — a non-sensitive flag in localStorage.
  *
  * With cookie-based auth, the actual tokens are httpOnly and cannot be read by JS.
- * This flag indicates "a session was established" so pages can skip the initial
- * API call when the user is clearly not logged in (e.g. fresh browser tab after logout).
+ * This flag indicates "a session was established" for UX-only affordances.
+ * It must never be treated as proof that the server-side session is still valid.
  *
  * It is NOT the token itself and carries no security value on its own.
  * The server enforces auth via the httpOnly cookie on every request.
@@ -644,18 +628,19 @@ const SESSION_HINT_KEY = 'blob_session_hint';
 
 function getTokens() {
   if (typeof window === 'undefined') return null;
-  // Prefer explicit tokens stored in localStorage (backward compat with older sessions).
-  // Auth is also enforced via httpOnly cookies (credentials: 'include') on every request.
-  const accessToken = localStorage.getItem('accessToken');
-  if (!accessToken) return null;
-  const refreshToken = localStorage.getItem('refreshToken');
-  return { accessToken, refreshToken };
+  // Cookie-only auth: the actual tokens are httpOnly cookies, inaccessible to JS.
+  // Return a truthy presence marker when the session hint is set for optional UX.
+  // Do not use it to decide whether the user is really authenticated.
+  // The hint ('1') is set by setTokens() after login and cleared on logout.
+  // It carries no security value — the server enforces auth via cookie on every request.
+  const hint = localStorage.getItem(SESSION_HINT_KEY);
+  return hint ? { accessToken: hint, refreshToken: null as string | null } : null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function setTokens(_access = '', _refresh = '') {
   // Tokens are set as httpOnly cookies by the server — nothing to store in JS.
-  // We only update the local session hint to reflect that a session is active.
+  // We only update the local session hint to reflect likely active UX state.
   if (typeof window === 'undefined') return;
   localStorage.setItem(SESSION_HINT_KEY, '1');
 }
@@ -759,13 +744,8 @@ async function request(
     }
   }
 
-  // Inject Authorization when an access token is available in localStorage.
-  // Auth is also enforced via httpOnly cookie (credentials: 'include') on every request.
-  // Never send "Bearer undefined" or "Bearer null".
-  const tokens = getTokens();
-  if (tokens?.accessToken) {
-    headers['Authorization'] = `Bearer ${tokens.accessToken}`;
-  }
+  // Auth is enforced via httpOnly cookie sent automatically with credentials:'include'.
+  // The session hint in getTokens() is not a JWT — do not inject as Authorization header.
 
   const consentHash = getConsentHash();
   if (consentHash) {
@@ -862,12 +842,8 @@ async function buildStrictHeaders(_withAuth = true) {
   const csrf = await ensureCsrfToken();
   if (csrf) headers['X-CSRF-Token'] = csrf;
 
-  // Inject Authorization when an access token is available.
-  // Auth is also enforced via httpOnly cookie (credentials: 'include').
-  const tokens = getTokens();
-  if (tokens?.accessToken) {
-    headers['Authorization'] = `Bearer ${tokens.accessToken}`;
-  }
+  // Auth is enforced via httpOnly cookie (credentials: 'include').
+  // Session hint is not a JWT — do not inject as Authorization header.
 
   const consentHash = getConsentHash();
   if (consentHash) headers['X-Consent-Hash'] = consentHash;
@@ -901,37 +877,6 @@ const openConversationDataSchema = z
   .strict();
 type OpenConversationData = z.infer<typeof openConversationDataSchema>;
 
-const createBookingAvailabilityPayloadSchema = z.object({
-  sport: z.enum(['surf', 'kitesurf']),
-  levels: z.array(z.enum(['beginner', 'intermediate', 'advanced'])).min(1),
-  startAt: z.string().datetime(),
-  endAt: z.string().datetime(),
-  capacity: z.number().int().positive().max(20).optional(),
-  spotName: z.string().min(1).max(120).optional(),
-  spotLat: z.number().min(-90).max(90).optional(),
-  spotLng: z.number().min(-180).max(180).optional(),
-  price: z.number().nonnegative().max(9999).optional(),
-});
-
-const proAvailabilityDataSchema = z
-  .object({
-    id: z.string().uuid(),
-    proUserId: z.string().uuid().optional(),
-    sport: z.enum(['surf', 'kitesurf']),
-    levels: z.array(z.enum(['beginner', 'intermediate', 'advanced'])),
-    startAt: z.string(),
-    endAt: z.string(),
-    capacity: z.number().int().nullable().optional(),
-    bookedCount: z.number().int().nonnegative().optional(),
-    spotName: z.string().nullable().optional(),
-    spotLat: z.number().nullable().optional(),
-    spotLng: z.number().nullable().optional(),
-    price: z.number().nullable().optional(),
-    status: z.enum(['OPEN', 'CLOSED']).optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
-  })
-  .strict();
 
 const sendMessagePayloadSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('TEXT'), content: z.string().min(1).max(1000) }),
@@ -951,15 +896,6 @@ const sendMessageDataSchema = z
   })
   .strict();
 
-// Booking API expects decision enum 'ACCEPT' | 'REJECT' and returns canonical action 'accept' | 'reject' (see API decideBookingRequestSchema).
-const bookingDecisionPayloadSchema = z.object({
-  decision: z.enum(['ACCEPT', 'REJECT']),
-});
-
-const bookingDecisionDataSchema = z.object({
-  success: z.boolean(),
-  action: z.enum(['accept', 'reject']),
-});
 
 const reportProfileBodySchema = z.object({
   targetProfileId: z.string().uuid(),
@@ -976,7 +912,14 @@ export const apiClient = {
   login: (body: { email: string; password: string; consentAccepted?: boolean }) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(body) }) as Promise<LoginResponse>,
 
-  register: (body: { email: string; password: string; role: 'RIDER' | 'PRO'; ageConfirmed: true; consentAccepted: true }) =>
+  register: (body: {
+    email: string;
+    password: string;
+    role: 'RIDER' | 'PRO';
+    ageConfirmed: true;
+    consentAccepted: true;
+    countryCode?: string;
+  }) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(body) }) as Promise<Record<string, unknown>>,
 
   requestPasswordReset: (email: string) =>
@@ -1005,6 +948,7 @@ export const apiClient = {
     request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<{ ok: true; message: string }>,
 
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
+  getProProfile: () => request('/pro/me/preview', { method: 'GET' }, true),
   updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
   getDisciplines: () => request('/profile/disciplines', { method: 'GET' }, true) as Promise<Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced'|'anytime' }>>,
@@ -1059,8 +1003,67 @@ export const apiClient = {
     const params = new URLSearchParams();
     if (opts?.includeTrashed) params.append('includeTrashed', 'true');
     if (opts?.type) params.append('type', opts.type);
+    if (typeof opts?.limit === 'number') params.append('limit', String(opts.limit));
+    if (opts?.cursor) params.append('cursor', opts.cursor);
     const query = params.toString();
     return request(`/conversations${query ? `?${query}` : ''}`, { method: 'GET' }, true) as Promise<ThreadListResponse>;
+  },
+  listAllConversations: async (
+    opts?: Omit<ThreadListQuery, 'cursor'> & { maxPages?: number }
+  ): Promise<ThreadListResponse> => {
+    const limit = typeof opts?.limit === 'number' ? Math.min(opts.limit, 100) : 100;
+    const maxPages = Math.max(1, opts?.maxPages ?? 10);
+    const items: ThreadListResponse['items'] = [];
+    let cursor: string | undefined;
+    let pageCount = 0;
+    let hasMore = false;
+    let nextCursor: string | null | undefined = null;
+
+    do {
+      const page = await apiClient.listConversations({
+        ...opts,
+        limit,
+        cursor,
+      });
+
+      items.push(...(page.items ?? []));
+      hasMore = Boolean(page.hasMore);
+      nextCursor = page.nextCursor ?? null;
+      cursor = page.nextCursor ?? undefined;
+      pageCount += 1;
+    } while (cursor && pageCount < maxPages);
+
+    return {
+      items,
+      hasMore: Boolean(cursor && pageCount >= maxPages) || hasMore,
+      nextCursor: cursor ?? nextCursor ?? null,
+    };
+  },
+  findConversationById: async (
+    conversationId: string,
+    opts?: Omit<ThreadListQuery, 'cursor'> & { maxPages?: number }
+  ) => {
+    const limit = typeof opts?.limit === 'number' ? Math.min(opts.limit, 100) : 100;
+    const maxPages = Math.max(1, opts?.maxPages ?? 10);
+    let cursor: string | undefined;
+    let pageCount = 0;
+
+    do {
+      const page = await apiClient.listConversations({
+        ...opts,
+        limit,
+        cursor,
+      });
+      const match = (page.items ?? []).find((item) => item.id === conversationId);
+      if (match) {
+        return match;
+      }
+
+      cursor = page.nextCursor ?? undefined;
+      pageCount += 1;
+    } while (cursor && pageCount < maxPages);
+
+    return null;
   },
   getMessages: (id: string, cursor?: string, limit: number = 50) =>
     request(
@@ -1143,8 +1146,21 @@ export const apiClient = {
 
   // Admin
   getSecurityHealth: () => request('/security/health', { method: 'GET' }, true) as Promise<SecurityHealth>,
+  getSecurityObservability: () =>
+    request('/security/observability', { method: 'GET' }, true) as Promise<SecurityObservability>,
   getGDPRReport: () => request('/admin/gdpr/compliance-report', { method: 'GET' }, true) as Promise<GDPRReport>,
-  runGDPRPurge: () => request('/admin/gdpr/run-purge', { method: 'POST' }, true) as Promise<GDPRPurgeResponse>,
+  runGDPRPurge: () => request('/admin/gdpr/run-purge', { method: 'POST', body: JSON.stringify({ confirm: 'CONFIRMER_PURGE_RGPD' }) }, true) as Promise<GDPRPurgeResponse>,
+  createRetentionExport: (body: { scope: 'AUDIT_LOG'; fromDate: string; toDate: string; format?: 'NDJSON' }) =>
+    request('/admin/gdpr/exports', { method: 'POST', body: JSON.stringify(body) }, true) as Promise<RetentionExportGenerateResponse>,
+  getRetentionExports: (params?: { page?: number; limit?: number; scope?: 'AUDIT_LOG'; status?: 'GENERATING' | 'READY' | 'VERIFIED' | 'FAILED' | 'EXPIRED' }) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.scope) query.append('scope', params.scope);
+    if (params?.status) query.append('status', params.status);
+    const qs = query.toString();
+    return request(`/admin/gdpr/exports${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<RetentionExportListResponse>;
+  },
   searchLegalArchive: (userId: string) => request(`/admin/gdpr/legal-archive/${userId}`, { method: 'GET' }, true),
   getAuditLogs: (params?: AuditLogQuery) => {
     const query = new URLSearchParams();
@@ -1159,13 +1175,6 @@ export const apiClient = {
     return request(`/admin/audit${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<AuditLogResponse>;
   },
   getAdminStats: () => request('/admin/stats', { method: 'GET' }, true),
-  getAdminAvailabilityStatus: (params?: { status?: 'OPEN' | 'CLOSED'; limit?: number }) => {
-    const query = new URLSearchParams();
-    if (params?.status) query.append('status', params.status);
-    if (params?.limit) query.append('limit', params.limit.toString());
-    const qs = query.toString();
-    return request(`/admin/booking/availability-status${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<AdminAvailabilityStatusResponse>;
-  },
   getAdminUsers: (params?: { page?: number; limit?: number; role?: string }) => {
     const query = new URLSearchParams();
     if (params?.page) query.append('page', params.page.toString());
@@ -1177,11 +1186,19 @@ export const apiClient = {
     request(`/admin/users/${userId}/suspend`, { method: 'PATCH', body: JSON.stringify({ suspended }) }, true),
   verifyPro: (userId: string, verified: boolean) =>
     request(`/admin/pros/${userId}/verify`, { method: 'PATCH', body: JSON.stringify({ verified }) }, true),
-  getAdminReports: (params?: { page?: number; limit?: number }) => {
+  getAdminReports: (params?: { page?: number; limit?: number; status?: 'pending' | 'reviewed' | 'all' }) => {
     const query = new URLSearchParams();
     if (params?.page) query.append('page', params.page.toString());
     if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.status) query.append('status', params.status);
     return request(`/admin/reports?${query.toString()}`, { method: 'GET' }, true);
+  },
+  getAdminReportHistory: (params?: { page?: number; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    const qs = query.toString();
+    return request(`/admin/reports/history${qs ? `?${qs}` : ''}`, { method: 'GET' }, true) as Promise<ReportHistoryResponse>;
   },
   moderateReport: (reportId: string, action: ModerationAction) =>
     request(`/admin/reports/${reportId}/action`, { method: 'POST', body: JSON.stringify({ action }) }, true) as Promise<AdminModerationResponse>,
@@ -1203,7 +1220,7 @@ export const apiClient = {
   },
   adminSetConversationBlock: (
     conversationId: string,
-    body: { action?: 'block' | 'unblock'; userId?: string }
+    body: { action?: 'block' | 'unblock'; userId?: string; reason?: string }
   ) =>
     request(
       `/admin/conversations/${conversationId}/block`,
@@ -1211,7 +1228,7 @@ export const apiClient = {
       true
     ) as Promise<AdminConversationBlockActionResult>,
   adminUnblockAllConversations: () =>
-    request('/admin/conversations/unblock-all', { method: 'POST' }, true) as Promise<{ success: boolean; count: number }>,
+    request('/admin/conversations/unblock-all', { method: 'POST' }, true) as Promise<{ success: boolean; batchId: string; processedCount: number; remainingCount: number }>,
   getConversationBlockHistory: (params?: { page?: number; limit?: number }) => {
     const query = new URLSearchParams();
     if (params?.page) query.append('page', params.page.toString());
@@ -1244,14 +1261,34 @@ export const apiClient = {
   },
   getSecurityLogsSummary: (days: number = 7) =>
     request(`/admin/security/logs/summary?days=${days}`, { method: 'GET' }, true) as Promise<AdminSecuritySummary>,
-  getLoginAttempts: (options?: { limit?: number; onlyFailed?: boolean; suspiciousOnly?: boolean }) => {
+  getLoginAttempts: (options?: {
+    /** Max 100. Values above 100 are rejected server-side. */
+    limit?: number;
+    onlyFailed?: boolean;
+    suspiciousOnly?: boolean;
+    /** Opaque cursor from a previous response's nextCursor field. */
+    cursor?: string;
+  }) => {
     const params = new URLSearchParams();
-    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.limit) params.append('limit', Math.min(options.limit, 100).toString());
     if (options?.onlyFailed) params.append('onlyFailed', 'true');
     if (options?.suspiciousOnly) params.append('suspiciousOnly', 'true');
+    if (options?.cursor) params.append('cursor', options.cursor);
     const query = params.toString() ? `?${params.toString()}` : '';
     return request(`/admin/security/login-attempts${query}`, { method: 'GET' }, true) as Promise<LoginAttemptsResponse>;
   },
+  purgeLoginAttempts: (options: { dryRun?: boolean; confirm?: string } = {}) =>
+    request('/admin/security/login-attempts/purge', {
+      method: 'POST',
+      body: JSON.stringify({ dryRun: options.dryRun ?? true, confirm: options.confirm }),
+    }, true) as Promise<{
+      deleted: number;
+      wouldDelete: number;
+      dryRun: boolean;
+      batches: number;
+      successRetentionDays: number;
+      failureRetentionDays: number;
+    }>,
   getEngagementAnalytics: (period?: AdminAnalyticsPeriod) => {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/engagement${query}`, { method: 'GET' }, true) as Promise<AdminEngagementAnalytics>;
@@ -1268,139 +1305,10 @@ export const apiClient = {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/matching/ttfm${query}`, { method: 'GET' }, true) as Promise<AdminMatchingTTFM>;
   },
-  searchBookingAvailability: (params: {
-    sport: 'surf' | 'kitesurf';
-    level: 'beginner' | 'intermediate' | 'advanced';
-    lat: number;
-    lng: number;
-    radiusKm: number;
-    startAt?: string;
-    endAt?: string;
-    page?: number;
-    pageSize?: number;
-  }) => {
-    const query = new URLSearchParams();
-    query.append('sport', params.sport);
-    query.append('level', params.level);
-    query.append('lat', params.lat.toString());
-    query.append('lng', params.lng.toString());
-    query.append('radiusKm', params.radiusKm.toString());
-    if (params.startAt) query.append('startAt', params.startAt);
-    if (params.endAt) query.append('endAt', params.endAt);
-    if (params.page) query.append('page', params.page.toString());
-    if (params.pageSize) query.append('pageSize', params.pageSize.toString());
-    return request(`/booking/availability/search?${query.toString()}`, { method: 'GET' }, true) as Promise<{ results: BookingAvailabilityResult[] }>;
+  getLessonRequestsAnalytics: (period?: AdminAnalyticsPeriod) => {
+    const query = period ? `?period=${period}` : '';
+    return request(`/admin/analytics/lesson-requests${query}`, { method: 'GET' }, true) as Promise<AdminLessonRequestsAnalytics>;
   },
-  searchNearbyPros: (params: {
-    lat: number;
-    lng: number;
-    radiusKm?: number;
-    sport?: 'surf' | 'kitesurf';
-  }) => {
-    const query = new URLSearchParams();
-    query.append('lat', params.lat.toString());
-    query.append('lng', params.lng.toString());
-    query.append('radiusKm', (params.radiusKm ?? 25).toString());
-    if (params.sport) query.append('sport', params.sport);
-    return request(`/booking/pros/nearby?${query.toString()}`, { method: 'GET' }, true) as Promise<{ pros: NearbyProResult[] }>;
-  },
-  getBookingAvailabilitiesForPro: () =>
-    request('/booking/availability/me', { method: 'GET' }, true) as Promise<{ availabilities: BookingAvailability[] }> ,
-  createBookingAvailability: (payload: CreateBookingAvailabilityPayload) =>
-    (async () => {
-      const parsed = createBookingAvailabilityPayloadSchema.parse(payload);
-
-      const headers = await buildStrictHeaders(true);
-
-      return requestStrict('/booking/availability', { method: 'POST', headers, body: JSON.stringify(parsed) }, proAvailabilityDataSchema);
-    })(),
-  updateBookingAvailability: (availabilityId: string, payload: Partial<CreateBookingAvailabilityPayload>) =>
-    request(`/booking/availability/${availabilityId}`, { method: 'PATCH', body: JSON.stringify(payload) }, true) as Promise<BookingAvailability>,
-  adjustBookingAvailabilityBookedCount: (availabilityId: string, delta: number) =>
-    request(`/booking/availability/${availabilityId}/adjust-booked`, { method: 'PATCH', body: JSON.stringify({ delta }) }, true) as Promise<BookingAvailability>,
-  deleteBookingAvailability: (availabilityId: string) =>
-    request(`/booking/availability/${availabilityId}`, { method: 'DELETE' }, true) as Promise<{ success: boolean; message: string }>,
-  createBookingRequest: (payload: { availabilityId: string; message?: string }) =>
-    request('/booking/requests', { method: 'POST', body: JSON.stringify(payload) }, true) as Promise<{ id: string }>,
-  getBookingRequestsInbox: async () => {
-    const response = (await request('/booking/requests/inbox', { method: 'GET' }, true)) as {
-      requests: BookingRequestInboxApiItem[];
-    };
-    return {
-      requests: response.requests.map<BookingRequestInboxItem>((req) => ({
-        id: req.id,
-        status: req.status,
-        riderName: req.rider.riderProfile?.displayName ?? req.rider.email,
-        riderEmail: req.rider.email,
-        riderAvatarUrl: req.rider.riderProfile?.photoUrl ?? null,
-        message: req.message ?? null,
-        createdAt: req.createdAt,
-        respondedAt: req.respondedAt ?? null,
-        availability: {
-          id: req.availability.id,
-          startAt: req.availability.startAt,
-          endAt: req.availability.endAt,
-          spotName: req.availability.spotName,
-          sport: req.availability.sport,
-          levels: req.availability.levels,
-          capacity: req.availability.capacity,
-          bookedCount: req.availability.bookedCount,
-          status: req.availability.status,
-        },
-      })),
-    };
-  },
-  decideBookingRequest: (requestId: string, decision: 'ACCEPT' | 'REJECT') =>
-    (async () => {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      const csrf = await ensureCsrfToken();
-      if (csrf) headers['X-CSRF-Token'] = csrf;
-
-      const t = getTokens();
-      if (t?.accessToken) headers['Authorization'] = `Bearer ${t.accessToken}`;
-
-      const payload = bookingDecisionPayloadSchema.parse({ decision });
-
-      return requestStrict(
-        `/booking/requests/${requestId}/decision`,
-        { method: 'POST', body: JSON.stringify(payload), headers },
-        bookingDecisionDataSchema
-      );
-    })(),
-  getProBookings: () =>
-    request('/booking/bookings/me', { method: 'GET' }, true) as Promise<{ bookings: ProBooking[] }>,
-  getRiderBookings: () =>
-    request('/booking/bookings/rider/me', { method: 'GET' }, true) as Promise<{ bookings: RiderBooking[] }>,
-  getMyBookingRequests: async () => {
-    const response = (await request('/booking/requests/me', { method: 'GET' }, true)) as {
-      requests: BookingRequestMeApiItem[];
-    };
-    return {
-      requests: response.requests.map<RiderBookingRequest>((req) => ({
-        id: req.id,
-        status: req.status,
-        message: req.message ?? null,
-        createdAt: req.createdAt,
-        respondedAt: req.respondedAt ?? null,
-        availability: {
-          id: req.availability.id,
-          sport: req.availability.sport,
-          levels: req.availability.levels,
-          spotName: req.availability.spotName,
-          startAt: req.availability.startAt,
-          endAt: req.availability.endAt,
-          pro: {
-            proPublicId: req.availability.pro.proPublicId ?? null,
-            businessName: req.availability.pro.businessName,
-          },
-        },
-      })),
-    };
-  },
-
   /**
    * saveTokens — Activates the local session hint flag.
    * Tokens themselves are managed as httpOnly cookies by the server.

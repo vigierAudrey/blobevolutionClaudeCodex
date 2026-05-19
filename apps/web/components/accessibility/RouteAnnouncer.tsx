@@ -1,23 +1,49 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+
+function formatPathname(pathname: string | null) {
+  if (!pathname || pathname === '/') {
+    return 'Accueil';
+  }
+
+  return pathname
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment).replace(/[-_]+/g, ' ');
+      } catch {
+        return segment.replace(/[-_]+/g, ' ');
+      }
+    })
+    .join(' / ');
+}
 
 export function RouteAnnouncer() {
   const pathname = usePathname();
-  const [message, setMessage] = useState('Navigation en cours');
+  const previousPathname = useRef<string | null>(null);
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const readablePath = pathname === '/' ? 'Accueil' : pathname?.replace(/-/g, ' ').replace(/\//g, ' / ');
-    const pageTitle = document.title || readablePath || 'Nouvelle page';
-    setMessage(`Navigation vers ${pageTitle}`);
+    if (previousPathname.current === null) {
+      previousPathname.current = pathname;
+      return;
+    }
+
+    if (previousPathname.current === pathname) {
+      return;
+    }
+
+    previousPathname.current = pathname;
+    setMessage(`Page chargée : ${formatPathname(pathname)}`);
   }, [pathname]);
 
   return (
     <p
       role="status"
-      aria-live="assertive"
+      aria-live="polite"
       aria-atomic="true"
       className="sr-only"
       data-testid="route-announcer"

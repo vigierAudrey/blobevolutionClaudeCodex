@@ -4,6 +4,7 @@ import { clientPrisma as prisma } from '@blobinfini/database';
 import { getSessionData } from '../../lib/auth-session-store';
 import { cacheService } from '../../services/cache.service';
 import { getClientIp } from '../../lib/client-ip';
+import { hashIpHmacSafe } from '../../lib/hash-ip';
 import { secureLogger } from '../../utils/secure-logger';
 import { resolveLiveSessionAuthBinding } from '../auth/auth.guard';
 
@@ -168,7 +169,7 @@ export async function enforceAdminAllowedIp(req: Request, res: Response, next: N
       secureLogger.warn('ADMIN_ALLOWED_IP_DENIED', {
         userId: user.id,
         path: req.path,
-        ip: clientIp,
+        ipHash: hashIpHmacSafe(clientIp),
       });
       res.status(403).json({
         error: 'IP non autorisée',

@@ -7,7 +7,13 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
  * Conformité ROADMAP.md Phase 2: Database SSL obligatoire
  */
 function validateDatabaseSSL(): void {
-  if (process.env.NODE_ENV === 'production') {
+  // Exemptions : environnements Docker internes où postgres est sur un réseau
+  // privé non exposé (172.20.0.0/16 pre-vps, 172.21.0.0/16 vps). SSL géré
+  // par nginx TLS pour les connexions externes. Un VPS réel avec postgres
+  // distant DOIT utiliser un APP_ENV différent (ex: 'production') et avoir sslmode.
+  if (process.env.NODE_ENV === 'production' &&
+      process.env.APP_ENV !== 'pre-vps' &&
+      process.env.APP_ENV !== 'vps') {
     const dbUrl = process.env.DATABASE_URL;
 
     if (!dbUrl) {

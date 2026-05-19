@@ -1,12 +1,12 @@
 "use client";
 import Image from 'next/image';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, Briefcase, Shield, ShieldOff, MessageSquare, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { apiClient } from '../../lib/apiClient';
-import type { ThreadSummary, ThreadListQuery, ThreadListResponse } from '@/types/messages';
+import type { ThreadSummary, ThreadListQuery } from '@/types/messages';
 import { Button } from '../../components/ui/button';
 import { ConversationInvitations } from '../../components/ConversationInvitations';
 
@@ -17,26 +17,77 @@ export default function MessagesPage() {
   const [items, setItems] = useState<ThreadSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL'|'FAVORITES'|'UNREAD'|'TRASH'|'RIDERS'|'PROS'>('ALL');
+  // Pagination API réelle : stocker le curseur pour la page suivante
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Compteur d'appels API pour debug (non affiché en UI)
+  const apiCallCount = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (softRefresh = false) => {
     try {
-      const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH' };
-
-      // Filter by conversation type if needed
+      const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH', limit: 100 };
       if (filter === 'RIDERS') opts.type = 'RIDER_TO_RIDER';
       if (filter === 'PROS') opts.type = 'RIDER_TO_PRO';
 
-      const data = await apiClient.listConversations(opts) as ThreadListResponse;
-      setItems(data.items ?? []);
+      apiCallCount.current += 1;
+      const page = await apiClient.listConversations(opts);
+      console.debug('[Conversations] Loaded', page.items?.length ?? 0, 'items, API calls total:', apiCallCount.current);
+
+      if (softRefresh) {
+        // Polling : on met à jour les items existants et on préfixe les nouveaux,
+        // sans détruire les pages accumulées via "Charger plus".
+        setItems(prev => {
+          const freshMap = new Map((page.items ?? []).map(i => [i.id, i]));
+          const existingIds = new Set(prev.map(i => i.id));
+          const newAtTop = (page.items ?? []).filter(i => !existingIds.has(i.id));
+          const updated = prev.map(i => freshMap.get(i.id) ?? i);
+          return [...newAtTop, ...updated];
+        });
+        // nextCursor n'est pas réinitialisé : la pagination accumulée est préservée.
+      } else {
+        setItems(page.items ?? []);
+        setNextCursor(page.nextCursor ?? null);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur');
     }
   }, [filter]);
 
+  // Charger plus : appel API avec le curseur, append sans doublon
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH', limit: 100, cursor: nextCursor };
+      if (filter === 'RIDERS') opts.type = 'RIDER_TO_RIDER';
+      if (filter === 'PROS') opts.type = 'RIDER_TO_PRO';
+
+      apiCallCount.current += 1;
+      const page = await apiClient.listConversations(opts);
+      console.debug('[Conversations] Loaded more:', page.items?.length ?? 0, 'items, API calls total:', apiCallCount.current);
+      // Append sans duplication (dedup par id)
+      setItems(prev => {
+        const existingIds = new Set(prev.map(i => i.id));
+        const newItems = (page.items ?? []).filter(i => !existingIds.has(i.id));
+        return [...prev, ...newItems];
+      });
+      setNextCursor(page.nextCursor ?? null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors du chargement');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filter, nextCursor, loadingMore]);
+
+  // Reset et rechargement quand le filtre change
   useEffect(() => {
+    setItems([]);
+    setNextCursor(null);
     void load();
-    const t = setInterval(load, 15000);
+    // softRefresh=true : le polling ne détruit pas les pages accumulées via "Charger plus"
+    const t = setInterval(() => void load(true), 15000);
     return () => clearInterval(t);
   }, [filter, load]);
 
@@ -58,12 +109,6 @@ export default function MessagesPage() {
     if (filter === 'PROS') return items.filter(i => !i.trashed && i.type === 'RIDER_TO_PRO');
     return items.filter(i => i.trashed);
   }, [items, filter]);
-
-  // Client-side lazy load
-  const PAGE = 20;
-  const [limit, setLimit] = useState<number>(PAGE);
-  useEffect(()=>{ setLimit(PAGE); }, [filter]);
-  const shown = useMemo(()=>visible.slice(0, limit), [visible, limit]);
 
   const totalUnread = useMemo(() =>
     items.filter(it => !it.trashed).reduce((acc, it) => acc + it.unread, 0),
@@ -245,7 +290,7 @@ export default function MessagesPage() {
             </div>
           ) : (
             <div className="divide-y">
-              {shown.map((it) => (
+              {visible.map((it) => (
                 <div
                   key={it.id}
                   className={`group flex items-center justify-between p-4 transition-all hover:bg-gradient-to-r hover:from-slate-50 hover:to-transparent ${
@@ -422,15 +467,16 @@ export default function MessagesPage() {
         </CardContent>
       </Card>
 
-      {/* Load more */}
-      {shown.length < visible.length && (
+      {/* Charger plus : appel API réel via nextCursor (pas slice mémoire) */}
+      {nextCursor && (
         <div className="flex justify-center">
           <Button
             variant="outline"
-            onClick={()=>setLimit((n)=>n+PAGE)}
+            onClick={loadMore}
+            disabled={loadingMore}
             className="border-2"
           >
-            Charger plus ({visible.length - shown.length} restant{visible.length - shown.length > 1 ? 's' : ''})
+            {loadingMore ? 'Chargement…' : 'Charger plus'}
           </Button>
         </div>
       )}

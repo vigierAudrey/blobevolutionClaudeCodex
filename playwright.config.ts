@@ -14,6 +14,27 @@ const apiURL = `http://localhost:${finalApiPort}`;
 process.env.PLAYWRIGHT_BASE_URL = baseURL;
 process.env.PLAYWRIGHT_API_URL = apiURL;
 
+const safeTestEnv = {
+  ALLOWED_ORIGINS: `${baseURL},http://127.0.0.1:${finalWebPort}`,
+  SMTP_HOST: '127.0.0.1',
+  SMTP_PORT: '1025',
+  SMTP_ALLOW_NO_AUTH: 'true',
+  SMTP_USER: '',
+  SMTP_PASS: '',
+  FIREBASE_PROJECT_ID: 'blobinfini-demo',
+  FIREBASE_CLIENT_EMAIL: '',
+  FIREBASE_PRIVATE_KEY: '',
+  NEXT_PUBLIC_FIREBASE_API_KEY: '',
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: '',
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '',
+  NEXT_PUBLIC_FIREBASE_APP_ID: '',
+  NEXT_PUBLIC_FIREBASE_VAPID_KEY: '',
+  WEBHOOK_URL: '',
+  N8N_WEBHOOK_URL: '',
+  NEXT_PUBLIC_ADSENSE_ENABLED: 'true',
+  NEXT_PUBLIC_ADSENSE_CLIENT_ID: 'ca-pub-0000000000000000',
+};
+
 async function waitForServer(port: number, label: string) {
   const ready = await waitPort({ host: '127.0.0.1', port, timeout: 180_000 });
   if (!ready) {
@@ -24,6 +45,9 @@ async function waitForServer(port: number, label: string) {
 
 export default defineConfig({
   testDir: './apps/web/tests/e2e',
+  // auth-verify-flow has its own dedicated config and Mailpit prerequisite.
+  testIgnore: ['**/auth-verify-flow.spec.ts'],
+  globalTimeout: process.env.CI ? 20 * 60 * 1000 : 10 * 60 * 1000,
   timeout: 45_000,
   // Avoid root-owned default 'test-results' folder in some environments
   outputDir: 'playwright-out',
@@ -33,7 +57,7 @@ export default defineConfig({
   },
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 1 : 4,
   reporter: process.env.CI
     ? [['github'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
     : 'list',
@@ -49,6 +73,7 @@ export default defineConfig({
       url: `${apiURL}/health`,
       env: {
         ...process.env,
+        ...safeTestEnv,
         PORT: String(finalApiPort),
       },
       reuseExistingServer: false,
@@ -57,10 +82,11 @@ export default defineConfig({
       timeout: 180_000,
     },
     {
-      command: 'npm run dev --workspace @blobinfini/web',
+      command: 'cd apps/web && npx next dev -p $PORT',
       url: baseURL,
       env: {
         ...process.env,
+        ...safeTestEnv,
         PORT: String(finalWebPort),
         NEXT_PUBLIC_API_URL: apiURL,
       },

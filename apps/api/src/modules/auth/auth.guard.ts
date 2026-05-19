@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { getSessionData } from '../../lib/auth-session-store';
 import { secureLogger } from '../../utils/secure-logger';
+import { setActorRefForUser } from '../../observability/log-context';
 
 export type VerifiedAccessTokenPayload = {
   sub: string;
@@ -43,8 +44,12 @@ export function resolveAccessToken(req: Request): AccessTokenResolution {
   let bearerToken: string | null = null;
   if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
     const candidate = auth.slice('Bearer '.length).trim();
-    // Legacy tests may still send "Bearer undefined"/"Bearer null".
-    bearerToken = candidate && candidate !== 'undefined' && candidate !== 'null' ? candidate : null;
+    // Ignore non-JWT-shaped strings: 'undefined', 'null', session hint '1', etc.
+    // A JWT always has exactly 3 dot-separated parts (header.payload.signature).
+    // Sending a non-JWT Bearer alongside a valid cookie would trigger the CONFLICT
+    // check below — ignoring it here lets the cookie path take over cleanly.
+    const isJwtShaped = candidate.split('.').length === 3;
+    bearerToken = isJwtShaped ? candidate : null;
   }
 
   const cookieToken = req.cookies?.accessToken;
@@ -110,6 +115,7 @@ function setAuthenticatedContext(req: Request, payload: VerifiedAccessTokenPaylo
     role: payload.role,
   };
   (req as Request & { user?: AuthenticatedUser; auth?: VerifiedAccessTokenPayload }).auth = payload;
+  setActorRefForUser(payload.sub);
 }
 
 function resolveAuthenticatedPayload(req: Request): AuthenticatedPayloadResolution {
@@ -267,15 +273,6 @@ export function requireAuthSensitive(options: AuthSensitiveOptions = {}) {
   };
 }
 
-export function requireRole(role: 'RIDER' | 'PRO' | 'ADMIN') {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as any).user as { id: string; role: string } | undefined;
-    if (!user) return res.status(401).json({ error: 'Unauthorized' });
-    if (user.role !== role) return res.status(403).json({ error: 'Forbidden' });
-    next();
-  };
-}
-
 export async function requireVerifiedEmail(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user as { id: string } | undefined;
   if (!user?.id) return res.status(401).json({ error: 'Unauthorized' });
@@ -289,7 +286,18 @@ export async function requireVerifiedEmail(req: Request, res: Response, next: Ne
   }
 }
 
-// Helper pour les middlewares admin
-export const requireAdmin = requireRole('ADMIN');
-export const requirePro = requireRole('PRO');
-export const requireRider = requireRole('RIDER');
+// Source unique de vérité pour les guards de rôle PRO/RIDER (DB fallback + alertes sécurité).
+export { requireRole } from '../../lib/role-guard';
+import { requireRole as _requireRole } from '../../lib/role-guard';
+
+// requireAdmin reste synchrone + JWT-only : le routeur admin est protégé par IP allowlist,
+// step-up auth et session server-side — le fallback DB y serait redondant.
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const user = (req as any).user as { id: string; role: string } | undefined;
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (user.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
+  return next();
+}
+
+export const requirePro = _requireRole('PRO');
+export const requireRider = _requireRole('RIDER');

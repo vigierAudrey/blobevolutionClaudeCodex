@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ERROR_CODES } from '../utils/error-codes';
+import { secureLogger } from '../utils/secure-logger';
 
 export const ackErrorSchema = z
   .object({
@@ -42,8 +43,7 @@ export function createAckOnce(ack?: unknown) {
   return (payload: AckResult<unknown>) => {
     if (called) {
       if (process.env.NODE_ENV !== 'production') {
-        // eslint-disable-next-line no-console
-        console.warn('[socket] ACK already called, ignoring subsequent call');
+        secureLogger.warn('SOCKET_ACK_DUPLICATE_IGNORED');
       }
       return;
     }

@@ -1,21 +1,21 @@
 name: Security Health Monitor
 
 on:
-  # schedule:
-  #   - cron: '*/30 * * * *'
-  workflow_dispatch: {}  # Vous pouvez toujours lancer manuellement si besoin
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch: {}
 
 jobs:
   check-security-health:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Run security health script
         env:
           SECURITY_HEALTH_URL: ${{ secrets.SECURITY_HEALTH_URL }}
-          SECURITY_HEALTH_TOKEN: ${{ secrets.SECURITY_HEALTH_TOKEN }}
+          SECURITY_MONITOR_TOKEN: ${{ secrets.SECURITY_MONITOR_TOKEN }}
           HC_FAIL_URL: ${{ secrets.SECURITY_HEALTH_FAIL_WEBHOOK }}
           HC_OK_URL: ${{ secrets.SECURITY_HEALTH_OK_WEBHOOK }}
         run: |

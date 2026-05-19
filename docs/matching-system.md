@@ -695,7 +695,7 @@ console.log('Mutual match created', {
 - [ ] IA de recommandation (ML)
 - [ ] Matching par skills (tricks, niveaux détaillés)
 - [ ] Événements de groupe (sessions collectives)
-- [ ] Intégration calendrier (Google Calendar, Apple Calendar)
+- [ ] ~~Intégration calendrier (Google Calendar, Apple Calendar)~~ — hors scope MVP (voir [docs/product-positioning.md](./product-positioning.md))
 
 ---
 

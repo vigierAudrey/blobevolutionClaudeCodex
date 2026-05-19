@@ -3,14 +3,15 @@
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
 import Image from 'next/image';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, ArrowLeft, Briefcase, Shield, ShieldOff, MessageSquare } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
-import type { ThreadSummary, ThreadListQuery, ThreadListResponse } from '@/types/messages';
+import type { ThreadSummary, ThreadListQuery } from '@/types/messages';
+import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../../../lib/clientSession';
 
 export default function ProMessagesPage() {
   const router = useRouter();
@@ -19,24 +20,26 @@ export default function ProMessagesPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL'|'FAVORITES'|'UNREAD'|'TRASH'|'RIDERS'>('ALL');
   const [loading, setLoading] = useState(true);
+  // Pagination API réelle
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const apiCallCount = useRef(0);
 
   // Vérification auth et rôle PRO
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-
-        const currentUser = await apiClient.me();
-        if (currentUser.role !== 'PRO') {
+        await requireClientRole('PRO');
+        setAuthorized(true);
+      } catch (err) {
+        if (err instanceof RoleMismatchError) {
           router.replace('/dashboard');
           return;
         }
-        setAuthorized(true);
-      } catch (err) {
+        if (err instanceof SessionRequiredError) {
+          router.replace('/login');
+          return;
+        }
         console.error('Auth check failed:', err);
         router.replace('/login');
       } finally {
@@ -46,24 +49,69 @@ export default function ProMessagesPage() {
 
     checkAuth();
   }, [router]);
-  const load = useCallback(async () => {
+
+  const load = useCallback(async (softRefresh = false) => {
     try {
-      const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH' };
+      const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH', limit: 100 };
       if (filter === 'RIDERS') opts.type = 'RIDER_TO_PRO';
 
-      const data = (await apiClient.listConversations(opts)) as ThreadListResponse;
-      const onlyRiderThreads = (data.items ?? []).filter((conv: ThreadSummary) => conv.type !== 'PRO_TO_PRO');
-      setItems(onlyRiderThreads);
+      apiCallCount.current += 1;
+      const page = await apiClient.listConversations(opts);
+      console.debug('[ProConversations] Loaded', page.items?.length ?? 0, 'items, API calls total:', apiCallCount.current);
+      const freshItems = (page.items ?? []).filter((conv: ThreadSummary) => conv.type !== 'PRO_TO_PRO');
+
+      if (softRefresh) {
+        // Polling : merge sans détruire les pages accumulées via "Charger plus".
+        setItems(prev => {
+          const freshMap = new Map(freshItems.map(i => [i.id, i]));
+          const existingIds = new Set(prev.map(i => i.id));
+          const newAtTop = freshItems.filter(i => !existingIds.has(i.id));
+          const updated = prev.map(i => freshMap.get(i.id) ?? i);
+          return [...newAtTop, ...updated];
+        });
+        // nextCursor non réinitialisé : pagination accumulée préservée.
+      } else {
+        setItems(freshItems);
+        setNextCursor(page.nextCursor ?? null);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur lors du chargement des conversations');
     }
   }, [filter]);
 
+  // Charger plus : appel API avec curseur, append sans doublon
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH', limit: 100, cursor: nextCursor };
+      if (filter === 'RIDERS') opts.type = 'RIDER_TO_PRO';
+
+      apiCallCount.current += 1;
+      const page = await apiClient.listConversations(opts);
+      console.debug('[ProConversations] Loaded more:', page.items?.length ?? 0, 'API calls total:', apiCallCount.current);
+      const newRiderThreads = (page.items ?? []).filter((conv: ThreadSummary) => conv.type !== 'PRO_TO_PRO');
+      setItems(prev => {
+        const existingIds = new Set(prev.map(i => i.id));
+        return [...prev, ...newRiderThreads.filter(i => !existingIds.has(i.id))];
+      });
+      setNextCursor(page.nextCursor ?? null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
+      setError(message || 'Erreur lors du chargement');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filter, nextCursor, loadingMore]);
+
   useEffect(() => {
     if (!authorized) return;
+    setItems([]);
+    setNextCursor(null);
     void load();
-    const interval = setInterval(load, 15000);
+    // softRefresh=true : le polling ne détruit pas les pages accumulées via "Charger plus"
+    const interval = setInterval(() => void load(true), 15000);
     return () => clearInterval(interval);
   }, [authorized, load]);
 
@@ -83,12 +131,6 @@ export default function ProMessagesPage() {
     if (filter === 'RIDERS') return items.filter(i => !i.trashed && i.type === 'RIDER_TO_PRO');
     return items.filter(i => i.trashed);
   }, [items, filter]);
-
-  // Client-side lazy load
-  const PAGE = 20;
-  const [limit, setLimit] = useState<number>(PAGE);
-  useEffect(() => { setLimit(PAGE); }, [filter]);
-  const shown = useMemo(() => visible.slice(0, limit), [visible, limit]);
 
   if (loading) return (
     <div className="max-w-2xl mx-auto space-y-4 pt-8">
@@ -173,7 +215,7 @@ export default function ProMessagesPage() {
           )}
 
           <div className="divide-y">
-            {shown.map((it) => (
+            {visible.map((it) => (
               <div key={it.id} className="flex items-center justify-between py-3 rounded-md px-2 hover:bg-accent">
                 <Link href={`/messages/${it.id}`} className="flex-1 flex items-start gap-3">
                   <div className="relative flex-shrink-0">
@@ -275,9 +317,16 @@ export default function ProMessagesPage() {
         </CardContent>
       </Card>
 
-      {shown.length < visible.length && (
+      {/* Charger plus : appel API réel via nextCursor */}
+      {nextCursor && (
         <div className="flex justify-center">
-          <button className="text-sm underline" onClick={() => setLimit((n) => n + PAGE)}>Charger plus</button>
+          <button
+            className="text-sm underline disabled:opacity-50"
+            onClick={loadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? 'Chargement…' : 'Charger plus'}
+          </button>
         </div>
       )}
     </div>

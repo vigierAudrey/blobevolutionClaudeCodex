@@ -7,11 +7,14 @@
  * Fonctionnalités :
  * - Enregistrement dans systemAlert (base de données)
  * - Notification email à l'administrateur
- * - Console logs pour traçabilité immédiate
+ * - Logs runtime sécurisés pour traçabilité immédiate
  */
 
 import { systemAlertService } from './system-alert.service';
 import { sendMail } from '../lib/mailer';
+import { hashIpHmac } from '../lib/hash-ip';
+import { hashEmail } from '../modules/auth/login-attempt.util';
+import { secureLogger } from '../utils/secure-logger';
 
 interface SecurityViolation {
   userId: string;
@@ -20,7 +23,7 @@ interface SecurityViolation {
   action: string;
   endpoint: string;
   attemptedAction: string;
-  ip?: string;
+  clientIp?: string;
   userAgent?: string;
 }
 
@@ -39,12 +42,19 @@ class SecurityAlertService {
       action,
       endpoint,
       attemptedAction,
-      ip,
+      clientIp,
       userAgent
     } = violation;
+    const ipHash = this.resolveIpHash(clientIp);
 
-    // 1. Console log immédiat pour traçabilité
-    console.warn(`🚨 SECURITY VIOLATION: ${userRole} user ${userId} attempted ${action} on ${endpoint}`);
+    secureLogger.security('SECURITY_VIOLATION_REPORTED', {
+      userId,
+      userRole,
+      action,
+      endpoint,
+      attemptedAction,
+      ipHash,
+    });
 
     // 2. Créer une alerte système en base de données
     try {
@@ -60,7 +70,8 @@ class SecurityAlertService {
           endpoint,
           action,
           attemptedAction,
-          ip,
+          ipHash,
+          ipHashVersion: ipHash ? 'v2' : null,
           userAgent,
           timestamp: new Date().toISOString()
         },
@@ -68,18 +79,20 @@ class SecurityAlertService {
         dedupeKey: null // Pas de déduplication pour les violations de sécurité
       });
 
-      console.log(`✅ Security alert created in database for user ${userId}`);
+      secureLogger.info('SECURITY_ALERT_CREATED', { userId, endpoint });
     } catch (error) {
-      console.error('❌ Failed to create security alert in database:', error);
+      secureLogger.error('SECURITY_ALERT_CREATE_FAILED', { error, endpoint });
       // Ne pas bloquer si l'alerte DB échoue
     }
 
     // 3. Envoyer notification email à l'admin
     try {
       await this.sendAdminNotificationEmail(violation);
-      console.log(`📧 Security notification email sent to admin (${this.ADMIN_EMAIL})`);
+      secureLogger.info('SECURITY_ALERT_EMAIL_SENT', {
+        adminEmailHash: hashEmail(this.ADMIN_EMAIL)
+      });
     } catch (error) {
-      console.error('❌ Failed to send admin notification email:', error);
+      secureLogger.error('SECURITY_ALERT_EMAIL_FAILED', { error });
       // Ne pas bloquer si l'email échoue
     }
   }
@@ -94,9 +107,10 @@ class SecurityAlertService {
       userRole,
       endpoint,
       attemptedAction,
-      ip,
+      clientIp,
       userAgent
     } = violation;
+    const ipHash = this.resolveIpHash(clientIp);
 
     const subject = `🚨 Alerte Sécurité : Tentative d'accès non autorisée`;
 
@@ -111,7 +125,7 @@ DÉTAILS DE L'INCIDENT :
 👥 Rôle : ${userRole}
 🎯 Endpoint : ${endpoint}
 ⚠️  Action tentée : ${attemptedAction}
-🌐 IP : ${ip || 'N/A'}
+🌐 Empreinte IP (HMAC) : ${ipHash || 'N/A'}
 🖥️  User-Agent : ${userAgent || 'N/A'}
 ⏰ Date/Heure : ${new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}
 
@@ -199,8 +213,8 @@ Système de sécurité BlobConnect`;
           <span class="detail-value">${attemptedAction}</span>
         </div>
         <div class="detail-row">
-          <span class="detail-label">🌐 Adresse IP :</span>
-          <span class="detail-value">${ip || 'N/A'}</span>
+          <span class="detail-label">🌐 Empreinte IP :</span>
+          <span class="detail-value"><code>${ipHash || 'N/A'}</code></span>
         </div>
         <div class="detail-row">
           <span class="detail-label">🖥️ User-Agent :</span>
@@ -246,8 +260,20 @@ Système de sécurité BlobConnect`;
       to: this.ADMIN_EMAIL,
       subject,
       text,
-      html
+      html,
+      type: 'security_alert',
     });
+  }
+
+  private resolveIpHash(clientIp?: string): string | undefined {
+    try {
+      return hashIpHmac(clientIp) ?? undefined;
+    } catch (error) {
+      secureLogger.error('SECURITY_ALERT_IP_HASH_FAILED', {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
   }
 
   /**
@@ -257,7 +283,7 @@ Système de sécurité BlobConnect`;
     userId: string,
     endpoint: string,
     userEmail?: string,
-    ip?: string,
+    clientIp?: string,
     userAgent?: string
   ): Promise<void> {
     await this.reportSecurityViolation({
@@ -267,7 +293,7 @@ Système de sécurité BlobConnect`;
       action: 'ACCESS_RIDER_ENDPOINT',
       endpoint,
       attemptedAction: 'Accès aux données RIDER depuis un compte PRO',
-      ip,
+      clientIp,
       userAgent
     });
   }
@@ -279,7 +305,7 @@ Système de sécurité BlobConnect`;
     userId: string,
     endpoint: string,
     userEmail?: string,
-    ip?: string,
+    clientIp?: string,
     userAgent?: string
   ): Promise<void> {
     await this.reportSecurityViolation({
@@ -289,7 +315,7 @@ Système de sécurité BlobConnect`;
       action: 'ACCESS_PRO_ENDPOINT',
       endpoint,
       attemptedAction: 'Accès aux données PRO depuis un compte RIDER',
-      ip,
+      clientIp,
       userAgent
     });
   }
@@ -302,7 +328,7 @@ Système de sécurité BlobConnect`;
     userRole: string,
     endpoint: string,
     userEmail?: string,
-    ip?: string,
+    clientIp?: string,
     userAgent?: string
   ): Promise<void> {
     await this.reportSecurityViolation({
@@ -312,7 +338,7 @@ Système de sécurité BlobConnect`;
       action: 'INVALID_ROLE_ACCESS',
       endpoint,
       attemptedAction: `Tentative d'accès avec un rôle invalide (${userRole})`,
-      ip,
+      clientIp,
       userAgent
     });
   }
@@ -325,7 +351,7 @@ Système de sécurité BlobConnect`;
     userId: string,
     endpoint: string,
     userEmail?: string,
-    ip?: string,
+    clientIp?: string,
     userAgent?: string
   ): Promise<void> {
     await this.reportSecurityViolation({
@@ -335,7 +361,7 @@ Système de sécurité BlobConnect`;
       action: 'ADMIN_ACCESS_PRO_ENDPOINT',
       endpoint,
       attemptedAction: '⚠️ Compte ADMIN accédant aux endpoints PRO (potentiellement compromis)',
-      ip,
+      clientIp,
       userAgent
     });
   }
@@ -348,7 +374,7 @@ Système de sécurité BlobConnect`;
     userId: string,
     endpoint: string,
     userEmail?: string,
-    ip?: string,
+    clientIp?: string,
     userAgent?: string
   ): Promise<void> {
     await this.reportSecurityViolation({
@@ -358,7 +384,7 @@ Système de sécurité BlobConnect`;
       action: 'ADMIN_ACCESS_RIDER_ENDPOINT',
       endpoint,
       attemptedAction: '⚠️ Compte ADMIN accédant aux endpoints RIDER (potentiellement compromis)',
-      ip,
+      clientIp,
       userAgent
     });
   }

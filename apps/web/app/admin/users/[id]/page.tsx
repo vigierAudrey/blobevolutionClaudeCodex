@@ -30,12 +30,7 @@ export default function AdminUserDetailPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const tokens = apiClient.getTokens();
-        if (!tokens?.accessToken) {
-          router.replace('/login');
-          return;
-        }
-
+        // No local hint check — truth comes from the server session.
         const currentUser = await apiClient.me();
         if (currentUser.role !== 'ADMIN') {
           router.replace('/dashboard');
@@ -181,10 +176,10 @@ export default function AdminUserDetailPage() {
               </div>
             )}
 
-            {user.riderProfile.lat != null && user.riderProfile.lng != null && (
+            {user.riderProfile.hasLocation && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <MapPin className="h-4 w-4" />
-                Position: {user.riderProfile.lat.toFixed(4)}, {user.riderProfile.lng.toFixed(4)}
+                Position renseignée (coordonnées masquées)
               </div>
             )}
 
@@ -224,9 +219,9 @@ export default function AdminUserDetailPage() {
                 <p className="text-xs text-muted-foreground uppercase">Tarif horaire</p>
                 <p className="text-sm">{user.proProfile.pricePerHour ? `${user.proProfile.pricePerHour} €` : 'Non renseigné'}</p>
               </div>
-              {user.proProfile.lat != null && user.proProfile.lng != null && (
+              {user.proProfile.hasLocation && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <MapPin className="h-4 w-4" /> {user.proProfile.lat.toFixed(4)}, {user.proProfile.lng.toFixed(4)}
+                  <MapPin className="h-4 w-4" /> Position renseignée (coordonnées masquées)
                 </div>
               )}
             </div>

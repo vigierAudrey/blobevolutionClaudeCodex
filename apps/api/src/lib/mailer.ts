@@ -1,15 +1,62 @@
 /* Lightweight mailer wrapper with optional nodemailer.
- * If SMTP env is missing or nodemailer is not installed, emails are skipped gracefully.
+ * Local/dev/pre-VPS may skip email delivery gracefully.
+ * VPS runtime must fail loud on SMTP misconfiguration or missing transport.
  */
 import dotenv from 'dotenv';
+import { createRequire } from 'module';
 import { resolve } from 'path';
+import { hashEmail } from '../modules/auth/login-attempt.util';
+import { recordEmailSendFailure, recordEmailSendSuccess } from './email-metrics';
+import { secureLogger } from '../utils/secure-logger';
 
 // Ensure env is loaded when used standalone (tests or jobs)
 dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env') });
+const requireModule = createRequire(resolve(process.cwd(), 'package.json'));
 
-type Mail = { to: string; subject: string; text: string; html?: string };
+const BREVO_SMTP_HOST = 'smtp-relay.brevo.com';
+const SMTP_CONNECTION_TIMEOUT_MS = 3000;
+const SMTP_GREETING_TIMEOUT_MS = 3000;
+const SMTP_SOCKET_TIMEOUT_MS = 5000;
+const SMTP_VERIFY_TIMEOUT_MS = 3000;
 
-function getSmtpConfig() {
+export type MailType =
+  | 'email_verification'
+  | 'email_verification_resend'
+  | 'password_reset'
+  | 'two_factor_code'
+  | 'account_deletion'
+  | 'account_deletion_cancelled'
+  | 'security_alert';
+
+type Mail = {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  type: MailType;
+};
+
+type MailProvider = 'brevo' | 'smtp';
+
+type SmtpConfig = {
+  host: string;
+  port: number;
+  secure: boolean;
+  from: string;
+  auth?: {
+    user: string;
+    pass: string;
+  };
+};
+
+const isStrictEmailDeliveryEnv = () =>
+  process.env.NODE_ENV === 'production' && process.env.APP_ENV === 'vps';
+
+function resolveMailProvider(host?: string): MailProvider {
+  return String(host ?? '').trim().toLowerCase() === BREVO_SMTP_HOST ? 'brevo' : 'smtp';
+}
+
+function getSmtpConfig(): SmtpConfig | null {
   const host = process.env.SMTP_HOST;
   const port = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587;
   const user = process.env.SMTP_USER;
@@ -19,8 +66,8 @@ function getSmtpConfig() {
 
   if (!host) return null;
 
-  // Dev convenience: allow servers without auth (e.g., Mailpit on 1025)
-  const allowNoAuth = String(process.env.SMTP_ALLOW_NO_AUTH || '').toLowerCase() === 'true' || port === 1025;
+  // Dev/pre-VPS only: explicit opt-in for unauthenticated SMTP targets such as Mailpit.
+  const allowNoAuth = String(process.env.SMTP_ALLOW_NO_AUTH || '').toLowerCase() === 'true';
 
   const base = { host, port, secure, from };
   if (user && pass) return { ...base, auth: { user, pass } };
@@ -29,46 +76,194 @@ function getSmtpConfig() {
   return null; // not configured properly
 }
 
+function buildTransportOptions(cfg: SmtpConfig) {
+  return {
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: cfg.auth,
+    connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
+    greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
+    socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
+    ...(isStrictEmailDeliveryEnv()
+      ? {
+          requireTLS: true,
+          tls: {
+            servername: cfg.host,
+            rejectUnauthorized: true,
+            minVersion: 'TLSv1.2',
+          },
+        }
+      : {}),
+  };
+}
+
 async function getTransport() {
   const cfg = getSmtpConfig();
-  if (!cfg) return null;
+  if (!cfg) {
+    if (isStrictEmailDeliveryEnv()) {
+      throw new Error('SMTP configuration is invalid for VPS runtime');
+    }
+    return null;
+  }
   try {
-    // Lazy import to keep optional
-    const mod = await import('nodemailer');
+    const mod = requireModule('nodemailer');
     const nodemailer: any = (mod as any).default ?? mod; // support CJS/ESM
-    const transport = nodemailer.createTransport({
-      host: (cfg as any).host,
-      port: (cfg as any).port,
-      secure: (cfg as any).secure,
-      // If no auth provided (Mailpit), nodemailer accepts undefined
-      auth: (cfg as any).auth,
-    });
-    return { transport, from: (cfg as any).from };
+    const transport = nodemailer.createTransport(buildTransportOptions(cfg));
+    return { transport, from: cfg.from, provider: resolveMailProvider(cfg.host) };
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('[mailer] nodemailer not available; emails will be skipped');
+    if (isStrictEmailDeliveryEnv()) {
+      throw e;
+    }
+    secureLogger.warn('MAILER_PACKAGE_UNAVAILABLE');
     return null;
   }
 }
 
+function isTimeoutError(error: unknown): boolean {
+  const code = String((error as any)?.code ?? '');
+  const command = String((error as any)?.command ?? '');
+  return code === 'ETIMEDOUT' || code === 'ESOCKET' || command === 'CONN';
+}
+
+function extractSmtpCode(error: unknown): number | undefined {
+  const raw = (error as any)?.responseCode ?? (error as any)?.statusCode;
+  return typeof raw === 'number' ? raw : undefined;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutHandle: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(Object.assign(new Error(label), { code: 'ETIMEDOUT' })), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  });
+}
+
+export class MailDeliveryError extends Error {
+  readonly smtpCode?: number;
+  readonly latencyMs: number;
+  readonly provider: MailProvider;
+  readonly type: MailType;
+  readonly timedOut: boolean;
+
+  constructor(args: {
+    type: MailType;
+    provider: MailProvider;
+    latencyMs: number;
+    smtpCode?: number;
+    timedOut: boolean;
+    cause?: unknown;
+  }) {
+    super('Email delivery unavailable');
+    this.name = 'MailDeliveryError';
+    this.smtpCode = args.smtpCode;
+    this.latencyMs = args.latencyMs;
+    this.provider = args.provider;
+    this.type = args.type;
+    this.timedOut = args.timedOut;
+    Object.defineProperty(this, 'internalCause', {
+      value: args.cause,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
+  }
+}
+
+function buildMailDeliveryError(args: {
+  type: MailType;
+  provider: MailProvider;
+  latencyMs: number;
+  cause: unknown;
+}) {
+  return new MailDeliveryError({
+    type: args.type,
+    provider: args.provider,
+    latencyMs: args.latencyMs,
+    smtpCode: extractSmtpCode(args.cause),
+    timedOut: isTimeoutError(args.cause),
+    cause: args.cause,
+  });
+}
+
+function logMailDeliveryError(error: MailDeliveryError, emailHash: string) {
+  const event = error.timedOut ? 'EMAIL_SEND_TIMEOUT' : 'EMAIL_SEND_FAILED';
+  secureLogger.error(event, {
+    emailHash,
+    type: error.type,
+    provider: error.provider,
+    latencyMs: error.latencyMs,
+    ...(typeof error.smtpCode === 'number' ? { smtpCode: error.smtpCode } : {}),
+  });
+}
+
 export async function sendMail(mail: Mail) {
-  const t = await getTransport();
+  const emailHash = hashEmail(mail.to);
+  const startedAt = Date.now();
+  let t: Awaited<ReturnType<typeof getTransport>>;
+  try {
+    t = await getTransport();
+  } catch (error) {
+    const deliveryError = buildMailDeliveryError({
+      type: mail.type,
+      provider: resolveMailProvider(process.env.SMTP_HOST),
+      latencyMs: Date.now() - startedAt,
+      cause: error,
+    });
+    recordEmailSendFailure(mail.type, deliveryError.latencyMs, deliveryError.timedOut);
+    logMailDeliveryError(deliveryError, emailHash);
+    throw deliveryError;
+  }
   if (!t) {
-    // eslint-disable-next-line no-console
-    console.info('[mailer] SMTP not configured. Skipping send to %s with subject "%s"', mail.to, mail.subject);
+    secureLogger.info('MAILER_SEND_SKIPPED', {
+      emailHash,
+      type: mail.type,
+      provider: resolveMailProvider(process.env.SMTP_HOST),
+    });
     return { skipped: true } as const;
   }
   try {
     await t.transport.sendMail({ from: t.from, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
-    return { sent: true } as const;
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.error('[mailer] Failed to send mail to %s: %s', mail.to, (e as any)?.message || e);
-    return { sent: false } as const;
+    const latencyMs = Date.now() - startedAt;
+    recordEmailSendSuccess(mail.type, latencyMs);
+    secureLogger.info('EMAIL_SEND_SUCCESS', {
+      emailHash,
+      type: mail.type,
+      provider: t.provider,
+      latencyMs,
+    });
+    return { sent: true, provider: t.provider, latencyMs } as const;
+  } catch (error) {
+    const deliveryError = buildMailDeliveryError({
+      type: mail.type,
+      provider: t.provider,
+      latencyMs: Date.now() - startedAt,
+      cause: error,
+    });
+    recordEmailSendFailure(mail.type, deliveryError.latencyMs, deliveryError.timedOut);
+    logMailDeliveryError(deliveryError, emailHash);
+    throw deliveryError;
   }
 }
 
-export function buildWebUrl(pathname: string, params?: Record<string, string>) {
+export async function verifySmtpConnection(): Promise<boolean> {
+  const transportBundle = await getTransport();
+  if (!transportBundle) {
+    return false;
+  }
+  await withTimeout(
+    Promise.resolve(transportBundle.transport.verify()),
+    SMTP_VERIFY_TIMEOUT_MS,
+    'SMTP verify timeout',
+  );
+  return true;
+}
+
+function buildWebUrl(pathname: string, params?: Record<string, string>) {
   const base = process.env.WEB_BASE_URL || 'http://localhost:3002';
   const url = new URL(pathname.startsWith('/') ? pathname : `/${pathname}`, base);
   if (params) {
@@ -77,18 +272,22 @@ export function buildWebUrl(pathname: string, params?: Record<string, string>) {
   return url.toString();
 }
 
-export async function sendVerificationEmail(to: string, token: string) {
+export async function sendVerificationEmail(
+  to: string,
+  token: string,
+  type: Extract<MailType, 'email_verification' | 'email_verification_resend'> = 'email_verification',
+) {
   const link = buildWebUrl('/verify', { token });
   const text = `Bienvenue ! Pour vérifier ton email, clique sur ce lien: ${link}`;
   const html = `<p>Bienvenue !</p><p>Pour vérifier ton email, clique sur ce lien:</p><p><a href="${link}">Vérifier mon email</a></p>`;
-  return sendMail({ to, subject: 'Vérifie ton email', text, html });
+  return sendMail({ to, subject: 'Vérifie ton email', text, html, type });
 }
 
 export async function sendPasswordResetEmail(to: string, token: string) {
   const link = buildWebUrl('/reset-password', { token });
   const text = `Tu as demandé à réinitialiser ton mot de passe. Clique ici: ${link}`;
   const html = `<p>Tu as demandé à réinitialiser ton mot de passe.</p><p><a href="${link}">Réinitialiser mon mot de passe</a></p>`;
-  return sendMail({ to, subject: 'Réinitialisation du mot de passe', text, html });
+  return sendMail({ to, subject: 'Réinitialisation du mot de passe', text, html, type: 'password_reset' });
 }
 
 export async function send2FACode(to: string, code: string) {
@@ -121,7 +320,7 @@ Si tu n'as pas demandé ce code, ignore cet email.`;
     </div>
   `;
 
-  return sendMail({ to, subject: '🔒 Code de sécurité BlobConnect', text, html });
+  return sendMail({ to, subject: '🔒 Code de sécurité BlobConnect', text, html, type: 'two_factor_code' });
 }
 
 function formatDeletionDate(date: Date) {
@@ -176,7 +375,7 @@ L'équipe BlobConnect`;
     </div>
   `;
 
-  return { to, subject, text, html };
+  return { to, subject, text, html, type: 'account_deletion' };
 }
 
 export async function sendAccountDeletionEmail(to: string, deletionDate: Date, role: string | null | undefined, supportEmail = 'support@blobinfini.com') {
@@ -212,7 +411,7 @@ L'équipe BlobConnect`;
     </div>
   `;
 
-  return { to, subject, text, html };
+  return { to, subject, text, html, type: 'account_deletion_cancelled' };
 }
 
 export async function sendAccountDeletionCancelledEmail(to: string, role: string | null | undefined, supportEmail = 'support@blobinfini.com') {
