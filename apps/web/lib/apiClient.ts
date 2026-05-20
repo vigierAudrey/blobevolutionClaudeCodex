@@ -299,6 +299,19 @@ export interface AdminLessonRequestsAnalytics {
   };
 }
 
+export interface AdminLessonPerformance {
+  requestsToday: number;
+  requests7d: number;
+  prosNotifiedToday: number;
+  prosNotified7d: number;
+  avgProsPerRequest: number;
+  avgProsFound: number;
+  noMatchRequests: number;
+  matchRate: number | null;
+  notificationFailures: number;
+  notificationSuccessRate: number | null;
+}
+
 export interface AdminBlockedConversation {
   conversationId: string;
   blockedAt: string | null;
@@ -1309,6 +1322,8 @@ export const apiClient = {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/lesson-requests${query}`, { method: 'GET' }, true) as Promise<AdminLessonRequestsAnalytics>;
   },
+  getLessonPerformanceAnalytics: () =>
+    request('/admin/analytics/lesson-performance', { method: 'GET' }, true) as Promise<AdminLessonPerformance>,
   /**
    * saveTokens — Activates the local session hint flag.
    * Tokens themselves are managed as httpOnly cookies by the server.

@@ -931,3 +931,23 @@ model AnalyticsDailyAgg {
   @@index([sport])
   @@index([zoneLarge])
 }
+
+// Observabilité opérationnelle des fanouts de notifications cours.
+// Une ligne par déclenchement (cooldowns bloqués exclus).
+// riderRef : SHA-256 tronqué — non-réversible, jamais retourné au client.
+model LessonFanout {
+  id              String   @id @default(cuid())
+  riderRef        String
+  // sha256(riderId + UTC-date)[:16] — un rider peut déclencher N fanouts/jour
+  // pour la même demande active (cooldown 1h). Ce champ permet COUNT(DISTINCT)
+  // pour mesurer les demandes uniques par rider-jour plutôt que les fanouts bruts.
+  lessonRequestId String
+  sport           String?
+  prosFound       Int      @default(0)
+  prosNotified    Int      @default(0)
+  failureCount    Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([lessonRequestId])
+}

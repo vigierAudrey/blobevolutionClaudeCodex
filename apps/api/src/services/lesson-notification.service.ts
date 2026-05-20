@@ -1,10 +1,27 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { cacheService } from './cache.service';
-import { createNotificationSilent, NotificationType } from './notification.service';
+import { createNotification, NotificationType } from './notification.service';
+import { hashRiderRef, makeLessonRequestId, recordFanout } from './lesson-fanout.repository';
+import type { NotificationRow } from './notification.service';
 import { secureLogger } from '../utils/secure-logger';
 
 /** Max pros notifiés par demande de cours (cap dur MVP). */
 export const MAX_PROS_TO_NOTIFY = 100;
+
+/**
+ * Taille des lots pour les inserts de notifications.
+ *
+ * Justification (Point 6) :
+ *   MAX_PROS_TO_NOTIFY = 100. Sans chunking, 100 Promise.allSettled() concurrents
+ *   = 100 connexions DB simultanées. Prisma pool par défaut = min(cpuCount*2+1, 10).
+ *   → 90 promesses se retrouvent en file d'attente et peuvent expirer si le pool
+ *   est saturé par d'autres requêtes concurrent (matching, chat…).
+ *
+ *   Chunking par 10 : max 10 INSERTs simultanés → respecte le pool sans saturer.
+ *   Coût : 10 rounds × RTT pour 100 pros. Acceptable car le fanout est fire-and-forget
+ *   (notifyNearbyProsForLessonSilent ne bloque pas la réponse HTTP rider).
+ */
+export const NOTIFICATION_CHUNK_SIZE = 10;
 
 /** Durée du cooldown anti-spam par rider (secondes). */
 export const FANOUT_COOLDOWN_TTL_SECONDS = 3600; // 1 heure
@@ -59,6 +76,23 @@ async function markFanoutSent(riderId: string): Promise<void> {
   } catch {
     // non-bloquant
   }
+}
+
+/**
+ * Envoie les notifications par lots de NOTIFICATION_CHUNK_SIZE.
+ * Évite de saturer le pool Prisma avec MAX_PROS_TO_NOTIFY inserts simultanés.
+ */
+async function sendNotificationsChunked(
+  pros: EligibleProRow[],
+  buildInput: (pro: EligibleProRow) => Parameters<typeof createNotification>[0],
+): Promise<PromiseSettledResult<NotificationRow>[]> {
+  const all: PromiseSettledResult<NotificationRow>[] = [];
+  for (let i = 0; i < pros.length; i += NOTIFICATION_CHUNK_SIZE) {
+    const chunk = pros.slice(i, i + NOTIFICATION_CHUNK_SIZE);
+    const results = await Promise.allSettled(chunk.map((pro) => createNotification(buildInput(pro))));
+    all.push(...results);
+  }
+  return all;
 }
 
 /**
@@ -134,6 +168,11 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
     return;
   }
 
+  // lessonRequestId : sha256(riderId + UTC-date)[:16] — stable sur la journée.
+  // COUNT(DISTINCT lessonRequestId) = riders uniques, pas fanouts bruts.
+  const riderRef = hashRiderRef(riderId);
+  const lessonRequestId = makeLessonRequestId(riderId);
+
   let pros: EligibleProRow[];
   try {
     pros = await findEligiblePros(input);
@@ -146,6 +185,14 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
 
   if (pros.length === 0) {
     secureLogger.debug('LESSON_NOTIF_NO_ELIGIBLE_PROS', {});
+    await recordFanout({
+      riderRef,
+      lessonRequestId,
+      sport: lessonSport ?? null,
+      prosFound: 0,
+      prosNotified: 0,
+      failureCount: 0,
+    });
     return;
   }
 
@@ -158,27 +205,41 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
   const title = 'Nouvelle demande de cours près de vous';
   const body = `Un rider cherche un prof de ${sportLabel} dans votre secteur.`;
 
-  for (const pro of pros) {
-    const distanceBucket = toDistanceBucket(Number(pro.distanceKm));
+  // Envoi par lots de NOTIFICATION_CHUNK_SIZE : évite de saturer le pool Prisma.
+  // fire-and-forget côté HTTP rider → la latence additionnelle est invisible.
+  const results = await sendNotificationsChunked(pros, (pro) => ({
+    userId: pro.userId,
+    type: NotificationType.LESSON_REQUEST_NEARBY,
+    title,
+    body,
+    url: '/pro/map',
+    data: {
+      // riderProfileRef : référence au profil du rider, PAS un requestId.
+      // Il n'existe pas encore de modèle LessonRequest dédié ; ce champ
+      // sera renommé requestId dès qu'un tel modèle existera.
+      riderProfileRef: riderId,
+      sport: lessonSport ?? null,
+      distanceBucket: toDistanceBucket(Number(pro.distanceKm)),
+    },
+  }));
 
-    createNotificationSilent({
-      userId: pro.userId,
-      type: NotificationType.LESSON_REQUEST_NEARBY,
-      title,
-      body,
-      url: '/pro/map',
-      data: {
-        // riderProfileRef : référence au profil du rider, PAS un requestId.
-        // Il n'existe pas encore de modèle LessonRequest dédié ; ce champ
-        // sera renommé requestId dès qu'un tel modèle existera.
-        riderProfileRef: riderId,
-        sport: lessonSport ?? null,
-        distanceBucket,
-      },
-    });
+  const notified = results.filter((r) => r.status === 'fulfilled').length;
+  const failed = results.filter((r) => r.status === 'rejected').length;
+
+  if (failed > 0) {
+    secureLogger.warn('LESSON_NOTIF_PARTIAL_FAILURE', { notified, failed });
   }
 
-  secureLogger.info('LESSON_NOTIF_FANOUT_DONE', { notified: pros.length });
+  secureLogger.info('LESSON_NOTIF_FANOUT_DONE', { notified });
+
+  await recordFanout({
+    riderRef,
+    lessonRequestId,
+    sport: lessonSport ?? null,
+    prosFound: pros.length,
+    prosNotified: notified,
+    failureCount: failed,
+  });
 }
 
 /**
