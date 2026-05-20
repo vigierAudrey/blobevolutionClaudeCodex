@@ -1,7 +1,7 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { cacheService } from './cache.service';
 import { createNotification, NotificationType } from './notification.service';
-import { hashRiderRef, makeLessonRequestId, recordFanout } from './lesson-fanout.repository';
+import { hashRiderRef, makeLessonRequestId, recordFanout, type FanoutTriggerReason } from './lesson-fanout.repository';
 import type { NotificationRow } from './notification.service';
 import { secureLogger } from '../utils/secure-logger';
 
@@ -34,6 +34,8 @@ export interface LessonNotificationInput {
   lessonLat: number;
   lessonLng: number;
   lessonSport: LessonSport | null;
+  // Raison du déclenchement — optionnel (défaut MANUAL) pour rétro-compatibilité tests.
+  triggerReason?: FanoutTriggerReason;
 }
 
 interface EligibleProRow {
@@ -192,6 +194,7 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
       prosFound: 0,
       prosNotified: 0,
       failureCount: 0,
+      triggerReason: input.triggerReason ?? 'MANUAL',
     });
     return;
   }
@@ -239,6 +242,7 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
     prosFound: pros.length,
     prosNotified: notified,
     failureCount: failed,
+    triggerReason: input.triggerReason ?? 'MANUAL',
   });
 }
 

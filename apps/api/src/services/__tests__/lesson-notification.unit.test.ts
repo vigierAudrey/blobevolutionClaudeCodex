@@ -95,6 +95,7 @@ const BASE_INPUT = {
   lessonLat: 43.6,
   lessonLng: -1.5,
   lessonSport: 'surf' as const,
+  triggerReason: 'ACTIVATED' as const,
 };
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -266,7 +267,7 @@ describe('notifyNearbyProsForLesson', () => {
     expect(call[0].data?.distanceBucket).toBe('>30km');
   });
 
-  it('fonctionne sans lessonSport (sport null)', async () => {
+  it('fonctionne sans lessonSport (sport null) — le service accepte null, c\'est le controller qui bloque', async () => {
     mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
 
     await notifyNearbyProsForLesson({ ...BASE_INPUT, lessonSport: null });
@@ -274,6 +275,33 @@ describe('notifyNearbyProsForLesson', () => {
     expect(mockCreateNotif).toHaveBeenCalledTimes(1);
     const call = mockCreateNotif.mock.calls[0] as [{ data?: Record<string, unknown> }];
     expect(call[0].data?.sport).toBeNull();
+  });
+
+  it('recordFanout reçoit le triggerReason transmis par l\'appelant', async () => {
+    mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
+
+    await notifyNearbyProsForLesson({ ...BASE_INPUT, triggerReason: 'SPORT_CHANGED' });
+
+    expect(mockRecordFanout).toHaveBeenCalledWith(
+      expect.objectContaining({ triggerReason: 'SPORT_CHANGED' }),
+    );
+  });
+
+  it('recordFanout reçoit MANUAL si triggerReason absent', async () => {
+    const inputWithoutReason = { ...BASE_INPUT } as Omit<typeof BASE_INPUT, 'triggerReason'>;
+    mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
+
+    // triggerReason est optionnel — on omet le champ
+    await notifyNearbyProsForLesson({
+      riderId: inputWithoutReason.riderId,
+      lessonLat: inputWithoutReason.lessonLat,
+      lessonLng: inputWithoutReason.lessonLng,
+      lessonSport: inputWithoutReason.lessonSport,
+    });
+
+    expect(mockRecordFanout).toHaveBeenCalledWith(
+      expect.objectContaining({ triggerReason: 'MANUAL' }),
+    );
   });
 
   it('erreur query SQL : log sans throw (pas de crash API)', async () => {

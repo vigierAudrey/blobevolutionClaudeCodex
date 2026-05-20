@@ -607,6 +607,11 @@ export const analyticsReportService = {
       (p) => p.updatedAt >= startDate && p.updatedAt <= now
     ).length;
 
+    // Demandes inactives > 30 jours : wantsLesson=true mais pas de mise à jour récente.
+    // Indicateur de données "fantômes" qui biaisent totalActive à la hausse.
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const inactiveRequests30d = activeProfiles.filter((p) => p.updatedAt < thirtyDaysAgo).length;
+
     // Pro contacts in period: ContactRequests sent to lesson-seeking riders
     const contactsRaw = await prisma.$queryRaw<ContactRow[]>`
       SELECT
@@ -649,6 +654,9 @@ export const analyticsReportService = {
       snapshot: {
         totalActive,
         newInPeriod,
+        // inactiveRequests30d : demandes wantsLesson=true sans mise à jour depuis 30 j.
+        // Si > 30 % de totalActive, les métriques de volume sont probablement biaisées.
+        inactiveRequests30d,
         bySport,
         byStudentCount,
       },

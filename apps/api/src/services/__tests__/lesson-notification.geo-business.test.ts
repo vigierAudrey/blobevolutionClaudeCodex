@@ -503,6 +503,24 @@ describe('invariant — distanceBucket cohérent avec la distance Haversine', ()
   });
 });
 
+describe('invariant — service accepte lessonSport=null (restriction dans le controller, pas le service)', () => {
+  it('notifie les pros éligibles même sans sport spécifié (comportement service)', async () => {
+    const lessonLat = 45.0037;
+    const lessonLng = -1.0786;
+    mockQueryRaw.mockResolvedValue(eligiblePros(lessonLat, lessonLng));
+
+    await notifyNearbyProsForLesson({
+      riderId: 'rider-null-sport',
+      lessonLat,
+      lessonLng,
+      lessonSport: null,
+    });
+
+    // Pro A est éligible → doit être notifié même sans sport
+    expect(notifiedIds()).toContain(PRO_A.id);
+  });
+});
+
 describe('invariant — la query SQL reçoit bien les coordonnées du rider, pas celles du pro', () => {
   it('les coordonnées transmises à $queryRaw correspondent à la position du cours', async () => {
     const lessonLat = 44.784;

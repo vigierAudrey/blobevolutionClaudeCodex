@@ -946,6 +946,9 @@ model LessonFanout {
   prosFound       Int      @default(0)
   prosNotified    Int      @default(0)
   failureCount    Int      @default(0)
+  // Raison du déclenchement : ACTIVATED | LOCATION_CHANGED | SPORT_CHANGED | MANUAL.
+  // NULL pour les lignes antérieures au sprint Data Quality (2026-05-20).
+  triggerReason   String?
   createdAt       DateTime @default(now())
 
   @@index([createdAt])

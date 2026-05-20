@@ -1,7 +1,21 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { createHash } from 'crypto';
 
-// ─── Interfaces ───────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+/**
+ * Raison du déclenchement d'un fanout.
+ *
+ * ACTIVATED       — wantsLesson vient de passer false → true.
+ * LOCATION_CHANGED — déplacement géographique > 100 m détecté.
+ * SPORT_CHANGED    — changement de sport demandé (surf ↔ kitesurf).
+ * MANUAL          — déclenchement explicite (admin, test, retry).
+ */
+export type FanoutTriggerReason =
+  | 'ACTIVATED'
+  | 'LOCATION_CHANGED'
+  | 'SPORT_CHANGED'
+  | 'MANUAL';
 
 export interface FanoutRecord {
   riderRef: string;
@@ -13,12 +27,31 @@ export interface FanoutRecord {
   prosFound: number;
   prosNotified: number;
   failureCount: number;
+  // Raison du déclenchement — null pour les lignes antérieures au sprint 2026-05-20.
+  triggerReason: FanoutTriggerReason | null;
+}
+
+/** Métriques par sport pour le dashboard admin. */
+export interface SportBreakdown {
+  // Demandes uniques (COUNT DISTINCT lessonRequestId) sur 7 jours.
+  requests7d: number;
+  // Taux de fanouts avec ≥ 1 pro trouvé (%), null si aucun fanout.
+  matchRate: number | null;
+  // Moyenne pros éligibles trouvés par fanout.
+  avgProsFound: number;
 }
 
 export interface LessonPerformanceMetrics {
   // Demandes uniques (COUNT DISTINCT lessonRequestId) — pas les fanouts bruts.
   requestsToday: number;
+  // requests7d = COUNT(DISTINCT lessonRequestId) sur 7 jours.
+  // NOTE : ce compteur mesure les "rider-jours actifs", pas les riders uniques.
+  // Un même rider avec une demande active 3 jours = 3 lessonRequestIds distincts.
+  // Pour les riders uniques, voir uniqueRiders7d.
   requests7d: number;
+  // uniqueRiders7d = COUNT(DISTINCT riderRef) sur 7 jours.
+  // Mesure les riders réellement distincts, indépendamment du nombre de jours actifs.
+  uniqueRiders7d: number;
   prosNotifiedToday: number;
   prosNotified7d: number;
   // Moyenne pros notifiés par fanout (prosNotified / nb fanouts).
@@ -32,6 +65,12 @@ export interface LessonPerformanceMetrics {
   notificationFailures: number;
   // succès / (succès + échecs) * 100.
   notificationSuccessRate: number | null;
+  // Métriques agrégées par sport (surf / kitesurf / other).
+  bySport: {
+    surf: SportBreakdown;
+    kitesurf: SportBreakdown;
+    other: SportBreakdown;
+  };
 }
 
 // ─── Hash helpers ─────────────────────────────────────────────────────────────
@@ -70,6 +109,7 @@ export async function recordFanout(record: FanoutRecord): Promise<void> {
 type AggRow = {
   requestsToday: bigint;
   requests7d: bigint;
+  uniqueRiders7d: bigint;
   prosNotifiedToday: bigint;
   prosNotified7d: bigint;
   avgProsPerRequest: number | null;
@@ -79,6 +119,15 @@ type AggRow = {
   notificationFailures: bigint;
 };
 
+type SportRow = {
+  sport: string;
+  requests7d: bigint;
+  matchRate: number | null;
+  avgProsFound: number | null;
+};
+
+const EMPTY_SPORT: SportBreakdown = { requests7d: 0, matchRate: null, avgProsFound: 0 };
+
 export async function getLessonPerformanceMetrics(): Promise<LessonPerformanceMetrics> {
   const now = new Date();
 
@@ -87,30 +136,50 @@ export async function getLessonPerformanceMetrics(): Promise<LessonPerformanceMe
 
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  // Un seul index range scan sur LessonFanout_createdAt_idx.
-  // FILTER évite plusieurs passes ; COUNT(DISTINCT) utilise LessonFanout_lessonRequestId_idx.
-  // Complexité : O(rows dans la fenêtre de 7j) — sub-ms à l'échelle MVP.
-  const rows = await prisma.$queryRaw<AggRow[]>(Prisma.sql`
-    SELECT
-      COUNT(DISTINCT "lessonRequestId") FILTER (WHERE "createdAt" >= ${todayStart})
-                                                                            AS "requestsToday",
-      COUNT(DISTINCT "lessonRequestId")                                     AS "requests7d",
-      COALESCE(SUM("prosNotified") FILTER (WHERE "createdAt" >= ${todayStart}), 0)
-                                                                            AS "prosNotifiedToday",
-      COALESCE(SUM("prosNotified"), 0)                                      AS "prosNotified7d",
-      AVG("prosNotified")::float                                            AS "avgProsPerRequest",
-      AVG("prosFound")::float                                               AS "avgProsFound",
-      COUNT(*) FILTER (WHERE "prosFound" = 0)                              AS "noMatchRequests",
-      ROUND(
-        COUNT(*) FILTER (WHERE "prosFound" > 0)::numeric
-        / NULLIF(COUNT(*), 0)
-        * 100,
-        1
-      )::float                                                              AS "matchRate",
-      COALESCE(SUM("failureCount"), 0)                                     AS "notificationFailures"
-    FROM "LessonFanout"
-    WHERE "createdAt" >= ${sevenDaysAgo}
-  `);
+  // Deux requêtes parallèles pour éviter un GROUP BY + FILTER complexe :
+  //   1. Agrégat global (même structure qu'avant + uniqueRiders7d).
+  //   2. Agrégat par sport (surf / kitesurf / null→other).
+  // Les deux utilisent l'index LessonFanout_createdAt_idx (range scan 7 jours).
+  const [rows, sportRows]: [AggRow[], SportRow[]] = await Promise.all([
+    prisma.$queryRaw<AggRow[]>(Prisma.sql`
+      SELECT
+        COUNT(DISTINCT "lessonRequestId") FILTER (WHERE "createdAt" >= ${todayStart})
+                                                                              AS "requestsToday",
+        COUNT(DISTINCT "lessonRequestId")                                     AS "requests7d",
+        COUNT(DISTINCT "riderRef")                                            AS "uniqueRiders7d",
+        COALESCE(SUM("prosNotified") FILTER (WHERE "createdAt" >= ${todayStart}), 0)
+                                                                              AS "prosNotifiedToday",
+        COALESCE(SUM("prosNotified"), 0)                                      AS "prosNotified7d",
+        AVG("prosNotified")::float                                            AS "avgProsPerRequest",
+        AVG("prosFound")::float                                               AS "avgProsFound",
+        COUNT(*) FILTER (WHERE "prosFound" = 0)                              AS "noMatchRequests",
+        ROUND(
+          COUNT(*) FILTER (WHERE "prosFound" > 0)::numeric
+          / NULLIF(COUNT(*), 0)
+          * 100,
+          1
+        )::float                                                              AS "matchRate",
+        COALESCE(SUM("failureCount"), 0)                                     AS "notificationFailures"
+      FROM "LessonFanout"
+      WHERE "createdAt" >= ${sevenDaysAgo}
+    `),
+
+    prisma.$queryRaw<SportRow[]>(Prisma.sql`
+      SELECT
+        COALESCE("sport", 'other')                                           AS "sport",
+        COUNT(DISTINCT "lessonRequestId")                                     AS "requests7d",
+        ROUND(
+          COUNT(*) FILTER (WHERE "prosFound" > 0)::numeric
+          / NULLIF(COUNT(*), 0)
+          * 100,
+          1
+        )::float                                                              AS "matchRate",
+        AVG("prosFound")::float                                               AS "avgProsFound"
+      FROM "LessonFanout"
+      WHERE "createdAt" >= ${sevenDaysAgo}
+      GROUP BY COALESCE("sport", 'other')
+    `),
+  ]);
 
   const row = rows[0];
 
@@ -118,9 +187,22 @@ export async function getLessonPerformanceMetrics(): Promise<LessonPerformanceMe
   const notificationFailures = Number(row.notificationFailures);
   const totalAttempts = prosNotified7d + notificationFailures;
 
+  // Convertit une ligne SportRow en SportBreakdown typé.
+  const toBreakdown = (sr: SportRow | undefined): SportBreakdown => {
+    if (!sr) return EMPTY_SPORT;
+    return {
+      requests7d: Number(sr.requests7d),
+      matchRate: sr.matchRate,
+      avgProsFound: sr.avgProsFound !== null ? Math.round(sr.avgProsFound * 10) / 10 : 0,
+    };
+  };
+
+  const sportMap = new Map<string, SportRow>(sportRows.map((sr): [string, SportRow] => [sr.sport, sr]));
+
   return {
     requestsToday: Number(row.requestsToday),
     requests7d: Number(row.requests7d),
+    uniqueRiders7d: Number(row.uniqueRiders7d),
     prosNotifiedToday: Number(row.prosNotifiedToday),
     prosNotified7d,
     avgProsPerRequest:
@@ -134,5 +216,10 @@ export async function getLessonPerformanceMetrics(): Promise<LessonPerformanceMe
       totalAttempts > 0
         ? Math.round((prosNotified7d / totalAttempts) * 1000) / 10
         : null,
+    bySport: {
+      surf: toBreakdown(sportMap.get('surf')),
+      kitesurf: toBreakdown(sportMap.get('kitesurf')),
+      other: toBreakdown(sportMap.get('other')),
+    },
   };
 }

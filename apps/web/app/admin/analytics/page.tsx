@@ -14,6 +14,7 @@ import {
   type AdminMatchingTTFM,
   type AdminLessonRequestsAnalytics,
   type AdminLessonPerformance,
+  type AdminSportBreakdown,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -30,6 +31,7 @@ import {
   LineChart,
   BookOpen,
   Activity,
+  Info,
 } from 'lucide-react';
 
 const PERIODS: Array<{ value: AdminAnalyticsPeriod; label: string }> = [
@@ -579,6 +581,38 @@ export default function AdminAnalytics() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Inactives &gt; 30 j
+                <span
+                  title="RiderProfile avec wantsLesson=true dont updatedAt < now - 30 jours. Ces demandes sont comptées dans le total actif mais probablement obsolètes. Attention : updatedAt se réinitialise à toute modification du profil (pas seulement wantsLesson). Si > 30 % du total, les volumes de demandes peuvent être surestimés."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const inactive = lessonData?.snapshot.inactiveRequests30d ?? 0;
+                const total = lessonData?.snapshot.totalActive ?? 0;
+                const pct = total > 0 ? Math.round((inactive / total) * 100) : 0;
+                const isHigh = pct > 30;
+                return (
+                  <>
+                    <p className={`text-3xl font-bold ${isHigh ? 'text-orange-600' : ''}`}>
+                      {formatNumber(inactive)}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {pct}% des actives
+                      {isHigh && ' — données potentiellement biaisées'}
+                    </p>
+                  </>
+                );
+              })()}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Surf / Kitesurf</CardTitle>
             </CardHeader>
             <CardContent>
@@ -712,16 +746,36 @@ export default function AdminAnalytics() {
         </div>
 
         {/* Ligne 1 : volume */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Demandes aujourd&apos;hui</CardTitle>
-              <CardDescription>Riders uniques (COUNT DISTINCT) · aujourd&apos;hui</CardDescription>
+              <CardDescription>Rider-jours actifs (DISTINCT requestId) · aujourd&apos;hui</CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold">{formatNumber(lessonPerformanceData?.requestsToday ?? null)}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {formatNumber(lessonPerformanceData?.requests7d ?? null)} sur 7 jours
+                {formatNumber(lessonPerformanceData?.requests7d ?? null)} rider-jours sur 7 j
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Riders distincts 7 j
+                <span
+                  title="COUNT DISTINCT riderRef sur 7 jours glissants. riderRef = sha256(riderId)[:24] — pseudonyme stable par rider. Contrairement à requests7d (rider-jours), ce chiffre compte chaque rider une seule fois même s'il a eu des demandes actives plusieurs jours."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
+              <CardDescription>COUNT DISTINCT riderRef · indépendant des jours actifs</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonPerformanceData?.uniqueRiders7d ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                riders uniques (pas rider-jours)
               </p>
             </CardContent>
           </Card>
@@ -741,7 +795,15 @@ export default function AdminAnalytics() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Taux de correspondance</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Taux de correspondance
+                <span
+                  title="% des fan-outs ayant trouvé au moins 1 pro éligible dans le périmètre géographique du rider. Formule : COUNT(*) FILTER (prosFound > 0) / COUNT(*) * 100. Un taux bas (< 60 %) peut signaler une zone sans pros ou un rayon trop restreint. Retourne N/A si aucun fan-out sur la période."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
               <CardDescription>Fanouts avec ≥ 1 pro trouvé · 7 jours</CardDescription>
             </CardHeader>
             <CardContent>
@@ -809,6 +871,46 @@ export default function AdminAnalytics() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Ligne 3 : répartition par sport */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-4 w-4" />
+              Répartition par sport · 7 jours
+            </CardTitle>
+            <CardDescription>matchRate et pros trouvés par discipline · fanouts avec sport renseigné uniquement</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-2 pr-4">Sport</th>
+                  <th className="pr-4">Demandes (rider-jours)</th>
+                  <th className="pr-4">Match rate</th>
+                  <th>Moy. pros trouvés</th>
+                </tr>
+              </thead>
+              <tbody>
+                {((['surf', 'kitesurf', 'other'] as const)).map((sport) => {
+                  const row: AdminSportBreakdown | undefined = lessonPerformanceData?.bySport[sport];
+                  return (
+                    <tr key={sport} className="border-t">
+                      <td className="py-2 pr-4 font-medium capitalize">{sport}</td>
+                      <td className="pr-4">{formatNumber(row?.requests7d ?? null)}</td>
+                      <td className="pr-4">
+                        {row?.matchRate !== null && row?.matchRate !== undefined
+                          ? formatPercent(row.matchRate)
+                          : 'N/A'}
+                      </td>
+                      <td>{formatRatio(row?.avgProsFound ?? null)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

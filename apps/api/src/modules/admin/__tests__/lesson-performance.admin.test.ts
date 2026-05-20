@@ -115,13 +115,14 @@ describe('GET /admin/analytics/lesson-performance — response shape', () => {
     ({ adminToken } = await seedFixtures());
   });
 
-  it('returns all 8 required metric fields', async () => {
+  it('returns all required metric fields including uniqueRiders7d and bySport', async () => {
     const res = await request(app)
       .get('/admin/analytics/lesson-performance')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
     const body = res.body as Record<string, unknown>;
+    // Champs existants
     expect(body).toHaveProperty('requestsToday');
     expect(body).toHaveProperty('requests7d');
     expect(body).toHaveProperty('prosNotifiedToday');
@@ -130,6 +131,20 @@ describe('GET /admin/analytics/lesson-performance — response shape', () => {
     expect(body).toHaveProperty('noMatchRequests');
     expect(body).toHaveProperty('notificationFailures');
     expect(body).toHaveProperty('notificationSuccessRate');
+    // Nouveaux champs Sprint A
+    expect(body).toHaveProperty('uniqueRiders7d');
+    expect(body).toHaveProperty('bySport');
+    const bySport = body.bySport as Record<string, unknown>;
+    expect(bySport).toHaveProperty('surf');
+    expect(bySport).toHaveProperty('kitesurf');
+    expect(bySport).toHaveProperty('other');
+    // Chaque entrée bySport a les 3 champs attendus
+    for (const sport of ['surf', 'kitesurf', 'other']) {
+      const s = bySport[sport] as Record<string, unknown>;
+      expect(s).toHaveProperty('requests7d');
+      expect(s).toHaveProperty('matchRate');
+      expect(s).toHaveProperty('avgProsFound');
+    }
   });
 
   it('all count fields are numbers (not bigint strings)', async () => {
@@ -140,11 +155,17 @@ describe('GET /admin/analytics/lesson-performance — response shape', () => {
 
     const body = res.body as Record<string, unknown>;
     for (const key of [
-      'requestsToday', 'requests7d', 'prosNotifiedToday',
+      'requestsToday', 'requests7d', 'uniqueRiders7d', 'prosNotifiedToday',
       'prosNotified7d', 'avgProsPerRequest', 'noMatchRequests',
       'notificationFailures',
     ]) {
       expect(typeof body[key]).toBe('number');
+    }
+    // bySport fields are also numbers
+    const bySport = body.bySport as Record<string, Record<string, unknown>>;
+    for (const sport of ['surf', 'kitesurf', 'other']) {
+      expect(typeof bySport[sport].requests7d).toBe('number');
+      expect(typeof bySport[sport].avgProsFound).toBe('number');
     }
   });
 
@@ -182,12 +203,20 @@ describe('GET /admin/analytics/lesson-performance — metrics computation', () =
     const body = res.body as Record<string, unknown>;
     expect(body.requestsToday).toBe(0);
     expect(body.requests7d).toBe(0);
+    expect(body.uniqueRiders7d).toBe(0);
     expect(body.prosNotifiedToday).toBe(0);
     expect(body.prosNotified7d).toBe(0);
     expect(body.avgProsPerRequest).toBe(0);
     expect(body.noMatchRequests).toBe(0);
     expect(body.notificationFailures).toBe(0);
     expect(body.notificationSuccessRate).toBeNull();
+    // bySport : tous vides
+    const bySport = body.bySport as Record<string, Record<string, unknown>>;
+    for (const sport of ['surf', 'kitesurf', 'other']) {
+      expect(bySport[sport].requests7d).toBe(0);
+      expect(bySport[sport].matchRate).toBeNull();
+      expect(bySport[sport].avgProsFound).toBe(0);
+    }
   });
 
   it('counts fanouts in the 7-day window', async () => {
@@ -226,6 +255,54 @@ describe('GET /admin/analytics/lesson-performance — metrics computation', () =
     const body = res.body as Record<string, unknown>;
     expect(body.noMatchRequests).toBe(2);
     expect(body.requests7d).toBe(3);
+  });
+
+  it('bySport agrège correctement par discipline', async () => {
+    await prisma.lessonFanout.createMany({
+      data: [
+        { id: 'bs1', riderRef: 'ref-s1', lessonRequestId: 'req-s1', sport: 'surf',     prosFound: 3, prosNotified: 3, failureCount: 0 },
+        { id: 'bs2', riderRef: 'ref-s2', lessonRequestId: 'req-s2', sport: 'surf',     prosFound: 0, prosNotified: 0, failureCount: 0 },
+        { id: 'bs3', riderRef: 'ref-k1', lessonRequestId: 'req-k1', sport: 'kitesurf', prosFound: 5, prosNotified: 4, failureCount: 1 },
+        { id: 'bs4', riderRef: 'ref-n1', lessonRequestId: 'req-n1', sport: null,       prosFound: 2, prosNotified: 2, failureCount: 0 },
+      ],
+    });
+
+    const res = await request(app)
+      .get('/admin/analytics/lesson-performance')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const bySport = (res.body as Record<string, Record<string, unknown>>).bySport as Record<string, Record<string, unknown>>;
+    // surf : 2 demandes, 1 avec pro trouvé → matchRate = 50 %
+    expect(bySport.surf.requests7d).toBe(2);
+    expect(bySport.surf.matchRate).toBeCloseTo(50, 0);
+    // kitesurf : 1 demande, matchRate = 100 %
+    expect(bySport.kitesurf.requests7d).toBe(1);
+    expect(bySport.kitesurf.matchRate).toBe(100);
+    // other (sport null) : 1 demande, matchRate = 100 %
+    expect(bySport.other.requests7d).toBe(1);
+    expect(bySport.other.matchRate).toBe(100);
+  });
+
+  it('uniqueRiders7d < requests7d quand un rider a plusieurs fanouts sur la fenêtre', async () => {
+    await prisma.lessonFanout.createMany({
+      data: [
+        // Même rider (même riderRef), deux jours différents → 2 lessonRequestIds mais 1 riderRef
+        { id: 'ur1', riderRef: 'same-ref', lessonRequestId: 'req-day1', sport: 'surf', prosFound: 2, prosNotified: 2, failureCount: 0 },
+        { id: 'ur2', riderRef: 'same-ref', lessonRequestId: 'req-day2', sport: 'surf', prosFound: 2, prosNotified: 2, failureCount: 0 },
+        // Rider distinct
+        { id: 'ur3', riderRef: 'other-ref', lessonRequestId: 'req-other', sport: 'kitesurf', prosFound: 1, prosNotified: 1, failureCount: 0 },
+      ],
+    });
+
+    const res = await request(app)
+      .get('/admin/analytics/lesson-performance')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const body = res.body as Record<string, unknown>;
+    expect(body.requests7d).toBe(3);      // 3 lessonRequestIds distincts
+    expect(body.uniqueRiders7d).toBe(2);  // 2 riderRefs distincts
   });
 
   it('calculates notificationSuccessRate correctly', async () => {
