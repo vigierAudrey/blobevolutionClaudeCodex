@@ -333,6 +333,24 @@ export interface AdminLessonPerformance {
   };
 }
 
+export interface AdminSportSupplyBreakdown {
+  prosVerified: number;
+  prosWithLocation: number;
+  prosNotifyEnabled: number;
+}
+
+export interface AdminSupplyDiagnostics {
+  verifiedProsTotal: number;
+  verifiedProsWithLocation: number;
+  verifiedProsMissingLocation: number;
+  verifiedProsNotifyLessonEnabled: number;
+  verifiedProsLessonOptOut: number;
+  bySport: {
+    surf: AdminSportSupplyBreakdown;
+    kitesurf: AdminSportSupplyBreakdown;
+  };
+}
+
 export interface AdminBlockedConversation {
   conversationId: string;
   blockedAt: string | null;
@@ -1345,6 +1363,8 @@ export const apiClient = {
   },
   getLessonPerformanceAnalytics: () =>
     request('/admin/analytics/lesson-performance', { method: 'GET' }, true) as Promise<AdminLessonPerformance>,
+  getSupplyDiagnosticsAnalytics: () =>
+    request('/admin/analytics/supply-diagnostics', { method: 'GET' }, true) as Promise<AdminSupplyDiagnostics>,
   /**
    * saveTokens — Activates the local session hint flag.
    * Tokens themselves are managed as httpOnly cookies by the server.

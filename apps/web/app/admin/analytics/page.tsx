@@ -15,6 +15,7 @@ import {
   type AdminLessonRequestsAnalytics,
   type AdminLessonPerformance,
   type AdminSportBreakdown,
+  type AdminSupplyDiagnostics,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -78,6 +79,7 @@ export default function AdminAnalytics() {
   const [ttfmData, setTtfmData] = useState<AdminMatchingTTFM | null>(null);
   const [lessonData, setLessonData] = useState<AdminLessonRequestsAnalytics | null>(null);
   const [lessonPerformanceData, setLessonPerformanceData] = useState<AdminLessonPerformance | null>(null);
+  const [supplyData, setSupplyData] = useState<AdminSupplyDiagnostics | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,13 +106,14 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior, ttfm, lesson, lessonPerf] = await Promise.all([
+      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
         apiClient.getMatchingTTFMAnalytics(period),
         apiClient.getLessonRequestsAnalytics(period),
         apiClient.getLessonPerformanceAnalytics(),
+        apiClient.getSupplyDiagnosticsAnalytics(),
       ]);
 
       setEngagementData(engagement);
@@ -119,6 +122,7 @@ export default function AdminAnalytics() {
       setTtfmData(ttfm);
       setLessonData(lesson);
       setLessonPerformanceData(lessonPerf);
+      setSupplyData(supply);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -904,6 +908,106 @@ export default function AdminAnalytics() {
                           : 'N/A'}
                       </td>
                       <td>{formatRatio(row?.avgProsFound ?? null)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ── Disponibilité des pros ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Target className="h-5 w-5 text-emerald-600" />
+          <h2 className="text-2xl font-semibold">Disponibilité des pros</h2>
+          <Badge variant="outline" className="text-xs">Snapshot actuel</Badge>
+        </div>
+
+        {/* Métriques globales */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pros vérifiés</CardTitle>
+              <CardDescription>Total actifs (non supprimés)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(supplyData?.verifiedProsTotal ?? null)}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Localisation renseignée
+                <span
+                  title="Pros vérifiés avec lat/lng dans ProProfile. Sans coordonnées, le pro n'apparaît dans aucun fanout géographique — même avec les notifications activées."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
+              <CardDescription>Condition requise pour le fanout spatial</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(supplyData?.verifiedProsWithLocation ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {formatNumber(supplyData?.verifiedProsMissingLocation ?? null)} sans localisation
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Notifications cours activées
+                <span
+                  title="Pros avec notifyLessonRequests=true ou sans préférences enregistrées (défaut true). Opt-out = pros ayant explicitement positionné notifyLessonRequests=false."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
+              <CardDescription>Éligibles aux demandes de cours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(supplyData?.verifiedProsNotifyLessonEnabled ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {formatNumber(supplyData?.verifiedProsLessonOptOut ?? null)} opt-out
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Breakdown par sport */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-4 w-4" />
+              Répartition par sport
+            </CardTitle>
+            <CardDescription>Éligibilité des pros vérifiés aux fanouts par discipline</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-2 pr-4">Sport</th>
+                  <th className="pr-4" title="Total des pros vérifiés — dénominateur commun">Pros vérifiés</th>
+                  <th className="pr-4" title="Pros vérifiés avec lat/lng renseignés — condition sine qua non pour le fanout spatial">Avec localisation</th>
+                  <th title="Pros avec notifyLessonRequests=true ET notifyFor[Sport]=true (ou sans préférences = défaut true)">Notifs activées</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(['surf', 'kitesurf'] as const).map((sport) => {
+                  const row = supplyData?.bySport[sport];
+                  return (
+                    <tr key={sport} className="border-t">
+                      <td className="py-2 pr-4 font-medium capitalize">{sport}</td>
+                      <td className="pr-4">{formatNumber(row?.prosVerified ?? null)}</td>
+                      <td className="pr-4">{formatNumber(row?.prosWithLocation ?? null)}</td>
+                      <td>{formatNumber(row?.prosNotifyEnabled ?? null)}</td>
                     </tr>
                   );
                 })}

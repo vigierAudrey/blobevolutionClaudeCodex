@@ -128,6 +128,26 @@ type SportRow = {
 
 const EMPTY_SPORT: SportBreakdown = { requests7d: 0, matchRate: null, avgProsFound: 0 };
 
+// ─── Supply Diagnostics ───────────────────────────────────────────────────────
+
+export interface SportSupplyBreakdown {
+  prosVerified: number;
+  prosWithLocation: number;
+  prosNotifyEnabled: number;
+}
+
+export interface SupplyDiagnosticsMetrics {
+  verifiedProsTotal: number;
+  verifiedProsWithLocation: number;
+  verifiedProsMissingLocation: number;
+  verifiedProsNotifyLessonEnabled: number;
+  verifiedProsLessonOptOut: number;
+  bySport: {
+    surf: SportSupplyBreakdown;
+    kitesurf: SportSupplyBreakdown;
+  };
+}
+
 export async function getLessonPerformanceMetrics(): Promise<LessonPerformanceMetrics> {
   const now = new Date();
 
@@ -220,6 +240,75 @@ export async function getLessonPerformanceMetrics(): Promise<LessonPerformanceMe
       surf: toBreakdown(sportMap.get('surf')),
       kitesurf: toBreakdown(sportMap.get('kitesurf')),
       other: toBreakdown(sportMap.get('other')),
+    },
+  };
+}
+
+// Snapshot instantané de l'offre pro disponible pour les fanouts de cours.
+// Pas de filtre temporel : c'est l'état courant de la base.
+export async function getSupplyDiagnosticsMetrics(): Promise<SupplyDiagnosticsMetrics> {
+  const [
+    verifiedProsTotal,
+    verifiedProsWithLocation,
+    verifiedProsLessonOptOut,
+    surfNotEnabled,
+    kitesurfNotEnabled,
+  ] = await Promise.all([
+    prisma.proProfile.count({
+      where: { verified: true, user: { deletedAt: null } },
+    }),
+    prisma.proProfile.count({
+      where: { verified: true, lat: { not: null }, lng: { not: null }, user: { deletedAt: null } },
+    }),
+    // Pros qui ont explicitement désactivé les notifs de cours.
+    prisma.proProfile.count({
+      where: {
+        verified: true,
+        user: { deletedAt: null, notificationPreferences: { notifyLessonRequests: false } },
+      },
+    }),
+    // Pros non éligibles aux fanouts surf : NP existe ET (notifyLessonRequests=false OU notifyForSurf=false).
+    // Pros sans NP = defaults true = éligibles → non comptés ici.
+    prisma.proProfile.count({
+      where: {
+        verified: true,
+        user: {
+          deletedAt: null,
+          notificationPreferences: {
+            OR: [{ notifyLessonRequests: false }, { notifyForSurf: false }],
+          },
+        },
+      },
+    }),
+    // Même logique pour kitesurf.
+    prisma.proProfile.count({
+      where: {
+        verified: true,
+        user: {
+          deletedAt: null,
+          notificationPreferences: {
+            OR: [{ notifyLessonRequests: false }, { notifyForKitesurf: false }],
+          },
+        },
+      },
+    }),
+  ]);
+
+  const sportBreakdown = (notEnabled: number): SportSupplyBreakdown => ({
+    prosVerified: verifiedProsTotal,
+    prosWithLocation: verifiedProsWithLocation,
+    prosNotifyEnabled: verifiedProsTotal - notEnabled,
+  });
+
+  return {
+    verifiedProsTotal,
+    verifiedProsWithLocation,
+    verifiedProsMissingLocation: verifiedProsTotal - verifiedProsWithLocation,
+    verifiedProsNotifyLessonEnabled: verifiedProsTotal - verifiedProsLessonOptOut,
+    verifiedProsLessonOptOut,
+    bySport: {
+      surf: sportBreakdown(surfNotEnabled),
+      kitesurf: sportBreakdown(kitesurfNotEnabled),
     },
   };
 }
