@@ -13,6 +13,7 @@ import {
   type AdminBehaviorAnalytics,
   type AdminMatchingTTFM,
   type AdminLessonRequestsAnalytics,
+  type AdminLessonPerformance,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -28,6 +29,7 @@ import {
   Globe,
   LineChart,
   BookOpen,
+  Activity,
 } from 'lucide-react';
 
 const PERIODS: Array<{ value: AdminAnalyticsPeriod; label: string }> = [
@@ -73,6 +75,7 @@ export default function AdminAnalytics() {
   const [behaviorData, setBehaviorData] = useState<AdminBehaviorAnalytics | null>(null);
   const [ttfmData, setTtfmData] = useState<AdminMatchingTTFM | null>(null);
   const [lessonData, setLessonData] = useState<AdminLessonRequestsAnalytics | null>(null);
+  const [lessonPerformanceData, setLessonPerformanceData] = useState<AdminLessonPerformance | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,12 +102,13 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior, ttfm, lesson] = await Promise.all([
+      const [engagement, matching, behavior, ttfm, lesson, lessonPerf] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
         apiClient.getMatchingTTFMAnalytics(period),
         apiClient.getLessonRequestsAnalytics(period),
+        apiClient.getLessonPerformanceAnalytics(),
       ]);
 
       setEngagementData(engagement);
@@ -112,6 +116,7 @@ export default function AdminAnalytics() {
       setBehaviorData(behavior);
       setTtfmData(ttfm);
       setLessonData(lesson);
+      setLessonPerformanceData(lessonPerf);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -693,6 +698,114 @@ export default function AdminAnalytics() {
                   </tbody>
                 </table>
               )}
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* ── Performance des demandes de cours (fanouts opérationnels) ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Activity className="h-5 w-5 text-violet-600" />
+          <h2 className="text-2xl font-semibold">Performance des demandes de cours</h2>
+          <Badge variant="outline" className="text-xs">7 jours glissants + aujourd&apos;hui</Badge>
+        </div>
+
+        {/* Ligne 1 : volume */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Demandes aujourd&apos;hui</CardTitle>
+              <CardDescription>Riders uniques (COUNT DISTINCT) · aujourd&apos;hui</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonPerformanceData?.requestsToday ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {formatNumber(lessonPerformanceData?.requests7d ?? null)} sur 7 jours
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pros notifiés aujourd&apos;hui</CardTitle>
+              <CardDescription>Notifications créées ce jour</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonPerformanceData?.prosNotifiedToday ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {formatNumber(lessonPerformanceData?.prosNotified7d ?? null)} sur 7 jours
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Taux de correspondance</CardTitle>
+              <CardDescription>Fanouts avec ≥ 1 pro trouvé · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">
+                {lessonPerformanceData?.matchRate !== null && lessonPerformanceData?.matchRate !== undefined
+                  ? formatPercent(lessonPerformanceData.matchRate)
+                  : 'N/A'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {lessonPerformanceData?.noMatchRequests ?? 0} sans pro trouvé
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Ligne 2 : qualité fanout */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Moy. pros éligibles</CardTitle>
+              <CardDescription>prosFound / fanout · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatRatio(lessonPerformanceData?.avgProsFound ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">pros dans le périmètre</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Moy. pros notifiés</CardTitle>
+              <CardDescription>prosNotified / fanout · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatRatio(lessonPerformanceData?.avgProsPerRequest ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">notifications envoyées</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Erreurs notifications</CardTitle>
+              <CardDescription>Créations échouées · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonPerformanceData?.notificationFailures ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">échecs INSERT base</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Taux succès notif.</CardTitle>
+              <CardDescription>Succès / (succès + échecs) · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">
+                {lessonPerformanceData?.notificationSuccessRate != null
+                  ? formatPercent(lessonPerformanceData.notificationSuccessRate)
+                  : 'N/A'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {lessonPerformanceData?.notificationSuccessRate == null ? 'Aucun fanout' : ''}
+              </p>
             </CardContent>
           </Card>
         </div>
