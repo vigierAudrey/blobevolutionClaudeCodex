@@ -1,7 +1,7 @@
 /**
  * Tests unitaires — lesson-notification.service.ts
  *
- * Stratégie : mock Prisma.$queryRaw + cacheService + createNotificationSilent.
+ * Stratégie : mock Prisma.$queryRaw + cacheService + createNotification + lesson-fanout.repository.
  * On valide :
  *   - Pro dans périmètre reçoit une notification
  *   - Pro hors périmètre n'est pas notifié (filtrage PostGIS dans la requête)
@@ -54,15 +54,25 @@ jest.mock('../cache.service', () => ({
   },
 }));
 
-// ─── Mock createNotificationSilent ───────────────────────────────────────────
+// ─── Mock createNotification (remplace l'ancienne createNotificationSilent) ──
 
-const mockCreateNotifSilent = jest.fn();
+const mockCreateNotif = jest.fn();
 
 jest.mock('../notification.service', () => ({
   NotificationType: {
     LESSON_REQUEST_NEARBY: 'LESSON_REQUEST_NEARBY',
   },
-  createNotificationSilent: (...args: unknown[]) => mockCreateNotifSilent(...args),
+  createNotification: (...args: unknown[]) => mockCreateNotif(...args),
+}));
+
+// ─── Mock lesson-fanout.repository ───────────────────────────────────────────
+
+const mockRecordFanout = jest.fn();
+
+jest.mock('../lesson-fanout.repository', () => ({
+  hashRiderRef: (id: string) => `hash-${id}`,
+  makeLessonRequestId: (id: string) => `req-${id}`,
+  recordFanout: (...args: unknown[]) => mockRecordFanout(...args),
 }));
 
 jest.mock('../../utils/secure-logger', () => ({
@@ -85,6 +95,7 @@ const BASE_INPUT = {
   lessonLat: 43.6,
   lessonLng: -1.5,
   lessonSport: 'surf' as const,
+  triggerReason: 'ACTIVATED' as const,
 };
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -95,6 +106,10 @@ describe('notifyNearbyProsForLesson', () => {
     // Pas de cooldown actif par défaut
     mockRedisGet.mockResolvedValue(null);
     mockRedisSet.mockResolvedValue('OK');
+    // createNotification retourne une notification fictive
+    mockCreateNotif.mockResolvedValue({ id: 'notif-1', createdAt: new Date() });
+    // recordFanout est non-bloquant
+    mockRecordFanout.mockResolvedValue(undefined);
   });
 
   it('crée une notification pour chaque pro éligible retourné par la query', async () => {
@@ -102,11 +117,11 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    expect(mockCreateNotifSilent).toHaveBeenCalledTimes(2);
-    expect(mockCreateNotifSilent).toHaveBeenCalledWith(
+    expect(mockCreateNotif).toHaveBeenCalledTimes(2);
+    expect(mockCreateNotif).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'pro-1' }),
     );
-    expect(mockCreateNotifSilent).toHaveBeenCalledWith(
+    expect(mockCreateNotif).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'pro-2' }),
     );
   });
@@ -116,7 +131,7 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    expect(mockCreateNotifSilent).not.toHaveBeenCalled();
+    expect(mockCreateNotif).not.toHaveBeenCalled();
   });
 
   it('utilise le type LESSON_REQUEST_NEARBY', async () => {
@@ -124,7 +139,7 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    expect(mockCreateNotifSilent).toHaveBeenCalledWith(
+    expect(mockCreateNotif).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'LESSON_REQUEST_NEARBY' }),
     );
   });
@@ -134,7 +149,7 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    const call = mockCreateNotifSilent.mock.calls[0] as [Parameters<typeof notifService.createNotificationSilent>[0]];
+    const call = mockCreateNotif.mock.calls[0] as [Parameters<typeof notifService.createNotification>[0]];
     const notif = call[0];
 
     expect(notif.data).toBeDefined();
@@ -161,7 +176,7 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    const call = mockCreateNotifSilent.mock.calls[0] as [{ url?: string }];
+    const call = mockCreateNotif.mock.calls[0] as [{ url?: string }];
     expect(call[0].url).toBe('/pro/map');
   });
 
@@ -170,7 +185,7 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    const call = mockCreateNotifSilent.mock.calls[0] as [{ body: string }];
+    const call = mockCreateNotif.mock.calls[0] as [{ body: string }];
     const body: string = call[0].body;
 
     // Aucune coordonnée numérique dans le body
@@ -186,7 +201,7 @@ describe('notifyNearbyProsForLesson', () => {
     await notifyNearbyProsForLesson(BASE_INPUT);
 
     expect(mockQueryRaw).not.toHaveBeenCalled();
-    expect(mockCreateNotifSilent).not.toHaveBeenCalled();
+    expect(mockCreateNotif).not.toHaveBeenCalled();
   });
 
   it('marque le cooldown après un fanout réussi', async () => {
@@ -214,7 +229,7 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    expect(mockCreateNotifSilent).toHaveBeenCalledTimes(1);
+    expect(mockCreateNotif).toHaveBeenCalledTimes(1);
   });
 
   it('une seule query SQL (pas de N+1)', async () => {
@@ -230,7 +245,7 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    const call = mockCreateNotifSilent.mock.calls[0] as [{ data?: Record<string, unknown> }];
+    const call = mockCreateNotif.mock.calls[0] as [{ data?: Record<string, unknown> }];
     expect(call[0].data?.distanceBucket).toBe('<5km');
   });
 
@@ -239,7 +254,7 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    const call = mockCreateNotifSilent.mock.calls[0] as [{ data?: Record<string, unknown> }];
+    const call = mockCreateNotif.mock.calls[0] as [{ data?: Record<string, unknown> }];
     expect(call[0].data?.distanceBucket).toBe('5-15km');
   });
 
@@ -248,25 +263,52 @@ describe('notifyNearbyProsForLesson', () => {
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    const call = mockCreateNotifSilent.mock.calls[0] as [{ data?: Record<string, unknown> }];
+    const call = mockCreateNotif.mock.calls[0] as [{ data?: Record<string, unknown> }];
     expect(call[0].data?.distanceBucket).toBe('>30km');
   });
 
-  it('fonctionne sans lessonSport (sport null)', async () => {
+  it('fonctionne sans lessonSport (sport null) — le service accepte null, c\'est le controller qui bloque', async () => {
     mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
 
     await notifyNearbyProsForLesson({ ...BASE_INPUT, lessonSport: null });
 
-    expect(mockCreateNotifSilent).toHaveBeenCalledTimes(1);
-    const call = mockCreateNotifSilent.mock.calls[0] as [{ data?: Record<string, unknown> }];
+    expect(mockCreateNotif).toHaveBeenCalledTimes(1);
+    const call = mockCreateNotif.mock.calls[0] as [{ data?: Record<string, unknown> }];
     expect(call[0].data?.sport).toBeNull();
+  });
+
+  it('recordFanout reçoit le triggerReason transmis par l\'appelant', async () => {
+    mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
+
+    await notifyNearbyProsForLesson({ ...BASE_INPUT, triggerReason: 'SPORT_CHANGED' });
+
+    expect(mockRecordFanout).toHaveBeenCalledWith(
+      expect.objectContaining({ triggerReason: 'SPORT_CHANGED' }),
+    );
+  });
+
+  it('recordFanout reçoit MANUAL si triggerReason absent', async () => {
+    const inputWithoutReason = { ...BASE_INPUT } as Omit<typeof BASE_INPUT, 'triggerReason'>;
+    mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
+
+    // triggerReason est optionnel — on omet le champ
+    await notifyNearbyProsForLesson({
+      riderId: inputWithoutReason.riderId,
+      lessonLat: inputWithoutReason.lessonLat,
+      lessonLng: inputWithoutReason.lessonLng,
+      lessonSport: inputWithoutReason.lessonSport,
+    });
+
+    expect(mockRecordFanout).toHaveBeenCalledWith(
+      expect.objectContaining({ triggerReason: 'MANUAL' }),
+    );
   });
 
   it('erreur query SQL : log sans throw (pas de crash API)', async () => {
     mockQueryRaw.mockRejectedValue(new Error('DB connection lost'));
 
     await expect(notifyNearbyProsForLesson(BASE_INPUT)).resolves.not.toThrow();
-    expect(mockCreateNotifSilent).not.toHaveBeenCalled();
+    expect(mockCreateNotif).not.toHaveBeenCalled();
   });
 });
 
@@ -275,6 +317,8 @@ describe('notifyNearbyProsForLessonSilent', () => {
     jest.clearAllMocks();
     mockRedisGet.mockResolvedValue(null);
     mockRedisSet.mockResolvedValue('OK');
+    mockCreateNotif.mockResolvedValue({ id: 'notif-1', createdAt: new Date() });
+    mockRecordFanout.mockResolvedValue(undefined);
   });
 
   it('est fire-and-forget : ne rejette jamais', async () => {
@@ -291,7 +335,7 @@ describe('notifyNearbyProsForLessonSilent', () => {
     notifyNearbyProsForLessonSilent(BASE_INPUT);
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(mockCreateNotifSilent).toHaveBeenCalledTimes(1);
+    expect(mockCreateNotif).toHaveBeenCalledTimes(1);
   });
 });
 

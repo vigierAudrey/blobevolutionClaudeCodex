@@ -280,6 +280,9 @@ export interface AdminLessonRequestsAnalytics {
   snapshot: {
     totalActive: number;
     newInPeriod: number;
+    // Demandes wantsLesson=true sans mise à jour depuis > 30 jours.
+    // Un taux élevé (>30 % de totalActive) indique des données fantômes.
+    inactiveRequests30d: number;
     bySport: { surf: number; kitesurf: number; other: number };
     byStudentCount: { solo: number; duo: number; group: number };
   };
@@ -296,6 +299,55 @@ export interface AdminLessonRequestsAnalytics {
     medianFirstContactHours: number | null;
     sampleSize: number;
     masked: boolean;
+  };
+}
+
+export interface AdminSportBreakdown {
+  // COUNT(DISTINCT lessonRequestId) sur 7 jours pour ce sport.
+  requests7d: number;
+  // Taux de fanouts avec ≥ 1 pro trouvé (%), null si aucun fanout.
+  matchRate: number | null;
+  // Moyenne pros éligibles trouvés par fanout.
+  avgProsFound: number;
+}
+
+export interface AdminLessonPerformance {
+  requestsToday: number;
+  // requests7d = rider-jours actifs (COUNT DISTINCT lessonRequestId).
+  // Un rider actif 3 jours = 3. Voir uniqueRiders7d pour les riders distincts.
+  requests7d: number;
+  // uniqueRiders7d = COUNT(DISTINCT riderRef) — riders réellement distincts sur 7 jours.
+  uniqueRiders7d: number;
+  prosNotifiedToday: number;
+  prosNotified7d: number;
+  avgProsPerRequest: number;
+  avgProsFound: number;
+  noMatchRequests: number;
+  matchRate: number | null;
+  notificationFailures: number;
+  notificationSuccessRate: number | null;
+  bySport: {
+    surf: AdminSportBreakdown;
+    kitesurf: AdminSportBreakdown;
+    other: AdminSportBreakdown;
+  };
+}
+
+export interface AdminSportSupplyBreakdown {
+  prosVerified: number;
+  prosWithLocation: number;
+  prosNotifyEnabled: number;
+}
+
+export interface AdminSupplyDiagnostics {
+  verifiedProsTotal: number;
+  verifiedProsWithLocation: number;
+  verifiedProsMissingLocation: number;
+  verifiedProsNotifyLessonEnabled: number;
+  verifiedProsLessonOptOut: number;
+  bySport: {
+    surf: AdminSportSupplyBreakdown;
+    kitesurf: AdminSportSupplyBreakdown;
   };
 }
 
@@ -1309,6 +1361,10 @@ export const apiClient = {
     const query = period ? `?period=${period}` : '';
     return request(`/admin/analytics/lesson-requests${query}`, { method: 'GET' }, true) as Promise<AdminLessonRequestsAnalytics>;
   },
+  getLessonPerformanceAnalytics: () =>
+    request('/admin/analytics/lesson-performance', { method: 'GET' }, true) as Promise<AdminLessonPerformance>,
+  getSupplyDiagnosticsAnalytics: () =>
+    request('/admin/analytics/supply-diagnostics', { method: 'GET' }, true) as Promise<AdminSupplyDiagnostics>,
   /**
    * saveTokens — Activates the local session hint flag.
    * Tokens themselves are managed as httpOnly cookies by the server.

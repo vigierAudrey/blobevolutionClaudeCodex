@@ -13,6 +13,9 @@ import {
   type AdminBehaviorAnalytics,
   type AdminMatchingTTFM,
   type AdminLessonRequestsAnalytics,
+  type AdminLessonPerformance,
+  type AdminSportBreakdown,
+  type AdminSupplyDiagnostics,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -28,6 +31,8 @@ import {
   Globe,
   LineChart,
   BookOpen,
+  Activity,
+  Info,
 } from 'lucide-react';
 
 const PERIODS: Array<{ value: AdminAnalyticsPeriod; label: string }> = [
@@ -73,6 +78,8 @@ export default function AdminAnalytics() {
   const [behaviorData, setBehaviorData] = useState<AdminBehaviorAnalytics | null>(null);
   const [ttfmData, setTtfmData] = useState<AdminMatchingTTFM | null>(null);
   const [lessonData, setLessonData] = useState<AdminLessonRequestsAnalytics | null>(null);
+  const [lessonPerformanceData, setLessonPerformanceData] = useState<AdminLessonPerformance | null>(null);
+  const [supplyData, setSupplyData] = useState<AdminSupplyDiagnostics | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,12 +106,14 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior, ttfm, lesson] = await Promise.all([
+      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
         apiClient.getMatchingTTFMAnalytics(period),
         apiClient.getLessonRequestsAnalytics(period),
+        apiClient.getLessonPerformanceAnalytics(),
+        apiClient.getSupplyDiagnosticsAnalytics(),
       ]);
 
       setEngagementData(engagement);
@@ -112,6 +121,8 @@ export default function AdminAnalytics() {
       setBehaviorData(behavior);
       setTtfmData(ttfm);
       setLessonData(lesson);
+      setLessonPerformanceData(lessonPerf);
+      setSupplyData(supply);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -574,6 +585,38 @@ export default function AdminAnalytics() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Inactives &gt; 30 j
+                <span
+                  title="RiderProfile avec wantsLesson=true dont updatedAt < now - 30 jours. Ces demandes sont comptées dans le total actif mais probablement obsolètes. Attention : updatedAt se réinitialise à toute modification du profil (pas seulement wantsLesson). Si > 30 % du total, les volumes de demandes peuvent être surestimés."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const inactive = lessonData?.snapshot.inactiveRequests30d ?? 0;
+                const total = lessonData?.snapshot.totalActive ?? 0;
+                const pct = total > 0 ? Math.round((inactive / total) * 100) : 0;
+                const isHigh = pct > 30;
+                return (
+                  <>
+                    <p className={`text-3xl font-bold ${isHigh ? 'text-orange-600' : ''}`}>
+                      {formatNumber(inactive)}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {pct}% des actives
+                      {isHigh && ' — données potentiellement biaisées'}
+                    </p>
+                  </>
+                );
+              })()}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Surf / Kitesurf</CardTitle>
             </CardHeader>
             <CardContent>
@@ -696,6 +739,282 @@ export default function AdminAnalytics() {
             </CardContent>
           </Card>
         </div>
+      </section>
+
+      {/* ── Performance des demandes de cours (fanouts opérationnels) ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Activity className="h-5 w-5 text-violet-600" />
+          <h2 className="text-2xl font-semibold">Performance des demandes de cours</h2>
+          <Badge variant="outline" className="text-xs">7 jours glissants + aujourd&apos;hui</Badge>
+        </div>
+
+        {/* Ligne 1 : volume */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Demandes aujourd&apos;hui</CardTitle>
+              <CardDescription>Rider-jours actifs (DISTINCT requestId) · aujourd&apos;hui</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonPerformanceData?.requestsToday ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {formatNumber(lessonPerformanceData?.requests7d ?? null)} rider-jours sur 7 j
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Riders distincts 7 j
+                <span
+                  title="COUNT DISTINCT riderRef sur 7 jours glissants. riderRef = sha256(riderId)[:24] — pseudonyme stable par rider. Contrairement à requests7d (rider-jours), ce chiffre compte chaque rider une seule fois même s'il a eu des demandes actives plusieurs jours."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
+              <CardDescription>COUNT DISTINCT riderRef · indépendant des jours actifs</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonPerformanceData?.uniqueRiders7d ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                riders uniques (pas rider-jours)
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pros notifiés aujourd&apos;hui</CardTitle>
+              <CardDescription>Notifications créées ce jour</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonPerformanceData?.prosNotifiedToday ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {formatNumber(lessonPerformanceData?.prosNotified7d ?? null)} sur 7 jours
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Taux de correspondance
+                <span
+                  title="% des fan-outs ayant trouvé au moins 1 pro éligible dans le périmètre géographique du rider. Formule : COUNT(*) FILTER (prosFound > 0) / COUNT(*) * 100. Un taux bas (< 60 %) peut signaler une zone sans pros ou un rayon trop restreint. Retourne N/A si aucun fan-out sur la période."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
+              <CardDescription>Fanouts avec ≥ 1 pro trouvé · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">
+                {lessonPerformanceData?.matchRate !== null && lessonPerformanceData?.matchRate !== undefined
+                  ? formatPercent(lessonPerformanceData.matchRate)
+                  : 'N/A'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {lessonPerformanceData?.noMatchRequests ?? 0} sans pro trouvé
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Ligne 2 : qualité fanout */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Moy. pros éligibles</CardTitle>
+              <CardDescription>prosFound / fanout · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatRatio(lessonPerformanceData?.avgProsFound ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">pros dans le périmètre</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Moy. pros notifiés</CardTitle>
+              <CardDescription>prosNotified / fanout · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatRatio(lessonPerformanceData?.avgProsPerRequest ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">notifications envoyées</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Erreurs notifications</CardTitle>
+              <CardDescription>Créations échouées · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(lessonPerformanceData?.notificationFailures ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">échecs INSERT base</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Taux succès notif.</CardTitle>
+              <CardDescription>Succès / (succès + échecs) · 7 jours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">
+                {lessonPerformanceData?.notificationSuccessRate != null
+                  ? formatPercent(lessonPerformanceData.notificationSuccessRate)
+                  : 'N/A'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {lessonPerformanceData?.notificationSuccessRate == null ? 'Aucun fanout' : ''}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Ligne 3 : répartition par sport */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-4 w-4" />
+              Répartition par sport · 7 jours
+            </CardTitle>
+            <CardDescription>matchRate et pros trouvés par discipline · fanouts avec sport renseigné uniquement</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-2 pr-4">Sport</th>
+                  <th className="pr-4">Demandes (rider-jours)</th>
+                  <th className="pr-4">Match rate</th>
+                  <th>Moy. pros trouvés</th>
+                </tr>
+              </thead>
+              <tbody>
+                {((['surf', 'kitesurf', 'other'] as const)).map((sport) => {
+                  const row: AdminSportBreakdown | undefined = lessonPerformanceData?.bySport[sport];
+                  return (
+                    <tr key={sport} className="border-t">
+                      <td className="py-2 pr-4 font-medium capitalize">{sport}</td>
+                      <td className="pr-4">{formatNumber(row?.requests7d ?? null)}</td>
+                      <td className="pr-4">
+                        {row?.matchRate !== null && row?.matchRate !== undefined
+                          ? formatPercent(row.matchRate)
+                          : 'N/A'}
+                      </td>
+                      <td>{formatRatio(row?.avgProsFound ?? null)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ── Disponibilité des pros ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Target className="h-5 w-5 text-emerald-600" />
+          <h2 className="text-2xl font-semibold">Disponibilité des pros</h2>
+          <Badge variant="outline" className="text-xs">Snapshot actuel</Badge>
+        </div>
+
+        {/* Métriques globales */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pros vérifiés</CardTitle>
+              <CardDescription>Total actifs (non supprimés)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(supplyData?.verifiedProsTotal ?? null)}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Localisation renseignée
+                <span
+                  title="Pros vérifiés avec lat/lng dans ProProfile. Sans coordonnées, le pro n'apparaît dans aucun fanout géographique — même avec les notifications activées."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
+              <CardDescription>Condition requise pour le fanout spatial</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(supplyData?.verifiedProsWithLocation ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {formatNumber(supplyData?.verifiedProsMissingLocation ?? null)} sans localisation
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                Notifications cours activées
+                <span
+                  title="Pros avec notifyLessonRequests=true ou sans préférences enregistrées (défaut true). Opt-out = pros ayant explicitement positionné notifyLessonRequests=false."
+                  className="cursor-help"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                </span>
+              </CardTitle>
+              <CardDescription>Éligibles aux demandes de cours</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{formatNumber(supplyData?.verifiedProsNotifyLessonEnabled ?? null)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {formatNumber(supplyData?.verifiedProsLessonOptOut ?? null)} opt-out
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Breakdown par sport */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-4 w-4" />
+              Répartition par sport
+            </CardTitle>
+            <CardDescription>Éligibilité des pros vérifiés aux fanouts par discipline</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-2 pr-4">Sport</th>
+                  <th className="pr-4" title="Total des pros vérifiés — dénominateur commun">Pros vérifiés</th>
+                  <th className="pr-4" title="Pros vérifiés avec lat/lng renseignés — condition sine qua non pour le fanout spatial">Avec localisation</th>
+                  <th title="Pros avec notifyLessonRequests=true ET notifyFor[Sport]=true (ou sans préférences = défaut true)">Notifs activées</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(['surf', 'kitesurf'] as const).map((sport) => {
+                  const row = supplyData?.bySport[sport];
+                  return (
+                    <tr key={sport} className="border-t">
+                      <td className="py-2 pr-4 font-medium capitalize">{sport}</td>
+                      <td className="pr-4">{formatNumber(row?.prosVerified ?? null)}</td>
+                      <td className="pr-4">{formatNumber(row?.prosWithLocation ?? null)}</td>
+                      <td>{formatNumber(row?.prosNotifyEnabled ?? null)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

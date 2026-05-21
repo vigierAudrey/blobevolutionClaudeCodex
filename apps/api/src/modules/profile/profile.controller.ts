@@ -24,7 +24,43 @@ import {
   assertFranceLaunchLocationInput,
   isFranceLaunchGuardError,
 } from '../../lib/france-launch-guard';
-import { notifyNearbyProsForLessonSilent } from '../../services/lesson-notification.service';
+import {
+  notifyNearbyProsForLessonSilent,
+  type LessonNotificationInput,
+} from '../../services/lesson-notification.service';
+import type { FanoutTriggerReason } from '../../services/lesson-fanout.repository';
+
+/**
+ * Distance géodésique entre deux points GPS (formule de Haversine).
+ * Retourne les mètres. Utilisé pour le guard re-fanout (seuil 100 m).
+ */
+function haversineDistanceMeters(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+): number {
+  const R = 6_371_000;
+  const p = Math.PI / 180;
+  const dLat = (lat2 - lat1) * p;
+  const dLng = (lng2 - lng1) * p;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * p) * Math.cos(lat2 * p) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Retourne true si la nouvelle position est à plus de 100 m de l'ancienne.
+ * Si l'ancienne position est inconnue (null), considère que la position a changé.
+ */
+function locationMovedOver100m(
+  prevLat: number | null | undefined,
+  prevLng: number | null | undefined,
+  newLat: number,
+  newLng: number,
+): boolean {
+  if (prevLat == null || prevLng == null) return true;
+  return haversineDistanceMeters(prevLat, prevLng, newLat, newLng) > 100;
+}
 
 export const profileRouter = Router();
 profileRouter.use(requireAuth, requireVerifiedEmail);
@@ -304,26 +340,47 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => { // authz-
         update: { ...body },
       });
 
-      // Déclenche la fanout de notifications uniquement sur :
-      //   1. Activation wantsLesson false → true
-      //   2. Changement de zone (lessonLat ou lessonLng modifiés)
-      //   3. Changement de sport demandé (surf ↔ kitesurf)
-      // Un update de bio/photo/prénom avec wantsLesson=true et mêmes coords
-      // n'entre dans aucune de ces branches → pas de spam.
+      // Guard fanout :
+      //   Déclenche uniquement si wantsLesson est actif ET qu'un sport est fourni.
+      //   Sport obligatoire : un fanout sans sport notifie tous les pros sans filtre
+      //   de préférence → bruit inacceptable pour les pros côté kite ou côté surf.
+      //   Conditions de déclenchement (au moins une) :
+      //     1. wantsLesson passe false → true
+      //     2. Déplacement géographique > 100 m (Haversine — évite les re-fanouts
+      //        sur float epsilon ou mêmes coords re-soumises)
+      //     3. Changement de sport demandé (surf ↔ kitesurf)
+      const lessonSport = (body.lessonSport as 'surf' | 'kitesurf' | null | undefined) ?? null;
       const lessonNowActive = body.wantsLesson === true && body.lessonLat != null && body.lessonLng != null;
       if (lessonNowActive) {
-        const wasActive = prevProfile?.wantsLesson ?? false;
-        const latChanged = prevProfile?.lessonLat !== body.lessonLat;
-        const lngChanged = prevProfile?.lessonLng !== body.lessonLng;
-        const sportChanged = (prevProfile?.lessonSport ?? null) !== ((body.lessonSport as string | null | undefined) ?? null);
+        if (!lessonSport) {
+          secureLogger.info('LESSON_FANOUT_SKIPPED_NO_SPORT', { userId });
+        } else {
+          const wasActive = prevProfile?.wantsLesson ?? false;
+          const moved = locationMovedOver100m(
+            prevProfile?.lessonLat,
+            prevProfile?.lessonLng,
+            body.lessonLat as number,
+            body.lessonLng as number,
+          );
+          const sportChanged =
+            (prevProfile?.lessonSport ?? null) !== lessonSport;
 
-        if (!wasActive || latChanged || lngChanged || sportChanged) {
-          notifyNearbyProsForLessonSilent({
-            riderId: userId,
-            lessonLat: body.lessonLat as number,
-            lessonLng: body.lessonLng as number,
-            lessonSport: (body.lessonSport as 'surf' | 'kitesurf' | null) ?? null,
-          });
+          if (!wasActive || moved || sportChanged) {
+            const triggerReason: FanoutTriggerReason = !wasActive
+              ? 'ACTIVATED'
+              : sportChanged
+                ? 'SPORT_CHANGED'
+                : 'LOCATION_CHANGED';
+
+            const fanoutInput: LessonNotificationInput = {
+              riderId: userId,
+              lessonLat: body.lessonLat as number,
+              lessonLng: body.lessonLng as number,
+              lessonSport,
+              triggerReason,
+            };
+            notifyNearbyProsForLessonSilent(fanoutInput);
+          }
         }
       }
 

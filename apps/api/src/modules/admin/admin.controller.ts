@@ -15,6 +15,7 @@ import { invalidateSessionCache } from '../../lib/auth-session-store';
 import { disconnectUserSockets } from '../../lib/socket';
 import { analyticsReportService } from '../../services/analytics/reports.service';
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
+import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics } from '../../services/lesson-fanout.repository';
 import { capAdminLimit } from '../../utils/admin-list-cap';
 import {
   ADMIN_STATS_MAIN_CACHE_KEY,
@@ -1110,6 +1111,38 @@ adminRouter.get(
     return res.status(500).json({ error: 'Internal error' });
   }
 });
+
+// Performance opérationnelle des fanouts de cours (7 derniers jours + aujourd'hui)
+adminRouter.get(
+  '/analytics/lesson-performance',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:lesson-performance', () => 'admin:analytics:lesson-performance'),
+  async (_req, res) => {
+    try {
+      const metrics = await getLessonPerformanceMetrics();
+      return res.json(metrics);
+    } catch (error) {
+      secureLogger.error('Analytics lesson-performance error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
+
+// Snapshot de la disponibilité des pros vérifiés pour les fanouts de cours.
+adminRouter.get(
+  '/analytics/supply-diagnostics',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:supply-diagnostics', () => 'admin:analytics:supply-diagnostics'),
+  async (_req, res) => {
+    try {
+      const metrics = await getSupplyDiagnosticsMetrics();
+      return res.json(metrics);
+    } catch (error) {
+      secureLogger.error('Analytics supply-diagnostics error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
 
 const reportActionSchema = z.object({
   action: z.enum(['approve', 'dismiss', 'ban'])
