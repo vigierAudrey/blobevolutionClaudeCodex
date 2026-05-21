@@ -885,7 +885,7 @@ jobs:
         run: pnpm run db:reseed
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           # Invalidate when pnpm-lock.yaml changes (Playwright version bump).
