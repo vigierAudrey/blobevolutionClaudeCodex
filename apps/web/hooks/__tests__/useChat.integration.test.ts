@@ -14,6 +14,7 @@
  */
 
 import { renderHook, act, waitFor } from '@testing-library/react';
+import type { Socket } from 'socket.io-client';
 import { useChat } from '../useChat';
 import { useSocket } from '../useSocket';
 import { apiClient } from '../../lib/apiClient';
@@ -24,15 +25,55 @@ jest.mock('../../lib/apiClient');
 const mockUseSocket = useSocket as jest.MockedFunction<typeof useSocket>;
 const mockApiClient = apiClient as jest.Mocked<typeof apiClient>;
 
+type ChatMessage = Parameters<NonNullable<Parameters<typeof useChat>[0]['onNewMessage']>>[0];
+type ChatMessageWithClientMsgId = ChatMessage & { clientMsgId?: string };
+type ChatSendResult = Awaited<ReturnType<ReturnType<typeof useChat>['sendMessage']>>;
+type ChatSendPromise = Promise<ChatSendResult>;
+type SendPayload = {
+  conversationId: string;
+  content: string;
+  type: 'TEXT' | 'PROPOSAL';
+  clientMsgId: string;
+};
+type AckPayload = {
+  ok: true;
+  data: {
+    id: string;
+    conversationId: string;
+    content: string;
+    type: string;
+    createdAt: string;
+    created?: boolean;
+  };
+};
+type AckCallback = (payload: AckPayload) => void;
+type AckCallbackRecord = { clientMsgId: string; callback: AckCallback };
+type MockSocket = Socket & {
+  connected: boolean;
+  emit: jest.Mock;
+  on: jest.Mock;
+  off: jest.Mock;
+};
+
+const requireAssigned = <T>(value: T, label: string): NonNullable<T> => {
+  if (value === null || value === undefined) {
+    throw new Error(`${label} was not assigned`);
+  }
+  return value as NonNullable<T>;
+};
+
+const requireSendPromise = (value: ChatSendPromise | null, label: string): ChatSendPromise =>
+  requireAssigned(value, label);
+
 describe('useChat - Integration: WS timeout → HTTP replay', () => {
   const conversationId = 'conv-integration-test';
   const token = 'test-token';
 
-  let mockSocket: unknown;
+  let mockSocket: MockSocket;
   let mockEmit: jest.Mock;
   let mockOn: jest.Mock;
   let mockOff: jest.Mock;
-  let onNewMessageCallback: ((msg: unknown) => void) | null = null;
+  let onNewMessageCallback: ((msg: ChatMessageWithClientMsgId) => void) | null = null;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -48,15 +89,18 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
     mockOff = jest.fn();
 
     mockSocket = {
+      connected: true,
       emit: mockEmit,
       on: mockOn,
       off: mockOff
-    };
+    } as unknown as MockSocket;
 
     mockUseSocket.mockReturnValue({
       socket: mockSocket,
       connected: true,
       lastSocketError: null,
+      connect: jest.fn(),
+      disconnect: jest.fn(),
       emit: mockEmit,
       on: mockOn,
       off: mockOff
@@ -72,9 +116,9 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
    * Vérifie que reconciliation par clientMsgId évite doublons
    */
   it('should avoid duplicate when WS timeout → HTTP 200 (replay) → Server push', async () => {
-    const receivedMessages: unknown[] = [];
-    const onNewMessage = jest.fn((msg) => {
-      receivedMessages.push(msg);
+    const receivedMessages: ChatMessageWithClientMsgId[] = [];
+    const onNewMessage = jest.fn((msg: ChatMessage) => {
+      receivedMessages.push(msg as ChatMessageWithClientMsgId);
     });
 
     const { result } = renderHook(() =>
@@ -91,7 +135,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
 
     // Setup: WS times out (don't call callback to simulate network timeout)
     const testClientMsgId = 'test-uuid-12345';
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string, payload: SendPayload) => {
       if (event === 'send-message') {
         // Capture clientMsgId from payload
         expect(payload.clientMsgId).toBe(testClientMsgId);
@@ -114,7 +158,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
     });
 
     // User sends message
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Test message', 'TEXT', undefined, testClientMsgId);
     });
@@ -125,7 +169,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
     });
 
     // HTTP fallback should succeed with created:false
-    const sendResult = await sendPromise;
+    const sendResult = await requireSendPromise(sendPromise, 'sendPromise');
     expect(sendResult).toEqual({
       success: true,
       transport: 'HTTP',
@@ -165,9 +209,9 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
    * Vérifie que reconciliation par clientMsgId fonctionne aussi pour WS
    */
   it('should reconcile by clientMsgId when WS succeeds and server pushes', async () => {
-    const receivedMessages: unknown[] = [];
-    const onNewMessage = jest.fn((msg) => {
-      receivedMessages.push(msg);
+    const receivedMessages: ChatMessageWithClientMsgId[] = [];
+    const onNewMessage = jest.fn((msg: ChatMessage) => {
+      receivedMessages.push(msg as ChatMessageWithClientMsgId);
     });
 
     const { result } = renderHook(() =>
@@ -183,18 +227,18 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
     });
 
     const testClientMsgId = 'test-uuid-67890';
-    let sendAckCallback: unknown;
+    let sendAckCallback: AckCallback | null = null;
 
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
-        sendAckCallback = callback;
+        sendAckCallback = callback ?? null;
         expect(payload.clientMsgId).toBe(testClientMsgId);
       }
       return mockSocket;
     });
 
     // Send message
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('WS message', 'TEXT', undefined, testClientMsgId);
     });
@@ -214,7 +258,7 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
       });
     });
 
-    await expect(sendPromise).resolves.toMatchObject({
+    await expect(requireSendPromise(sendPromise, 'sendPromise')).resolves.toMatchObject({
       success: true,
       transport: 'WS',
       clientMsgId: testClientMsgId
@@ -249,9 +293,9 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
    * Vérifie que chaque message est distinct
    */
   it('should handle multiple messages with different clientMsgIds correctly', async () => {
-    const receivedMessages: unknown[] = [];
-    const onNewMessage = jest.fn((msg) => {
-      receivedMessages.push(msg);
+    const receivedMessages: ChatMessageWithClientMsgId[] = [];
+    const onNewMessage = jest.fn((msg: ChatMessage) => {
+      receivedMessages.push(msg as ChatMessageWithClientMsgId);
     });
 
     const { result } = renderHook(() =>
@@ -269,22 +313,22 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
     const clientMsgId1 = 'uuid-msg-1';
     const clientMsgId2 = 'uuid-msg-2';
 
-    let ackCallbacks: unknown[] = [];
-    mockEmit.mockImplementation((event, payload, callback) => {
+    const ackCallbacks: AckCallbackRecord[] = [];
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
-        ackCallbacks.push({ clientMsgId: payload.clientMsgId, callback });
+        ackCallbacks.push({ clientMsgId: payload.clientMsgId, callback: requireAssigned(callback ?? null, 'ackCallback') });
       }
       return mockSocket;
     });
 
     // Send first message
-    let promise1: Promise<any>;
+    let promise1: ChatSendPromise | null = null;
     act(() => {
       promise1 = result.current.sendMessage('First', 'TEXT', undefined, clientMsgId1);
     });
 
     // Send second message
-    let promise2: Promise<any>;
+    let promise2: ChatSendPromise | null = null;
     act(() => {
       promise2 = result.current.sendMessage('Second', 'TEXT', undefined, clientMsgId2);
     });
@@ -316,7 +360,10 @@ describe('useChat - Integration: WS timeout → HTTP replay', () => {
       });
     });
 
-    await Promise.all([promise1, promise2]);
+    await Promise.all([
+      requireSendPromise(promise1, 'promise1'),
+      requireSendPromise(promise2, 'promise2')
+    ]);
 
     // Server pushes both messages
     act(() => {

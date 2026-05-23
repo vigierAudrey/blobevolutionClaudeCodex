@@ -9,6 +9,7 @@
  */
 
 import { renderHook, act, waitFor } from '@testing-library/react';
+import type { Socket } from 'socket.io-client';
 import { useChat } from '../useChat';
 import { useSocket } from '../useSocket';
 import { apiClient } from '../../lib/apiClient';
@@ -20,11 +21,69 @@ jest.mock('../../lib/apiClient');
 const mockUseSocket = useSocket as jest.MockedFunction<typeof useSocket>;
 const mockApiClient = apiClient as jest.Mocked<typeof apiClient>;
 
+type ChatSendResult = Awaited<ReturnType<ReturnType<typeof useChat>['sendMessage']>>;
+type ChatSendSuccess = Extract<ChatSendResult, { success: true }>;
+type ChatSendPromise = Promise<ChatSendResult>;
+type SendPayload = {
+  conversationId: string;
+  content: string;
+  type: 'TEXT' | 'PROPOSAL';
+  clientMsgId: string;
+};
+type AckPayload =
+  | {
+      ok: true;
+      data: {
+        id?: string;
+        conversationId: string;
+        content?: string;
+        type?: string;
+        createdAt?: string;
+        created?: boolean;
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        code: string;
+        message: string;
+        details?: unknown;
+      };
+    };
+type AckCallback = (payload: AckPayload) => void;
+type MockSocket = Socket & {
+  connected: boolean;
+  emit: jest.Mock;
+  on: jest.Mock;
+  off: jest.Mock;
+};
+
+const requireAssigned = <T>(value: T, label: string): NonNullable<T> => {
+  if (value === null || value === undefined) {
+    throw new Error(`${label} was not assigned`);
+  }
+  return value as NonNullable<T>;
+};
+
+const requireSendPromise = (value: ChatSendPromise | null, label: string): ChatSendPromise =>
+  requireAssigned(value, label);
+
+const requireString = (value: string | null, label: string): string =>
+  requireAssigned(value, label);
+
+const expectSendSuccess = (result: ChatSendResult): ChatSendSuccess => {
+  expect(result.success).toBe(true);
+  if (!result.success) {
+    throw new Error('Expected sendMessage to succeed');
+  }
+  return result;
+};
+
 describe('useChat - clientMsgId integration', () => {
   const conversationId = 'conv-123';
   const token = 'test-token';
 
-  let mockSocket: unknown;
+  let mockSocket: MockSocket;
   let mockEmit: jest.Mock;
   let mockOn: jest.Mock;
   let mockOff: jest.Mock;
@@ -37,15 +96,18 @@ describe('useChat - clientMsgId integration', () => {
     mockOn = jest.fn();
     mockOff = jest.fn();
     mockSocket = {
+      connected: true,
       emit: mockEmit,
       on: mockOn,
       off: mockOff
-    };
+    } as unknown as MockSocket;
 
     mockUseSocket.mockReturnValue({
       socket: mockSocket,
       connected: true,
       lastSocketError: null,
+      connect: jest.fn(),
+      disconnect: jest.fn(),
       emit: mockEmit,
       on: mockOn,
       off: mockOff
@@ -77,10 +139,10 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Send message
-    let sendAckCallback: unknown;
-    mockEmit.mockImplementation((event, payload, callback) => {
+    let sendAckCallback: AckCallback | null = null;
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
-        sendAckCallback = callback;
+        sendAckCallback = callback ?? null;
         // Vérifier que clientMsgId est présent dans le payload
         expect(payload).toHaveProperty('clientMsgId');
         expect(typeof payload.clientMsgId).toBe('string');
@@ -89,7 +151,7 @@ describe('useChat - clientMsgId integration', () => {
       return mockSocket;
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Hello');
     });
@@ -109,11 +171,11 @@ describe('useChat - clientMsgId integration', () => {
       });
     });
 
-    const sendResult = await sendPromise;
-    expect(sendResult.success).toBe(true);
-    expect(sendResult.transport).toBe('WS');
-    expect(sendResult.clientMsgId).toBeDefined();
-    expect(sendResult.created).toBe(true);
+    const sendResult = await requireSendPromise(sendPromise, 'sendPromise');
+    const successResult = expectSendSuccess(sendResult);
+    expect(successResult.transport).toBe('WS');
+    expect(successResult.clientMsgId).toBeDefined();
+    expect(successResult.created).toBe(true);
   });
 
   /**
@@ -135,15 +197,15 @@ describe('useChat - clientMsgId integration', () => {
       joinAckCallback?.({ ok: true, data: { conversationId } });
     });
 
-    let sendAckCallback: unknown;
-    mockEmit.mockImplementation((event, payload, callback) => {
+    let sendAckCallback: AckCallback | null = null;
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
-        sendAckCallback = callback;
+        sendAckCallback = callback ?? null;
       }
       return mockSocket;
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Hello');
     });
@@ -164,11 +226,11 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Hook should handle created:false without crashing and return it
-    const sendResult = await sendPromise;
-    expect(sendResult.success).toBe(true);
-    expect(sendResult.transport).toBe('WS');
-    expect(sendResult.clientMsgId).toBeDefined();
-    expect(sendResult.created).toBe(false);
+    const sendResult = await requireSendPromise(sendPromise, 'sendPromise');
+    const successResult = expectSendSuccess(sendResult);
+    expect(successResult.transport).toBe('WS');
+    expect(successResult.clientMsgId).toBeDefined();
+    expect(successResult.created).toBe(false);
   });
 
   /**
@@ -191,8 +253,8 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // WS emit times out (don't call callback to simulate network timeout)
-    let capturedClientMsgId: string;
-    mockEmit.mockImplementation((event, payload, callback) => {
+    let capturedClientMsgId: string | null = null;
+    mockEmit.mockImplementation((event: string, payload: SendPayload) => {
       if (event === 'send-message') {
         capturedClientMsgId = payload.clientMsgId;
         // Simulate WS timeout: DON'T call callback
@@ -212,7 +274,7 @@ describe('useChat - clientMsgId integration', () => {
       status: 201 // C4.2: Include status
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Hello HTTP');
     });
@@ -229,16 +291,16 @@ describe('useChat - clientMsgId integration', () => {
         expect.objectContaining({
           type: 'TEXT',
           content: 'Hello HTTP',
-          clientMsgId: capturedClientMsgId
+          clientMsgId: requireString(capturedClientMsgId, 'capturedClientMsgId')
         })
       );
     });
 
     // HTTP fallback should return clientMsgId
-    const sendResult = await sendPromise;
-    expect(sendResult.success).toBe(true);
-    expect(sendResult.transport).toBe('HTTP');
-    expect(sendResult.clientMsgId).toBe(capturedClientMsgId);
+    const sendResult = await requireSendPromise(sendPromise, 'sendPromise');
+    const successResult = expectSendSuccess(sendResult);
+    expect(successResult.transport).toBe('HTTP');
+    expect(successResult.clientMsgId).toBe(requireString(capturedClientMsgId, 'capturedClientMsgId'));
   });
 
   /**
@@ -261,7 +323,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // WS timeout (don't call callback to simulate network timeout)
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string) => {
       if (event === 'send-message') {
         // Simulate WS timeout: DON'T call callback
         // emitWithAck will timeout after 5s
@@ -280,7 +342,7 @@ describe('useChat - clientMsgId integration', () => {
       status: 200 // Replay détecté côté serveur
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Replay message');
     });
@@ -290,10 +352,10 @@ describe('useChat - clientMsgId integration', () => {
       jest.advanceTimersByTime(5000);
     });
 
-    const sendResult = await sendPromise;
-    expect(sendResult.success).toBe(true);
-    expect(sendResult.transport).toBe('HTTP');
-    expect(sendResult.clientMsgId).toBeDefined();
+    const sendResult = await requireSendPromise(sendPromise, 'sendPromise');
+    const successResult = expectSendSuccess(sendResult);
+    expect(successResult.transport).toBe('HTTP');
+    expect(successResult.clientMsgId).toBeDefined();
 
     // Backend a retourné 200 = replay, donc pas de nouveau message créé
     expect(mockApiClient.sendMessageWithStatus).toHaveBeenCalledTimes(1);
@@ -318,11 +380,11 @@ describe('useChat - clientMsgId integration', () => {
       joinAckCallback?.({ ok: true, data: { conversationId } });
     });
 
-    let firstClientMsgId: string;
-    let secondClientMsgId: string;
+    let firstClientMsgId: string | null = null;
+    let secondClientMsgId: string | null = null;
     let callCount = 0;
 
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
         callCount++;
 
@@ -360,24 +422,29 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // First message
-    let firstPromise: Promise<any>;
+    let firstPromise: ChatSendPromise | null = null;
     act(() => {
       firstPromise = result.current.sendMessage('First message');
     });
 
-    const firstResult = await firstPromise;
-    expect(firstResult.success).toBe(true);
-    expect(firstResult.transport).toBe('WS');
-    expect(firstResult.clientMsgId).toBe(firstClientMsgId);
-    expect(firstResult.created).toBe(true);
+    const firstResult = await requireSendPromise(firstPromise, 'firstPromise');
+    const firstSuccessResult = expectSendSuccess(firstResult);
+    expect(firstSuccessResult.transport).toBe('WS');
+    expect(firstSuccessResult.clientMsgId).toBe(requireString(firstClientMsgId, 'firstClientMsgId'));
+    expect(firstSuccessResult.created).toBe(true);
 
     // Second message (different from first)
-    let secondPromise: Promise<any>;
+    let secondPromise: ChatSendPromise | null = null;
     act(() => {
       secondPromise = result.current.sendMessage('Second message');
     });
 
-    await expect(secondPromise).resolves.toEqual({ success: true, transport: 'WS', clientMsgId: secondClientMsgId, created: true });
+    await expect(requireSendPromise(secondPromise, 'secondPromise')).resolves.toEqual({
+      success: true,
+      transport: 'WS',
+      clientMsgId: requireString(secondClientMsgId, 'secondClientMsgId'),
+      created: true
+    });
     expect(callCount).toBe(2);
   });
 
@@ -401,9 +468,9 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     const providedClientMsgId = 'custom-client-msg-id-123';
-    let capturedClientMsgId: string;
+    let capturedClientMsgId: string | null = null;
 
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
         capturedClientMsgId = payload.clientMsgId;
         callback?.({
@@ -421,7 +488,7 @@ describe('useChat - clientMsgId integration', () => {
       return mockSocket;
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Hello', 'TEXT', undefined, providedClientMsgId);
     });
@@ -432,7 +499,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Should return the provided clientMsgId
-    await expect(sendPromise).resolves.toEqual({
+    await expect(requireSendPromise(sendPromise, 'sendPromise')).resolves.toEqual({
       success: true,
       transport: 'WS',
       clientMsgId: providedClientMsgId,
@@ -458,9 +525,9 @@ describe('useChat - clientMsgId integration', () => {
       joinAckCallback?.({ ok: true, data: { conversationId } });
     });
 
-    let capturedClientMsgId: string;
+    let capturedClientMsgId: string | null = null;
 
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
         capturedClientMsgId = payload.clientMsgId;
         callback?.({
@@ -478,15 +545,15 @@ describe('useChat - clientMsgId integration', () => {
       return mockSocket;
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Hello');
     });
 
-    await expect(sendPromise).resolves.toEqual({
+    await expect(requireSendPromise(sendPromise, 'sendPromise')).resolves.toEqual({
       success: true,
       transport: 'WS',
-      clientMsgId: capturedClientMsgId,
+      clientMsgId: requireString(capturedClientMsgId, 'capturedClientMsgId'),
       created: false // Backend flag passed through
     });
   });
@@ -508,9 +575,9 @@ describe('useChat - clientMsgId integration', () => {
       joinAckCallback?.({ ok: true, data: { conversationId } });
     });
 
-    let capturedClientMsgId: string;
+    let capturedClientMsgId: string | null = null;
 
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
         capturedClientMsgId = payload.clientMsgId;
         callback?.({
@@ -524,14 +591,14 @@ describe('useChat - clientMsgId integration', () => {
       return mockSocket;
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Hello');
     });
 
-    const sendResult = await sendPromise;
+    const sendResult = await requireSendPromise(sendPromise, 'sendPromise');
     expect(sendResult.success).toBe(false);
-    expect(sendResult.clientMsgId).toBe(capturedClientMsgId);
+    expect(sendResult.clientMsgId).toBe(requireString(capturedClientMsgId, 'capturedClientMsgId'));
   });
 
   /**
@@ -553,11 +620,11 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     const fixedClientMsgId = 'retry-test-id';
-    let firstCallClientMsgId: string;
-    let secondCallClientMsgId: string;
+    let firstCallClientMsgId: string | null = null;
+    let secondCallClientMsgId: string | null = null;
     let callCount = 0;
 
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
         callCount++;
         if (callCount === 1) {
@@ -590,7 +657,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // First attempt (fails)
-    let firstPromise: Promise<any>;
+    let firstPromise: ChatSendPromise | null = null;
     act(() => {
       firstPromise = result.current.sendMessage('Hello', 'TEXT', undefined, fixedClientMsgId);
     });
@@ -599,12 +666,12 @@ describe('useChat - clientMsgId integration', () => {
       expect(firstCallClientMsgId).toBe(fixedClientMsgId);
     });
 
-    const firstResult = await firstPromise;
+    const firstResult = await requireSendPromise(firstPromise, 'firstPromise');
     expect(firstResult.success).toBe(false);
     expect(firstResult.clientMsgId).toBe(fixedClientMsgId);
 
     // Retry with SAME clientMsgId (parent's responsibility)
-    let retryPromise: Promise<any>;
+    let retryPromise: ChatSendPromise | null = null;
     act(() => {
       retryPromise = result.current.sendMessage('Hello', 'TEXT', undefined, fixedClientMsgId);
     });
@@ -614,7 +681,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Retry succeeds, backend detects replay via clientMsgId
-    await expect(retryPromise).resolves.toEqual({
+    await expect(requireSendPromise(retryPromise, 'retryPromise')).resolves.toEqual({
       success: true,
       transport: 'WS',
       clientMsgId: fixedClientMsgId,
@@ -622,7 +689,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Both calls used same clientMsgId
-    expect(firstCallClientMsgId).toBe(secondCallClientMsgId);
+    expect(requireString(firstCallClientMsgId, 'firstCallClientMsgId')).toBe(requireString(secondCallClientMsgId, 'secondCallClientMsgId'));
     expect(callCount).toBe(2);
   });
 
@@ -652,9 +719,9 @@ describe('useChat - clientMsgId integration', () => {
       joinAckCallback?.({ ok: true, data: { conversationId } });
     });
 
-    let capturedClientMsgId: string;
+    let capturedClientMsgId: string | null = null;
 
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string, payload: SendPayload, callback?: AckCallback) => {
       if (event === 'send-message') {
         capturedClientMsgId = payload.clientMsgId;
         callback?.({
@@ -672,7 +739,7 @@ describe('useChat - clientMsgId integration', () => {
       return mockSocket;
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Hello');
     });
@@ -680,7 +747,7 @@ describe('useChat - clientMsgId integration', () => {
     await waitFor(() => {
       // Verify clientMsgId is valid UUID v4 (RFC4122)
       const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      expect(capturedClientMsgId).toMatch(uuidV4Regex);
+      expect(requireString(capturedClientMsgId, 'capturedClientMsgId')).toMatch(uuidV4Regex);
     });
 
     // Restore crypto
@@ -690,7 +757,7 @@ describe('useChat - clientMsgId integration', () => {
       configurable: true
     });
 
-    await expect(sendPromise).resolves.toMatchObject({ success: true });
+    await expect(requireSendPromise(sendPromise, 'sendPromise')).resolves.toMatchObject({ success: true });
   });
 
   /**
@@ -713,7 +780,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // WS emit times out (don't call callback to simulate network timeout)
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string) => {
       if (event === 'send-message') {
         // Simulate WS timeout: DON'T call callback
         // emitWithAck will timeout after 5s
@@ -732,7 +799,7 @@ describe('useChat - clientMsgId integration', () => {
       status: 201 // First creation
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Hello HTTP');
     });
@@ -743,7 +810,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Should derive created: true from status 201
-    await expect(sendPromise).resolves.toEqual({
+    await expect(requireSendPromise(sendPromise, 'sendPromise')).resolves.toEqual({
       success: true,
       transport: 'HTTP',
       clientMsgId: expect.any(String),
@@ -771,7 +838,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // WS timeout (don't call callback to simulate network timeout)
-    mockEmit.mockImplementation((event, payload, callback) => {
+    mockEmit.mockImplementation((event: string) => {
       if (event === 'send-message') {
         // Simulate WS timeout: DON'T call callback
         // emitWithAck will timeout after 5s
@@ -790,7 +857,7 @@ describe('useChat - clientMsgId integration', () => {
       status: 200 // Replay detected
     });
 
-    let sendPromise: Promise<any>;
+    let sendPromise: ChatSendPromise | null = null;
     act(() => {
       sendPromise = result.current.sendMessage('Replay message');
     });
@@ -801,7 +868,7 @@ describe('useChat - clientMsgId integration', () => {
     });
 
     // Should derive created: false from status 200
-    await expect(sendPromise).resolves.toEqual({
+    await expect(requireSendPromise(sendPromise, 'sendPromise')).resolves.toEqual({
       success: true,
       transport: 'HTTP',
       clientMsgId: expect.any(String),

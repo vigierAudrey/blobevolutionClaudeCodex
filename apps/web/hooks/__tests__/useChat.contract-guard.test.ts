@@ -22,6 +22,18 @@ jest.mock('../../lib/apiClient', () => ({
   },
 }));
 
+type ChatSendResult = Awaited<ReturnType<ReturnType<typeof useChat>['sendMessage']>>;
+
+const requireAssigned = <T>(value: T, label: string): NonNullable<T> => {
+  if (value === null || value === undefined) {
+    throw new Error(`${label} was not assigned`);
+  }
+  return value as NonNullable<T>;
+};
+
+const requireSendResult = (value: ChatSendResult | null, label: string): ChatSendResult =>
+  requireAssigned(value, label);
+
 describe('clientMsgId Contract Behavioral Guards', () => {
   const conversationId = 'contract-test-conv';
   const token = 'test-token';
@@ -135,7 +147,7 @@ describe('clientMsgId Contract Behavioral Guards', () => {
     await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
 
     // Call with provided clientMsgId
-    let sendResult;
+    let sendResult: ChatSendResult | null = null;
     await act(async () => {
       sendResult = await result.current.sendMessage('test', 'TEXT', undefined, FIXED_CLIENT_MSG_ID);
     });
@@ -160,7 +172,7 @@ describe('clientMsgId Contract Behavioral Guards', () => {
 
     await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
 
-    let sendResult;
+    let sendResult: ChatSendResult | null = null;
     await act(async () => {
       sendResult = await result.current.sendMessage('test', 'TEXT', undefined, FIXED_CLIENT_MSG_ID);
     });
@@ -218,19 +230,20 @@ describe('clientMsgId Contract Behavioral Guards', () => {
 
     await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
 
-    let sendResult;
+    let sendResult: ChatSendResult | null = null;
     await act(async () => {
       sendResult = await result.current.sendMessage('test', 'TEXT', undefined, FIXED_CLIENT_MSG_ID);
     });
 
     // Verify failure result includes clientMsgId
-    expect(sendResult).toMatchObject({
+    const failureResult = requireSendResult(sendResult, 'sendResult');
+    expect(failureResult).toMatchObject({
       success: false,
       clientMsgId: FIXED_CLIENT_MSG_ID,
     });
 
-    if (sendResult && !sendResult.success) {
-      expect(sendResult.clientMsgId).toBe(FIXED_CLIENT_MSG_ID);
+    if (!failureResult.success) {
+      expect(failureResult.clientMsgId).toBe(FIXED_CLIENT_MSG_ID);
     }
   });
 });

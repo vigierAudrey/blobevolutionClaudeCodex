@@ -21,6 +21,29 @@ type MockSocket = {
   emit: jest.Mock;
 };
 
+type ChatSendResult = Awaited<ReturnType<ReturnType<typeof useChat>['sendMessage']>>;
+
+const requireAssigned = <T>(value: T, label: string): NonNullable<T> => {
+  if (value === null || value === undefined) {
+    throw new Error(`${label} was not assigned`);
+  }
+  return value as NonNullable<T>;
+};
+
+const requireSendResult = (value: ChatSendResult | null, label: string): ChatSendResult =>
+  requireAssigned(value, label);
+
+const sendMessageInAct = async (
+  sendMessage: ReturnType<typeof useChat>['sendMessage'],
+  ...args: Parameters<ReturnType<typeof useChat>['sendMessage']>
+): Promise<ChatSendResult> => {
+  let sendResult: ChatSendResult | null = null;
+  await act(async () => {
+    sendResult = await sendMessage(...args);
+  });
+  return requireSendResult(sendResult, 'sendResult');
+};
+
 const setupSocket = (overrides: Partial<MockSocket> = {}) => {
   const socket: MockSocket = {
     connected: true,
@@ -34,6 +57,8 @@ const setupSocket = (overrides: Partial<MockSocket> = {}) => {
     socket,
     connected: socket.connected,
     lastSocketError: null,
+    connect: jest.fn(),
+    disconnect: jest.fn(),
     emit: socket.emit,
     on: socket.on,
     off: socket.off
@@ -101,10 +126,7 @@ describe('useChat', () => {
 
     await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
 
-    let sendResult;
-    await act(async () => {
-      sendResult = await result.current.sendMessage('hello');
-    });
+    const sendResult = await sendMessageInAct(result.current.sendMessage, 'hello');
 
     expect(sendResult).toMatchObject({
       success: true,
@@ -136,10 +158,7 @@ describe('useChat', () => {
 
     await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
 
-    let sendResult;
-    await act(async () => {
-      sendResult = await result.current.sendMessage('hello');
-    });
+    const sendResult = await sendMessageInAct(result.current.sendMessage, 'hello');
 
     expect(sendResult?.success).toBe(false);
     if (sendResult && !sendResult.success) {
@@ -164,10 +183,7 @@ describe('useChat', () => {
 
     await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
 
-    let sendResult;
-    await act(async () => {
-      sendResult = await result.current.sendMessage('hello');
-    });
+    const sendResult = await sendMessageInAct(result.current.sendMessage, 'hello');
 
     expect(sendResult?.success).toBe(false);
     if (sendResult && !sendResult.success) {
@@ -199,10 +215,7 @@ describe('useChat', () => {
 
     await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
 
-    let sendResult;
-    await act(async () => {
-      sendResult = await result.current.sendMessage('hello');
-    });
+    const sendResult = await sendMessageInAct(result.current.sendMessage, 'hello');
 
     expect(sendResult).toMatchObject({
       success: true,
@@ -238,10 +251,7 @@ describe('useChat', () => {
 
     await waitFor(() => expect(emitWithAck).toHaveBeenCalledTimes(1));
 
-    let sendResult;
-    await act(async () => {
-      sendResult = await result.current.sendMessage('hello');
-    });
+    const sendResult = await sendMessageInAct(result.current.sendMessage, 'hello');
 
     expect(sendResult?.success).toBe(false);
     if (sendResult && !sendResult.success) {
