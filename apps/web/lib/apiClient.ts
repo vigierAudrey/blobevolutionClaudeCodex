@@ -372,6 +372,16 @@ export interface AdminAnalyticsSportBreakdown {
   coverageRatePct: number | null;
 }
 
+export interface AdminAnalyticsReasonBreakdown {
+  reason: string;
+  fanouts7d: number;
+  requests7d: number;
+  contacted7d: number;
+  contactRatePct: number | null;
+  covered7d: number;
+  coverageRatePct: number | null;
+}
+
 export interface AdminAnalyticsOverview {
   requests7d: number;
   contacted7d: number;
@@ -379,6 +389,7 @@ export interface AdminAnalyticsOverview {
   covered7d: number;
   coverageRatePct: number | null;
   bySport: AdminAnalyticsSportBreakdown[];
+  reasonBreakdown: AdminAnalyticsReasonBreakdown[];
 }
 
 export interface AdminBlockedConversation {

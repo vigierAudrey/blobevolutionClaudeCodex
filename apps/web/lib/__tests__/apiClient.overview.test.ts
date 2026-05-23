@@ -57,6 +57,10 @@ describe('getAdminAnalyticsOverview', () => {
         { sport: 'kitesurf', requests7d: 60, contacted7d: 20, contactRatePct: 33.3, covered7d: 50, coverageRatePct: 83.3 },
         { sport: 'surf',     requests7d: 60, contacted7d: 25, contactRatePct: 41.7, covered7d: 45, coverageRatePct: 75.0 },
       ],
+      reasonBreakdown: [
+        { reason: 'ACTIVATED',       fanouts7d: 80, requests7d: 80, contacted7d: 30, contactRatePct: 37.5, covered7d: 65, coverageRatePct: 81.3 },
+        { reason: 'LOCATION_CHANGED', fanouts7d: 40, requests7d: 40, contacted7d: 15, contactRatePct: 37.5, covered7d: 30, coverageRatePct: 75.0 },
+      ],
     };
 
     queueApiResponse(payload);
@@ -79,6 +83,7 @@ describe('getAdminAnalyticsOverview', () => {
       covered7d: 0,
       coverageRatePct: null,
       bySport: [],
+      reasonBreakdown: [],
     };
 
     queueApiResponse(payload);
@@ -101,6 +106,9 @@ describe('getAdminAnalyticsOverview', () => {
       coverageRatePct: 80,
       bySport: [
         { sport: 'surf', requests7d: 5, contacted7d: 2, contactRatePct: 40, covered7d: 4, coverageRatePct: 80 },
+      ],
+      reasonBreakdown: [
+        { reason: 'ACTIVATED', fanouts7d: 5, requests7d: 5, contacted7d: 2, contactRatePct: 40, covered7d: 4, coverageRatePct: 80 },
       ],
     };
 

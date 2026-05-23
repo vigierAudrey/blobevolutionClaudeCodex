@@ -359,6 +359,24 @@ export interface SportConversionBreakdown {
   coverageRatePct: number | null;
 }
 
+// Métriques par raison de déclenchement pour le dashboard admin (Sprint C6).
+export interface ReasonBreakdown {
+  // COALESCE(triggerReason, 'UNKNOWN') — 'UNKNOWN' pour les lignes legacy (null).
+  reason: string;
+  // Nombre brut de fanouts (COUNT DISTINCT id — insensible au LEFT JOIN inflation).
+  fanouts7d: number;
+  // Demandes uniques (COUNT DISTINCT lessonRequestId).
+  requests7d: number;
+  // Demandes uniques ayant au moins un ContactRequest.
+  contacted7d: number;
+  // contacted7d / requests7d * 100 (1 décimale), null si requests7d = 0.
+  contactRatePct: number | null;
+  // Demandes uniques ayant prosFound > 0 sur au moins un fanout.
+  covered7d: number;
+  // covered7d / requests7d * 100 (1 décimale), null si requests7d = 0.
+  coverageRatePct: number | null;
+}
+
 export interface AnalyticsOverviewMetrics {
   requests7d: number;
   contacted7d: number;
@@ -367,6 +385,8 @@ export interface AnalyticsOverviewMetrics {
   coverageRatePct: number | null;
   // Présent uniquement quand au moins un fanout a sport IN ('surf','kitesurf').
   bySport: SportConversionBreakdown[];
+  // Breakdown par triggerReason — max 5 groupes (4 valeurs + UNKNOWN pour legacy).
+  reasonBreakdown: ReasonBreakdown[];
 }
 
 type OverviewRow = {
@@ -386,14 +406,27 @@ type SportOverviewRow = {
   coverage_rate_pct: number | null;
 };
 
+type ReasonOverviewRow = {
+  reason: string;
+  fanouts7d: bigint;
+  requests7d: bigint;
+  contacted7d: bigint;
+  contact_rate_pct: number | null;
+  covered7d: bigint;
+  coverage_rate_pct: number | null;
+};
+
 export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMetrics> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-  // Deux requêtes parallèles sur le même index LessonFanout_createdAt_idx :
+  // Trois requêtes parallèles sur le même index LessonFanout_createdAt_idx :
   //   1. Agrégat global (C4 — inchangé).
   //   2. Agrégat par sport (C5) — filtre sport IN ('surf','kitesurf') pour exclure
   //      les lignes pré-C1 (sport NULL) et garantir un groupe borné (max 2 lignes).
-  const [rows, sportRows]: [OverviewRow[], SportOverviewRow[]] = await Promise.all([
+  //   3. Agrégat par triggerReason (C6) — COALESCE(null, 'UNKNOWN') pour legacy.
+  //      fanouts7d = COUNT(DISTINCT id) — insensible à l'inflation du LEFT JOIN.
+  //      GROUP BY borné : max 5 groupes (ACTIVATED/LOCATION_CHANGED/SPORT_CHANGED/MANUAL/UNKNOWN).
+  const [rows, sportRows, reasonRows]: [OverviewRow[], SportOverviewRow[], ReasonOverviewRow[]] = await Promise.all([
     prisma.$queryRaw<OverviewRow[]>(Prisma.sql`
       SELECT
         COUNT(DISTINCT lf."lessonRequestId")                                       AS "requests7d",
@@ -447,6 +480,35 @@ export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMe
       GROUP BY lf."sport"
       ORDER BY lf."sport"
     `),
+
+    prisma.$queryRaw<ReasonOverviewRow[]>(Prisma.sql`
+      SELECT
+        COALESCE(lf."triggerReason", 'UNKNOWN')                                    AS "reason",
+        COUNT(DISTINCT lf."id")                                                    AS "fanouts7d",
+        COUNT(DISTINCT lf."lessonRequestId")                                       AS "requests7d",
+        COUNT(DISTINCT cr."lessonRequestId")
+          FILTER (WHERE cr."lessonRequestId" IS NOT NULL)                          AS "contacted7d",
+        ROUND(
+          COUNT(DISTINCT cr."lessonRequestId")
+            FILTER (WHERE cr."lessonRequestId" IS NOT NULL)::numeric
+          / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+          1
+        )::float                                                                   AS "contact_rate_pct",
+        COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)
+                                                                                   AS "covered7d",
+        ROUND(
+          COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)::numeric
+          / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+          1
+        )::float                                                                   AS "coverage_rate_pct"
+      FROM "LessonFanout" lf
+      LEFT JOIN "ContactRequest" cr
+        ON cr."lessonRequestId" = lf."lessonRequestId"
+        AND cr."createdAt" >= ${sevenDaysAgo}
+      WHERE lf."createdAt" >= ${sevenDaysAgo}
+      GROUP BY COALESCE(lf."triggerReason", 'UNKNOWN')
+      ORDER BY COUNT(DISTINCT lf."id") DESC
+    `),
   ]);
 
   const row = rows[0];
@@ -460,6 +522,16 @@ export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMe
     coverageRatePct: sr.coverage_rate_pct,
   }));
 
+  const reasonBreakdown: ReasonBreakdown[] = reasonRows.map((rr) => ({
+    reason: rr.reason,
+    fanouts7d: Number(rr.fanouts7d),
+    requests7d: Number(rr.requests7d),
+    contacted7d: Number(rr.contacted7d),
+    contactRatePct: rr.contact_rate_pct,
+    covered7d: Number(rr.covered7d),
+    coverageRatePct: rr.coverage_rate_pct,
+  }));
+
   return {
     requests7d: Number(row.requests7d),
     contacted7d: Number(row.contacted7d),
@@ -467,6 +539,7 @@ export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMe
     covered7d: Number(row.covered7d),
     coverageRatePct: row.coverage_rate_pct,
     bySport,
+    reasonBreakdown,
   };
 }
 

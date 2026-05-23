@@ -17,6 +17,7 @@ import {
   type AdminSportBreakdown,
   type AdminSupplyDiagnostics,
   type AdminAnalyticsOverview,
+  type AdminAnalyticsReasonBreakdown,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -70,6 +71,14 @@ const formatHours = (value: number | null | undefined) => {
     return `${days.toFixed(1)} j`;
   }
   return `${value.toFixed(1)} h`;
+};
+
+const TRIGGER_REASON_LABELS: Record<string, string> = {
+  ACTIVATED: 'Activation',
+  LOCATION_CHANGED: 'Déplacement',
+  SPORT_CHANGED: 'Changement de sport',
+  MANUAL: 'Manuel',
+  UNKNOWN: 'Inconnu (legacy)',
 };
 
 export default function AdminAnalytics() {
@@ -757,6 +766,53 @@ export default function AdminAnalytics() {
                     {overviewData.bySport.map((row) => (
                       <tr key={row.sport} className="border-t">
                         <td className="py-2 pr-4 font-medium capitalize">{row.sport}</td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.requests7d)}</td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.contacted7d)}</td>
+                        <td className="py-2 pr-4 text-right">
+                          {row.contactRatePct === null ? '—' : formatPercent(row.contactRatePct)}
+                        </td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.covered7d)}</td>
+                        <td className="py-2 text-right">
+                          {row.coverageRatePct === null ? '—' : formatPercent(row.coverageRatePct)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Répartition par déclencheur — breakdown C6 */}
+        {overviewData && overviewData.reasonBreakdown.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Activity className="h-4 w-4 text-orange-600" />
+                Répartition par déclencheur · 7 jours glissants
+              </CardTitle>
+              <CardDescription>Origine des fanouts de cours (raison de déclenchement)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b">
+                      <th className="pb-2 pr-4">Raison</th>
+                      <th className="pb-2 pr-4 text-right">Fanouts</th>
+                      <th className="pb-2 pr-4 text-right">Demandes</th>
+                      <th className="pb-2 pr-4 text-right">Contacts</th>
+                      <th className="pb-2 pr-4 text-right">Conversion</th>
+                      <th className="pb-2 pr-4 text-right">Couvertes</th>
+                      <th className="pb-2 text-right">Couverture</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overviewData.reasonBreakdown.map((row: AdminAnalyticsReasonBreakdown) => (
+                      <tr key={row.reason} className="border-t">
+                        <td className="py-2 pr-4 font-medium">{TRIGGER_REASON_LABELS[row.reason] ?? row.reason}</td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.fanouts7d)}</td>
                         <td className="py-2 pr-4 text-right">{formatNumber(row.requests7d)}</td>
                         <td className="py-2 pr-4 text-right">{formatNumber(row.contacted7d)}</td>
                         <td className="py-2 pr-4 text-right">
