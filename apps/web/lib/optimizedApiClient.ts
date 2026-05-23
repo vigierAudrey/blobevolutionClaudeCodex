@@ -245,6 +245,7 @@ export const optimizedApiClient = {
   getMatchingAnalytics: apiClient.getMatchingAnalytics,
   getBehaviorAnalytics: apiClient.getBehaviorAnalytics,
   getMatchingTTFMAnalytics: apiClient.getMatchingTTFMAnalytics,
+  getProDashboardStats: apiClient.getProDashboardStats,
 };
 
 // Export helper for measuring performance

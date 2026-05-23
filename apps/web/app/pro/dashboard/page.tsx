@@ -8,16 +8,149 @@ import { optimizedApiClient } from '../../../lib/optimizedApiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
-import { User, Map, Info, LogOut, MessageSquare, Gift, Sparkles } from 'lucide-react';
+import { User, Map, Info, LogOut, MessageSquare, Gift, Sparkles, TrendingUp, Bell, Send, CheckCircle, Activity } from 'lucide-react';
 import { NotificationBell } from '../../../components/NotificationBell';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
 import { useAnalytics } from '@/hooks/useAnalytics';
 
+type ProDashboardStats = {
+  receivedRequests: number;
+  readNotifications: number;
+  sentContacts: number;
+  acceptedContacts: number;
+  acceptanceRate: number | null;
+  weeklyNotifications: Array<{ week: string; count: number }>;
+  weeklyContacts: Array<{ week: string; count: number }>;
+  activeNearbyRequests: number;
+};
+
+function WeeklyBar({ label, count, max }: { label: string; count: number; max: number }) {
+  const pct = max > 0 ? Math.round((count / max) * 100) : 0;
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="w-24 shrink-0 text-muted-foreground text-xs">{label}</span>
+      <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
+        <div
+          className="h-full bg-blue-500 rounded-full transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="w-6 text-right tabular-nums text-xs">{count}</span>
+    </div>
+  );
+}
+
+function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
+  const kpis = [
+    {
+      label: 'Demandes reçues',
+      value: stats.receivedRequests,
+      icon: Bell,
+      color: 'text-blue-500',
+      bg: 'bg-blue-50 dark:bg-blue-950/30',
+    },
+    {
+      label: 'Notifs lues',
+      value: stats.readNotifications,
+      icon: CheckCircle,
+      color: 'text-green-500',
+      bg: 'bg-green-50 dark:bg-green-950/30',
+    },
+    {
+      label: 'Contacts envoyés',
+      value: stats.sentContacts,
+      icon: Send,
+      color: 'text-purple-500',
+      bg: 'bg-purple-50 dark:bg-purple-950/30',
+    },
+    {
+      label: 'Contacts acceptés',
+      value: stats.acceptedContacts,
+      icon: TrendingUp,
+      color: 'text-amber-500',
+      bg: 'bg-amber-50 dark:bg-amber-950/30',
+    },
+  ];
+
+  const maxNotif = Math.max(...stats.weeklyNotifications.map((w) => w.count), 1);
+  const maxContact = Math.max(...stats.weeklyContacts.map((w) => w.count), 1);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="w-5 h-5 text-blue-500" />
+        <h2 className="font-semibold text-foreground">Mes stats — 7 derniers jours</h2>
+      </div>
+
+      {/* KPI Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {kpis.map((kpi) => (
+          <div key={kpi.label} className={`rounded-xl p-3 ${kpi.bg} border border-transparent`}>
+            <div className="flex items-center gap-2 mb-1">
+              <kpi.icon className={`w-4 h-4 ${kpi.color}`} />
+              <span className="text-xs text-muted-foreground">{kpi.label}</span>
+            </div>
+            <p className={`text-2xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Taux d'acceptation + demandes actives */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="rounded-xl p-3 bg-muted/50 border">
+          <div className="flex items-center gap-2 mb-1">
+            <CheckCircle className="w-4 h-4 text-green-500" />
+            <span className="text-xs text-muted-foreground">Taux d&apos;acceptation</span>
+          </div>
+          <p className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">
+            {stats.acceptanceRate != null ? `${stats.acceptanceRate}%` : '—'}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">contacts acceptés / envoyés</p>
+        </div>
+
+        <div className="rounded-xl p-3 bg-muted/50 border">
+          <div className="flex items-center gap-2 mb-1">
+            <Activity className="w-4 h-4 text-cyan-500" />
+            <span className="text-xs text-muted-foreground">Demandes actives dans ta zone</span>
+          </div>
+          <p className="text-2xl font-bold tabular-nums text-cyan-600 dark:text-cyan-400">
+            {stats.activeNearbyRequests}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">riders cherchant un coach</p>
+        </div>
+      </div>
+
+      {/* Historique hebdomadaire */}
+      {(stats.weeklyNotifications.length > 0 || stats.weeklyContacts.length > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {stats.weeklyNotifications.length > 0 && (
+            <div className="rounded-xl p-3 bg-muted/30 border space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Notifications / semaine</p>
+              {stats.weeklyNotifications.map((w) => (
+                <WeeklyBar key={w.week} label={w.week} count={w.count} max={maxNotif} />
+              ))}
+            </div>
+          )}
+          {stats.weeklyContacts.length > 0 && (
+            <div className="rounded-xl p-3 bg-muted/30 border space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Contacts / semaine</p>
+              {stats.weeklyContacts.map((w) => (
+                <WeeklyBar key={w.week} label={w.week} count={w.count} max={maxContact} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<DashboardUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<ProDashboardStats | null>(null);
   const { trackEvent } = useAnalytics();
   const trackedRef = useRef(false);
 
@@ -35,6 +168,8 @@ export default function ProDashboardPage() {
           return;
         }
         setUser(u);
+        // Fetch stats sans bloquer l'affichage principal
+        optimizedApiClient.getProDashboardStats().then(setStats).catch(() => null);
       })
       .catch(() => {
         router.replace('/login');
@@ -193,6 +328,20 @@ export default function ProDashboardPage() {
           </Card>
         </Link>
       </div>
+
+      {/* Stats MVP */}
+      <Card className="rounded-[1.75rem] border overflow-hidden">
+        <CardContent className="p-4">
+          {stats ? (
+            <ProStatsSection stats={stats} />
+          ) : (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+              <TrendingUp className="w-4 h-4 animate-pulse" />
+              Chargement des statistiques…
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* BloboMap */}
       <div className="grid grid-cols-1 gap-4">

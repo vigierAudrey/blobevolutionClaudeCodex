@@ -1072,6 +1072,16 @@ export const apiClient = {
 
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
   getProProfile: () => request('/pro/me/preview', { method: 'GET' }, true),
+  getProDashboardStats: () => request('/pro/dashboard/stats', { method: 'GET' }, true) as Promise<{
+    receivedRequests: number;
+    readNotifications: number;
+    sentContacts: number;
+    acceptedContacts: number;
+    acceptanceRate: number | null;
+    weeklyNotifications: Array<{ week: string; count: number }>;
+    weeklyContacts: Array<{ week: string; count: number }>;
+    activeNearbyRequests: number;
+  }>,
   updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
   getDisciplines: () => request('/profile/disciplines', { method: 'GET' }, true) as Promise<Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced'|'anytime' }>>,

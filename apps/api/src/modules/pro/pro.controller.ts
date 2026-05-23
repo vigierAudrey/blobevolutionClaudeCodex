@@ -16,6 +16,7 @@ import { requireProRole } from './pro.guard';
 import { secureLogger } from '../../utils/secure-logger';
 import { computeZoneLarge, recordServerAnalyticsEvent } from '../../services/analytics/events.service';
 import { createGeoEndpointLimiter, createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { getProDashboardStats } from '../../services/pro-dashboard.service';
 import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmacSafe } from '../../lib/hash-ip';
 import { assertFranceLaunchProProfile, isFranceLaunchGuardError } from '../../lib/france-launch-guard';
@@ -152,6 +153,21 @@ const upsertSchema = z.object({
 
 const nearLessonsBurstLimiter = createGeoEndpointLimiter('pro_near_lessons', 'GEO_HEAVY_BURST');
 const nearLessonsMinuteLimiter = createGeoEndpointLimiter('pro_near_lessons', 'GEO_HEAVY_MINUTE');
+
+// Dashboard stats rate limiter : 30 req/min/userId — lecture seule, calcul SQL léger
+const dashboardStatsLimiter = createLazyCustomRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => {
+    const userId = (req as any).user?.id;
+    return userId ? `pro_dashboard_stats:${userId}` : 'pro_dashboard_stats:anonymous';
+  },
+  handler: (_req: any, res: any) => {
+    res.status(429).json({ error: 'RATE_LIMIT_EXCEEDED', message: 'Trop de requêtes. Réessayez dans une minute.' });
+  },
+}, 'pro_dashboard_stats');
 
 type LessonCandidateRow = {
   id: string;
@@ -448,6 +464,19 @@ proRouter.post('/photo/finalize', requireProRole, finalizeRateLimiter, async (re
     secureLogger.error('UPLOAD_FINALIZE_PRO_ERROR', {
       error: err instanceof Error ? err.message : String(err),
     });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// KPIs personnels du pro — 7 jours glissants + historique 2 semaines + demandes actives zone
+proRouter.get('/dashboard/stats', requireProRole, dashboardStatsLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const stats = await getProDashboardStats(userId);
+    return res.json(stats);
+  } catch (err) {
+    secureLogger.error('Pro dashboard stats error', { error: err });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
