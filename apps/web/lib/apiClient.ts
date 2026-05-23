@@ -351,6 +351,12 @@ export interface AdminSupplyDiagnostics {
   };
 }
 
+export interface AdminContactConversionAnalytics {
+  requests7d: number;
+  contacted7d: number;
+  contactRatePct: number | null;
+}
+
 export interface AdminBlockedConversation {
   conversationId: string;
   blockedAt: string | null;
@@ -1365,6 +1371,8 @@ export const apiClient = {
     request('/admin/analytics/lesson-performance', { method: 'GET' }, true) as Promise<AdminLessonPerformance>,
   getSupplyDiagnosticsAnalytics: () =>
     request('/admin/analytics/supply-diagnostics', { method: 'GET' }, true) as Promise<AdminSupplyDiagnostics>,
+  getContactConversionAnalytics: () =>
+    request('/admin/analytics/contact-conversion', { method: 'GET' }, true) as Promise<AdminContactConversionAnalytics>,
   /**
    * saveTokens — Activates the local session hint flag.
    * Tokens themselves are managed as httpOnly cookies by the server.

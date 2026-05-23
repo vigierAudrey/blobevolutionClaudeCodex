@@ -16,6 +16,7 @@ import {
   type AdminLessonPerformance,
   type AdminSportBreakdown,
   type AdminSupplyDiagnostics,
+  type AdminContactConversionAnalytics,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -80,6 +81,7 @@ export default function AdminAnalytics() {
   const [lessonData, setLessonData] = useState<AdminLessonRequestsAnalytics | null>(null);
   const [lessonPerformanceData, setLessonPerformanceData] = useState<AdminLessonPerformance | null>(null);
   const [supplyData, setSupplyData] = useState<AdminSupplyDiagnostics | null>(null);
+  const [contactConversionData, setContactConversionData] = useState<AdminContactConversionAnalytics | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +108,7 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply] = await Promise.all([
+      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply, contactConversion] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
@@ -114,6 +116,7 @@ export default function AdminAnalytics() {
         apiClient.getLessonRequestsAnalytics(period),
         apiClient.getLessonPerformanceAnalytics(),
         apiClient.getSupplyDiagnosticsAnalytics(),
+        apiClient.getContactConversionAnalytics(),
       ]);
 
       setEngagementData(engagement);
@@ -123,6 +126,7 @@ export default function AdminAnalytics() {
       setLessonData(lesson);
       setLessonPerformanceData(lessonPerf);
       setSupplyData(supply);
+      setContactConversionData(contactConversion);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -659,6 +663,39 @@ export default function AdminAnalytics() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Conversion demandes → contacts (Sprint C2) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Target className="h-4 w-4 text-emerald-600" />
+              Conversion demandes → contacts · 7 jours glissants
+            </CardTitle>
+            <CardDescription>Ratio demandes de cours ayant généré au moins un contact pro</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Demandes 7 j</p>
+                <p className="text-3xl font-bold">{formatNumber(contactConversionData?.requests7d ?? null)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Contacts 7 j</p>
+                <p className="text-3xl font-bold">{formatNumber(contactConversionData?.contacted7d ?? null)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Taux de contact</p>
+                <p className="text-3xl font-bold">
+                  {contactConversionData === null
+                    ? 'Chargement…'
+                    : contactConversionData.contactRatePct === null
+                    ? '—'
+                    : formatPercent(contactConversionData.contactRatePct)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Répartition par nombre d'élèves */}
         <div className="grid gap-4 md:grid-cols-2">
