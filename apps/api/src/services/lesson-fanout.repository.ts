@@ -788,3 +788,144 @@ export async function getSupplyDiagnosticsMetrics(): Promise<SupplyDiagnosticsMe
     },
   };
 }
+
+// ─── Workflow Quality Metrics (Sprint C10) ─────────────────────────────────────
+//
+// KPI du funnel professionnel :
+//   notificationReadRate      : % notifications LESSON_REQUEST_NEARBY lues
+//   contactConversionRate     : ContactRequests / Notifications envoyées
+//   riderResponseRate         : ContactRequests ayant ≥ 1 réponse / ContactRequests total
+//   medianRiderResponseTime   : médiane de MIN(crr.createdAt) - cr.createdAt
+//
+// Sécurité :
+//   • Réponse = agrégats uniquement — pas d'id, riderId, proUserId exposé.
+//   • Fenêtre bornée (windowDays ≤ 30) — validée par Zod côté contrôleur.
+//   • 3 requêtes parallèles, chacune bornée par la fenêtre temporelle.
+//
+// Limites connues :
+//   • ContactRequest n'a pas d'index sur createdAt — scan séquentiel borné
+//     par la fenêtre. Acceptable admin-only (rare). Index à créer si > 100k lignes.
+//   • Anciennes notifications sans lessonRequestId en data : incluses dans
+//     readCount et totalCount (filtre sur type uniquement, pas sur data).
+
+export interface WorkflowQualityMetrics {
+  windowDays: number;
+  notificationReadRate: {
+    readCount: number;
+    totalCount: number;
+    ratePct: number | null;
+  };
+  // contacts_per_notification : ContactRequests créés / Notifications LESSON_REQUEST_NEARBY envoyées.
+  // Mesure le taux d'action des pros qui ont reçu une notification.
+  // Distinct de requestContactRate (contacted7d/requests7d) qui mesure demandes → contact.
+  contactConversionRate: {
+    contactCount: number;
+    notificationCount: number;
+    ratePct: number | null;
+    definition: 'contacts_per_notification';
+  };
+  riderResponseRate: {
+    respondedContactRequests: number;
+    totalContactRequests: number;
+    ratePct: number | null;
+  };
+  medianRiderResponseTime: {
+    minutes: number | null;
+  };
+}
+
+type NotifQualityRow = {
+  readCount: bigint;
+  totalCount: bigint;
+};
+
+type ContactQualityRow = {
+  contactCount: bigint;
+  respondedCount: bigint;
+};
+
+type MedianRow = {
+  medianMinutes: number | null;
+};
+
+function toRatePct(numerator: number, denominator: number): number | null {
+  if (denominator === 0) return null;
+  return Math.round((numerator / denominator) * 1000) / 10;
+}
+
+export async function getWorkflowQualityMetrics(windowDays: number): Promise<WorkflowQualityMetrics> {
+  const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+
+  // 3 requêtes parallèles — indépendantes, pas de N+1.
+  const [notifRows, contactRows, medianRows] = await Promise.all([
+    // 1. Notification read rate + count (index Notification_createdAt_idx)
+    prisma.$queryRaw<NotifQualityRow[]>(Prisma.sql`
+      SELECT
+        COUNT(*) FILTER (WHERE "readAt" IS NOT NULL)   AS "readCount",
+        COUNT(*)                                        AS "totalCount"
+      FROM "Notification"
+      WHERE "type" = 'LESSON_REQUEST_NEARBY'
+        AND "createdAt" >= ${windowStart}::timestamptz
+    `),
+
+    // 2. riderResponseRate — scan borné sur ContactRequest (no createdAt index, voir limites)
+    //    EXISTS évite tout chargement de lignes ContactRequestResponse en mémoire.
+    prisma.$queryRaw<ContactQualityRow[]>(Prisma.sql`
+      SELECT
+        COUNT(cr.id)                                                           AS "contactCount",
+        COUNT(cr.id) FILTER (
+          WHERE EXISTS (
+            SELECT 1 FROM "ContactRequestResponse" crr
+            WHERE crr."contactRequestId" = cr.id
+          )
+        )                                                                       AS "respondedCount"
+      FROM "ContactRequest" cr
+      WHERE cr."createdAt" >= ${windowStart}::timestamptz
+    `),
+
+    // 3. Median response time — MIN(crr.createdAt) - cr.createdAt par ContactRequest.
+    //    PERCENTILE_CONT(0.5) sur la CTE : O(n log n), borné par la fenêtre.
+    //    Retourne NULL si aucun ContactRequest n'a de réponse sur la période.
+    prisma.$queryRaw<MedianRow[]>(Prisma.sql`
+      WITH per_contact AS (
+        SELECT
+          EXTRACT(EPOCH FROM (MIN(crr."createdAt") - cr."createdAt")) / 60.0 AS delay_min
+        FROM "ContactRequest" cr
+        JOIN "ContactRequestResponse" crr ON crr."contactRequestId" = cr.id
+        WHERE cr."createdAt" >= ${windowStart}::timestamptz
+        GROUP BY cr.id, cr."createdAt"
+      )
+      SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY delay_min)::float AS "medianMinutes"
+      FROM per_contact
+    `),
+  ]);
+
+  const readCount = Number(notifRows[0]?.readCount ?? 0n);
+  const totalCount = Number(notifRows[0]?.totalCount ?? 0n);
+  const contactCount = Number(contactRows[0]?.contactCount ?? 0n);
+  const respondedCount = Number(contactRows[0]?.respondedCount ?? 0n);
+  const medianMinutes = medianRows[0]?.medianMinutes ?? null;
+
+  return {
+    windowDays,
+    notificationReadRate: {
+      readCount,
+      totalCount,
+      ratePct: toRatePct(readCount, totalCount),
+    },
+    contactConversionRate: {
+      contactCount,
+      notificationCount: totalCount,
+      ratePct: toRatePct(contactCount, totalCount),
+      definition: 'contacts_per_notification',
+    },
+    riderResponseRate: {
+      respondedContactRequests: respondedCount,
+      totalContactRequests: contactCount,
+      ratePct: toRatePct(respondedCount, contactCount),
+    },
+    medianRiderResponseTime: {
+      minutes: medianMinutes,
+    },
+  };
+}

@@ -225,6 +225,11 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
       riderProfileRef: riderId,
       sport: lessonSport ?? null,
       distanceBucket: toDistanceBucket(Number(pro.distanceKm)),
+      // lessonRequestId : sha256(riderId+UTC-date)[:16] — stable par rider-jour.
+      // Permet de corréler les notifications LESSON_REQUEST_NEARBY au funnel
+      // LessonFanout → ContactRequest dans les métriques admin (Sprint C10).
+      // Non-PII : valeur hashée, non réversible, non exposée côté client.
+      lessonRequestId,
     },
   }));
 

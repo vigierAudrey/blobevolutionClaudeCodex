@@ -15,7 +15,7 @@ import { invalidateSessionCache } from '../../lib/auth-session-store';
 import { disconnectUserSockets } from '../../lib/socket';
 import { analyticsReportService } from '../../services/analytics/reports.service';
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
-import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics, getContactConversionMetrics, getLessonCoverageMetrics, getAnalyticsOverviewMetrics } from '../../services/lesson-fanout.repository';
+import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics, getContactConversionMetrics, getLessonCoverageMetrics, getAnalyticsOverviewMetrics, getWorkflowQualityMetrics } from '../../services/lesson-fanout.repository';
 import { capAdminLimit } from '../../utils/admin-list-cap';
 import {
   ADMIN_STATS_MAIN_CACHE_KEY,
@@ -1190,6 +1190,32 @@ adminRouter.get(
       return res.json(metrics);
     } catch (error) {
       secureLogger.error('Analytics overview error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
+
+// Qualité du workflow professionnel (Sprint C10) — KPI du funnel notification → réponse.
+// windowDays : fenêtre glissante (défaut 7, max 30).
+// Réponse : agrégats uniquement — aucun riderId/proUserId exposé.
+const workflowQualityQuerySchema = z.object({
+  windowDays: z.coerce.number().int().min(1).max(30).default(7),
+});
+
+adminRouter.get(
+  '/analytics/workflow-quality',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:workflow-quality', () => 'admin:analytics:workflow-quality'),
+  async (req, res) => {
+    try {
+      const { windowDays } = workflowQualityQuerySchema.parse(req.query);
+      const metrics = await getWorkflowQualityMetrics(windowDays);
+      return res.json(metrics);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid query parameters', details: error.errors });
+      }
+      secureLogger.error('Analytics workflow-quality error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   },

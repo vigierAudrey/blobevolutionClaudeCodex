@@ -144,7 +144,7 @@ describe('notifyNearbyProsForLesson', () => {
     );
   });
 
-  it('le payload notification contient requestId, sport, distanceBucket — pas de coords exactes', async () => {
+  it('le payload notification contient riderProfileRef, sport, distanceBucket, lessonRequestId — pas de coords exactes', async () => {
     mockQueryRaw.mockResolvedValue([proRow('pro-1', 3)]);
 
     await notifyNearbyProsForLesson(BASE_INPUT);
@@ -162,6 +162,11 @@ describe('notifyNearbyProsForLesson', () => {
     // distanceBucket, pas distanceKm exact
     expect(data).toHaveProperty('distanceBucket');
     expect(typeof data.distanceBucket).toBe('string');
+    // lessonRequestId : sha256 tronqué — présent depuis Sprint C10
+    expect(data).toHaveProperty('lessonRequestId');
+    expect(typeof data.lessonRequestId).toBe('string');
+    // Non-PII : valeur hashée (mock retourne 'req-<riderId>')
+    expect(data.lessonRequestId).not.toBe('rider-uuid-123');
 
     // Jamais de coordonnées GPS exactes dans data
     expect(data).not.toHaveProperty('lat');
