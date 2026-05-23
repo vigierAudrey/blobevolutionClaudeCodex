@@ -17,6 +17,7 @@ import {
   type AdminSportBreakdown,
   type AdminSupplyDiagnostics,
   type AdminContactConversionAnalytics,
+  type AdminCoverageAnalytics,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -82,6 +83,7 @@ export default function AdminAnalytics() {
   const [lessonPerformanceData, setLessonPerformanceData] = useState<AdminLessonPerformance | null>(null);
   const [supplyData, setSupplyData] = useState<AdminSupplyDiagnostics | null>(null);
   const [contactConversionData, setContactConversionData] = useState<AdminContactConversionAnalytics | null>(null);
+  const [coverageData, setCoverageData] = useState<AdminCoverageAnalytics | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +110,7 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply, contactConversion] = await Promise.all([
+      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply, contactConversion, coverage] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
@@ -117,6 +119,7 @@ export default function AdminAnalytics() {
         apiClient.getLessonPerformanceAnalytics(),
         apiClient.getSupplyDiagnosticsAnalytics(),
         apiClient.getContactConversionAnalytics(),
+        apiClient.getCoverageAnalytics(),
       ]);
 
       setEngagementData(engagement);
@@ -127,6 +130,7 @@ export default function AdminAnalytics() {
       setLessonPerformanceData(lessonPerf);
       setSupplyData(supply);
       setContactConversionData(contactConversion);
+      setCoverageData(coverage);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -691,6 +695,39 @@ export default function AdminAnalytics() {
                     : contactConversionData.contactRatePct === null
                     ? '—'
                     : formatPercent(contactConversionData.contactRatePct)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Couverture géographique des demandes (Sprint C3) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Activity className="h-4 w-4 text-blue-600" />
+              Couverts par des pros · 7 jours glissants
+            </CardTitle>
+            <CardDescription>Demandes pour lesquelles au moins un pro a été trouvé dans le secteur</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Demandes 7 j</p>
+                <p className="text-3xl font-bold">{formatNumber(coverageData?.requests7d ?? null)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Couvertes 7 j</p>
+                <p className="text-3xl font-bold">{formatNumber(coverageData?.covered7d ?? null)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Taux de couverture</p>
+                <p className="text-3xl font-bold">
+                  {coverageData === null
+                    ? 'Chargement…'
+                    : coverageData.coverageRatePct === null
+                    ? '—'
+                    : formatPercent(coverageData.coverageRatePct)}
                 </p>
               </div>
             </div>

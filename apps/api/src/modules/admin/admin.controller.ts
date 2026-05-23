@@ -15,7 +15,7 @@ import { invalidateSessionCache } from '../../lib/auth-session-store';
 import { disconnectUserSockets } from '../../lib/socket';
 import { analyticsReportService } from '../../services/analytics/reports.service';
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
-import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics, getContactConversionMetrics } from '../../services/lesson-fanout.repository';
+import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics, getContactConversionMetrics, getLessonCoverageMetrics } from '../../services/lesson-fanout.repository';
 import { capAdminLimit } from '../../utils/admin-list-cap';
 import {
   ADMIN_STATS_MAIN_CACHE_KEY,
@@ -1156,6 +1156,23 @@ adminRouter.get(
       return res.json(metrics);
     } catch (error) {
       secureLogger.error('Analytics contact-conversion error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
+
+// Couverture géographique des demandes de cours — 7 jours glissants (Sprint C3).
+// "couverte" = au moins un fanout de ce lessonRequestId avait prosFound > 0.
+adminRouter.get(
+  '/analytics/coverage',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:coverage', () => 'admin:analytics:coverage'),
+  async (_req, res) => {
+    try {
+      const metrics = await getLessonCoverageMetrics();
+      return res.json(metrics);
+    } catch (error) {
+      secureLogger.error('Analytics coverage error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   },

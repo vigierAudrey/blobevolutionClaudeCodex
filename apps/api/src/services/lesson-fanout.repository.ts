@@ -289,6 +289,51 @@ export async function getContactConversionMetrics(): Promise<ContactConversionMe
   };
 }
 
+// ─── Coverage Metrics (Sprint C3) ────────────────────────────────────────────
+
+// Mesure la couverture géographique des demandes de cours sur 7 jours.
+// "couverte" = au moins un fanout de ce lessonRequestId avait prosFound > 0.
+export interface CoverageMetrics {
+  // Demandes uniques (COUNT DISTINCT lessonRequestId) sur 7 jours.
+  requests7d: number;
+  // Demandes pour lesquelles au moins un fanout a trouvé ≥ 1 pro.
+  covered7d: number;
+  // covered7d / requests7d * 100 (1 décimale), null si requests7d = 0.
+  coverageRatePct: number | null;
+}
+
+type CovRow = {
+  requests7d: bigint;
+  covered7d: bigint;
+  coverage_rate_pct: number | null;
+};
+
+export async function getLessonCoverageMetrics(): Promise<CoverageMetrics> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  // Une seule requête sur LessonFanout (index createdAt) — pas de JOIN.
+  // COUNT(DISTINCT CASE WHEN prosFound > 0 THEN lessonRequestId END) garantit
+  // qu'une demande est "couverte" si AU MOINS UN de ses fanouts a trouvé un pro.
+  const [row] = await prisma.$queryRaw<CovRow[]>(Prisma.sql`
+    SELECT
+      COUNT(DISTINCT "lessonRequestId")                                        AS "requests7d",
+      COUNT(DISTINCT CASE WHEN "prosFound" > 0 THEN "lessonRequestId" END)    AS "covered7d",
+      ROUND(
+        COUNT(DISTINCT CASE WHEN "prosFound" > 0 THEN "lessonRequestId" END)::numeric
+        / NULLIF(COUNT(DISTINCT "lessonRequestId"), 0) * 100,
+        1
+      )::float                                                                 AS "coverage_rate_pct"
+    FROM "LessonFanout"
+    WHERE "createdAt" >= ${sevenDaysAgo}
+  `);
+
+  return {
+    requests7d: Number(row.requests7d),
+    covered7d: Number(row.covered7d),
+    coverageRatePct: row.coverage_rate_pct,
+  };
+}
+
 // Snapshot instantané de l'offre pro disponible pour les fanouts de cours.
 // Pas de filtre temporel : c'est l'état courant de la base.
 export async function getSupplyDiagnosticsMetrics(): Promise<SupplyDiagnosticsMetrics> {
