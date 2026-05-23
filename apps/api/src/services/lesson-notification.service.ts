@@ -4,6 +4,7 @@ import { createNotification, NotificationType } from './notification.service';
 import { hashRiderRef, makeLessonRequestId, recordFanout, type FanoutTriggerReason } from './lesson-fanout.repository';
 import type { NotificationRow } from './notification.service';
 import { secureLogger } from '../utils/secure-logger';
+import { computeZoneLarge } from './analytics/events.service';
 
 /** Max pros notifiés par demande de cours (cap dur MVP). */
 export const MAX_PROS_TO_NOTIFY = 100;
@@ -195,6 +196,7 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
       prosNotified: 0,
       failureCount: 0,
       triggerReason: input.triggerReason ?? 'MANUAL',
+      zoneLarge: computeZoneLarge(input.lessonLat, input.lessonLng),
     });
     return;
   }
@@ -243,6 +245,7 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
     prosNotified: notified,
     failureCount: failed,
     triggerReason: input.triggerReason ?? 'MANUAL',
+    zoneLarge: computeZoneLarge(input.lessonLat, input.lessonLng),
   });
 }
 

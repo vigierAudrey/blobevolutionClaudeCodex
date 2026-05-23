@@ -954,6 +954,10 @@ model LessonFanout {
   // Raison du déclenchement : ACTIVATED | LOCATION_CHANGED | SPORT_CHANGED | MANUAL.
   // NULL pour les lignes antérieures au sprint Data Quality (2026-05-20).
   triggerReason   String?
+  // Zone géographique large (grille 1° ≈ 111 km) — ex: "Z43:-2".
+  // NULL pour les lignes antérieures au sprint C7 (2026-05-23).
+  // Calculée au moment du fanout depuis lessonLat/lessonLng (non stockés pour privacy).
+  zoneLarge       String?
   createdAt       DateTime @default(now())
 
   @@index([createdAt])

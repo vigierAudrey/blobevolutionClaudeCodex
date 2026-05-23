@@ -1,5 +1,6 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { createHash } from 'crypto';
+import { PRIVACY_THRESHOLD } from './analytics/definitions';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,9 @@ export interface FanoutRecord {
   failureCount: number;
   // Raison du déclenchement — null pour les lignes antérieures au sprint 2026-05-20.
   triggerReason: FanoutTriggerReason | null;
+  // Zone géographique large (grille 1° ≈ 111 km) — ex: "Z43:-2".
+  // null pour les lignes antérieures au sprint C7 (2026-05-23).
+  zoneLarge: string | null;
 }
 
 /** Métriques par sport pour le dashboard admin. */
@@ -359,6 +363,23 @@ export interface SportConversionBreakdown {
   coverageRatePct: number | null;
 }
 
+// Métriques par zone géographique large pour le dashboard admin (Sprint C7).
+// Zones exclues si requests7d < PRIVACY_THRESHOLD (anonymisation RGPD).
+export interface GeoBreakdown {
+  // Code de zone — ex: "Z43:-2" (grille 1° ≈ 111 km). Opaque, non-identifiant.
+  zone: string;
+  // Demandes uniques (COUNT DISTINCT lessonRequestId) sur 7 jours.
+  requests7d: number;
+  // Demandes pour lesquelles au moins un fanout a trouvé ≥ 1 pro.
+  covered7d: number;
+  // covered7d / requests7d * 100 (1 décimale), null si requests7d = 0.
+  coverageRatePct: number | null;
+  // Demandes uniques ayant au moins un ContactRequest sur 7 jours.
+  contacted7d: number;
+  // contacted7d / requests7d * 100 (1 décimale), null si requests7d = 0.
+  contactRatePct: number | null;
+}
+
 // Métriques par raison de déclenchement pour le dashboard admin (Sprint C6).
 export interface ReasonBreakdown {
   // COALESCE(triggerReason, 'UNKNOWN') — 'UNKNOWN' pour les lignes legacy (null).
@@ -387,6 +408,9 @@ export interface AnalyticsOverviewMetrics {
   bySport: SportConversionBreakdown[];
   // Breakdown par triggerReason — max 5 groupes (4 valeurs + UNKNOWN pour legacy).
   reasonBreakdown: ReasonBreakdown[];
+  // Breakdown par zone géographique large — zones avec < PRIVACY_THRESHOLD demandes exclues.
+  // Vide si aucune donnée C7 (fanouts antérieurs au sprint C7 n'ont pas zoneLarge).
+  geoBreakdown: GeoBreakdown[];
 }
 
 type OverviewRow = {
@@ -416,17 +440,29 @@ type ReasonOverviewRow = {
   coverage_rate_pct: number | null;
 };
 
+type GeoOverviewRow = {
+  zone: string;
+  requests7d: bigint;
+  covered7d: bigint;
+  coverage_rate_pct: number | null;
+  contacted7d: bigint;
+  contact_rate_pct: number | null;
+};
+
 export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMetrics> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-  // Trois requêtes parallèles sur le même index LessonFanout_createdAt_idx :
+  // Quatre requêtes parallèles sur le même index LessonFanout_createdAt_idx :
   //   1. Agrégat global (C4 — inchangé).
   //   2. Agrégat par sport (C5) — filtre sport IN ('surf','kitesurf') pour exclure
   //      les lignes pré-C1 (sport NULL) et garantir un groupe borné (max 2 lignes).
   //   3. Agrégat par triggerReason (C6) — COALESCE(null, 'UNKNOWN') pour legacy.
   //      fanouts7d = COUNT(DISTINCT id) — insensible à l'inflation du LEFT JOIN.
   //      GROUP BY borné : max 5 groupes (ACTIVATED/LOCATION_CHANGED/SPORT_CHANGED/MANUAL/UNKNOWN).
-  const [rows, sportRows, reasonRows]: [OverviewRow[], SportOverviewRow[], ReasonOverviewRow[]] = await Promise.all([
+  //   4. Agrégat par zone géographique large (C7) — zoneLarge IS NOT NULL (lignes pré-C7 exclues).
+  //      HAVING >= PRIVACY_THRESHOLD : zones avec < 20 demandes masquées pour RGPD.
+  //      GROUP BY borné : ≤ ~50 cellules 1° sur la France métropolitaine.
+  const [rows, sportRows, reasonRows, geoRows]: [OverviewRow[], SportOverviewRow[], ReasonOverviewRow[], GeoOverviewRow[]] = await Promise.all([
     prisma.$queryRaw<OverviewRow[]>(Prisma.sql`
       SELECT
         COUNT(DISTINCT lf."lessonRequestId")                                       AS "requests7d",
@@ -509,6 +545,39 @@ export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMe
       GROUP BY COALESCE(lf."triggerReason", 'UNKNOWN')
       ORDER BY COUNT(DISTINCT lf."id") DESC
     `),
+
+    // C7 : breakdown géographique — fanouts avec zoneLarge uniquement (pré-C7 = NULL, exclus).
+    // HAVING applique PRIVACY_THRESHOLD : zones avec < 20 demandes uniques masquées côté SQL.
+    // Tri : requests7d DESC — zones les plus actives en premier.
+    prisma.$queryRaw<GeoOverviewRow[]>(Prisma.sql`
+      SELECT
+        lf."zoneLarge"                                                             AS "zone",
+        COUNT(DISTINCT lf."lessonRequestId")                                       AS "requests7d",
+        COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)
+                                                                                   AS "covered7d",
+        ROUND(
+          COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)::numeric
+          / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+          1
+        )::float                                                                   AS "coverage_rate_pct",
+        COUNT(DISTINCT cr."lessonRequestId")
+          FILTER (WHERE cr."lessonRequestId" IS NOT NULL)                          AS "contacted7d",
+        ROUND(
+          COUNT(DISTINCT cr."lessonRequestId")
+            FILTER (WHERE cr."lessonRequestId" IS NOT NULL)::numeric
+          / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+          1
+        )::float                                                                   AS "contact_rate_pct"
+      FROM "LessonFanout" lf
+      LEFT JOIN "ContactRequest" cr
+        ON cr."lessonRequestId" = lf."lessonRequestId"
+        AND cr."createdAt" >= ${sevenDaysAgo}
+      WHERE lf."createdAt" >= ${sevenDaysAgo}
+        AND lf."zoneLarge" IS NOT NULL
+      GROUP BY lf."zoneLarge"
+      HAVING COUNT(DISTINCT lf."lessonRequestId") >= ${PRIVACY_THRESHOLD}
+      ORDER BY COUNT(DISTINCT lf."lessonRequestId") DESC
+    `),
   ]);
 
   const row = rows[0];
@@ -532,6 +601,15 @@ export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMe
     coverageRatePct: rr.coverage_rate_pct,
   }));
 
+  const geoBreakdown: GeoBreakdown[] = geoRows.map((gr) => ({
+    zone: gr.zone,
+    requests7d: Number(gr.requests7d),
+    covered7d: Number(gr.covered7d),
+    coverageRatePct: gr.coverage_rate_pct,
+    contacted7d: Number(gr.contacted7d),
+    contactRatePct: gr.contact_rate_pct,
+  }));
+
   return {
     requests7d: Number(row.requests7d),
     contacted7d: Number(row.contacted7d),
@@ -540,6 +618,7 @@ export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMe
     coverageRatePct: row.coverage_rate_pct,
     bySport,
     reasonBreakdown,
+    geoBreakdown,
   };
 }
 

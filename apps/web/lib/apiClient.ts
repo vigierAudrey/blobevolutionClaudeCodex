@@ -382,6 +382,15 @@ export interface AdminAnalyticsReasonBreakdown {
   coverageRatePct: number | null;
 }
 
+export interface AdminAnalyticsGeoBreakdown {
+  zone: string;
+  requests7d: number;
+  covered7d: number;
+  coverageRatePct: number | null;
+  contacted7d: number;
+  contactRatePct: number | null;
+}
+
 export interface AdminAnalyticsOverview {
   requests7d: number;
   contacted7d: number;
@@ -390,6 +399,7 @@ export interface AdminAnalyticsOverview {
   coverageRatePct: number | null;
   bySport: AdminAnalyticsSportBreakdown[];
   reasonBreakdown: AdminAnalyticsReasonBreakdown[];
+  geoBreakdown: AdminAnalyticsGeoBreakdown[];
 }
 
 export interface AdminBlockedConversation {

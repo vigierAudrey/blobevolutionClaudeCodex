@@ -10,7 +10,7 @@ const fetchMock = jest.fn<Promise<{
 }>, Parameters<typeof fetch>>();
 (global as { fetch?: unknown }).fetch = fetchMock as unknown as typeof fetch;
 
-import { __testUtils, apiClient, type AdminAnalyticsOverview } from '../apiClient';
+import { __testUtils, apiClient, type AdminAnalyticsOverview, type AdminAnalyticsGeoBreakdown } from '../apiClient';
 
 const API_BASE_URL = 'http://localhost:4000';
 
@@ -61,6 +61,10 @@ describe('getAdminAnalyticsOverview', () => {
         { reason: 'ACTIVATED',       fanouts7d: 80, requests7d: 80, contacted7d: 30, contactRatePct: 37.5, covered7d: 65, coverageRatePct: 81.3 },
         { reason: 'LOCATION_CHANGED', fanouts7d: 40, requests7d: 40, contacted7d: 15, contactRatePct: 37.5, covered7d: 30, coverageRatePct: 75.0 },
       ],
+      geoBreakdown: [
+        { zone: 'Z43:-2', requests7d: 80, covered7d: 65, coverageRatePct: 81.3, contacted7d: 30, contactRatePct: 37.5 },
+        { zone: 'Z44:-1', requests7d: 40, covered7d: 30, coverageRatePct: 75.0, contacted7d: 15, contactRatePct: 37.5 },
+      ] as AdminAnalyticsGeoBreakdown[],
     };
 
     queueApiResponse(payload);
@@ -71,6 +75,9 @@ describe('getAdminAnalyticsOverview', () => {
     expect(result.bySport).toHaveLength(2);
     expect(result.bySport[0].sport).toBe('kitesurf');
     expect(result.bySport[1].sport).toBe('surf');
+    expect(result.geoBreakdown).toHaveLength(2);
+    expect(result.geoBreakdown[0].zone).toBe('Z43:-2');
+    expect(result.geoBreakdown[1].zone).toBe('Z44:-1');
     const calls = fetchMock.mock.calls.map(([url]) => url as string);
     expect(calls.some((u) => u.includes('/admin/analytics/overview'))).toBe(true);
   });
@@ -84,6 +91,7 @@ describe('getAdminAnalyticsOverview', () => {
       coverageRatePct: null,
       bySport: [],
       reasonBreakdown: [],
+      geoBreakdown: [],
     };
 
     queueApiResponse(payload);
@@ -110,6 +118,7 @@ describe('getAdminAnalyticsOverview', () => {
       reasonBreakdown: [
         { reason: 'ACTIVATED', fanouts7d: 5, requests7d: 5, contacted7d: 2, contactRatePct: 40, covered7d: 4, coverageRatePct: 80 },
       ],
+      geoBreakdown: [],
     };
 
     queueApiResponse(payload);

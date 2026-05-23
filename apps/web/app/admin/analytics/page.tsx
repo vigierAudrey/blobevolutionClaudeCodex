@@ -18,6 +18,7 @@ import {
   type AdminSupplyDiagnostics,
   type AdminAnalyticsOverview,
   type AdminAnalyticsReasonBreakdown,
+  type AdminAnalyticsGeoBreakdown,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -821,6 +822,53 @@ export default function AdminAnalytics() {
                         <td className="py-2 pr-4 text-right">{formatNumber(row.covered7d)}</td>
                         <td className="py-2 text-right">
                           {row.coverageRatePct === null ? '—' : formatPercent(row.coverageRatePct)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Diagnostic géographique — breakdown C7 */}
+        {overviewData && overviewData.geoBreakdown.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Globe className="h-4 w-4 text-emerald-600" />
+                Diagnostic géographique · 7 jours glissants
+              </CardTitle>
+              <CardDescription>
+                Zones de demande de cours · masqué si n &lt; {rgpdThreshold} · grille 1° ≈ 111 km · trié par volume décroissant
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b">
+                      <th className="pb-2 pr-4">Zone</th>
+                      <th className="pb-2 pr-4 text-right">Demandes</th>
+                      <th className="pb-2 pr-4 text-right">Couvertes</th>
+                      <th className="pb-2 pr-4 text-right">Couverture</th>
+                      <th className="pb-2 pr-4 text-right">Contacts</th>
+                      <th className="pb-2 text-right">Conversion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overviewData.geoBreakdown.map((row: AdminAnalyticsGeoBreakdown) => (
+                      <tr key={row.zone} className="border-t">
+                        <td className="py-2 pr-4 font-mono text-xs">{row.zone}</td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.requests7d)}</td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.covered7d)}</td>
+                        <td className="py-2 pr-4 text-right">
+                          {row.coverageRatePct === null ? '—' : formatPercent(row.coverageRatePct)}
+                        </td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.contacted7d)}</td>
+                        <td className="py-2 text-right">
+                          {row.contactRatePct === null ? '—' : formatPercent(row.contactRatePct)}
                         </td>
                       </tr>
                     ))}
