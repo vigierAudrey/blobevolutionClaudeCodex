@@ -15,7 +15,7 @@ import { invalidateSessionCache } from '../../lib/auth-session-store';
 import { disconnectUserSockets } from '../../lib/socket';
 import { analyticsReportService } from '../../services/analytics/reports.service';
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
-import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics, getContactConversionMetrics, getLessonCoverageMetrics } from '../../services/lesson-fanout.repository';
+import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics, getContactConversionMetrics, getLessonCoverageMetrics, getAnalyticsOverviewMetrics } from '../../services/lesson-fanout.repository';
 import { capAdminLimit } from '../../utils/admin-list-cap';
 import {
   ADMIN_STATS_MAIN_CACHE_KEY,
@@ -1173,6 +1173,23 @@ adminRouter.get(
       return res.json(metrics);
     } catch (error) {
       secureLogger.error('Analytics coverage error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
+
+// Vue décisionnelle agrégée C2+C3 — 7 jours glissants (Sprint C4).
+// Fusionne contact-conversion et coverage en un seul appel.
+adminRouter.get(
+  '/analytics/overview',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:overview', () => 'admin:analytics:overview'),
+  async (_req, res) => {
+    try {
+      const metrics = await getAnalyticsOverviewMetrics();
+      return res.json(metrics);
+    } catch (error) {
+      secureLogger.error('Analytics overview error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   },

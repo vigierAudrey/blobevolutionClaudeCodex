@@ -16,8 +16,7 @@ import {
   type AdminLessonPerformance,
   type AdminSportBreakdown,
   type AdminSupplyDiagnostics,
-  type AdminContactConversionAnalytics,
-  type AdminCoverageAnalytics,
+  type AdminAnalyticsOverview,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -82,8 +81,7 @@ export default function AdminAnalytics() {
   const [lessonData, setLessonData] = useState<AdminLessonRequestsAnalytics | null>(null);
   const [lessonPerformanceData, setLessonPerformanceData] = useState<AdminLessonPerformance | null>(null);
   const [supplyData, setSupplyData] = useState<AdminSupplyDiagnostics | null>(null);
-  const [contactConversionData, setContactConversionData] = useState<AdminContactConversionAnalytics | null>(null);
-  const [coverageData, setCoverageData] = useState<AdminCoverageAnalytics | null>(null);
+  const [overviewData, setOverviewData] = useState<AdminAnalyticsOverview | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +108,7 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply, contactConversion, coverage] = await Promise.all([
+      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply, overview] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
@@ -118,8 +116,7 @@ export default function AdminAnalytics() {
         apiClient.getLessonRequestsAnalytics(period),
         apiClient.getLessonPerformanceAnalytics(),
         apiClient.getSupplyDiagnosticsAnalytics(),
-        apiClient.getContactConversionAnalytics(),
-        apiClient.getCoverageAnalytics(),
+        apiClient.getAdminAnalyticsOverview(),
       ]);
 
       setEngagementData(engagement);
@@ -129,8 +126,7 @@ export default function AdminAnalytics() {
       setLessonData(lesson);
       setLessonPerformanceData(lessonPerf);
       setSupplyData(supply);
-      setContactConversionData(contactConversion);
-      setCoverageData(coverage);
+      setOverviewData(overview);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -681,20 +677,20 @@ export default function AdminAnalytics() {
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <p className="text-xs text-muted-foreground">Demandes 7 j</p>
-                <p className="text-3xl font-bold">{formatNumber(contactConversionData?.requests7d ?? null)}</p>
+                <p className="text-3xl font-bold">{formatNumber(overviewData?.requests7d ?? null)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Contacts 7 j</p>
-                <p className="text-3xl font-bold">{formatNumber(contactConversionData?.contacted7d ?? null)}</p>
+                <p className="text-3xl font-bold">{formatNumber(overviewData?.contacted7d ?? null)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Taux de contact</p>
                 <p className="text-3xl font-bold">
-                  {contactConversionData === null
+                  {overviewData === null
                     ? 'Chargement…'
-                    : contactConversionData.contactRatePct === null
+                    : overviewData.contactRatePct === null
                     ? '—'
-                    : formatPercent(contactConversionData.contactRatePct)}
+                    : formatPercent(overviewData.contactRatePct)}
                 </p>
               </div>
             </div>
@@ -714,20 +710,20 @@ export default function AdminAnalytics() {
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <p className="text-xs text-muted-foreground">Demandes 7 j</p>
-                <p className="text-3xl font-bold">{formatNumber(coverageData?.requests7d ?? null)}</p>
+                <p className="text-3xl font-bold">{formatNumber(overviewData?.requests7d ?? null)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Couvertes 7 j</p>
-                <p className="text-3xl font-bold">{formatNumber(coverageData?.covered7d ?? null)}</p>
+                <p className="text-3xl font-bold">{formatNumber(overviewData?.covered7d ?? null)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Taux de couverture</p>
                 <p className="text-3xl font-bold">
-                  {coverageData === null
+                  {overviewData === null
                     ? 'Chargement…'
-                    : coverageData.coverageRatePct === null
+                    : overviewData.coverageRatePct === null
                     ? '—'
-                    : formatPercent(coverageData.coverageRatePct)}
+                    : formatPercent(overviewData.coverageRatePct)}
                 </p>
               </div>
             </div>

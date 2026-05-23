@@ -334,6 +334,72 @@ export async function getLessonCoverageMetrics(): Promise<CoverageMetrics> {
   };
 }
 
+// ─── Analytics Overview (Sprint C4) ──────────────────────────────────────────
+
+// Vue décisionnelle agrégée : fusion C2 (contact-conversion) + C3 (coverage)
+// en une seule requête SQL sur 7 jours glissants.
+//
+// Sémantique identique à C2/C3 séparés :
+//   requests7d      = COUNT(DISTINCT lf.lessonRequestId) WHERE lf.createdAt >= 7j
+//   contacted7d     = COUNT(DISTINCT cr.lessonRequestId) du LEFT JOIN C2
+//   covered7d       = COUNT(DISTINCT CASE WHEN prosFound > 0 THEN lr END) de C3
+//
+// Le LEFT JOIN ne biaise pas requests7d ni covered7d car COUNT DISTINCT
+// est insensible à la multiplication de lignes par le JOIN.
+
+export interface AnalyticsOverviewMetrics {
+  requests7d: number;
+  contacted7d: number;
+  contactRatePct: number | null;
+  covered7d: number;
+  coverageRatePct: number | null;
+}
+
+type OverviewRow = {
+  requests7d: bigint;
+  contacted7d: bigint;
+  contact_rate_pct: number | null;
+  covered7d: bigint;
+  coverage_rate_pct: number | null;
+};
+
+export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMetrics> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [row] = await prisma.$queryRaw<OverviewRow[]>(Prisma.sql`
+    SELECT
+      COUNT(DISTINCT lf."lessonRequestId")                                       AS "requests7d",
+      COUNT(DISTINCT cr."lessonRequestId")
+        FILTER (WHERE cr."lessonRequestId" IS NOT NULL)                          AS "contacted7d",
+      ROUND(
+        COUNT(DISTINCT cr."lessonRequestId")
+          FILTER (WHERE cr."lessonRequestId" IS NOT NULL)::numeric
+        / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+        1
+      )::float                                                                   AS "contact_rate_pct",
+      COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)
+                                                                                 AS "covered7d",
+      ROUND(
+        COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)::numeric
+        / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+        1
+      )::float                                                                   AS "coverage_rate_pct"
+    FROM "LessonFanout" lf
+    LEFT JOIN "ContactRequest" cr
+      ON cr."lessonRequestId" = lf."lessonRequestId"
+      AND cr."createdAt" >= ${sevenDaysAgo}
+    WHERE lf."createdAt" >= ${sevenDaysAgo}
+  `);
+
+  return {
+    requests7d: Number(row.requests7d),
+    contacted7d: Number(row.contacted7d),
+    contactRatePct: row.contact_rate_pct,
+    covered7d: Number(row.covered7d),
+    coverageRatePct: row.coverage_rate_pct,
+  };
+}
+
 // Snapshot instantané de l'offre pro disponible pour les fanouts de cours.
 // Pas de filtre temporel : c'est l'état courant de la base.
 export async function getSupplyDiagnosticsMetrics(): Promise<SupplyDiagnosticsMetrics> {

@@ -363,6 +363,14 @@ export interface AdminCoverageAnalytics {
   coverageRatePct: number | null;
 }
 
+export interface AdminAnalyticsOverview {
+  requests7d: number;
+  contacted7d: number;
+  contactRatePct: number | null;
+  covered7d: number;
+  coverageRatePct: number | null;
+}
+
 export interface AdminBlockedConversation {
   conversationId: string;
   blockedAt: string | null;
@@ -1381,6 +1389,8 @@ export const apiClient = {
     request('/admin/analytics/contact-conversion', { method: 'GET' }, true) as Promise<AdminContactConversionAnalytics>,
   getCoverageAnalytics: () =>
     request('/admin/analytics/coverage', { method: 'GET' }, true) as Promise<AdminCoverageAnalytics>,
+  getAdminAnalyticsOverview: () =>
+    request('/admin/analytics/overview', { method: 'GET' }, true) as Promise<AdminAnalyticsOverview>,
   /**
    * saveTokens — Activates the local session hint flag.
    * Tokens themselves are managed as httpOnly cookies by the server.
