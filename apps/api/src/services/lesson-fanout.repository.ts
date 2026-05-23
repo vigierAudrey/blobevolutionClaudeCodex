@@ -244,6 +244,51 @@ export async function getLessonPerformanceMetrics(): Promise<LessonPerformanceMe
   };
 }
 
+// ─── Contact Conversion Metrics (Sprint C2) ───────────────────────────────────
+
+export interface ContactConversionMetrics {
+  // COUNT(DISTINCT lessonRequestId) dans LessonFanout sur 7 jours.
+  requests7d: number;
+  // COUNT(DISTINCT lessonRequestId) dans ContactRequest (non-null) sur 7 jours.
+  contacted7d: number;
+  // contacted7d / requests7d * 100 (1 décimale), null si requests7d = 0.
+  contactRatePct: number | null;
+}
+
+type ConvRow = {
+  requests7d: bigint;
+  contacted7d: bigint;
+  contact_rate_pct: number | null;
+};
+
+export async function getContactConversionMetrics(): Promise<ContactConversionMetrics> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [row] = await prisma.$queryRaw<ConvRow[]>(Prisma.sql`
+    SELECT
+      COUNT(DISTINCT lf."lessonRequestId")                                   AS "requests7d",
+      COUNT(DISTINCT cr."lessonRequestId")
+        FILTER (WHERE cr."lessonRequestId" IS NOT NULL)                      AS "contacted7d",
+      ROUND(
+        COUNT(DISTINCT cr."lessonRequestId")
+          FILTER (WHERE cr."lessonRequestId" IS NOT NULL)::numeric
+        / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+        1
+      )::float                                                               AS "contact_rate_pct"
+    FROM "LessonFanout" lf
+    LEFT JOIN "ContactRequest" cr
+      ON cr."lessonRequestId" = lf."lessonRequestId"
+      AND cr."createdAt" >= ${sevenDaysAgo}
+    WHERE lf."createdAt" >= ${sevenDaysAgo}
+  `);
+
+  return {
+    requests7d: Number(row.requests7d),
+    contacted7d: Number(row.contacted7d),
+    contactRatePct: row.contact_rate_pct,
+  };
+}
+
 // Snapshot instantané de l'offre pro disponible pour les fanouts de cours.
 // Pas de filtre temporel : c'est l'état courant de la base.
 export async function getSupplyDiagnosticsMetrics(): Promise<SupplyDiagnosticsMetrics> {

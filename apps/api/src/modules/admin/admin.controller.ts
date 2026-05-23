@@ -15,7 +15,7 @@ import { invalidateSessionCache } from '../../lib/auth-session-store';
 import { disconnectUserSockets } from '../../lib/socket';
 import { analyticsReportService } from '../../services/analytics/reports.service';
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
-import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics } from '../../services/lesson-fanout.repository';
+import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics, getContactConversionMetrics } from '../../services/lesson-fanout.repository';
 import { capAdminLimit } from '../../utils/admin-list-cap';
 import {
   ADMIN_STATS_MAIN_CACHE_KEY,
@@ -1139,6 +1139,23 @@ adminRouter.get(
       return res.json(metrics);
     } catch (error) {
       secureLogger.error('Analytics supply-diagnostics error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
+
+// Taux de conversion demandes de cours → contacts (Sprint C2).
+// Fenêtre fixe 7 jours : COUNT(DISTINCT lessonRequestId) LessonFanout vs ContactRequest.
+adminRouter.get(
+  '/analytics/contact-conversion',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:contact-conversion', () => 'admin:analytics:contact-conversion'),
+  async (_req, res) => {
+    try {
+      const metrics = await getContactConversionMetrics();
+      return res.json(metrics);
+    } catch (error) {
+      secureLogger.error('Analytics contact-conversion error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   },
