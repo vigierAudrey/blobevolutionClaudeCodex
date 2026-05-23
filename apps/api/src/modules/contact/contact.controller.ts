@@ -2,15 +2,17 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
+import { makeLessonRequestId } from '../../services/lesson-fanout.repository';
 
 export const contactRouter = Router();
 contactRouter.use(requireAuth, requireVerifiedEmail);
 
-// Schema pour créer une demande de contact
+// Schema pour créer une demande de contact.
+// lessonRequestId est exclu volontairement : calculé server-side uniquement.
 const createContactRequestSchema = z.object({
   conversationId: z.string().uuid(),
   message: z.string().max(500).optional(),
-});
+}).strict();
 
 // Schema pour répondre à une demande de contact
 const respondToContactRequestSchema = z.object({
@@ -36,7 +38,7 @@ contactRouter.post('/request', async (req, res) => {
 
     const { conversationId, message } = createContactRequestSchema.parse(req.body);
 
-    // Vérifier que la conversation existe et contient des riders avec demande de cours
+    // Vérifier que la conversation existe et contient des riders avec demande de cours.
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
@@ -45,9 +47,6 @@ contactRouter.post('/request', async (req, res) => {
             userOne: { include: { riderProfile: true } },
             userTwo: { include: { riderProfile: true } }
           }
-        },
-        members: {
-          include: { user: { include: { riderProfile: true } } }
         }
       }
     });
@@ -56,13 +55,25 @@ contactRouter.post('/request', async (req, res) => {
       return res.status(404).json({ error: 'Conversation or match not found' });
     }
 
-    // Vérifier qu'au moins un des riders veut un cours
+    // IDOR guard : seuls les participants du match (userOneId / userTwoId) peuvent
+    // initier un ContactRequest pour cette conversation.
+    // Réponse 404 neutre — même message que "conversation not found" pour éviter
+    // toute discrimination observable qui permettrait d'énumérer les conversations.
+    const { userOneId, userTwoId } = conversation.match;
+    if (userId !== userOneId && userId !== userTwoId) {
+      return res.status(404).json({ error: 'Conversation or match not found' });
+    }
+
+    // Identifier le premier participant avec wantsLesson=true.
+    // Le pro (qui n'a pas de riderProfile) ne peut jamais être lessonRider.
+    // Guard supplémentaire : lessonRider.id !== userId — défense en profondeur
+    // contre un utilisateur ayant à la fois un proProfile et wantsLesson=true.
     const riders = [conversation.match.userOne, conversation.match.userTwo];
-    const hasLessonRequest = riders.some(rider =>
-      rider.riderProfile?.wantsLesson === true
+    const lessonRider = riders.find(
+      rider => rider.riderProfile?.wantsLesson === true && rider.id !== userId
     );
 
-    if (!hasLessonRequest) {
+    if (!lessonRider) {
       return res.status(400).json({ error: 'No lesson request found in this conversation' });
     }
 
@@ -79,13 +90,18 @@ contactRouter.post('/request', async (req, res) => {
       return res.status(400).json({ error: 'Contact request already pending for this conversation' });
     }
 
+    // lessonRequestId calculé server-side : sha256(riderId + UTC-date)[:16].
+    // Stable sur la journée — permet COUNT(DISTINCT lessonRequestId) ↔ LessonFanout.
+    const lessonRequestId = makeLessonRequestId(lessonRider.id);
+
     // Créer la demande de contact
     const contactRequest = await prisma.contactRequest.create({
       data: {
         proUserId: userId,
         conversationId,
         message: message || null,
-        status: 'PENDING'
+        status: 'PENDING',
+        lessonRequestId,
       },
       include: {
         pro: {

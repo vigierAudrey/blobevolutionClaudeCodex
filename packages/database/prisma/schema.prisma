@@ -578,20 +578,25 @@ model ProOfferClick {
 }
 
 model ContactRequest {
-  id             String              @id @default(uuid())
-  proUserId      String
-  conversationId String
-  message        String?
-  status         ContactRequestStatus @default(PENDING)
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  pro            User                @relation("ProContactRequests", fields: [proUserId], references: [id], onDelete: Cascade)
-  conversation   Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  responses      ContactRequestResponse[]
+  id              String               @id @default(uuid())
+  proUserId       String
+  conversationId  String
+  message         String?
+  status          ContactRequestStatus @default(PENDING)
+  // sha256(riderId + UTC-date)[:16] — calculé server-side, jamais fourni par le client.
+  // Nullable : les ContactRequest antérieures au sprint C1 (2026-05-21) gardent NULL.
+  // Permet COUNT(DISTINCT lessonRequestId) pour les métriques de conversion demande → contact.
+  lessonRequestId String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  pro             User                 @relation("ProContactRequests", fields: [proUserId], references: [id], onDelete: Cascade)
+  conversation    Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  responses       ContactRequestResponse[]
 
   @@index([proUserId])
   @@index([conversationId])
   @@index([status])
+  @@index([lessonRequestId])
 }
 
 model ContactRequestResponse {
