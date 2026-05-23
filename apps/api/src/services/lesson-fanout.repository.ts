@@ -334,10 +334,10 @@ export async function getLessonCoverageMetrics(): Promise<CoverageMetrics> {
   };
 }
 
-// ─── Analytics Overview (Sprint C4) ──────────────────────────────────────────
+// ─── Analytics Overview (Sprint C4 + C5) ─────────────────────────────────────
 
 // Vue décisionnelle agrégée : fusion C2 (contact-conversion) + C3 (coverage)
-// en une seule requête SQL sur 7 jours glissants.
+// + breakdown par sport (C5) — deux requêtes parallèles sur 7 jours glissants.
 //
 // Sémantique identique à C2/C3 séparés :
 //   requests7d      = COUNT(DISTINCT lf.lessonRequestId) WHERE lf.createdAt >= 7j
@@ -347,12 +347,26 @@ export async function getLessonCoverageMetrics(): Promise<CoverageMetrics> {
 // Le LEFT JOIN ne biaise pas requests7d ni covered7d car COUNT DISTINCT
 // est insensible à la multiplication de lignes par le JOIN.
 
+// Métriques conversion + couverture pour un sport donné (C5).
+export interface SportConversionBreakdown {
+  sport: string;
+  requests7d: number;
+  contacted7d: number;
+  // null si requests7d = 0
+  contactRatePct: number | null;
+  covered7d: number;
+  // null si requests7d = 0
+  coverageRatePct: number | null;
+}
+
 export interface AnalyticsOverviewMetrics {
   requests7d: number;
   contacted7d: number;
   contactRatePct: number | null;
   covered7d: number;
   coverageRatePct: number | null;
+  // Présent uniquement quand au moins un fanout a sport IN ('surf','kitesurf').
+  bySport: SportConversionBreakdown[];
 }
 
 type OverviewRow = {
@@ -363,33 +377,88 @@ type OverviewRow = {
   coverage_rate_pct: number | null;
 };
 
+type SportOverviewRow = {
+  sport: string;
+  requests7d: bigint;
+  contacted7d: bigint;
+  contact_rate_pct: number | null;
+  covered7d: bigint;
+  coverage_rate_pct: number | null;
+};
+
 export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMetrics> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-  const [row] = await prisma.$queryRaw<OverviewRow[]>(Prisma.sql`
-    SELECT
-      COUNT(DISTINCT lf."lessonRequestId")                                       AS "requests7d",
-      COUNT(DISTINCT cr."lessonRequestId")
-        FILTER (WHERE cr."lessonRequestId" IS NOT NULL)                          AS "contacted7d",
-      ROUND(
+  // Deux requêtes parallèles sur le même index LessonFanout_createdAt_idx :
+  //   1. Agrégat global (C4 — inchangé).
+  //   2. Agrégat par sport (C5) — filtre sport IN ('surf','kitesurf') pour exclure
+  //      les lignes pré-C1 (sport NULL) et garantir un groupe borné (max 2 lignes).
+  const [rows, sportRows]: [OverviewRow[], SportOverviewRow[]] = await Promise.all([
+    prisma.$queryRaw<OverviewRow[]>(Prisma.sql`
+      SELECT
+        COUNT(DISTINCT lf."lessonRequestId")                                       AS "requests7d",
         COUNT(DISTINCT cr."lessonRequestId")
-          FILTER (WHERE cr."lessonRequestId" IS NOT NULL)::numeric
-        / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
-        1
-      )::float                                                                   AS "contact_rate_pct",
-      COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)
-                                                                                 AS "covered7d",
-      ROUND(
-        COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)::numeric
-        / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
-        1
-      )::float                                                                   AS "coverage_rate_pct"
-    FROM "LessonFanout" lf
-    LEFT JOIN "ContactRequest" cr
-      ON cr."lessonRequestId" = lf."lessonRequestId"
-      AND cr."createdAt" >= ${sevenDaysAgo}
-    WHERE lf."createdAt" >= ${sevenDaysAgo}
-  `);
+          FILTER (WHERE cr."lessonRequestId" IS NOT NULL)                          AS "contacted7d",
+        ROUND(
+          COUNT(DISTINCT cr."lessonRequestId")
+            FILTER (WHERE cr."lessonRequestId" IS NOT NULL)::numeric
+          / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+          1
+        )::float                                                                   AS "contact_rate_pct",
+        COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)
+                                                                                   AS "covered7d",
+        ROUND(
+          COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)::numeric
+          / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+          1
+        )::float                                                                   AS "coverage_rate_pct"
+      FROM "LessonFanout" lf
+      LEFT JOIN "ContactRequest" cr
+        ON cr."lessonRequestId" = lf."lessonRequestId"
+        AND cr."createdAt" >= ${sevenDaysAgo}
+      WHERE lf."createdAt" >= ${sevenDaysAgo}
+    `),
+
+    prisma.$queryRaw<SportOverviewRow[]>(Prisma.sql`
+      SELECT
+        lf."sport",
+        COUNT(DISTINCT lf."lessonRequestId")                                       AS "requests7d",
+        COUNT(DISTINCT cr."lessonRequestId")
+          FILTER (WHERE cr."lessonRequestId" IS NOT NULL)                          AS "contacted7d",
+        ROUND(
+          COUNT(DISTINCT cr."lessonRequestId")
+            FILTER (WHERE cr."lessonRequestId" IS NOT NULL)::numeric
+          / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+          1
+        )::float                                                                   AS "contact_rate_pct",
+        COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)
+                                                                                   AS "covered7d",
+        ROUND(
+          COUNT(DISTINCT CASE WHEN lf."prosFound" > 0 THEN lf."lessonRequestId" END)::numeric
+          / NULLIF(COUNT(DISTINCT lf."lessonRequestId"), 0) * 100,
+          1
+        )::float                                                                   AS "coverage_rate_pct"
+      FROM "LessonFanout" lf
+      LEFT JOIN "ContactRequest" cr
+        ON cr."lessonRequestId" = lf."lessonRequestId"
+        AND cr."createdAt" >= ${sevenDaysAgo}
+      WHERE lf."createdAt" >= ${sevenDaysAgo}
+        AND lf."sport" IN ('surf', 'kitesurf')
+      GROUP BY lf."sport"
+      ORDER BY lf."sport"
+    `),
+  ]);
+
+  const row = rows[0];
+
+  const bySport: SportConversionBreakdown[] = sportRows.map((sr) => ({
+    sport: sr.sport,
+    requests7d: Number(sr.requests7d),
+    contacted7d: Number(sr.contacted7d),
+    contactRatePct: sr.contact_rate_pct,
+    covered7d: Number(sr.covered7d),
+    coverageRatePct: sr.coverage_rate_pct,
+  }));
 
   return {
     requests7d: Number(row.requests7d),
@@ -397,6 +466,7 @@ export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMe
     contactRatePct: row.contact_rate_pct,
     covered7d: Number(row.covered7d),
     coverageRatePct: row.coverage_rate_pct,
+    bySport,
   };
 }
 

@@ -363,12 +363,22 @@ export interface AdminCoverageAnalytics {
   coverageRatePct: number | null;
 }
 
+export interface AdminAnalyticsSportBreakdown {
+  sport: string;
+  requests7d: number;
+  contacted7d: number;
+  contactRatePct: number | null;
+  covered7d: number;
+  coverageRatePct: number | null;
+}
+
 export interface AdminAnalyticsOverview {
   requests7d: number;
   contacted7d: number;
   contactRatePct: number | null;
   covered7d: number;
   coverageRatePct: number | null;
+  bySport: AdminAnalyticsSportBreakdown[];
 }
 
 export interface AdminBlockedConversation {

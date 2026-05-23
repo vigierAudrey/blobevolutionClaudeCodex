@@ -730,6 +730,51 @@ export default function AdminAnalytics() {
           </CardContent>
         </Card>
 
+        {/* Par sport — breakdown C5 */}
+        {overviewData && overviewData.bySport.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Activity className="h-4 w-4 text-violet-600" />
+                Par sport · 7 jours glissants
+              </CardTitle>
+              <CardDescription>Demandes, contacts et couverture par discipline</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground border-b">
+                      <th className="pb-2 pr-4">Sport</th>
+                      <th className="pb-2 pr-4 text-right">Demandes</th>
+                      <th className="pb-2 pr-4 text-right">Contacts</th>
+                      <th className="pb-2 pr-4 text-right">Conversion</th>
+                      <th className="pb-2 pr-4 text-right">Couvertes</th>
+                      <th className="pb-2 text-right">Couverture</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overviewData.bySport.map((row) => (
+                      <tr key={row.sport} className="border-t">
+                        <td className="py-2 pr-4 font-medium capitalize">{row.sport}</td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.requests7d)}</td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.contacted7d)}</td>
+                        <td className="py-2 pr-4 text-right">
+                          {row.contactRatePct === null ? '—' : formatPercent(row.contactRatePct)}
+                        </td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(row.covered7d)}</td>
+                        <td className="py-2 text-right">
+                          {row.coverageRatePct === null ? '—' : formatPercent(row.coverageRatePct)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Répartition par nombre d'élèves */}
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
