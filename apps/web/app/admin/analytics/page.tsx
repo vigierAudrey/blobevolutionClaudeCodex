@@ -19,6 +19,7 @@ import {
   type AdminAnalyticsOverview,
   type AdminAnalyticsReasonBreakdown,
   type AdminAnalyticsGeoBreakdown,
+  type AdminMarketplaceBottleneck,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -36,6 +37,7 @@ import {
   BookOpen,
   Activity,
   Info,
+  TrendingDown,
 } from 'lucide-react';
 
 const PERIODS: Array<{ value: AdminAnalyticsPeriod; label: string }> = [
@@ -81,6 +83,144 @@ const TRIGGER_REASON_LABELS: Record<string, string> = {
   MANUAL: 'Manuel',
   UNKNOWN: 'Inconnu (legacy)',
 };
+
+// ─── Funnel Marketplace (Sprint C8) ──────────────────────────────────────────
+
+const BOTTLENECK_LABELS: Record<AdminMarketplaceBottleneck, string> = {
+  PRO_SUPPLY: 'Manque de pros',
+  PRO_RESPONSE: 'Réponse des pros',
+  HEALTHY: 'Marketplace saine',
+};
+
+const BOTTLENECK_COLORS: Record<AdminMarketplaceBottleneck, string> = {
+  PRO_SUPPLY: 'text-red-700 bg-red-50 border-red-200',
+  PRO_RESPONSE: 'text-amber-700 bg-amber-50 border-amber-200',
+  HEALTHY: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+};
+
+const SEVERITY_COLORS: Record<string, string> = {
+  HIGH: 'bg-red-500',
+  MEDIUM: 'bg-amber-500',
+  LOW: 'bg-emerald-500',
+};
+
+interface FunnelMarketplaceProps {
+  funnel: NonNullable<AdminAnalyticsOverview['marketplaceFunnel']>;
+  health: NonNullable<AdminAnalyticsOverview['marketplaceHealth']>;
+}
+
+function FunnelMarketplace({ funnel, health }: FunnelMarketplaceProps) {
+  const bottleneckClass = BOTTLENECK_COLORS[health.primaryBottleneck];
+  const severityDotClass = SEVERITY_COLORS[health.severity] ?? 'bg-gray-400';
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <TrendingDown className="h-5 w-5 text-indigo-600" />
+        <h2 className="text-2xl font-semibold">Funnel Marketplace</h2>
+        <Badge variant="outline" className="text-xs">7 jours glissants</Badge>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Funnel visuel */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <TrendingDown className="h-4 w-4 text-indigo-600" />
+              Entonnoir de conversion
+            </CardTitle>
+            <CardDescription>
+              Demandes créées → couvertes par des pros → contactées
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 font-mono text-sm">
+            {/* Étape 1 : demandes */}
+            <div className="flex items-center justify-between rounded-md bg-indigo-50 px-4 py-3">
+              <span className="font-semibold text-indigo-800">Demandes créées</span>
+              <span className="text-xl font-bold text-indigo-900">{formatNumber(funnel.requests7d)}</span>
+            </div>
+
+            {/* Perte couverture */}
+            {funnel.requests7d > 0 && (
+              <div className="flex items-center gap-2 px-4 text-xs text-red-600">
+                <TrendingDown className="h-3 w-3 shrink-0" />
+                <span>perte {formatNumber(funnel.coverageLoss)} (sans pro dans le secteur)</span>
+              </div>
+            )}
+
+            {/* Étape 2 : couvertes */}
+            <div className="flex items-center justify-between rounded-md bg-blue-50 px-4 py-3">
+              <span className="font-semibold text-blue-800">Demandes couvertes</span>
+              <span className="text-xl font-bold text-blue-900">
+                {formatNumber(funnel.covered7d)}
+                {funnel.coverageRatePct !== null && (
+                  <span className="ml-2 text-sm font-normal text-blue-600">({formatPercent(funnel.coverageRatePct)})</span>
+                )}
+              </span>
+            </div>
+
+            {/* Perte contact */}
+            {funnel.requests7d > 0 && (
+              <div className="flex items-center gap-2 px-4 text-xs text-amber-600">
+                <TrendingDown className="h-3 w-3 shrink-0" />
+                <span>perte {formatNumber(funnel.contactLoss)} (pros trouvés mais pas de contact)</span>
+              </div>
+            )}
+
+            {/* Étape 3 : contactées */}
+            <div className="flex items-center justify-between rounded-md bg-emerald-50 px-4 py-3">
+              <span className="font-semibold text-emerald-800">Demandes contactées</span>
+              <span className="text-xl font-bold text-emerald-900">
+                {formatNumber(funnel.contacted7d)}
+                {funnel.contactRatePct !== null && (
+                  <span className="ml-2 text-sm font-normal text-emerald-600">({formatPercent(funnel.contactRatePct)})</span>
+                )}
+              </span>
+            </div>
+
+            {funnel.requests7d === 0 && (
+              <p className="text-center text-xs text-muted-foreground pt-2">Aucun fanout sur les 7 derniers jours.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Goulot principal */}
+        <Card className={`border ${bottleneckClass}`}>
+          <CardHeader>
+            <CardTitle className="text-base">Goulot principal</CardTitle>
+            <CardDescription>Diagnostic automatique — règles déterministes</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-3">
+              <span className={`inline-block h-3 w-3 rounded-full ${severityDotClass}`} />
+              <span className="text-2xl font-bold">
+                {BOTTLENECK_LABELS[health.primaryBottleneck]}
+              </span>
+            </div>
+            <Badge variant="outline" className={bottleneckClass}>
+              Sévérité : {health.severity}
+            </Badge>
+
+            <div className="rounded-md border bg-white/60 p-3 text-xs text-muted-foreground space-y-1">
+              <p className="font-semibold text-foreground">Règles de diagnostic :</p>
+              <p>
+                <span className="font-medium text-red-700">Manque de pros</span> — couverture &lt; 50 %
+                {' '}(HIGH si &lt; 30 %, MEDIUM si 30–49 %)
+              </p>
+              <p>
+                <span className="font-medium text-amber-700">Réponse des pros</span> — couverture ≥ 50 % et contact &lt; 30 %
+                {' '}(HIGH si &lt; 15 %, MEDIUM si 15–29 %)
+              </p>
+              <p>
+                <span className="font-medium text-emerald-700">Marketplace saine</span> — couverture ≥ 50 % et contact ≥ 30 %
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+  );
+}
 
 export default function AdminAnalytics() {
   const router = useRouter();
@@ -576,6 +716,14 @@ export default function AdminAnalytics() {
           </CardContent>
         </Card>
       </section>
+
+      {/* ── Funnel Marketplace (Sprint C8) ── */}
+      {overviewData && (
+        <FunnelMarketplace
+          funnel={overviewData.marketplaceFunnel}
+          health={overviewData.marketplaceHealth}
+        />
+      )}
 
       {/* ── Demandes de cours (BloboMap) ── */}
       <section className="space-y-4">

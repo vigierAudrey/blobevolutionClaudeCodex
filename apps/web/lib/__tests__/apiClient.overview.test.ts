@@ -10,7 +10,7 @@ const fetchMock = jest.fn<Promise<{
 }>, Parameters<typeof fetch>>();
 (global as { fetch?: unknown }).fetch = fetchMock as unknown as typeof fetch;
 
-import { __testUtils, apiClient, type AdminAnalyticsOverview, type AdminAnalyticsGeoBreakdown } from '../apiClient';
+import { __testUtils, apiClient, type AdminAnalyticsOverview, type AdminAnalyticsGeoBreakdown, type AdminMarketplaceFunnel, type AdminMarketplaceHealth } from '../apiClient';
 
 const API_BASE_URL = 'http://localhost:4000';
 
@@ -45,6 +45,31 @@ afterAll(() => {
   (global as { fetch?: unknown }).fetch = originalFetch;
 });
 
+const HEALTHY_FUNNEL: AdminMarketplaceFunnel = {
+  requests7d: 120,
+  covered7d: 95,
+  contacted7d: 45,
+  coverageLoss: 25,
+  contactLoss: 50,
+  coverageRatePct: 79.2,
+  contactRatePct: 37.5,
+};
+
+const HEALTHY_HEALTH: AdminMarketplaceHealth = {
+  primaryBottleneck: 'HEALTHY',
+  severity: 'LOW',
+};
+
+const EMPTY_FUNNEL: AdminMarketplaceFunnel = {
+  requests7d: 0,
+  covered7d: 0,
+  contacted7d: 0,
+  coverageLoss: 0,
+  contactLoss: 0,
+  coverageRatePct: null,
+  contactRatePct: null,
+};
+
 describe('getAdminAnalyticsOverview', () => {
   it('calls GET /admin/analytics/overview and returns all metrics including bySport', async () => {
     const payload: AdminAnalyticsOverview = {
@@ -65,6 +90,8 @@ describe('getAdminAnalyticsOverview', () => {
         { zone: 'Z43:-2', requests7d: 80, covered7d: 65, coverageRatePct: 81.3, contacted7d: 30, contactRatePct: 37.5 },
         { zone: 'Z44:-1', requests7d: 40, covered7d: 30, coverageRatePct: 75.0, contacted7d: 15, contactRatePct: 37.5 },
       ] as AdminAnalyticsGeoBreakdown[],
+      marketplaceFunnel: HEALTHY_FUNNEL,
+      marketplaceHealth: HEALTHY_HEALTH,
     };
 
     queueApiResponse(payload);
@@ -78,6 +105,8 @@ describe('getAdminAnalyticsOverview', () => {
     expect(result.geoBreakdown).toHaveLength(2);
     expect(result.geoBreakdown[0].zone).toBe('Z43:-2');
     expect(result.geoBreakdown[1].zone).toBe('Z44:-1');
+    expect(result.marketplaceFunnel.requests7d).toBe(120);
+    expect(result.marketplaceHealth.primaryBottleneck).toBe('HEALTHY');
     const calls = fetchMock.mock.calls.map(([url]) => url as string);
     expect(calls.some((u) => u.includes('/admin/analytics/overview'))).toBe(true);
   });
@@ -92,6 +121,8 @@ describe('getAdminAnalyticsOverview', () => {
       bySport: [],
       reasonBreakdown: [],
       geoBreakdown: [],
+      marketplaceFunnel: EMPTY_FUNNEL,
+      marketplaceHealth: { primaryBottleneck: 'HEALTHY', severity: 'LOW' },
     };
 
     queueApiResponse(payload);
@@ -101,6 +132,8 @@ describe('getAdminAnalyticsOverview', () => {
     expect(result.coverageRatePct).toBeNull();
     expect(result.requests7d).toBe(0);
     expect(result.bySport).toEqual([]);
+    expect(result.marketplaceFunnel.coverageRatePct).toBeNull();
+    expect(result.marketplaceHealth.primaryBottleneck).toBe('HEALTHY');
   });
 
   it('bySport entry has null contactRatePct when sport has no requests', async () => {
@@ -119,12 +152,15 @@ describe('getAdminAnalyticsOverview', () => {
         { reason: 'ACTIVATED', fanouts7d: 5, requests7d: 5, contacted7d: 2, contactRatePct: 40, covered7d: 4, coverageRatePct: 80 },
       ],
       geoBreakdown: [],
+      marketplaceFunnel: { requests7d: 5, covered7d: 4, contacted7d: 2, coverageLoss: 1, contactLoss: 2, coverageRatePct: 80, contactRatePct: 40 },
+      marketplaceHealth: { primaryBottleneck: 'HEALTHY', severity: 'LOW' },
     };
 
     queueApiResponse(payload);
 
     const result = await apiClient.getAdminAnalyticsOverview();
     expect(result.bySport[0].contactRatePct).toBe(40);
+    expect(result.marketplaceFunnel.covered7d).toBe(4);
   });
 
   it('throws on API error (401)', async () => {

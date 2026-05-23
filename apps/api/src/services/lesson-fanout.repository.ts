@@ -398,6 +398,85 @@ export interface ReasonBreakdown {
   coverageRatePct: number | null;
 }
 
+// ─── Marketplace Funnel (Sprint C8) ──────────────────────────────────────────
+
+// Étapes du funnel calculables avec les données existantes :
+//   requests7d  — COUNT(DISTINCT lessonRequestId) dans LessonFanout sur 7 jours.
+//   covered7d   — demandes où au moins un fanout avait prosFound > 0 (C3).
+//   contacted7d — demandes ayant au moins un ContactRequest (C2).
+//
+// Étapes non calculables (données absentes) :
+//   • "pro a vu la notification" — pas de tracking de lecture
+//   • "pro a répondu" — ContactRequest n'a pas de statut d'acceptation
+//   • "leçon finalisée" — module booking retiré
+export interface MarketplaceFunnel {
+  requests7d: number;
+  covered7d: number;
+  contacted7d: number;
+  // requests7d - covered7d
+  coverageLoss: number;
+  // covered7d - contacted7d
+  contactLoss: number;
+  // covered7d / requests7d * 100 (1 décimale), null si requests7d = 0
+  coverageRatePct: number | null;
+  // contacted7d / requests7d * 100 (1 décimale), null si requests7d = 0
+  contactRatePct: number | null;
+}
+
+export type MarketplaceBottleneck = 'PRO_SUPPLY' | 'PRO_RESPONSE' | 'HEALTHY';
+export type MarketplaceSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export interface MarketplaceHealth {
+  // Règles déterministes et testables — aucune heuristique opaque :
+  //   PRO_SUPPLY   : coverageRatePct < 50 (pas assez de pros dans le périmètre)
+  //   PRO_RESPONSE : coverageRatePct >= 50 ET contactRatePct < 30 (pros trouvés mais pas de réponse)
+  //   HEALTHY      : coverageRatePct >= 50 ET contactRatePct >= 30 (ou aucune donnée)
+  primaryBottleneck: MarketplaceBottleneck;
+  // HIGH   : situation critique (coverageRatePct < 30 ou contactRatePct < 15)
+  // MEDIUM : dégradation notable (coverageRatePct < 50 ou contactRatePct < 30)
+  // LOW    : normal
+  severity: MarketplaceSeverity;
+}
+
+// Calcule le funnel et l'insight à partir des métriques déjà agrégées — O(1), sans SQL.
+export function computeMarketplaceFunnel(
+  requests7d: number,
+  covered7d: number,
+  contacted7d: number,
+  coverageRatePct: number | null,
+  contactRatePct: number | null,
+): { funnel: MarketplaceFunnel; health: MarketplaceHealth } {
+  const funnel: MarketplaceFunnel = {
+    requests7d,
+    covered7d,
+    contacted7d,
+    coverageLoss: requests7d - covered7d,
+    contactLoss: covered7d - contacted7d,
+    coverageRatePct,
+    contactRatePct,
+  };
+
+  let primaryBottleneck: MarketplaceBottleneck;
+  let severity: MarketplaceSeverity;
+
+  if (coverageRatePct === null) {
+    // Aucun fanout sur la période — pas de données pour diagnostiquer
+    primaryBottleneck = 'HEALTHY';
+    severity = 'LOW';
+  } else if (coverageRatePct < 50) {
+    primaryBottleneck = 'PRO_SUPPLY';
+    severity = coverageRatePct < 30 ? 'HIGH' : 'MEDIUM';
+  } else if (contactRatePct !== null && contactRatePct < 30) {
+    primaryBottleneck = 'PRO_RESPONSE';
+    severity = contactRatePct < 15 ? 'HIGH' : 'MEDIUM';
+  } else {
+    primaryBottleneck = 'HEALTHY';
+    severity = 'LOW';
+  }
+
+  return { funnel, health: { primaryBottleneck, severity } };
+}
+
 export interface AnalyticsOverviewMetrics {
   requests7d: number;
   contacted7d: number;
@@ -411,6 +490,9 @@ export interface AnalyticsOverviewMetrics {
   // Breakdown par zone géographique large — zones avec < PRIVACY_THRESHOLD demandes exclues.
   // Vide si aucune donnée C7 (fanouts antérieurs au sprint C7 n'ont pas zoneLarge).
   geoBreakdown: GeoBreakdown[];
+  // Funnel marketplace (Sprint C8) — dérivé de C2+C3, zéro requête SQL supplémentaire.
+  marketplaceFunnel: MarketplaceFunnel;
+  marketplaceHealth: MarketplaceHealth;
 }
 
 type OverviewRow = {
@@ -610,15 +692,31 @@ export async function getAnalyticsOverviewMetrics(): Promise<AnalyticsOverviewMe
     contactRatePct: gr.contact_rate_pct,
   }));
 
+  const requests7d = Number(row.requests7d);
+  const covered7d = Number(row.covered7d);
+  const contacted7d = Number(row.contacted7d);
+  const coverageRatePct = row.coverage_rate_pct;
+  const contactRatePct = row.contact_rate_pct;
+
+  const { funnel: marketplaceFunnel, health: marketplaceHealth } = computeMarketplaceFunnel(
+    requests7d,
+    covered7d,
+    contacted7d,
+    coverageRatePct,
+    contactRatePct,
+  );
+
   return {
-    requests7d: Number(row.requests7d),
-    contacted7d: Number(row.contacted7d),
-    contactRatePct: row.contact_rate_pct,
-    covered7d: Number(row.covered7d),
-    coverageRatePct: row.coverage_rate_pct,
+    requests7d,
+    contacted7d,
+    contactRatePct,
+    covered7d,
+    coverageRatePct,
     bySport,
     reasonBreakdown,
     geoBreakdown,
+    marketplaceFunnel,
+    marketplaceHealth,
   };
 }
 

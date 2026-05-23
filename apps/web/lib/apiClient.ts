@@ -391,6 +391,24 @@ export interface AdminAnalyticsGeoBreakdown {
   contactRatePct: number | null;
 }
 
+export interface AdminMarketplaceFunnel {
+  requests7d: number;
+  covered7d: number;
+  contacted7d: number;
+  coverageLoss: number;
+  contactLoss: number;
+  coverageRatePct: number | null;
+  contactRatePct: number | null;
+}
+
+export type AdminMarketplaceBottleneck = 'PRO_SUPPLY' | 'PRO_RESPONSE' | 'HEALTHY';
+export type AdminMarketplaceSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export interface AdminMarketplaceHealth {
+  primaryBottleneck: AdminMarketplaceBottleneck;
+  severity: AdminMarketplaceSeverity;
+}
+
 export interface AdminAnalyticsOverview {
   requests7d: number;
   contacted7d: number;
@@ -400,6 +418,8 @@ export interface AdminAnalyticsOverview {
   bySport: AdminAnalyticsSportBreakdown[];
   reasonBreakdown: AdminAnalyticsReasonBreakdown[];
   geoBreakdown: AdminAnalyticsGeoBreakdown[];
+  marketplaceFunnel: AdminMarketplaceFunnel;
+  marketplaceHealth: AdminMarketplaceHealth;
 }
 
 export interface AdminBlockedConversation {
