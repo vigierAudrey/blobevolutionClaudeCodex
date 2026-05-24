@@ -164,3 +164,105 @@ describe('OpenAPI /contact/respond — codes erreurs 409/429 (C15)', () => {
     expect(spec.paths['/contact/respond']?.post?.responses?.['429']).toBeDefined();
   });
 });
+
+// ─── /contact/requests (C16) ──────────────────────────────────────────────────
+
+describe('OpenAPI /contact/requests — DTO strict pro (C16)', () => {
+  let spec: OpenApiSpec;
+
+  beforeAll(() => {
+    spec = loadSpec();
+  });
+
+  function getItemSchema(s: OpenApiSpec) {
+    const resp200 = (s.paths['/contact/requests']?.get?.responses?.['200'] as {
+      content?: {
+        'application/json'?: {
+          schema?: {
+            additionalProperties?: unknown;
+            required?: string[];
+            properties?: {
+              requests?: {
+                maxItems?: number;
+                items?: {
+                  additionalProperties?: unknown;
+                  required?: string[];
+                  properties?: Record<string, unknown>;
+                };
+              };
+              nextCursor?: unknown;
+            };
+          };
+        };
+      };
+    });
+    return resp200?.content?.['application/json']?.schema;
+  }
+
+  it('route /contact/requests GET est documentée', () => {
+    expect(spec.paths['/contact/requests']?.get).toBeDefined();
+  });
+
+  it('ne documente aucun query param (pas de cursor, pas de take)', () => {
+    const params = spec.paths['/contact/requests']?.get?.parameters ?? [];
+    expect(params).toHaveLength(0);
+  });
+
+  it('ne documente pas nextCursor dans la réponse 200', () => {
+    const schema = getItemSchema(spec);
+    expect(schema?.properties).not.toHaveProperty('nextCursor');
+  });
+
+  it('l\'enveloppe est stricte (additionalProperties: false)', () => {
+    const schema = getItemSchema(spec);
+    expect(schema?.additionalProperties).toBe(false);
+  });
+
+  it('l\'item est strict (additionalProperties: false)', () => {
+    const schema = getItemSchema(spec);
+    expect(schema?.properties?.requests?.items?.additionalProperties).toBe(false);
+  });
+
+  it('maxItems est 50', () => {
+    const schema = getItemSchema(spec);
+    expect(schema?.properties?.requests?.maxItems).toBe(50);
+  });
+
+  it('les champs requis de l\'item sont exactement id, status, message, createdAt, conversationId, riderName', () => {
+    const schema = getItemSchema(spec);
+    const required = schema?.properties?.requests?.items?.required ?? [];
+    expect(required.sort()).toEqual(['conversationId', 'createdAt', 'id', 'message', 'riderName', 'status']);
+  });
+
+  it('les propriétés documentées sont exactement les 6 champs du DTO', () => {
+    const schema = getItemSchema(spec);
+    const props = Object.keys(schema?.properties?.requests?.items?.properties ?? {});
+    expect(props.sort()).toEqual(['conversationId', 'createdAt', 'id', 'message', 'riderName', 'status']);
+  });
+
+  const FORBIDDEN_FIELDS = [
+    'email', 'proUserId', 'lessonRequestId', 'conversation',
+    'members', 'user', 'riderProfile', 'responses', 'rider',
+    'lat', 'lng', 'lessonLat', 'lessonLng', 'nextCursor',
+  ];
+
+  for (const field of FORBIDDEN_FIELDS) {
+    it(`ne documente pas le champ sensible "${field}"`, () => {
+      const schema = getItemSchema(spec);
+      const props = schema?.properties?.requests?.items?.properties ?? {};
+      expect(props).not.toHaveProperty(field);
+    });
+  }
+
+  it('documente une réponse 401', () => {
+    expect(spec.paths['/contact/requests']?.get?.responses?.['401']).toBeDefined();
+  });
+
+  it('documente une réponse 403', () => {
+    expect(spec.paths['/contact/requests']?.get?.responses?.['403']).toBeDefined();
+  });
+
+  it('documente une réponse 429 (rate limit)', () => {
+    expect(spec.paths['/contact/requests']?.get?.responses?.['429']).toBeDefined();
+  });
+});

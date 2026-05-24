@@ -23,6 +23,20 @@ const contactRequestLimiter = createLazyCustomRateLimiter(
   'contact_request',
 );
 
+// 60 lectures / min / userId — listing pro, lecture seule.
+const contactRequestsListLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 1000,
+    limit: 60,
+    keyGenerator: (req: Request) => `contact_requests_list:${(req as any).user?.id ?? 'anon'}`,
+    message: {
+      error: 'CONTACT_REQUESTS_RATE_LIMIT_EXCEEDED',
+      message: 'Too many requests. Please wait.',
+    },
+  },
+  'contact_requests_list',
+);
+
 // 20 réponses / 10 min / userId — protège contre le bourrage de votes.
 const contactRespondLimiter = createLazyCustomRateLimiter(
   {
@@ -355,41 +369,67 @@ contactRouter.post('/respond', contactRespondLimiter, async (req, res) => {
   }
 });
 
-// GET /contact/requests - Obtenir les demandes de contact pour un Pro
-contactRouter.get('/requests', async (req, res) => {
+// DTO minimal pro pour GET /contact/requests.
+// Seuls les champs nécessaires à l'UI pro sont exposés.
+// Aucun email, aucun objet user/riderProfile complet, aucune lat/lng.
+const REQUESTS_MAX = 50;
+
+// GET /contact/requests - Obtenir les demandes de contact envoyées par un Pro
+contactRouter.get('/requests', contactRequestsListLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true }
+      select: { role: true },
     });
 
     if (!user || user.role !== 'PRO') {
       return res.status(403).json({ error: 'Only professionals can view contact requests' });
     }
 
-    const requests = await prisma.contactRequest.findMany({
+    const rows = await prisma.contactRequest.findMany({
       where: { proUserId: userId },
-      include: {
+      select: {
+        id: true,
+        status: true,
+        message: true,
+        createdAt: true,
+        conversationId: true,
         conversation: {
-          include: {
+          select: {
             members: {
-              include: { user: { include: { riderProfile: true } } }
-            }
-          }
+              where: { userId: { not: userId } },
+              take: 1,
+              select: {
+                user: {
+                  select: {
+                    riderProfile: { select: { displayName: true } },
+                  },
+                },
+              },
+            },
+          },
         },
-        responses: {
-          include: { rider: { include: { riderProfile: true } } }
-        }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: REQUESTS_MAX,
     });
+
+    const requests = rows.map((r: (typeof rows)[number]) => ({
+      id: r.id,
+      status: r.status,
+      message: r.message,
+      createdAt: r.createdAt,
+      conversationId: r.conversationId,
+      riderName: r.conversation.members[0]?.user.riderProfile?.displayName ?? 'Rider',
+    }));
 
     return res.json({ requests });
 
   } catch (err) {
+    secureLogger.error('CONTACT_REQUESTS_LIST_ERROR', { error: (err as any)?.message });
     return res.status(500).json({ error: 'Internal error' });
   }
 });

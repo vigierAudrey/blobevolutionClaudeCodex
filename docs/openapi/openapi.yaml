@@ -1502,44 +1502,50 @@ paths:
   /contact/requests:
     get:
       tags: [Contact]
-      summary: Liste les demandes destinées au pro
+      summary: Liste les demandes envoyées par le pro (DTO minimal C16)
       operationId: contactListPro
-      parameters:
-        - in: query
-          name: cursor
-          schema:
-            type: string
-            format: uuid
-          description: Curseur de pagination (id du dernier item reçu)
-        - in: query
-          name: take
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
-          description: Taille de page demandée (cap serveur 200)
       responses:
         '200':
-          description: Demandes en cours
+          description: Demandes envoyées par le pro (cap 50, ordre anti-chronologique)
           content:
             application/json:
               schema:
                 type: object
+                required: [requests]
+                additionalProperties: false
                 properties:
                   requests:
                     type: array
+                    maxItems: 50
                     items:
                       type: object
-                      additionalProperties: true
-                  nextCursor:
-                    type: string
-                    format: uuid
-                    nullable: true
+                      additionalProperties: false
+                      required: [id, status, message, createdAt, conversationId, riderName]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        status:
+                          type: string
+                          enum: [PENDING, ACCEPTED, REJECTED]
+                        message:
+                          type: string
+                          nullable: true
+                          maxLength: 500
+                        createdAt:
+                          type: string
+                          format: date-time
+                        conversationId:
+                          type: string
+                          format: uuid
+                        riderName:
+                          type: string
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /contact/pending:
     get:
       tags: [Contact]
