@@ -1543,23 +1543,8 @@ paths:
   /contact/pending:
     get:
       tags: [Contact]
-      summary: Liste les demandes en attente pour le rider
+      summary: Liste les demandes en attente pour le rider (DTO minimal C14)
       operationId: contactPending
-      parameters:
-        - in: query
-          name: cursor
-          schema:
-            type: string
-            format: uuid
-          description: Curseur de pagination (id du dernier item reçu)
-        - in: query
-          name: take
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
-          description: Taille de page demandée (cap serveur 200)
       responses:
         '200':
           description: Demandes à traiter
@@ -1567,16 +1552,33 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [requests]
+                additionalProperties: false
                 properties:
                   requests:
                     type: array
+                    maxItems: 50
                     items:
                       type: object
-                      additionalProperties: true
-                  nextCursor:
-                    type: string
-                    format: uuid
-                    nullable: true
+                      required: [id, message, createdAt, conversationId, proName]
+                      additionalProperties: false
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        message:
+                          type: string
+                          nullable: true
+                          maxLength: 500
+                        createdAt:
+                          type: string
+                          format: date-time
+                        conversationId:
+                          type: string
+                          format: uuid
+                        proName:
+                          type: string
+                          description: Nom commercial du pro (businessName ou "Professionnel" en fallback)
         '401':
           $ref: '#/components/responses/Unauthorized'
 
