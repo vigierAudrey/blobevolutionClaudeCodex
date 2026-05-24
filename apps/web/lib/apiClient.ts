@@ -357,6 +357,24 @@ export interface AdminContactConversionAnalytics {
   contactRatePct: number | null;
 }
 
+export interface PendingContactRequest {
+  id: string;
+  message: string | null;
+  createdAt: string;
+  conversationId: string;
+  proName: string;
+}
+
+export interface PendingContactRequestsResponse {
+  requests: PendingContactRequest[];
+}
+
+export interface ContactRespondResponse {
+  success: true;
+  status: 'ACCEPTED' | 'REJECTED' | 'PENDING';
+  message: string;
+}
+
 export interface AdminCoverageAnalytics {
   requests7d: number;
   covered7d: number;
@@ -1452,6 +1470,16 @@ export const apiClient = {
     request('/admin/analytics/coverage', { method: 'GET' }, true) as Promise<AdminCoverageAnalytics>,
   getAdminAnalyticsOverview: () =>
     request('/admin/analytics/overview', { method: 'GET' }, true) as Promise<AdminAnalyticsOverview>,
+  getPendingContactRequests: () =>
+    request('/contact/pending', { method: 'GET' }, true) as Promise<PendingContactRequestsResponse>,
+
+  respondToContactRequest: (contactRequestId: string, response: 'ACCEPT' | 'REJECT') =>
+    request(
+      '/contact/respond',
+      { method: 'POST', body: JSON.stringify({ contactRequestId, response }) },
+      true,
+    ) as Promise<ContactRespondResponse>,
+
   /**
    * saveTokens — Activates the local session hint flag.
    * Tokens themselves are managed as httpOnly cookies by the server.

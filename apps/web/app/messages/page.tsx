@@ -9,6 +9,7 @@ import { apiClient } from '../../lib/apiClient';
 import type { ThreadSummary, ThreadListQuery } from '@/types/messages';
 import { Button } from '../../components/ui/button';
 import { ConversationInvitations } from '../../components/ConversationInvitations';
+import { ContactRequests } from '../../components/ContactRequests';
 
 // Force SSR for real-time messaging
 export const dynamic = 'force-dynamic';
@@ -146,6 +147,9 @@ export default function MessagesPage() {
 
       {/* Invitations en attente */}
       <ConversationInvitations />
+
+      {/* Demandes de contact de pros en attente (rider uniquement) */}
+      <ContactRequests />
 
       {/* Filtres */}
       <Card className="border-2">
