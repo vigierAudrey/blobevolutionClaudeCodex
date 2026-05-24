@@ -394,45 +394,52 @@ contactRouter.get('/requests', async (req, res) => {
   }
 });
 
+// DTO minimal pour GET /contact/pending
+// Seuls les champs nécessaires à l'UI rider sont exposés.
+// Aucun email, userId du rider, profil complet, ni objet conversation.
+const PENDING_MAX = 50;
+
 // GET /contact/pending - Obtenir les demandes en attente pour un rider
 contactRouter.get('/pending', async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Trouver les demandes de contact en attente pour les conversations de ce rider
-    const pendingRequests = await prisma.contactRequest.findMany({
+    const rows = await prisma.contactRequest.findMany({
       where: {
         status: 'PENDING',
         conversation: {
-          members: {
-            some: { userId }
-          }
+          members: { some: { userId } },
         },
         // Exclure les demandes où ce rider a déjà répondu
         NOT: {
-          responses: {
-            some: { riderUserId: userId }
-          }
-        }
-      },
-      include: {
-        pro: {
-          include: { proProfile: true }
+          responses: { some: { riderUserId: userId } },
         },
-        conversation: {
-          include: {
-            match: true,
-            members: {
-              include: { user: { include: { riderProfile: true } } }
-            }
-          }
-        }
       },
-      orderBy: { createdAt: 'desc' }
+      select: {
+        id: true,
+        message: true,
+        createdAt: true,
+        conversationId: true,
+        pro: {
+          select: {
+            proProfile: { select: { businessName: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: PENDING_MAX,
     });
 
-    return res.json({ requests: pendingRequests });
+    const requests = rows.map((r: (typeof rows)[number]) => ({
+      id: r.id,
+      message: r.message,
+      createdAt: r.createdAt,
+      conversationId: r.conversationId,
+      proName: r.pro.proProfile?.businessName ?? 'Professionnel',
+    }));
+
+    return res.json({ requests });
 
   } catch (err) {
     return res.status(500).json({ error: 'Internal error' });
