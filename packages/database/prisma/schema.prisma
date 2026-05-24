@@ -593,6 +593,10 @@ model ContactRequest {
   conversation    Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   responses       ContactRequestResponse[]
 
+  // Un seul ContactRequest par (pro, conversation) — règle métier et garde TOCTOU.
+  // Sans contrainte DB, deux requêtes concurrentes depuis le même JWT peuvent toutes
+  // deux passer le findFirst (null) et créer deux lignes identiques (race condition).
+  @@unique([proUserId, conversationId])
   @@index([proUserId])
   @@index([conversationId])
   @@index([status])

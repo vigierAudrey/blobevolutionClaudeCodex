@@ -1,11 +1,27 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { makeLessonRequestId } from '../../services/lesson-fanout.repository';
+import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { secureLogger } from '../../utils/secure-logger';
 
 export const contactRouter = Router();
 contactRouter.use(requireAuth, requireVerifiedEmail);
+
+// 5 demandes de contact / 10 min / userId — intentionnel : un pro ne spamme pas.
+const contactRequestLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 10 * 60 * 1000,
+    limit: 5,
+    keyGenerator: (req: Request) => `contact_request:${(req as any).user?.id ?? 'anon'}`,
+    message: {
+      error: 'CONTACT_REQUEST_RATE_LIMIT_EXCEEDED',
+      message: 'Too many contact requests. Please wait before sending another.',
+    },
+  },
+  'contact_request',
+);
 
 // Schema pour créer une demande de contact.
 // lessonRequestId est exclu volontairement : calculé server-side uniquement.
@@ -21,7 +37,7 @@ const respondToContactRequestSchema = z.object({
 });
 
 // POST /contact/request - Le Pro envoie une demande de contact
-contactRouter.post('/request', async (req, res) => {
+contactRouter.post('/request', contactRequestLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -77,17 +93,18 @@ contactRouter.post('/request', async (req, res) => {
       return res.status(400).json({ error: 'No lesson request found in this conversation' });
     }
 
-    // Vérifier qu'il n'y a pas déjà une demande en cours
+    // Garde anti-doublon : un seul ContactRequest par (pro, conversation), quel que soit
+    // le statut précédent. La contrainte DB unique couvre aussi le TOCTOU concurrent.
     const existingRequest = await prisma.contactRequest.findFirst({
       where: {
         proUserId: userId,
         conversationId: conversationId,
-        status: 'PENDING'
-      }
+      },
+      select: { id: true },
     });
 
     if (existingRequest) {
-      return res.status(400).json({ error: 'Contact request already pending for this conversation' });
+      return res.status(409).json({ error: 'Contact request already exists for this conversation' });
     }
 
     // lessonRequestId calculé server-side : sha256(riderId + UTC-date)[:16].
@@ -95,26 +112,40 @@ contactRouter.post('/request', async (req, res) => {
     const lessonRequestId = makeLessonRequestId(lessonRider.id);
 
     // Créer la demande de contact
-    const contactRequest = await prisma.contactRequest.create({
-      data: {
-        proUserId: userId,
-        conversationId,
-        message: message || null,
-        status: 'PENDING',
-        lessonRequestId,
-      },
-      include: {
-        pro: {
-          include: { proProfile: true }
+    let contactRequest: Awaited<ReturnType<typeof prisma.contactRequest.create>>;
+    try {
+      contactRequest = await prisma.contactRequest.create({
+        data: {
+          proUserId: userId,
+          conversationId,
+          message: message || null,
+          status: 'PENDING',
+          lessonRequestId,
         },
-        conversation: {
-          include: {
-            members: {
-              include: { user: { include: { riderProfile: true } } }
+        include: {
+          pro: {
+            include: { proProfile: true }
+          },
+          conversation: {
+            include: {
+              members: {
+                include: { user: { include: { riderProfile: true } } }
+              }
             }
           }
         }
+      });
+    } catch (createErr: unknown) {
+      // Race condition : une requête concurrente a créé le ContactRequest avant nous.
+      if ((createErr as any)?.code === 'P2002') {
+        return res.status(409).json({ error: 'Contact request already exists for this conversation' });
       }
+      throw createErr;
+    }
+
+    secureLogger.info('CONTACT_REQUEST_CREATED', {
+      conversationId,
+      lessonRequestId,
     });
 
     return res.json({
