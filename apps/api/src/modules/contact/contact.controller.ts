@@ -139,8 +139,18 @@ contactRouter.post('/request', contactRequestLimiter, async (req, res) => {
     // Stable sur la journée — permet COUNT(DISTINCT lessonRequestId) ↔ LessonFanout.
     const lessonRequestId = makeLessonRequestId(lessonRider.id);
 
-    // Créer la demande de contact
-    let contactRequest: Awaited<ReturnType<typeof prisma.contactRequest.create>>;
+    // Créer la demande de contact — select minimal : seuls les champs du DTO public.
+    // Pas de conversation, pas d'objet user complet, pas de riderProfile.
+    type ContactRequestCreated = Prisma.ContactRequestGetPayload<{
+      select: {
+        id: true;
+        message: true;
+        createdAt: true;
+        pro: { select: { proProfile: { select: { businessName: true } } } };
+      };
+    }>;
+
+    let contactRequest!: ContactRequestCreated;
     try {
       contactRequest = await prisma.contactRequest.create({
         data: {
@@ -150,18 +160,16 @@ contactRouter.post('/request', contactRequestLimiter, async (req, res) => {
           status: 'PENDING',
           lessonRequestId,
         },
-        include: {
+        select: {
+          id: true,
+          message: true,
+          createdAt: true,
           pro: {
-            include: { proProfile: true }
+            select: {
+              proProfile: { select: { businessName: true } },
+            },
           },
-          conversation: {
-            include: {
-              members: {
-                include: { user: { include: { riderProfile: true } } }
-              }
-            }
-          }
-        }
+        },
       });
     } catch (createErr: unknown) {
       // Race condition : une requête concurrente a créé le ContactRequest avant nous.
@@ -181,9 +189,9 @@ contactRouter.post('/request', contactRequestLimiter, async (req, res) => {
       contactRequest: {
         id: contactRequest.id,
         message: contactRequest.message,
-        proName: contactRequest.pro.proProfile?.businessName || 'Professionnel',
-        createdAt: contactRequest.createdAt
-      }
+        proName: contactRequest.pro?.proProfile?.businessName || 'Professionnel',
+        createdAt: contactRequest.createdAt,
+      },
     });
 
   } catch (err: any) {
