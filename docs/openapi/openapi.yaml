@@ -1453,17 +1453,52 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [success, status, message]
                 properties:
                   success:
                     type: boolean
+                    example: true
                   status:
                     type: string
+                    enum: [PENDING, ACCEPTED, REJECTED]
+                    description: État final de la demande après cette réponse
+                  message:
+                    type: string
+                    description: Message lisible décrivant l'état
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            Conflit — trois cas possibles selon `error` :
+            - `ALREADY_RESPONDED` : le rider a déjà voté pour cette demande (vote immuable)
+            - `CONTACT_REQUEST_ALREADY_RESOLVED` : la demande est déjà ACCEPTED ou REJECTED ; `status` indique l'état final
+            - `CONCURRENT_UPDATE` : échec de sérialisation transitoire (P2034) — retryable
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    enum:
+                      - ALREADY_RESPONDED
+                      - CONTACT_REQUEST_ALREADY_RESOLVED
+                      - CONCURRENT_UPDATE
+                  status:
+                    type: string
+                    enum: [ACCEPTED, REJECTED]
+                    description: Présent uniquement pour CONTACT_REQUEST_ALREADY_RESOLVED
+                  message:
+                    type: string
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /contact/requests:
     get:
       tags: [Contact]

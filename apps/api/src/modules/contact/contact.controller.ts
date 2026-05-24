@@ -23,6 +23,20 @@ const contactRequestLimiter = createLazyCustomRateLimiter(
   'contact_request',
 );
 
+// 20 réponses / 10 min / userId — protège contre le bourrage de votes.
+const contactRespondLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 10 * 60 * 1000,
+    limit: 20,
+    keyGenerator: (req: Request) => `contact_respond:${(req as any).user?.id ?? 'anon'}`,
+    message: {
+      error: 'CONTACT_RESPOND_RATE_LIMIT_EXCEEDED',
+      message: 'Too many responses. Please wait before responding again.',
+    },
+  },
+  'contact_respond',
+);
+
 // Schema pour créer une demande de contact.
 // lessonRequestId est exclu volontairement : calculé server-side uniquement.
 const createContactRequestSchema = z.object({
@@ -167,135 +181,176 @@ contactRouter.post('/request', contactRequestLimiter, async (req, res) => {
 });
 
 // POST /contact/respond - Les riders répondent à la demande
-contactRouter.post('/respond', async (req, res) => {
+//
+// Machine d'état stricte :
+//   PENDING → ACCEPTED  (tous les riders ont ACCEPT)
+//   PENDING → REJECTED  (au moins un rider a REJECT)
+//   Toute autre transition → 409 Conflict
+//
+// Garanties de concurrence :
+//   - Tout est dans une transaction Serializable
+//   - contactRequestResponse.create (pas upsert) → vote immuable, P2002 → 409
+//   - updateMany WHERE status=PENDING → transition atomique
+//   - conversationMember.createMany skipDuplicates → idempotent
+contactRouter.post('/respond', contactRespondLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const { contactRequestId, response } = respondToContactRequestSchema.parse(req.body);
 
-    // Vérifier que la demande existe et que l'utilisateur fait partie de la conversation
-    const contactRequest = await prisma.contactRequest.findUnique({
-      where: { id: contactRequestId },
-      include: {
-        conversation: {
-          include: {
-            members: true,
-            match: true
+    type RespondStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED';
+    let finalStatus: RespondStatus = 'PENDING';
+
+    try {
+      finalStatus = await prisma.$transaction(
+        async (tx: Prisma.TransactionClient): Promise<RespondStatus> => {
+          // 1. Charger la demande et ses membres dans la transaction
+          const contactRequest = await tx.contactRequest.findUnique({
+            where: { id: contactRequestId },
+            include: { conversation: { include: { members: true } } },
+          });
+
+          if (!contactRequest) {
+            throw Object.assign(new Error('NOT_FOUND'), { _code: 'NOT_FOUND' });
           }
+
+          const members = contactRequest.conversation.members as Array<{ userId: string }>;
+
+          // 3. Autorisation : doit être membre de la conversation
+          if (!members.some(m => m.userId === userId)) {
+            throw Object.assign(new Error('FORBIDDEN'), { _code: 'FORBIDDEN' });
+          }
+
+          // 4. Le pro ne peut pas répondre à sa propre demande
+          if (userId === contactRequest.proUserId) {
+            throw Object.assign(new Error('FORBIDDEN'), { _code: 'FORBIDDEN' });
+          }
+
+          // 5. Vérifier si le rider a déjà voté — avant le check de statut pour donner
+          //    une erreur sémantiquement correcte ("tu as déjà répondu" > "c'est résolu")
+          const existingVote = await tx.contactRequestResponse.findUnique({
+            where: { contactRequestId_riderUserId: { contactRequestId, riderUserId: userId } },
+            select: { id: true },
+          });
+          if (existingVote) {
+            throw Object.assign(new Error('ALREADY_RESPONDED'), { _code: 'ALREADY_RESPONDED' });
+          }
+
+          // 6. Machine d'état : seul PENDING peut transitionner (après le check de vote)
+          if (contactRequest.status !== 'PENDING') {
+            throw Object.assign(new Error('ALREADY_RESOLVED'), {
+              _code: 'ALREADY_RESOLVED',
+              currentStatus: contactRequest.status,
+            });
+          }
+
+          // 7. Enregistrer le vote (CREATE — P2002 = filet de sécurité concurrence)
+          try {
+            await tx.contactRequestResponse.create({
+              data: { contactRequestId, riderUserId: userId, response },
+            });
+          } catch (createErr: unknown) {
+            if ((createErr as any)?.code === 'P2002') {
+              throw Object.assign(new Error('ALREADY_RESPONDED'), { _code: 'ALREADY_RESPONDED' });
+            }
+            throw createErr;
+          }
+
+          // 8. Recalculer le statut final avec toutes les réponses actuelles
+          const riderIds = members
+            .filter(m => m.userId !== contactRequest.proUserId)
+            .map(m => m.userId);
+
+          const allResponses: Array<{ riderUserId: string; response: string }> =
+            await tx.contactRequestResponse.findMany({
+              where: { contactRequestId },
+              select: { riderUserId: true, response: true },
+            });
+
+          const allRidersResponded = riderIds.every(riderId =>
+            allResponses.some(r => r.riderUserId === riderId)
+          );
+
+          if (!allRidersResponded) return 'PENDING'; // En attente d'autres riders
+
+          const next: RespondStatus = allResponses.some(r => r.response === 'REJECT')
+            ? 'REJECTED'
+            : 'ACCEPTED';
+
+          // 7. Transition atomique : updateMany WHERE status=PENDING évite le double-fire concurrent
+          const updated = await tx.contactRequest.updateMany({
+            where: { id: contactRequestId, status: 'PENDING' },
+            data: { status: next },
+          });
+
+          if (updated.count === 0) {
+            // Une requête concurrente a déjà finalisé — lire l'état réel
+            const current = await tx.contactRequest.findUnique({
+              where: { id: contactRequestId },
+              select: { status: true },
+            });
+            return ((current?.status as RespondStatus | undefined) ?? 'PENDING');
+          }
+
+          if (next === 'ACCEPTED') {
+            // 8. Ajouter le pro à la conversation (skipDuplicates = garde concurrence)
+            await tx.conversationMember.createMany({
+              data: [{ conversationId: contactRequest.conversationId, userId: contactRequest.proUserId }],
+              skipDuplicates: true,
+            });
+          }
+
+          return next;
         },
-        pro: {
-          include: { proProfile: true }
-        }
-      }
-    });
-
-    if (!contactRequest) {
-      return res.status(404).json({ error: 'Contact request not found' });
-    }
-
-    if (contactRequest.status !== 'PENDING') {
-      return res.status(400).json({ error: 'Contact request is no longer pending' });
-    }
-
-    const conversationMembers = contactRequest.conversation.members as Array<{ userId: string }>;
-
-    // Vérifier que l'utilisateur fait partie de la conversation
-    const isMember = conversationMembers.some(
-      (member: { userId: string }) => member.userId === userId
-    );
-    if (!isMember) {
-      return res.status(403).json({ error: 'User not part of this conversation' });
-    }
-
-    // Enregistrer la réponse du rider
-    await prisma.contactRequestResponse.upsert({
-      where: {
-        contactRequestId_riderUserId: {
-          contactRequestId,
-          riderUserId: userId
-        }
-      },
-      create: {
-        contactRequestId,
-        riderUserId: userId,
-        response
-      },
-      update: {
-        response
-      }
-    });
-
-    // Vérifier les réponses de tous les riders
-    const allResponses = await prisma.contactRequestResponse.findMany({
-      where: { contactRequestId },
-      include: { rider: true }
-    });
-
-    const riderIds = conversationMembers
-      .filter((member: { userId: string }) => member.userId !== contactRequest.proUserId)
-      .map((member: { userId: string }) => member.userId);
-
-    const allRidersResponded = riderIds.every((riderId: string) =>
-      allResponses.some(
-        (resp: Prisma.ContactRequestResponseGetPayload<{ include: { rider: true } }>) =>
-          resp.riderUserId === riderId
-      )
-    );
-
-    let finalStatus = 'PENDING';
-    let shouldAddProToConversation = false;
-
-    if (allRidersResponded) {
-      const allAccepted = allResponses.every(
-        (resp: Prisma.ContactRequestResponseGetPayload<{ include: { rider: true } }>) =>
-          resp.response === 'ACCEPT'
-      );
-      const anyRejected = allResponses.some(
-        (resp: Prisma.ContactRequestResponseGetPayload<{ include: { rider: true } }>) =>
-          resp.response === 'REJECT'
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
 
-      if (allAccepted) {
-        finalStatus = 'ACCEPTED';
-        shouldAddProToConversation = true;
-      } else if (anyRejected) {
-        finalStatus = 'REJECTED';
+    } catch (txErr: unknown) {
+      const code = (txErr as any)?._code;
+      if (code === 'NOT_FOUND') {
+        return res.status(404).json({ error: 'Contact request not found' });
       }
-    }
-
-    // Mettre à jour le statut de la demande
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.contactRequest.update({
-        where: { id: contactRequestId },
-        data: { status: finalStatus as any }
-      });
-
-      // Si accepté par tous, ajouter le pro à la conversation (sans changer le type)
-      if (shouldAddProToConversation) {
-        await tx.conversationMember.create({
-          data: {
-            conversationId: contactRequest.conversationId,
-            userId: contactRequest.proUserId
-          }
+      if (code === 'ALREADY_RESOLVED') {
+        return res.status(409).json({
+          error: 'CONTACT_REQUEST_ALREADY_RESOLVED',
+          status: (txErr as any).currentStatus,
         });
       }
-    });
+      if (code === 'FORBIDDEN') {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (code === 'ALREADY_RESPONDED') {
+        return res.status(409).json({
+          error: 'ALREADY_RESPONDED',
+          message: 'You have already responded to this contact request',
+        });
+      }
+      // P2034 = échec de sérialisation PostgreSQL — transitoire
+      if ((txErr as any)?.code === 'P2034') {
+        return res.status(409).json({ error: 'CONCURRENT_UPDATE', message: 'Please retry' });
+      }
+      throw txErr;
+    }
+
+    secureLogger.info('CONTACT_RESPOND', { contactRequestId, response, finalStatus });
 
     return res.json({
       success: true,
       status: finalStatus,
-      message: finalStatus === 'ACCEPTED'
-        ? 'Le professionnel a été ajouté à votre conversation'
-        : finalStatus === 'REJECTED'
-        ? 'Demande refusée'
-        : 'Réponse enregistrée, en attente des autres participants'
+      message:
+        finalStatus === 'ACCEPTED'
+          ? 'Le professionnel a été ajouté à votre conversation'
+          : finalStatus === 'REJECTED'
+          ? 'Demande refusée'
+          : 'Réponse enregistrée, en attente des autres participants',
     });
 
-  } catch (err: any) {
-    if (err?.name === 'ZodError') {
-      return res.status(400).json({ error: 'Invalid input', details: err.errors });
+  } catch (err: unknown) {
+    if ((err as any)?.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid input', details: (err as any).errors });
     }
+    secureLogger.error('CONTACT_RESPOND_ERROR', { error: (err as any)?.message });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
