@@ -10,7 +10,7 @@
 # Le volume caddy-data (docker-compose.blobsurf.yml) persiste les certificats.
 #
 # CORS storage :
-#   - Origin stricte : https://{env.APP_DOMAIN} uniquement (pas de wildcard)
+#   - Origin stricte : https://{$APP_DOMAIN} uniquement (pas de wildcard)
 #   - OPTIONS preflight : retourné par Caddy, ne reach pas MinIO
 #   - PUT/GET : proxy MinIO avec header ACAO ajouté si Origin correspond
 #   - MinIO CORS headers strippés (header_down) pour éviter les doublons
@@ -21,13 +21,13 @@
 #   Sans cela, toutes les requêtes présignées retournent 403 SignatureDoesNotMatch.
 
 {
-    email {env.CADDY_ACME_EMAIL}
+    email {$CADDY_ACME_EMAIL}
     # Désactiver l'interface d'administration Caddy (non nécessaire en prod)
     admin off
 }
 
 # ─── Frontend Next.js ──────────────────────────────────────────────────────────
-{env.APP_DOMAIN} {
+{$APP_DOMAIN} {
     encode gzip
 
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -41,7 +41,7 @@
 }
 
 # ─── API Node.js ───────────────────────────────────────────────────────────────
-{env.API_DOMAIN} {
+{$API_DOMAIN} {
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
     # Limite upload corps de requête (photos profil, fichiers)
@@ -66,13 +66,13 @@
 # ─── Stockage MinIO ────────────────────────────────────────────────────────────
 #
 # Flux presigned PUT (upload photo profil) :
-#   1. API génère URL présignée : S3_PRESIGN_ENDPOINT = https://{env.STORAGE_DOMAIN}
+#   1. API génère URL présignée : S3_PRESIGN_ENDPOINT = https://{$STORAGE_DOMAIN}
 #   2. Navigateur envoie OPTIONS (preflight CORS) → Caddy répond 204, MinIO non touché
 #   3. Navigateur envoie PUT avec X-Amz-Signature dans la query string
-#   4. Caddy proxifie vers minio:9000 en préservant Host: {env.STORAGE_DOMAIN}
-#   5. MinIO valide la signature via MINIO_SERVER_URL = https://{env.STORAGE_DOMAIN}
+#   4. Caddy proxifie vers minio:9000 en préservant Host: {$STORAGE_DOMAIN}
+#   5. MinIO valide la signature via MINIO_SERVER_URL = https://{$STORAGE_DOMAIN}
 #
-{env.STORAGE_DOMAIN} {
+{$STORAGE_DOMAIN} {
     # Limite taille upload (10 MB = max raisonnable pour photo profil JPEG/PNG/WebP)
     request_body {
         max_size 10MB
@@ -87,11 +87,11 @@
     route {
         # ── 1. Preflight CORS ─────────────────────────────────────────────────
         # OPTIONS retourné directement par Caddy — MinIO n'est pas contacté.
-        # Origin stricte : seul {env.APP_DOMAIN} est autorisé.
+        # Origin stricte : seul {$APP_DOMAIN} est autorisé.
         # Valeur vide (origine non listée) = aucun header ACAO = rejet navigateur.
         @preflight method OPTIONS
         handle @preflight {
-            header Access-Control-Allow-Origin  "https://{env.APP_DOMAIN}"
+            header Access-Control-Allow-Origin  "https://{$APP_DOMAIN}"
             header Access-Control-Allow-Methods "GET, PUT, OPTIONS"
             header Access-Control-Allow-Headers "Content-Type"
             header Access-Control-Max-Age       "3600"
@@ -113,8 +113,8 @@
         # ── 3. Proxy vers MinIO avec CORS conditionnel ────────────────────────
         handle {
             # Ajouter ACAO uniquement si l'origin correspond — pas de wildcard.
-            @from_app header Origin "https://{env.APP_DOMAIN}"
-            header @from_app Access-Control-Allow-Origin "https://{env.APP_DOMAIN}"
+            @from_app header Origin "https://{$APP_DOMAIN}"
+            header @from_app Access-Control-Allow-Origin "https://{$APP_DOMAIN}"
 
             reverse_proxy minio:9000 {
                 # CRITIQUE : MinIO valide la signature HMAC sur le Host header.

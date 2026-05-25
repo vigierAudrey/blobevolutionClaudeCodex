@@ -250,6 +250,13 @@ jobs:
           fi
           echo "✅ POISON OK [empty authz-guard-ok rejected]"
 
+      - name: Caddy syntax guard — forbid {env.VAR} in Caddyfiles (block)
+        # {env.VAR} is treated literally by Caddy in site addresses and global block
+        # options — certificates are issued for the literal string, causing TLS failure.
+        # Only {$VAR} (parse-time substitution) is valid in those contexts.
+        # Root cause of confirmed production outage (Cloudflare 521, 2026-05-25).
+        run: bash scripts/check-caddy-syntax.sh docker/
+
   # ──────────────────────────────────────────────────────────────────────────
   # 2. Lint — ALWAYS runs
   # ──────────────────────────────────────────────────────────────────────────

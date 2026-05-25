@@ -173,7 +173,7 @@ services:
     environment:
       # Email ACME pour Let's Encrypt (obligatoire — Let's Encrypt requiert un email valide)
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL}
-      # Domaines — injectés dans le Caddyfile via {env.VAR}
+      # Domaines — injectés dans le Caddyfile via {$VAR} (substitution parse-time Caddy)
       APP_DOMAIN:     ${APP_DOMAIN:-blobsurf.com}
       API_DOMAIN:     ${API_DOMAIN:-api.blobsurf.com}
       STORAGE_DOMAIN: ${STORAGE_DOMAIN:-storage.blobsurf.com}
