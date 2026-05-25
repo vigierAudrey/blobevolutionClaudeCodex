@@ -9,12 +9,32 @@ import {
   newMatchOutboundSchema,
   matchDecisionOutboundSchema,
   newMatchingCardOutboundSchema,
+  sendMessageSchema,
   type NewMessageOutbound,
   type UserTypingOutbound,
   type NewMatchOutbound,
   type MatchDecisionOutbound,
   type NewMatchingCardOutbound
 } from '../socket-schemas';
+
+describe('Inbound WebSocket Schemas (client → server)', () => {
+  describe('sendMessageSchema', () => {
+    it('trims content and rejects whitespace-only messages', () => {
+      expect(() => sendMessageSchema.parse({
+        conversationId: '550e8400-e29b-41d4-a716-446655440001',
+        content: '   ',
+        type: 'TEXT',
+      })).toThrow();
+
+      const parsed = sendMessageSchema.parse({
+        conversationId: '550e8400-e29b-41d4-a716-446655440001',
+        content: '  Bonjour  ',
+        type: 'TEXT',
+      });
+      expect(parsed.content).toBe('Bonjour');
+    });
+  });
+});
 
 describe('Outbound WebSocket Schemas (Server → Client)', () => {
   // ============================================================================

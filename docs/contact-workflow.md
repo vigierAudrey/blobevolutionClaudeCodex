@@ -185,6 +185,12 @@ PENDING → REJECTED  (≥ 1 rider vote REJECT)
 - `lessonRequestId` est calculé server-side, jamais retourné dans les réponses.
 - Aucune adresse email, mot de passe, IP, ou coordonnée dans les réponses.
 
+### Mesure "conversation démarrée" (C21)
+- Une conversation est démarrée uniquement si la demande est `ACCEPTED` et qu'au moins un `Message` réel existe après l'acceptation.
+- L'instant d'acceptation est dérivé de `MAX(ContactRequestResponse.createdAt)` pour éviter une nouvelle colonne et ne pas dépendre de `ContactRequest.updatedAt` (modifié aussi par l'archivage).
+- Les messages blancs après trim, notifications système, emails automatiques, brouillons et messages rejetés par validation ne comptent pas.
+- Le calcul est dynamique côté serveur (`/pro/dashboard/stats`, `/admin/analytics/conversations`) : aucun analytics front-only et aucun contenu de message n'est loggé.
+
 ### Logging
 - `secureLogger` uniquement (pas de `console.*` avec PII).
 - Les logs d'audit incluent : `CONTACT_REQUEST_CREATED`, `CONTACT_RESPOND`, `CONTACT_RESPOND_ERROR`, `CONTACT_PENDING_ERROR`, `CONTACT_REQUESTS_LIST_ERROR`.

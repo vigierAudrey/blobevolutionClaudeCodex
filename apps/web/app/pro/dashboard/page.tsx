@@ -21,6 +21,8 @@ type ProDashboardStats = {
   connectedContacts: number;
   pendingContacts: number;
   connectionRate: number | null;
+  conversationsStartedCount: number;
+  conversationStartRate: number | null;
   acceptedContacts?: number;
   acceptanceRate?: number | null;
   weeklyNotifications: Array<{ week: string; count: number }>;
@@ -49,6 +51,8 @@ export function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
   const connectedContacts = stats.connectedContacts ?? stats.acceptedContacts ?? 0;
   const pendingContacts = stats.pendingContacts ?? Math.max(stats.sentContacts - connectedContacts, 0);
   const connectionRate = stats.connectionRate ?? stats.acceptanceRate ?? null;
+  const conversationsStartedCount = stats.conversationsStartedCount ?? 0;
+  const conversationStartRate = stats.conversationStartRate ?? null;
 
   const kpis = [
     {
@@ -78,6 +82,13 @@ export function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
       icon: TrendingUp,
       color: 'text-amber-500',
       bg: 'bg-amber-50 dark:bg-amber-950/30',
+    },
+    {
+      label: 'Conversations démarrées',
+      value: conversationsStartedCount,
+      icon: MessageSquare,
+      color: 'text-emerald-500',
+      bg: 'bg-emerald-50 dark:bg-emerald-950/30',
     },
     {
       label: 'Demandes en attente',
@@ -129,7 +140,7 @@ export function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
       </div>
 
       {/* Taux de mise en relation + demandes actives */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-xl p-3 bg-muted/50 border">
           <div className="flex items-center gap-2 mb-1">
             <CheckCircle className="w-4 h-4 text-green-500" />
@@ -139,6 +150,17 @@ export function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
             {connectionRate != null ? `${connectionRate}%` : '—'}
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">mises en relation / demandes envoyées</p>
+        </div>
+
+        <div className="rounded-xl p-3 bg-muted/50 border">
+          <div className="flex items-center gap-2 mb-1">
+            <MessageSquare className="w-4 h-4 text-emerald-500" />
+            <span className="text-xs text-muted-foreground">Mise en relation → conversation</span>
+          </div>
+          <p className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+            {conversationStartRate != null ? `${conversationStartRate}%` : '—'}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">premier message réel / mises en relation</p>
         </div>
 
         <div className="rounded-xl p-3 bg-muted/50 border">

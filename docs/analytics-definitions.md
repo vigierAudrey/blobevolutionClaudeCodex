@@ -53,6 +53,8 @@ Deduplication: un meme acteur ne compte qu'une fois par jour et par event.
 - Supply vs demand = demandes de cours (riders) vs presence pro active par sport + zone large.
 - Zone large = grille (par defaut 1 degre) pour eviter toute precision fine.
 - KPIs: taux de mise en relation (demandes ayant abouti a un premier contact), delai de reponse median.
+- Conversation demarree = ContactRequest ACCEPTED + au moins un Message reel apres acceptation.
+  Les messages blancs, contenus systeme/automatiques, brouillons et validations rejetees ne comptent pas.
 - Masquage des segments si n < 20.
 - Note: les noms d'events serveur (RIDER_BOOKING_REQUEST, PRO_BOOKING_RESPONSE) sont des noms techniques historiques conserves pour compatibilite code. Ils designent respectivement "demande de cours soumise" et "reponse pro a une demande de cours".
 

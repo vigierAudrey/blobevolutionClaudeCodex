@@ -2301,6 +2301,33 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/analytics/conversations:
+    get:
+      tags: [Admin]
+      summary: Conversations réellement démarrées après mise en relation
+      operationId: adminAnalyticsConversations
+      parameters:
+        - in: query
+          name: windowDays
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+          description: Fenêtre glissante bornée pour les agrégats.
+      responses:
+        '200':
+          description: KPI agrégés, sans contenu de message ni identifiant utilisateur.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConversationAnalyticsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /admin/gdpr/compliance-report:
     get:
       tags: [Admin]
@@ -3517,6 +3544,8 @@ components:
         - connectedContacts
         - pendingContacts
         - connectionRate
+        - conversationsStartedCount
+        - conversationStartRate
         - acceptedContacts
         - acceptanceRate
         - weeklyNotifications
@@ -3544,6 +3573,16 @@ components:
           type: number
           nullable: true
           description: connectedContacts / sentContacts * 100, null si sentContacts = 0.
+        conversationsStartedCount:
+          type: integer
+          description: >
+            Mises en relation acceptées ayant au moins un message réel après
+            acceptation. Les messages vides/blancs et les contenus système ne
+            sont pas comptés.
+        conversationStartRate:
+          type: number
+          nullable: true
+          description: conversationsStartedCount / connectedContacts * 100, null si connectedContacts = 0.
         acceptedContacts:
           type: integer
           deprecated: true
@@ -3578,6 +3617,54 @@ components:
         activeNearbyRequests:
           type: integer
           description: Demandes de cours actives dans la zone du pro connecté.
+    AdminConversationAnalyticsResponse:
+      type: object
+      required:
+        - windowDays
+        - connectedContactsCount
+        - conversationsStartedCount
+        - conversationStartRate
+        - bySport
+        - timeline
+      properties:
+        windowDays:
+          type: integer
+        connectedContactsCount:
+          type: integer
+          description: ContactRequests ACCEPTED sur la fenêtre.
+        conversationsStartedCount:
+          type: integer
+          description: ContactRequests ACCEPTED avec au moins un message réel après acceptation.
+        conversationStartRate:
+          type: number
+          nullable: true
+          description: conversationsStartedCount / connectedContactsCount * 100.
+        bySport:
+          type: array
+          items:
+            type: object
+            required: [sport, connectedContactsCount, conversationsStartedCount, conversationStartRate]
+            properties:
+              sport:
+                type: string
+              connectedContactsCount:
+                type: integer
+              conversationsStartedCount:
+                type: integer
+              conversationStartRate:
+                type: number
+                nullable: true
+        timeline:
+          type: array
+          items:
+            type: object
+            required: [day, conversationsStartedCount]
+            properties:
+              day:
+                type: string
+                format: date
+              conversationsStartedCount:
+                type: integer
     AdminAcceptanceMetrics:
       type: object
       properties:

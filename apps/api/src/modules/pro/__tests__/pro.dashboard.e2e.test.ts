@@ -73,6 +73,8 @@ describe('GET /pro/dashboard/stats — métier', () => {
       weeklyNotifications: [],
       weeklyContacts:      [],
       activeNearbyRequests: 0,
+      conversationsStartedCount: 0,
+      conversationStartRate: null,
     });
   });
 
@@ -166,6 +168,46 @@ describe('GET /pro/dashboard/stats — métier', () => {
     expect(res.body.connectionRate).toBe(50);
     expect(res.body.acceptedContacts).toBe(1);
     expect(res.body.acceptanceRate).toBe(50);
+    expect(res.body.conversationsStartedCount).toBe(0);
+    expect(res.body.conversationStartRate).toBe(0);
+  });
+
+  it('7b. conversation démarrée → premier message réel après mise en relation', async () => {
+    const { session, userId: proUserId } = await getAccessToken({ app, email: EMAIL_PRO, role: 'PRO' });
+    const riderAuth = await getAccessToken({ app, email: EMAIL_RIDER, role: 'RIDER' });
+
+    const conv = await prisma.conversation.create({
+      data: {
+        type: 'RIDER_TO_PRO',
+        members: { create: [{ userId: proUserId }, { userId: riderAuth.userId }] },
+      },
+    });
+    const contactRequest = await prisma.contactRequest.create({
+      data: { proUserId, conversationId: conv.id, status: 'ACCEPTED' },
+    });
+    const acceptedAt = new Date(Date.now() - 60_000);
+    await prisma.contactRequestResponse.create({
+      data: {
+        contactRequestId: contactRequest.id,
+        riderUserId: riderAuth.userId,
+        response: 'ACCEPT',
+        createdAt: acceptedAt,
+      },
+    });
+    await prisma.message.create({
+      data: {
+        conversationId: conv.id,
+        senderId: riderAuth.userId,
+        type: 'TEXT',
+        content: 'Bonjour après mise en relation',
+        createdAt: new Date(acceptedAt.getTime() + 1000),
+      },
+    });
+
+    const res = await session.get('/pro/dashboard/stats').expect(200);
+    expect(res.body.connectedContacts).toBe(1);
+    expect(res.body.conversationsStartedCount).toBe(1);
+    expect(res.body.conversationStartRate).toBe(100);
   });
 
   it('8. connectionRate et alias acceptanceRate null quand sentContacts = 0', async () => {

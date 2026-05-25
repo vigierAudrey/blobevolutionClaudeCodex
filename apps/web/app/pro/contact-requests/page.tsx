@@ -7,7 +7,6 @@ import { useRouter } from 'next/navigation';
 import { optimizedApiClient } from '../../../lib/optimizedApiClient';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
-import { Badge } from '../../../components/ui/badge';
 import Link from 'next/link';
 import { Archive, ArchiveRestore, ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
 

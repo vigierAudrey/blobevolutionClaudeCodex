@@ -17,6 +17,7 @@ import {
   type AdminSportBreakdown,
   type AdminSupplyDiagnostics,
   type AdminAnalyticsOverview,
+  type AdminConversationAnalytics,
   type AdminAnalyticsReasonBreakdown,
   type AdminAnalyticsGeoBreakdown,
   type AdminMarketplaceBottleneck,
@@ -37,6 +38,7 @@ import {
   BookOpen,
   Activity,
   Info,
+  MessageSquare,
   TrendingDown,
 } from 'lucide-react';
 
@@ -232,6 +234,7 @@ export default function AdminAnalytics() {
   const [lessonPerformanceData, setLessonPerformanceData] = useState<AdminLessonPerformance | null>(null);
   const [supplyData, setSupplyData] = useState<AdminSupplyDiagnostics | null>(null);
   const [overviewData, setOverviewData] = useState<AdminAnalyticsOverview | null>(null);
+  const [conversationData, setConversationData] = useState<AdminConversationAnalytics | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -258,7 +261,7 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply, overview] = await Promise.all([
+      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply, overview, conversations] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
@@ -267,6 +270,7 @@ export default function AdminAnalytics() {
         apiClient.getLessonPerformanceAnalytics(),
         apiClient.getSupplyDiagnosticsAnalytics(),
         apiClient.getAdminAnalyticsOverview(),
+        apiClient.getConversationAnalytics(7),
       ]);
 
       setEngagementData(engagement);
@@ -277,6 +281,7 @@ export default function AdminAnalytics() {
       setLessonPerformanceData(lessonPerf);
       setSupplyData(supply);
       setOverviewData(overview);
+      setConversationData(conversations);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -723,6 +728,76 @@ export default function AdminAnalytics() {
           funnel={overviewData.marketplaceFunnel}
           health={overviewData.marketplaceHealth}
         />
+      )}
+
+      {conversationData && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-emerald-600" />
+            <h2 className="text-2xl font-semibold">Conversations après mise en relation</h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Mises en relation</CardTitle>
+                <CardDescription>ContactRequests acceptées · {conversationData.windowDays} jours</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">{formatNumber(conversationData.connectedContactsCount)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Conversations démarrées</CardTitle>
+                <CardDescription>Au moins un message réel après acceptation</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">{formatNumber(conversationData.conversationsStartedCount)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Taux mise en relation → conversation</CardTitle>
+                <CardDescription>Conversations démarrées / mises en relation</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">{formatPercent(conversationData.conversationStartRate)}</p>
+              </CardContent>
+            </Card>
+          </div>
+          {conversationData.bySport.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Démarrage par sport</CardTitle>
+                <CardDescription>Sport issu des fanouts de demandes de cours quand disponible</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-muted-foreground">
+                      <tr>
+                        <th className="py-2 pr-4">Sport</th>
+                        <th className="py-2 pr-4 text-right">Mises en relation</th>
+                        <th className="py-2 pr-4 text-right">Démarrées</th>
+                        <th className="py-2 pr-4 text-right">Taux</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {conversationData.bySport.map((row) => (
+                        <tr key={row.sport} className="border-t">
+                          <td className="py-2 pr-4">{row.sport}</td>
+                          <td className="py-2 pr-4 text-right">{formatNumber(row.connectedContactsCount)}</td>
+                          <td className="py-2 pr-4 text-right">{formatNumber(row.conversationsStartedCount)}</td>
+                          <td className="py-2 pr-4 text-right">{formatPercent(row.conversationStartRate)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </section>
       )}
 
       {/* ── Demandes de cours (BloboMap) ── */}

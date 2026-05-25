@@ -13,6 +13,8 @@ describe('ProStatsSection — wording mise en relation', () => {
     connectedContacts: 2,
     pendingContacts: 1,
     connectionRate: 66.7,
+    conversationsStartedCount: 1,
+    conversationStartRate: 50,
     acceptedContacts: 2,
     acceptanceRate: 66.7,
     weeklyNotifications: [],
@@ -24,8 +26,10 @@ describe('ProStatsSection — wording mise en relation', () => {
     render(<ProStatsSection stats={stats} />);
 
     expect(screen.getByText('Mises en relation')).toBeInTheDocument();
+    expect(screen.getByText('Conversations démarrées')).toBeInTheDocument();
     expect(screen.getByText('Demandes en attente')).toBeInTheDocument();
     expect(screen.getByText('Taux de mise en relation')).toBeInTheDocument();
+    expect(screen.getByText('Mise en relation → conversation')).toBeInTheDocument();
     expect(screen.getByText('mises en relation / demandes envoyées')).toBeInTheDocument();
     expect(screen.queryByText(/cours accepté/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/réservation acceptée/i)).not.toBeInTheDocument();

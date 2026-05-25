@@ -10,7 +10,7 @@ const fetchMock = jest.fn<Promise<{
 }>, Parameters<typeof fetch>>();
 (global as { fetch?: unknown }).fetch = fetchMock as unknown as typeof fetch;
 
-import { __testUtils, apiClient, type AdminContactConversionAnalytics } from '../apiClient';
+import { __testUtils, apiClient, type AdminContactConversionAnalytics, type AdminConversationAnalytics } from '../apiClient';
 
 const API_BASE_URL = 'http://localhost:4000';
 
@@ -81,5 +81,30 @@ describe('getContactConversionAnalytics', () => {
     queueApiResponse({ error: 'Unauthorized' }, false, 401);
 
     await expect(apiClient.getContactConversionAnalytics()).rejects.toThrow();
+  });
+});
+
+describe('getConversationAnalytics', () => {
+  it('calls GET /admin/analytics/conversations and returns started metrics', async () => {
+    const payload: AdminConversationAnalytics = {
+      windowDays: 7,
+      connectedContactsCount: 5,
+      conversationsStartedCount: 3,
+      conversationStartRate: 60,
+      bySport: [
+        { sport: 'surf', connectedContactsCount: 4, conversationsStartedCount: 2, conversationStartRate: 50 },
+      ],
+      timeline: [
+        { day: '2026-05-25', conversationsStartedCount: 3 },
+      ],
+    };
+
+    queueApiResponse(payload);
+
+    const result = await apiClient.getConversationAnalytics(7);
+
+    expect(result).toEqual(payload);
+    const calls = fetchMock.mock.calls.map(([url]) => url as string);
+    expect(calls.some((u) => u.includes('/admin/analytics/conversations?windowDays=7'))).toBe(true);
   });
 });

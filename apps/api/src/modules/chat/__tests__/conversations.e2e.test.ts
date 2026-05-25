@@ -338,6 +338,27 @@ describe('Conversations E2E', () => {
       expect(res.body).toHaveProperty('id');
     });
 
+    it('should reject whitespace-only messages', async () => {
+      await post(`/conversations/${conversationId}/messages`)
+        .set('Authorization', `Bearer ${riderAccessToken}`)
+        .send({ content: '   ', type: 'TEXT' })
+        .expect(400);
+    });
+
+    it('should trim message content before storing it', async () => {
+      const res = await post(`/conversations/${conversationId}/messages`)
+        .set('Authorization', `Bearer ${riderAccessToken}`)
+        .set('X-API-ENVELOPE', '1')
+        .send({ content: '  Message trimé  ', type: 'TEXT' })
+        .expect(201);
+
+      const stored = await prisma.message.findUnique({
+        where: { id: res.body.data.id },
+        select: { content: true },
+      });
+      expect(stored?.content).toBe('Message trimé');
+    });
+
     it('should get messages from conversation', async () => {
       await post(`/conversations/${conversationId}/messages`)
         .set('Authorization', `Bearer ${riderAccessToken}`)

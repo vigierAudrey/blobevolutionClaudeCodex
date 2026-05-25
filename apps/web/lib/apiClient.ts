@@ -361,6 +361,23 @@ export interface AdminContactConversionAnalytics {
   contactRatePct: number | null;
 }
 
+export interface AdminConversationAnalytics {
+  windowDays: number;
+  connectedContactsCount: number;
+  conversationsStartedCount: number;
+  conversationStartRate: number | null;
+  bySport: Array<{
+    sport: string;
+    connectedContactsCount: number;
+    conversationsStartedCount: number;
+    conversationStartRate: number | null;
+  }>;
+  timeline: Array<{
+    day: string;
+    conversationsStartedCount: number;
+  }>;
+}
+
 export interface PendingContactRequest {
   id: string;
   message: string | null;
@@ -1101,6 +1118,8 @@ export const apiClient = {
     connectedContacts: number;
     pendingContacts: number;
     connectionRate: number | null;
+    conversationsStartedCount: number;
+    conversationStartRate: number | null;
     /** Alias legacy: ACCEPTED means relation opened, not lesson accepted. */
     acceptedContacts: number;
     /** Alias legacy for connectionRate. */
@@ -1504,6 +1523,8 @@ export const apiClient = {
     request('/admin/analytics/supply-diagnostics', { method: 'GET' }, true) as Promise<AdminSupplyDiagnostics>,
   getContactConversionAnalytics: () =>
     request('/admin/analytics/contact-conversion', { method: 'GET' }, true) as Promise<AdminContactConversionAnalytics>,
+  getConversationAnalytics: (windowDays = 7) =>
+    request(`/admin/analytics/conversations?windowDays=${windowDays}`, { method: 'GET' }, true) as Promise<AdminConversationAnalytics>,
   getCoverageAnalytics: () =>
     request('/admin/analytics/coverage', { method: 'GET' }, true) as Promise<AdminCoverageAnalytics>,
   getAdminAnalyticsOverview: () =>

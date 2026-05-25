@@ -92,8 +92,8 @@ export const leaveConversationSchema = z.preprocess(
 export const sendMessageSchema = z.object({
   conversationId: z.string().uuid('conversationId must be a valid UUID'),
   content: z.string()
-    .min(1, 'Message cannot be empty')
-    .max(1000, 'Message too long (max 1000 characters)'),
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1, 'Message cannot be empty').max(1000, 'Message too long (max 1000 characters)')),
   type: z.enum(['TEXT', 'PROPOSAL']).optional().default('TEXT'),
   clientMsgId: z.string().uuid().optional(), // Nouveau (canonique)
   clientMessageId: z.string().uuid().optional() // Legacy (deprecated)

@@ -1,4 +1,5 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
+import { getProConversationStartedStats } from './conversation-started.service';
 
 type WeeklyRow = { week: Date; count: bigint };
 type CountRow = { count: bigint };
@@ -16,6 +17,8 @@ export interface ProDashboardStats {
   connectedContacts: number;
   pendingContacts: number;
   connectionRate: number | null; // pct arrondi à 1 décimale, null si sentContacts=0
+  conversationsStartedCount: number;
+  conversationStartRate: number | null; // pct arrondi à 1 décimale, null si connectedContacts=0
   // Alias rétrocompatibles: ACCEPTED = mise en relation ouverte, pas cours accepté.
   acceptedContacts: number;
   acceptanceRate: number | null;
@@ -111,6 +114,7 @@ export async function getProDashboardStats(userId: string): Promise<ProDashboard
     sentContacts > 0
       ? Math.round((connectedContacts / sentContacts) * 1000) / 10
       : null;
+  const conversationStarted = await getProConversationStartedStats(userId, sevenDaysAgo, connectedContacts);
 
   return {
     receivedRequests,
@@ -119,6 +123,8 @@ export async function getProDashboardStats(userId: string): Promise<ProDashboard
     connectedContacts,
     pendingContacts,
     connectionRate,
+    conversationsStartedCount: conversationStarted.conversationsStartedCount,
+    conversationStartRate: conversationStarted.conversationStartRate,
     acceptedContacts: connectedContacts,
     acceptanceRate: connectionRate,
     weeklyNotifications: weeklyNotifRows.map((r) => ({

@@ -18,6 +18,8 @@ describe('Admin analytics — libelles ContactRequest', () => {
 
     expect(content).toContain('Taux de sollicitation pro');
     expect(content).toContain('Taux de mise en relation');
+    expect(content).toContain('Conversations démarrées');
+    expect(content).toContain('Taux mise en relation → conversation');
     expect(content).not.toMatch(/Accepted bookings|Bookings acceptés|Reservas aceptadas|Angenommene Buchungen|Geaccepteerde boekingen/i);
     expect(content).not.toMatch(/cours accepté|réservation acceptée/i);
   });

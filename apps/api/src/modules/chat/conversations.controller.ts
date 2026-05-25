@@ -705,7 +705,7 @@ conversationsRouter.post('/:id/messages', conversationMessagesGlobalLimiter, con
     const body = z
       .object({
         type: z.enum(['TEXT', 'PROPOSAL']).default('TEXT'),
-        content: z.string().min(1).max(1000),
+        content: z.string().transform((value) => value.trim()).pipe(z.string().min(1).max(1000)),
         meta: z.any().optional(),
         clientMsgId: z.string().uuid().optional(),
         clientMessageId: z.string().uuid().optional(), // Legacy
@@ -1402,6 +1402,7 @@ conversationsRouter.post('/:id/members', async (req, res) => {
           conversationId: id,
           senderId: userId,
           type: 'TEXT',
+          meta: { kind: 'SYSTEM' },
           content: `${inviterName} a invité ${invitedUserName} à rejoindre la conversation`,
         },
       });
@@ -1611,6 +1612,7 @@ conversationsRouter.post('/invitations/:invitationId/respond', async (req, res) 
             conversationId: invitation.conversationId,
             senderId: userId,
             type: 'TEXT',
+            meta: { kind: 'SYSTEM' },
             content: `${joinedUserName} a rejoint la conversation`,
           },
         });
@@ -1714,6 +1716,7 @@ conversationsRouter.delete('/:id/members/:targetUserId', async (req, res) => {
           conversationId: id,
           senderId: userId,
           type: 'TEXT',
+          meta: { kind: 'SYSTEM' },
           content: systemMessage,
         },
       });

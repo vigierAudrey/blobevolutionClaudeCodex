@@ -16,6 +16,7 @@ import { disconnectUserSockets } from '../../lib/socket';
 import { analyticsReportService } from '../../services/analytics/reports.service';
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
 import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics, getContactConversionMetrics, getLessonCoverageMetrics, getAnalyticsOverviewMetrics, getWorkflowQualityMetrics } from '../../services/lesson-fanout.repository';
+import { getAdminConversationAnalytics } from '../../services/conversation-started.service';
 import { capAdminLimit } from '../../utils/admin-list-cap';
 import {
   ADMIN_STATS_MAIN_CACHE_KEY,
@@ -1201,6 +1202,30 @@ adminRouter.get(
 const workflowQualityQuerySchema = z.object({
   windowDays: z.coerce.number().int().min(1).max(30).default(7),
 });
+
+const conversationAnalyticsQuerySchema = z.object({
+  windowDays: z.coerce.number().int().min(1).max(90).default(7),
+});
+
+adminRouter.get(
+  '/analytics/conversations',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:conversations', () => 'admin:analytics:conversations'),
+  async (req, res) => {
+    const parsed = conversationAnalyticsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid query parameters', details: parsed.error.errors });
+    }
+
+    try {
+      const metrics = await getAdminConversationAnalytics(parsed.data.windowDays);
+      return res.json(metrics);
+    } catch (error) {
+      secureLogger.error('Analytics conversations error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
 
 adminRouter.get(
   '/analytics/workflow-quality',
