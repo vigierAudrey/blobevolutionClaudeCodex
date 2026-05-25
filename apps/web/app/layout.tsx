@@ -46,7 +46,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const messages = await getMessages();
 
   return (
-    <html lang={locale}>
+    <html lang={locale} translate="no">
       <head>
         {/* Apply theme class before paint to avoid FOUC */}
         <ThemeScript nonce={nonce} />

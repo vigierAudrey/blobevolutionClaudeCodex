@@ -40,63 +40,41 @@ export default function Home() {
 
       {/* Main column */}
       <div className="space-y-8">
-      {/* Bandeau vidéo limité à la colonne centrale */}
-      <section aria-label="Vidéo d ambiance surf et kite" className="space-y-4">
+      {/* Hero : vidéo océan + wordmark Blob */}
+      <section aria-label="BlobConnect — Ta communauté Surf et Kite" className="space-y-4">
         <div className="home-hero-video-wrapper">
           <video
             className="home-hero-video"
-            // Utiliser le fragment temporel #t=start,end pour ignorer les quelques premières/dernières secondes
-            // Ajuste les valeurs (2,22) si besoin.
             src="/videos/surf-kite-full.webm#t=2,22"
             autoPlay
             loop
             muted
             playsInline
           />
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="pointer-events-none absolute inset-0 bg-black/30" aria-hidden="true" />
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 px-4">
             <Image
-              src="/images/home/Surf&Kite.png"
-              alt=""
-              width={1113}
-              height={399}
+              src="/images/home/blob-wordmark.png"
+              alt="Blob"
+              width={1150}
+              height={535}
               priority
-              aria-hidden="true"
-              className="w-[80%] max-w-[720px]"
-              sizes="(min-width: 768px) 60vw, 90vw"
+              className="mx-auto w-72 sm:w-96 lg:w-[480px] drop-shadow-[0_2px_24px_rgba(0,0,0,0.5)]"
+              sizes="(min-width: 1024px) 33vw, (min-width: 640px) 40vw, 60vw"
             />
-          </div>
-        </div>
-        {/* HERO condensé */}
-        <div className="relative rounded-3xl border bg-gradient-to-br from-sky-50 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 px-6 py-4 shadow-sm sm:px-10 sm:py-6 -mt-12 sm:-mt-16 lg:-mt-20">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full bg-sky-100 dark:bg-slate-800/40 blur-2xl md:h-56 md:w-56"
-          />
-          <div className="relative flex flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left">
-            <h1 className="font-display text-5xl font-bold tracking-tight text-foreground sm:text-6xl">
-              Ta communauté connectée
-            </h1>
-            <Image
-              src="/images/home/geolocSymbol.png"
-              alt="Repères géolocalisés"
-              width={906}
-              height={863}
-              className="w-20 sm:w-24 lg:w-28"
-              sizes="(min-width: 1024px) 8vw, 20vw"
-            />
+            <div className="h-px w-20 rounded-full bg-[#C8A96E]" aria-hidden="true" />
+            <p className="text-white/90 text-base sm:text-lg lg:text-xl font-medium tracking-[0.2em] uppercase text-center drop-shadow-[0_1px_8px_rgba(0,0,0,0.6)]">
+              Ta communauté Surf &amp; Kite connectée
+            </p>
           </div>
         </div>
       </section>
-      {/* Section découverte avec CTA */}
-      <section aria-label="Découvre la plateforme" className="space-y-10 pb-8">
-        <div className="text-center space-y-2">
-          <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Tout ce qu&apos;il te faut</p>
-          <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Matching, cours, promos et conseils
-          </h2>
-        </div>
+      {/* Section CTA */}
+      <section aria-label="Découvre la plateforme" className="space-y-6 pb-8">
+        <h2 className="text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+          Matching, cours, promos et conseils
+        </h2>
 
-        {/* CTA centré et visible */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Button asChild size="lg" className="w-full sm:w-auto text-base px-8 py-6 shadow-lg hover:shadow-xl transition-all">
             <Link href="/register">Créer un compte</Link>
