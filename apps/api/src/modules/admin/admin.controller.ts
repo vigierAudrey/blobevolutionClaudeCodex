@@ -17,6 +17,7 @@ import { analyticsReportService } from '../../services/analytics/reports.service
 import { type AnalyticsPeriod } from '../../services/analytics/definitions';
 import { getLessonPerformanceMetrics, getSupplyDiagnosticsMetrics, getContactConversionMetrics, getLessonCoverageMetrics, getAnalyticsOverviewMetrics, getWorkflowQualityMetrics } from '../../services/lesson-fanout.repository';
 import { getAdminConversationAnalytics } from '../../services/conversation-started.service';
+import { getAdminFunnelAnalytics } from '../../services/funnel.service';
 import { capAdminLimit } from '../../utils/admin-list-cap';
 import {
   ADMIN_STATS_MAIN_CACHE_KEY,
@@ -1241,6 +1242,68 @@ adminRouter.get(
         return res.status(400).json({ error: 'Invalid query parameters', details: error.errors });
       }
       secureLogger.error('Analytics workflow-quality error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  },
+);
+
+// Funnel complet BlobConnect (Sprint C22).
+// Période : from/to au format YYYY-MM-DD, défaut 30 jours glissants, max 365 jours.
+// Réponse : agrégats uniquement — aucun userId/proId/riderId exposé.
+const funnelQuerySchema = z
+  .object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format attendu: YYYY-MM-DD').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format attendu: YYYY-MM-DD').optional(),
+  })
+  .superRefine((data, ctx) => {
+    const now = new Date();
+    const toDate = data.to ? new Date(data.to) : now;
+    const fromDate = data.from
+      ? new Date(data.from)
+      : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Date invalide', path: ['from'] });
+      return;
+    }
+    if (fromDate >= toDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '`from` doit être antérieur à `to`',
+        path: ['from'],
+      });
+    }
+    const rangeDays = (toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000);
+    if (rangeDays > 365) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'La période ne peut dépasser 365 jours',
+        path: ['to'],
+      });
+    }
+  });
+
+adminRouter.get(
+  '/analytics/funnel',
+  requirePermissions('analytics.view'),
+  audit('admin:analytics:funnel', () => 'admin:analytics:funnel'),
+  async (req, res) => {
+    const parsed = funnelQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid query parameters', details: parsed.error.errors });
+    }
+
+    try {
+      const now = new Date();
+      const toDate = parsed.data.to ? new Date(parsed.data.to) : now;
+      const fromDate = parsed.data.from
+        ? new Date(parsed.data.from)
+        : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const metrics = await getAdminFunnelAnalytics(fromDate, toDate);
+      return res.json(metrics);
+    } catch (error) {
+      secureLogger.error('Analytics funnel error', { error });
       return res.status(500).json({ error: 'Internal error' });
     }
   },

@@ -448,6 +448,26 @@ export interface AdminMarketplaceHealth {
   severity: AdminMarketplaceSeverity;
 }
 
+export interface AdminFunnelStep {
+  count: number;
+  rateFromPrevious: number | null;
+}
+
+export interface AdminFunnelAnalytics {
+  period: { from: string; to: string };
+  steps: {
+    requestCreated: { count: number };
+    proMatched: AdminFunnelStep;
+    contactSent: AdminFunnelStep;
+    connectionAccepted: AdminFunnelStep;
+    conversationStarted: AdminFunnelStep;
+  };
+  globalRates: {
+    requestToConversationStarted: number | null;
+    contactSentToConversationStarted: number | null;
+  };
+}
+
 export interface AdminAnalyticsOverview {
   requests7d: number;
   contacted7d: number;
@@ -1529,6 +1549,17 @@ export const apiClient = {
     request('/admin/analytics/coverage', { method: 'GET' }, true) as Promise<AdminCoverageAnalytics>,
   getAdminAnalyticsOverview: () =>
     request('/admin/analytics/overview', { method: 'GET' }, true) as Promise<AdminAnalyticsOverview>,
+  getFunnelAnalytics: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return request(
+      `/admin/analytics/funnel${qs ? `?${qs}` : ''}`,
+      { method: 'GET' },
+      true,
+    ) as Promise<AdminFunnelAnalytics>;
+  },
   getPendingContactRequests: () =>
     request('/contact/pending', { method: 'GET' }, true) as Promise<PendingContactRequestsResponse>,
 

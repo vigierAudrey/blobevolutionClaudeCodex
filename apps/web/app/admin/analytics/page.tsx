@@ -21,6 +21,7 @@ import {
   type AdminAnalyticsReasonBreakdown,
   type AdminAnalyticsGeoBreakdown,
   type AdminMarketplaceBottleneck,
+  type AdminFunnelAnalytics,
 } from '../../../lib/apiClient';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -85,6 +86,212 @@ const TRIGGER_REASON_LABELS: Record<string, string> = {
   MANUAL: 'Manuel',
   UNKNOWN: 'Inconnu (legacy)',
 };
+
+// ─── Funnel Complet BlobConnect (Sprint C22) ─────────────────────────────────
+
+const FUNNEL_STEPS: Array<{
+  key: keyof AdminFunnelAnalytics['steps'];
+  label: string;
+  color: string;
+  lossLabel: string;
+}> = [
+  {
+    key: 'requestCreated',
+    label: 'Demande créée',
+    color: 'bg-indigo-50 text-indigo-900',
+    lossLabel: '',
+  },
+  {
+    key: 'proMatched',
+    label: 'Pro trouvé',
+    color: 'bg-blue-50 text-blue-900',
+    lossLabel: 'sans pro dans le secteur → problème couverture géographique',
+  },
+  {
+    key: 'contactSent',
+    label: 'Contact envoyé',
+    color: 'bg-sky-50 text-sky-900',
+    lossLabel: 'pros trouvés mais aucun contact → problème déclenchement',
+  },
+  {
+    key: 'connectionAccepted',
+    label: 'Mise en relation acceptée',
+    color: 'bg-emerald-50 text-emerald-900',
+    lossLabel: 'contacts envoyés mais non acceptés → problème réactivité pro',
+  },
+  {
+    key: 'conversationStarted',
+    label: 'Conversation démarrée',
+    color: 'bg-teal-50 text-teal-900',
+    lossLabel: 'acceptées sans message → problème engagement post-match',
+  },
+];
+
+function FunnelComplet({ data }: { data: AdminFunnelAnalytics }) {
+  const { steps, globalRates, period } = data;
+
+  const counts: Record<string, number> = {
+    requestCreated: steps.requestCreated.count,
+    proMatched: steps.proMatched.count,
+    contactSent: steps.contactSent.count,
+    connectionAccepted: steps.connectionAccepted.count,
+    conversationStarted: steps.conversationStarted.count,
+  };
+
+  const rates: Record<string, number | null> = {
+    requestCreated: null,
+    proMatched: steps.proMatched.rateFromPrevious,
+    contactSent: steps.contactSent.rateFromPrevious,
+    connectionAccepted: steps.connectionAccepted.rateFromPrevious,
+    conversationStarted: steps.conversationStarted.rateFromPrevious,
+  };
+
+  const isEmpty = steps.requestCreated.count === 0;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <TrendingDown className="h-5 w-5 text-indigo-600" />
+        <h2 className="text-2xl font-semibold">Funnel BlobConnect complet</h2>
+        <Badge variant="outline" className="text-xs">
+          {period.from} → {period.to}
+        </Badge>
+        <Badge variant="outline" className="text-xs">30 jours glissants</Badge>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Entonnoir visuel */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <TrendingDown className="h-4 w-4 text-indigo-600" />
+              Entonnoir complet — 5 étapes
+            </CardTitle>
+            <CardDescription>
+              Demande créée → Pro trouvé → Contact → Acceptée → Conversation
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 font-mono text-sm">
+            {FUNNEL_STEPS.map((step, idx) => {
+              const count = counts[step.key];
+              const rate = rates[step.key];
+              const prevCount = idx > 0 ? counts[FUNNEL_STEPS[idx - 1].key] : null;
+              const loss = prevCount !== null ? prevCount - count : 0;
+
+              return (
+                <div key={step.key}>
+                  {idx > 0 && loss > 0 && (
+                    <div className="flex items-start gap-2 px-4 text-xs text-red-600 py-1">
+                      <TrendingDown className="h-3 w-3 shrink-0 mt-0.5" />
+                      <span>
+                        perte {formatNumber(loss)} — {step.lossLabel}
+                      </span>
+                    </div>
+                  )}
+                  <div className={`flex items-center justify-between rounded-md px-4 py-3 ${step.color}`}>
+                    <span className="font-semibold">{step.label}</span>
+                    <span className="text-xl font-bold">
+                      {formatNumber(count)}
+                      {rate !== null && (
+                        <span className="ml-2 text-sm font-normal opacity-70">
+                          ({formatPercent(rate)})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {isEmpty && (
+              <p className="text-center text-xs text-muted-foreground pt-2">
+                Aucune donnée sur la période sélectionnée.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Taux globaux + interprétation */}
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Taux globaux</CardTitle>
+              <CardDescription>Demande créée → Conversation démarrée</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Demande → Conversation</p>
+                <p className="text-3xl font-bold">
+                  {globalRates.requestToConversationStarted !== null
+                    ? formatPercent(globalRates.requestToConversationStarted)
+                    : '—'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatNumber(steps.conversationStarted.count)} conversations /&nbsp;
+                  {formatNumber(steps.requestCreated.count)} demandes
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Contact envoyé → Conversation</p>
+                <p className="text-3xl font-bold">
+                  {globalRates.contactSentToConversationStarted !== null
+                    ? formatPercent(globalRates.contactSentToConversationStarted)
+                    : '—'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatNumber(steps.conversationStarted.count)} conversations /&nbsp;
+                  {formatNumber(steps.contactSent.count)} contacts envoyés
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-blue-100 bg-blue-50/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Info className="h-4 w-4 text-blue-600" />
+                Interpréter les pertes
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs text-blue-900">
+              <p>
+                <span className="font-semibold">Peu de pros trouvés :</span> problème de couverture géographique ou manque de pros.
+              </p>
+              <p>
+                <span className="font-semibold">Pros trouvés, peu de contacts :</span> problème de déclenchement ou filtres trop restrictifs.
+              </p>
+              <p>
+                <span className="font-semibold">Contacts envoyés, peu d&apos;acceptations :</span> problème de réactivité pro ou intérêt faible.
+              </p>
+              <p>
+                <span className="font-semibold">Mises en relation sans conversation :</span> problème d&apos;engagement post-match (UX, motivation).
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-amber-100 bg-amber-50/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                Lecture par cohorte
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-amber-900 space-y-1">
+              <p>
+                Ce funnel est calculé par <span className="font-semibold">cohorte de demandes et contacts créés dans la période</span>.
+                Les acceptations et conversations sont rattachées à cette cohorte même si elles surviennent après la borne de fin.
+              </p>
+              <p className="text-amber-700">
+                Exemple : une demande créée le 25 mai et acceptée le 2 juin sera comptée dans
+                &laquo;Mise en relation acceptée&raquo; si la période inclut le 25 mai.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // ─── Funnel Marketplace (Sprint C8) ──────────────────────────────────────────
 
@@ -235,6 +442,7 @@ export default function AdminAnalytics() {
   const [supplyData, setSupplyData] = useState<AdminSupplyDiagnostics | null>(null);
   const [overviewData, setOverviewData] = useState<AdminAnalyticsOverview | null>(null);
   const [conversationData, setConversationData] = useState<AdminConversationAnalytics | null>(null);
+  const [funnelData, setFunnelData] = useState<AdminFunnelAnalytics | null>(null);
   const [period, setPeriod] = useState<AdminAnalyticsPeriod>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -261,7 +469,7 @@ export default function AdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply, overview, conversations] = await Promise.all([
+      const [engagement, matching, behavior, ttfm, lesson, lessonPerf, supply, overview, conversations, funnel] = await Promise.all([
         apiClient.getEngagementAnalytics(period),
         apiClient.getMatchingAnalytics(period),
         apiClient.getBehaviorAnalytics(period),
@@ -271,6 +479,7 @@ export default function AdminAnalytics() {
         apiClient.getSupplyDiagnosticsAnalytics(),
         apiClient.getAdminAnalyticsOverview(),
         apiClient.getConversationAnalytics(7),
+        apiClient.getFunnelAnalytics(),
       ]);
 
       setEngagementData(engagement);
@@ -282,6 +491,7 @@ export default function AdminAnalytics() {
       setSupplyData(supply);
       setOverviewData(overview);
       setConversationData(conversations);
+      setFunnelData(funnel);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : null;
       setError(message || 'Erreur de chargement des analytics');
@@ -721,6 +931,9 @@ export default function AdminAnalytics() {
           </CardContent>
         </Card>
       </section>
+
+      {/* ── Funnel Complet BlobConnect (Sprint C22) ── */}
+      {funnelData && <FunnelComplet data={funnelData} />}
 
       {/* ── Funnel Marketplace (Sprint C8) ── */}
       {overviewData && (
