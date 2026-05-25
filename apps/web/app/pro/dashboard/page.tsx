@@ -26,6 +26,7 @@ type ProDashboardStats = {
   weeklyNotifications: Array<{ week: string; count: number }>;
   weeklyContacts: Array<{ week: string; count: number }>;
   activeNearbyRequests: number;
+  archivedCount?: number;
 };
 
 function WeeklyBar({ label, count, max }: { label: string; count: number; max: number }) {
@@ -85,6 +86,13 @@ export function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
       color: 'text-cyan-500',
       bg: 'bg-cyan-50 dark:bg-cyan-950/30',
     },
+    {
+      label: 'Archivées',
+      value: stats.archivedCount ?? 0,
+      icon: Activity,
+      color: 'text-slate-500',
+      bg: 'bg-slate-50 dark:bg-slate-950/30',
+    },
   ];
 
   const maxNotif = Math.max(...stats.weeklyNotifications.map((w) => w.count), 1);
@@ -98,7 +106,7 @@ export function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {kpis.map((kpi) => (
           <div key={kpi.label} className={`rounded-xl p-3 ${kpi.bg} border border-transparent`}>
             <div className="flex items-center gap-2 mb-1">
@@ -108,6 +116,16 @@ export function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
             <p className={`text-2xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* Lien rapide vers la gestion des demandes */}
+      <div className="flex justify-end">
+        <a
+          href="/pro/contact-requests"
+          className="text-xs text-primary hover:underline flex items-center gap-1"
+        >
+          Gérer les demandes de contact →
+        </a>
       </div>
 
       {/* Taux de mise en relation + demandes actives */}

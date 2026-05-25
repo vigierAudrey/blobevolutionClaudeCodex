@@ -154,6 +154,28 @@ const upsertSchema = z.object({
 const nearLessonsBurstLimiter = createGeoEndpointLimiter('pro_near_lessons', 'GEO_HEAVY_BURST');
 const nearLessonsMinuteLimiter = createGeoEndpointLimiter('pro_near_lessons', 'GEO_HEAVY_MINUTE');
 
+// Listing paginé des demandes de contact du pro — 60 req/min/userId
+const proContactRequestsLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 1000,
+    limit: 60,
+    keyGenerator: (req: Request) => `pro_contact_requests:${(req as any).user?.id ?? 'anon'}`,
+    message: { error: 'PRO_CONTACT_REQUESTS_RATE_LIMIT', message: 'Too many requests.' },
+  },
+  'pro_contact_requests',
+);
+
+// Archive / désarchive — 20 op/min/userId (action UI, pas lecture)
+const proContactArchiveLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 1000,
+    limit: 20,
+    keyGenerator: (req: Request) => `pro_contact_archive:${(req as any).user?.id ?? 'anon'}`,
+    message: { error: 'PRO_CONTACT_ARCHIVE_RATE_LIMIT', message: 'Too many archive operations.' },
+  },
+  'pro_contact_archive',
+);
+
 // Dashboard stats rate limiter : 30 req/min/userId — lecture seule, calcul SQL léger
 const dashboardStatsLimiter = createLazyCustomRateLimiter({
   windowMs: 60 * 1000,
@@ -480,6 +502,147 @@ proRouter.get('/dashboard/stats', requireProRole, dashboardStatsLimiter, async (
     return res.status(500).json({ error: 'Internal error' });
   }
 });
+
+// ── C20 : Gestion des demandes de contact côté pro ────────────────────────────
+
+const contactRequestsQuerySchema = z.object({
+  page:   z.coerce.number().int().min(1).default(1),
+  limit:  z.coerce.number().int().min(1).max(50).default(20),
+  status: z.enum(['active', 'archived', 'all']).default('active'),
+}).strict();
+
+// GET /pro/contact-requests — liste paginée avec filtre active/archived/all.
+// IDOR-safe : WHERE proUserId = userId (JWT), pas de proId côté client.
+proRouter.get('/contact-requests', requireProRole, proContactRequestsLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const parsed = contactRequestsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid query parameters', details: parsed.error.errors });
+    }
+    const { page, limit, status } = parsed.data;
+
+    const archivedFilter =
+      status === 'active'   ? false :
+      status === 'archived' ? true  :
+      undefined;
+
+    const where = {
+      proUserId: userId,
+      ...(archivedFilter !== undefined && { archivedByPro: archivedFilter }),
+    };
+
+    const [total, rows] = await Promise.all([
+      prisma.contactRequest.count({ where }),
+      prisma.contactRequest.findMany({
+        where,
+        select: {
+          id:           true,
+          status:       true,
+          message:      true,
+          createdAt:    true,
+          conversationId: true,
+          archivedByPro:  true,
+          conversation: {
+            select: {
+              members: {
+                where: { userId: { not: userId } },
+                take:  1,
+                select: {
+                  user: {
+                    select: {
+                      riderProfile: { select: { displayName: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip:    (page - 1) * limit,
+        take:    limit,
+      }),
+    ]);
+
+    const items = rows.map((r: (typeof rows)[number]) => ({
+      id:             r.id,
+      status:         r.status,
+      message:        r.message,
+      createdAt:      r.createdAt,
+      conversationId: r.conversationId,
+      archivedByPro:  r.archivedByPro,
+      riderName:      r.conversation.members[0]?.user.riderProfile?.displayName ?? 'Rider',
+    }));
+
+    return res.json({ items, total, page, pageCount: Math.ceil(total / limit) });
+  } catch (err: unknown) {
+    secureLogger.error('PRO_CONTACT_REQUESTS_LIST_ERROR', { error: (err as any)?.message });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+const contactRequestIdSchema = z.string().uuid();
+
+// PATCH /pro/contact-requests/:id/archive
+// IDOR : updateMany WHERE id + proUserId → 404 neutre si non trouvé OU non autorisé.
+proRouter.patch('/contact-requests/:id/archive', requireProRole, proContactArchiveLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (!contactRequestIdSchema.safeParse(req.params.id).success) {
+      return res.status(400).json({ error: 'Invalid contact request ID' });
+    }
+
+    const updated = await prisma.contactRequest.updateMany({
+      where: { id: req.params.id, proUserId: userId },
+      data:  { archivedByPro: true },
+    });
+
+    if (updated.count === 0) {
+      return res.status(404).json({ error: 'Contact request not found' });
+    }
+
+    secureLogger.info('CONTACT_REQUEST_ARCHIVED', { contactRequestId: req.params.id });
+    return res.json({ success: true });
+  } catch (err: unknown) {
+    secureLogger.error('PRO_CONTACT_ARCHIVE_ERROR', { error: (err as any)?.message });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// PATCH /pro/contact-requests/:id/unarchive
+// Idempotent : archivedByPro = false même si déjà false.
+proRouter.patch('/contact-requests/:id/unarchive', requireProRole, proContactArchiveLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (!contactRequestIdSchema.safeParse(req.params.id).success) {
+      return res.status(400).json({ error: 'Invalid contact request ID' });
+    }
+
+    const updated = await prisma.contactRequest.updateMany({
+      where: { id: req.params.id, proUserId: userId },
+      data:  { archivedByPro: false },
+    });
+
+    if (updated.count === 0) {
+      return res.status(404).json({ error: 'Contact request not found' });
+    }
+
+    secureLogger.info('CONTACT_REQUEST_UNARCHIVED', { contactRequestId: req.params.id });
+    return res.json({ success: true });
+  } catch (err: unknown) {
+    secureLogger.error('PRO_CONTACT_UNARCHIVE_ERROR', { error: (err as any)?.message });
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // List riders wanting lessons (variant B: visible to all pros in radius)
 proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLessonsMinuteLimiter, async (req, res) => {

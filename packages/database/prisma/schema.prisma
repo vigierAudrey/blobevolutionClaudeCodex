@@ -587,6 +587,9 @@ model ContactRequest {
   // Nullable : les ContactRequest antérieures au sprint C1 (2026-05-21) gardent NULL.
   // Permet COUNT(DISTINCT lessonRequestId) pour les métriques de conversion demande → contact.
   lessonRequestId String?
+  // Préférence d'organisation UI côté pro — n'affecte pas status ni les analytics.
+  // @default(false) : aucun backfill nécessaire sur les lignes existantes.
+  archivedByPro   Boolean              @default(false)
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   pro             User                 @relation("ProContactRequests", fields: [proUserId], references: [id], onDelete: Cascade)
@@ -598,6 +601,7 @@ model ContactRequest {
   // deux passer le findFirst (null) et créer deux lignes identiques (race condition).
   @@unique([proUserId, conversationId])
   @@index([proUserId])
+  @@index([proUserId, archivedByPro, createdAt(sort: Desc)])
   @@index([conversationId])
   @@index([status])
   @@index([lessonRequestId])

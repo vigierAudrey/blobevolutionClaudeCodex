@@ -1108,7 +1108,36 @@ export const apiClient = {
     weeklyNotifications: Array<{ week: string; count: number }>;
     weeklyContacts: Array<{ week: string; count: number }>;
     activeNearbyRequests: number;
+    archivedCount: number;
   }>,
+
+  // C20 — Gestion des demandes de contact côté pro
+  getProContactRequests: (params?: { page?: number; limit?: number; status?: 'active' | 'archived' | 'all' }) => {
+    const qs = new URLSearchParams();
+    if (params?.page  != null) qs.set('page',   String(params.page));
+    if (params?.limit != null) qs.set('limit',  String(params.limit));
+    if (params?.status)        qs.set('status', params.status);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return request(`/pro/contact-requests${query}`, { method: 'GET' }, true) as Promise<{
+      items: Array<{
+        id:             string;
+        status:         'PENDING' | 'ACCEPTED' | 'REJECTED';
+        message:        string | null;
+        createdAt:      string;
+        conversationId: string;
+        archivedByPro:  boolean;
+        riderName:      string;
+      }>;
+      total:     number;
+      page:      number;
+      pageCount: number;
+    }>;
+  },
+  archiveContactRequest:   (id: string) =>
+    request(`/pro/contact-requests/${id}/archive`,   { method: 'PATCH' }, true) as Promise<{ success: boolean }>,
+  unarchiveContactRequest: (id: string) =>
+    request(`/pro/contact-requests/${id}/unarchive`, { method: 'PATCH' }, true) as Promise<{ success: boolean }>,
+
   updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
   getDisciplines: () => request('/profile/disciplines', { method: 'GET' }, true) as Promise<Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced'|'anytime' }>>,

@@ -24,6 +24,8 @@ export interface ProDashboardStats {
   weeklyContacts: WeeklyBucket[];
   // Activité en cours
   activeNearbyRequests: number;
+  // C20 : demandes archivées (toutes périodes — compteur global)
+  archivedCount: number;
 }
 
 export async function getProDashboardStats(userId: string): Promise<ProDashboardStats> {
@@ -46,7 +48,8 @@ export async function getProDashboardStats(userId: string): Promise<ProDashboard
     weeklyNotifRows,
     weeklyContactRows,
     activeNearbyRequests,
-  ]: [number, number, number, number, number, WeeklyRow[], WeeklyRow[], number] = await Promise.all([
+    archivedCount,
+  ]: [number, number, number, number, number, WeeklyRow[], WeeklyRow[], number, number] = await Promise.all([
     prisma.notification.count({
       where: {
         userId,
@@ -98,6 +101,10 @@ export async function getProDashboardStats(userId: string): Promise<ProDashboard
     proProfile?.lat != null && proProfile?.lng != null
       ? fetchActiveNearbyCount(proProfile.lat, proProfile.lng, proProfile.radiusKm ?? 25)
       : Promise.resolve(0),
+    // C20 : total archivé (toutes périodes — préférence UI pro)
+    prisma.contactRequest.count({
+      where: { proUserId: userId, archivedByPro: true },
+    }),
   ]);
 
   const connectionRate =
@@ -123,6 +130,7 @@ export async function getProDashboardStats(userId: string): Promise<ProDashboard
       count: Number(r.count),
     })),
     activeNearbyRequests,
+    archivedCount,
   };
 }
 
