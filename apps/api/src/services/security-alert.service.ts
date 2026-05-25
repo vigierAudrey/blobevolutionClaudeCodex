@@ -114,7 +114,7 @@ class SecurityAlertService {
 
     const subject = `🚨 Alerte Sécurité : Tentative d'accès non autorisée`;
 
-    const text = `ALERTE DE SÉCURITÉ - BlobConnect
+    const text = `ALERTE DE SÉCURITÉ - Blob
 
 Une tentative d'accès non autorisée a été détectée et bloquée.
 
@@ -145,7 +145,7 @@ ACTIONS RECOMMANDÉES :
 Accéder au dashboard : ${this.WEB_BASE_URL}/admin/security-alerts
 
 ────────────────────────
-Système de sécurité BlobConnect`;
+Système de sécurité Blob`;
 
     const html = `
 <!DOCTYPE html>
@@ -248,7 +248,7 @@ Système de sécurité BlobConnect`;
     </div>
 
     <div class="footer">
-      <strong>Système de sécurité BlobConnect</strong><br>
+      <strong>Système de sécurité Blob</strong><br>
       Cette alerte a été générée automatiquement. Ne pas répondre à cet email.<br>
       Pour toute question, consultez le dashboard administrateur.
     </div>

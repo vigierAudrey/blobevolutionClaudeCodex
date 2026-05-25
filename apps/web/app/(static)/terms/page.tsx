@@ -6,7 +6,7 @@ import Link from 'next/link';
 export const revalidate = 300;
 
 export const metadata = {
-  title: 'Conditions Générales d\'Utilisation – BlobConnect',
+  title: 'Conditions Générales d\'Utilisation – Blob',
 };
 
 export default function TermsPage() {
@@ -26,7 +26,7 @@ export default function TermsPage() {
           <section className="space-y-2">
             <h2 className="text-lg font-semibold text-foreground">1. Objet de la plateforme</h2>
             <p>
-              BlobConnect est une plateforme de mise en relation permettant aux pratiquants de sports de glisse (surf, kitesurf, etc.) de :
+              Blob est une plateforme de mise en relation permettant aux pratiquants de sports de glisse (surf, kitesurf, etc.) de :
             </p>
             <ul className="list-disc pl-6 space-y-1">
               <li>Trouver des partenaires de session adaptés à leur niveau</li>
@@ -35,7 +35,7 @@ export default function TermsPage() {
               <li>Organiser des sessions en toute autonomie</li>
             </ul>
             <p className="text-amber-800 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-800/50">
-              ⚠️ BlobConnect n&apos;organise pas d&apos;activités, ne fournit ni assurance ni encadrement, et n&apos;est pas responsable des activités entre utilisateurs.
+              ⚠️ Blob n&apos;organise pas d&apos;activités, ne fournit ni assurance ni encadrement, et n&apos;est pas responsable des activités entre utilisateurs.
             </p>
           </section>
 
@@ -44,7 +44,7 @@ export default function TermsPage() {
             <h2 className="text-lg font-semibold text-foreground">2. Conditions d&apos;accès</h2>
             <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border-2 border-blue-300 dark:border-blue-800/50">
               <p className="font-semibold text-blue-900 dark:text-blue-100">
-                🔞 L&apos;accès à BlobConnect est strictement réservé aux personnes majeures (18 ans et plus).
+                🔞 L&apos;accès à Blob est strictement réservé aux personnes majeures (18 ans et plus).
               </p>
               <p className="mt-2 text-blue-800 dark:text-blue-200">
                 En créant un compte, vous certifiez avoir 18 ans révolus. Toute fausse déclaration pourra entraîner la suspension immédiate de votre compte sans préavis.
@@ -64,7 +64,7 @@ export default function TermsPage() {
           {/* Article 3 : Responsabilités */}
           <section className="space-y-2">
             <h2 className="text-lg font-semibold text-foreground">3. Responsabilités de l&apos;utilisateur</h2>
-            <p>En utilisant BlobConnect, vous vous engagez à :</p>
+            <p>En utilisant Blob, vous vous engagez à :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li>Fournir des informations exactes et à jour</li>
               <li>Respecter les autres utilisateurs</li>
@@ -74,15 +74,15 @@ export default function TermsPage() {
               <li>Ne pas utiliser la plateforme à des fins commerciales non autorisées</li>
             </ul>
             <p className="mt-3 font-medium text-foreground">
-              Vous êtes seul responsable de vos décisions, de votre sécurité et de vos biens lors des activités organisées via BlobConnect.
+              Vous êtes seul responsable de vos décisions, de votre sécurité et de vos biens lors des activités organisées via Blob.
             </p>
           </section>
 
           {/* Article 4 : Limitation de responsabilité */}
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold text-foreground">4. Limitation de responsabilité de BlobConnect</h2>
+            <h2 className="text-lg font-semibold text-foreground">4. Limitation de responsabilité de Blob</h2>
             <p>
-              BlobConnect est un simple intermédiaire technique. Nous ne sommes pas responsables :
+              Blob est un simple intermédiaire technique. Nous ne sommes pas responsables :
             </p>
             <ul className="list-disc pl-6 space-y-1">
               <li>Des dommages corporels, matériels ou immatériels survenus lors des sessions</li>
@@ -139,7 +139,7 @@ export default function TermsPage() {
               Tous les contenus de la plateforme (logos, textes, design, code source) sont protégés par le droit d&apos;auteur. Toute reproduction non autorisée est interdite.
             </p>
             <p>
-              Les contenus que vous publiez (photos, messages, bio) restent votre propriété, mais vous accordez à BlobConnect une licence d&apos;utilisation pour afficher ces contenus sur la plateforme.
+              Les contenus que vous publiez (photos, messages, bio) restent votre propriété, mais vous accordez à Blob une licence d&apos;utilisation pour afficher ces contenus sur la plateforme.
             </p>
           </section>
 
@@ -147,7 +147,7 @@ export default function TermsPage() {
           <section className="space-y-2">
             <h2 className="text-lg font-semibold text-foreground">8. Modifications des CGU</h2>
             <p>
-              BlobConnect se réserve le droit de modifier les présentes CGU à tout moment. Les utilisateurs seront informés par email des changements significatifs.
+              Blob se réserve le droit de modifier les présentes CGU à tout moment. Les utilisateurs seront informés par email des changements significatifs.
             </p>
             <p>
               En continuant à utiliser la plateforme après modification, vous acceptez les nouvelles conditions.

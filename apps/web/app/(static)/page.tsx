@@ -12,7 +12,7 @@ import { Users, GraduationCap, Tag, BookOpen, ArrowRight } from 'lucide-react';
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'BlobConnect — Communauté Surf & Kite',
+  title: 'Blob — Communauté Surf & Kite',
   description:
     'Rejoins la communauté surf & kite : trouve des partenaires, réserve un cours et organise tes sessions facilement.',
 };
@@ -41,7 +41,7 @@ export default function Home() {
       {/* Main column */}
       <div className="space-y-8">
       {/* Hero : vidéo océan + wordmark Blob */}
-      <section aria-label="BlobConnect — Ta communauté Surf et Kite" className="space-y-4">
+      <section aria-label="Blob — Ta communauté Surf et Kite" className="space-y-4">
         <div className="home-hero-video-wrapper">
           <video
             className="home-hero-video"

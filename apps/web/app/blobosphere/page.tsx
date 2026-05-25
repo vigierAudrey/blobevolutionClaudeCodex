@@ -38,7 +38,7 @@ export const revalidate = 300;
 export const metadata: Metadata = {
   title: 'Blobosphère — Le guide surf & kite',
   description:
-    'Guides débutants pour bien t’équiper, rider responsable et rester en forme. Articles courts + liens utiles, et bientôt des interviews inspirantes. Par la communauté BlobConnect.',
+    ‘Guides débutants pour bien t’équiper, rider responsable et rester en forme. Articles courts + liens utiles, et bientôt des interviews inspirantes. Par la communauté Blob.’,
 };
 
 type BlobospherePageProps = {
@@ -71,7 +71,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
   const collectionJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
-    name: 'Blobosphère - BlobConnect',
+    name: 'Blobosphère - Blob',
     description: metadata.description,
     hasPart: allArticles.map((article) => ({
       '@type': 'Article',

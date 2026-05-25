@@ -152,7 +152,7 @@ function FunnelComplet({ data }: { data: AdminFunnelAnalytics }) {
     <section className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <TrendingDown className="h-5 w-5 text-indigo-600" />
-        <h2 className="text-2xl font-semibold">Funnel BlobConnect complet</h2>
+        <h2 className="text-2xl font-semibold">Funnel Blob complet</h2>
         <Badge variant="outline" className="text-xs">
           {period.from} → {period.to}
         </Badge>

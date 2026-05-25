@@ -53,7 +53,7 @@ self.addEventListener('push', function(event) {
   console.log('📬 SW: Push received');
 
   let notificationData = {
-    title: 'BlobConnect',
+    title: 'Blob',
     body: 'Nouvelle notification',
     icon: '/icons/icon-192x192.png',
     badge: '/icons/icon-72x72.png',

@@ -2,7 +2,7 @@
 export const revalidate = 300;
 
 export const metadata = {
-  title: 'Charte et avertissement – BlobConnect',
+  title: 'Charte et avertissement – Blob',
 };
 
 export default function ChartePage() {
@@ -16,14 +16,14 @@ export default function ChartePage() {
       <section className="mt-6 space-y-4">
         <div className="bg-blue-100 dark:bg-blue-950/30 p-4 rounded-lg border-2 border-blue-400 dark:border-blue-800/50">
           <p className="font-semibold text-blue-900 dark:text-blue-100">
-            🔞 L&apos;utilisation de BlobConnect est strictement réservée aux personnes majeures (18 ans et plus).
+            🔞 L&apos;utilisation de Blob est strictement réservée aux personnes majeures (18 ans et plus).
           </p>
           <p className="mt-2 text-blue-800 dark:text-blue-200 text-sm">
             Les sports de glisse comportent des risques. En tant qu&apos;utilisateur majeur, tu es pleinement responsable de tes choix et de ta sécurité.
           </p>
         </div>
         <p>
-          BlobConnect est une plateforme de mise en relation pour partager des activités et de bons moments.
+          Blob est une plateforme de mise en relation pour partager des activités et de bons moments.
           Nous ne sommes ni un organisateur d&apos;activités, ni une agence, ni un assureur.
           Les décisions que tu prends, les rencontres que tu effectues et les activités que tu pratiques
           relèvent de ta seule responsabilité.
@@ -32,7 +32,7 @@ export default function ChartePage() {
           En utilisant la plateforme, tu reconnais et acceptes que:
         </p>
         <ul className="list-disc pl-6 space-y-2">
-          <li>BlobConnect ne fournit aucune assurance ni couverture pour les activités réalisées entre utilisateurs.</li>
+          <li>Blob ne fournit aucune assurance ni couverture pour les activités réalisées entre utilisateurs.</li>
           <li>Les utilisateurs organisent et participent aux activités à leurs risques et périls.</li>
           <li>Tu es responsable d’évaluer les conditions (météo, niveau technique, équipement, lieu) et d’y renoncer si nécessaire.</li>
           <li>Tu restes vigilant face à tout comportement inapproprié, frauduleux ou malveillant.</li>

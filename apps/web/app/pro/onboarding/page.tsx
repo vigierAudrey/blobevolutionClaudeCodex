@@ -121,7 +121,7 @@ function ProOnboardingInner() {
           </svg>
         </div>
         <div className="flex-1">
-          <h1 className="text-xl font-bold text-foreground">Bienvenue sur BlobConnect Pro ! 👋</h1>
+          <h1 className="text-xl font-bold text-foreground">Bienvenue sur Blob Pro ! 👋</h1>
           <p className="text-sm text-muted-foreground">Complète ton profil professionnel</p>
         </div>
       </div>

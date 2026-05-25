@@ -234,7 +234,7 @@ export class PushNotificationService {
    */
   async sendTestNotification(userId: string): Promise<boolean> {
     const notification: PushNotificationData = {
-      title: '🧪 Test BlobConnect',
+      title: '🧪 Test Blob',
       body: 'Si tu vois ça, les notifications fonctionnent parfaitement ! 🎉',
       type: 'general',
       url: '/dashboard',

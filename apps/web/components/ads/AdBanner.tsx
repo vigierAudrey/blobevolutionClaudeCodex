@@ -30,7 +30,7 @@ const HOUSE_MESSAGES: Record<'loading' | 'config' | 'refused', { title: string; 
     description: 'Paramètre AdSense pour activer les campagnes sur BlobConnect.',
   },
   refused: {
-    title: 'BlobConnect House Ads',
+    title: 'Blob House Ads',
     description: 'Découvre la Blobosphère, les bons plans spots et nos partenaires éthiques.',
   },
 };
@@ -51,7 +51,7 @@ const HouseAd = ({
       <div className="mt-2 leading-relaxed text-slate-600">{content.description}</div>
       <div className="mt-3 inline-flex items-center gap-2 text-[10px] text-slate-500">
         <span className="rounded-full bg-slate-200 px-2 py-0.5 uppercase tracking-wide">
-          BlobConnect&nbsp;•&nbsp;{new Date().getFullYear()}
+          Blob&nbsp;•&nbsp;{new Date().getFullYear()}
         </span>
       </div>
     </div>

@@ -31,7 +31,7 @@ export default function ProPromosPage() {
               <div className="flex-1">
                 <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Bientôt disponible</h3>
                 <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
-                  Cette section accueillera des opportunités de partenariats et de visibilité pour les professionnels de BlobConnect.
+                  Cette section accueillera des opportunités de partenariats et de visibilité pour les professionnels de Blob.
                 </p>
                 <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
                   Au fur et à mesure du développement de la plateforme, nous proposerons des offres de sponsoring,

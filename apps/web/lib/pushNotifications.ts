@@ -278,7 +278,7 @@ export class PushNotificationManager {
             Notifications bloquées
           </h3>
           <p class="text-sm text-gray-600 mt-2">
-            Pour recevoir les notifications BlobConnect, active-les dans les paramètres de ton navigateur.
+            Pour recevoir les notifications Blob, active-les dans les paramètres de ton navigateur.
           </p>
         </div>
         <div class="text-xs text-gray-500 space-y-1">

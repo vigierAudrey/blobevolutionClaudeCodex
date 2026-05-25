@@ -22,7 +22,7 @@ const CookieConsent = dynamicImport(
 // Static pages in (static)/ use ISR with revalidate=300 and avoid using contexts
 
 export const metadata: Metadata = {
-  title: 'BlobConnect — Auth',
+  title: 'Blob — Auth',
   description: 'Inscription, connexion et gestion du compte',
   icons: {
     icon: '/favicon.ico',

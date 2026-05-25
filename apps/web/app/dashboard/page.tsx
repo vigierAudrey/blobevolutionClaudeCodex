@@ -220,7 +220,7 @@ export default function DashboardPage() {
   if (!user) return null;
   if (user.role === 'PRO') return null;
 
-  const greeting = displayName ? `Salut ${displayName} 👋` : 'Bienvenue sur BlobConnect 👋';
+  const greeting = displayName ? `Salut ${displayName} 👋` : 'Bienvenue sur Blob 👋';
   const matchingCtaLabel = hasMatchingShortcut ? 'Continuer le matching' : 'Commencer le matching';
   const matchingCardText = hasMatchingShortcut
     ? 'Reviens directement sur les profils proposés avec tes derniers filtres actifs.'

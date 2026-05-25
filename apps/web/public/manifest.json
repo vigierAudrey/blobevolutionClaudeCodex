@@ -1,6 +1,6 @@
 {
-  "name": "BlobConnect - Cours de Surf & Kitesurf",
-  "short_name": "BlobConnect",
+  "name": "Blob - Cours de Surf & Kitesurf",
+  "short_name": "Blob",
   "description": "Trouve et contacte les meilleurs instructeurs de surf et kitesurf",
   "start_url": "/",
   "display": "standalone",

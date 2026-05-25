@@ -2,8 +2,8 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Politique de Sécurité - BlobConnect',
-  description: 'Politique de divulgation responsable des vulnérabilités et programme de bug bounty de BlobConnect',
+  title: 'Politique de Sécurité - Blob',
+  description: 'Politique de divulgation responsable des vulnérabilités et programme de bug bounty de Blob',
 };
 
 export default function SecurityPolicyPage() {
@@ -28,7 +28,7 @@ export default function SecurityPolicyPage() {
               Notre Engagement
             </h2>
             <p className="text-gray-700 leading-relaxed">
-              Chez <strong>BlobConnect</strong>, la sécurité de nos utilisateurs est notre priorité absolue.
+              Chez <strong>Blob</strong>, la sécurité de nos utilisateurs est notre priorité absolue.
               Nous encourageons les chercheurs en sécurité à nous aider à identifier et corriger
               les vulnérabilités de manière responsable.
             </p>
@@ -42,7 +42,7 @@ export default function SecurityPolicyPage() {
 
             <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
               <p className="text-sm text-yellow-800">
-                <strong>Note :</strong> BlobConnect est une startup éducative avec des moyens limités.
+                <strong>Note :</strong> Blob est une startup éducative avec des moyens limités.
                 Nous offrons des récompenses modestes mais valorisons énormément la reconnaissance publique.
               </p>
             </div>

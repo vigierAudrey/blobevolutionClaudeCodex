@@ -150,7 +150,7 @@ test.describe('Consent-driven ads', () => {
     // adEnabled=false so no ins.adsbygoogle is rendered in the tested slot.
     await assertGtagSignals(page, SIGNALS.none, 'none');
 
-    await expect(page.getByText(/BlobConnect House Ads/i)).toBeVisible();
+    await expect(page.getByText(/Blob House Ads/i)).toBeVisible();
     const slot = page.locator('ins.adsbygoogle[data-ad-slot="matching-selection"]');
     await expect(slot).toHaveCount(0);
 

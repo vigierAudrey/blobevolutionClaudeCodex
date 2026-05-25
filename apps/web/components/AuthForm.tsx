@@ -392,7 +392,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           <div>
             <CardTitle>{mode === 'login' ? 'Connexion' : 'Inscription'}</CardTitle>
             <CardDescription>
-              {mode === 'login' ? 'Accède à ton compte BlobConnect' : 'Rejoins la communauté BlobConnect'}
+              {mode === 'login' ? 'Accède à ton compte Blob' : 'Rejoins la communauté Blob'}
             </CardDescription>
           </div>
         </div>
@@ -508,9 +508,9 @@ export function AuthForm({ mode }: AuthFormProps) {
               <div className="text-sm text-foreground">
                 <p className="font-medium">Charte de sécurité & responsabilité</p>
                 <p className="mt-1">
-                  BlobConnect facilite la mise en relation entre personnes pour partager de bons moments.
+                  Blob facilite la mise en relation entre personnes pour partager de bons moments.
                   Tu restes toutefois seul responsable de tes choix, de ta sécurité et de tes biens.
-                  BlobConnect ne fournit ni assurance, ni encadrement, ni garantie sur les activités organisées entre utilisateurs.
+                  Blob ne fournit ni assurance, ni encadrement, ni garantie sur les activités organisées entre utilisateurs.
                 </p>
                 <ul className="list-disc pl-5 mt-2 space-y-1">
                   <li>Donne rendez-vous dans un lieu public et préviens un proche.</li>

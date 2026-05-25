@@ -42,7 +42,7 @@ export default function PromosPage() {
               <div className="flex-1">
                 <h3 className="font-semibold text-blue-900 mb-2">Bientôt disponible</h3>
                 <p className="text-sm text-blue-800 mb-3">
-                  Cette section accueillera des offres promotionnelles exclusives pour la communauté BlobConnect.
+                  Cette section accueillera des offres promotionnelles exclusives pour la communauté Blob.
                 </p>
                 <p className="text-sm text-blue-800">
                   Au fur et à mesure du développement de la plateforme, nous proposerons des partenariats

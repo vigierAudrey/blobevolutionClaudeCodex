@@ -451,7 +451,7 @@ export function createApp() {
   if (swaggerDocument) {
     const swaggerOptions = {
       explorer: true,
-      customSiteTitle: 'BlobConnect API – Swagger UI',
+      customSiteTitle: 'Blob API – Swagger UI',
       swaggerOptions: {
         deepLinking: true
       }
