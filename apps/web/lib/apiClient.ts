@@ -218,7 +218,9 @@ export interface AdminMatchingAnalytics {
   }>;
   acceptance: {
     totalRequests: number;
+    /** Legacy frozen metric from deprecated historical module. */
     acceptedRequests: number | null;
+    /** Legacy frozen metric from deprecated historical module. */
     acceptanceRate: number | null;
     medianResponseHours: number | null;
     responseSampleSize: number;
@@ -227,7 +229,9 @@ export interface AdminMatchingAnalytics {
   acceptanceBySport: Array<{
     sport: string;
     totalRequests: number;
+    /** Legacy frozen metric from deprecated historical module. */
     acceptedRequests: number | null;
+    /** Legacy frozen metric from deprecated historical module. */
     acceptanceRate: number | null;
     medianResponseHours: number | null;
     masked: boolean;
@@ -1094,7 +1098,12 @@ export const apiClient = {
     receivedRequests: number;
     readNotifications: number;
     sentContacts: number;
+    connectedContacts: number;
+    pendingContacts: number;
+    connectionRate: number | null;
+    /** Alias legacy: ACCEPTED means relation opened, not lesson accepted. */
     acceptedContacts: number;
+    /** Alias legacy for connectionRate. */
     acceptanceRate: number | null;
     weeklyNotifications: Array<{ week: string; count: number }>;
     weeklyContacts: Array<{ week: string; count: number }>;

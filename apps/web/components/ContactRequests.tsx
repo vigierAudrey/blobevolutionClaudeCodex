@@ -67,8 +67,8 @@ export function ContactRequests() {
     try {
       const res = await apiClient.respondToContactRequest(requestId, action);
       const labels: Record<string, string> = {
-        ACCEPTED: 'Le professionnel a été ajouté à ta conversation.',
-        REJECTED: 'Demande refusée.',
+        ACCEPTED: 'Mise en relation ouverte : le professionnel a rejoint ta conversation.',
+        REJECTED: 'Demande non retenue.',
         PENDING: 'Ta réponse a été enregistrée.',
       };
       setStates(prev => ({
@@ -144,30 +144,30 @@ export function ContactRequests() {
                     size="sm"
                     onClick={() => void handleRespond(req.id, 'ACCEPT')}
                     disabled={isLoading}
-                    aria-label={`Accepter la demande de ${proName}`}
+                    aria-label={`Ouvrir la mise en relation avec ${proName}`}
                     className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700"
                     data-testid={`accept-${req.id}`}
                   >
                     <Check size={14} />
-                    Accepter
+                    Ouvrir
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => void handleRespond(req.id, 'REJECT')}
                     disabled={isLoading}
-                    aria-label={`Refuser la demande de ${proName}`}
+                    aria-label={`Ne pas retenir la demande de ${proName}`}
                     className="flex items-center gap-1"
                     data-testid={`reject-${req.id}`}
                   >
                     <X size={14} />
-                    Refuser
+                    Ne pas retenir
                   </Button>
                 </div>
               ) : state.kind === 'done' ? (
                 <div className="flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300 flex-shrink-0">
                   <Check size={14} />
-                  {state.finalStatus === 'ACCEPTED' ? 'Accepté' : state.finalStatus === 'REJECTED' ? 'Refusé' : 'Enregistré'}
+                  {state.finalStatus === 'ACCEPTED' ? 'Mise en relation ouverte' : state.finalStatus === 'REJECTED' ? 'Non retenue' : 'Enregistré'}
                 </div>
               ) : null}
             </div>
@@ -175,7 +175,7 @@ export function ContactRequests() {
             {state.kind === 'loading' && (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground pl-13">
                 <Clock size={12} className="animate-spin" />
-                {state.action === 'ACCEPT' ? 'Acceptation en cours…' : 'Refus en cours…'}
+                {state.action === 'ACCEPT' ? 'Ouverture de la mise en relation…' : 'Réponse en cours…'}
               </div>
             )}
 

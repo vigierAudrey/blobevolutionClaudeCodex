@@ -89,21 +89,21 @@ describe('ContactRequests — accept flow', () => {
     await waitFor(() => expect(screen.getByTestId('accept-req-1')).toBeDisabled());
     expect(screen.getByTestId('reject-req-1')).toBeDisabled();
 
-    resolveRespond({ success: true, status: 'ACCEPTED', message: 'Accepté' });
+    resolveRespond({ success: true, status: 'ACCEPTED', message: 'Mise en relation ouverte' });
     // done state: buttons replaced by status label
     await waitFor(() => expect(screen.queryByTestId('accept-req-1')).not.toBeInTheDocument());
   });
 
   it('removes request from list after ACCEPTED', async () => {
     mockGet.mockResolvedValue({ requests: [REQ_1] });
-    mockRespond.mockResolvedValue({ success: true, status: 'ACCEPTED', message: 'Le professionnel a été ajouté à votre conversation' });
+    mockRespond.mockResolvedValue({ success: true, status: 'ACCEPTED', message: 'Mise en relation ouverte' });
 
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     render(<ContactRequests />);
     await waitFor(() => expect(screen.getByTestId('accept-req-1')).toBeInTheDocument());
 
     await user.click(screen.getByTestId('accept-req-1'));
-    await waitFor(() => expect(screen.getByText(/Accepté/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText(/Mise en relation ouverte/).length).toBeGreaterThan(0));
 
     jest.advanceTimersByTime(3000);
     await waitFor(() => expect(screen.queryByTestId('contact-request-req-1')).not.toBeInTheDocument());
@@ -111,14 +111,14 @@ describe('ContactRequests — accept flow', () => {
 
   it('removes request from list after REJECTED', async () => {
     mockGet.mockResolvedValue({ requests: [REQ_1] });
-    mockRespond.mockResolvedValue({ success: true, status: 'REJECTED', message: 'Demande refusée' });
+    mockRespond.mockResolvedValue({ success: true, status: 'REJECTED', message: 'Demande non retenue' });
 
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     render(<ContactRequests />);
     await waitFor(() => expect(screen.getByTestId('reject-req-1')).toBeInTheDocument());
 
     await user.click(screen.getByTestId('reject-req-1'));
-    await waitFor(() => expect(screen.getByText(/Refusé/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Non retenue/)).toBeInTheDocument());
 
     jest.advanceTimersByTime(3000);
     await waitFor(() => expect(screen.queryByTestId('contact-request-req-1')).not.toBeInTheDocument());
@@ -215,7 +215,7 @@ describe('ContactRequests — error handling', () => {
     await waitFor(() => expect(screen.getByTestId('accept-req-1')).not.toBeDisabled());
 
     await user.click(screen.getByTestId('accept-req-1'));
-    await waitFor(() => expect(screen.getByText(/Accepté/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText(/Mise en relation ouverte/).length).toBeGreaterThan(0));
 
     expect(mockRespond).toHaveBeenCalledTimes(2);
   });
@@ -254,6 +254,6 @@ describe('ContactRequests — error handling', () => {
     expect(mockRespond).toHaveBeenCalledTimes(1);
 
     resolveRespond({ success: true, status: 'ACCEPTED', message: 'ok' });
-    await waitFor(() => expect(screen.getByText(/Accepté/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText(/Mise en relation ouverte/).length).toBeGreaterThan(0));
   });
 });

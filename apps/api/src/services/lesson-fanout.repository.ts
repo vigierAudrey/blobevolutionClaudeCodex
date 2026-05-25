@@ -248,7 +248,7 @@ export async function getLessonPerformanceMetrics(): Promise<LessonPerformanceMe
   };
 }
 
-// ─── Contact Conversion Metrics (Sprint C2) ───────────────────────────────────
+// ─── Contact Solicitation Metrics (Sprint C2) ─────────────────────────────────
 
 export interface ContactConversionMetrics {
   // COUNT(DISTINCT lessonRequestId) dans LessonFanout sur 7 jours.
@@ -340,7 +340,7 @@ export async function getLessonCoverageMetrics(): Promise<CoverageMetrics> {
 
 // ─── Analytics Overview (Sprint C4 + C5) ─────────────────────────────────────
 
-// Vue décisionnelle agrégée : fusion C2 (contact-conversion) + C3 (coverage)
+// Vue décisionnelle agrégée : fusion C2 (sollicitation pro) + C3 (coverage)
 // + breakdown par sport (C5) — deux requêtes parallèles sur 7 jours glissants.
 //
 // Sémantique identique à C2/C3 séparés :
@@ -351,7 +351,7 @@ export async function getLessonCoverageMetrics(): Promise<CoverageMetrics> {
 // Le LEFT JOIN ne biaise pas requests7d ni covered7d car COUNT DISTINCT
 // est insensible à la multiplication de lignes par le JOIN.
 
-// Métriques conversion + couverture pour un sport donné (C5).
+// Métriques sollicitation pro + couverture pour un sport donné (C5).
 export interface SportConversionBreakdown {
   sport: string;
   requests7d: number;

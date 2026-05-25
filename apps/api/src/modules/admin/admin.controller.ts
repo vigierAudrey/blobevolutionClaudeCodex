@@ -1144,7 +1144,7 @@ adminRouter.get(
   },
 );
 
-// Taux de conversion demandes de cours → contacts (Sprint C2).
+// Taux de sollicitation pro des demandes de cours (Sprint C2).
 // Fenêtre fixe 7 jours : COUNT(DISTINCT lessonRequestId) LessonFanout vs ContactRequest.
 adminRouter.get(
   '/analytics/contact-conversion',
@@ -1179,7 +1179,7 @@ adminRouter.get(
 );
 
 // Vue décisionnelle agrégée C2+C3 — 7 jours glissants (Sprint C4).
-// Fusionne contact-conversion et coverage en un seul appel.
+// Fusionne sollicitation pro et coverage en un seul appel.
 adminRouter.get(
   '/analytics/overview',
   requirePermissions('analytics.view'),

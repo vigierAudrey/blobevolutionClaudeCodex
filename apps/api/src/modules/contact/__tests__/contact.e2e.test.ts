@@ -232,6 +232,12 @@ describe('Contact Controller', () => {
     });
     expect(proMembership).toBeTruthy();
 
+    const messages = await prisma.message.findMany({
+      where: { conversationId: fixture.conversationId },
+      select: { id: true },
+    });
+    expect(messages).toHaveLength(0);
+
     const proView = await request(app)
       .get('/contact/requests')
       .set('Authorization', `Bearer ${fixture.proToken}`)

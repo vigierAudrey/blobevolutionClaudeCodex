@@ -8,8 +8,8 @@
  *   4.  200 + notifications reçues → receivedRequests correct
  *   5.  200 + notifications lues → readNotifications correct
  *   6.  200 + contacts envoyés → sentContacts correct
- *   7.  200 + contacts acceptés → acceptedContacts + acceptanceRate corrects
- *   8.  200 + acceptanceRate = null quand sentContacts = 0
+ *   7.  200 + mises en relation → connectedContacts + connectionRate corrects
+ *   8.  200 + connectionRate = null quand sentContacts = 0
  *   9.  IDOR : deux pros → chacun voit uniquement ses propres stats
  *   10. activeNearbyRequests = 0 si le pro n'a pas de localisation
  *   11. Notifications hors fenêtre 7j → exclues du compteur
@@ -57,7 +57,7 @@ describe('GET /pro/dashboard/stats — auth', () => {
 // ─── 3-8 : Logique métier ─────────────────────────────────────────────────────
 
 describe('GET /pro/dashboard/stats — métier', () => {
-  it('3. zéro données → tous les compteurs à 0, acceptanceRate null', async () => {
+  it('3. zéro données → tous les compteurs à 0, connectionRate null + alias legacy', async () => {
     const { session } = await getAccessToken({ app, email: EMAIL_PRO, role: 'PRO' });
     const res = await session.get('/pro/dashboard/stats').expect(200);
 
@@ -65,6 +65,9 @@ describe('GET /pro/dashboard/stats — métier', () => {
       receivedRequests:   0,
       readNotifications:  0,
       sentContacts:       0,
+      connectedContacts:  0,
+      pendingContacts:    0,
+      connectionRate:     null,
       acceptedContacts:   0,
       acceptanceRate:     null,
       weeklyNotifications: [],
@@ -124,12 +127,15 @@ describe('GET /pro/dashboard/stats — métier', () => {
 
     const res = await session.get('/pro/dashboard/stats').expect(200);
     expect(res.body.sentContacts).toBe(1);
+    expect(res.body.connectedContacts).toBe(0);
+    expect(res.body.pendingContacts).toBe(1);
+    expect(res.body.connectionRate).toBe(0);
     expect(res.body.acceptedContacts).toBe(0);
-    // 0 accepté / 1 envoyé = 0% (pas null : le dénominateur est non-nul)
+    // Alias legacy conservés : ACCEPTED = mise en relation ouverte, pas cours accepté.
     expect(res.body.acceptanceRate).toBe(0);
   });
 
-  it('7. contacts acceptés → acceptedContacts + acceptanceRate corrects', async () => {
+  it('7. mises en relation ouvertes → connectedContacts + connectionRate + alias legacy corrects', async () => {
     const { session, userId: proUserId } = await getAccessToken({ app, email: EMAIL_PRO, role: 'PRO' });
     const riderAuth = await getAccessToken({ app, email: EMAIL_RIDER, role: 'RIDER' });
 
@@ -155,15 +161,18 @@ describe('GET /pro/dashboard/stats — métier', () => {
 
     const res = await session.get('/pro/dashboard/stats').expect(200);
     expect(res.body.sentContacts).toBe(2);
+    expect(res.body.connectedContacts).toBe(1);
+    expect(res.body.pendingContacts).toBe(1);
+    expect(res.body.connectionRate).toBe(50);
     expect(res.body.acceptedContacts).toBe(1);
-    // 1/2 * 100 = 50.0
     expect(res.body.acceptanceRate).toBe(50);
   });
 
-  it('8. acceptanceRate null quand sentContacts = 0', async () => {
+  it('8. connectionRate et alias acceptanceRate null quand sentContacts = 0', async () => {
     const { session } = await getAccessToken({ app, email: EMAIL_PRO, role: 'PRO' });
     const res = await session.get('/pro/dashboard/stats').expect(200);
     expect(res.body.sentContacts).toBe(0);
+    expect(res.body.connectionRate).toBeNull();
     expect(res.body.acceptanceRate).toBeNull();
   });
 

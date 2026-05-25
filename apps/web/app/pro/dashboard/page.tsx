@@ -8,7 +8,7 @@ import { optimizedApiClient } from '../../../lib/optimizedApiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
-import { User, Map, Info, LogOut, MessageSquare, Gift, Sparkles, TrendingUp, Bell, Send, CheckCircle, Activity } from 'lucide-react';
+import { User, Map, Info, LogOut, MessageSquare, Gift, Sparkles, TrendingUp, Bell, Send, CheckCircle, Activity, Clock } from 'lucide-react';
 import { NotificationBell } from '../../../components/NotificationBell';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
@@ -18,8 +18,11 @@ type ProDashboardStats = {
   receivedRequests: number;
   readNotifications: number;
   sentContacts: number;
-  acceptedContacts: number;
-  acceptanceRate: number | null;
+  connectedContacts: number;
+  pendingContacts: number;
+  connectionRate: number | null;
+  acceptedContacts?: number;
+  acceptanceRate?: number | null;
   weeklyNotifications: Array<{ week: string; count: number }>;
   weeklyContacts: Array<{ week: string; count: number }>;
   activeNearbyRequests: number;
@@ -41,7 +44,11 @@ function WeeklyBar({ label, count, max }: { label: string; count: number; max: n
   );
 }
 
-function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
+export function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
+  const connectedContacts = stats.connectedContacts ?? stats.acceptedContacts ?? 0;
+  const pendingContacts = stats.pendingContacts ?? Math.max(stats.sentContacts - connectedContacts, 0);
+  const connectionRate = stats.connectionRate ?? stats.acceptanceRate ?? null;
+
   const kpis = [
     {
       label: 'Demandes reçues',
@@ -58,18 +65,25 @@ function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
       bg: 'bg-green-50 dark:bg-green-950/30',
     },
     {
-      label: 'Contacts envoyés',
+      label: 'Demandes envoyées',
       value: stats.sentContacts,
       icon: Send,
       color: 'text-purple-500',
       bg: 'bg-purple-50 dark:bg-purple-950/30',
     },
     {
-      label: 'Contacts acceptés',
-      value: stats.acceptedContacts,
+      label: 'Mises en relation',
+      value: connectedContacts,
       icon: TrendingUp,
       color: 'text-amber-500',
       bg: 'bg-amber-50 dark:bg-amber-950/30',
+    },
+    {
+      label: 'Demandes en attente',
+      value: pendingContacts,
+      icon: Clock,
+      color: 'text-cyan-500',
+      bg: 'bg-cyan-50 dark:bg-cyan-950/30',
     },
   ];
 
@@ -84,7 +98,7 @@ function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {kpis.map((kpi) => (
           <div key={kpi.label} className={`rounded-xl p-3 ${kpi.bg} border border-transparent`}>
             <div className="flex items-center gap-2 mb-1">
@@ -96,17 +110,17 @@ function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
         ))}
       </div>
 
-      {/* Taux d'acceptation + demandes actives */}
+      {/* Taux de mise en relation + demandes actives */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="rounded-xl p-3 bg-muted/50 border">
           <div className="flex items-center gap-2 mb-1">
             <CheckCircle className="w-4 h-4 text-green-500" />
-            <span className="text-xs text-muted-foreground">Taux d&apos;acceptation</span>
+            <span className="text-xs text-muted-foreground">Taux de mise en relation</span>
           </div>
           <p className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">
-            {stats.acceptanceRate != null ? `${stats.acceptanceRate}%` : '—'}
+            {connectionRate != null ? `${connectionRate}%` : '—'}
           </p>
-          <p className="text-xs text-muted-foreground mt-0.5">contacts acceptés / envoyés</p>
+          <p className="text-xs text-muted-foreground mt-0.5">mises en relation / demandes envoyées</p>
         </div>
 
         <div className="rounded-xl p-3 bg-muted/50 border">
@@ -121,12 +135,12 @@ function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
         </div>
       </div>
 
-      {/* Historique hebdomadaire */}
+      {/* Activité récente */}
       {(stats.weeklyNotifications.length > 0 || stats.weeklyContacts.length > 0) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {stats.weeklyNotifications.length > 0 && (
             <div className="rounded-xl p-3 bg-muted/30 border space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Notifications / semaine</p>
+              <p className="text-xs font-medium text-muted-foreground">Nouvelles demandes de cours / semaine</p>
               {stats.weeklyNotifications.map((w) => (
                 <WeeklyBar key={w.week} label={w.week} count={w.count} max={maxNotif} />
               ))}
@@ -134,7 +148,7 @@ function ProStatsSection({ stats }: { stats: ProDashboardStats }) {
           )}
           {stats.weeklyContacts.length > 0 && (
             <div className="rounded-xl p-3 bg-muted/30 border space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Contacts / semaine</p>
+              <p className="text-xs font-medium text-muted-foreground">Demandes de contact pro / semaine</p>
               {stats.weeklyContacts.map((w) => (
                 <WeeklyBar key={w.week} label={w.week} count={w.count} max={maxContact} />
               ))}

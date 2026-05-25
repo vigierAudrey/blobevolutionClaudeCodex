@@ -55,15 +55,15 @@
 **Pour les PROs** :
 - `ProProfile.emailNotif` : Case à cocher inutilisée
 - ✅ **NOUVEAU** : `/pro/settings/notifications` pour les demandes de cours (implémenté 2025-12-30)
-- ❌ Pas d'options pour messages, réservations acceptées/refusées
+- ❌ Pas d'options pour messages, mises en relation ouvertes / demandes non retenues
 
 ### ✅ Ce qui fonctionne
 
 | Notification | Socket.io temps réel | Push Firebase | Email | Préférences |
 |--------------|---------------------|---------------|-------|-------------|
 | **Demandes de cours PRO** | ✅ | ✅ | ❌ | ✅ (nouveau) |
-| **Réservation acceptée** | ❌ | ✅ | ❌ | ❌ |
-| **Réservation refusée** | ❌ | ✅ | ❌ | ❌ |
+| **Mise en relation ouverte** | ❌ | ✅ | ❌ | ❌ |
+| **Demande non retenue** | ❌ | ✅ | ❌ | ❌ |
 | **Messages** | ✅ | ❌ | ❌ | ❌ |
 | **Matchings** | ✅ | ❌ | ❌ | ❌ |
 | **Invitations groupe** | ❌ | ❌ | ❌ | ❌ |
@@ -275,7 +275,7 @@ async function shouldThrottle(userId: string, notifType: string): Promise<boolea
 ### À faire rapidement (Important)
 4. **Interface préférences rider** : Page `/settings/notifications` pour riders
 5. **Migrer ProProfile.notificationPreferences** vers table dédiée
-6. **Étendre préférences PRO** : Ajouter messages, booking accept/reject
+6. **Étendre préférences PRO** : Ajouter messages, mises en relation ouvertes / demandes non retenues
 
 ### À faire plus tard (Nice to have)
 7. Emails de notification (infrastructure SMTP à configurer)

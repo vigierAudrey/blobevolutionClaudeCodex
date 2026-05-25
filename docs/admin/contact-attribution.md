@@ -1,5 +1,10 @@
 # Contact Attribution — Sprint C1
 
+> Note legacy : `/admin/analytics/contact-conversion` est un nom technique
+> historique conservé pour compatibilité. La métrique produit affichée côté
+> admin est **sollicitation pro**. Ne pas renommer la route sans stratégie de
+> dépréciation explicite.
+
 ## Pourquoi ce champ existe
 
 `ContactRequest.lessonRequestId` permet de relier un contact pro à une demande de cours

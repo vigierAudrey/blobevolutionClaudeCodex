@@ -13,8 +13,12 @@ export interface ProDashboardStats {
   receivedRequests: number;
   readNotifications: number;
   sentContacts: number;
+  connectedContacts: number;
+  pendingContacts: number;
+  connectionRate: number | null; // pct arrondi à 1 décimale, null si sentContacts=0
+  // Alias rétrocompatibles: ACCEPTED = mise en relation ouverte, pas cours accepté.
   acceptedContacts: number;
-  acceptanceRate: number | null; // pct arrondi à 1 décimale, null si sentContacts=0
+  acceptanceRate: number | null;
   // Historique 2 dernières semaines ISO
   weeklyNotifications: WeeklyBucket[];
   weeklyContacts: WeeklyBucket[];
@@ -37,11 +41,12 @@ export async function getProDashboardStats(userId: string): Promise<ProDashboard
     receivedRequests,
     readNotifications,
     sentContacts,
-    acceptedContacts,
+    connectedContacts,
+    pendingContacts,
     weeklyNotifRows,
     weeklyContactRows,
     activeNearbyRequests,
-  ]: [number, number, number, number, WeeklyRow[], WeeklyRow[], number] = await Promise.all([
+  ]: [number, number, number, number, number, WeeklyRow[], WeeklyRow[], number] = await Promise.all([
     prisma.notification.count({
       where: {
         userId,
@@ -62,6 +67,9 @@ export async function getProDashboardStats(userId: string): Promise<ProDashboard
     }),
     prisma.contactRequest.count({
       where: { proUserId: userId, createdAt: { gte: sevenDaysAgo }, status: 'ACCEPTED' },
+    }),
+    prisma.contactRequest.count({
+      where: { proUserId: userId, createdAt: { gte: sevenDaysAgo }, status: 'PENDING' },
     }),
     // Groupement hebdomadaire notifications — index [userId, createdAt DESC] utilisé
     prisma.$queryRaw<WeeklyRow[]>(Prisma.sql`
@@ -92,17 +100,20 @@ export async function getProDashboardStats(userId: string): Promise<ProDashboard
       : Promise.resolve(0),
   ]);
 
-  const acceptanceRate =
+  const connectionRate =
     sentContacts > 0
-      ? Math.round((acceptedContacts / sentContacts) * 1000) / 10
+      ? Math.round((connectedContacts / sentContacts) * 1000) / 10
       : null;
 
   return {
     receivedRequests,
     readNotifications,
     sentContacts,
-    acceptedContacts,
-    acceptanceRate,
+    connectedContacts,
+    pendingContacts,
+    connectionRate,
+    acceptedContacts: connectedContacts,
+    acceptanceRate: connectionRate,
     weeklyNotifications: weeklyNotifRows.map((r) => ({
       week: r.week.toISOString().split('T')[0]!,
       count: Number(r.count),

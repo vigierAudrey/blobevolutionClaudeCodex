@@ -868,6 +868,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /pro/dashboard/stats:
+    get:
+      tags: [Pros]
+      summary: Statistiques du dashboard pro
+      description: >
+        Statistiques agrégées du professionnel connecté. Les mises en relation
+        correspondent aux ContactRequest ACCEPTED : le rider a ouvert l'accès à
+        la conversation. Cela ne signifie pas qu'un cours est réservé ou validé.
+        Les champs acceptedContacts et acceptanceRate sont conservés comme alias
+        rétrocompatibles.
+      operationId: proDashboardStats
+      responses:
+        '200':
+          description: Statistiques agrégées du pro connecté
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProDashboardStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /pro/offers/me:
     get:
       tags: [Pros]
@@ -1493,7 +1516,10 @@ paths:
                   status:
                     type: string
                     enum: [PENDING, ACCEPTED, REJECTED]
-                    description: État final de la demande après cette réponse
+                    description: >
+                      État final de la demande après cette réponse. ACCEPTED signifie
+                      "mise en relation ouverte" : le pro est autorisé à rejoindre la
+                      conversation. Ce n'est pas une réservation ni un cours accepté.
                   message:
                     type: string
                     description: Message lisible décrivant l'état
@@ -1560,6 +1586,9 @@ paths:
                         status:
                           type: string
                           enum: [PENDING, ACCEPTED, REJECTED]
+                          description: >
+                            ACCEPTED = mise en relation ouverte et accès messagerie accordé
+                            au pro ; REJECTED = demande non retenue.
                         message:
                           type: string
                           nullable: true
@@ -3479,6 +3508,76 @@ components:
           type: integer
         masked:
           type: boolean
+    ProDashboardStats:
+      type: object
+      required:
+        - receivedRequests
+        - readNotifications
+        - sentContacts
+        - connectedContacts
+        - pendingContacts
+        - connectionRate
+        - acceptedContacts
+        - acceptanceRate
+        - weeklyNotifications
+        - weeklyContacts
+        - activeNearbyRequests
+      properties:
+        receivedRequests:
+          type: integer
+          description: Notifications de demandes de cours reçues sur 7 jours.
+        readNotifications:
+          type: integer
+          description: Notifications de demandes de cours lues sur 7 jours.
+        sentContacts:
+          type: integer
+          description: Demandes de contact envoyées par le pro sur 7 jours.
+        connectedContacts:
+          type: integer
+          description: >
+            Mises en relation ouvertes sur 7 jours. Source technique :
+            ContactRequest.status = ACCEPTED.
+        pendingContacts:
+          type: integer
+          description: Demandes de contact encore en attente de réponse rider.
+        connectionRate:
+          type: number
+          nullable: true
+          description: connectedContacts / sentContacts * 100, null si sentContacts = 0.
+        acceptedContacts:
+          type: integer
+          deprecated: true
+          description: Alias rétrocompatible de connectedContacts.
+        acceptanceRate:
+          type: number
+          nullable: true
+          deprecated: true
+          description: Alias rétrocompatible de connectionRate.
+        weeklyNotifications:
+          type: array
+          items:
+            type: object
+            required: [week, count]
+            properties:
+              week:
+                type: string
+                format: date
+              count:
+                type: integer
+        weeklyContacts:
+          type: array
+          items:
+            type: object
+            required: [week, count]
+            properties:
+              week:
+                type: string
+                format: date
+              count:
+                type: integer
+        activeNearbyRequests:
+          type: integer
+          description: Demandes de cours actives dans la zone du pro connecté.
     AdminAcceptanceMetrics:
       type: object
       properties:
@@ -3487,9 +3586,11 @@ components:
         acceptedRequests:
           type: integer
           nullable: true
+          description: Champ historique figé du module retiré ; ne pas lire comme cours accepté.
         acceptanceRate:
           type: number
           nullable: true
+          description: Champ historique figé du module retiré.
         medianResponseHours:
           type: number
           nullable: true
@@ -3507,9 +3608,11 @@ components:
         acceptedRequests:
           type: integer
           nullable: true
+          description: Champ historique figé du module retiré ; ne pas lire comme cours accepté.
         acceptanceRate:
           type: number
           nullable: true
+          description: Champ historique figé du module retiré.
         medianResponseHours:
           type: number
           nullable: true

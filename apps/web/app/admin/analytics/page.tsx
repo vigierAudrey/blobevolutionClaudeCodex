@@ -127,10 +127,10 @@ function FunnelMarketplace({ funnel, health }: FunnelMarketplaceProps) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <TrendingDown className="h-4 w-4 text-indigo-600" />
-              Entonnoir de conversion
+              Entonnoir de sollicitation
             </CardTitle>
             <CardDescription>
-              Demandes créées → couvertes par des pros → contactées
+              Demandes créées → couvertes par des pros → sollicitées
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 font-mono text-sm">
@@ -163,13 +163,13 @@ function FunnelMarketplace({ funnel, health }: FunnelMarketplaceProps) {
             {funnel.requests7d > 0 && (
               <div className="flex items-center gap-2 px-4 text-xs text-amber-600">
                 <TrendingDown className="h-3 w-3 shrink-0" />
-                <span>perte {formatNumber(funnel.contactLoss)} (pros trouvés mais pas de contact)</span>
+                <span>perte {formatNumber(funnel.contactLoss)} (pros trouvés mais pas de demande de contact)</span>
               </div>
             )}
 
             {/* Étape 3 : contactées */}
             <div className="flex items-center justify-between rounded-md bg-emerald-50 px-4 py-3">
-              <span className="font-semibold text-emerald-800">Demandes contactées</span>
+              <span className="font-semibold text-emerald-800">Demandes sollicitées</span>
               <span className="text-xl font-bold text-emerald-900">
                 {formatNumber(funnel.contacted7d)}
                 {funnel.contactRatePct !== null && (
@@ -510,8 +510,8 @@ export default function AdminAnalytics() {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">Taux d&apos;acceptation</CardTitle>
-              <CardDescription>Données figées · booking retiré</CardDescription>
+              <CardTitle className="text-sm">Ancien taux de réponse</CardTitle>
+              <CardDescription>Données figées · module historique retiré</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-semibold">{formatPercent(marketplace?.acceptance.acceptanceRate ?? null)}</div>
@@ -521,7 +521,7 @@ export default function AdminAnalytics() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Délai de réponse médian</CardTitle>
-              <CardDescription>Données figées · booking retiré</CardDescription>
+              <CardDescription>Données figées · module historique retiré</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-semibold">{formatHours(marketplace?.acceptance.medianResponseHours ?? null)}</div>
@@ -536,7 +536,7 @@ export default function AdminAnalytics() {
               <BarChart3 className="h-4 w-4" />
               Supply vs Demand par sport & zone large
             </CardTitle>
-            <CardDescription>Données figées — fonctionnalité booking retirée · segments masqués si n &lt; {rgpdThreshold}</CardDescription>
+            <CardDescription>Données figées — module historique retiré · segments masqués si n &lt; {rgpdThreshold}</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -566,8 +566,8 @@ export default function AdminAnalytics() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Acceptation par sport</CardTitle>
-            <CardDescription>Données figées — fonctionnalité booking retirée · masqué si n &lt; {rgpdThreshold}</CardDescription>
+            <CardTitle className="text-base">Ancienne réponse par sport</CardTitle>
+            <CardDescription>Données figées — module historique retiré · masqué si n &lt; {rgpdThreshold}</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -575,7 +575,7 @@ export default function AdminAnalytics() {
                 <tr className="text-left text-xs text-muted-foreground">
                   <th className="py-2">Sport</th>
                   <th>Demandes</th>
-                  <th>Taux d&apos;acceptation</th>
+                  <th>Taux de réponse</th>
                   <th>Délai médian</th>
                 </tr>
               </thead>
@@ -800,14 +800,14 @@ export default function AdminAnalytics() {
               <p className="text-3xl font-bold">{formatNumber(lessonData?.proContactStats.totalContacts ?? null)}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 {lessonData?.proContactStats.masked
-                  ? 'Riders contactés : masqué'
-                  : `${formatNumber(lessonData?.proContactStats.distinctRidersContacted ?? null)} riders contactés`}
+                  ? 'Riders sollicités : masqué'
+                  : `${formatNumber(lessonData?.proContactStats.distinctRidersContacted ?? null)} riders sollicités`}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Taux de contact pro</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Taux de sollicitation pro</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold">
@@ -822,14 +822,14 @@ export default function AdminAnalytics() {
           </Card>
         </div>
 
-        {/* Conversion demandes → contacts (Sprint C2) */}
+        {/* Sollicitation pro des demandes de cours (Sprint C2) */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Target className="h-4 w-4 text-emerald-600" />
-              Conversion demandes → contacts · 7 jours glissants
+              Sollicitation pro des demandes · 7 jours glissants
             </CardTitle>
-            <CardDescription>Ratio demandes de cours ayant généré au moins un contact pro</CardDescription>
+            <CardDescription>Part des demandes de cours ayant généré au moins une demande de contact pro</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-3">
@@ -838,11 +838,11 @@ export default function AdminAnalytics() {
                 <p className="text-3xl font-bold">{formatNumber(overviewData?.requests7d ?? null)}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Contacts 7 j</p>
+                <p className="text-xs text-muted-foreground">Demandes pro 7 j</p>
                 <p className="text-3xl font-bold">{formatNumber(overviewData?.contacted7d ?? null)}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Taux de contact</p>
+                <p className="text-xs text-muted-foreground">Taux de sollicitation pro</p>
                 <p className="text-3xl font-bold">
                   {overviewData === null
                     ? 'Chargement…'
@@ -905,8 +905,8 @@ export default function AdminAnalytics() {
                     <tr className="text-left text-xs text-muted-foreground border-b">
                       <th className="pb-2 pr-4">Sport</th>
                       <th className="pb-2 pr-4 text-right">Demandes</th>
-                      <th className="pb-2 pr-4 text-right">Contacts</th>
-                      <th className="pb-2 pr-4 text-right">Conversion</th>
+                      <th className="pb-2 pr-4 text-right">Demandes pro</th>
+                      <th className="pb-2 pr-4 text-right">Sollicitation</th>
                       <th className="pb-2 pr-4 text-right">Couvertes</th>
                       <th className="pb-2 text-right">Couverture</th>
                     </tr>
@@ -951,8 +951,8 @@ export default function AdminAnalytics() {
                       <th className="pb-2 pr-4">Raison</th>
                       <th className="pb-2 pr-4 text-right">Fanouts</th>
                       <th className="pb-2 pr-4 text-right">Demandes</th>
-                      <th className="pb-2 pr-4 text-right">Contacts</th>
-                      <th className="pb-2 pr-4 text-right">Conversion</th>
+                      <th className="pb-2 pr-4 text-right">Demandes pro</th>
+                      <th className="pb-2 pr-4 text-right">Sollicitation</th>
                       <th className="pb-2 pr-4 text-right">Couvertes</th>
                       <th className="pb-2 text-right">Couverture</th>
                     </tr>
@@ -1001,8 +1001,8 @@ export default function AdminAnalytics() {
                       <th className="pb-2 pr-4 text-right">Demandes</th>
                       <th className="pb-2 pr-4 text-right">Couvertes</th>
                       <th className="pb-2 pr-4 text-right">Couverture</th>
-                      <th className="pb-2 pr-4 text-right">Contacts</th>
-                      <th className="pb-2 text-right">Conversion</th>
+                      <th className="pb-2 pr-4 text-right">Demandes pro</th>
+                      <th className="pb-2 text-right">Sollicitation</th>
                     </tr>
                   </thead>
                   <tbody>

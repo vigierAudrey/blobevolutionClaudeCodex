@@ -376,10 +376,10 @@ contactRouter.post('/respond', contactRespondLimiter, async (req, res) => {
       status: finalStatus,
       message:
         finalStatus === 'ACCEPTED'
-          ? 'Le professionnel a été ajouté à votre conversation'
+          ? 'Mise en relation ouverte : le professionnel a été ajouté à votre conversation'
           : finalStatus === 'REJECTED'
-          ? 'Demande refusée'
-          : 'Réponse enregistrée, en attente des autres participants',
+            ? 'Demande non retenue'
+            : 'Réponse enregistrée, en attente des autres participants',
     });
 
   } catch (err: unknown) {
