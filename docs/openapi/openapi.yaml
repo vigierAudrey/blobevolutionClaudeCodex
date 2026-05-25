@@ -1402,6 +1402,8 @@ paths:
           application/json:
             schema:
               type: object
+              required: [conversationId]
+              additionalProperties: false
               properties:
                 conversationId:
                   type: string
@@ -1416,18 +1418,48 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [success, contactRequest]
+                additionalProperties: false
                 properties:
                   success:
                     type: boolean
                   contactRequest:
                     type: object
-                    additionalProperties: true
+                    additionalProperties: false
+                    required: [id, message, proName, createdAt]
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      message:
+                        type: string
+                        nullable: true
+                        maxLength: 500
+                      proName:
+                        type: string
+                        description: businessName du pro ou "Professionnel" en fallback
+                      createdAt:
+                        type: string
+                        format: date-time
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Une demande de contact existe déjà pour cette conversation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    example: Contact request already exists for this conversation
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /contact/respond:
     post:
       tags: [Contact]

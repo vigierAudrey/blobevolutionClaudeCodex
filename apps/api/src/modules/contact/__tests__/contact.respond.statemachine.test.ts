@@ -310,3 +310,23 @@ describe('POST /contact/respond — autorisation', () => {
     expect(res.body.error).toBe('Contact request not found');
   });
 });
+
+// ─── Validation stricte du body (C18.1) ──────────────────────────────────────
+
+describe('POST /contact/respond — strict schema (champs inconnus rejetés)', () => {
+  it('body avec champ inconnu → 400', async () => {
+    const agent = request.agent(app);
+    const csrf = await getCsrf(agent);
+    const res = await agent
+      .post('/contact/respond')
+      .set('Authorization', `Bearer ${fixture.riderToken}`)
+      .set('X-CSRF-Token', csrf)
+      .send({
+        contactRequestId: '00000000-0000-0000-0000-000000000000',
+        response: 'ACCEPT',
+        extraField: 'should-be-rejected',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid input');
+  });
+});

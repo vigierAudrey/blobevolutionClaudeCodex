@@ -37,6 +37,20 @@ const contactRequestsListLimiter = createLazyCustomRateLimiter(
   'contact_requests_list',
 );
 
+// 120 lectures / min / userId — GET /contact/pending, rider en attente.
+const contactPendingLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 1000,
+    limit: 120,
+    keyGenerator: (req: Request) => `contact_pending:${(req as any).user?.id ?? 'anon'}`,
+    message: {
+      error: 'CONTACT_PENDING_RATE_LIMIT_EXCEEDED',
+      message: 'Too many requests. Please wait.',
+    },
+  },
+  'contact_pending',
+);
+
 // 20 réponses / 10 min / userId — protège contre le bourrage de votes.
 const contactRespondLimiter = createLazyCustomRateLimiter(
   {
@@ -62,7 +76,7 @@ const createContactRequestSchema = z.object({
 const respondToContactRequestSchema = z.object({
   contactRequestId: z.string().uuid(),
   response: z.enum(['ACCEPT', 'REJECT']),
-});
+}).strict();
 
 // POST /contact/request - Le Pro envoie une demande de contact
 contactRouter.post('/request', contactRequestLimiter, async (req, res) => {
@@ -448,7 +462,7 @@ contactRouter.get('/requests', contactRequestsListLimiter, async (req, res) => {
 const PENDING_MAX = 50;
 
 // GET /contact/pending - Obtenir les demandes en attente pour un rider
-contactRouter.get('/pending', async (req, res) => {
+contactRouter.get('/pending', contactPendingLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -490,6 +504,7 @@ contactRouter.get('/pending', async (req, res) => {
     return res.json({ requests });
 
   } catch (err) {
+    secureLogger.error('CONTACT_PENDING_ERROR', { error: (err as any)?.message });
     return res.status(500).json({ error: 'Internal error' });
   }
 });
