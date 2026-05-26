@@ -288,7 +288,7 @@ export function createApp() {
   }));
   const analyticsJsonLimit = process.env.ANALYTICS_EVENT_MAX_BYTES || '8kb';
   app.use('/analytics', express.json({ limit: analyticsJsonLimit }));
-  app.use(express.json());
+  app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
   app.use(requestIdMiddleware);
 
@@ -566,6 +566,10 @@ export function createApp() {
 }
 
 export const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    res.status(413).json({ error: 'Payload too large' });
+    return;
+  }
   secureLogger.error('GLOBAL_ERROR_HANDLER_TRIGGERED', {
     error: err,
     method: req?.method,

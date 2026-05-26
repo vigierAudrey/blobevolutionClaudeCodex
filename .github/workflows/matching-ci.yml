@@ -30,10 +30,12 @@ jobs:
         uses: actions/checkout@v6
 
       - name: No skipped tests in matching suites (block)
-        # Fails if any matching test file contains .skip, xtest, xit, or TODO stubs.
+        # Fails if any matching test file contains .skip(, xtest(, xit(, or .todo( stubs.
+        # Pattern requires ( after the keyword to avoid false-positives on identifiers
+        # such as skippedReciprocalPairsCount which legitimately contain the word "skip".
         run: |
           set -euo pipefail
-          PATTERN='(\.skip|xtest|xit|todo\()'
+          PATTERN='(\.skip\s*\(|xtest\s*\(|xit\s*\(|\.todo\s*\()'
           FILES=$(find apps/api/src/modules/matching -name "*.test.ts" -o -name "*.spec.ts")
           if echo "$FILES" | xargs grep -lEn "$PATTERN" 2>/dev/null; then
             echo "❌ Skipped or todo tests detected in matching suite."

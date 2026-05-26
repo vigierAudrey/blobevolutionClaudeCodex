@@ -490,5 +490,14 @@ describe('POST /matching/search security & safety', () => {
     expect(responseSchema.properties.nextCursor.nullable).toBe(true);
   });
 
-  it.todo('returns 413 (not 500) when request body exceeds global parser limit');
+  it('returns 413 (not 500) when request body exceeds global parser limit', async () => {
+    // Express json({ limit: '100kb' }) must return 413, not let Express default to 500.
+    const oversizedBody = Buffer.alloc(110 * 1024, 'x').toString();
+    const res = await riderSession
+      .post('/matching/search')
+      .set('Content-Type', 'application/json')
+      .send(`{"sport":"surf","level":"beginner","date":"2025-09-04","overflow":"${oversizedBody}"}`)
+      .buffer(true);
+    expect(res.status).toBe(413);
+  });
 });
