@@ -24,7 +24,7 @@
     "clsx": "^2.1.1",
     "cookies-next": "^4.3.0",
     "firebase": "^12.3.0",
-    "framer-motion": "^12.23.18",
+    "framer-motion": "^12.38.0",
     "gray-matter": "^4.0.3",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.556.0",
