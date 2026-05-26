@@ -40,7 +40,7 @@ export default function AccountPage() {
   const logout = async () => {
     try {
       await apiClient.logoutAll();
-    } catch (_) {}
+    } catch {}
     apiClient.clearTokens();
     router.replace('/login');
   };

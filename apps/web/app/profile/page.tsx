@@ -218,7 +218,7 @@ export default function ProfilePage() {
         } else {
           setUserLocation(null);
         }
-      } catch (error) {
+      } catch {
         if (!isMounted) return;
         router.replace('/login');
       }
