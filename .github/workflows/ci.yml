@@ -33,7 +33,7 @@ jobs:
       openapi: ${{ steps.filter.outputs.openapi }}
     steps:
       - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           # token: auto-detected from GITHUB_TOKEN — uses REST API, no extra fetch-depth
