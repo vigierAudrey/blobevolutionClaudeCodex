@@ -1,0 +1,152 @@
+name: Matching CI
+
+# Dedicated workflow for the matching module.
+# Runs on every PR (not just main) to surface matching regressions fast,
+# without waiting for the full build-and-test pipeline.
+#
+# Scope: matching search, decisions, quota, metrics, geospatial.
+# Does NOT replace the full test suite — it runs in ADDITION to ci.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: matching-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.28.2'
+
+jobs:
+  matching-guard:
+    name: Matching — Anti-skip / Anti-todo guard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: No skipped tests in matching suites (block)
+        # Fails if any matching test file contains .skip, xtest, xit, or TODO stubs.
+        run: |
+          set -euo pipefail
+          PATTERN='(\.skip|xtest|xit|todo\()'
+          FILES=$(find apps/api/src/modules/matching -name "*.test.ts" -o -name "*.spec.ts")
+          if echo "$FILES" | xargs grep -lEn "$PATTERN" 2>/dev/null; then
+            echo "❌ Skipped or todo tests detected in matching suite."
+            echo "   Skipping tests masks regressions. Remove .skip/.todo before merging."
+            exit 1
+          fi
+          echo "✅ No skipped or todo tests in matching suite."
+
+  matching-typecheck:
+    name: Matching — Type Check
+    runs-on: ubuntu-22.04
+    needs: matching-guard
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check API (includes matching module)
+        run: pnpm --filter @blobinfini/api type-check
+
+  matching-tests:
+    name: Matching — Test Suite
+    runs-on: ubuntu-22.04
+    needs: matching-guard
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blobinfini
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=4096
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
+      JWT_SECRET: test-jwt-secret
+      JWT_REFRESH_SECRET: test-jwt-refresh-secret
+      IP_HASH_SECRET: test-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: test-log-actor-secret-for-ci-only-min-32-chars
+      WEB_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for Postgres to be ready
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          deadline=$((SECONDS + 30))
+          until pg_isready -h localhost -U postgres -d blobinfini; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "❌ Postgres not ready after 30s — aborting." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "✅ Postgres TCP ready."
+          psql "$DATABASE_URL" -c "select 1" > /dev/null
+          echo "✅ Postgres auth ready."
+
+      - name: Enable PostGIS
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d blobinfini -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Generate Prisma Client
+        run: pnpm run db:generate
+
+      - name: Run DB migrations
+        run: pnpm run db:migrate:deploy
+
+      - name: Run matching test suite
+        # Uses the scoped jest.matching.config.cjs — maxWorkers:1 for DB safety.
+        # --runInBand is redundant with maxWorkers:1 but makes the intent explicit.
+        env:
+          JEST_DB_PREPARED: 'true'
+        run: pnpm --filter @blobinfini/api test:matching -- --runInBand

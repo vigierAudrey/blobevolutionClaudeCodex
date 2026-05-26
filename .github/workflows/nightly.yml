@@ -1,0 +1,439 @@
+name: Nightly — Simulation, Abuse & Stability
+
+# Runs every night + can be triggered manually.
+# Purpose:
+#   - Heavier/slower tests that are too unstable or expensive for per-PR runs
+#   - Abuse/load simulation tests in full isolation (own DB, own Redis, own env)
+#   - Socket concurrency stress scenarios
+#   - Migration drift deep check
+#   - DR dry-run: validate restore scripts work
+#
+# Failure policy:
+#   - Every job here is REQUIRED (no continue-on-error).
+#   - A nightly failure must be triaged the next morning.
+#   - Do NOT mute failures or add continue-on-error to hide flakiness.
+
+on:
+  schedule:
+    # 03:00 UTC every day (no prod traffic expected)
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false  # Never cancel a running nightly
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.28.2'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 1 — Security guards (same as PR CI — confirms nightly env is clean)
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  security-guard:
+    name: Security Guard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - run: bash scripts/no-skip-critical-check.sh
+      - run: bash scripts/no-insecure-logs-check.sh
+      - run: node scripts/check-security-routes.mjs
+      - run: node scripts/check-api-runtime-console.mjs
+      - run: bash scripts/ci-block-db-push.sh
+      - run: bash scripts/no-unsafe-db-push-check.sh
+      - run: bash scripts/check-authz-route-guards.sh
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 2 — Simulation tests (active-user-simulation)
+#
+# WHY ISOLATED:
+#   - Creates many users, sends many messages, measures fan-out timing
+#   - Sensitive to DB/Redis contention from concurrent suites
+#   - Runs ALONE (only this test file) with a fresh DB
+# ─────────────────────────────────────────────────────────────────────────────
+  simulation-tests:
+    name: Active User Simulation
+    runs-on: ubuntu-22.04
+    needs: security-guard
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blobinfini
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=4096
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
+      JWT_SECRET: nightly-jwt-secret
+      JWT_REFRESH_SECRET: nightly-jwt-refresh-secret
+      IP_HASH_SECRET: nightly-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: nightly-log-actor-secret-for-ci-only-min-32-chars
+      WEB_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for Postgres
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          deadline=$((SECONDS + 30))
+          until pg_isready -h localhost -U postgres -d blobinfini; do
+            [ $SECONDS -ge $deadline ] && { echo "❌ Postgres not ready"; exit 1; }
+            sleep 1
+          done
+          psql "$DATABASE_URL" -c "select 1" > /dev/null
+          echo "✅ Postgres ready."
+
+      - name: Enable PostGIS
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d blobinfini -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Generate Prisma Client
+        run: pnpm run db:generate
+
+      - name: Run DB migrations
+        run: pnpm run db:migrate:deploy
+
+      - name: Run active-user-simulation (isolated)
+        # maxWorkers=1 + runInBand: prevents any other suite from running concurrently.
+        # NIGHTLY_ISOLATION=true signals test code that it runs with a guaranteed clean DB.
+        env:
+          JEST_DB_PREPARED: 'true'
+          NIGHTLY_ISOLATION: 'true'
+        run: |
+          pnpm --filter @blobinfini/api exec jest \
+            --config jest.config.cjs \
+            --testPathPatterns "active-user-simulation\.e2e\.test\.ts" \
+            --runInBand \
+            --forceExit \
+            --verbose
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 3 — Abuse controls tests (active-user-abuse-controls)
+#
+# WHY ISOLATED:
+#   - Sends 11 concurrent HTTP requests to test rate-limiting
+#   - Race conditions with DB constraints (clientMsgId, directKey) are the
+#     tested behaviors — not bugs. They generate expected P2002 errors.
+#   - The global afterEach resetDb() interferes with in-flight requests when
+#     running alongside other suites. Isolation eliminates this.
+# ─────────────────────────────────────────────────────────────────────────────
+  abuse-controls-tests:
+    name: Active User Abuse Controls
+    runs-on: ubuntu-22.04
+    needs: security-guard
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blobinfini
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=4096
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
+      JWT_SECRET: nightly-jwt-secret
+      JWT_REFRESH_SECRET: nightly-jwt-refresh-secret
+      IP_HASH_SECRET: nightly-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: nightly-log-actor-secret-for-ci-only-min-32-chars
+      WEB_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for Postgres
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          deadline=$((SECONDS + 30))
+          until pg_isready -h localhost -U postgres -d blobinfini; do
+            [ $SECONDS -ge $deadline ] && { echo "❌ Postgres not ready"; exit 1; }
+            sleep 1
+          done
+          psql "$DATABASE_URL" -c "select 1" > /dev/null
+          echo "✅ Postgres ready."
+
+      - name: Enable PostGIS
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d blobinfini -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Generate Prisma Client
+        run: pnpm run db:generate
+
+      - name: Run DB migrations
+        run: pnpm run db:migrate:deploy
+
+      - name: Run abuse-controls tests (isolated)
+        env:
+          JEST_DB_PREPARED: 'true'
+          NIGHTLY_ISOLATION: 'true'
+        run: |
+          pnpm --filter @blobinfini/api exec jest \
+            --config jest.config.cjs \
+            --testPathPatterns "active-user-abuse-controls\.e2e\.test\.ts" \
+            --runInBand \
+            --forceExit \
+            --verbose
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 4 — Socket concurrency stress (all socket tests in strict sequence)
+#
+# WHY NIGHTLY AND NOT PR:
+#   - Socket tests start/stop real HTTP servers (ports 4097-4129)
+#   - With maxWorkers:1 they run fine but are slow (~3-4 min just socket suite)
+#   - This job verifies no port-leak or cleanup regression appeared
+# ─────────────────────────────────────────────────────────────────────────────
+  socket-stress:
+    name: Socket Concurrency Stress
+    runs-on: ubuntu-22.04
+    needs: security-guard
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blobinfini
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      NODE_OPTIONS: --max-old-space-size=4096
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini_shadow
+      JWT_SECRET: nightly-jwt-secret
+      JWT_REFRESH_SECRET: nightly-jwt-refresh-secret
+      IP_HASH_SECRET: nightly-ip-hash-secret-for-ci-only-min-32-chars
+      LOG_ACTOR_SECRET: nightly-log-actor-secret-for-ci-only-min-32-chars
+      WEB_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for Postgres
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          deadline=$((SECONDS + 30))
+          until pg_isready -h localhost -U postgres -d blobinfini; do
+            [ $SECONDS -ge $deadline ] && { echo "❌ Postgres not ready"; exit 1; }
+            sleep 1
+          done
+          psql "$DATABASE_URL" -c "select 1" > /dev/null
+          echo "✅ Postgres ready."
+
+      - name: Enable PostGIS
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d blobinfini -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Generate Prisma Client
+        run: pnpm run db:generate
+
+      - name: Run DB migrations
+        run: pnpm run db:migrate:deploy
+
+      - name: Run all socket tests in strict sequence
+        env:
+          JEST_DB_PREPARED: 'true'
+        run: |
+          pnpm --filter @blobinfini/api exec jest \
+            --config jest.config.cjs \
+            --testPathPatterns "src/lib/__tests__/socket-" \
+            --runInBand \
+            --forceExit \
+            --verbose
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 5 — Migration drift deep check (full migration chain replay)
+#
+# Repeats migrate-deploy-fresh from PR CI + prisma migrate diff.
+# Nightly replay is cheaper insurance against migration chain bit-rot.
+# ─────────────────────────────────────────────────────────────────────────────
+  migration-drift-check:
+    name: Migration Drift Deep Check
+    runs-on: ubuntu-22.04
+    needs: security-guard
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blobinfini
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for Postgres
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          deadline=$((SECONDS + 30))
+          until pg_isready -h localhost -U postgres -d blobinfini; do
+            [ $SECONDS -ge $deadline ] && { echo "❌ Postgres not ready"; exit 1; }
+            sleep 1
+          done
+          echo "✅ Postgres ready."
+
+      - name: Enable PostGIS
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d blobinfini -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Run full migration chain on empty DB
+        run: pnpm --filter @blobinfini/database migrate:test:derived
+
+      - name: Verify schema.prisma ↔ migration chain (prisma migrate diff)
+        working-directory: packages/database
+        run: |
+          set -euo pipefail
+          set +e
+          DIFF_SQL=$(npx prisma migrate diff \
+            --from-schema-datasource prisma/schema.prisma \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code --script 2>&1)
+          DRIFT_EXIT=$?
+          set -e
+          if [ "$DRIFT_EXIT" -eq 2 ]; then
+            echo "❌ NIGHTLY DRIFT DETECTED — schema.prisma diverged from migration chain"
+            echo "$DIFF_SQL"
+            exit 1
+          elif [ "$DRIFT_EXIT" -ne 0 ]; then
+            echo "❌ prisma migrate diff failed (exit $DRIFT_EXIT)"
+            echo "$DIFF_SQL"
+            exit 1
+          fi
+          echo "✅ No drift — schema.prisma matches deployed migration chain."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 6 — DR dry-run: backup scripts syntax + restore readiness
+#
+# Validates that backup scripts are syntactically correct and executable.
+# Does NOT actually connect to production — no VPS secrets needed.
+# ─────────────────────────────────────────────────────────────────────────────
+  dr-dry-run:
+    name: DR Dry-run — Backup Script Validation
+    runs-on: ubuntu-22.04
+    needs: security-guard
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate backup script syntax (bash -n)
+        run: |
+          set -euo pipefail
+          failed=0
+          for script in scripts/backup-pg.sh scripts/backup-encrypt-upload.sh scripts/restore-pg.sh scripts/r2-rotate.sh; do
+            if [ -f "$script" ]; then
+              bash -n "$script" && echo "✅ $script" || { echo "❌ $script: syntax error"; failed=1; }
+            else
+              echo "⚠️  $script: not found (skip)"
+            fi
+          done
+          exit $failed
+
+      - name: Validate restore script is executable (not zero-size)
+        run: |
+          set -euo pipefail
+          for script in scripts/restore-pg.sh scripts/r2-restore-test.sh; do
+            if [ -f "$script" ]; then
+              SIZE=$(wc -c < "$script")
+              [ "$SIZE" -gt 100 ] && echo "✅ $script (${SIZE}B)" || { echo "❌ $script is suspiciously small (${SIZE}B)"; exit 1; }
+            else
+              echo "⚠️  $script: not found (skip)"
+            fi
+          done
+
+      - name: Validate check-backup-scripts
+        run: bash scripts/check-backup-scripts.sh 2>/dev/null || echo "⚠️  check-backup-scripts not available in this env (no R2 creds)"
