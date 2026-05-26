@@ -36,7 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Read the per-request nonce set by middleware so inline scripts can be
   // tagged with it and pass the Content-Security-Policy nonce check.
   // Falls back to undefined when middleware is not running (e.g. tests).
-  const nonce = headers().get('x-nonce') ?? undefined;
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
 
   const locale = await getLocale();
   const messages = await getMessages();

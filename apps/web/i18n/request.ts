@@ -8,7 +8,7 @@ export type Locale = (typeof LOCALES)[number];
 
 export default getRequestConfig(async () => {
   // 1. Vérifier si l'utilisateur a déjà choisi une langue (cookie)
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const savedLocale = cookieStore.get('NEXT_LOCALE')?.value;
 
   // 2. Utiliser la langue sauvegardée ou fallback FR

@@ -42,7 +42,7 @@ export const metadata: Metadata = {
 };
 
 type BlobospherePageProps = {
-  searchParams?: { topic?: string };
+  searchParams?: Promise<{ topic?: string }>;
 };
 
 function isBlobosphereTopic(value?: string): value is BlobosphereTopicSlug {
@@ -56,7 +56,8 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
   const leftSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_LEFT || 'blobosphere-left';
   const rightSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_RIGHT || 'blobosphere-right';
   const mobileFeedSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_MOBILE || 'blobosphere-mobile';
-  const activeTopic: TopicFilterValue = isBlobosphereTopic(searchParams?.topic) ? searchParams!.topic : 'all';
+  const resolvedSearchParams = await searchParams;
+  const activeTopic: TopicFilterValue = isBlobosphereTopic(resolvedSearchParams?.topic) ? resolvedSearchParams!.topic : 'all';
   const allArticles = await loadBlobospherePreviews();
   const filteredArticles = activeTopic === 'all' ? allArticles : allArticles.filter((a) => a.topic === activeTopic);
 
