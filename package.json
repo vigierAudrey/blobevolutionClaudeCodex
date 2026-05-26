@@ -112,10 +112,10 @@
     "react-dom": "18.2.0",
     "next": "14.2.35",
     "styled-jsx": "5.1.1",
-    "@typescript-eslint/eslint-plugin": "7.18.0",
-    "@typescript-eslint/parser": "7.18.0",
-    "@typescript-eslint/utils": "7.18.0",
-    "@typescript-eslint/type-utils": "7.18.0",
+    "@typescript-eslint/eslint-plugin": "8.59.3",
+    "@typescript-eslint/parser": "8.59.3",
+    "@typescript-eslint/utils": "8.59.3",
+    "@typescript-eslint/type-utils": "8.59.3",
     "js-yaml": "^4.1.1",
     "@istanbuljs/load-nyc-config": {
       "js-yaml": "^4.1.1"
