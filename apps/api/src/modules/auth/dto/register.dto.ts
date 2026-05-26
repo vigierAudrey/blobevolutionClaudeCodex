@@ -10,7 +10,7 @@ export const registerSchema = z
       errorMap: () => ({ message: 'Vous devez avoir 18 ans ou plus pour vous inscrire.' }),
     }),
     consentAccepted: z.literal(true, {
-      errorMap: () => ({ message: 'Vous devez accepter la charte et l\'avertissement.' }),
+      errorMap: () => ({ message: 'Vous devez accepter les règles de sécurité des sessions.' }),
     }),
   })
   .superRefine((value, ctx) => {

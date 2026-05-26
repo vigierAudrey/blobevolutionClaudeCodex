@@ -57,7 +57,7 @@ export default function TermsPage() {
               <li>Une adresse email valide</li>
               <li>Un mot de passe sécurisé (minimum 8 caractères)</li>
               <li>L&apos;acceptation des présentes CGU</li>
-              <li>L&apos;acceptation de la <Link href="/charte" className="underline text-primary">Charte de sécurité</Link></li>
+              <li>L&apos;acceptation de la <Link href="/securite-sessions" className="underline text-primary">Sécurité des sessions</Link></li>
             </ul>
           </section>
 
@@ -121,7 +121,7 @@ export default function TermsPage() {
               Nous nous réservons le droit de modérer les contenus et de suspendre ou supprimer tout compte en cas de :
             </p>
             <ul className="list-disc pl-6 space-y-1">
-              <li>Non-respect des présentes CGU ou de la Charte de sécurité</li>
+              <li>Non-respect des présentes CGU ou des règles de sécurité des sessions</li>
               <li>Comportement inapproprié, harcèlement ou discrimination</li>
               <li>Fraude ou tentative d&apos;escroquerie</li>
               <li>Usurpation d&apos;identité</li>
@@ -176,8 +176,8 @@ export default function TermsPage() {
 
           {/* Liens utiles */}
           <div className="pt-6 border-t flex flex-wrap gap-4">
-            <Link href="/charte" className="underline text-primary">
-              Charte de sécurité
+            <Link href="/securite-sessions" className="underline text-primary">
+              Sécurité des sessions
             </Link>
             <Link href="/about" className="underline text-primary">
               RGPD & Données
