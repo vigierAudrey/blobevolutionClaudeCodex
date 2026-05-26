@@ -1,9 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { ProStatsSection } from '../page';
-
-jest.mock('@/hooks/useAnalytics', () => ({
-  useAnalytics: () => ({ trackEvent: jest.fn() }),
-}));
+import { ProStatsSection } from '../ProStatsSection';
 
 describe('ProStatsSection — wording mise en relation', () => {
   const stats = {
