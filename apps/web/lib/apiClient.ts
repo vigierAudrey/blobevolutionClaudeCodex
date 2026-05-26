@@ -1,5 +1,6 @@
 import type { MessageListResponse, SendMessagePayload, ThreadListQuery, ThreadListResponse } from '@/types/messages';
 import { z } from 'zod';
+import type { UserProfileUpdate } from '@/types/user';
 import { requestStrict, requestStrictWithStatus } from './requestStrict';
 
 export interface AuditLogEntry {
@@ -1177,7 +1178,7 @@ export const apiClient = {
   unarchiveContactRequest: (id: string) =>
     request(`/pro/contact-requests/${id}/unarchive`, { method: 'PATCH' }, true) as Promise<{ success: boolean }>,
 
-  updateProfile: (body: Record<string, unknown>) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
+  updateProfile: (body: UserProfileUpdate) => request('/profile/me', { method: 'PUT', body: JSON.stringify(body) }, true),
 
   getDisciplines: () => request('/profile/disciplines', { method: 'GET' }, true) as Promise<Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced'|'anytime' }>>,
   setDisciplines: (items: Array<{ sport: 'surf'|'kitesurf'; level: 'beginner'|'intermediate'|'advanced'|'anytime' }>) =>

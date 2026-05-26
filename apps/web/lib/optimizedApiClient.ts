@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './apiClient';
+import type { UserProfileUpdate } from '@/types/user';
 import { clientCache, CacheKeys, CacheTTL } from './clientCache';
 import { measurePerformance } from './performanceMonitor';
 
@@ -186,7 +187,7 @@ export const optimizedApiClient = {
   },
 
   // Pass-through methods for non-cached operations
-  updateProfile: async (body: Record<string, unknown>) => {
+  updateProfile: async (body: UserProfileUpdate) => {
     const result = await apiClient.updateProfile(body);
     // Invalidate related cache
     optimizedApiClient.invalidateUserData();
