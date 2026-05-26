@@ -125,7 +125,7 @@ export function AuthForm({ mode }: AuthFormProps) {
       } else if (pathSegment === 'role') {
         errors.role = 'Rôle invalide.';
       } else if (pathSegment === 'consentAccepted') {
-        errors.consent = 'Vous devez accepter la charte pour continuer.';
+        errors.consent = 'Vous devez accepter les règles de sécurité des sessions pour continuer.';
       } else if (pathSegment === 'ageConfirmed') {
         errors.ageConfirmation = 'Vous devez avoir 18 ans ou plus pour vous inscrire.';
       }
@@ -152,7 +152,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           return;
         }
         if (!consentAccepted) {
-          setFieldErrors({ consent: 'Merci de confirmer que vous avez lu et accepté la charte.' });
+          setFieldErrors({ consent: 'Merci de confirmer que vous avez lu et accepté les règles de sécurité des sessions.' });
           return;
         }
         await apiClient.register({
@@ -227,7 +227,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
       if (mode === 'login' && normalized.includes('consent')) {
         setLoginConsentNeeded(true);
-        setError('Pour continuer, merci d’accepter la charte.');
+        setError('Pour continuer, merci d’accepter les règles de sécurité des sessions.');
         setEmailNotVerified(false);
       } else if (mode === 'login' && normalized.includes('email not verified')) {
         setEmailNotVerified(true);
@@ -506,7 +506,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           {mode === 'register' && (
             <div className="space-y-2 border rounded-md p-3 bg-muted/30">
               <div className="text-sm text-foreground">
-                <p className="font-medium">Charte de sécurité & responsabilité</p>
+                <p className="font-medium">Sécurité des sessions & responsabilité</p>
                 <p className="mt-1">
                   Blob facilite la mise en relation entre personnes pour partager de bons moments.
                   Tu restes toutefois seul responsable de tes choix, de ta sécurité et de tes biens.
@@ -519,10 +519,10 @@ export function AuthForm({ mode }: AuthFormProps) {
                   <li>Interromps toute activité si tu ne te sens pas en sécurité.</li>
                 </ul>
                 <p className="mt-2 text-muted-foreground">
-                  En t’inscrivant, tu confirmes avoir lu et accepté cette charte.
+                  En t’inscrivant, tu confirmes avoir lu et accepté ces règles de sécurité.
                   Pour les détails, consulte la page «
-                  <a className="underline text-primary" href="/charte" target="_blank" rel="noopener noreferrer">
-                    Charte et avertissement
+                  <a className="underline text-primary" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
+                    Sécurité des sessions
                   </a>
                   ».
                 </p>
@@ -536,7 +536,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                   onChange={(event) => setConsentAccepted(event.target.checked)}
                   required
                 />
-                <span>J&apos;ai lu et j&apos;accepte la charte de sécurité et l&apos;avertissement.</span>
+                <span>J&apos;ai lu et j&apos;accepte les règles de sécurité des sessions.</span>
               </label>
               {fieldErrors.consent && (
                 <p className="text-sm text-red-600 mt-2" role="alert">
@@ -548,12 +548,12 @@ export function AuthForm({ mode }: AuthFormProps) {
           {mode === 'login' && loginConsentNeeded && (
             <div className="space-y-2 border rounded-md p-3 bg-muted/30">
               <div className="text-sm text-foreground">
-                <p className="font-medium">Charte de sécurité & responsabilité</p>
+                <p className="font-medium">Sécurité des sessions & responsabilité</p>
                 <p className="mt-1">
-                  Pour poursuivre la connexion, confirme avoir lu et accepté la charte.
+                  Pour poursuivre la connexion, confirme avoir lu et accepté les règles de sécurité.
                   Consulte la page «
-                  <a className="underline text-primary" href="/charte" target="_blank" rel="noopener noreferrer">
-                    Charte et avertissement
+                  <a className="underline text-primary" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
+                    Sécurité des sessions
                   </a>
                   ».
                 </p>
@@ -567,7 +567,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                   onChange={(event) => setLoginConsentAccepted(event.target.checked)}
                   required
                 />
-                <span>J&apos;ai lu et j&apos;accepte la charte de sécurité et l&apos;avertissement.</span>
+                <span>J&apos;ai lu et j&apos;accepte les règles de sécurité des sessions.</span>
               </label>
             </div>
           )}

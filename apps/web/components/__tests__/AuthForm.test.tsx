@@ -61,7 +61,7 @@ describe('AuthForm', () => {
     await user.type(screen.getByLabelText(/^mot de passe$/i), 'Passw0rd!');
     await user.selectOptions(screen.getByLabelText(/rôle/i), 'PRO');
     await user.click(screen.getByLabelText(/18 ans ou plus/i));
-    await user.click(screen.getByLabelText(/j'ai lu et j'accepte la charte/i));
+    await user.click(screen.getByLabelText(/j'ai lu et j'accepte les règles de sécurité des sessions/i));
     await user.click(screen.getByRole('button', { name: /créer le compte/i }));
 
     expect(mockedApiClient.register).toHaveBeenCalledWith({

@@ -32,7 +32,7 @@ export default function AboutPage() {
               <ul className="list-disc pl-5 space-y-1">
                 <li>Compte: email, identité pro, coordonnées publiques vérifiées.</li>
                 <li>Profil public: sports enseignés, bio, zone d’activité.</li>
-                <li>Organisation: créneaux proposés, demandes reçues, journal d’actions (audit).</li>
+                <li>Organisation: demandes reçues, échanges en messagerie pour convenir d’un cours, journal d’actions (audit).</li>
                 <li>Documents professionnels partagés hors plateforme – vérification à la charge des utilisateurs.</li>
               </ul>
             </div>
@@ -65,11 +65,11 @@ export default function AboutPage() {
           </div>
           <div>
             <h3 className="font-medium text-foreground">Cours & coaching pros</h3>
-            <p>Besoin d’un œil expert ? Parcours les profils pros, consulte leurs disponibilités et réserve un créneau directement depuis la messagerie.</p>
+            <p>Besoin d’un œil expert ? Publie une demande de cours : les pros proches la voient et peuvent te répondre avec une proposition adaptée.</p>
           </div>
           <div>
             <h3 className="font-medium text-foreground">Visibilité auprès des pros</h3>
-            <p>Active ton alerte « je cherche un coach » : les pros savent que tu es disponible et peuvent t’envoyer une proposition personnalisée.</p>
+            <p>Quand tu indiques que tu cherches un coach, ta demande peut apparaître aux pros dont la zone couvre ta distance. La fonctionnalité se déploie progressivement : selon ton spot, il peut y avoir peu de réponses au début.</p>
           </div>
           <div>
             <h3 className="font-medium text-foreground">Promos & bons plans</h3>

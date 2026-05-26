@@ -3986,7 +3986,7 @@ components:
           type: string
         consentAccepted:
           type: boolean
-          description: Confirmation de la charte RGPD
+          description: Confirmation des règles de sécurité des sessions
     CookieSessionOkResponse:
       type: object
       properties:

@@ -90,7 +90,7 @@ const registerSchema = z
     role: z.enum(['RIDER', 'PRO']).default('RIDER'),
     countryCode: z.string().trim().length(2).transform((value) => value.toUpperCase()).optional(),
     consentAccepted: z.literal(true, {
-      errorMap: () => ({ message: 'Vous devez accepter la charte et l\'avertissement.' }),
+      errorMap: () => ({ message: 'Vous devez accepter les règles de sécurité des sessions.' }),
     }),
   })
   .superRefine((value, ctx) => {
