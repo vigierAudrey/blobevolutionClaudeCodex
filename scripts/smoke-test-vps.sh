@@ -567,12 +567,15 @@ fi
 # Sans ces headers, fetch(presignedUrl, {method:'PUT'}) est bloqué par le browser
 # (profile/page.tsx:486, pro/profile/page.tsx:481).
 echo "--- [21] CORS preflight OPTIONS (storage domain → app domain) ---"
+# L'origin testée est le domaine du frontend (APP_DOMAIN, chargé depuis .env.vps).
+# Exemples : https://blobsurf.com (prod), https://app.blobinfini.local (pré-vps).
+CORS_TEST_ORIGIN="https://${APP_DOMAIN:-app.blobinfini.local}"
 CORS_RESP=$(curl -sk \
   $CURL_RESOLVE \
   -D - \
   -X OPTIONS \
   "${STORAGE}/${S3_BUCKET_CHECK}/probe-cors-smoke" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: ${CORS_TEST_ORIGIN}" \
   -H "Access-Control-Request-Method: PUT" \
   -H "Access-Control-Request-Headers: Content-Type" \
   -o /dev/null 2>/dev/null || echo "CURL_FAILED")
@@ -581,16 +584,18 @@ CORS_ORIGIN=$(echo "$CORS_RESP" | grep -i "access-control-allow-origin" | head -
 CORS_METHOD=$(echo "$CORS_RESP" | grep -i "access-control-allow-method" | head -1 | tr -d '\r')
 CORS_HDRS=$(echo "$CORS_RESP"  | grep -i "access-control-allow-header" | head -1 | tr -d '\r')
 
-check_contains "CORS OPTIONS → Access-Control-Allow-Origin présent" "$CORS_ORIGIN" "app.blobinfini.local"
+check_contains "CORS OPTIONS → Access-Control-Allow-Origin présent" "$CORS_ORIGIN" "${APP_DOMAIN:-app.blobinfini.local}"
 check_contains "CORS OPTIONS → Access-Control-Allow-Methods contient PUT" "$CORS_METHOD" "PUT"
 check_contains "CORS OPTIONS → Allow-Headers contient Content-Type" "$CORS_HDRS" "Content-Type"
 
 if [ -z "$CORS_ORIGIN" ] || [ -z "$CORS_METHOD" ] || [ -z "$CORS_HDRS" ]; then
-  echo "       CORS_ORIGIN:  '${CORS_ORIGIN}'"
-  echo "       CORS_METHOD:  '${CORS_METHOD}'"
-  echo "       CORS_HEADERS: '${CORS_HDRS}'"
+  echo "       Origin testée : ${CORS_TEST_ORIGIN}"
+  echo "       CORS_ORIGIN:   '${CORS_ORIGIN}'"
+  echo "       CORS_METHOD:   '${CORS_METHOD}'"
+  echo "       CORS_HEADERS:  '${CORS_HDRS}'"
   echo "       FAIL: les uploads photo navigateur (RIDER + PRO) seront bloqués par le browser."
-  echo "       Action: vérifier mc cors set dans bootstrap ou configurer via console MinIO."
+  echo "       Stack Caddy   : vérifier docker/Caddyfile (section storage CORS)"
+  echo "       Stack nginx   : vérifier mc cors set dans bootstrap ou console MinIO."
 fi
 
 # ─── [21b] CORS storage — origin hostile doit être rejetée ───────────────────
