@@ -147,8 +147,8 @@ jobs:
         run: pnpm run db:migrate:deploy
 
       - name: Run matching test suite
-        # Uses the scoped jest.matching.config.cjs — maxWorkers:1 for DB safety.
-        # --runInBand is redundant with maxWorkers:1 but makes the intent explicit.
+        # Uses the scoped jest.matching.config.cjs — maxWorkers:1 ensures serial execution.
+        # exec jest passes flags directly without pnpm --filter argument forwarding issues.
         env:
           JEST_DB_PREPARED: 'true'
-        run: pnpm --filter @blobinfini/api test:matching -- --runInBand
+        run: pnpm --filter @blobinfini/api exec jest --config jest.matching.config.cjs --runInBand --forceExit
