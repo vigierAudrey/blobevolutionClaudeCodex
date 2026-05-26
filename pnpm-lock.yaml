@@ -326,8 +326,8 @@ importers:
         specifier: ^8.6.15
         version: 8.6.15(storybook@8.6.15)
       '@storybook/addon-links':
-        specifier: ^8.6.15
-        version: 8.6.15(react@18.2.0)(storybook@8.6.15)
+        specifier: ^10.4.1
+        version: 10.4.1(@types/react@18.3.28)(react@18.2.0)(storybook@8.6.15)
       '@storybook/blocks':
         specifier: ^8.6.15
         version: 8.6.15(react-dom@18.2.0(react@18.2.0))(react@18.2.0)(storybook@8.6.15)
@@ -3591,12 +3591,15 @@ packages:
     peerDependencies:
       storybook: ^8.6.15
 
-  '@storybook/addon-links@8.6.15':
-    resolution: {integrity: sha512-abRWnDPBTwnj6sQYfAjUnYCNuUQbrVLLOyuormbDUqOcvZ+OqehNYo4BKXx0/lz61h0A2dOD1IuDo40uWyYVFQ==}
+  '@storybook/addon-links@10.4.1':
+    resolution: {integrity: sha512-h/5D23GwMuHA55sB7XDyhByF9psF7UFmaQOn72pjNAarew5eOpue5A+jXk3AKEYokHbvgQaoz+FrvWo9GEfSKQ==}
     peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0-beta
-      storybook: ^8.6.15
+      '@types/react': ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      storybook: ^10.4.1
     peerDependenciesMeta:
+      '@types/react':
+        optional: true
       react:
         optional: true
 
@@ -14505,12 +14508,12 @@ snapshots:
       storybook: 8.6.15
       ts-dedent: 2.2.0
 
-  '@storybook/addon-links@8.6.15(react@18.2.0)(storybook@8.6.15)':
+  '@storybook/addon-links@10.4.1(@types/react@18.3.28)(react@18.2.0)(storybook@8.6.15)':
     dependencies:
       '@storybook/global': 5.0.0
       storybook: 8.6.15
-      ts-dedent: 2.2.0
     optionalDependencies:
+      '@types/react': 18.3.28
       react: 18.2.0
 
   '@storybook/addon-measure@8.6.15(storybook@8.6.15)':
