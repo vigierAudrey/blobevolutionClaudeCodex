@@ -94,7 +94,7 @@ export default function DashboardPage() {
         } else {
           setShowProfilePrompt(false);
         }
-      } catch (_) {
+      } catch {
         // ignore
       }
     })();
@@ -191,7 +191,7 @@ export default function DashboardPage() {
   const logout = async () => {
     try {
       await apiClient.logoutAll();
-    } catch (_) {}
+    } catch {}
     apiClient.clearTokens();
     router.replace('/login');
   };

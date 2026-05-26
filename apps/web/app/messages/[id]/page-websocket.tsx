@@ -200,7 +200,7 @@ export default function ConversationPage() {
     try {
       const convInfo = await apiClient.findConversationById(id);
       setConversationInfo(convInfo);
-    } catch (err) {
+    } catch {
       // ✅ E-REVIEW P0 #4: Pas de console.error, erreur silencieuse ou UI
       setError('Erreur de chargement des informations');
     }
@@ -533,7 +533,7 @@ export default function ConversationPage() {
 
       await refreshConversationInfo();
       setShowMenu(false);
-    } catch (err) {
+    } catch {
       // ✅ E-REVIEW P0 #4: Pas de console.error, UI uniquement
       setError('Erreur lors du blocage ou du déblocage');
     }

@@ -207,7 +207,7 @@ export function normalizeAppError(err: unknown): AppError {
       actionHint,
       debug: Object.keys(debug).length > 0 ? debug : undefined,
     };
-  } catch (normalizationError) {
+  } catch {
     // Fallback: if normalization itself fails, return minimal AppError
     return {
       source: 'UNKNOWN',

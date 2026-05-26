@@ -269,7 +269,7 @@ export default function MessagesPage() {
                     const result = await apiClient.emptyTrashConversations();
                     await load();
                     alert(`${result.count} conversation${result.count > 1 ? 's ont été supprimées' : ' a été supprimée'} définitivement.`);
-                  } catch (err) {
+                  } catch {
                     alert('Erreur lors de la suppression des conversations');
                   }
                 }}
