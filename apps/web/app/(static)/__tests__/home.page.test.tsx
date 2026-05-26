@@ -5,7 +5,7 @@ describe('Static Home page', () => {
   it('affiche un hero clair pour la communauté Surf & Kite avec CTA principaux', () => {
     render(<Home />);
 
-    expect(screen.getByRole('heading', { name: /ta communauté connectée/i })).toBeInTheDocument();
+    expect(screen.getByText(/communauté Surf.*Kite connectée/i)).toBeInTheDocument();
 
     const createAccount = screen.getByRole('link', { name: /Créer un compte/i });
     expect(createAccount).toBeInTheDocument();
