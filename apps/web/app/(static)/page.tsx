@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { Metadata } from 'next';
-import dynamic from 'next/dynamic';
+import { AdBannerSidebar, AdBannerFeed } from '@/components/ads/AdBannersClient';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Users, GraduationCap, Tag, BookOpen, ArrowRight } from 'lucide-react';
@@ -20,14 +20,6 @@ export const metadata: Metadata = {
 // Retiré: ancien bloc "Comment ça marche" (3 étapes)
 
 export default function Home() {
-  const AdBannerSidebar = dynamic(
-    () => import('@/components/ads/AdBanner').then((m) => m.AdBannerSidebar),
-    { ssr: false },
-  );
-  const AdBannerFeed = dynamic(
-    () => import('@/components/ads/AdBanner').then((m) => m.AdBannerFeed),
-    { ssr: false },
-  );
   const leftSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_HOME_LEFT || 'home-left';
   const rightSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_HOME_RIGHT || 'home-right';
   const mobileFeedSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_HOME_MOBILE || 'home-mobile';

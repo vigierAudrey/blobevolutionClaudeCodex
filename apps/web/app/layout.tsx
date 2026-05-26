@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import dynamicImport from 'next/dynamic';
 import Script from 'next/script';
 import { headers } from 'next/headers';
 import './globals.css';
@@ -9,14 +8,11 @@ import { SkipLink } from '@/components/accessibility/SkipLink';
 import { ThemeScript } from '@/components/theme/ThemeScript';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
+import { CookieConsent } from '@/components/cookies/CookieConsentLoader';
 
 // Force dynamic rendering for all pages (no static generation)
 export const dynamic = 'force-dynamic';
 export const dynamicParams = true;
-const CookieConsent = dynamicImport(
-  () => import('../components/cookies/CookieConsent').then((mod) => mod.CookieConsent),
-  { ssr: false },
-);
 
 // Root layout provides HTML shell + ClientProvider for all pages
 // Static pages in (static)/ use ISR with revalidate=300 and avoid using contexts

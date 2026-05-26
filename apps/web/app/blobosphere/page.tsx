@@ -6,7 +6,7 @@ import { loadBlobospherePreviews, type BlobosphereArticlePreview } from '@/lib/b
 import { cn } from '@/lib/utils';
 import { AlertCircle, BookOpen, Heart, Leaf, Sparkles, Users } from 'lucide-react';
 import type { Metadata } from 'next';
-import dynamic from 'next/dynamic';
+import { AdBannerSidebar, AdBannerFeed } from '@/components/ads/AdBannersClient';
 import Link from 'next/link';
 import { blobosphereTopics, type BlobosphereTopicSlug } from './static';
 
@@ -53,14 +53,6 @@ function isBlobosphereTopic(value?: string): value is BlobosphereTopicSlug {
 }
 
 export default async function BlobospherePage({ searchParams }: BlobospherePageProps) {
-  const AdBannerSidebar = dynamic(
-    () => import('@/components/ads/AdBanner').then((m) => m.AdBannerSidebar),
-    { ssr: false },
-  );
-  const AdBannerFeed = dynamic(
-    () => import('@/components/ads/AdBanner').then((m) => m.AdBannerFeed),
-    { ssr: false },
-  );
   const leftSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_LEFT || 'blobosphere-left';
   const rightSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_RIGHT || 'blobosphere-right';
   const mobileFeedSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_MOBILE || 'blobosphere-mobile';
