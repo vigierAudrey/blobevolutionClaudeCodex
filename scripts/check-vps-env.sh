@@ -231,21 +231,44 @@ require_var "NEXT_PUBLIC_API_URL"
 require_var "WEB_BASE_URL"
 require_var "PRIMARY_ADMIN_EMAILS"
 
-# ─── Certs TLS VPS ───────────────────────────────────────────────────────────
-echo "--- TLS (certs VPS) ---"
-CERT_DIR="${VPS_CERTS_DIR:-./docker/certs/vps}"
-DOMAIN="${API_DOMAIN:-api.blobinfini.local}"
-STORAGE_DOMAIN_CERT="${STORAGE_DOMAIN:-storage.blobinfini.local}"
-APP_DOMAIN_CERT="${APP_DOMAIN:-app.blobinfini.local}"
-
-for cert_domain in "$DOMAIN" "$APP_DOMAIN_CERT" "$STORAGE_DOMAIN_CERT"; do
-  if [ ! -f "${CERT_DIR}/${cert_domain}.pem" ]; then
-    log_err "Cert manquant : ${CERT_DIR}/${cert_domain}.pem (lancer vps-bootstrap.sh)"
-    ERRORS=$((ERRORS + 1))
+# ─── Caddy ACME (stack blobsurf — docker-compose.blobsurf.yml) ───────────────
+echo "--- Caddy ACME ---"
+if [ -n "${CADDY_ACME_EMAIL:-}" ]; then
+  if echo "${CADDY_ACME_EMAIL}" | grep -qP "^[^@\s]+@[^@\s]+\.[^@\s]+$" 2>/dev/null || \
+     echo "${CADDY_ACME_EMAIL}" | grep -qE "^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$"; then
+    log_ok "CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL}"
   else
-    log_ok "Cert présent : ${cert_domain}.pem"
+    log_err "CADDY_ACME_EMAIL ne ressemble pas à un email valide : ${CADDY_ACME_EMAIL}"
+    ERRORS=$((ERRORS + 1))
   fi
-done
+  forbidden_value "CADDY_ACME_EMAIL" "contact@blobinfini.local"
+else
+  # CADDY_ACME_EMAIL optionnel : uniquement requis pour docker-compose.blobsurf.yml.
+  # Avec docker-compose.vps.yml (nginx), les certs sont gérés par mkcert/certbot.
+  log_ok "CADDY_ACME_EMAIL non défini (optionnel — requis uniquement pour stack Caddy/blobsurf)"
+fi
+
+# ─── Certs TLS VPS (nginx — docker-compose.vps.yml) ──────────────────────────
+# Ce check ne s'applique qu'à la stack nginx (docker-compose.vps.yml).
+# Pour la stack Caddy (docker-compose.blobsurf.yml), Caddy gère les certs automatiquement.
+echo "--- TLS (certs VPS nginx) ---"
+if [ -n "${CADDY_ACME_EMAIL:-}" ]; then
+  log_ok "Stack Caddy détectée (CADDY_ACME_EMAIL défini) — check certs mkcert ignoré"
+else
+  CERT_DIR="${VPS_CERTS_DIR:-./docker/certs/vps}"
+  DOMAIN="${API_DOMAIN:-api.blobinfini.local}"
+  STORAGE_DOMAIN_CERT="${STORAGE_DOMAIN:-storage.blobinfini.local}"
+  APP_DOMAIN_CERT="${APP_DOMAIN:-app.blobinfini.local}"
+
+  for cert_domain in "$DOMAIN" "$APP_DOMAIN_CERT" "$STORAGE_DOMAIN_CERT"; do
+    if [ ! -f "${CERT_DIR}/${cert_domain}.pem" ]; then
+      log_err "Cert manquant : ${CERT_DIR}/${cert_domain}.pem (lancer vps-bootstrap.sh)"
+      ERRORS=$((ERRORS + 1))
+    else
+      log_ok "Cert présent : ${cert_domain}.pem"
+    fi
+  done
+fi
 
 echo ""
 if [ "$ERRORS" -eq 0 ]; then
