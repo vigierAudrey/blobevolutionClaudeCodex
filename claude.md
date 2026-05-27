@@ -747,13 +747,6 @@ Le projet utilise Model Context Protocol (MCP) pour enrichir les capacités des 
 ```json
 {
   "mcpServers": {
-    "vercel": {
-      "command": "npx",
-      "args": ["-y", "vercel-mcp"],
-      "env": {
-        "VERCEL_API_KEY": "votre-clé-api"
-      }
-    },
     "chrome-devtools": {
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]
