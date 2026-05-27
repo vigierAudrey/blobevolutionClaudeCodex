@@ -21,13 +21,6 @@ Ce document détaille la configuration des serveurs MCP pour enrichir les capaci
 ```json
 {
   "mcpServers": {
-    "vercel": {
-      "command": "npx",
-      "args": ["-y", "vercel-mcp"],
-      "env": {
-        "VERCEL_API_KEY": "votre-clé-api"
-      }
-    },
     "chrome-devtools": {
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]
@@ -47,7 +40,6 @@ Ce document détaille la configuration des serveurs MCP pour enrichir les capaci
 
 | Serveur | Usage |
 |---------|-------|
-| **Vercel MCP** | Gestion déploiements frontend (logs, domaines, projets) |
 | **Chrome DevTools MCP** | Tests navigateur, debugging, screenshots, performance |
 | **GitHub MCP** | Accéder au repo, créer/modifier issues et PRs depuis Claude Code |
 
@@ -112,10 +104,6 @@ Ce document détaille la configuration des serveurs MCP pour enrichir les capaci
 - URL : https://github.com/settings/tokens
 - Scopes : `repo`, `read:org`, `workflow`
 
-### Vercel
-- URL : https://vercel.com/account/tokens
-- Scopes : `deployments`, `logs`, `projects`
-
 ### Context7
 - URL : https://context7.com
 - Créer un compte et générer une clé API
@@ -146,12 +134,7 @@ Les IA peuvent désormais :
    - Analyser PRs
    - Rechercher dans le code
 
-5. **Gérer les déploiements** (Vercel)
-   - Consulter les logs
-   - Vérifier le statut
-   - Gérer les domaines
-
-6. **Déboguer le frontend** (Chrome DevTools)
+5. **Déboguer le frontend** (Chrome DevTools)
    - Inspecter le DOM
    - Analyser les performances
    - Capturer des screenshots

@@ -12,7 +12,7 @@ test-results/
 playwright-out/
 apps/web/storybook-static/
 
-# Vercel
+# Legacy deploy metadata (local only, may contain project links)
 .vercel
 apps/web/.vercel
 apps/api/apps/

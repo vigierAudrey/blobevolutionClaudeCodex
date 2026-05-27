@@ -69,10 +69,9 @@ Services:
 
 Infrastructure:
   - Docker Compose (dev)
-  - Vercel (frontend production - gratuit)
-  - Clever Cloud ou autre hébergeur (backend production: Render/Railway/Fly.io possibles)
+  - Docker Compose (VPS production)
+  - GitHub Actions (CI puis déploiement VPS)
   - Firebase (push notifications)
-  - CI/CD GitHub Actions
   - PostGIS activé (image `postgis/postgis:15-3.4` pour dev & CI)
 ```
 
@@ -106,7 +105,7 @@ Pour la phase MVP, plusieurs options d'hébergement backend gratuites sont dispo
 - **Idéal pour** : Production avec budget (non obligatoire pour le lancement)
 - **Site** : https://www.clever-cloud.com
 
-**Note** : Pour le frontend Next.js, Vercel reste gratuit et illimité (voir section déploiement ci-dessous).
+**Note** : le chemin de production actuel est `localhost -> GitHub -> CI -> VPS`, avec le frontend Next.js servi par la stack Docker du VPS.
 
 ### Structure Monorepo - Phase MVP (exemple, recommandé pour démarrer)
 
@@ -447,13 +446,6 @@ Configuration : `~/.config/claude-code/mcp.json`
 ```json
 {
   "mcpServers": {
-    "vercel": {
-      "command": "npx",
-      "args": ["-y", "vercel-mcp"],
-      "env": {
-        "VERCEL_API_KEY": "votre-clé-api-vercel"
-      }
-    },
     "chrome-devtools": {
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]
@@ -470,7 +462,6 @@ Configuration : `~/.config/claude-code/mcp.json`
 ```
 
 **Capacités** :
-- **Vercel MCP** : Gestion des déploiements, projets, domaines, logs Vercel
 - **Chrome DevTools MCP** : Automatisation navigateur, debugging, screenshots, analyse de performance
 - **GitHub MCP** : Consultation, recherche et création d’issues/PR directement depuis Claude Code
 
@@ -528,7 +519,6 @@ Pour activer les serveurs MCP :
 1. **Sentry** : https://sentry.io/settings/account/api/auth-tokens/
 2. **Context7** : https://context7.com (compte + clé API)
 3. **GitHub** : https://github.com/settings/tokens (scopes: `repo`, `read:org`, `workflow`)
-4. **Vercel** : https://vercel.com/account/tokens
 
 ### Documentation Complète
 
@@ -545,7 +535,7 @@ Voir `docs/mcp-setup.md` pour :
 - Travaillez exclusivement dans `blobevolutionClaudeCodex`.
 - Respectez l'architecture modulaire (`apps/api/src/modules/*` : auth, booking, chat, matching, blobosphere, consent, profile/pro, push, security, etc.).
 - Intégrez le module `blobosphere` (contenus éditoriaux) pour renforcer la visibilité externe.
-- Utilisez les serveurs MCP disponibles (Sentry, GitHub, Playwright, Chrome DevTools, Context7, Vercel) pour enrichir vos capacités d'analyse et de déploiement.
+- Utilisez les serveurs MCP disponibles (Sentry, GitHub, Playwright, Chrome DevTools, Context7) pour enrichir vos capacités d'analyse.
 - Sécurité systématique : Zod sur tous les inputs, Prisma uniquement, rate limiting, CSRF, headers de sécurité.
 - Auth : JWT 15 min + refresh 30 j, 2FA obligatoire pour les pros, sessions invalidables.
 - RGPD : consentement explicite, anonymisation, droit à l'oubli, export des données.
@@ -645,97 +635,21 @@ images: {
 
 **Erreur courante :** Si vous voyez `Error: Invalid src prop... hostname is not configured`, c'est que le domaine de l'image n'est pas autorisé dans `next.config.mjs`.
 
-## 🌐 Déploiement Frontend avec Vercel
+## 🌐 Déploiement VPS
 
-### Configuration Initiale
+Le frontend Next.js (`apps/web`) et l'API Express (`apps/api`) sont construits et servis par Docker Compose sur le VPS.
 
-Le frontend Next.js (`apps/web`) est déployé sur **Vercel**, tandis que le backend API Express (`apps/api`) est hébergé sur **Clever Cloud** ou un autre provider (Render/Railway/Fly.io).
+Chemin de livraison :
 
-#### 1. Installation du CLI Vercel
-
-```bash
-npm i -g vercel
+```text
+localhost -> GitHub -> CI GitHub Actions -> VPS
 ```
 
-#### 2. Connexion à Vercel
+- ✅ **GitHub Actions `CI`** : lint, type-check, tests unitaires, tests API E2E et job Playwright (`e2e-tests`) qui rejoue les scénarios web critiques (`npm run test:e2e`). Le job provisionne Postgres, applique `db:generate`, `db:migrate:deploy`, `db:reseed`, installe les navigateurs Playwright puis lance les tests.
+- ✅ **VPS** : build Docker `api` + `web`, `prisma migrate deploy`, `docker compose up -d`, puis smoke test.
+- ✅ **Secrets** : les secrets de déploiement vivent dans GitHub Actions (`Settings -> Secrets and variables -> Actions`) ou dans `.env.vps` sur le VPS. Aucun secret ne doit être commité.
 
-```bash
-vercel login
-```
-
-Suivez les instructions pour vous authentifier (GitHub, GitLab, Bitbucket ou Email).
-
-#### 3. Configuration du Projet
-
-```bash
-cd apps/web
-vercel link
-```
-
-Lors de la première exécution, Vercel vous demandera :
-- **Set up and deploy?** → Oui
-- **Which scope?** → Sélectionnez votre compte/équipe
-- **Link to existing project?** → Non (première fois) puis créez un nouveau projet
-- **Project name** → `blobinfini` (ou nom de votre choix)
-- **In which directory is your code located?** → `./` (déjà dans apps/web)
-
-#### 4. Configuration des Variables d'Environnement
-
-Ajoutez ces variables dans le tableau de bord Vercel (Settings → Environment Variables) :
-
-```bash
-# OBLIGATOIRE
-NEXT_PUBLIC_API_URL=https://api.votredomaine.com
-NEXT_PUBLIC_SITE_URL=https://blobinfini.vercel.app
-
-# OPTIONNEL - Push Notifications (Firebase)
-NEXT_PUBLIC_FIREBASE_API_KEY=votre-clé-firebase
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=votre-projet-id
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=votre-sender-id
-NEXT_PUBLIC_FIREBASE_APP_ID=votre-app-id
-
-# OPTIONNEL - Analytics
-NEXT_PUBLIC_ADSENSE_CLIENT_ID=ca-pub-XXXXXXXXXX
-NEXT_PUBLIC_ADSENSE_ENABLED=true
-```
-
-**Astuce** : Copiez les valeurs depuis `apps/web/.env.example` et adaptez-les pour la production.
-
-#### 5. Déploiement
-
-##### Déploiement Automatique (Recommandé)
-
-Une fois le projet lié, **chaque push sur `main` ou `develop`** déclenche automatiquement un déploiement Vercel.
-
-##### Déploiement Manuel
-
-```bash
-cd apps/web
-vercel --prod
-```
-
-#### 6. URLs de Déploiement
-
-Après chaque déploiement, Vercel génère :
-- **URL de production** : `https://blobinfini.vercel.app` (ou votre domaine custom)
-- **URLs de prévisualisation** : Une URL unique par commit/branche (ex: `https://blobinfini-git-feat-xxx.vercel.app`)
-
-Vous pouvez consulter tous les déploiements sur : `https://vercel.com/dashboard`
-
-### ⚠️ CI/CD et Vercel
-
-#  ⚠️ CI/CD et Vercel
-
-# **Important** : Les builds frontend sont désormais gérés par **Vercel**, pas par GitHub Actions.
-
-- ✅ **GitHub Actions** : Lint, type-check, tests unitaires, tests API E2E et job Playwright (`e2e-tests`) qui rejoue les scénarios web critiques (`npm run test:e2e`). Le job provisionne Postgres (service `postgres`), applique `db:generate`, `db:migrate:deploy`, `db:reseed`, installe les navigateurs Playwright (`npx playwright install --with-deps`) puis lance les tests. Il s’exécute sur chaque push et sur les pull requests ciblant `main`.
-- ✅ **Vercel** : Build et déploiement du frontend Next.js uniquement
-- ✅ **Backend API** : Déploiement via Docker (Clever Cloud ou autre hébergeur)
-
-Le workflow `.github/workflows/ci.yml` a été adapté pour :
-- **Supprimer** l'étape `Build web app` (gérée par Vercel)
-- **Conserver** les étapes de validation (lint, type-check, tests)
-- **Préserver** la compatibilité avec `act` pour les tests locaux
+Voir `docs/runbooks/vps-runtime.md` pour la configuration runtime VPS.
 
 ### 🔧 Tests Locaux avec `act`
 
@@ -752,7 +666,7 @@ act -j build-and-test
 act -j e2e-tests
 ```
 
-⚠️ Le job `e2e-tests` attend un service Postgres nommé `postgres` (comme en CI); assurez-vous qu’`act` soit configuré avec Docker disponible. Les étapes de déploiement Vercel sont automatiquement ignorées dans les runs locaux.
+⚠️ Le job `e2e-tests` attend un service Postgres nommé `postgres` (comme en CI); assurez-vous qu’`act` soit configuré avec Docker disponible.
 
 ### 2025-11-09 — Politique de nettoyage Jest (2025)
 
@@ -827,16 +741,8 @@ act -j build-and-test -P ubuntu-latest=catthehacker/ubuntu:act-latest
 
 - ✅ Local first : lancez `act` avant de push (lint/type-check/tests/e2e)
 - ✅ GitLab CI sert de backup quand GitHub Actions est bloqué par quota
-- ✅ Vercel valide le frontend en environnement déployé + fournit une URL de preview partageable
-- ✅ Évitez les doublons : pas besoin de rebuild frontend ailleurs si Vercel gère build + CDN
-- ✅ Vérifiez les logs Vercel en cas d'erreur (dashboard, optionnel)
-
-### 🔗 Ressources Vercel
-
-- [Documentation Vercel](https://vercel.com/docs)
-- [Next.js sur Vercel](https://vercel.com/docs/frameworks/nextjs)
-- [Variables d'environnement](https://vercel.com/docs/environment-variables)
-- [Domaines personnalisés](https://vercel.com/docs/custom-domains)
+- ✅ La CI GitHub reste la source de vérité avant déploiement VPS
+- ✅ Vérifiez les logs GitHub Actions et les logs Docker du VPS en cas d'erreur
 
 
 ## 🔔 Push Notifications - Architecture Hybride

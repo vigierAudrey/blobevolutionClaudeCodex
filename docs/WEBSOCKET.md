@@ -303,7 +303,7 @@ Clever Cloud supporte WebSocket nativement :
 
 ```bash
 # Production uniquement
-ALLOWED_ORIGINS=https://blobinfini.vercel.app
+ALLOWED_ORIGINS=https://app.blobinfini.fr
 
 # Trust proxy sûr (IP réelle pour protections pre-auth / per-IP)
 TRUST_PROXY_MODE=ips
