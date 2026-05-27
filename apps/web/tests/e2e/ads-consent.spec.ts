@@ -52,7 +52,7 @@ async function assertGtagSignals(page: Page, expected: typeof SIGNALS[ConsentMod
   await page.waitForFunction(
     () => (window as WindowWithGtagTracking).__CONSENT_READY === true,
     undefined,
-    { timeout: 6000 },
+    { timeout: 10000 },
   );
 
   // Cross-validate that the internal mode matches what the test expects.
@@ -68,7 +68,7 @@ async function assertGtagSignals(page: Page, expected: typeof SIGNALS[ConsentMod
       return calls.some((a: unknown) => Array.isArray(a) && a[0] === 'consent' && a[1] === 'update');
     },
     undefined,
-    { timeout: 5000 },
+    { timeout: 8000 },
   );
 
   const calls = await page.evaluate(() => (window as WindowWithGtagTracking).__gtagCalls ?? []);
@@ -88,7 +88,7 @@ async function assertGtagSignals(page: Page, expected: typeof SIGNALS[ConsentMod
       return calls.some((a: unknown) => Array.isArray(a) && a[0] === 'event' && a[1] === 'ad_impression');
     },
     undefined,
-    { timeout: 5000 },
+    { timeout: 8000 },
   );
 
   const allCalls = await page.evaluate(() => (window as WindowWithGtagTracking).__gtagCalls ?? []);

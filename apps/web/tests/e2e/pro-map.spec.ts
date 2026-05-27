@@ -232,7 +232,9 @@ test.describe('Pro Map (Blobomap)', () => {
     await expect(page).toHaveURL(/\/pro\/map/);
 
     // Seed guarantees lat/lng → Leaflet map container must appear.
-    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
+    // Next.js 15 + React 19: the full render chain (mount → useEffect → /pro/me API →
+    // setState → dynamic import → Leaflet init) needs more time than Next.js 14 in CI.
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20000 });
 
     await context.close();
   });
@@ -242,7 +244,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20000 });
 
     await loadVisibleLessonRequests(page);
 
@@ -259,7 +261,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20000 });
 
     await loadVisibleLessonRequests(page);
 
@@ -281,7 +283,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
     await dismissAdsModalIfPresent(page);
 
     // Sport buttons are rendered unconditionally — hard assertion preserved from #147.
@@ -308,7 +310,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
     await dismissAdsModalIfPresent(page);
 
     // Radius input (labeled "Rayon :") is always rendered — hard assertion preserved from #147.
@@ -330,7 +332,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
     await dismissAdsModalIfPresent(page);
 
     // Fixture ensures at least 1 rider is visible → hard assertion preserved from #147.
@@ -344,7 +346,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await page.goto(appUrl('/pro/map'));
     await expect(page).toHaveURL(/\/pro\/map/);
-    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20000 });
 
     await loadVisibleLessonRequests(page);
 
