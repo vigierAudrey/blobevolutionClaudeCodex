@@ -56,6 +56,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
    Finaliser déploiement AdSense, bannière RGPD et analytics revenus. Voir section « Monétisation (Publicité) ».
 4. **⚙️ Performance & DX rapides**
    Connection pooling, compression, CDN gratuit, automatisation déploiement. Voir sections « Performance & UX » et « Developer Experience ».
+   - [x] 2026-05-27: retrait Vercel obsolète et préparation du déploiement automatique GitHub Actions → VPS après CI verte, avec rollback minimal et documentation ops.
 5. **📈 Observabilité & Analytics**
    Endpoint `/security/health`, audit logs, dashboard analytics open source. Voir sections « Sécurité & Conformité » et « Croissance & Analytics ».
    - [x] 2026-05-25: C21 mesure les conversations réellement démarrées après mise en relation via messages réels post-acceptation, avec dashboard pro, analytics admin, validation trim et tests IDOR/race ciblés.

@@ -1,0 +1,165 @@
+name: Deploy VPS
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy main to VPS
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+    steps:
+      - name: Validate required deployment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          missing=0
+          for name in VPS_HOST VPS_USER VPS_PORT VPS_SSH_KEY VPS_DEPLOY_PATH; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Missing secret::${name} is required in GitHub Actions secrets."
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          if ! [[ "$VPS_PORT" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Invalid secret::VPS_PORT must be numeric."
+            exit 1
+          fi
+
+          case "$VPS_DEPLOY_PATH" in
+            ""|"/"|"/root"|"/home"|"/home/"*)
+              if [ "$VPS_DEPLOY_PATH" = "/" ] || [ "$VPS_DEPLOY_PATH" = "/root" ] || [ "$VPS_DEPLOY_PATH" = "/home" ]; then
+                echo "::error title=Unsafe deploy path::VPS_DEPLOY_PATH points to a top-level system directory."
+                exit 1
+              fi
+              ;;
+          esac
+
+      - name: Configure SSH key and known_hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+
+          ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" > "$HOME/.ssh/known_hosts.tmp"
+          if [ ! -s "$HOME/.ssh/known_hosts.tmp" ]; then
+            echo "::error title=SSH host key scan failed::Could not collect the VPS host key."
+            exit 1
+          fi
+          mv "$HOME/.ssh/known_hosts.tmp" "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Deploy on VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          printf -v DEPLOY_PATH_Q '%q' "$VPS_DEPLOY_PATH"
+          printf -v API_BASE_URL_Q '%q' "$API_BASE_URL"
+
+          ssh \
+            -i "$HOME/.ssh/deploy_key" \
+            -p "$VPS_PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$VPS_USER@$VPS_HOST" \
+            "VPS_DEPLOY_PATH=$DEPLOY_PATH_Q API_BASE_URL=$API_BASE_URL_Q bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          COMPOSE_FILE="docker-compose.vps.yml"
+          ENV_FILE=".env.vps"
+
+          fail() {
+            echo "DEPLOY_REFUSED: $*" >&2
+            exit 1
+          }
+
+          case "${VPS_DEPLOY_PATH:-}" in
+            ""|"/"|"/root"|"/home")
+              fail "unsafe VPS_DEPLOY_PATH=${VPS_DEPLOY_PATH:-<empty>}"
+              ;;
+          esac
+
+          cd "$VPS_DEPLOY_PATH"
+
+          [ -d .git ] || fail "deploy path is not a git repository"
+          [ -f "$ENV_FILE" ] || fail "$ENV_FILE is missing on the VPS"
+          [ -f "$COMPOSE_FILE" ] || fail "$COMPOSE_FILE is missing on the VPS"
+          [ "$COMPOSE_FILE" != "docker-compose.pre-vps.yml" ] || fail "pre-vps compose is forbidden for production deploy"
+
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            fail "git worktree is dirty; refusing to overwrite local VPS changes"
+          fi
+
+          PREV_SHA="$(git rev-parse HEAD)"
+          echo "Previous SHA: $PREV_SHA"
+
+          rollback() {
+            status=$?
+            if [ "$status" -eq 0 ]; then
+              return 0
+            fi
+
+            echo "Deploy failed; rolling back to $PREV_SHA" >&2
+            git reset --hard "$PREV_SHA"
+            docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build api web
+            docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+            exit "$status"
+          }
+          trap rollback EXIT
+
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+          docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build api web
+
+          docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm api \
+            sh -c "pnpm --filter @blobinfini/database exec prisma migrate deploy"
+
+          docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+
+          set -a
+          # shellcheck disable=SC1091
+          . "$ENV_FILE"
+          set +a
+
+          SMOKE_API_BASE_URL="${API_BASE_URL:-}"
+          if [ -z "$SMOKE_API_BASE_URL" ]; then
+            [ -n "${API_DOMAIN:-}" ] || fail "API_BASE_URL secret is empty and API_DOMAIN is missing from $ENV_FILE"
+            SMOKE_API_BASE_URL="https://${API_DOMAIN}"
+          fi
+
+          API_BASE_URL="$SMOKE_API_BASE_URL" ./scripts/smoke-test-vps.sh
+
+          trap - EXIT
+          echo "Deploy completed successfully."
+          REMOTE
