@@ -24,10 +24,11 @@ async function resolveFile(category: string, slug: string): Promise<string> {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { category: string; slug: string } },
+  { params }: { params: Promise<{ category: string; slug: string }> },
 ) {
+  const { category, slug } = await params;
   try {
-    const filePath = await resolveFile(params.category, params.slug);
+    const filePath = await resolveFile(category, slug);
     const raw = await fs.readFile(filePath, 'utf8');
     return NextResponse.json({ raw });
   } catch (err: unknown) {
@@ -35,27 +36,28 @@ export async function GET(
       return NextResponse.json({ error: 'Article introuvable' }, { status: 404 });
     }
     const message = err instanceof Error ? err.message : 'Erreur lecture fichier';
-    console.error('[blobosphere] GET failed', { category: params.category, slug: params.slug, message });
+    console.error('[blobosphere] GET failed', { category, slug, message });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { category: string; slug: string } },
+  { params }: { params: Promise<{ category: string; slug: string }> },
 ) {
+  const { category, slug } = await params;
   if (!isDevRequest()) {
     return devOnlyResponse();
   }
   try {
-    const currentPath = await resolveFile(params.category, params.slug);
+    const currentPath = await resolveFile(category, slug);
     const raw = await fs.readFile(currentPath, 'utf8');
     const { data, content } = matter(raw);
 
     const defaultPayload: SaveMdxPayload = {
-      title: typeof data.title === 'string' ? data.title : params.slug,
-      slug: typeof data.slug === 'string' ? sanitizeSlug(data.slug) : params.slug,
-      category: ensureCategory(typeof data.category === 'string' ? data.category : params.category),
+      title: typeof data.title === 'string' ? data.title : slug,
+      slug: typeof data.slug === 'string' ? sanitizeSlug(data.slug) : slug,
+      category: ensureCategory(typeof data.category === 'string' ? data.category : category),
       excerpt: typeof data.excerpt === 'string' ? data.excerpt : '',
       tags: Array.isArray(data.tags) ? data.tags.map((tag) => String(tag)) : [],
       status: data.status === 'published' ? 'published' : 'draft',
@@ -99,20 +101,21 @@ export async function PUT(
       return NextResponse.json({ error: 'Article introuvable' }, { status: 404 });
     }
     const message = err instanceof Error ? err.message : 'Erreur lors de la mise à jour';
-    console.error('[blobosphere] PUT failed', { category: params.category, slug: params.slug, message });
+    console.error('[blobosphere] PUT failed', { category, slug, message });
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { category: string; slug: string } },
+  { params }: { params: Promise<{ category: string; slug: string }> },
 ) {
+  const { category, slug } = await params;
   if (!isDevRequest()) {
     return devOnlyResponse();
   }
   try {
-    const filePath = await resolveFile(params.category, params.slug);
+    const filePath = await resolveFile(category, slug);
     await fs.rm(filePath);
     return NextResponse.json({
       success: true,
@@ -123,7 +126,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Article introuvable' }, { status: 404 });
     }
     const message = err instanceof Error ? err.message : 'Erreur lors de la suppression';
-    console.error('[blobosphere] DELETE failed', { category: params.category, slug: params.slug, message });
+    console.error('[blobosphere] DELETE failed', { category, slug, message });
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
