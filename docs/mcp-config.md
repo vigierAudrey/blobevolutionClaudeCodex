@@ -36,7 +36,7 @@ Ce document détaille la configuration des serveurs MCP pour enrichir les capaci
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "<GITHUB_TOKEN_WITH_REQUIRED_SCOPES>"
       }
     }
   }
@@ -85,7 +85,7 @@ Ce document détaille la configuration des serveurs MCP pour enrichir les capaci
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "<GITHUB_TOKEN_WITH_REQUIRED_SCOPES>"
       }
     }
   }
