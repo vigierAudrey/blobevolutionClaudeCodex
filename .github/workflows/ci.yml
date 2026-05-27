@@ -832,8 +832,8 @@ jobs:
       LOG_ACTOR_SECRET: ci-log-actor-secret-for-e2e-only-min-32-chars
       EMAIL_HASH_SECRET: ci-email-hash-secret-for-e2e-only-min-32-chars
       MAILPIT_URL: http://localhost:8025
-      NEXT_PUBLIC_API_URL: http://127.0.0.1:4020
-      WEB_BASE_URL: http://127.0.0.1:3020
+      NEXT_PUBLIC_API_URL: http://localhost:4020
+      WEB_BASE_URL: http://localhost:3020
       NEXT_PUBLIC_ADSENSE_ENABLED: 'true'
       NEXT_PUBLIC_ADSENSE_CLIENT_ID: 'ca-pub-0000000000000000'
     steps:
