@@ -5,7 +5,7 @@ const finalWebPort = parseInt(process.env.E2E_WEB_PORT ?? '3020', 10);
 const finalApiPort = parseInt(process.env.E2E_API_PORT ?? '4020', 10);
 
 const baseURL = `http://localhost:${finalWebPort}`;
-const apiURL = `http://localhost:${finalApiPort}`;
+const apiURL = `http://127.0.0.1:${finalApiPort}`;
 
 process.env.PLAYWRIGHT_BASE_URL = baseURL;
 process.env.PLAYWRIGHT_API_URL = apiURL;
