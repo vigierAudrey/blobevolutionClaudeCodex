@@ -884,6 +884,17 @@ jobs:
       - name: Seed database
         run: pnpm run db:reseed
 
+      - name: Build Web (bake NEXT_PUBLIC_API_URL for next start)
+        # next start requires a pre-built .next/ — without it Next.js 15 compiles
+        # on-demand during tests (lazy mode), causing MapComponent/Leaflet chunk
+        # compilation to exceed the 20s leaflet-container timeout.
+        # NEXT_PUBLIC_API_URL is baked at build time; must match the E2E API URL.
+        run: pnpm --filter @blobinfini/web build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_ADSENSE_ENABLED: ${{ env.NEXT_PUBLIC_ADSENSE_ENABLED }}
+          NEXT_PUBLIC_ADSENSE_CLIENT_ID: ${{ env.NEXT_PUBLIC_ADSENSE_CLIENT_ID }}
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
