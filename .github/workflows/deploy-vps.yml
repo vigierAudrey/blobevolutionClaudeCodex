@@ -115,7 +115,10 @@ jobs:
           [ -f "$COMPOSE_FILE" ] || fail "$COMPOSE_FILE is missing on the VPS"
           [ "$COMPOSE_FILE" != "docker-compose.pre-vps.yml" ] || fail "pre-vps compose is forbidden for production deploy"
 
-          if ! git diff --quiet || ! git diff --cached --quiet; then
+          dirty="$(git status --porcelain)"
+          if [ -n "$dirty" ]; then
+            echo "Refusing deploy: VPS worktree is dirty (tracked, staged, or untracked files)" >&2
+            git status --porcelain >&2
             fail "git worktree is dirty; refusing to overwrite local VPS changes"
           fi
 
