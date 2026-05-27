@@ -4,7 +4,7 @@ process.env.PLAYWRIGHT_SKIP_LAST_RUN = '1';
 const finalWebPort = parseInt(process.env.E2E_WEB_PORT ?? '3020', 10);
 const finalApiPort = parseInt(process.env.E2E_API_PORT ?? '4020', 10);
 
-const baseURL = `http://localhost:${finalWebPort}`;
+const baseURL = `http://127.0.0.1:${finalWebPort}`;
 const apiURL = `http://127.0.0.1:${finalApiPort}`;
 
 process.env.PLAYWRIGHT_BASE_URL = baseURL;
