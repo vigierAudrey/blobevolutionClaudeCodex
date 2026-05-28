@@ -10,6 +10,11 @@ const requestedWebPort = parseInt(process.env.E2E_WEB_PORT ?? '3020', 10);
 const requestedApiPort = parseInt(process.env.E2E_API_PORT ?? '4020', 10);
 
 async function pickPorts() {
+  if (process.env.CI) {
+    console.info('[E2E] CI mode: using fixed ports baked into the web build');
+    return { web: requestedWebPort, api: requestedApiPort };
+  }
+
   try {
     const { default: getPort } = await import('get-port');
     const web = await getPort({ port: [requestedWebPort, requestedWebPort + 1, requestedWebPort + 2] });
@@ -33,7 +38,12 @@ const { web, api } = await pickPorts();
 console.info(`[E2E] Using ports: web=${web}, api=${api}`);
 
 const playwrightBin = path.resolve(__dirname, '../node_modules/.bin', process.platform === 'win32' ? 'playwright.cmd' : 'playwright');
-const child = spawn(playwrightBin, ['test', ...process.argv.slice(2)], {
+const playwrightArgs = process.argv.slice(2);
+if (playwrightArgs[0] === '--') {
+  playwrightArgs.shift();
+}
+
+const child = spawn(playwrightBin, ['test', ...playwrightArgs], {
   stdio: 'inherit',
   env: {
     ...process.env,

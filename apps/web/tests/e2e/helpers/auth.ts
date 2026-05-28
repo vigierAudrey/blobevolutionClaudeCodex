@@ -3,6 +3,8 @@ import { request as playwrightRequest, type Browser, type BrowserContext, type P
 const API_BASE_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:4000';
 const DEFAULT_PASSWORD = process.env.E2E_DEFAULT_PASSWORD ?? 'Passw0rd!';
 const SESSION_HINT_KEY = 'blob_session_hint';
+type CookieSessionState = Awaited<ReturnType<BrowserContext['storageState']>>;
+const cookieSessionCache = new Map<string, Promise<CookieSessionState>>();
 
 const MINIMAL_AD_CONSENT = JSON.stringify({
   mode: 'limited',
@@ -34,41 +36,13 @@ export async function loginWithCookieSession(
 ): Promise<BrowserContext> {
   const password = options.password ?? DEFAULT_PASSWORD;
   const forwardedFor = testIp(options.tag);
-
-  const apiContext = await playwrightRequest.newContext({
-    baseURL: API_BASE_URL,
-    extraHTTPHeaders: { 'X-Forwarded-For': forwardedFor },
-  });
-
-  const csrfResponse = await apiContext.get('/csrf-token');
-  if (!csrfResponse.ok()) {
-    throw new Error(`Unable to fetch CSRF token (${csrfResponse.status()})`);
+  const cacheKey = `${email}:${password}`;
+  let storageStatePromise = cookieSessionCache.get(cacheKey);
+  if (!storageStatePromise) {
+    storageStatePromise = createCookieSession(email, password, forwardedFor);
+    cookieSessionCache.set(cacheKey, storageStatePromise);
   }
-
-  const csrfJson = (await csrfResponse.json()) as { csrfToken?: string };
-  if (!csrfJson.csrfToken) {
-    throw new Error('Missing csrfToken in /csrf-token response');
-  }
-
-  const loginResponse = await apiContext.post('/auth/login', {
-    headers: { 'X-CSRF-Token': csrfJson.csrfToken },
-    data: { email, password, consentAccepted: true },
-  });
-
-  if (!loginResponse.ok()) {
-    throw new Error(`Login failed for ${email}: ${loginResponse.status()} ${await loginResponse.text()}`);
-  }
-
-  const loginBody = (await loginResponse.json()) as { ok?: boolean; requires2FA?: boolean };
-  if (loginBody.requires2FA) {
-    throw new Error(`2FA login is not supported by this helper for ${email}`);
-  }
-  if (loginBody.ok !== true) {
-    throw new Error(`Unexpected login payload for ${email}`);
-  }
-
-  const storageState = await apiContext.storageState();
-  await apiContext.dispose();
+  const storageState = await storageStatePromise;
 
   const context = await browser.newContext({
     storageState,
@@ -102,6 +76,50 @@ export async function loginWithCookieSession(
   }
 
   return context;
+}
+
+async function createCookieSession(
+  email: string,
+  password: string,
+  forwardedFor: string,
+): Promise<CookieSessionState> {
+  const apiContext = await playwrightRequest.newContext({
+    baseURL: API_BASE_URL,
+    extraHTTPHeaders: { 'X-Forwarded-For': forwardedFor },
+  });
+
+  try {
+    const csrfResponse = await apiContext.get('/csrf-token');
+    if (!csrfResponse.ok()) {
+      throw new Error(`Unable to fetch CSRF token (${csrfResponse.status()})`);
+    }
+
+    const csrfJson = (await csrfResponse.json()) as { csrfToken?: string };
+    if (!csrfJson.csrfToken) {
+      throw new Error('Missing csrfToken in /csrf-token response');
+    }
+
+    const loginResponse = await apiContext.post('/auth/login', {
+      headers: { 'X-CSRF-Token': csrfJson.csrfToken },
+      data: { email, password, consentAccepted: true },
+    });
+
+    if (!loginResponse.ok()) {
+      throw new Error(`Login failed for ${email}: ${loginResponse.status()} ${await loginResponse.text()}`);
+    }
+
+    const loginBody = (await loginResponse.json()) as { ok?: boolean; requires2FA?: boolean };
+    if (loginBody.requires2FA) {
+      throw new Error(`2FA login is not supported by this helper for ${email}`);
+    }
+    if (loginBody.ok !== true) {
+      throw new Error(`Unexpected login payload for ${email}`);
+    }
+
+    return await apiContext.storageState();
+  } finally {
+    await apiContext.dispose();
+  }
 }
 
 export async function loginThroughUi(page: Page, email: string, password = DEFAULT_PASSWORD): Promise<void> {

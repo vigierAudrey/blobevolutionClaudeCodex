@@ -52,6 +52,7 @@ _Note : valeurs indicatives, non garanties comme etat actuel._
    - [x] 2026-03-15: Rééquilibrage load BlobConnect avec réutilisation cookie+CSRF, pagination `GET /conversations`, limitation post-auth plus fine sur matching/chat, et `login` hybride `email+IP` + plafond réseau pour réduire les collisions NAT sans ouvrir la porte aux brute-force.
    - [x] 2026-03-29: garde-fou France-only initial réellement branché sur l’inscription PRO, `PUT/PATCH /pro/me`, `GET /pro/near/lessons`, `POST /matching/search`, UI informative et tests ciblés API/web.
    - [x] 2026-05-18: audit flow photo rider, alignement typage front/OpenAPI sur `photoUrl: null` uniquement via `PUT /profile/me`, et régressions API upload/finalize/save.
+   - [x] 2026-05-28: fiabilisation E2E Blobomap CI en servant le build Next du workspace web, alignement `127.0.0.1` et vérification explicite `/pro/me` avant rendu Leaflet.
 3. **📢 Publicité / Monétisation initiale**
    Finaliser déploiement AdSense, bannière RGPD et analytics revenus. Voir section « Monétisation (Publicité) ».
 4. **⚙️ Performance & DX rapides**

@@ -884,6 +884,15 @@ jobs:
       - name: Seed database
         run: pnpm run db:reseed
 
+      - name: Build Web (bake NEXT_PUBLIC_API_URL for next start)
+        # CI Playwright serves the production build with next start; this avoids
+        # lazy route/chunk compilation delaying the Leaflet dynamic import.
+        run: pnpm --filter @blobinfini/web build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_ADSENSE_ENABLED: ${{ env.NEXT_PUBLIC_ADSENSE_ENABLED }}
+          NEXT_PUBLIC_ADSENSE_CLIENT_ID: ${{ env.NEXT_PUBLIC_ADSENSE_CLIENT_ID }}
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:

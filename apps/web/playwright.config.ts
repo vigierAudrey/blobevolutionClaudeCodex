@@ -17,6 +17,7 @@ const safeTestEnv = {
   SMTP_ALLOW_NO_AUTH: 'true',
   SMTP_USER: '',
   SMTP_PASS: '',
+  TRUST_PROXY_MODE: 'loopback',
   FIREBASE_PROJECT_ID: 'blobinfini-demo',
   FIREBASE_CLIENT_EMAIL: '',
   FIREBASE_PRIVATE_KEY: '',

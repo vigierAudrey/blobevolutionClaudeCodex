@@ -333,11 +333,12 @@ type GeoRateLimitProfile = 'GEO_HEAVY_BURST' | 'GEO_HEAVY_MINUTE';
  */
 export function createGeoEndpointLimiter(endpointKey: string, profile: GeoRateLimitProfile) {
   const normalizedEndpoint = endpointKey.toLowerCase().replace(/[^a-z0-9:_-]/g, '_');
+  const normalizedProfile = profile.toLowerCase();
   const keyGenerator = (req: Request) => {
     const userId = (req as Request & { user?: { id?: string } }).user?.id ?? 'anonymous';
     const ip = req.ip || req.socket?.remoteAddress;
     const ipToken = ip ? ipKeyGenerator(ip) : 'ip:unknown';
-    return `geo:${normalizedEndpoint}:u:${userId}:ip:${ipToken}`;
+    return `geo:${normalizedEndpoint}:${normalizedProfile}:u:${userId}:ip:${ipToken}`;
   };
 
   const memoryLimiter = createRateLimiter(profile, { keyGenerator, store: undefined });
