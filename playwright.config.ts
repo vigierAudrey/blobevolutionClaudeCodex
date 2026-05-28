@@ -8,8 +8,9 @@ const finalApiPort = parseInt(process.env.E2E_API_PORT ?? '4020', 10);
 
 console.info(`[E2E] Configured ports: web=${finalWebPort}, api=${finalApiPort}`);
 
-const baseURL = `http://localhost:${finalWebPort}`;
-const apiURL = `http://localhost:${finalApiPort}`;
+const baseURL = `http://127.0.0.1:${finalWebPort}`;
+const apiURL = `http://127.0.0.1:${finalApiPort}`;
+const webMode = process.env.CI ? 'start' : 'dev';
 
 process.env.PLAYWRIGHT_BASE_URL = baseURL;
 process.env.PLAYWRIGHT_API_URL = apiURL;
@@ -21,6 +22,7 @@ const safeTestEnv = {
   SMTP_ALLOW_NO_AUTH: 'true',
   SMTP_USER: '',
   SMTP_PASS: '',
+  TRUST_PROXY_MODE: 'loopback',
   FIREBASE_PROJECT_ID: 'blobinfini-demo',
   FIREBASE_CLIENT_EMAIL: '',
   FIREBASE_PRIVATE_KEY: '',
@@ -82,12 +84,13 @@ export default defineConfig({
       timeout: 180_000,
     },
     {
-      command: 'cd apps/web && npx next dev -p $PORT',
+      command: `pnpm --filter @blobinfini/web exec next ${webMode} -p $PORT`,
       url: baseURL,
       env: {
         ...process.env,
         ...safeTestEnv,
         PORT: String(finalWebPort),
+        NODE_ENV: webMode === 'start' ? 'production' : process.env.NODE_ENV,
         NEXT_PUBLIC_API_URL: apiURL,
       },
       reuseExistingServer: false,

@@ -105,6 +105,11 @@ function appUrl(path: string) {
   return new URL(path, WEB_BASE_URL).toString();
 }
 
+function isApiResponse(responseUrl: string, pathname: string) {
+  const url = new URL(responseUrl);
+  return url.origin === API_BASE_URL && url.pathname === pathname;
+}
+
 type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
 
 async function createPageFromStorageState(
@@ -120,6 +125,25 @@ async function createPageFromStorageState(
   });
   const page = await context.newPage();
   return { context, page };
+}
+
+async function openProMapWithValidSession(page: Page) {
+  const proMeResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      isApiResponse(response.url(), '/pro/me'),
+    { timeout: 15_000 },
+  );
+
+  await page.goto(appUrl('/pro/map'));
+  await expect(page).toHaveURL(/\/pro\/map/);
+
+  const proMeResponse = await proMeResponsePromise;
+  expect(proMeResponse.status(), '/pro/me must accept the E2E PRO cookie session').toBe(200);
+
+  const proMeBody = (await proMeResponse.json()) as { lat?: unknown; lng?: unknown };
+  expect(proMeBody.lat, '/pro/me must return the seeded PRO latitude').toEqual(expect.any(Number));
+  expect(proMeBody.lng, '/pro/me must return the seeded PRO longitude').toEqual(expect.any(Number));
 }
 
 async function resolveMatchingOptionValue(selectLocator: Locator, pattern: RegExp) {
@@ -150,6 +174,24 @@ function mapMarkerIcons(page: Page) {
   return page.locator('.leaflet-marker-icon.map-marker-item');
 }
 
+async function visibleLessonCount(page: Page) {
+  const text = await page.locator('main').textContent();
+  const match = text?.match(/(\d+)\s+demande\(s\)\s+trouvée\(s\)/i);
+  return match ? Number(match[1]) : -1;
+}
+
+async function waitForVisibleLessonCount(page: Page, timeout = 10_000) {
+  await expect
+    .poll(() => visibleLessonCount(page), { timeout })
+    .toBeGreaterThan(0);
+}
+
+async function waitForRiderMarkers(page: Page, timeout = 10_000) {
+  await expect
+    .poll(() => mapMarkerIcons(page).count(), { timeout })
+    .toBeGreaterThan(0);
+}
+
 async function dismissAdsModalIfPresent(page: Page) {
   const modalHeading = page.getByRole('heading', { name: /Publicités adaptées à tes goûts surf\/kite/i });
   // waitFor polls briefly so a late-appearing modal (rendered after initial paint) is caught.
@@ -178,21 +220,27 @@ async function loadVisibleLessonRequests(page: Page) {
     content: '.leaflet-zoom-animated { transition-property: none !important; }',
   });
 
-  const radiusInput = page.locator('input[type="number"]').first();
-  await radiusInput.fill('200');
-  await dismissAdsModalIfPresent(page);
-  await page.getByRole('button', { name: /Rafraîchir/i }).click();
+  const initialCount = await waitForVisibleLessonCount(page).then(() => true).catch(() => false);
 
-  await expect
-    .poll(
-      async () => {
-        const text = await page.locator('main').textContent();
-        const match = text?.match(/(\d+)\s+demande\(s\)\s+trouvée\(s\)/i);
-        return match ? Number(match[1]) : -1;
-      },
-      { timeout: 15_000 },
-    )
-    .toBeGreaterThan(0);
+  if (!initialCount) {
+    const radiusInput = page.locator('input[type="number"]').first();
+    if ((await radiusInput.inputValue()) !== '200') {
+      await radiusInput.fill('200');
+    }
+    await dismissAdsModalIfPresent(page);
+    const lessonsResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        isApiResponse(response.url(), '/pro/near/lessons') &&
+        response.status() < 400,
+      { timeout: 10_000 },
+    );
+    await page.getByRole('button', { name: /Rafraîchir/i }).click();
+    await lessonsResponsePromise;
+    await waitForVisibleLessonCount(page, 15_000);
+  }
+
+  await waitForRiderMarkers(page);
 
   // Wait for the Leaflet flyToBounds animation to settle. The map animates when
   // bounds change; clicking a marker during animation triggers "intercepts pointer
@@ -228,8 +276,7 @@ test.describe('Pro Map (Blobomap)', () => {
   test('should display map page with riders looking for lessons', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map');
     await setupConsent(page);
-    await page.goto(appUrl('/pro/map'));
-    await expect(page).toHaveURL(/\/pro\/map/);
+    await openProMapWithValidSession(page);
 
     // Seed guarantees lat/lng → Leaflet map container must appear.
     // Next.js 15 + React 19: the full render chain (mount → useEffect → /pro/me API →
@@ -242,8 +289,7 @@ test.describe('Pro Map (Blobomap)', () => {
   test('should display markers for riders on the map', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-markers');
     await setupConsent(page);
-    await page.goto(appUrl('/pro/map'));
-    await expect(page).toHaveURL(/\/pro\/map/);
+    await openProMapWithValidSession(page);
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20000 });
 
     await loadVisibleLessonRequests(page);
@@ -259,8 +305,7 @@ test.describe('Pro Map (Blobomap)', () => {
   test('should show rider details on marker click', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-details');
     await setupConsent(page);
-    await page.goto(appUrl('/pro/map'));
-    await expect(page).toHaveURL(/\/pro\/map/);
+    await openProMapWithValidSession(page);
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20000 });
 
     await loadVisibleLessonRequests(page);
@@ -281,8 +326,7 @@ test.describe('Pro Map (Blobomap)', () => {
   test('should filter riders by sport', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-filter-sport');
     await setupConsent(page);
-    await page.goto(appUrl('/pro/map'));
-    await expect(page).toHaveURL(/\/pro\/map/);
+    await openProMapWithValidSession(page);
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
     await dismissAdsModalIfPresent(page);
 
@@ -308,8 +352,7 @@ test.describe('Pro Map (Blobomap)', () => {
   test('should adjust map radius/distance filter', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-radius');
     await setupConsent(page);
-    await page.goto(appUrl('/pro/map'));
-    await expect(page).toHaveURL(/\/pro\/map/);
+    await openProMapWithValidSession(page);
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
     await dismissAdsModalIfPresent(page);
 
@@ -330,8 +373,7 @@ test.describe('Pro Map (Blobomap)', () => {
   test('should show rider count or statistics', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-stats');
     await setupConsent(page);
-    await page.goto(appUrl('/pro/map'));
-    await expect(page).toHaveURL(/\/pro\/map/);
+    await openProMapWithValidSession(page);
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
     await dismissAdsModalIfPresent(page);
 
@@ -344,8 +386,7 @@ test.describe('Pro Map (Blobomap)', () => {
   test('should allow contacting a rider from the map', async ({ browser }) => {
     const { context, page } = await createPageFromStorageState(browser, proStorageState, 'pro-map-contact');
     await setupConsent(page);
-    await page.goto(appUrl('/pro/map'));
-    await expect(page).toHaveURL(/\/pro\/map/);
+    await openProMapWithValidSession(page);
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20000 });
 
     await loadVisibleLessonRequests(page);

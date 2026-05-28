@@ -1,4 +1,5 @@
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { loginWithCookieSession } from './helpers/auth';
 
 // Extend window interface for gtag tracking and internal consent observability
 interface WindowWithGtagTracking extends Window {
@@ -18,6 +19,8 @@ const SIGNALS: Record<ConsentMode, { ad_storage: 'granted' | 'denied'; ad_user_d
   limited: { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' },
   none: { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' },
 };
+const ADS_RIDER_EMAIL = process.env.E2E_ADS_RIDER_EMAIL ?? 'dev+active-rider-c@test.com';
+const ADS_RIDER_PASSWORD = process.env.E2E_ADS_RIDER_PASSWORD ?? 'Passw0rd!';
 
 const encodeConsent = (mode: ConsentMode) =>
   JSON.stringify({
@@ -27,8 +30,8 @@ const encodeConsent = (mode: ConsentMode) =>
     updatedAt: new Date().toISOString(),
   });
 
-async function bootstrapConsent(context: BrowserContext, mode: ConsentMode) {
-  await context.addInitScript(
+async function bootstrapConsent(page: Page, mode: ConsentMode) {
+  await page.addInitScript(
     ({ consent, modeSignals }) => {
       window.localStorage.setItem('blob_consent', consent);
       window.localStorage.setItem('blob_device_id', 'playwright-device');
@@ -42,6 +45,18 @@ async function bootstrapConsent(context: BrowserContext, mode: ConsentMode) {
     },
     { consent: encodeConsent(mode), modeSignals: { mode } },
   );
+}
+
+async function openMatchingWithConsent(browser: Browser, mode: ConsentMode) {
+  const context = await loginWithCookieSession(browser, ADS_RIDER_EMAIL, {
+    password: ADS_RIDER_PASSWORD,
+    tag: `ads-consent-${mode}`,
+  });
+  const page = await context.newPage();
+  await bootstrapConsent(page, mode);
+  await page.goto('/matching');
+  await expect(page).toHaveURL(/\/matching/);
+  return { context, page };
 }
 
 async function assertGtagSignals(page: Page, expected: typeof SIGNALS[ConsentMode], mode: ConsentMode) {
@@ -100,9 +115,8 @@ async function assertGtagSignals(page: Page, expected: typeof SIGNALS[ConsentMod
 }
 
 test.describe('Consent-driven ads', () => {
-  test('renders personalized ads when full consent is granted', async ({ context, page }) => {
-    await bootstrapConsent(context, 'personalized');
-    await page.goto('/matching');
+  test('renders personalized ads when full consent is granted', async ({ browser }) => {
+    const { context, page } = await openMatchingWithConsent(browser, 'personalized');
 
     // Wait for consent signals to propagate — ad_impression fires AFTER the ins element is
     // committed to the DOM, so this guarantees the slot is stable before counting.
@@ -112,11 +126,11 @@ test.describe('Consent-driven ads', () => {
     await expect(slot).toHaveCount(1);
     const scriptLoaded = await page.evaluate(() => !!document.querySelector('script[data-blobinfini="adsense"]'));
     expect(scriptLoaded).toBeTruthy();
+    await context.close();
   });
 
-  test('renders non-personalized ads when only storage is granted', async ({ context, page }) => {
-    await bootstrapConsent(context, 'npa');
-    await page.goto('/matching');
+  test('renders non-personalized ads when only storage is granted', async ({ browser }) => {
+    const { context, page } = await openMatchingWithConsent(browser, 'npa');
 
     await assertGtagSignals(page, SIGNALS.npa, 'npa');
 
@@ -124,11 +138,11 @@ test.describe('Consent-driven ads', () => {
     await expect(slot).toHaveCount(1);
     const dataNpa = await slot.getAttribute('data-npa');
     expect(dataNpa).toBe('1');
+    await context.close();
   });
 
-  test('renders limited ads without storage', async ({ context, page }) => {
-    await bootstrapConsent(context, 'limited');
-    await page.goto('/matching');
+  test('renders limited ads without storage', async ({ browser }) => {
+    const { context, page } = await openMatchingWithConsent(browser, 'limited');
 
     await assertGtagSignals(page, SIGNALS.limited, 'limited');
 
@@ -140,11 +154,11 @@ test.describe('Consent-driven ads', () => {
     const cookies = await context.cookies();
     const googleCookies = cookies.filter((cookie) => /google/i.test(cookie.name));
     expect(googleCookies.length).toBe(0);
+    await context.close();
   });
 
-  test('renders house ads with full refusal', async ({ context, page }) => {
-    await bootstrapConsent(context, 'none');
-    await page.goto('/matching');
+  test('renders house ads with full refusal', async ({ browser }) => {
+    const { context, page } = await openMatchingWithConsent(browser, 'none');
 
     // consent:update fires once useConsent establishes mode='none' — after this,
     // adEnabled=false so no ins.adsbygoogle is rendered in the tested slot.
@@ -160,6 +174,7 @@ test.describe('Consent-driven ads', () => {
     const cookies = await context.cookies();
     const googleCookies = cookies.filter((cookie) => /google/i.test(cookie.name));
     expect(googleCookies.length).toBe(0);
+    await context.close();
   });
 });
 
