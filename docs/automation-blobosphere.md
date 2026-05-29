@@ -9,7 +9,7 @@ Objectif: générer/éditer des brouillons MDX à partir de prompts ou de liens 
 3. Retour: corps MDX + frontmatter YAML conforme au schéma.
 4. n8n écrit le fichier dans `apps/web/content/blobosphere/{topic}/{slug}.mdx` (branche `feature/auto-article-…`).
 5. Ouvre une PR GitHub/GitLab avec labels `blobosphere`, `auto-draft` et assigne un relecteur.
-6. À la merge, Vercel reconstruit le site; `/blobosphere` liste l’article.
+6. À la merge, GitHub Actions reconstruit et déploie la stack VPS; `/blobosphere` liste l’article.
 
 ## Garde‑fous
 
@@ -56,4 +56,3 @@ Comportement:
 Sécurité:
 - RBAC `ADMIN` obligatoire côté API.
 - Les erreurs GitHub n’empêchent pas l’écriture locale (les appels réseau sont en “best‑effort”).
-

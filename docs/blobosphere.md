@@ -190,9 +190,9 @@ export const legalInfo = {
     link: 'https://cnil.fr',
   },
   hosting: {
-    provider: 'Clever Cloud',
-    address: '3 rue de l\'Allier, 44000 Nantes',
-    country: 'France 🇫🇷', // Hébergement français = garantie RGPD
+    provider: 'Hetzner VPS',
+    address: 'Union europeenne',
+    country: 'UE', // Hébergement européen = cadre RGPD
   },
 };
 ```

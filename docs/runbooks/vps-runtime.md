@@ -1,75 +1,163 @@
-# Runbook VPS Runtime — BlobConnect
+# Runbook VPS Runtime - BlobConnect
+
+> Source operationnelle VPS. Ce runbook decrit la stack reelle actuelle:
+> Hetzner VPS, Docker Compose, Caddy, PostgreSQL/PostGIS, Redis, MinIO, API Express
+> et frontend Next.js.
+
+## Sources de verite
+
+- `docker-compose.vps.yml` : services runtime VPS et reseau Docker.
+- `docker/Caddyfile` : reverse proxy TLS, routage API/web/storage et CORS storage.
+- `.github/workflows/deploy-vps.yml` : deploiement automatique apres CI verte.
+- `.github/workflows/ci.yml` : garde-fous CI, dont l'interdiction de nginx dans `docker-compose.vps.yml`.
+- `scripts/guard-no-nginx-vps.sh` : politique explicite "Caddy est le reverse proxy officiel".
+- `docs/ops/deploy-vps.md` : procedure de deploiement automatique GitHub Actions -> VPS.
 
 ## Vue d'ensemble
 
-Ce runbook couvre les opérations du lot **VPS Runtime Hardening**.
+Difference fondamentale avec le pre-VPS local:
 
-Différence fondamentale avec le pré-VPS :
-- MinIO n'est **plus** exposé sur aucun port hôte
-- Tout accès S3 (presigned PUT, lecture publique) passe par nginx TLS sur `storage.$DOMAIN`
-- `MINIO_SERVER_URL=https://storage.$DOMAIN` est requis pour la validation HMAC des URLs présignées
+- MinIO n'est expose sur aucun port hote en VPS.
+- Tout acces S3 public ou presigne passe par Caddy TLS sur `https://$STORAGE_DOMAIN`.
+- `MINIO_SERVER_URL=https://$STORAGE_DOMAIN` est requis pour que MinIO valide les URLs presignees avec le bon host public.
+- Caddy gere automatiquement les certificats Let's Encrypt via ACME HTTP-01.
 
-## Architecture réseau VPS
+`nginx` n'est plus le reverse proxy officiel du VPS. Il reste limite a l'environnement
+local `docker-compose.pre-vps.yml` avec mkcert.
 
-```
+## Architecture reseau VPS
+
+```text
 Navigateur
-    │
-    │ HTTPS 443
-    ▼
-nginx (container)
-    ├─ api.$DOMAIN       → api:4000
-    ├─ app.$DOMAIN       → web:3000
-    └─ storage.$DOMAIN   → minio:9000   ← CRITIQUE : seul point d'accès MinIO
-                                           Aucun port 9000/9001 exposé sur l'hôte
+    |
+    | HTTPS 443 / HTTP 80 pour ACME
+    v
+Caddy (container)
+    |- $API_DOMAIN     -> api:4000
+    |- $APP_DOMAIN     -> web:3000
+    `- $STORAGE_DOMAIN -> minio:9000
+                         seul point d'acces public MinIO
 
-Réseau interne Docker (172.21.0.0/16) :
-  api → minio:9000        (S3_ENDPOINT=http://minio:9000)
-  api → postgres:5432
-  api → redis:6379
+Reseau Docker interne `blobconnect-vps_vps` (172.21.0.0/16):
+  api -> minio:9000        (S3_ENDPOINT=http://minio:9000)
+  api -> postgres:5432
+  api -> redis:6379
+  web -> api via URL publique configuree
 ```
 
 ## Bootstrap
 
 ```bash
-# 1. Copier et remplir l'env
+# 1. Copier et remplir l'env sur le VPS
 cp .env.vps.example .env.vps
-vim .env.vps  # Changer CHANGEME, STORAGE_DOMAIN, domaines
+vim .env.vps
 
-# 2. Bootstrap complet
+# 2. Verifier l'environnement
+bash scripts/check-vps-env.sh .env.vps
+
+# 3. Bootstrap complet
 ./scripts/vps-bootstrap.sh
-
-# 3. Avec /etc/hosts automatique (sudo)
-./scripts/vps-bootstrap.sh --hosts
 
 # 4. Qualification
 ./scripts/smoke-test-vps.sh
 ```
 
+Pre-requis DNS et firewall:
+
+- `APP_DOMAIN`, `API_DOMAIN` et `STORAGE_DOMAIN` pointent vers l'IP du VPS Hetzner.
+- Les ports 80 et 443 sont ouverts.
+- `CADDY_ACME_EMAIL` est defini dans `.env.vps`.
+
 ## Variables critiques
 
-| Variable | Rôle | Contrainte VPS |
+| Variable | Role | Contrainte VPS |
 |---|---|---|
-| `STORAGE_DOMAIN` | Domaine nginx pour MinIO | DOIT pointer sur ce VPS |
-| `S3_PRESIGN_ENDPOINT` | Host dans les URLs présignées | JAMAIS localhost |
-| `S3_PUBLIC_URL_BASE` | Base URL assets publics | JAMAIS localhost |
-| `MINIO_SERVER_URL` | Host validé par MinIO pour HMAC | = `https://$STORAGE_DOMAIN` |
+| `APP_DOMAIN` | Domaine public du frontend | Pointe vers le VPS |
+| `API_DOMAIN` | Domaine public de l'API | Pointe vers le VPS |
+| `STORAGE_DOMAIN` | Domaine public MinIO via Caddy | Pointe vers le VPS |
+| `CADDY_ACME_EMAIL` | Email ACME Let's Encrypt | Obligatoire |
+| `S3_ENDPOINT` | API -> MinIO interne | `http://minio:9000` |
+| `S3_PRESIGN_ENDPOINT` | URL presignee vue par le navigateur | `https://$STORAGE_DOMAIN` |
+| `S3_PUBLIC_URL_BASE` | Base publique des assets | `https://$STORAGE_DOMAIN/$S3_BUCKET` |
+| `MINIO_SERVER_URL` | Host public valide par MinIO | `https://$STORAGE_DOMAIN` |
+| `TRUSTED_PROXY_IPS` | Proxy Docker autorise | `172.21.0.0/16` pour `docker-compose.vps.yml` |
 
-Cohérence requise (cassant si désalignée) :
-```
+Coherence requise:
+
+```text
 S3_PRESIGN_ENDPOINT == https://$STORAGE_DOMAIN
 S3_PUBLIC_URL_BASE  == https://$STORAGE_DOMAIN/$S3_BUCKET
-MINIO_SERVER_URL    == https://$STORAGE_DOMAIN  (dans docker-compose.vps.yml)
+MINIO_SERVER_URL    == https://$STORAGE_DOMAIN
+```
+
+## Deploiement automatique
+
+Le chemin de production est documente dans `docs/ops/deploy-vps.md`:
+
+```text
+push main
+-> workflow GitHub Actions "CI"
+-> workflow "Deploy VPS" uniquement si CI success sur main
+-> SSH vers le VPS
+-> git reset --hard origin/main dans VPS_DEPLOY_PATH
+-> docker compose build api web
+-> prisma migrate deploy
+-> docker compose up -d
+-> scripts/smoke-test-vps.sh
+```
+
+Le workflow refuse de demarrer si `docker-compose.vps.yml` ou `.env.vps` est absent
+sur le VPS.
+
+## Diagnostics runtime
+
+### Etat des services
+
+```bash
+docker compose -f docker-compose.vps.yml --env-file .env.vps ps
+```
+
+### Logs principaux
+
+```bash
+docker compose -f docker-compose.vps.yml --env-file .env.vps logs caddy --tail=100
+docker compose -f docker-compose.vps.yml --env-file .env.vps logs api --tail=100
+docker compose -f docker-compose.vps.yml --env-file .env.vps logs web --tail=100
+docker compose -f docker-compose.vps.yml --env-file .env.vps logs minio --tail=100
+```
+
+### Verifier la connectivite Caddy -> MinIO
+
+```bash
+docker compose -f docker-compose.vps.yml --env-file .env.vps exec caddy \
+  wget -qO- http://minio:9000/minio/health/live && echo "OK"
+```
+
+### Verifier la configuration MinIO
+
+```bash
+docker compose -f docker-compose.vps.yml --env-file .env.vps exec minio \
+  env | grep MINIO_SERVER_URL
+```
+
+La valeur attendue est `https://$STORAGE_DOMAIN`.
+
+### Smoke test manuel
+
+```bash
+API_BASE_URL="https://${API_DOMAIN}" ./scripts/smoke-test-vps.sh
 ```
 
 ## Bucket policy
 
-Le bucket est configuré en **lecture anonyme (GET-only, sans listing)**.
+Le bucket est configure en lecture anonyme GET-only, sans listing.
 
-- Uploads : via presigned PUT (authentifiés, 15 min d'expiry)
-- Lectures : URL directe `https://storage.$DOMAIN/$BUCKET/key` (publique)
-- Listing : interdit (la policy `download` de mc ne donne que `s3:GetObject`)
+- Uploads : via presigned PUT authentifie, avec expiration courte.
+- Lectures : URL directe `https://$STORAGE_DOMAIN/$S3_BUCKET/key`.
+- Listing : interdit.
 
-Re-appliquer la policy si nécessaire :
+Verifier la policy:
+
 ```bash
 MINIO_INT_URL="http://${S3_ACCESS_KEY_ID}:${S3_SECRET_ACCESS_KEY}@minio:9000"
 
@@ -77,178 +165,83 @@ docker run --rm \
   --network blobconnect-vps_vps \
   -e "MC_HOST_minio=${MINIO_INT_URL}" \
   quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z \
-  anonymous set download "minio/${S3_BUCKET}"
+  anonymous get "minio/${S3_BUCKET}"
 ```
 
-Vérifier la policy :
+Re-appliquer la policy si necessaire:
+
 ```bash
 docker run --rm \
   --network blobconnect-vps_vps \
   -e "MC_HOST_minio=${MINIO_INT_URL}" \
   quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z \
-  anonymous get "minio/${S3_BUCKET}"
-# Attendu : Access permission for `minio/blobinfini-vps` is `download`
-```
-
-## Accès console MinIO (admin)
-
-MinIO console (port 9001) n'est **pas** exposé sur l'hôte.
-
-Accès via tunnel SSH :
-```bash
-ssh -L 9001:127.0.0.1:9001 user@vps-ip
-# Puis naviguer vers http://localhost:9001
-```
-
-Credentials : `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` dans `.env.vps`.
-
-## Diagnostic S3
-
-### Presigned URL ne fonctionne pas (403/SignatureDoesNotMatch)
-
-Cause probable : `MINIO_SERVER_URL` ne correspond pas à `S3_PRESIGN_ENDPOINT`.
-
-Vérifier :
-```bash
-# Voir les logs MinIO
-docker compose -f docker-compose.vps.yml logs minio --tail=50
-
-# Vérifier la variable dans le container MinIO
-docker compose -f docker-compose.vps.yml exec minio env | grep MINIO_SERVER_URL
-```
-
-Correction : s'assurer que dans `docker-compose.vps.yml` :
-```yaml
-MINIO_SERVER_URL: "https://${STORAGE_DOMAIN:-storage.blobinfini.local}"
-```
-correspond exactement à `S3_PRESIGN_ENDPOINT` dans `.env.vps`.
-
-### Bucket inaccessible en lecture publique (403)
-
-```bash
-# Vérifier la policy
-docker run --rm --network blobconnect-vps_vps \
-  -e "MC_HOST_minio=http://${S3_ACCESS_KEY_ID}:${S3_SECRET_ACCESS_KEY}@minio:9000" \
-  quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z \
-  anonymous get "minio/${S3_BUCKET}"
-
-# Réappliquer si absent
-docker run --rm --network blobconnect-vps_vps \
-  -e "MC_HOST_minio=http://${S3_ACCESS_KEY_ID}:${S3_SECRET_ACCESS_KEY}@minio:9000" \
-  quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z \
   anonymous set download "minio/${S3_BUCKET}"
 ```
 
-### nginx n'atteint pas MinIO
+## Acces console MinIO
+
+La console MinIO n'est pas exposee publiquement.
+
+Acces via tunnel SSH:
 
 ```bash
-# Vérifier le container minio est healthy
-docker compose -f docker-compose.vps.yml ps minio
-
-# Tester la connectivité depuis nginx
-docker compose -f docker-compose.vps.yml exec nginx \
-  wget -qO- http://minio:9000/minio/health/live && echo "OK"
-
-# Logs nginx
-docker compose -f docker-compose.vps.yml logs nginx --tail=50
+ssh -L 9001:127.0.0.1:9001 user@vps-ip
+# Puis ouvrir http://localhost:9001
 ```
 
-## Arrêt et maintenance
+Identifiants: `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` dans `.env.vps`.
+
+## Maintenance
 
 ```bash
-# Arrêt propre
-docker compose -f docker-compose.vps.yml down
+# Arret propre
+docker compose -f docker-compose.vps.yml --env-file .env.vps down
 
-# Arrêt + reset volumes (DESTRUCTIF — perd les données)
-./scripts/vps-bootstrap.sh --reset
-
-# Redémarrage sans rebuild
+# Redemarrage sans rebuild
 docker compose -f docker-compose.vps.yml --env-file .env.vps up -d
 
-# Rebuild image API uniquement
+# Rebuild API uniquement
 docker compose -f docker-compose.vps.yml --env-file .env.vps build api
 docker compose -f docker-compose.vps.yml --env-file .env.vps up -d api
+
+# Recharger Caddy apres modification du Caddyfile
+docker compose -f docker-compose.vps.yml --env-file .env.vps exec caddy \
+  caddy reload --config /etc/caddy/Caddyfile
 ```
 
-## Passage en production (domaines réels)
+Reset destructif:
 
-1. **DNS** : pointer `api.blobinfini.fr`, `app.blobinfini.fr`, `storage.blobinfini.fr` vers l'IP du VPS
-2. **Certs** : remplacer mkcert par Let's Encrypt (certbot ou acme.sh)
-3. **nginx.vps.conf** : remplacer `*.blobinfini.local` → `*.blobinfini.fr` (ou votre domaine)
-4. **VPS_CERTS_DIR** : pointer vers les certs Let's Encrypt (`/etc/letsencrypt/live/...`)
-5. **STORAGE_DOMAIN** : mettre `storage.blobinfini.fr` dans `.env.vps`
-6. **SMTP** : configurer Brevo (`SMTP_HOST=smtp-relay.brevo.com`, auth obligatoire, aucun `SMTP_ALLOW_NO_AUTH`)
-7. **AUTH_REQUIRE_2FA** : `true` par défaut dans `.env.vps.example` — vérifier que c'est bien conservé
-8. Relancer `check-vps-env.sh` — doit passer sans erreur
-9. Relancer `smoke-test-vps.sh` — doit retourner GO VPS ✓
+```bash
+./scripts/vps-bootstrap.sh --reset
+```
 
-## Threat model spécifique VPS
+Cette commande supprime les volumes VPS. Ne pas l'utiliser sur une production contenant
+des donnees sans procedure de sauvegarde/restauration validee.
+
+## Threat model specifique VPS
 
 | Vecteur | Mitigation |
 |---|---|
-| Fuite URL interne MinIO | S3_PRESIGN_ENDPOINT = URL nginx publique. check-vps-env.sh rejette localhost. |
-| Exposition directe MinIO | Aucun port 9000/9001 dans docker-compose.vps.yml |
-| Bucket trop ouvert | Policy `download` uniquement (GET-object, pas ListBucket ni PutObject) |
-| Presigned URL mal configurée | MINIO_SERVER_URL = S3_PRESIGN_ENDPOINT (validation HMAC côté MinIO) |
-| Confusion pré-VPS / VPS | APP_ENV=vps, project name distinct, volumes distincts, subnet distinct |
-| Fallback silencieux vers Mailpit | `docker-compose.vps.yml` n'embarque aucun service Mailpit; `check-vps-env.sh` + `validateProductionEnv()` imposent Brevo SMTP authentifié |
-| Credentials MinIO par défaut | check-vps-env.sh rejette minioadmin et pvps-access-key |
-| Accès console MinIO depuis internet | Port 9001 non exposé — tunnel SSH requis |
-| TLS mal câblé (cert storage manquant) | check-vps-env.sh vérifie les 3 certs (api, app, storage) |
+| Fuite URL interne MinIO | Les URLs navigateur utilisent `S3_PRESIGN_ENDPOINT=https://$STORAGE_DOMAIN`. |
+| Exposition directe MinIO | Aucun port 9000/9001 n'est expose dans `docker-compose.vps.yml`. |
+| Bucket trop ouvert | Policy `download` uniquement: GET object, pas ListBucket ni PutObject. |
+| Presigned URL mal configuree | `MINIO_SERVER_URL` doit correspondre au host public Caddy. |
+| Confusion pre-VPS / VPS | `APP_ENV=vps`, project name et volumes dedies. |
+| Fallback silencieux vers Mailpit | `docker-compose.vps.yml` n'embarque aucun Mailpit; Brevo SMTP authentifie est requis. |
+| Credentials MinIO par defaut | `check-vps-env.sh` rejette les credentials faibles ou de demo. |
+| Acces console MinIO internet | Port 9001 non expose; tunnel SSH requis. |
+| TLS mal cable | Caddy emet et renouvelle les certificats via Let's Encrypt; verifier `logs caddy`. |
 
-## Contrainte WebSocket — Single-instance uniquement
+## WebSocket - contrainte single-instance
 
-### Setup actuel : qualifié pour 1 réplique
+La configuration actuelle est qualifiee pour une seule replique API (`REPLICAS=1`).
+Socket.IO maintient les rooms en memoire par processus.
 
-La configuration WebSocket actuelle (`docker-compose.vps.yml`, `nginx.vps.conf`) est **qualifiée pour un déploiement single-instance** (`REPLICAS=1`). En dessous de cette limite, la stack est fonctionnelle, testée, et sûre.
+Ne pas documenter ni activer de scale horizontal sans prerequisites explicites:
 
-### Pourquoi le scale horizontal WS n'est pas supporté sans prérequis
+- adapter Redis Socket.IO active et teste;
+- strategie de session affinity compatible avec les transports Socket.IO;
+- smoke tests de revocation et de broadcast relances apres scale-up.
 
-Socket.IO maintient des rooms en mémoire par processus (`user:{userId}`, `conversation:{id}`).
-Sans Redis adapter, chaque réplique a sa propre vue des connexions.
-
-Conséquences si `REPLICAS > 1` sans Redis adapter :
-- `disconnectUserSockets(userId)` n'atteint que les sockets connectés **sur la même instance** — les sockets sur d'autres instances ne sont pas révoqués.
-- Un logout ou changement de mot de passe ne garantit pas la déconnexion immédiate de toutes les sessions WS actives.
-- Les messages room-broadcast ne sont pas fanout-able cross-instance.
-
-Le code détecte cette condition et loggue au démarrage :
-```
-WS_MULTI_INSTANCE_WITHOUT_REDIS_ADAPTER  { replicas: N, risk: "Room revocation is best-effort per node" }
-```
-
-### Prérequis pour scale horizontal WS
-
-**1. Redis adapter Socket.IO**
-
-```bash
-# .env.vps
-WS_ADAPTER_REDIS=true   # active l'adapter Redis Socket.IO
-# REDIS_URL doit pointer vers un Redis accessible de toutes les instances
-```
-
-L'adapter distribue les `io.in(room).emit()` et `io.in(room).disconnectSockets()` cross-instance via Redis pub/sub. Voir la doc Socket.IO : https://socket.io/docs/v4/redis-adapter/
-
-**2. Sticky sessions nginx**
-
-Tant que le polling HTTP est actif comme transport fallback, un client en polling doit toujours atteindre la même instance (état de session Socket.IO en mémoire). Sans sticky sessions, le polling peut atterrir sur une instance qui ne connaît pas la session → reconnexion en boucle.
-
-Options nginx :
-```nginx
-upstream api_backend {
-    ip_hash;               # sticky par IP client (simple, acceptable pour VPS)
-    server api_1:4000;
-    server api_2:4000;
-    # ...
-}
-```
-Ou via `sticky cookie` (nginx plus) / balanceur externe avec session affinity.
-
-**3. Checklist avant scale-out**
-
-- [ ] `WS_ADAPTER_REDIS=true` dans `.env.vps`
-- [ ] Redis accessible de toutes les instances (même réseau Docker ou Redis externe)
-- [ ] Sticky sessions activées dans nginx upstream (au moins `ip_hash`)
-- [ ] `REPLICAS` mis à jour dans `.env.vps`
-- [ ] Smoke test `socket-session-revocation` relancé après scale-up
-- [ ] Vérifier l'absence de `WS_MULTI_INSTANCE_WITHOUT_REDIS_ADAPTER` dans les logs
+Tant que ces prerequisites ne sont pas livres, le deploiement VPS officiel reste
+single-instance.

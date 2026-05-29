@@ -1,165 +1,55 @@
-# DEPLOYMENT.md
+# Deploiement - Document deprecie
 
-> Guide pratique pour livrer l’API + le front Blobinfini en environnement production/staging et valider les garde-fous sécurité (Phase 3 roadmap).
-
-## 1. Prérequis
-- Node.js 20+, pnpm 10+ (via Corepack).
-- PostgreSQL + Redis accessibles via réseau privé/SSL (`sslmode=require` obligatoires).
-- Reverse proxy (Clever Cloud/Nginx) qui propage `X-Forwarded-*` et termine le TLS.
-- Secrets générés avec `./scripts/generate-secrets.sh` (openssl ≥1.1).
-- Un secret dédié `SECURITY_MONITOR_TOKEN` pour la supervision automatisée.
-
-## 2. Variables d’environnement
-
-### Bloc critique (boot blockers)
-| Variable | Description / attente |
-|----------|----------------------|
-| `NODE_ENV` | `production` (requis pour activer HSTS, cookies `secure`, purge jobs). |
-| `ALLOWED_ORIGINS` | CSV des fronts autorisés (`https://app.blobinfini.com,https://admin.blobinfini.com`). Vide → crash en prod. |
-| `TRUSTED_PROXY_IPS` | Liste IP/CIDR du reverse proxy Clever Cloud (sinon l’API refuse de démarrer). |
-| `SESSION_SECRET` | ≥64 chars (généré via script). |
-| `JWT_SECRET` | ≥64 chars (access token). |
-| `JWT_REFRESH_SECRET` | ≥64 chars (refresh token). |
-| `DATABASE_URL` | Doit contenir `sslmode=require` (ou `sslmode=verify-full`) + **paramètres connection pooling recommandés** : `connection_limit=20&pool_timeout=20&connect_timeout=10`. Sans pooling, limite à ~10 connexions (risque d'erreurs en prod sous charge). Avec pooling optimisé : gère ~2000 req/min sans erreur "too many connections". |
-| `REDIS_URL` | URL Redis avec mot de passe fort (`rediss://` si fournisseur supporte TLS). |
-| `LOG_ACTOR_SECRET` | Secret HMAC dédié à la pseudonymisation `actorRef` dans les logs runtime. Doit être distinct des secrets JWT. |
-| `AUTH_REQUIRE_VERIFIED` | `true` en production pour forcer email vérifié (riders & pros bloqués tant qu'ils n'ont pas validé). |
-
-### Bloc opération (recommandé)
-| Variable | Objectif |
-|----------|----------|
-| `GDPR_PURGE_INTERVAL_HOURS` / `GDPR_PURGE_RUN_ON_START` | Planification purge RGPD. |
-| `CONV_PURGE_INTERVAL_HOURS` / `CONV_TRASH_RETENTION_DAYS` | Nettoyage conversations archivées. |
-| `AUDIT_LOG_RETENTION_DAYS` | Conservation des audit logs (par défaut 365j). |
-| `AUDIT_LOG_PURGE_REQUIRES_VERIFIED_EXPORT` | Empêche la suppression des `AuditLog` sans manifeste d’export `VERIFIED` couvrant la fenêtre purgeable. |
-| `LOGIN_ATTEMPT_RETENTION_DAYS` | Conservation des empreintes de tentatives de connexion. |
-| `CSP_REPORT_ONLY` | Laisser à `false` en prod (mode blocage). |
-| `S3_*` | Uploads (photos) via MinIO/S3. |
-| `FIREBASE_*` | Notifications push (optionnel). |
-| `SECURITY_HEALTH_URL` / `SECURITY_MONITOR_TOKEN` | Utilisés par le cron de supervision (cf. §6). |
-
-> ⚠️ Les secrets sont validés au démarrage (`apps/api/src/index.ts`). Toute valeur manquante/faible arrête l’API immédiatement.
+> Statut: deprecie pour le chemin production actuel.
 >
-> ℹ️ **Redis obligatoire** : le 2FA admin repose désormais uniquement sur Redis (pas de fallback mémoire en production). Vérifier `REDIS_URL`, mot de passe et connectivité avant le déploiement.
+> Ce document conservait l'ancien cadrage production/staging base sur des providers
+> manages et des notes Vercel/Clever Cloud. Il ne doit plus etre utilise comme
+> runbook de deploiement.
 
-### Backfill legacy blocages
-- Après déploiement de la migration `20260406110000_add_conversation_block_event_and_retention_export_artifact`, exécuter une seule fois :
-  - `tsx scripts/backfill-conversation-block-events.ts`
-- En cas d’échec partiel ou pour compléter uniquement les lignes encore actives sans événement legacy :
-  - `tsx scripts/backfill-conversation-block-events.ts --repair`
-- Le script écrit des événements `ConversationBlockEvent` avec `source=LEGACY_UNKNOWN` et `batchId=legacy-backfill-20260406`.
-- Tant que des lignes `LEGACY_UNKNOWN` existent, l’UI admin affiche un avertissement indiquant que l’historique complet n’est garanti qu’à partir du `2026-04-06`.
+## Source operationnelle actuelle
 
-## 3. Checklist pré-déploiement
-1. Générer de nouveaux secrets (`./scripts/generate-secrets.sh`) et mettre à jour les variables correspondantes.
-2. Compléter `ALLOWED_ORIGINS`, `TRUSTED_PROXY_IPS`, `DATABASE_URL?...sslmode=require`.
-3. Mettre `AUTH_REQUIRE_VERIFIED=true` et `NODE_ENV=production` (bloque riders & pros tant que l'email n'est pas confirmé).
-4. Vérifier `REDIS_URL` (mot de passe non trivial) + certificats si fournis.
-5. Générer un secret dédié `SECURITY_MONITOR_TOKEN` pour tester `/security/health` sans dépendre d’un JWT admin éphémère.
-6. Exporter toutes les variables dans un fichier `apps/api/.env.production` (jamais commité) puis sourcer avant build.
-7. Configurer le monitoring : générer `SECURITY_MONITOR_TOKEN`, définir `SECURITY_HEALTH_URL=https://api....`, renseigner `SECURITY_HEALTH_FAIL_WEBHOOK`/`SECURITY_HEALTH_OK_WEBHOOK` (Slack/Healthchecks) dans GitHub Secrets **et** dans Clever Cloud si un cron externe est utilisé.
-8. Vérifier que `CSP_REPORT_ONLY=false` et que le secret de supervision est présent côté GitHub Actions.
+Pour deployer BlobConnect aujourd'hui, utiliser:
 
-## 4. Procédure de déploiement
-```bash
-# 1. Installer les dépendances
-pnpm install --frozen-lockfile
+- `docs/ops/deploy-vps.md` pour le flux GitHub Actions -> VPS.
+- `docs/runbooks/vps-runtime.md` pour l'exploitation runtime VPS.
+- `docker-compose.vps.yml` pour la stack Docker Compose officielle.
+- `docker/Caddyfile` pour le reverse proxy TLS Caddy.
+- `.github/workflows/deploy-vps.yml` pour le workflow de deploiement automatique.
 
-# 2. Construire et tester l’API
-pnpm --filter @blobinfini/api build
-pnpm --filter @blobinfini/api test
+## Architecture actuelle
 
-# 3. Construire le package web
-pnpm -w run build:web
-
-# 4. Appliquer les migrations (DB déjà accessible SSL)
-npx prisma migrate deploy --schema packages/database/prisma/schema.prisma
-
-# 5. Démarrer les services
-NODE_ENV=production node apps/api/dist/index.js
-pnpm --filter @blobinfini/web start
+```text
+push main
+-> GitHub Actions "CI"
+-> GitHub Actions "Deploy VPS" si CI verte
+-> SSH vers le VPS Hetzner
+-> docker compose -f docker-compose.vps.yml --env-file .env.vps build api web
+-> prisma migrate deploy
+-> docker compose -f docker-compose.vps.yml --env-file .env.vps up -d
+-> scripts/smoke-test-vps.sh
 ```
 
-**Reverse proxy** : activer `proxy_set_header X-Forwarded-For`/`Proto`; côté Clever Cloud, ajouter les IPs officielles dans `TRUSTED_PROXY_IPS`.
+Le runtime production utilise Caddy comme reverse proxy officiel. Les references
+historiques a Vercel, Clever Cloud ou a un reverse proxy nginx ne representent plus
+le chemin principal de deploiement.
 
-### Vercel (monorepo)
-- Root Directory: `apps/web`
-- Install Command: `pnpm install --frozen-lockfile`
-- Build Command: `pnpm -w run build:web`
-- Si un `npm install` apparaît encore dans les logs, supprimer l’override manuel dans Vercel Project Settings > Build and Development Settings (il écrase la config repo).
+## Pourquoi ce document n'est pas reecrit en runbook complet
 
-## 5. Vérifications post-déploiement
+Le choix maintenable est de conserver une seule procedure operationnelle detaillee:
+`docs/ops/deploy-vps.md`.
 
-### API & sécurité
-- [ ] `curl -I https://api.../health` → `200` + headers `Strict-Transport-Security`, `Content-Security-Policy`, `Referrer-Policy`.
-- [ ] Script `/security/health` :
-  ```bash
-  curl -H "X-Security-Monitor-Token: ${SECURITY_MONITOR_TOKEN}" "${SECURITY_HEALTH_URL}" | jq
-  ```
-  Résultat attendu : `status:"SECURE"` et `checks.*="ok"`. Cet endpoint décrit la posture/configuration; il ne doit pas être utilisé pour prétendre exposer le pipeline de logs.
-- [ ] Script `/security/observability` :
-  ```bash
-  curl -H "X-Security-Monitor-Token: ${SECURITY_MONITOR_TOKEN}" https://api.../security/observability | jq
-  ```
-  Résultat attendu : payload parsable avec `pipeline.queued|sent|dropped|failed|breakerState`.
-- [ ] `scripts/security-health-check.sh` avec les variables d’environnement réelles → sortie `"[security-health] OK – statut SECURE"` (garantit que le cron utilisera des secrets valides).
-- [ ] CORS positif : `curl -H "Origin: https://front.prod" https://api.../health -I` → header `Access-Control-Allow-Origin` égal à l’origine.
-- [ ] CORS négatif : `curl -H "Origin: https://evil.com" https://api.../health -I` → `403`.
-- [ ] Rate limiting : 6 POST `/auth/login` rapides → `429` (profil `AUTH`).
-- [ ] CSRF : POST `/profile/update` sans header `X-CSRF-Token` → `403`.
-- [ ] JWT invalide : `curl -H "Authorization: Bearer xxx" https://api.../profile/me` → `401`.
-- [ ] Login rider/pro non vérifié → `403` (`AUTH_REQUIRE_VERIFIED` + middleware `requireVerifiedEmail` sur toutes les routes rider/pro/admin). Après validation email, les routes booking/matching/push/contact/pro/admin doivent répondre `200`.
+Dupliquer ici les commandes de deploiement, les secrets GitHub Actions et la sequence
+rollback augmenterait le risque de divergence. Ce fichier sert donc uniquement de
+panneau de redirection pour les contributeurs qui ouvrent encore `docs/deployment.md`.
 
-### Fonctionnel
-- [ ] Flux login/register complet depuis le front autorisé (vérifier cookies CSRF).
-- [ ] `/matching/search` + `/offers/search` avec payload invalide → `400` (Zod).
-- [ ] Dashboard admin : `/admin/stats`, `/admin/audit` → 200 avec token admin valide.
-- [ ] Frontend Next.js : `npm run start -w @blobinfini/web` → `0` warning SSR, pages matching & admin accessibles.
+## Verification rapide
 
-## 6. Monitoring `/security/health`
+Avant une livraison production, verifier dans cet ordre:
 
-### Script CLI
-- Utiliser `scripts/security-health-check.sh` (bash + curl + jq).
-- Variables requises : `SECURITY_HEALTH_URL`, `SECURITY_MONITOR_TOKEN`. Optionnelles : `HC_FAIL_URL`, `HC_OK_URL`.
-- Exemple :
-  ```bash
-  SECURITY_HEALTH_URL=https://api.blobinfini.com/security/health \
-  SECURITY_MONITOR_TOKEN="..." \
-  HC_FAIL_URL="https://hc-ping.com/fail" \
-  HC_OK_URL="https://hc-ping.com/ok" \
-  scripts/security-health-check.sh
-  ```
+1. `docs/ops/deploy-vps.md`
+2. `.github/workflows/deploy-vps.yml`
+3. `docker-compose.vps.yml`
+4. `docs/runbooks/vps-runtime.md`
 
-### Cron GitHub Actions
-- Workflow `.github/workflows/security-health-monitor.yml` exécute le script toutes les 30 minutes (et via `workflow_dispatch`).
-- Secrets à configurer dans GitHub :
-  - `SECURITY_HEALTH_URL`
-  - `SECURITY_MONITOR_TOKEN`
-  - `SECURITY_HEALTH_FAIL_WEBHOOK` (optionnel)
-  - `SECURITY_HEALTH_OK_WEBHOOK` (optionnel)
-- Pour déployer sur Clever Cloud, créer une tâche planifiée qui exécute la même commande en injectant les variables d’environnement.
-- **Rôle du cron** : détecter rapidement toute dérive de configuration (origins non déclarés, secrets raccourcis, proxies non confiés). À chaque exécution, le workflow déclenche les webhooks adaptés (`HC_FAIL_URL`/`HC_OK_URL`) de façon à alerter l’équipe en <30 min sans intervention humaine.
-- La supervision détaillée du pipeline de logs s’appuie sur `/security/observability` côté admin/interne, pas sur `/security/health`.
-
-## 7. Scope observability
-
-Ce socle livre une observabilité serveur minimale et honnête: logs sécurisés, audit, posture `/security/health`, puis endpoint dédié au pipeline de logs.
-Il ne promet pas dans ce chantier:
-- OpenTelemetry complet
-- Datadog full stack
-- distributed tracing complet
-- observabilité full-stack front+back
-- migration exhaustive des logs browser/service worker
-
-## Logging serveur sécurisé — clôture du chantier
-
-Résumé honnête:
-- livraison limitée au socle serveur minimal d’observabilité / logging sécurisé
-- livré: logging runtime structuré, transport borné, endpoints `/security/health` et `/security/observability`, audit admin sensible, supervision scriptée
-- exclu: full-stack observability, distributed tracing complet, OpenTelemetry complet, nettoyage exhaustif des logs du repo
-- dette P2 restante: pseudonymisation encore partiellement dépendante des conventions de clés
-## 8. Notes & dépannage
-- L’API refuse de démarrer si l’un des secrets/`ALLOWED_ORIGINS`/`TRUSTED_PROXY_IPS` est absent en production. Corriger l’environnement plutôt que contourner.
-- `DATABASE_URL` sans SSL → exception `DATABASE_URL must include "?sslmode=require"`.
-- Pas de credentials Firebase ? Les endpoints push restent inactifs mais stables (logs `secureLogger` uniquement).
-- Toute modification de DTO/API doit mettre à jour `docs/openapi/openapi.yaml` avant déploiement.
+Toute modification de contrat API doit toujours mettre a jour `docs/openapi/openapi.yaml`
+avant deploiement.

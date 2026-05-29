@@ -69,43 +69,29 @@ Services:
 
 Infrastructure:
   - Docker Compose (dev)
-  - Docker Compose (VPS production)
-  - GitHub Actions (CI puis déploiement VPS)
+  - Hetzner VPS + Docker Compose (production)
+  - Caddy (reverse proxy TLS + Let's Encrypt)
+  - GitHub Actions (CI puis Deploy VPS)
   - Firebase (push notifications)
   - PostGIS activé (image `postgis/postgis:15-3.4` pour dev & CI)
 ```
 
-### 🆓 Hébergement Backend - Alternatives Gratuites (Phase MVP - exemple)
+### Infrastructure actuelle de production
 
-Pour la phase MVP, plusieurs options d'hébergement backend gratuites sont disponibles :
+Le chemin de production actuel est :
 
-#### Option 1 : **Render** (⭐ Recommandé pour débuter)
-- **Gratuit** : 750h/mois de compute (24/7 pour 1 app)
-- **Inclus** : PostgreSQL (90 jours gratuit) + Redis (25 MB)
-- **Inconvénient** : L'app "s'endort" après 15 min d'inactivité (redémarre en ~30s)
-- **Idéal pour** : MVP, démos, prototypes
-- **Site** : https://render.com
+```text
+local -> GitHub -> GitHub Actions CI -> Deploy VPS -> Hetzner VPS
+```
 
-#### Option 2 : **Railway**
-- **Gratuit** : $5 de crédit/mois (~500h de runtime)
-- **Inclus** : PostgreSQL + Redis illimités
-- **Avantage** : Pas de sleep/hibernation
-- **Inconvénient** : Crédit peut s'épuiser avant fin du mois si fort trafic
-- **Site** : https://railway.app
+Sur le VPS, `docker-compose.vps.yml` lance le frontend Next.js, l'API Express,
+PostgreSQL/PostGIS, Redis, MinIO et Caddy. Caddy est le reverse proxy TLS officiel:
+il route `$APP_DOMAIN` vers `web:3000`, `$API_DOMAIN` vers `api:4000` et
+`$STORAGE_DOMAIN` vers `minio:9000`.
 
-#### Option 3 : **Fly.io**
-- **Gratuit** : 3 VM + PostgreSQL (3GB)
-- **Avantage** : Pas de sleep, bonnes performances
-- **Inconvénient** : Configuration plus technique (Dockerfile requis)
-- **Site** : https://fly.io
-
-#### Option 4 : **Clever Cloud** (Payant, option possible)
-- **Payant** : À partir de ~7€/mois
-- **Avantages** : Hébergement France (RGPD), support Docker natif, pas de limitations
-- **Idéal pour** : Production avec budget (non obligatoire pour le lancement)
-- **Site** : https://www.clever-cloud.com
-
-**Note** : le chemin de production actuel est `localhost -> GitHub -> CI -> VPS`, avec le frontend Next.js servi par la stack Docker du VPS.
+Les alternatives d'hebergement manage (Render, Railway, Fly.io, Clever Cloud) ont
+ete etudiees historiquement, mais ne constituent plus le chemin principal de
+deploiement du projet.
 
 ### Structure Monorepo - Phase MVP (exemple, recommandé pour démarrer)
 
@@ -222,7 +208,7 @@ model User {
 - ✅ **Droit à l'oubli** (soft delete + purge automatique 3 phases)
 - ✅ **Export données utilisateur** (GDPR CLI intégré)
 - ✅ **Logs anonymisés** après 30 jours
-- ✅ **Hébergement données en Europe** (Clever Cloud France ou autre hébergeur UE)
+- ✅ **Hébergement données en Europe** (VPS Hetzner / hébergeur UE)
 
 ### ✅ Sécurité Technique (Implémenté)
 
@@ -541,7 +527,7 @@ Voir `docs/mcp-setup.md` pour :
 - RGPD : consentement explicite, anonymisation, droit à l'oubli, export des données.
 - Performance : PostGIS, Redis, index composites, pagination cursor-based.
 - Qualité : TypeScript strict, tests unitaires/E2E, couverture ≥ 80 %.
-- CI/CD : utilisez les scripts fournis (`npm run build`, `npm test`, etc.) et surveillez la GitHub Action `CI`.
+- CI/CD : utilisez les scripts fournis (`pnpm run build`, `pnpm test`, etc.) et surveillez la GitHub Action `CI`.
 
 ### Processus recommandé
 
@@ -551,7 +537,7 @@ Voir `docs/mcp-setup.md` pour :
 4. Livrez par petits commits/diffs, avec migrations et seeds synchronisés.
 5. Vérifiez les impacts Blobosphère (SEO, partage, rôles admin) si votre changement touche l’éditorial.
 6. Ajoutez/actualisez tests, seeds, SEO metadata et documentation.
-7. Exécutez `npm run lint`, `npm run type-check` et `npm test` avant de soumettre.
+7. Exécutez `pnpm run lint`, `pnpm run type-check` et `pnpm test` avant de soumettre.
 
 ## 💻 Commandes de Développement
 
@@ -559,29 +545,29 @@ Voir `docs/mcp-setup.md` pour :
 # Installation rapide
 git clone https://github.com/vigierAudrey/blobevolutionClaudeCodex.git
 cd blobevolutionClaudeCodex
-npm install
+pnpm install
 
 # Setup environnement (première fois uniquement)
 cp .env.example .env
 # Puis remplacez immédiatement EMAIL_HASH_SECRET par une valeur forte et unique
 # Exemple: openssl rand -base64 48 | tr -d '\n'
 docker compose up -d postgres redis minio mailpit
-npm run db:reseed  # Base + données de test
+pnpm run db:reseed  # Base + données de test
 
 # Développement
-npm run dev:all      # Lance API (port 4000) + Frontend (port 3002)
-npm run dev:api      # API seulement
-npm run dev:web      # Frontend seulement
+pnpm run dev:all      # Lance API (port 4000) + Frontend (port 3002)
+pnpm run dev:api      # API seulement
+pnpm run dev:web      # Frontend seulement
 
 # Base de données
-npm run db:migrate   # Applique les migrations
-npm run db:seed      # Charge les données de test
-npm run db:reset     # Reset complet (drop + migrate + seed)
-npm run db:studio    # Interface admin Prisma
+pnpm run db:migrate   # Applique les migrations
+pnpm run db:seed      # Charge les données de test
+pnpm run db:reset     # Reset complet (drop + migrate + seed)
+pnpm run db:studio    # Interface admin Prisma
 
 # Build et tests
-npm run build        # Build de production (API uniquement)
-npm run type-check   # Vérification TypeScript
+pnpm run build        # Build de production
+pnpm run type-check   # Vérification TypeScript
 ```
 
 ## 🖼️ Configuration des Images (Next.js + MinIO)
@@ -605,7 +591,7 @@ images: {
 
 **⚠️ Points importants :**
 
-1. **Redémarrage obligatoire** : Après toute modification de `next.config.mjs`, vous devez **redémarrer le serveur Next.js** (Ctrl+C puis `npm run dev`)
+1. **Redémarrage obligatoire** : Après toute modification de `next.config.mjs`, vous devez **redémarrer le serveur Next.js** (Ctrl+C puis `pnpm run dev`)
 2. **Environnements multiples** : Pour la production, ajoutez un nouveau pattern dans `remotePatterns` avec :
    - Le hostname de production de MinIO (ex: `minio.votredomaine.com`)
    - Le protocol `https` (recommandé)
@@ -637,19 +623,20 @@ images: {
 
 ## 🌐 Déploiement VPS
 
-Le frontend Next.js (`apps/web`) et l'API Express (`apps/api`) sont construits et servis par Docker Compose sur le VPS.
+Le frontend Next.js (`apps/web`) et l'API Express (`apps/api`) sont construits et servis par Docker Compose sur le VPS Hetzner.
 
 Chemin de livraison :
 
 ```text
-localhost -> GitHub -> CI GitHub Actions -> VPS
+local -> GitHub -> CI GitHub Actions -> Deploy VPS -> Hetzner VPS
 ```
 
-- ✅ **GitHub Actions `CI`** : lint, type-check, tests unitaires, tests API E2E et job Playwright (`e2e-tests`) qui rejoue les scénarios web critiques (`npm run test:e2e`). Le job provisionne Postgres, applique `db:generate`, `db:migrate:deploy`, `db:reseed`, installe les navigateurs Playwright puis lance les tests.
-- ✅ **VPS** : build Docker `api` + `web`, `prisma migrate deploy`, `docker compose up -d`, puis smoke test.
+- ✅ **GitHub Actions `CI`** : lint, type-check, tests unitaires, tests API E2E et job Playwright (`e2e-tests`) qui rejoue les scénarios web critiques (`pnpm run test:e2e`). Le job provisionne Postgres, applique `db:generate`, `db:migrate:deploy`, `db:reseed`, installe les navigateurs Playwright puis lance les tests.
+- ✅ **GitHub Actions `Deploy VPS`** : déclenché après CI verte sur `main`, connexion SSH au VPS, `git reset --hard origin/main`, build Docker `api` + `web`, `prisma migrate deploy`, `docker compose up -d`, puis `scripts/smoke-test-vps.sh`.
+- ✅ **VPS** : stack `docker-compose.vps.yml` avec Caddy comme reverse proxy TLS officiel.
 - ✅ **Secrets** : les secrets de déploiement vivent dans GitHub Actions (`Settings -> Secrets and variables -> Actions`) ou dans `.env.vps` sur le VPS. Aucun secret ne doit être commité.
 
-Voir `docs/runbooks/vps-runtime.md` pour la configuration runtime VPS.
+Voir `docs/ops/deploy-vps.md` pour le deploiement automatique et `docs/runbooks/vps-runtime.md` pour l'exploitation runtime VPS.
 
 ### 🔧 Tests Locaux avec `act`
 
@@ -678,45 +665,47 @@ act -j e2e-tests
 
 ### 📦 Architecture de Déploiement
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                     GitHub Repository                         │
-│          (source de vérité, remote principal)                │
-└────────────┬──────────────────────────────┬──────────────────┘
-             │                              │
-     ┌───────▼──────────────────┐   ┌───────▼───────────────┐
-     │ Validation CI            │   │        Vercel         │
-     │ (lint / type / tests)    │   │   Preview + Prod      │
-     │ • act (local, .yml)      │   │   Next.js uniquement  │
-     │ • GitLab CI (remote)     │   │   Build + CDN         │
-     │ • GitHub Actions (quota) │   └────────┬──────────────┘
-     └──────────────────────────┘            │
-                                             │ API Calls
-                                             ▼
-                                    ┌──────────────────────┐
-                                    │   Backend Hosting    │
-                                    │ (Clever Cloud/Render)│
-                                    │  (Railway/Fly.io)    │
-                                    │    + PostgreSQL      │
-                                    │    + Redis           │
-                                    └──────────────────────┘
+```text
+GitHub Repository (origin)
+    |
+    | push / pull request
+    v
+GitHub Actions "CI"
+    |- lint / type-check / tests
+    |- API E2E
+    `- Playwright E2E
+    |
+    | main + CI verte
+    v
+GitHub Actions "Deploy VPS"
+    |
+    | SSH
+    v
+Hetzner VPS
+    |- Caddy TLS (80/443)
+    |- web:3000
+    |- api:4000
+    |- postgres:5432
+    |- redis:6379
+    `- minio:9000 via storage domain uniquement
 ```
 
-CI locale avec `act` (lint/type-check/tests/e2e), CI distante via GitLab (lint/type-check/tests, au moins backend), GitHub Actions reste optionnel car soumis aux quotas.
+GitHub Actions est la source de vérité CI/CD avant déploiement VPS. `act` reste utile pour rejouer certains jobs localement.
 
 ### 🚀 Workflow de Développement
 
 1. **Développement local** :
-   - Chemin A (API hors Docker): `npm run dev:all`
-   - Chemin B recommandé (API dans Docker): `npm run dev:all:docker`
+   - Chemin A (API hors Docker): `pnpm run dev:all`
+   - Chemin B recommandé (API dans Docker): `pnpm run dev:all:docker`
      - Démarre l'infra Docker (Postgres, Redis, MinIO, Mailpit) et l'API dans Docker
      - Lance le frontend Next.js en local sur `http://localhost:3002`
 2. **Créer une branche** : `git checkout -b feat/nouvelle-fonctionnalite`
 3. **Validation locale (recommandée)** avec `act` (voir ci-dessous)
 4. **Commit et push** : `git push origin feat/nouvelle-fonctionnalite`
-5. **GitLab CI (optionnel)** : `git push gitlab` si configuré
-6. **Vercel crée automatiquement** une URL de prévisualisation
-7. **Merge vers `main`** → Déploiement automatique en production sur Vercel
+5. **GitLab CI (optionnel)** : `git push gitlab` si configuré comme backup
+6. **Merge vers `main`** → GitHub Actions `CI`
+7. **CI verte sur `main`** → GitHub Actions `Deploy VPS`
+8. **Smoke test VPS** → `scripts/smoke-test-vps.sh`
 
 #### Validation locale (recommandée) avec act
 
@@ -749,16 +738,16 @@ act -j build-and-test -P ubuntu-latest=catthehacker/ubuntu:act-latest
 
 ### Décision Technique : Hébergement backend + Firebase
 
-**Choix architectural** : Hébergement API sur Clever Cloud ou autre provider (Render/Railway/Fly.io) avec Firebase Cloud Messaging pour les notifications push.
+**Choix architectural actuel** : API sur la stack Docker Compose du VPS Hetzner, avec Firebase Cloud Messaging pour les notifications push.
 
 #### Pourquoi cette combinaison ?
 
 ```yaml
-Hébergeur backend (Clever Cloud/Render/Railway/Fly.io):
+Backend BlobConnect (VPS Docker Compose):
   - Hébergement API Node.js ✅
-  - Base de données PostgreSQL ✅
-  - Redis pour le cache ✅
-  - Déploiement simple et français ✅
+  - Base de données PostgreSQL/PostGIS ✅
+  - Redis pour le cache et les limites ✅
+  - Déploiement GitHub Actions -> VPS ✅
   - Pas de service push natif ❌
 
 Firebase FCM:
@@ -807,7 +796,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 
 #### Coûts
 
-- **Hébergeur backend (option Clever Cloud)** : ~10-30€/mois (API + DB, selon provider)
+- **VPS Hetzner** : coût fixe selon le serveur choisi
 - **Firebase FCM** : Gratuit (jusqu'à millions de notifications)
 - **Total** : Très économique pour une startup
 
@@ -943,9 +932,9 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ## 🧪 Données de démo (seed)
 
 - Commandes:
-  - `npm run db:seed` → crée des comptes de démo.
-  - `npm run db:reseed` → efface les données et réinjecte la démo (rapide, sans toucher au schéma).
-  - `npm run db:reset` → drop + remigre + seed (reset complet).
+  - `pnpm run db:seed` → crée des comptes de démo.
+  - `pnpm run db:reseed` → efface les données et réinjecte la démo (rapide, sans toucher au schéma).
+  - `pnpm run db:reset` → drop + remigre + seed (reset complet).
 
 - Démarrage rapide à copier-coller (local) :
 
@@ -953,17 +942,17 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
   # 1. Préparer l'environnement (la copie .env est nécessaire uniquement la première fois)
   cp -n .env.example .env 2>/dev/null || true
   docker compose up -d postgres redis minio mailpit
-  npm install
-  npm run db:reseed
+  pnpm install
+  pnpm run db:reseed
 
   # 2. Lancer les serveurs applicatifs (dans deux terminaux séparés)
 # Démarrage dev (Chemin B – API dans Docker)
-npm run dev:all:docker
+pnpm run dev:all:docker
 
 # Démarrages ciblés
-npm run dev:infra       # Postgres/Redis/MinIO/Mailpit (Docker)
-npm run dev:api:docker  # API dans Docker
-npm run dev:web         # Frontend en local (http://localhost:3002)
+pnpm run dev:infra       # Postgres/Redis/MinIO/Mailpit (Docker)
+pnpm run dev:api:docker  # API dans Docker
+pnpm run dev:web         # Frontend en local (http://localhost:3002)
 
 Notes:
 - Pour accéder à Swagger: `http://localhost:4000/api/docs` (API dans Docker)
@@ -987,7 +976,7 @@ Activer l’envoi d’emails (dev avec Mailpit)
 - Démarrer Mailpit: inclus dans `docker-compose.yml` → `docker compose up -d mailpit` (UI: http://localhost:8025)
 - `.env` déjà prêt pour Mailpit: `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_SECURE=false`.
 - Définir `WEB_BASE_URL` (ex: http://localhost:3002) pour générer les liens.
-- `apps/api` dépend de `nodemailer`; exécutez `npm install` à la racine si besoin.
+- `apps/api` dépend de `nodemailer`; exécutez `pnpm install` à la racine si besoin.
 
 Mailpit ne doit pas être utilisé en VPS/pré-prod réelle: utiliser Brevo via `.env.vps` et `docker-compose.vps.yml`.
 
@@ -1117,7 +1106,7 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 4. **Partagez un plan concis** : étapes, fichiers ciblés, tests prévus; validez-le avec l’équipe avant d’écrire du code.
 5. **Itérez par petits commits/diffs** : documentez les décisions et actualisez la doc associée (README, claude.md, RFC).
 6. **Gardez la visibilité en tête** : pour toute feature touchant la Blobosphère, mettez à jour SEO, métadonnées de partage et analytics (`aiRedirects`).
-7. **Exécutez la boucle CI locale** : `npm run lint`, `npm run type-check`, `npm test`, scénarios E2E obligatoires si concernés.
+7. **Exécutez la boucle CI locale** : `pnpm run lint`, `pnpm run type-check`, `pnpm test`, scénarios E2E obligatoires si concernés.
 
 ### Definition of Done
 - ✅ Couverture de tests ≥ 80 % (unitaires + E2E ciblés).
@@ -1196,7 +1185,7 @@ readingTime: 7
    - Authorization callback URL : `http://localhost:3002/api/decap/auth/callback`  
    - Récupère `Client ID` / `Client Secret` pour la configuration Décap (popup d’auth).
 4. **Démarrage**  
-   - `npm run dev --workspace @blobinfini/web` (écoute sur `3002`)  
+   - `pnpm --filter @blobinfini/web dev` (écoute sur `3002`)
    - Navigue vers `/admin/blobosphere` pour charger l’iframe Décap isolée.  
    - Le bouton “Ouvrir dans un nouvel onglet” pointe vers `/admin/index.html` si l’iframe est bloquée.
 
@@ -1234,11 +1223,11 @@ readingTime: 7
    - Tous les articles sont physiquement stockés dans `apps/web/content/blobosphere/<category>/<slug>.mdx`.  
    - Les dossiers sont créés à la volée si besoin.
 6. **Vérifier dans `/blobosphere`**  
-   - `npm run dev --workspace @blobinfini/web`  
+   - `pnpm --filter @blobinfini/web dev`
    - Ouvre `http://localhost:3002/blobosphere` et filtre par catégorie : seuls les MDX `status: published` apparaissent (chargés par `loadBlobospherePreviews()`).
 
 ### Vérifier la lecture côté `/blobosphere`
-1. `npm run dev --workspace @blobinfini/web`
+1. `pnpm --filter @blobinfini/web dev`
 2. Ajoute/modifie un fichier dans `apps/web/content/blobosphere`
 3. Ouvre `http://localhost:3002/blobosphere` → les articles publiés doivent apparaître.  
    - `loadBlobospherePreviews()` filtre automatiquement `status: draft` et calcule `readingTime`.

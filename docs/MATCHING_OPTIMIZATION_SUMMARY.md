@@ -271,7 +271,7 @@ interface MatchingResult {
 
 ### Performance
 - [ ] Ajouter cache Redis pour `/matching/search` si forte charge
-- [ ] Monitorer latence PostGIS avec Clever Cloud logs
+- [ ] Monitorer latence PostGIS via logs API VPS et métriques internes
 - [ ] Optimiser taille images (compression, WebP)
 
 ### UX
