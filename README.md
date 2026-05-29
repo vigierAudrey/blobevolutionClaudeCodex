@@ -1,25 +1,39 @@
-# 🏄 BlobConnect – Monorepo IA
+# 🏄 Blob – Monorepo IA
 
 ## 📋 Mission pour l'IA
 
-Ce monorepo contient la version vivante de BlobConnect, marketplace de mise en relation pour les sports de glisse (surf/kitesurf).
+Ce monorepo contient la version vivante de **Blob**, plateforme de mise en relation pour les sports de glisse (surf/kitesurf).
 
 **Votre mission** : Contribuer directement ici. Ignorez l'ancien projet `/blobevolution` (archivé). Pour un rappel historique uniquement, consultez `ai/context/migration_from_blobevolution.md`.
 
 **Référence IA** : Ce README, `AGENTS.md` et `claude.md` sont les guides officiels pour nos IA (Codex, ChatGPT-5, Claude Code) et l’équipe humaine.
 
-**Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de BlobConnect via du contenu partageable (SEO + réseaux sociaux).
+**Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de Blob via du contenu partageable (SEO + réseaux sociaux).
 
 ## 🏷️ Naming produit (IMPORTANT)
 
-- **BlobConnect** = nom **visible utilisateurs** (UI, emails, pages publiques, wording marketing).
-- **Blobinfini** = nom **interne/tech** (repo, namespaces, packages) tant qu’aucune décision de renommage globale n’est actée.
+- **Blob** = nom visible utilisateur dans les interfaces, emails, pages publiques et textes marketing.
+- **BlobConnect** = nom projet/plateforme technique ou historique interne lorsque le dépôt l'emploie encore.
+- **BlobSurf / blobsurf.com** = domaine public actuel de déploiement.
+- **Blobinfini** = legacy technique à conserver uniquement là où il existe encore dans les namespaces, packages, variables ou historiques.
 - Ne pas “renommer en masse” (variables, packages, env, Sentry, Firebase, URLs) sans ticket/validation : risque casse SEO, config, observabilité, clés, routes.
-- Dans les textes UI, toujours afficher **BlobConnect**.
+- Dans les textes UI, emails et pages publiques, afficher **Blob**.
+
+Le dépôt GitHub s'appelle encore techniquement `blobevolutionClaudeCodex`. C'est un nom de dépôt historique, pas le nom produit.
+
+## 🌍 Domaine public actuel
+
+Les domaines publics confirmés par `docker/Caddyfile` et `docs/ops/monitoring-blobsurf.md` sont :
+
+- Site/app : `https://blobsurf.com`
+- API : `https://api.blobsurf.com`
+- Stockage public MinIO : `https://storage.blobsurf.com`
+
+`docker-compose.vps.yml` reste paramétrable via `APP_DOMAIN`, `API_DOMAIN` et `STORAGE_DOMAIN`. Les valeurs `*.blobinfini.local` visibles dans certains exemples sont des placeholders techniques locaux, pas des domaines publics.
 
 ## 🎯 Vision Produit
 
-BlobConnect connecte les passionnés de sports de glisse en proposant :
+Blob connecte les passionnés de sports de glisse en proposant :
 
 - **Matching intelligent** entre riders basé sur géolocalisation, niveau et affinités
 - **Publication de demandes géolocalisées** : un particulier publie une intention de cours (surf/kitesurf) ; les professionnels dans leur périmètre configuré voient les demandes locales
@@ -27,7 +41,7 @@ BlobConnect connecte les passionnés de sports de glisse en proposant :
 - **Messagerie intégrée** pour organiser librement le cours — sans réservation ni paiement orchestrés par la plateforme
 - **(Reporté)** Gamification communautaire (systèmes de points/badges) – hors scope MVP
 - **BloboMap** : outil de visualisation à destination des professionnels pour identifier les demandes géolocalisées dans leur zone d’activité
-- **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de BlobConnect
+- **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de Blob
 
 ### Utilisateurs cibles
 
@@ -42,9 +56,9 @@ BlobConnect connecte les passionnés de sports de glisse en proposant :
 - **Contrastes dynamiques** : les thèmes reposent sur les variables CSS Tailwind ; activer le mode contraste élevé force des valeurs RGAA (texte clair, bordures renforcées, focus visibles).
 - **Mode clair/sombre** : un bouton persistant en bas à droite permet de basculer à tout moment entre clair et sombre (préférence mémorisée dans le navigateur et initialisée selon `prefers-color-scheme`).
 
-## 🏗️ Architecture Cible
+## 🏗️ Architecture actuelle
 
-### Stack Technique Requis
+### Stack technique active
 
 ```yaml
 Frontend:
@@ -63,8 +77,9 @@ Backend:
 
 Services:
   - Stripe (paiements — hors scope MVP, non actif)
-  - Twilio (SMS/2FA)
-  - Google Maps / OpenStreetMap
+  - Brevo SMTP (emails VPS/pre-prod/prod)
+  - Mailpit (emails local/dev uniquement)
+  - OpenStreetMap + Leaflet (cartographie active)
   - Firebase (notifications push)
 
 Infrastructure:
@@ -96,7 +111,7 @@ deploiement du projet.
 ### Structure Monorepo - Phase MVP (exemple, recommandé pour démarrer)
 
 ```
-blobevolutionClaudeCodex/
+blobevolutionClaudeCodex/        # nom de dossier historique
 ├── apps/
 │   ├── web/                    # Next.js PWA
 │   │   ├── app/               # App Router pages
@@ -114,7 +129,7 @@ blobevolutionClaudeCodex/
 │       │   │   │   ├── strategies/
 │       │   │   │   └── dto/
 │       │   │   ├── blobosphere/ # Contenus éditoriaux & partage social
-│       │   │   ├── booking/     # Réservations & mise en relation
+│       │   │   ├── booking/     # Legacy technique: demandes de contact / mise en relation
 │       │   │   ├── chat/        # Messagerie temps réel
 │       │   │   ├── consent/     # Consentement & publicité
 │       │   │   ├── contact/     # Contact & support
@@ -138,7 +153,7 @@ blobevolutionClaudeCodex/
 ### Structure Services Découplés - Phase Scale (exemple, évolution future)
 
 ```
-blobevolutionClaudeCodex/
+blobevolutionClaudeCodex/        # nom de dossier historique
 ├── services/                   # Microservices (après 1000+ users)
 │   ├── auth-service/          # Service auth dédié
 │   ├── matching-service/      # Service matching dédié
@@ -262,7 +277,7 @@ Le projet implémente le standard **RFC 9116** pour faciliter le signalement de 
 
 **Fichier** : `apps/web/public/.well-known/security.txt`
 
-Ce fichier est **automatiquement accessible** publiquement via l'URL `https://votredomaine.com/.well-known/security.txt` une fois déployé. Il contient :
+Ce fichier est **automatiquement accessible** publiquement via l'URL `https://blobsurf.com/.well-known/security.txt` une fois déployé. Il contient :
 - Contact email pour signaler des vulnérabilités
 - Politique de divulgation responsable
 - Programme de bug bounty (récompenses 20€/10€/reconnaissance)
@@ -270,7 +285,7 @@ Ce fichier est **automatiquement accessible** publiquement via l'URL `https://vo
 - Conformité Code Pénal français (Art. 323-1)
 
 **⚠️ Action requise avant production** :
-Remplacer les 3 occurrences de `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobinfini.com` dans :
+Remplacer les 3 occurrences de `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobsurf.com` dans :
 - Ligne 4 : `Contact:`
 - Ligne 53 : Commentaire Contact
 - Ligne 64 : Commentaire découverte accidentelle
@@ -287,15 +302,17 @@ Ce standard est reconnu par Google, Facebook, GitHub et recommandé par l'ANSSI.
 
 ```bash
 # Variables d'environnement obligatoires
-ADMIN_EMAIL=admin@blobinfini.com  # Email(s) recevant les alertes (séparés par virgules)
+ADMIN_EMAIL=admin@blobsurf.com  # Email(s) recevant les alertes (séparés par virgules)
 
-# Configuration SMTP (Mailpit local/dev uniquement)
+# Configuration SMTP local/dev (Mailpit)
 SMTP_HOST=localhost
 SMTP_PORT=1025
 SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASS=
 ```
+
+En VPS, pré-prod et prod réelle, l'envoi SMTP doit utiliser Brevo (`SMTP_HOST=smtp-relay.brevo.com`) via `.env.vps`. Mailpit est interdit hors local/dev.
 
 **Violations détectées :**
 
@@ -424,7 +441,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 
 ### Serveurs MCP Disponibles
 
-Le projet **blobevolutionClaudeCodex** est configuré pour utiliser plusieurs serveurs MCP qui enrichissent les capacités des IA :
+Le dépôt technique **blobevolutionClaudeCodex** est configuré pour utiliser plusieurs serveurs MCP qui enrichissent les capacités des IA :
 
 #### Pour Claude Code (CLI)
 Configuration : `~/.config/claude-code/mcp.json`
@@ -518,8 +535,8 @@ Voir `docs/mcp-setup.md` pour :
 
 ### Lignes directrices
 
-- Travaillez exclusivement dans `blobevolutionClaudeCodex`.
-- Respectez l'architecture modulaire (`apps/api/src/modules/*` : auth, booking, chat, matching, blobosphere, consent, profile/pro, push, security, etc.).
+- Travaillez exclusivement dans le dépôt `blobevolutionClaudeCodex` (nom historique, pas nom produit).
+- Respectez l'architecture modulaire (`apps/api/src/modules/*` : auth, contact, chat, matching, blobosphere, consent, profile/pro, push, security, etc.). Le module `booking` existe encore comme legacy technique et ne doit pas être renommé en masse.
 - Intégrez le module `blobosphere` (contenus éditoriaux) pour renforcer la visibilité externe.
 - Utilisez les serveurs MCP disponibles (Sentry, GitHub, Playwright, Chrome DevTools, Context7) pour enrichir vos capacités d'analyse.
 - Sécurité systématique : Zod sur tous les inputs, Prisma uniquement, rate limiting, CSRF, headers de sécurité.
@@ -570,6 +587,8 @@ pnpm run build        # Build de production
 pnpm run type-check   # Vérification TypeScript
 ```
 
+`blobevolutionClaudeCodex` est le nom du dépôt historique GitHub. Le produit public s'appelle Blob et le domaine public actuel est `blobsurf.com`.
+
 ## 🖼️ Configuration des Images (Next.js + MinIO)
 
 ### Configuration Locale et Production
@@ -593,9 +612,9 @@ images: {
 
 1. **Redémarrage obligatoire** : Après toute modification de `next.config.mjs`, vous devez **redémarrer le serveur Next.js** (Ctrl+C puis `pnpm run dev`)
 2. **Environnements multiples** : Pour la production, ajoutez un nouveau pattern dans `remotePatterns` avec :
-   - Le hostname de production de MinIO (ex: `minio.votredomaine.com`)
+   - Le hostname de production de MinIO exposé par Caddy (`storage.blobsurf.com`)
    - Le protocol `https` (recommandé)
-   - Le pathname correspondant à votre bucket de production
+   - Le pathname correspondant au bucket de production (`S3_BUCKET`, ex: `blobinfini-vps` tant que le bucket legacy n'est pas renommé)
 
 **Exemple de configuration multi-environnements :**
 
@@ -612,8 +631,8 @@ images: {
     // Production
     {
       protocol: 'https',
-      hostname: 'minio.votredomaine.com',
-      pathname: '/blobinfini-prod/**',
+      hostname: 'storage.blobsurf.com',
+      pathname: '/blobinfini-vps/**',
     },
   ],
 },
@@ -657,7 +676,7 @@ act -j e2e-tests
 
 ### 2025-11-09 — Politique de nettoyage Jest (2025)
 
-1. **Résumé** – Toutes les suites e2e critiques (`auth`, `conversations`, `matching`, `profile`, `admin`, `contact`, `anti-overbooking`, `booking`) reconstruisent leurs fixtures dans un `beforeEach()`. Chaque scénario repart ainsi d’un environnement neuf, sans dépendre des créations effectuées par un test précédent.
+1. **Résumé** – Les suites e2e critiques reconstruisent leurs fixtures dans un `beforeEach()`. Chaque scénario repart ainsi d’un environnement neuf, sans dépendre des créations effectuées par un test précédent.
 2. **Description technique** – `apps/api/jest.setup.db.ts` vide désormais l’ensemble des tables entre les suites Jest sans aucune exception dans `skipCleanupPatterns`. Cette politique rend la CI plus prévisible et prépare la migration Prisma 7.
 
 > 🧠 Coach pédago : chaque train (suite e2e) passe désormais par son atelier de remise à zéro avant le départ, pendant que la grande équipe de nettoyage repasse entre chaque passage.  
@@ -743,7 +762,7 @@ act -j build-and-test -P ubuntu-latest=catthehacker/ubuntu:act-latest
 #### Pourquoi cette combinaison ?
 
 ```yaml
-Backend BlobConnect (VPS Docker Compose):
+Backend Blob (VPS Docker Compose):
   - Hébergement API Node.js ✅
   - Base de données PostgreSQL/PostGIS ✅
   - Redis pour le cache et les limites ✅
@@ -761,7 +780,7 @@ Firebase FCM:
 #### Architecture de communication
 
 ```
-[Frontend PWA] ←→ [Backend API (hébergeur)] ←→ [Firebase FCM] → [Dispositifs Users]
+[Frontend PWA] ←→ [Backend API VPS] ←→ [Firebase FCM] → [Dispositifs Users]
      ↑                    ↑                   ↑
 Service Worker     Firebase Admin SDK   Push Service
    (Client)           (Serveur)        (Google/Apple)
@@ -771,15 +790,15 @@ Service Worker     Firebase Admin SDK   Push Service
 
 **Variables d'environnement backend (API) :**
 ```bash
-FIREBASE_PROJECT_ID=blobinfini-prod
-FIREBASE_CLIENT_EMAIL=firebase-admin@blobinfini.iam.gserviceaccount.com
+FIREBASE_PROJECT_ID=<firebase-project-id>
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@<firebase-project-id>.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
 ```
 
 **Frontend (variables publiques) :**
 ```bash
 NEXT_PUBLIC_FIREBASE_API_KEY=your-web-api-key
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=blobinfini-prod
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=<firebase-project-id>
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ```
 
@@ -828,7 +847,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ## 🌐 Blobosphère – Hub éditorial
 
 ### Objectif produit
-- Amplifier la visibilité de BlobConnect via un espace éditorial riche (articles, interviews, reportages photo).
+- Amplifier la visibilité de Blob via un espace éditorial riche (articles, interviews, reportages photo).
 - Créer un tunnel d’entrée SEO/social : chaque contenu dispose d’URL publiques optimisées et de métadonnées partageables.
 - Offrir aux riders/pros un lien direct depuis leurs univers respectifs pour explorer l’actualité de la communauté.
 
@@ -897,7 +916,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 1. Inscription + vérification email (support rider ou pro).
 2. Configuration du profil et consentement géolocalisation.
 3. Exploration de `/matching`, envoi d’une demande de session et échanges avec le pro.
-4. Validation finale hors plateforme (paiement non géré dans BlobConnect pour le MVP).
+4. Validation finale hors plateforme (paiement non géré dans Blob pour le MVP).
 
 ### Pros (Professionnels)
 
@@ -906,7 +925,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 - Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).
 - Lancement initial : création/édition des comptes et profils pro temporairement limitées à `countryCode=FR`, avec contrôle serveur des coordonnées France métropolitaine + Corse.
 - Informations tarifaires non exposées en UI (données conservées en base pour usage interne uniquement).
-- Créneaux publiés, demandes reçues et journal d’audit pro.
+- Demandes reçues, visibilité locale et journal d’audit pro.
 - Pièces justificatives partagées hors plateforme : les utilisateurs doivent vérifier directement les documents fournis par le professionnel.
 - Auth renforcée avec 2FA obligatoire sur connexion.
 
@@ -968,7 +987,7 @@ Notes:
 ## 🗺️ Carte (open source, sans Google)
 
 - Front: Leaflet + tuiles OpenStreetMap.
-- Pas de dépendance payante Google Maps.
+- Pas de dépendance cartographique payante.
 - Extension prévue: géocodage gratuit Nominatim pour convertir adresses → lat/lng.
 
 Activer l’envoi d’emails (dev avec Mailpit)
@@ -1015,37 +1034,7 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 
 ### API Route Protégée
 
-Extrait réel : `apps/api/src/modules/booking/booking.controller.ts`
-
-```typescript
-bookingRouter.post('/availability', ensureRole('PRO'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const body = createAvailabilitySchema.parse(req.body);
-    const current = req.user;
-    if (!current) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const availability = await bookingService.createAvailability(current.id, body);
-    const consentHash = getConsentHash(req);
-    void recordServerAnalyticsEvent({
-      eventType: 'PRO_SLOTS_UPDATE',
-      actorType: 'PRO',
-      actorId: current.id,
-      consentHash,
-      sport: availability.sport,
-      zoneLarge: computeZoneLarge(availability.spotLat, availability.spotLng),
-      occurredAt: availability.createdAt,
-    });
-    return res.status(201).json(availability);
-  } catch (error: unknown) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
-    }
-    const status = getErrorStatus(error);
-    return res.status(status).json({ error: getErrorMessage(error) });
-  }
-});
-```
+Les routes protégées doivent combiner garde d'authentification, contrôle de rôle, validation Zod et réponses d'erreur typées. Le module `booking` peut encore apparaître dans des noms techniques legacy, mais la documentation produit ne doit pas réintroduire de workflow de réservation orchestrée.
 
 ## 🔍 Points d'Attention Spécifiques
 
@@ -1067,14 +1056,14 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 
 ### Paiement & Commission (hors scope MVP)
 
-- Pas de paiement intégré dans BlobConnect — l'organisation financière du cours se fait hors plateforme
+- Pas de paiement intégré dans Blob — l'organisation financière du cours se fait hors plateforme
 - Aucun prélèvement ni escrow en production
 - Éventuellement exploratoire post-MVP si l'adoption terrain valide l'intérêt de fonctionnalités premium
 
 ### Messagerie
 
 - Filtrage regex emails/téléphones
-- Conversations limitées aux matchs confirmés
+- Conversations ouvertes dans le parcours de mise en relation validé
 - Archivage auto après 30 jours inactivité
 - Modération IA contenus inappropriés
 
@@ -1085,7 +1074,6 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 ## 📚 Documentation Technique
 
 - [**Positionnement Produit MVP**](./docs/product-positioning.md) — **Source de vérité scope fonctionnel (à lire en premier)**
-- [Synthèse Projet (PDF)](./docs/synthese-blobinfini.pdf)
 - [API Documentation](./docs/api.md)
 - [Database Schema](./docs/database.md)
 - [Security Guidelines](./docs/security.md)
@@ -1118,12 +1106,12 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 ## 📞 Support & Contact
 
 - **Documentation** : à définir
-- **Email** : blobinfini@gmail.com
+- **Email** : contact@blobsurf.com (à confirmer avant production publique)
 - **Discord** : à définir
 
 ---
 
-_BlobConnect - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
+_Blob - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
 
 ## ✍️ Blobosphère – MDX + Git + Décap CMS
 
