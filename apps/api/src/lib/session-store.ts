@@ -12,7 +12,7 @@
  * pour garantir que getRedisClient() retourne un client connecté.
  */
 
-import RedisStore from 'connect-redis';
+import { RedisStore } from 'connect-redis';
 import type { Store } from 'express-session';
 import { secureLogger } from '../utils/secure-logger';
 import { getRedisClient } from './redis-client';
@@ -21,7 +21,7 @@ export function buildSessionStore(): Store | undefined {
   const client = getRedisClient();
 
   if (client) {
-    // connect-redis v7 — compatible redis v5
+    // connect-redis v9 — compatible redis v5
     const store = new RedisStore({
       client,
       prefix: 'sess:',
