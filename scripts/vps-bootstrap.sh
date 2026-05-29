@@ -2,9 +2,9 @@
 # vps-bootstrap.sh — Bootstrap complet de l'environnement VPS Runtime BlobConnect
 #
 # Ce script orchestre dans l'ordre :
-#   1. Vérification des prérequis (Docker, mkcert, pnpm)
-#   2. Validation du .env.vps
-#   3. Génération des certs TLS mkcert (api + app + storage)
+#   1. Vérification des prérequis (Docker, pnpm)
+#   2. Validation du .env.vps (incl. CADDY_ACME_EMAIL obligatoire)
+#   3. TLS : Caddy gère les certificats Let's Encrypt automatiquement — pas de mkcert
 #   4. Entrée /etc/hosts (optionnelle avec --hosts)
 #   5. Reset volumes (optionnel avec --reset)
 #   6. Build des images Docker production
@@ -12,11 +12,12 @@
 #   8. Configuration MinIO : bucket + policy GET anonyme
 #   9. Migration Prisma (migrate deploy — jamais db push)
 #  10. Seed des comptes de test stables
-#  11. Démarrage API + frontend + nginx
+#  11. Démarrage API + frontend + Caddy (reverse proxy TLS Let's Encrypt)
 #
 # Différences vs pre-vps-bootstrap.sh :
 #   - docker-compose.vps.yml / .env.vps
-#   - 3 domaines TLS générés (api + app + STORAGE)
+#   - Reverse proxy : Caddy (Let's Encrypt auto) — pre-vps utilise nginx + mkcert
+#   - CADDY_ACME_EMAIL requis dans .env.vps (port 80 doit être ouvert pour ACME HTTP-01)
 #   - Étape 8 : mc (MinIO Client) configure bucket policy GET anonyme
 #     MinIO n'est pas exposé sur l'hôte → configuration via réseau Docker interne
 #
@@ -31,7 +32,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env.vps"
-CERTS_DIR="$REPO_ROOT/docker/certs/vps"
 DC="docker compose -f $REPO_ROOT/docker-compose.vps.yml --env-file $ENV_FILE"
 MC_IMAGE="quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 
@@ -62,13 +62,10 @@ command -v docker >/dev/null 2>&1  || die "docker n'est pas installé"
 docker info >/dev/null 2>&1        || die "Docker daemon n'est pas démarré"
 command -v pnpm >/dev/null 2>&1    || die "pnpm n'est pas installé (corepack enable)"
 
-if ! command -v mkcert >/dev/null 2>&1; then
-  die "mkcert n'est pas installé.
-       Ubuntu/Debian : sudo apt install libnss3-tools && wget -O mkcert https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v1.4.4-linux-amd64 && chmod +x mkcert && sudo mv mkcert /usr/local/bin/
-       macOS         : brew install mkcert"
-fi
+# mkcert n'est plus requis : Caddy gère les certificats Let's Encrypt automatiquement.
+# (mkcert reste nécessaire pour pre-vps-bootstrap.sh uniquement)
 
-log "  Docker OK, pnpm OK, mkcert OK"
+log "  Docker OK, pnpm OK"
 
 # ─── 2. Fichier .env.vps ──────────────────────────────────────────────────────
 log "2. Validation du fichier .env.vps..."
@@ -108,37 +105,20 @@ API_DOMAIN="${API_DOMAIN:-api.blobinfini.local}"
 APP_DOMAIN="${APP_DOMAIN:-app.blobinfini.local}"
 BUCKET="${S3_BUCKET:-blobinfini-vps}"
 
-# ─── 3. Certificats TLS mkcert (3 domaines) ───────────────────────────────────
-log "3. Génération des certificats TLS mkcert (api, app, storage)..."
-
-mkdir -p "$CERTS_DIR"
-
-# api
-if [ ! -f "$CERTS_DIR/${API_DOMAIN}.pem" ]; then
-  mkcert -install 2>/dev/null || true
-  (cd "$CERTS_DIR" && mkcert "$API_DOMAIN")
-  log "  Cert généré : $API_DOMAIN"
-else
-  log "  Cert déjà présent : $API_DOMAIN — skip"
-fi
-
-# app
-if [ ! -f "$CERTS_DIR/${APP_DOMAIN}.pem" ]; then
-  (cd "$CERTS_DIR" && mkcert "$APP_DOMAIN")
-  log "  Cert généré : $APP_DOMAIN"
-else
-  log "  Cert déjà présent : $APP_DOMAIN — skip"
-fi
-
-# storage (NEW : absent du pre-vps bootstrap)
-if [ ! -f "$CERTS_DIR/${STORAGE_DOMAIN}.pem" ]; then
-  (cd "$CERTS_DIR" && mkcert "$STORAGE_DOMAIN")
-  log "  Cert généré : $STORAGE_DOMAIN"
-else
-  log "  Cert déjà présent : $STORAGE_DOMAIN — skip"
-fi
-
-log "  Certs TLS OK dans $CERTS_DIR"
+# ─── 3. Certificats TLS ───────────────────────────────────────────────────────
+# Caddy gère les certificats Let's Encrypt automatiquement via ACME HTTP-01.
+# Aucune action manuelle requise : les certs sont émis et renouvelés par Caddy au démarrage.
+#
+# Prérequis réseau pour l'émission initiale :
+#   - Port 80 ouvert sur le VPS (firewall/iptables) — Let's Encrypt vérifie /.well-known/acme-challenge/
+#   - Domaines DNS (APP_DOMAIN, API_DOMAIN, STORAGE_DOMAIN) pointent vers l'IP du VPS
+#   - CADDY_ACME_EMAIL défini dans .env.vps (validé par check-vps-env.sh ci-dessus)
+#
+# Les certs sont persistés dans le volume Docker caddy-data — NE PAS supprimer ce volume
+# (rate-limit Let's Encrypt : 5 certificats par semaine par domaine registered).
+log "3. Certificats TLS : Caddy (Let's Encrypt) — aucune action manuelle requise."
+log "   CADDY_ACME_EMAIL : ${CADDY_ACME_EMAIL:-<non défini — vérifier .env.vps>}"
+log "   Caddy émettra les certs au premier démarrage (port 80 doit être accessible)."
 
 # ─── 4. /etc/hosts (optionnel) ────────────────────────────────────────────────
 if [ "$ADD_HOSTS" = "true" ]; then
@@ -324,8 +304,8 @@ $DC run --rm \
 
 log "  Seed OK"
 
-# ─── 11. Démarrage API + Web + nginx ──────────────────────────────────────────
-log "11. Démarrage de l'API, du frontend et de nginx..."
+# ─── 11. Démarrage API + Web + Caddy ──────────────────────────────────────────
+log "11. Démarrage de l'API, du frontend et de Caddy..."
 $DC up -d api web
 
 log "    Attente API (healthcheck)..."
@@ -344,9 +324,12 @@ timeout 120 bash -c "until $DC ps web | grep -q 'healthy'; do sleep 3; done" \
     die "Le frontend n'est pas healthy après 120s"
   }
 
-$DC up -d nginx
+$DC up -d caddy
 
-log "  API, Web, nginx OK"
+log "  API, Web, Caddy OK"
+log "  Caddy va émettre les certificats Let's Encrypt au premier démarrage."
+log "  Vérifier les logs Caddy si HTTPS ne répond pas après 60s :"
+log "    docker compose -f docker-compose.vps.yml logs caddy"
 
 # ─── Résumé ───────────────────────────────────────────────────────────────────
 echo ""
@@ -361,6 +344,9 @@ echo ""
 echo "  MinIO console : NON exposé sur l'hôte"
 echo "    Accès via tunnel : ssh -L 9001:localhost:9001 user@vps"
 echo "    Puis : http://localhost:9001 (credentials dans .env.vps)"
+echo ""
+echo "  Logs Caddy (si HTTPS ne répond pas après 60s) :"
+echo "    docker compose -f docker-compose.vps.yml logs caddy"
 echo ""
 echo "  Comptes de test :"
 echo "  rider.a@pre-vps.blobinfini.local  / RiderAlpha2026!PreVPS"

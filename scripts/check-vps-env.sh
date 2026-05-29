@@ -11,7 +11,7 @@
 #   - S3_PUBLIC_URL_BASE ne contient PAS localhost (idem)
 #   - STORAGE_DOMAIN défini et non-localhost (si utilisé)
 #   - SMTP Brevo obligatoire, authentifié, sans fallback Mailpit
-#   - Certs VPS présents pour les 3 domaines (api, app, storage)
+#   - CADDY_ACME_EMAIL obligatoire (Caddy est le reverse proxy VPS, gère Let's Encrypt)
 
 set -euo pipefail
 
@@ -231,8 +231,12 @@ require_var "NEXT_PUBLIC_API_URL"
 require_var "WEB_BASE_URL"
 require_var "PRIMARY_ADMIN_EMAILS"
 
-# ─── Caddy ACME (stack blobsurf — docker-compose.blobsurf.yml) ───────────────
+# ─── Caddy ACME (docker-compose.vps.yml utilise Caddy — obligatoire) ─────────
+# CADDY_ACME_EMAIL est requis pour docker-compose.vps.yml depuis la migration nginx→Caddy.
+# Caddy gère les certificats Let's Encrypt automatiquement via ACME (RFC 8555).
+# Aucun cert mkcert manuel requis.
 echo "--- Caddy ACME ---"
+require_var "CADDY_ACME_EMAIL"
 if [ -n "${CADDY_ACME_EMAIL:-}" ]; then
   if echo "${CADDY_ACME_EMAIL}" | grep -qP "^[^@\s]+@[^@\s]+\.[^@\s]+$" 2>/dev/null || \
      echo "${CADDY_ACME_EMAIL}" | grep -qE "^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$"; then
@@ -242,33 +246,14 @@ if [ -n "${CADDY_ACME_EMAIL:-}" ]; then
     ERRORS=$((ERRORS + 1))
   fi
   forbidden_value "CADDY_ACME_EMAIL" "contact@blobinfini.local"
-else
-  # CADDY_ACME_EMAIL optionnel : uniquement requis pour docker-compose.blobsurf.yml.
-  # Avec docker-compose.vps.yml (nginx), les certs sont gérés par mkcert/certbot.
-  log_ok "CADDY_ACME_EMAIL non défini (optionnel — requis uniquement pour stack Caddy/blobsurf)"
 fi
 
-# ─── Certs TLS VPS (nginx — docker-compose.vps.yml) ──────────────────────────
-# Ce check ne s'applique qu'à la stack nginx (docker-compose.vps.yml).
-# Pour la stack Caddy (docker-compose.blobsurf.yml), Caddy gère les certs automatiquement.
-echo "--- TLS (certs VPS nginx) ---"
-if [ -n "${CADDY_ACME_EMAIL:-}" ]; then
-  log_ok "Stack Caddy détectée (CADDY_ACME_EMAIL défini) — check certs mkcert ignoré"
-else
-  CERT_DIR="${VPS_CERTS_DIR:-./docker/certs/vps}"
-  DOMAIN="${API_DOMAIN:-api.blobinfini.local}"
-  STORAGE_DOMAIN_CERT="${STORAGE_DOMAIN:-storage.blobinfini.local}"
-  APP_DOMAIN_CERT="${APP_DOMAIN:-app.blobinfini.local}"
-
-  for cert_domain in "$DOMAIN" "$APP_DOMAIN_CERT" "$STORAGE_DOMAIN_CERT"; do
-    if [ ! -f "${CERT_DIR}/${cert_domain}.pem" ]; then
-      log_err "Cert manquant : ${CERT_DIR}/${cert_domain}.pem (lancer vps-bootstrap.sh)"
-      ERRORS=$((ERRORS + 1))
-    else
-      log_ok "Cert présent : ${cert_domain}.pem"
-    fi
-  done
-fi
+# ─── TLS : Caddy gère les certificats automatiquement ────────────────────────
+# docker-compose.vps.yml utilise Caddy (Let's Encrypt) — aucun cert mkcert requis.
+# Le volume caddy-data (défini dans docker-compose.vps.yml) persiste les certs.
+# NE PAS supprimer ce volume sur le VPS (rate-limit Let's Encrypt : 5 certs/semaine/domaine).
+echo "--- TLS (Caddy Let's Encrypt) ---"
+log_ok "Certs TLS gérés par Caddy automatiquement — check certs mkcert non applicable"
 
 echo ""
 if [ "$ERRORS" -eq 0 ]; then
