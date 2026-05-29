@@ -27,7 +27,7 @@
 ## Recommandations production
 1. Exécuter `npm test --workspace @blobinfini/api` & `npm run build --workspace …` sur l’environnement CI.
 2. Déployer la migration Prisma (`prisma migrate deploy`) puis vérifier la table `user_consent` côté DB.
-3. Activer compression Brotli et pooling PostgreSQL (pgBouncer / Clever Cloud).
+3. Activer compression Brotli et pooling PostgreSQL si la charge VPS le justifie.
 4. Configurer Cloudflare CDN gratuit pour `/public` et `/images`.
 5. Surveiller GA4 (`ad_impression`) pour mesurer le mix consentement (personalized/NPA/limited/house).
 

@@ -69,15 +69,17 @@ Ces fichiers sont à la racine pour une visibilité maximale :
 
 | Document | Description |
 |----------|-------------|
-| **[deployment.md](deployment.md)** | Guide déploiement production (Clever Cloud) |
-| **[adsense-deployment.md](adsense-deployment.md)** | Checklist déploiement Google AdSense |
+| **[ops/deploy-vps.md](ops/deploy-vps.md)** | Runbook déploiement automatique GitHub Actions → VPS |
+| **[runbooks/vps-runtime.md](runbooks/vps-runtime.md)** | Exploitation runtime VPS Hetzner + Docker Compose + Caddy |
+| **[deployment.md](deployment.md)** | Document déprécié, redirige vers le runbook VPS actuel |
+| **[adsense-deployment.md](adsense-deployment.md)** | Checklist déploiement Google AdSense sur domaine servi par le VPS |
 | **[monitoring.md](monitoring.md)** | Outils monitoring gratuits |
 
 **Déploiement** :
-- Prérequis (Node.js 20+, PostgreSQL, Redis)
-- Variables d'environnement obligatoires
-- Procédure complète (build, migrations, vérifications)
-- Checklist post-déploiement
+- GitHub Actions `CI` puis `Deploy VPS`
+- Stack `docker-compose.vps.yml`
+- Reverse proxy Caddy (`docker/Caddyfile`)
+- Smoke test `scripts/smoke-test-vps.sh`
 
 **AdSense** :
 - Inscription compte Google AdSense
@@ -116,7 +118,7 @@ Ces fichiers sont à la racine pour une visibilité maximale :
 **MCP (Model Context Protocol)** :
 - Configuration Claude Code (CLI)
 - Configuration Claude Desktop (App)
-- Serveurs disponibles : GitHub, Sentry, Playwright, Context7, Vercel
+- Serveurs disponibles selon l'environnement local : GitHub, Sentry, Playwright, Context7, Chrome DevTools
 - Obtention des tokens
 
 ---
@@ -139,7 +141,9 @@ docs/
 │       └── ACTIONS_URGENTES_PRO_PROFILE.sh        # Script actions urgentes
 │
 ├── 🚀 Déploiement & Infra
-│   ├── deployment.md                  # Déploiement production
+│   ├── deployment.md                  # Document déprécié, redirection VPS
+│   ├── ops/deploy-vps.md              # Déploiement automatique VPS
+│   ├── runbooks/vps-runtime.md        # Runtime VPS Hetzner + Caddy
 │   ├── adsense-deployment.md          # Déploiement AdSense
 │   └── monitoring.md                  # Monitoring gratuit
 │
@@ -182,9 +186,10 @@ docs/
 
 ### Pour les Ops/DevOps
 
-1. **Déploiement** → [deployment.md](deployment.md)
-2. **Monitoring** → [monitoring.md](monitoring.md)
-3. **Sécurité** → [SECURITY.md](../SECURITY.md)
+1. **Déploiement VPS** → [ops/deploy-vps.md](ops/deploy-vps.md)
+2. **Runtime VPS** → [runbooks/vps-runtime.md](runbooks/vps-runtime.md)
+3. **Monitoring** → [monitoring.md](monitoring.md)
+4. **Sécurité** → [SECURITY.md](../SECURITY.md)
 
 ---
 

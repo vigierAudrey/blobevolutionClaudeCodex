@@ -14,7 +14,7 @@ info:
     url: https://blobinfini.app/legal
 servers:
   - url: https://api.blobinfini.app
-    description: Production (Clever Cloud)
+    description: Production (VPS)
   - url: http://localhost:4000
     description: Développement local
 security:

@@ -6,8 +6,8 @@
 
 **1. Nom de domaine :**
 - [ ] Acheter domaine (ex: `surfconnect.fr`, `ridemates.fr`, `blobsurf.com`)
-- [ ] Configurer DNS vers Clever Cloud
-- [ ] HTTPS/SSL activé automatiquement
+- [ ] Configurer DNS vers l'IP du VPS Hetzner
+- [ ] Vérifier HTTPS/SSL via Caddy + Let's Encrypt
 - [ ] Redirection www → domaine principal
 
 **2. Contenu minimum requis :**
@@ -52,7 +52,7 @@
 
 **1. Variables d'environnement production :**
 ```bash
-# Clever Cloud - Variables d'environnement
+# .env.vps ou secrets de deploiement front
 NEXT_PUBLIC_ADSENSE_CLIENT_ID=ca-pub-VOTRE-VRAIE-ID
 NEXT_PUBLIC_ADSENSE_ENABLED=true
 ```
@@ -65,7 +65,8 @@ NEXT_PUBLIC_ADSENSE_ENABLED=true
 
 **3. Déploiement production :**
 - [ ] Push code avec vraies variables
-- [ ] Redémarrer application Clever Cloud
+- [ ] Laisser GitHub Actions `Deploy VPS` livrer la stack après CI verte
+- [ ] Vérifier Caddy et le frontend sur le domaine principal
 - [ ] Test final sur domaine principal
 
 ### **Phase 4 : Validation Google (Jour J+1 à J+14)**

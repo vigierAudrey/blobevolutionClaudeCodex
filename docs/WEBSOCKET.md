@@ -171,14 +171,19 @@ NEXT_PUBLIC_API_URL=http://localhost:4000
 
 Le WebSocket utilise automatiquement la même URL.
 
-### Production (Clever Cloud)
+### Production (VPS Hetzner + Caddy)
 
 ```env
-# Variables d'environnement Vercel
-NEXT_PUBLIC_API_URL=https://api.blobinfini.cleverapps.io
+# .env.vps
+NEXT_PUBLIC_API_URL=https://$API_DOMAIN
+ALLOWED_ORIGINS=https://$APP_DOMAIN
+TRUST_PROXY_MODE=ips
+TRUSTED_PROXY_IPS=172.21.0.0/16
 ```
 
-⚠️ **HTTPS automatique** : Clever Cloud gère le WSS (WebSocket Secure) automatiquement.
+Caddy termine TLS sur le VPS et proxifie `$API_DOMAIN` vers `api:4000`.
+Socket.IO utilise la même origine API que le client HTTP; le WSS est donc servi via
+`https://$API_DOMAIN` avec upgrade WebSocket géré par Caddy.
 
 ## 🔧 Configuration Socket.io
 
@@ -283,31 +288,34 @@ npm run dev:api
 
 ### Métriques production
 
-Sur Clever Cloud, les WebSockets apparaissent dans :
+Sur la stack VPS, les WebSockets se diagnostiquent via :
 - **Logs applicatifs** : connexions/déconnexions
-- **Métriques réseau** : nombre de connexions actives
+- **Logs Caddy** : proxy TLS et upgrades WebSocket
 - **RAM** : légère augmentation (connexions persistantes)
 
 ## 🚀 Déploiement
 
-### Clever Cloud
+### VPS Docker Compose
 
-**Aucune configuration supplémentaire nécessaire !**
+Le déploiement production passe par `docs/ops/deploy-vps.md` et
+`docker-compose.vps.yml`.
 
-Clever Cloud supporte WebSocket nativement :
-- ✅ WSS (WebSocket Secure) automatique
-- ✅ Sticky sessions gérées
-- ✅ Load balancing compatible
+Caddy est le reverse proxy officiel et le fichier `docker/Caddyfile` définit le
+transport HTTP avec un `read_timeout` long pour Socket.IO.
+
+La configuration actuelle est qualifiée pour une seule réplique API. Ne pas supposer
+de load balancing distribué tant qu'un adapter Redis Socket.IO et une stratégie de
+session affinity n'ont pas été livrés et testés.
 
 ### Variables d'environnement requises
 
 ```bash
 # Production uniquement
-ALLOWED_ORIGINS=https://app.blobinfini.fr
+ALLOWED_ORIGINS=https://$APP_DOMAIN
 
 # Trust proxy sûr (IP réelle pour protections pre-auth / per-IP)
 TRUST_PROXY_MODE=ips
-TRUSTED_PROXY_IPS=10.2.0.0/16,172.31.0.0/16
+TRUSTED_PROXY_IPS=172.21.0.0/16
 
 # Rate limiting handshake pre-auth (avant jwt.verify)
 WS_PREAUTH_RL_ENABLED=true
@@ -383,9 +391,9 @@ npm run test --workspace=@blobinfini/api -- --runInBand \
 
 ## 💰 Coûts
 
-**0€ supplémentaire** sur Clever Cloud.
+**0€ supplémentaire côté service tiers WebSocket.**
 
-Les WebSockets utilisent le même conteneur que l'API REST.
+Les WebSockets utilisent le même conteneur que l'API REST sur le VPS.
 
 Impact ressources estimé (MVP < 1000 users) :
 - RAM : +10-20 MB
@@ -396,4 +404,4 @@ Impact ressources estimé (MVP < 1000 users) :
 
 - [Documentation Socket.io](https://socket.io/docs/v4/)
 - [Socket.io avec React](https://socket.io/how-to/use-with-react)
-- [Clever Cloud WebSocket](https://www.clever-cloud.com/doc/develop/websockets/)
+- [Caddy reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)

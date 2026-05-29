@@ -1,25 +1,39 @@
-# 🏄 BlobConnect – Monorepo IA
+# 🏄 Blob – Monorepo IA
 
 ## 📋 Mission pour l'IA
 
-Ce monorepo contient la version vivante de BlobConnect, marketplace de mise en relation pour les sports de glisse (surf/kitesurf).
+Ce monorepo contient la version vivante de **Blob**, plateforme de mise en relation pour les sports de glisse (surf/kitesurf).
 
 **Votre mission** : Contribuer directement ici. Ignorez l'ancien projet `/blobevolution` (archivé). Pour un rappel historique uniquement, consultez `ai/context/migration_from_blobevolution.md`.
 
 **Référence IA** : Ce README, `AGENTS.md` et `claude.md` sont les guides officiels pour nos IA (Codex, ChatGPT-5, Claude Code) et l’équipe humaine.
 
-**Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de BlobConnect via du contenu partageable (SEO + réseaux sociaux).
+**Focus stratégique** : La Blobosphère est l’outil clé pour amplifier la visibilité de Blob via du contenu partageable (SEO + réseaux sociaux).
 
 ## 🏷️ Naming produit (IMPORTANT)
 
-- **BlobConnect** = nom **visible utilisateurs** (UI, emails, pages publiques, wording marketing).
-- **Blobinfini** = nom **interne/tech** (repo, namespaces, packages) tant qu’aucune décision de renommage globale n’est actée.
+- **Blob** = nom visible utilisateur dans les interfaces, emails, pages publiques et textes marketing.
+- **BlobConnect** = nom projet/plateforme technique ou historique interne lorsque le dépôt l'emploie encore.
+- **BlobSurf / blobsurf.com** = domaine public actuel de déploiement.
+- **Blobinfini** = legacy technique à conserver uniquement là où il existe encore dans les namespaces, packages, variables ou historiques.
 - Ne pas “renommer en masse” (variables, packages, env, Sentry, Firebase, URLs) sans ticket/validation : risque casse SEO, config, observabilité, clés, routes.
-- Dans les textes UI, toujours afficher **BlobConnect**.
+- Dans les textes UI, emails et pages publiques, afficher **Blob**.
+
+Le dépôt GitHub s'appelle encore techniquement `blobevolutionClaudeCodex`. C'est un nom de dépôt historique, pas le nom produit.
+
+## 🌍 Domaine public actuel
+
+Les domaines publics confirmés par `docker/Caddyfile` et `docs/ops/monitoring-blobsurf.md` sont :
+
+- Site/app : `https://blobsurf.com`
+- API : `https://api.blobsurf.com`
+- Stockage public MinIO : `https://storage.blobsurf.com`
+
+`docker-compose.vps.yml` reste paramétrable via `APP_DOMAIN`, `API_DOMAIN` et `STORAGE_DOMAIN`. Les valeurs `*.blobinfini.local` visibles dans certains exemples sont des placeholders techniques locaux, pas des domaines publics.
 
 ## 🎯 Vision Produit
 
-BlobConnect connecte les passionnés de sports de glisse en proposant :
+Blob connecte les passionnés de sports de glisse en proposant :
 
 - **Matching intelligent** entre riders basé sur géolocalisation, niveau et affinités
 - **Publication de demandes géolocalisées** : un particulier publie une intention de cours (surf/kitesurf) ; les professionnels dans leur périmètre configuré voient les demandes locales
@@ -27,7 +41,7 @@ BlobConnect connecte les passionnés de sports de glisse en proposant :
 - **Messagerie intégrée** pour organiser librement le cours — sans réservation ni paiement orchestrés par la plateforme
 - **(Reporté)** Gamification communautaire (systèmes de points/badges) – hors scope MVP
 - **BloboMap** : outil de visualisation à destination des professionnels pour identifier les demandes géolocalisées dans leur zone d’activité
-- **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de BlobConnect
+- **Blobosphère éditoriale** pour publier articles/photos et renforcer la visibilité de Blob
 
 ### Utilisateurs cibles
 
@@ -42,9 +56,9 @@ BlobConnect connecte les passionnés de sports de glisse en proposant :
 - **Contrastes dynamiques** : les thèmes reposent sur les variables CSS Tailwind ; activer le mode contraste élevé force des valeurs RGAA (texte clair, bordures renforcées, focus visibles).
 - **Mode clair/sombre** : un bouton persistant en bas à droite permet de basculer à tout moment entre clair et sombre (préférence mémorisée dans le navigateur et initialisée selon `prefers-color-scheme`).
 
-## 🏗️ Architecture Cible
+## 🏗️ Architecture actuelle
 
-### Stack Technique Requis
+### Stack technique active
 
 ```yaml
 Frontend:
@@ -63,54 +77,41 @@ Backend:
 
 Services:
   - Stripe (paiements — hors scope MVP, non actif)
-  - Twilio (SMS/2FA)
-  - Google Maps / OpenStreetMap
+  - Brevo SMTP (emails VPS/pre-prod/prod)
+  - Mailpit (emails local/dev uniquement)
+  - OpenStreetMap + Leaflet (cartographie active)
   - Firebase (notifications push)
 
 Infrastructure:
   - Docker Compose (dev)
-  - Docker Compose (VPS production)
-  - GitHub Actions (CI puis déploiement VPS)
+  - Hetzner VPS + Docker Compose (production)
+  - Caddy (reverse proxy TLS + Let's Encrypt)
+  - GitHub Actions (CI puis Deploy VPS)
   - Firebase (push notifications)
   - PostGIS activé (image `postgis/postgis:15-3.4` pour dev & CI)
 ```
 
-### 🆓 Hébergement Backend - Alternatives Gratuites (Phase MVP - exemple)
+### Infrastructure actuelle de production
 
-Pour la phase MVP, plusieurs options d'hébergement backend gratuites sont disponibles :
+Le chemin de production actuel est :
 
-#### Option 1 : **Render** (⭐ Recommandé pour débuter)
-- **Gratuit** : 750h/mois de compute (24/7 pour 1 app)
-- **Inclus** : PostgreSQL (90 jours gratuit) + Redis (25 MB)
-- **Inconvénient** : L'app "s'endort" après 15 min d'inactivité (redémarre en ~30s)
-- **Idéal pour** : MVP, démos, prototypes
-- **Site** : https://render.com
+```text
+local -> GitHub -> GitHub Actions CI -> Deploy VPS -> Hetzner VPS
+```
 
-#### Option 2 : **Railway**
-- **Gratuit** : $5 de crédit/mois (~500h de runtime)
-- **Inclus** : PostgreSQL + Redis illimités
-- **Avantage** : Pas de sleep/hibernation
-- **Inconvénient** : Crédit peut s'épuiser avant fin du mois si fort trafic
-- **Site** : https://railway.app
+Sur le VPS, `docker-compose.vps.yml` lance le frontend Next.js, l'API Express,
+PostgreSQL/PostGIS, Redis, MinIO et Caddy. Caddy est le reverse proxy TLS officiel:
+il route `$APP_DOMAIN` vers `web:3000`, `$API_DOMAIN` vers `api:4000` et
+`$STORAGE_DOMAIN` vers `minio:9000`.
 
-#### Option 3 : **Fly.io**
-- **Gratuit** : 3 VM + PostgreSQL (3GB)
-- **Avantage** : Pas de sleep, bonnes performances
-- **Inconvénient** : Configuration plus technique (Dockerfile requis)
-- **Site** : https://fly.io
-
-#### Option 4 : **Clever Cloud** (Payant, option possible)
-- **Payant** : À partir de ~7€/mois
-- **Avantages** : Hébergement France (RGPD), support Docker natif, pas de limitations
-- **Idéal pour** : Production avec budget (non obligatoire pour le lancement)
-- **Site** : https://www.clever-cloud.com
-
-**Note** : le chemin de production actuel est `localhost -> GitHub -> CI -> VPS`, avec le frontend Next.js servi par la stack Docker du VPS.
+Les alternatives d'hebergement manage (Render, Railway, Fly.io, Clever Cloud) ont
+ete etudiees historiquement, mais ne constituent plus le chemin principal de
+deploiement du projet.
 
 ### Structure Monorepo - Phase MVP (exemple, recommandé pour démarrer)
 
 ```
-blobevolutionClaudeCodex/
+blobevolutionClaudeCodex/        # nom de dossier historique
 ├── apps/
 │   ├── web/                    # Next.js PWA
 │   │   ├── app/               # App Router pages
@@ -128,7 +129,7 @@ blobevolutionClaudeCodex/
 │       │   │   │   ├── strategies/
 │       │   │   │   └── dto/
 │       │   │   ├── blobosphere/ # Contenus éditoriaux & partage social
-│       │   │   ├── booking/     # Réservations & mise en relation
+│       │   │   ├── booking/     # Legacy technique: demandes de contact / mise en relation
 │       │   │   ├── chat/        # Messagerie temps réel
 │       │   │   ├── consent/     # Consentement & publicité
 │       │   │   ├── contact/     # Contact & support
@@ -149,10 +150,13 @@ blobevolutionClaudeCodex/
 └── claude.md                   # Guide IA
 ```
 
-### Structure Services Découplés - Phase Scale (exemple, évolution future)
+### Structure Services Découplés - Phase Scale (historique / exploratoire)
+
+Cette structure n'est pas l'architecture active du MVP. Elle reste une piste
+historique pour un éventuel découpage futur si le volume d'usage le justifie.
 
 ```
-blobevolutionClaudeCodex/
+blobevolutionClaudeCodex/        # nom de dossier historique
 ├── services/                   # Microservices (après 1000+ users)
 │   ├── auth-service/          # Service auth dédié
 │   ├── matching-service/      # Service matching dédié
@@ -162,18 +166,17 @@ blobevolutionClaudeCodex/
 
 ## 🔐 Architecture Authentification
 
-### Phase MVP (exemple) - Module Auth Intégré
-
-L'authentification est un **module dans l'API principale** pour simplifier le développement :
+L'authentification active reste un **module dans l'API principale**. Côté
+client, la session repose sur des cookies HttpOnly envoyés automatiquement ;
+les JWT/refresh tokens existent encore comme mécanisme technique API, mais ne
+doivent pas être stockés ni manipulés par le front.
 
 ```typescript
 // apps/api/src/modules/auth/
-├── auth.controller.ts    # Routes: login, register, refresh, 2fa
-├── auth.service.ts        # Logique: JWT, bcrypt, sessions
-├── auth.guard.ts          # Middleware protection routes
-├── strategies/
-│   ├── jwt.strategy.ts    # Validation JWT
-│   └── local.strategy.ts  # Email/password
+├── auth.controller.ts    # login/register/refresh/logout/2FA + cookies HttpOnly
+├── auth.service.ts       # tokens API, bcrypt, sessions, email
+├── auth.guard.ts         # validation JWT API + cookies accessToken
+├── auth-session-context.ts # liaison express-session / contexte auth
 └── dto/
     ├── register.dto.ts    # Validation inscription
     └── login.dto.ts       # Validation connexion
@@ -182,13 +185,19 @@ L'authentification est un **module dans l'API principale** pour simplifier le d�
 ### Fonctionnalités Auth (État Actuel)
 
 - ✅ **Registration avec vérification email** (implémenté)
-- ✅ **Login JWT + Refresh tokens** (implémenté)
+- ✅ **Connexion via session/cookies HttpOnly côté client** (implémenté)
+- ✅ **Refresh API via cookie `refreshToken` HttpOnly** (implémenté)
 - ✅ **Reset password sécurisé** (implémenté)
-- ✅ **Sessions multi-devices** (implémenté)
-- ✅ **Logout avec invalidation tokens** (implémenté)
+- ✅ **Sessions serveur `express-session` + contexte auth lié** (implémenté)
+- ✅ **Logout avec révocation refresh et suppression cookies** (implémenté)
 - ✅ **RGPD: consentement, export, suppression** (implémenté)
 - ✅ **2FA obligatoire pour pros** (implémenté - activation via email + code 2FA)
 - ⏳ **Social login** (Google, Facebook) (Phase 2 - exemple)
+
+À ne pas faire côté front : stocker `accessToken`/`refreshToken`, injecter un
+Bearer token depuis `localStorage`, ou traiter `localStorage` comme preuve
+d'authentification. Le front peut conserver uniquement des hints non sensibles
+comme `blob_session_hint`.
 
 ### Schéma Base de Données
 
@@ -222,7 +231,7 @@ model User {
 - ✅ **Droit à l'oubli** (soft delete + purge automatique 3 phases)
 - ✅ **Export données utilisateur** (GDPR CLI intégré)
 - ✅ **Logs anonymisés** après 30 jours
-- ✅ **Hébergement données en Europe** (Clever Cloud France ou autre hébergeur UE)
+- ✅ **Hébergement données en Europe** (VPS Hetzner / hébergeur UE)
 
 ### ✅ Sécurité Technique (Implémenté)
 
@@ -231,15 +240,20 @@ model User {
 - ✅ **Rate limiting intelligent** (170+ endpoints protégés)
 - ✅ **CSRF tokens** obligatoires sur toutes mutations
 - ✅ **Headers sécurité** (CSP, HSTS, XSS Protection)
-- ✅ **JWT + refresh tokens** sécurisés (rotation automatique)
+- ✅ **Cookies HttpOnly + refresh API serveur** (rotation côté API)
 - ✅ **2FA obligatoire pour pros** (déployé)
 
-### Décision: Refresh tokens (MVP)
+### Décision: Refresh tokens (détail API)
 
-- Stockage: empreinte SHA‑256 du refresh token (non réversible) au lieu d’un hash salé type bcrypt pour permettre une comparaison déterministe et rapide.
-- Rotation: lors de l’appel à `/auth/refresh`, tous les refresh tokens actifs de l’utilisateur sont révoqués puis un nouveau token est émis. Cela impose la sémantique « single‑use » et évite toute réutilisation accidentelle d’un ancien token.
-- Tests: des tests E2E vérifient l’inscription, la connexion, la rotation du refresh (l’ancien devient invalide), le logout (global et device unique), et le reset password.
-- Implémentation: voir `apps/api/src/modules/auth/auth.service.ts`.
+- Le refresh token existe encore côté API, mais il est transporté par cookie
+  HttpOnly (`refreshToken`) et rafraîchi via `POST /auth/refresh`.
+- L'access token API est aussi posé en cookie HttpOnly (`accessToken`) et
+  validé par `auth.guard.ts`. Le guard accepte encore un Bearer JWT technique
+  si présent, mais le chemin front standard est cookie-only.
+- `localStorage` sert uniquement à des hints UX non sensibles ; la vérité de
+  session vient de `GET /auth/me` et des cookies validés serveur.
+- Implémentation : `apps/api/src/modules/auth/auth.controller.ts`,
+  `apps/api/src/modules/auth/auth.guard.ts`, `apps/web/lib/apiClient.ts`.
 
 ### Protection Commission
 
@@ -276,7 +290,7 @@ Le projet implémente le standard **RFC 9116** pour faciliter le signalement de 
 
 **Fichier** : `apps/web/public/.well-known/security.txt`
 
-Ce fichier est **automatiquement accessible** publiquement via l'URL `https://votredomaine.com/.well-known/security.txt` une fois déployé. Il contient :
+Ce fichier est **automatiquement accessible** publiquement via l'URL `https://blobsurf.com/.well-known/security.txt` une fois déployé. Il contient :
 - Contact email pour signaler des vulnérabilités
 - Politique de divulgation responsable
 - Programme de bug bounty (récompenses 20€/10€/reconnaissance)
@@ -284,7 +298,7 @@ Ce fichier est **automatiquement accessible** publiquement via l'URL `https://vo
 - Conformité Code Pénal français (Art. 323-1)
 
 **⚠️ Action requise avant production** :
-Remplacer les 3 occurrences de `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobinfini.com` dans :
+Remplacer les 3 occurrences de `METTRE_EMAIL_SECURITE_ICI_AVANT_PROD@example.com` par `security@blobsurf.com` dans :
 - Ligne 4 : `Contact:`
 - Ligne 53 : Commentaire Contact
 - Ligne 64 : Commentaire découverte accidentelle
@@ -301,15 +315,17 @@ Ce standard est reconnu par Google, Facebook, GitHub et recommandé par l'ANSSI.
 
 ```bash
 # Variables d'environnement obligatoires
-ADMIN_EMAIL=admin@blobinfini.com  # Email(s) recevant les alertes (séparés par virgules)
+ADMIN_EMAIL=admin@blobsurf.com  # Email(s) recevant les alertes (séparés par virgules)
 
-# Configuration SMTP (Mailpit local/dev uniquement)
+# Configuration SMTP local/dev (Mailpit)
 SMTP_HOST=localhost
 SMTP_PORT=1025
 SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASS=
 ```
+
+En VPS, pré-prod et prod réelle, l'envoi SMTP doit utiliser Brevo (`SMTP_HOST=smtp-relay.brevo.com`) via `.env.vps`. Mailpit est interdit hors local/dev.
 
 **Violations détectées :**
 
@@ -374,7 +390,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 **Architecture actuelle**:
 - **Messagerie**: WebSocket page-scoped (`apps/web/app/messages/[id]/page-websocket.tsx`)
   - Connexion uniquement si page conversation ouverte
-  - Auth JWT obligatoire à la connexion
+  - Auth via cookie HttpOnly `accessToken` envoyé au handshake (JWT seulement côté API)
   - Rooms par conversation (isolation broadcast)
   - Fallback HTTP si WS fail
 - **Dashboard**: Polling optimisé 60s (voir ci-dessus)
@@ -403,11 +419,11 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 
 ### ✅ Phase 1 (exemple) - MVP (statut historique, à confirmer)
 
-- ✅ **Auth Module complet** : inscription, connexion, JWT, reset password, RGPD
+- ✅ **Auth Module complet** : inscription, connexion via cookies HttpOnly, reset password, RGPD
 - ✅ **Matching & Géolocalisation** : algorithme intelligent PostGIS
 - ✅ **Mise en relation** : publication de demandes géolocalisées, visualisation BloboMap, contact via messagerie
 - ✅ **Chat temps réel** : Socket.io avec anti-contournement
-- ✅ **PWA avancée** : push notifications, offline-first, installation
+- 🟡 **PWA avancée** : installation/offline prouvés selon modules ; push notifications à confirmer de bout en bout
 - ✅ **Performance optimisée** : cache Redis, requêtes N+1 éliminées
 - ✅ **Sécurité production** : CSRF, rate limiting, RGPD complet
 - ⏸️ **Paiement / transaction** : hors scope MVP — l'organisation financière du cours se fait hors plateforme
@@ -430,7 +446,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 - [ ] Multi-sports (windsurf, paddle)
 - [ ] API publique REST/GraphQL
 - [ ] Chatbot IA (Blobot – R&D, non activé dans le MVP)
-- [ ] Camps/stages réservables
+- [ ] Camps/stages (exploratoire post-MVP, sans booking actif)
 - [ ] Marketplace équipement
 - [ ] Internationalisation
 
@@ -438,7 +454,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 
 ### Serveurs MCP Disponibles
 
-Le projet **blobevolutionClaudeCodex** est configuré pour utiliser plusieurs serveurs MCP qui enrichissent les capacités des IA :
+Le dépôt technique **blobevolutionClaudeCodex** est configuré pour utiliser plusieurs serveurs MCP qui enrichissent les capacités des IA :
 
 #### Pour Claude Code (CLI)
 Configuration : `~/.config/claude-code/mcp.json`
@@ -532,16 +548,16 @@ Voir `docs/mcp-setup.md` pour :
 
 ### Lignes directrices
 
-- Travaillez exclusivement dans `blobevolutionClaudeCodex`.
-- Respectez l'architecture modulaire (`apps/api/src/modules/*` : auth, booking, chat, matching, blobosphere, consent, profile/pro, push, security, etc.).
+- Travaillez exclusivement dans le dépôt `blobevolutionClaudeCodex` (nom historique, pas nom produit).
+- Respectez l'architecture modulaire (`apps/api/src/modules/*` : auth, contact, chat, matching, blobosphere, consent, profile/pro, push, security, etc.). Le module `booking` existe encore comme legacy technique et ne doit pas être renommé en masse.
 - Intégrez le module `blobosphere` (contenus éditoriaux) pour renforcer la visibilité externe.
 - Utilisez les serveurs MCP disponibles (Sentry, GitHub, Playwright, Chrome DevTools, Context7) pour enrichir vos capacités d'analyse.
 - Sécurité systématique : Zod sur tous les inputs, Prisma uniquement, rate limiting, CSRF, headers de sécurité.
-- Auth : JWT 15 min + refresh 30 j, 2FA obligatoire pour les pros, sessions invalidables.
+- Auth : session/cookies HttpOnly côté client, refresh côté API, 2FA obligatoire pour les pros, aucune persistance de tokens côté front.
 - RGPD : consentement explicite, anonymisation, droit à l'oubli, export des données.
 - Performance : PostGIS, Redis, index composites, pagination cursor-based.
 - Qualité : TypeScript strict, tests unitaires/E2E, couverture ≥ 80 %.
-- CI/CD : utilisez les scripts fournis (`npm run build`, `npm test`, etc.) et surveillez la GitHub Action `CI`.
+- CI/CD : utilisez les scripts fournis (`pnpm run build`, `pnpm test`, etc.) et surveillez la GitHub Action `CI`.
 
 ### Processus recommandé
 
@@ -551,7 +567,7 @@ Voir `docs/mcp-setup.md` pour :
 4. Livrez par petits commits/diffs, avec migrations et seeds synchronisés.
 5. Vérifiez les impacts Blobosphère (SEO, partage, rôles admin) si votre changement touche l’éditorial.
 6. Ajoutez/actualisez tests, seeds, SEO metadata et documentation.
-7. Exécutez `npm run lint`, `npm run type-check` et `npm test` avant de soumettre.
+7. Exécutez `pnpm run lint`, `pnpm run type-check` et `pnpm test` avant de soumettre.
 
 ## 💻 Commandes de Développement
 
@@ -559,30 +575,32 @@ Voir `docs/mcp-setup.md` pour :
 # Installation rapide
 git clone https://github.com/vigierAudrey/blobevolutionClaudeCodex.git
 cd blobevolutionClaudeCodex
-npm install
+pnpm install
 
 # Setup environnement (première fois uniquement)
 cp .env.example .env
 # Puis remplacez immédiatement EMAIL_HASH_SECRET par une valeur forte et unique
 # Exemple: openssl rand -base64 48 | tr -d '\n'
 docker compose up -d postgres redis minio mailpit
-npm run db:reseed  # Base + données de test
+pnpm run db:reseed  # Base + données de test
 
 # Développement
-npm run dev:all      # Lance API (port 4000) + Frontend (port 3002)
-npm run dev:api      # API seulement
-npm run dev:web      # Frontend seulement
+pnpm run dev:all      # Lance API (port 4000) + Frontend (port 3002)
+pnpm run dev:api      # API seulement
+pnpm run dev:web      # Frontend seulement
 
 # Base de données
-npm run db:migrate   # Applique les migrations
-npm run db:seed      # Charge les données de test
-npm run db:reset     # Reset complet (drop + migrate + seed)
-npm run db:studio    # Interface admin Prisma
+pnpm run db:migrate   # Applique les migrations
+pnpm run db:seed      # Charge les données de test
+pnpm run db:reset     # Reset complet (drop + migrate + seed)
+pnpm run db:studio    # Interface admin Prisma
 
 # Build et tests
-npm run build        # Build de production (API uniquement)
-npm run type-check   # Vérification TypeScript
+pnpm run build        # Build de production
+pnpm run type-check   # Vérification TypeScript
 ```
+
+`blobevolutionClaudeCodex` est le nom du dépôt historique GitHub. Le produit public s'appelle Blob et le domaine public actuel est `blobsurf.com`.
 
 ## 🖼️ Configuration des Images (Next.js + MinIO)
 
@@ -605,11 +623,11 @@ images: {
 
 **⚠️ Points importants :**
 
-1. **Redémarrage obligatoire** : Après toute modification de `next.config.mjs`, vous devez **redémarrer le serveur Next.js** (Ctrl+C puis `npm run dev`)
+1. **Redémarrage obligatoire** : Après toute modification de `next.config.mjs`, vous devez **redémarrer le serveur Next.js** (Ctrl+C puis `pnpm run dev`)
 2. **Environnements multiples** : Pour la production, ajoutez un nouveau pattern dans `remotePatterns` avec :
-   - Le hostname de production de MinIO (ex: `minio.votredomaine.com`)
+   - Le hostname de production de MinIO exposé par Caddy (`storage.blobsurf.com`)
    - Le protocol `https` (recommandé)
-   - Le pathname correspondant à votre bucket de production
+   - Le pathname correspondant au bucket de production (`S3_BUCKET`, ex: `blobinfini-vps` tant que le bucket legacy n'est pas renommé)
 
 **Exemple de configuration multi-environnements :**
 
@@ -626,8 +644,8 @@ images: {
     // Production
     {
       protocol: 'https',
-      hostname: 'minio.votredomaine.com',
-      pathname: '/blobinfini-prod/**',
+      hostname: 'storage.blobsurf.com',
+      pathname: '/blobinfini-vps/**',
     },
   ],
 },
@@ -637,19 +655,40 @@ images: {
 
 ## 🌐 Déploiement VPS
 
-Le frontend Next.js (`apps/web`) et l'API Express (`apps/api`) sont construits et servis par Docker Compose sur le VPS.
+Le frontend Next.js (`apps/web`) et l'API Express (`apps/api`) sont construits et servis par Docker Compose sur le VPS Hetzner.
 
 Chemin de livraison :
 
 ```text
-localhost -> GitHub -> CI GitHub Actions -> VPS
+local -> GitHub -> CI GitHub Actions -> Deploy VPS -> Hetzner VPS
 ```
 
-- ✅ **GitHub Actions `CI`** : lint, type-check, tests unitaires, tests API E2E et job Playwright (`e2e-tests`) qui rejoue les scénarios web critiques (`npm run test:e2e`). Le job provisionne Postgres, applique `db:generate`, `db:migrate:deploy`, `db:reseed`, installe les navigateurs Playwright puis lance les tests.
-- ✅ **VPS** : build Docker `api` + `web`, `prisma migrate deploy`, `docker compose up -d`, puis smoke test.
+- ✅ **GitHub Actions `CI`** : lint, type-check, tests unitaires, tests API E2E et job Playwright (`e2e-tests`) qui rejoue les scénarios web critiques (`pnpm run test:e2e`). Le job provisionne Postgres, applique `db:generate`, `db:migrate:deploy`, `db:reseed`, installe les navigateurs Playwright puis lance les tests.
+- ✅ **GitHub Actions `Deploy VPS`** : déclenché après CI verte sur `main`, connexion SSH au VPS, `git reset --hard origin/main`, build Docker `api` + `web`, `prisma migrate deploy`, `docker compose up -d`, puis `scripts/smoke-test-vps.sh`.
+- ✅ **VPS** : stack `docker-compose.vps.yml` avec Caddy comme reverse proxy TLS officiel.
 - ✅ **Secrets** : les secrets de déploiement vivent dans GitHub Actions (`Settings -> Secrets and variables -> Actions`) ou dans `.env.vps` sur le VPS. Aucun secret ne doit être commité.
 
-Voir `docs/runbooks/vps-runtime.md` pour la configuration runtime VPS.
+Voir `docs/ops/deploy-vps.md` pour le deploiement automatique et `docs/runbooks/vps-runtime.md` pour l'exploitation runtime VPS.
+
+### Ops / exploitation VPS
+
+Le dépôt prouve une base VPS opérationnelle, mais l'exploitation complète n'est
+pas encore à considérer comme terminée.
+
+| Sujet | Statut README | Preuve dépôt |
+|---|---|---|
+| Environnement local | Terminé | `docker-compose.yml`, Mailpit, Postgres, Redis, MinIO |
+| VPS privé / préproduction | Partiellement réalisé | `docker-compose.vps.yml`, `docker/Caddyfile`, Brevo, MinIO, Redis, Postgres |
+| Production publique | À confirmer | domaines documentés, lancement public non prouvé uniquement par le dépôt |
+| Backups PostgreSQL | Terminé | `scripts/backup-blobsurf.sh`, `scripts/backup-pg.sh`, `scripts/restore-pg.sh` |
+| Backup MinIO | À faire | `scripts/backup-minio.sh` absent |
+| Chiffrement `age` + upload R2 | Partiellement réalisé | `scripts/setup-backup-keys.sh`, `scripts/backup-encrypt-upload.sh`, `scripts/r2-rotate.sh`, `scripts/r2-restore-test.sh` |
+| Monitoring | Partiellement réalisé | `/health`, `/security/health`, `docs/ops/monitoring-blobsurf.md`; scripts cron finaux à confirmer |
+| Alerting Discord | À confirmer | `DISCORD_WEBHOOK_URL` documenté, `scripts/alert.sh` absent |
+| PRA complet | À faire | procédure complète de reprise à formaliser et tester |
+
+Mailpit est réservé au local/dev. Tout environnement VPS réel doit utiliser
+Brevo SMTP et les secrets `.env.vps` / GitHub Actions.
 
 ### 🔧 Tests Locaux avec `act`
 
@@ -668,55 +707,54 @@ act -j e2e-tests
 
 ⚠️ Le job `e2e-tests` attend un service Postgres nommé `postgres` (comme en CI); assurez-vous qu’`act` soit configuré avec Docker disponible.
 
-### 2025-11-09 — Politique de nettoyage Jest (2025)
+### Archive historique — Politique de nettoyage Jest (2025)
 
-1. **Résumé** – Toutes les suites e2e critiques (`auth`, `conversations`, `matching`, `profile`, `admin`, `contact`, `anti-overbooking`, `booking`) reconstruisent leurs fixtures dans un `beforeEach()`. Chaque scénario repart ainsi d’un environnement neuf, sans dépendre des créations effectuées par un test précédent.
+1. **Résumé** – Les suites e2e critiques reconstruisent leurs fixtures dans un `beforeEach()`. Chaque scénario repart ainsi d’un environnement neuf, sans dépendre des créations effectuées par un test précédent.
 2. **Description technique** – `apps/api/jest.setup.db.ts` vide désormais l’ensemble des tables entre les suites Jest sans aucune exception dans `skipCleanupPatterns`. Cette politique rend la CI plus prévisible et prépare la migration Prisma 7.
-
-> 🧠 Coach pédago : chaque train (suite e2e) passe désormais par son atelier de remise à zéro avant le départ, pendant que la grande équipe de nettoyage repasse entre chaque passage.  
-> 🧭 Prochaine balade naturelle : surveiller l’arrivée de nouvelles suites e2e et documenter immédiatement tout besoin spécifique pour conserver cette isolation totale.
 
 ### 📦 Architecture de Déploiement
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                     GitHub Repository                         │
-│          (source de vérité, remote principal)                │
-└────────────┬──────────────────────────────┬──────────────────┘
-             │                              │
-     ┌───────▼──────────────────┐   ┌───────▼───────────────┐
-     │ Validation CI            │   │        Vercel         │
-     │ (lint / type / tests)    │   │   Preview + Prod      │
-     │ • act (local, .yml)      │   │   Next.js uniquement  │
-     │ • GitLab CI (remote)     │   │   Build + CDN         │
-     │ • GitHub Actions (quota) │   └────────┬──────────────┘
-     └──────────────────────────┘            │
-                                             │ API Calls
-                                             ▼
-                                    ┌──────────────────────┐
-                                    │   Backend Hosting    │
-                                    │ (Clever Cloud/Render)│
-                                    │  (Railway/Fly.io)    │
-                                    │    + PostgreSQL      │
-                                    │    + Redis           │
-                                    └──────────────────────┘
+```text
+GitHub Repository (origin)
+    |
+    | push / pull request
+    v
+GitHub Actions "CI"
+    |- lint / type-check / tests
+    |- API E2E
+    `- Playwright E2E
+    |
+    | main + CI verte
+    v
+GitHub Actions "Deploy VPS"
+    |
+    | SSH
+    v
+Hetzner VPS
+    |- Caddy TLS (80/443)
+    |- web:3000
+    |- api:4000
+    |- postgres:5432
+    |- redis:6379
+    `- minio:9000 via storage domain uniquement
 ```
 
-CI locale avec `act` (lint/type-check/tests/e2e), CI distante via GitLab (lint/type-check/tests, au moins backend), GitHub Actions reste optionnel car soumis aux quotas.
+GitHub Actions est la source de vérité CI/CD avant déploiement VPS. `act` reste utile pour rejouer certains jobs localement.
 
 ### 🚀 Workflow de Développement
 
 1. **Développement local** :
-   - Chemin A (API hors Docker): `npm run dev:all`
-   - Chemin B recommandé (API dans Docker): `npm run dev:all:docker`
+   - Chemin A (API hors Docker): `pnpm run dev:all`
+   - Chemin B recommandé (API dans Docker): `pnpm run dev:all:docker`
      - Démarre l'infra Docker (Postgres, Redis, MinIO, Mailpit) et l'API dans Docker
      - Lance le frontend Next.js en local sur `http://localhost:3002`
 2. **Créer une branche** : `git checkout -b feat/nouvelle-fonctionnalite`
 3. **Validation locale (recommandée)** avec `act` (voir ci-dessous)
 4. **Commit et push** : `git push origin feat/nouvelle-fonctionnalite`
-5. **GitLab CI (optionnel)** : `git push gitlab` si configuré
-6. **Vercel crée automatiquement** une URL de prévisualisation
-7. **Merge vers `main`** → Déploiement automatique en production sur Vercel
+5. **GitLab CI (optionnel)** : `git push gitlab` si configuré comme backup
+6. **Merge vers `main`** → GitHub Actions `CI`
+7. **CI verte sur `main`** → GitHub Actions `Deploy VPS`
+8. **Smoke test VPS** → `scripts/smoke-test-vps.sh`
 
 #### Validation locale (recommandée) avec act
 
@@ -745,80 +783,24 @@ act -j build-and-test -P ubuntu-latest=catthehacker/ubuntu:act-latest
 - ✅ Vérifiez les logs GitHub Actions et les logs Docker du VPS en cas d'erreur
 
 
-## 🔔 Push Notifications - Architecture Hybride
+## 🔔 Push Notifications / Firebase (partiel, à confirmer)
 
-### Décision Technique : Hébergement backend + Firebase
+Firebase FCM existe dans le dépôt comme piste technique pour les notifications
+push, avec service worker, helpers front et routes API. Ce bloc ne doit pas être
+lu comme une garantie de canal push production déjà validé de bout en bout.
 
-**Choix architectural** : Hébergement API sur Clever Cloud ou autre provider (Render/Railway/Fly.io) avec Firebase Cloud Messaging pour les notifications push.
+État prudent :
 
-#### Pourquoi cette combinaison ?
+- **Confirmé** : code front/back autour de Firebase FCM et PWA.
+- **À confirmer** : configuration Firebase réelle, inscription/désinscription
+  des tokens en production, monitoring et tests bout en bout.
+- **MVP actuel** : les demandes de contact et notifications pros peuvent rester
+  opérées via API/email tant que le canal push n'est pas validé.
 
-```yaml
-Hébergeur backend (Clever Cloud/Render/Railway/Fly.io):
-  - Hébergement API Node.js ✅
-  - Base de données PostgreSQL ✅
-  - Redis pour le cache ✅
-  - Déploiement simple et français ✅
-  - Pas de service push natif ❌
+Conserver Firebase comme historique/exploratoire actif, pas comme dépendance
+critique de la stack VPS.
 
-Firebase FCM:
-  - Service push gratuit et illimité ✅
-  - Compatible tous navigateurs ✅
-  - Infrastructure mondiale Google ✅
-  - SDK officiels Android/iOS/Web ✅
-  - Aucun serveur à maintenir ✅
-```
-
-#### Architecture de communication
-
-```
-[Frontend PWA] ←→ [Backend API (hébergeur)] ←→ [Firebase FCM] → [Dispositifs Users]
-     ↑                    ↑                   ↑
-Service Worker     Firebase Admin SDK   Push Service
-   (Client)           (Serveur)        (Google/Apple)
-```
-
-#### Configuration requise
-
-**Variables d'environnement backend (API) :**
-```bash
-FIREBASE_PROJECT_ID=blobinfini-prod
-FIREBASE_CLIENT_EMAIL=firebase-admin@blobinfini.iam.gserviceaccount.com
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
-```
-
-**Frontend (variables publiques) :**
-```bash
-NEXT_PUBLIC_FIREBASE_API_KEY=your-web-api-key
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=blobinfini-prod
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
-```
-
-#### Fonctionnalités implémentées (Phase 1 - exemple)
-
-- ✅ **Service Worker** sophistiqué avec gestion offline
-- ✅ **PWA Manifest** pour installation app-like
-- ✅ **Notifications automatiques** acceptation/refus demandes
-- ✅ **API Routes** `/push/subscribe`, `/push/test`, `/push/status`
-- ✅ **Hooks React** `usePushNotifications` pour intégration
-- ✅ **Composants UI** prompts de permissions élégants
-- ✅ **Analytics** tracking interactions notifications
-- ✅ **Gestion d'erreurs** robuste et fallbacks
-
-#### Coûts
-
-- **Hébergeur backend (option Clever Cloud)** : ~10-30€/mois (API + DB, selon provider)
-- **Firebase FCM** : Gratuit (jusqu'à millions de notifications)
-- **Total** : Très économique pour une startup
-
-#### Alternatives écartées
-
-- **OneSignal** : Payant après 10k users
-- **AWS SNS** : Plus complexe, coûts variables
-- **Web Push natif** : Complexité serveur énorme
-- **Services tiers hébergeur** : Dépend du provider (souvent limités en gratuit)
-
-## 📋 Changements récents
+## 📋 Archive historique — changements 2025
 
 ### Suppression du champ `partnerPref` (Sept 2025)
 
@@ -839,7 +821,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ## 🌐 Blobosphère – Hub éditorial
 
 ### Objectif produit
-- Amplifier la visibilité de BlobConnect via un espace éditorial riche (articles, interviews, reportages photo).
+- Amplifier la visibilité de Blob via un espace éditorial riche (articles, interviews, reportages photo).
 - Créer un tunnel d’entrée SEO/social : chaque contenu dispose d’URL publiques optimisées et de métadonnées partageables.
 - Offrir aux riders/pros un lien direct depuis leurs univers respectifs pour explorer l’actualité de la communauté.
 
@@ -908,7 +890,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 1. Inscription + vérification email (support rider ou pro).
 2. Configuration du profil et consentement géolocalisation.
 3. Exploration de `/matching`, envoi d’une demande de session et échanges avec le pro.
-4. Validation finale hors plateforme (paiement non géré dans BlobConnect pour le MVP).
+4. Validation finale hors plateforme (paiement non géré dans Blob pour le MVP).
 
 ### Pros (Professionnels)
 
@@ -917,7 +899,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 - Profil `ProProfile` (nom commercial, bio, photo/logo, lieu de travail lat/lng, `verified`).
 - Lancement initial : création/édition des comptes et profils pro temporairement limitées à `countryCode=FR`, avec contrôle serveur des coordonnées France métropolitaine + Corse.
 - Informations tarifaires non exposées en UI (données conservées en base pour usage interne uniquement).
-- Créneaux publiés, demandes reçues et journal d’audit pro.
+- Demandes reçues, visibilité locale et journal d’audit pro.
 - Pièces justificatives partagées hors plateforme : les utilisateurs doivent vérifier directement les documents fournis par le professionnel.
 - Auth renforcée avec 2FA obligatoire sur connexion.
 
@@ -943,9 +925,9 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 ## 🧪 Données de démo (seed)
 
 - Commandes:
-  - `npm run db:seed` → crée des comptes de démo.
-  - `npm run db:reseed` → efface les données et réinjecte la démo (rapide, sans toucher au schéma).
-  - `npm run db:reset` → drop + remigre + seed (reset complet).
+  - `pnpm run db:seed` → crée des comptes de démo.
+  - `pnpm run db:reseed` → efface les données et réinjecte la démo (rapide, sans toucher au schéma).
+  - `pnpm run db:reset` → drop + remigre + seed (reset complet).
 
 - Démarrage rapide à copier-coller (local) :
 
@@ -953,17 +935,17 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
   # 1. Préparer l'environnement (la copie .env est nécessaire uniquement la première fois)
   cp -n .env.example .env 2>/dev/null || true
   docker compose up -d postgres redis minio mailpit
-  npm install
-  npm run db:reseed
+  pnpm install
+  pnpm run db:reseed
 
   # 2. Lancer les serveurs applicatifs (dans deux terminaux séparés)
 # Démarrage dev (Chemin B – API dans Docker)
-npm run dev:all:docker
+pnpm run dev:all:docker
 
 # Démarrages ciblés
-npm run dev:infra       # Postgres/Redis/MinIO/Mailpit (Docker)
-npm run dev:api:docker  # API dans Docker
-npm run dev:web         # Frontend en local (http://localhost:3002)
+pnpm run dev:infra       # Postgres/Redis/MinIO/Mailpit (Docker)
+pnpm run dev:api:docker  # API dans Docker
+pnpm run dev:web         # Frontend en local (http://localhost:3002)
 
 Notes:
 - Pour accéder à Swagger: `http://localhost:4000/api/docs` (API dans Docker)
@@ -979,7 +961,7 @@ Notes:
 ## 🗺️ Carte (open source, sans Google)
 
 - Front: Leaflet + tuiles OpenStreetMap.
-- Pas de dépendance payante Google Maps.
+- Pas de dépendance cartographique payante.
 - Extension prévue: géocodage gratuit Nominatim pour convertir adresses → lat/lng.
 
 Activer l’envoi d’emails (dev avec Mailpit)
@@ -987,7 +969,7 @@ Activer l’envoi d’emails (dev avec Mailpit)
 - Démarrer Mailpit: inclus dans `docker-compose.yml` → `docker compose up -d mailpit` (UI: http://localhost:8025)
 - `.env` déjà prêt pour Mailpit: `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_SECURE=false`.
 - Définir `WEB_BASE_URL` (ex: http://localhost:3002) pour générer les liens.
-- `apps/api` dépend de `nodemailer`; exécutez `npm install` à la racine si besoin.
+- `apps/api` dépend de `nodemailer`; exécutez `pnpm install` à la racine si besoin.
 
 Mailpit ne doit pas être utilisé en VPS/pré-prod réelle: utiliser Brevo via `.env.vps` et `docker-compose.vps.yml`.
 
@@ -1026,47 +1008,17 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 
 ### API Route Protégée
 
-Extrait réel : `apps/api/src/modules/booking/booking.controller.ts`
-
-```typescript
-bookingRouter.post('/availability', ensureRole('PRO'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const body = createAvailabilitySchema.parse(req.body);
-    const current = req.user;
-    if (!current) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const availability = await bookingService.createAvailability(current.id, body);
-    const consentHash = getConsentHash(req);
-    void recordServerAnalyticsEvent({
-      eventType: 'PRO_SLOTS_UPDATE',
-      actorType: 'PRO',
-      actorId: current.id,
-      consentHash,
-      sport: availability.sport,
-      zoneLarge: computeZoneLarge(availability.spotLat, availability.spotLng),
-      occurredAt: availability.createdAt,
-    });
-    return res.status(201).json(availability);
-  } catch (error: unknown) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
-    }
-    const status = getErrorStatus(error);
-    return res.status(status).json({ error: getErrorMessage(error) });
-  }
-});
-```
+Les routes protégées doivent combiner garde d'authentification, contrôle de rôle, validation Zod et réponses d'erreur typées. Le module `booking` peut encore apparaître dans des noms techniques legacy, mais la documentation produit ne doit pas réintroduire de workflow de réservation orchestrée.
 
 ## 🔍 Points d'Attention Spécifiques
 
 ### Authentification
 
-- JWT courte durée (15min) + refresh token (30j)
-- Stockage refresh tokens en base (révocation possible)
-- 2FA obligatoire pour pros (génération QR code TOTP)
-- Invalidation sessions lors logout
-- Rate limiting sur login (5 tentatives/minute)
+- Client : cookies HttpOnly + `credentials: include`, sans stockage de tokens côté front.
+- API : JWT access + refresh token restent des détails techniques serveur, transportés par cookies et révocables.
+- `express-session` lie le contexte serveur aux tokens API.
+- 2FA obligatoire pour pros (activation par email + code 2FA).
+- Rate limiting strict sur login/refresh.
 
 ### Matching Algorithm
 
@@ -1078,14 +1030,14 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 
 ### Paiement & Commission (hors scope MVP)
 
-- Pas de paiement intégré dans BlobConnect — l'organisation financière du cours se fait hors plateforme
+- Pas de paiement intégré dans Blob — l'organisation financière du cours se fait hors plateforme
 - Aucun prélèvement ni escrow en production
 - Éventuellement exploratoire post-MVP si l'adoption terrain valide l'intérêt de fonctionnalités premium
 
 ### Messagerie
 
 - Filtrage regex emails/téléphones
-- Conversations limitées aux matchs confirmés
+- Conversations ouvertes dans le parcours de mise en relation validé
 - Archivage auto après 30 jours inactivité
 - Modération IA contenus inappropriés
 
@@ -1096,7 +1048,6 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 ## 📚 Documentation Technique
 
 - [**Positionnement Produit MVP**](./docs/product-positioning.md) — **Source de vérité scope fonctionnel (à lire en premier)**
-- [Synthèse Projet (PDF)](./docs/synthese-blobinfini.pdf)
 - [API Documentation](./docs/api.md)
 - [Database Schema](./docs/database.md)
 - [Security Guidelines](./docs/security.md)
@@ -1117,7 +1068,7 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 4. **Partagez un plan concis** : étapes, fichiers ciblés, tests prévus; validez-le avec l’équipe avant d’écrire du code.
 5. **Itérez par petits commits/diffs** : documentez les décisions et actualisez la doc associée (README, claude.md, RFC).
 6. **Gardez la visibilité en tête** : pour toute feature touchant la Blobosphère, mettez à jour SEO, métadonnées de partage et analytics (`aiRedirects`).
-7. **Exécutez la boucle CI locale** : `npm run lint`, `npm run type-check`, `npm test`, scénarios E2E obligatoires si concernés.
+7. **Exécutez la boucle CI locale** : `pnpm run lint`, `pnpm run type-check`, `pnpm test`, scénarios E2E obligatoires si concernés.
 
 ### Definition of Done
 - ✅ Couverture de tests ≥ 80 % (unitaires + E2E ciblés).
@@ -1129,12 +1080,12 @@ bookingRouter.post('/availability', ensureRole('PRO'), async (req: Authenticated
 ## 📞 Support & Contact
 
 - **Documentation** : à définir
-- **Email** : blobinfini@gmail.com
+- **Email** : contact@blobsurf.com (à confirmer avant production publique)
 - **Discord** : à définir
 
 ---
 
-_BlobConnect - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
+_Blob - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
 
 ## ✍️ Blobosphère – MDX + Git + Décap CMS
 
@@ -1196,7 +1147,7 @@ readingTime: 7
    - Authorization callback URL : `http://localhost:3002/api/decap/auth/callback`  
    - Récupère `Client ID` / `Client Secret` pour la configuration Décap (popup d’auth).
 4. **Démarrage**  
-   - `npm run dev --workspace @blobinfini/web` (écoute sur `3002`)  
+   - `pnpm --filter @blobinfini/web dev` (écoute sur `3002`)
    - Navigue vers `/admin/blobosphere` pour charger l’iframe Décap isolée.  
    - Le bouton “Ouvrir dans un nouvel onglet” pointe vers `/admin/index.html` si l’iframe est bloquée.
 
@@ -1234,11 +1185,11 @@ readingTime: 7
    - Tous les articles sont physiquement stockés dans `apps/web/content/blobosphere/<category>/<slug>.mdx`.  
    - Les dossiers sont créés à la volée si besoin.
 6. **Vérifier dans `/blobosphere`**  
-   - `npm run dev --workspace @blobinfini/web`  
+   - `pnpm --filter @blobinfini/web dev`
    - Ouvre `http://localhost:3002/blobosphere` et filtre par catégorie : seuls les MDX `status: published` apparaissent (chargés par `loadBlobospherePreviews()`).
 
 ### Vérifier la lecture côté `/blobosphere`
-1. `npm run dev --workspace @blobinfini/web`
+1. `pnpm --filter @blobinfini/web dev`
 2. Ajoute/modifie un fichier dans `apps/web/content/blobosphere`
 3. Ouvre `http://localhost:3002/blobosphere` → les articles publiés doivent apparaître.  
    - `loadBlobospherePreviews()` filtre automatiquement `status: draft` et calcule `readingTime`.
@@ -1247,5 +1198,5 @@ readingTime: 7
 - Next.js doit tourner sur **`http://localhost:3002`** (sinon adapter `base_url` dans `config.yml`).
 - `repo` doit être remplacé par le vrai dépôt GitHub (sinon Décap renvoie 404 GitHub).
 - Vérifie l’URL de callback de l’OAuth App (`/api/decap/auth/callback` exactement).
-- Si Décap affiche des 401/403, vider les tokens locaux : onglet Application > Local Storage > supprimer `accessToken`/`refreshToken`.
+- Si Décap affiche des 401/403, vider les hints locaux legacy : onglet Application > Local Storage > supprimer `blob_session_hint` et d'anciens `accessToken`/`refreshToken` s'ils existent.
 - L’éditeur interne n’utilise plus `apiClient` sur `/admin/blobosphere`, évitant les requêtes parasites sur `/api/v1`.
