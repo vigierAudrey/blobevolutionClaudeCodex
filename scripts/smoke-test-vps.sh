@@ -4,7 +4,7 @@
 # 16 checks fonctionnels (identiques au smoke-test.sh pré-VPS)
 # + 4 checks S3 réels (preuve flux stockage VPS)
 #
-# [17] Storage domain joignable via nginx HTTPS
+# [17] Storage domain joignable via Caddy HTTPS (Let's Encrypt)
 # [18] Presigned PUT URL générée sans localhost
 # [19] Upload réel d'un fichier via presigned URL
 # [20] Lecture du fichier uploadé via URL publique
@@ -424,8 +424,8 @@ STORAGE_DOMAIN_CHECK="${STORAGE_DOMAIN:-storage.blobinfini.local}"
 SMOKE_KEY="smoke-test-vps/$(date +%s)-test.txt"
 SMOKE_CONTENT="smoke-test-vps-$(date +%s)"
 
-# ─── [17] Storage domain joignable via nginx HTTPS ────────────────────────────
-echo "--- [17] Storage domain via nginx HTTPS ---"
+# ─── [17] Storage domain joignable via Caddy HTTPS (Let's Encrypt) ───────────
+echo "--- [17] Storage domain via Caddy HTTPS ---"
 # MinIO health endpoint est accessible publiquement (pas de policy sur /minio/health/live)
 STORAGE_S=$(http_status "$STORAGE/minio/health/live")
 check "GET $STORAGE/minio/health/live → 200" "$STORAGE_S" "200"
@@ -484,12 +484,13 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# ─── [19b] nginx bloque Content-Type hostile — XSS polyglot guard ─────────────
-echo "--- [19b] nginx rejette Content-Type: text/html (XSS upload guard) ---"
+# ─── [19b] Caddy bloque Content-Type hostile — XSS polyglot guard ─────────────
+# Caddy implémente ce guard via le matcher @bad_put dans docker/Caddyfile.
+echo "--- [19b] Caddy rejette Content-Type: text/html (XSS upload guard) ---"
 if [ -n "$PRESIGN_URL" ]; then
-  # nginx doit intercepter et retourner 415 AVANT que MinIO valide la signature
-  # Si on obtient 403 → nginx laisse passer (MinIO refuse via HMAC) → restriction ABSENTE
-  # Si on obtient 200 → nginx ET MinIO acceptent text/html → DANGER CRITIQUE
+  # Caddy doit intercepter et retourner 415 AVANT que MinIO valide la signature
+  # Si on obtient 403 → Caddy laisse passer (MinIO refuse via HMAC) → restriction ABSENTE
+  # Si on obtient 200 → Caddy ET MinIO acceptent text/html → DANGER CRITIQUE
   CT_REJECT=$(curl -sk \
     $CURL_RESOLVE \
     -X PUT "$PRESIGN_URL" \
@@ -497,16 +498,16 @@ if [ -n "$PRESIGN_URL" ]; then
     --data-binary "<script>alert(1)</script>" \
     -o /dev/null \
     -w "%{http_code}" 2>/dev/null || echo "000")
-  check "PUT Content-Type: text/html → 415 (nginx bloque XSS polyglot)" \
+  check "PUT Content-Type: text/html → 415 (Caddy bloque XSS polyglot)" \
     "$([ "$CT_REJECT" = "415" ] && echo ok || echo fail)" "ok"
   if [ "$CT_REJECT" != "415" ]; then
     echo "       HTTP obtenu: $CT_REJECT"
     if [ "$CT_REJECT" = "200" ]; then
       echo "       DANGER CRITIQUE: HTML/JS uploadable — XSS via URL storage CDN possible"
     elif [ "$CT_REJECT" = "403" ]; then
-      echo "       nginx ne bloque PAS (MinIO refuse via HMAC — protection absente côté nginx)"
+      echo "       Caddy ne bloque PAS (MinIO refuse via HMAC — protection absente côté Caddy)"
     fi
-    echo "       Action: vérifier nginx map Content-Type restriction sur PUT /$S3_BUCKET_CHECK/"
+    echo "       Action: vérifier Caddyfile matcher @bad_put (Content-Type restriction PUT) dans docker/Caddyfile"
   fi
 else
   printf "  \033[31mFAIL\033[0m [19b] SKIP — presigned URL absente\n"
@@ -594,8 +595,7 @@ if [ -z "$CORS_ORIGIN" ] || [ -z "$CORS_METHOD" ] || [ -z "$CORS_HDRS" ]; then
   echo "       CORS_METHOD:   '${CORS_METHOD}'"
   echo "       CORS_HEADERS:  '${CORS_HDRS}'"
   echo "       FAIL: les uploads photo navigateur (RIDER + PRO) seront bloqués par le browser."
-  echo "       Stack Caddy   : vérifier docker/Caddyfile (section storage CORS)"
-  echo "       Stack nginx   : vérifier mc cors set dans bootstrap ou console MinIO."
+  echo "       Stack Caddy : vérifier docker/Caddyfile (section storage CORS, matcher @preflight et @from_app)"
 fi
 
 # ─── [21b] CORS storage — origin hostile doit être rejetée ───────────────────

@@ -4,7 +4,7 @@
 #
 # Différences structurelles par rapport à docker-compose.pre-vps.yml :
 #   - MinIO : ZERO port exposé sur l'hôte (ni 9000 ni 9001)
-#     → accès uniquement via nginx TLS (storage.$STORAGE_DOMAIN)
+#     → accès uniquement via Caddy TLS Let's Encrypt (storage.$STORAGE_DOMAIN)
 #   - MINIO_SERVER_URL : indique à MinIO son URL publique pour valider
 #     les URLs présignées (HMAC host check)
 #   - APP_ENV=vps : remplace APP_ENV=pre-vps (même exception SSL interne Docker,
@@ -12,11 +12,12 @@
 #   - Sous-réseau dédié 172.21.0.0/16 (évite collision avec pre-vps 172.20.0.0/16)
 #   - Volumes nommés *-vps (indépendants des volumes pre-vps)
 #   - S3_PRESIGN_ENDPOINT et S3_PUBLIC_URL_BASE pointent vers le domaine public
-#     TLS géré par nginx — plus de localhost
+#     TLS géré par Caddy — plus de localhost
+#   - Reverse proxy : Caddy (Let's Encrypt auto) — pre-vps utilise nginx + mkcert
 #
 # Ce qui reste partagé avec pre-vps :
 #   - Images Docker identiques (api.production.Dockerfile, web.production.Dockerfile)
-#   - Images infra identiques (postgres, redis, minio, nginx:alpine)
+#   - Images infra identiques (postgres, redis, minio)
 #   - Réseau interne isolé (services non exposés directement)
 #   - Patterns healthcheck / depends_on
 #
@@ -99,7 +100,7 @@ services:
       - miniodata-vps:/data
     # AUCUN port exposé sur l'hôte — différence clé avec pre-vps.
     # Accès admin console : via tunnel SSH (ssh -L 9001:localhost:9001 user@vps)
-    # Accès API : uniquement via nginx (storage.$STORAGE_DOMAIN)
+    # Accès API : uniquement via Caddy (storage.$STORAGE_DOMAIN)
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -124,7 +125,7 @@ services:
       S3_ENDPOINT:  "http://minio:9000"
       # S3_PRESIGN_ENDPOINT : URL utilisée par le SDK pour générer les URLs présignées.
       # DOIT correspondre à MINIO_SERVER_URL sur le conteneur MinIO.
-      # Le client (navigateur) appellera cette URL → doit être l'URL nginx publique.
+      # Le client (navigateur) appellera cette URL → doit être l'URL Caddy publique.
       S3_PRESIGN_ENDPOINT:  "https://${STORAGE_DOMAIN:-storage.blobinfini.local}"
       # S3_PUBLIC_URL_BASE : URL de base pour les accès direct (avatars, assets).
       # Bucket configuré en lecture anonyme (GET-only, pas de list).
@@ -140,7 +141,7 @@ services:
         condition: service_healthy
     networks:
       - vps
-    # PAS de port exposé : accès via nginx uniquement
+    # PAS de port exposé : accès via Caddy uniquement
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 10s
@@ -165,7 +166,7 @@ services:
         condition: service_healthy
     networks:
       - vps
-    # PAS de port exposé : accès via nginx uniquement
+    # PAS de port exposé : accès via Caddy uniquement
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 10s
@@ -173,9 +174,23 @@ services:
       retries: 10
       start_period: 45s
 
-  # ─── Reverse proxy TLS ───────────────────────────────────────────────────────
-  nginx:
-    image: nginx:alpine
+  # ─── Reverse proxy TLS (Caddy + Let's Encrypt) ───────────────────────────────
+  #
+  # Caddy gère :
+  #   - TLS automatique Let's Encrypt (renouvellement auto, aucun cert manuel)
+  #   - CORS pour $STORAGE_DOMAIN (docker/Caddyfile — origin stricte, pas de wildcard)
+  #   - Proxy $API_DOMAIN → api:4000 (WebSocket Socket.IO inclus, read_timeout 3600s)
+  #   - Proxy $APP_DOMAIN → web:3000
+  #   - Proxy $STORAGE_DOMAIN → minio:9000
+  #
+  # Volume caddy-data : certificats Let's Encrypt persistants — NE PAS supprimer.
+  # Suppression = perte des certs → re-issuance Let's Encrypt (rate-limited à 5/semaine/domaine).
+  #
+  # ACME HTTP-01 : Let's Encrypt envoie une requête HTTP sur port 80.
+  # Si Cloudflare est actif (proxy orange), le challenge passe par Cloudflare → OK.
+  # Port 80 doit être ouvert sur le VPS (firewall/iptables) pour l'émission initiale.
+  caddy:
+    image: caddy:2-alpine
     restart: unless-stopped
     networks:
       - vps
@@ -183,13 +198,15 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./docker/nginx.vps.conf:/etc/nginx/nginx.conf:ro
-      # Certs VPS : mkcert (local) ou Let's Encrypt (prod)
-      # Structure attendue :
-      #   $VPS_CERTS_DIR/api.$DOMAIN.pem + -key.pem
-      #   $VPS_CERTS_DIR/app.$DOMAIN.pem + -key.pem
-      #   $VPS_CERTS_DIR/storage.$DOMAIN.pem + -key.pem
-      - ${VPS_CERTS_DIR:-./docker/certs/vps}:/etc/nginx/certs:ro
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    environment:
+      # Email ACME pour Let's Encrypt (obligatoire — requis par ACME RFC 8555)
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL}
+      # Domaines — injectés dans le Caddyfile via {$VAR} (substitution parse-time Caddy)
+      APP_DOMAIN:     ${APP_DOMAIN}
+      API_DOMAIN:     ${API_DOMAIN}
+      STORAGE_DOMAIN: ${STORAGE_DOMAIN}
     depends_on:
       api:
         condition: service_healthy
@@ -208,3 +225,4 @@ networks:
 volumes:
   pgdata-vps:
   miniodata-vps:
+  caddy-data:        # Certificats Let's Encrypt — NE PAS supprimer
