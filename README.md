@@ -150,7 +150,10 @@ blobevolutionClaudeCodex/        # nom de dossier historique
 └── claude.md                   # Guide IA
 ```
 
-### Structure Services Découplés - Phase Scale (exemple, évolution future)
+### Structure Services Découplés - Phase Scale (historique / exploratoire)
+
+Cette structure n'est pas l'architecture active du MVP. Elle reste une piste
+historique pour un éventuel découpage futur si le volume d'usage le justifie.
 
 ```
 blobevolutionClaudeCodex/        # nom de dossier historique
@@ -163,18 +166,17 @@ blobevolutionClaudeCodex/        # nom de dossier historique
 
 ## 🔐 Architecture Authentification
 
-### Phase MVP (exemple) - Module Auth Intégré
-
-L'authentification est un **module dans l'API principale** pour simplifier le développement :
+L'authentification active reste un **module dans l'API principale**. Côté
+client, la session repose sur des cookies HttpOnly envoyés automatiquement ;
+les JWT/refresh tokens existent encore comme mécanisme technique API, mais ne
+doivent pas être stockés ni manipulés par le front.
 
 ```typescript
 // apps/api/src/modules/auth/
-├── auth.controller.ts    # Routes: login, register, refresh, 2fa
-├── auth.service.ts        # Logique: JWT, bcrypt, sessions
-├── auth.guard.ts          # Middleware protection routes
-├── strategies/
-│   ├── jwt.strategy.ts    # Validation JWT
-│   └── local.strategy.ts  # Email/password
+├── auth.controller.ts    # login/register/refresh/logout/2FA + cookies HttpOnly
+├── auth.service.ts       # tokens API, bcrypt, sessions, email
+├── auth.guard.ts         # validation JWT API + cookies accessToken
+├── auth-session-context.ts # liaison express-session / contexte auth
 └── dto/
     ├── register.dto.ts    # Validation inscription
     └── login.dto.ts       # Validation connexion
@@ -183,13 +185,19 @@ L'authentification est un **module dans l'API principale** pour simplifier le d�
 ### Fonctionnalités Auth (État Actuel)
 
 - ✅ **Registration avec vérification email** (implémenté)
-- ✅ **Login JWT + Refresh tokens** (implémenté)
+- ✅ **Connexion via session/cookies HttpOnly côté client** (implémenté)
+- ✅ **Refresh API via cookie `refreshToken` HttpOnly** (implémenté)
 - ✅ **Reset password sécurisé** (implémenté)
-- ✅ **Sessions multi-devices** (implémenté)
-- ✅ **Logout avec invalidation tokens** (implémenté)
+- ✅ **Sessions serveur `express-session` + contexte auth lié** (implémenté)
+- ✅ **Logout avec révocation refresh et suppression cookies** (implémenté)
 - ✅ **RGPD: consentement, export, suppression** (implémenté)
 - ✅ **2FA obligatoire pour pros** (implémenté - activation via email + code 2FA)
 - ⏳ **Social login** (Google, Facebook) (Phase 2 - exemple)
+
+À ne pas faire côté front : stocker `accessToken`/`refreshToken`, injecter un
+Bearer token depuis `localStorage`, ou traiter `localStorage` comme preuve
+d'authentification. Le front peut conserver uniquement des hints non sensibles
+comme `blob_session_hint`.
 
 ### Schéma Base de Données
 
@@ -232,15 +240,20 @@ model User {
 - ✅ **Rate limiting intelligent** (170+ endpoints protégés)
 - ✅ **CSRF tokens** obligatoires sur toutes mutations
 - ✅ **Headers sécurité** (CSP, HSTS, XSS Protection)
-- ✅ **JWT + refresh tokens** sécurisés (rotation automatique)
+- ✅ **Cookies HttpOnly + refresh API serveur** (rotation côté API)
 - ✅ **2FA obligatoire pour pros** (déployé)
 
-### Décision: Refresh tokens (MVP)
+### Décision: Refresh tokens (détail API)
 
-- Stockage: empreinte SHA‑256 du refresh token (non réversible) au lieu d’un hash salé type bcrypt pour permettre une comparaison déterministe et rapide.
-- Rotation: lors de l’appel à `/auth/refresh`, tous les refresh tokens actifs de l’utilisateur sont révoqués puis un nouveau token est émis. Cela impose la sémantique « single‑use » et évite toute réutilisation accidentelle d’un ancien token.
-- Tests: des tests E2E vérifient l’inscription, la connexion, la rotation du refresh (l’ancien devient invalide), le logout (global et device unique), et le reset password.
-- Implémentation: voir `apps/api/src/modules/auth/auth.service.ts`.
+- Le refresh token existe encore côté API, mais il est transporté par cookie
+  HttpOnly (`refreshToken`) et rafraîchi via `POST /auth/refresh`.
+- L'access token API est aussi posé en cookie HttpOnly (`accessToken`) et
+  validé par `auth.guard.ts`. Le guard accepte encore un Bearer JWT technique
+  si présent, mais le chemin front standard est cookie-only.
+- `localStorage` sert uniquement à des hints UX non sensibles ; la vérité de
+  session vient de `GET /auth/me` et des cookies validés serveur.
+- Implémentation : `apps/api/src/modules/auth/auth.controller.ts`,
+  `apps/api/src/modules/auth/auth.guard.ts`, `apps/web/lib/apiClient.ts`.
 
 ### Protection Commission
 
@@ -377,7 +390,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 **Architecture actuelle**:
 - **Messagerie**: WebSocket page-scoped (`apps/web/app/messages/[id]/page-websocket.tsx`)
   - Connexion uniquement si page conversation ouverte
-  - Auth JWT obligatoire à la connexion
+  - Auth via cookie HttpOnly `accessToken` envoyé au handshake (JWT seulement côté API)
   - Rooms par conversation (isolation broadcast)
   - Fallback HTTP si WS fail
 - **Dashboard**: Polling optimisé 60s (voir ci-dessus)
@@ -406,11 +419,11 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 
 ### ✅ Phase 1 (exemple) - MVP (statut historique, à confirmer)
 
-- ✅ **Auth Module complet** : inscription, connexion, JWT, reset password, RGPD
+- ✅ **Auth Module complet** : inscription, connexion via cookies HttpOnly, reset password, RGPD
 - ✅ **Matching & Géolocalisation** : algorithme intelligent PostGIS
 - ✅ **Mise en relation** : publication de demandes géolocalisées, visualisation BloboMap, contact via messagerie
 - ✅ **Chat temps réel** : Socket.io avec anti-contournement
-- ✅ **PWA avancée** : push notifications, offline-first, installation
+- 🟡 **PWA avancée** : installation/offline prouvés selon modules ; push notifications à confirmer de bout en bout
 - ✅ **Performance optimisée** : cache Redis, requêtes N+1 éliminées
 - ✅ **Sécurité production** : CSRF, rate limiting, RGPD complet
 - ⏸️ **Paiement / transaction** : hors scope MVP — l'organisation financière du cours se fait hors plateforme
@@ -433,7 +446,7 @@ PUT /admin/alerts/:id/resolve // Marquer une alerte comme résolue
 - [ ] Multi-sports (windsurf, paddle)
 - [ ] API publique REST/GraphQL
 - [ ] Chatbot IA (Blobot – R&D, non activé dans le MVP)
-- [ ] Camps/stages réservables
+- [ ] Camps/stages (exploratoire post-MVP, sans booking actif)
 - [ ] Marketplace équipement
 - [ ] Internationalisation
 
@@ -540,7 +553,7 @@ Voir `docs/mcp-setup.md` pour :
 - Intégrez le module `blobosphere` (contenus éditoriaux) pour renforcer la visibilité externe.
 - Utilisez les serveurs MCP disponibles (Sentry, GitHub, Playwright, Chrome DevTools, Context7) pour enrichir vos capacités d'analyse.
 - Sécurité systématique : Zod sur tous les inputs, Prisma uniquement, rate limiting, CSRF, headers de sécurité.
-- Auth : JWT 15 min + refresh 30 j, 2FA obligatoire pour les pros, sessions invalidables.
+- Auth : session/cookies HttpOnly côté client, refresh côté API, 2FA obligatoire pour les pros, aucune persistance de tokens côté front.
 - RGPD : consentement explicite, anonymisation, droit à l'oubli, export des données.
 - Performance : PostGIS, Redis, index composites, pagination cursor-based.
 - Qualité : TypeScript strict, tests unitaires/E2E, couverture ≥ 80 %.
@@ -657,6 +670,26 @@ local -> GitHub -> CI GitHub Actions -> Deploy VPS -> Hetzner VPS
 
 Voir `docs/ops/deploy-vps.md` pour le deploiement automatique et `docs/runbooks/vps-runtime.md` pour l'exploitation runtime VPS.
 
+### Ops / exploitation VPS
+
+Le dépôt prouve une base VPS opérationnelle, mais l'exploitation complète n'est
+pas encore à considérer comme terminée.
+
+| Sujet | Statut README | Preuve dépôt |
+|---|---|---|
+| Environnement local | Terminé | `docker-compose.yml`, Mailpit, Postgres, Redis, MinIO |
+| VPS privé / préproduction | Partiellement réalisé | `docker-compose.vps.yml`, `docker/Caddyfile`, Brevo, MinIO, Redis, Postgres |
+| Production publique | À confirmer | domaines documentés, lancement public non prouvé uniquement par le dépôt |
+| Backups PostgreSQL | Terminé | `scripts/backup-blobsurf.sh`, `scripts/backup-pg.sh`, `scripts/restore-pg.sh` |
+| Backup MinIO | À faire | `scripts/backup-minio.sh` absent |
+| Chiffrement `age` + upload R2 | Partiellement réalisé | `scripts/setup-backup-keys.sh`, `scripts/backup-encrypt-upload.sh`, `scripts/r2-rotate.sh`, `scripts/r2-restore-test.sh` |
+| Monitoring | Partiellement réalisé | `/health`, `/security/health`, `docs/ops/monitoring-blobsurf.md`; scripts cron finaux à confirmer |
+| Alerting Discord | À confirmer | `DISCORD_WEBHOOK_URL` documenté, `scripts/alert.sh` absent |
+| PRA complet | À faire | procédure complète de reprise à formaliser et tester |
+
+Mailpit est réservé au local/dev. Tout environnement VPS réel doit utiliser
+Brevo SMTP et les secrets `.env.vps` / GitHub Actions.
+
 ### 🔧 Tests Locaux avec `act`
 
 Pour tester les workflows GitHub Actions en local avec `act` :
@@ -674,13 +707,10 @@ act -j e2e-tests
 
 ⚠️ Le job `e2e-tests` attend un service Postgres nommé `postgres` (comme en CI); assurez-vous qu’`act` soit configuré avec Docker disponible.
 
-### 2025-11-09 — Politique de nettoyage Jest (2025)
+### Archive historique — Politique de nettoyage Jest (2025)
 
 1. **Résumé** – Les suites e2e critiques reconstruisent leurs fixtures dans un `beforeEach()`. Chaque scénario repart ainsi d’un environnement neuf, sans dépendre des créations effectuées par un test précédent.
 2. **Description technique** – `apps/api/jest.setup.db.ts` vide désormais l’ensemble des tables entre les suites Jest sans aucune exception dans `skipCleanupPatterns`. Cette politique rend la CI plus prévisible et prépare la migration Prisma 7.
-
-> 🧠 Coach pédago : chaque train (suite e2e) passe désormais par son atelier de remise à zéro avant le départ, pendant que la grande équipe de nettoyage repasse entre chaque passage.  
-> 🧭 Prochaine balade naturelle : surveiller l’arrivée de nouvelles suites e2e et documenter immédiatement tout besoin spécifique pour conserver cette isolation totale.
 
 ### 📦 Architecture de Déploiement
 
@@ -753,80 +783,24 @@ act -j build-and-test -P ubuntu-latest=catthehacker/ubuntu:act-latest
 - ✅ Vérifiez les logs GitHub Actions et les logs Docker du VPS en cas d'erreur
 
 
-## 🔔 Push Notifications - Architecture Hybride
+## 🔔 Push Notifications / Firebase (partiel, à confirmer)
 
-### Décision Technique : Hébergement backend + Firebase
+Firebase FCM existe dans le dépôt comme piste technique pour les notifications
+push, avec service worker, helpers front et routes API. Ce bloc ne doit pas être
+lu comme une garantie de canal push production déjà validé de bout en bout.
 
-**Choix architectural actuel** : API sur la stack Docker Compose du VPS Hetzner, avec Firebase Cloud Messaging pour les notifications push.
+État prudent :
 
-#### Pourquoi cette combinaison ?
+- **Confirmé** : code front/back autour de Firebase FCM et PWA.
+- **À confirmer** : configuration Firebase réelle, inscription/désinscription
+  des tokens en production, monitoring et tests bout en bout.
+- **MVP actuel** : les demandes de contact et notifications pros peuvent rester
+  opérées via API/email tant que le canal push n'est pas validé.
 
-```yaml
-Backend Blob (VPS Docker Compose):
-  - Hébergement API Node.js ✅
-  - Base de données PostgreSQL/PostGIS ✅
-  - Redis pour le cache et les limites ✅
-  - Déploiement GitHub Actions -> VPS ✅
-  - Pas de service push natif ❌
+Conserver Firebase comme historique/exploratoire actif, pas comme dépendance
+critique de la stack VPS.
 
-Firebase FCM:
-  - Service push gratuit et illimité ✅
-  - Compatible tous navigateurs ✅
-  - Infrastructure mondiale Google ✅
-  - SDK officiels Android/iOS/Web ✅
-  - Aucun serveur à maintenir ✅
-```
-
-#### Architecture de communication
-
-```
-[Frontend PWA] ←→ [Backend API VPS] ←→ [Firebase FCM] → [Dispositifs Users]
-     ↑                    ↑                   ↑
-Service Worker     Firebase Admin SDK   Push Service
-   (Client)           (Serveur)        (Google/Apple)
-```
-
-#### Configuration requise
-
-**Variables d'environnement backend (API) :**
-```bash
-FIREBASE_PROJECT_ID=<firebase-project-id>
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@<firebase-project-id>.iam.gserviceaccount.com
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
-```
-
-**Frontend (variables publiques) :**
-```bash
-NEXT_PUBLIC_FIREBASE_API_KEY=your-web-api-key
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=<firebase-project-id>
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
-```
-
-#### Fonctionnalités implémentées (Phase 1 - exemple)
-
-- ✅ **Service Worker** sophistiqué avec gestion offline
-- ✅ **PWA Manifest** pour installation app-like
-- ✅ **Notifications automatiques** acceptation/refus demandes
-- ✅ **API Routes** `/push/subscribe`, `/push/test`, `/push/status`
-- ✅ **Hooks React** `usePushNotifications` pour intégration
-- ✅ **Composants UI** prompts de permissions élégants
-- ✅ **Analytics** tracking interactions notifications
-- ✅ **Gestion d'erreurs** robuste et fallbacks
-
-#### Coûts
-
-- **VPS Hetzner** : coût fixe selon le serveur choisi
-- **Firebase FCM** : Gratuit (jusqu'à millions de notifications)
-- **Total** : Très économique pour une startup
-
-#### Alternatives écartées
-
-- **OneSignal** : Payant après 10k users
-- **AWS SNS** : Plus complexe, coûts variables
-- **Web Push natif** : Complexité serveur énorme
-- **Services tiers hébergeur** : Dépend du provider (souvent limités en gratuit)
-
-## 📋 Changements récents
+## 📋 Archive historique — changements 2025
 
 ### Suppression du champ `partnerPref` (Sept 2025)
 
@@ -1040,11 +1014,11 @@ Les routes protégées doivent combiner garde d'authentification, contrôle de r
 
 ### Authentification
 
-- JWT courte durée (15min) + refresh token (30j)
-- Stockage refresh tokens en base (révocation possible)
-- 2FA obligatoire pour pros (génération QR code TOTP)
-- Invalidation sessions lors logout
-- Rate limiting sur login (5 tentatives/minute)
+- Client : cookies HttpOnly + `credentials: include`, sans stockage de tokens côté front.
+- API : JWT access + refresh token restent des détails techniques serveur, transportés par cookies et révocables.
+- `express-session` lie le contexte serveur aux tokens API.
+- 2FA obligatoire pour pros (activation par email + code 2FA).
+- Rate limiting strict sur login/refresh.
 
 ### Matching Algorithm
 
@@ -1224,5 +1198,5 @@ readingTime: 7
 - Next.js doit tourner sur **`http://localhost:3002`** (sinon adapter `base_url` dans `config.yml`).
 - `repo` doit être remplacé par le vrai dépôt GitHub (sinon Décap renvoie 404 GitHub).
 - Vérifie l’URL de callback de l’OAuth App (`/api/decap/auth/callback` exactement).
-- Si Décap affiche des 401/403, vider les tokens locaux : onglet Application > Local Storage > supprimer `accessToken`/`refreshToken`.
+- Si Décap affiche des 401/403, vider les hints locaux legacy : onglet Application > Local Storage > supprimer `blob_session_hint` et d'anciens `accessToken`/`refreshToken` s'ils existent.
 - L’éditeur interne n’utilise plus `apiClient` sur `/admin/blobosphere`, évitant les requêtes parasites sur `/api/v1`.
