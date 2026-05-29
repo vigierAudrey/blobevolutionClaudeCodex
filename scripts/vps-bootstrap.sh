@@ -331,6 +331,16 @@ log "  Caddy va émettre les certificats Let's Encrypt au premier démarrage."
 log "  Vérifier les logs Caddy si HTTPS ne répond pas après 60s :"
 log "    docker compose -f docker-compose.vps.yml logs caddy"
 
+# ─── 12. Clé deploy GitHub Actions ───────────────────────────────────────────
+# La clé publique github-actions-deploy@blobconnect doit être dans authorized_keys
+# pour que le workflow Deploy VPS (GitHub Actions) puisse se connecter.
+# Ce step est idempotent : no-op si la clé est déjà présente.
+log "12. Installation de la clé deploy GitHub Actions..."
+bash "$SCRIPT_DIR/install-deploy-key.sh" || {
+  warn "install-deploy-key.sh a échoué — ajouter manuellement :"
+  warn "  bash $SCRIPT_DIR/install-deploy-key.sh"
+}
+
 # ─── Résumé ───────────────────────────────────────────────────────────────────
 echo ""
 echo "=================================================="

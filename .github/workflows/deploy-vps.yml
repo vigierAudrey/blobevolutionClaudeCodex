@@ -5,6 +5,12 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Raison du déclenchement manuel (ex: fix SSH, redeploy après hotfix)'
+        required: false
+        default: 'manual redeploy'
 
 permissions:
   contents: read
@@ -19,8 +25,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     if: >
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main'
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
