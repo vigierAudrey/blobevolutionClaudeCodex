@@ -2,7 +2,7 @@
 export const revalidate = 300;
 
 export const metadata = {
-  title: 'Sécurité des sessions – Blob',
+  title: 'Sécurité des sessions · Blob',
 };
 
 export default function SessionSafetyPage() {
