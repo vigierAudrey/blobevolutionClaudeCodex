@@ -632,7 +632,7 @@ export default function ProfilePage() {
                     </Label>
                     <Input
                       id="displayName"
-                      placeholder="Exemple : Blobmama"
+                      placeholder="Ex : GlissDad, KookSurf, DadouKite…"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       className="text-base"
@@ -656,7 +656,7 @@ export default function ProfilePage() {
                     <Label htmlFor="bio">Ta présentation</Label>
                     <Textarea
                       id="bio"
-                      placeholder="Exemple : Je surf depuis trois ans et je suis plutôt shortboard. Lève-tôt qui préfère les sessions matinales. Maman à mi-temps"
+                      placeholder="Surfeur depuis 4 ans, je fais régulièrement Bordeaux → côte et je cherche quelqu'un pour partager le trajet et les sessions. Plutôt fish-board, prêt à marcher 20 min pour s'éloigner des spots saturés."
                       value={bio}
                       onChange={(e) => setBio(e.target.value)}
                       rows={4}
