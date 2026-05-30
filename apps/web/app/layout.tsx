@@ -18,7 +18,7 @@ export const dynamicParams = true;
 // Static pages in (static)/ use ISR with revalidate=300 and avoid using contexts
 
 export const metadata: Metadata = {
-  title: 'Blob — Auth',
+  title: 'Blob · Auth',
   description: 'Inscription, connexion et gestion du compte',
   icons: {
     icon: '/favicon.ico',

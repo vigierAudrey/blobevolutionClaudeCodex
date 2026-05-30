@@ -6,7 +6,7 @@ import Link from 'next/link';
 export const revalidate = 300;
 
 export const metadata = {
-  title: 'RGPD résumé – Blob',
+  title: 'RGPD résumé · Blob',
 };
 
 export default function RgpdSummaryPage() {

@@ -36,7 +36,7 @@ const topicMap = new Map(blobosphereTopics.map((topic) => [topic.slug, topic]));
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'Blobosphère — Le guide surf & kite',
+  title: 'Blobosphère · Le guide surf & kite',
   description:
     "Guides débutants pour bien t’équiper, rider responsable et rester en forme. Articles courts + liens utiles, et bientôt des interviews inspirantes. Par la communauté Blob.",
 };

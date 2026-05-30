@@ -6,7 +6,7 @@ import Link from 'next/link';
 export const revalidate = 300;
 
 export const metadata = {
-  title: 'Conditions Générales d\'Utilisation – Blob',
+  title: 'Conditions Générales d\'Utilisation · Blob',
 };
 
 export default function TermsPage() {

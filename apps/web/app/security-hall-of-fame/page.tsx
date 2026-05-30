@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Hall of Fame - Blob Security',
+  title: 'Hall of Fame · Blob Security',
   description: 'Nos contributeurs sécurité - Chercheurs qui ont aidé à sécuriser Blob',
 };
 

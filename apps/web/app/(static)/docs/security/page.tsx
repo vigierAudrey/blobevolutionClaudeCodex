@@ -6,7 +6,7 @@ import Link from 'next/link';
 export const revalidate = 300;
 
 export const metadata = {
-  title: 'Sécurité – Blob',
+  title: 'Sécurité · Blob',
 };
 
 export default function SecuritySummaryPage() {

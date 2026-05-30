@@ -12,7 +12,7 @@ import { Users, GraduationCap, Tag, BookOpen, ArrowRight } from 'lucide-react';
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'Blob — Communauté Surf & Kite',
+  title: 'Blob · Communauté Surf & Kite',
   description:
     'Rejoins la communauté surf & kite : trouve des partenaires, réserve un cours et organise tes sessions facilement.',
 };

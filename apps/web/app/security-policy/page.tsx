@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Politique de Sécurité - Blob',
+  title: 'Politique de Sécurité · Blob',
   description: 'Politique de divulgation responsable des vulnérabilités et programme de bug bounty de Blob',
 };
 
