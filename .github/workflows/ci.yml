@@ -84,6 +84,9 @@ jobs:
       - name: Guard — no nginx in docker-compose.vps.yml (Caddy is the official VPS proxy)
         run: bash scripts/guard-no-nginx-vps.sh
 
+      - name: Guard — Caddyfile XFF correct ({remote_host}) et subnet VPS cohérent
+        run: bash scripts/guard-caddyfile-xff.sh
+
       - name: Self-test ci-block-db-push (poison pill + variantes pnpm exec/npx/unsafe/continuation)
         # Prouve que le guard bloque les formes d'invocation de db push dans un workflow.
         # Chaque fichier poison est un workflow YAML valide (name/on/jobs/steps) pour tester
