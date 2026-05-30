@@ -229,6 +229,7 @@ profileRouter.get('/me', async (req, res) => { // authz-guard-ok: role-dispatche
       message: 'Cette tentative d\'accès a été enregistrée et l\'administrateur en a été informé.'
     });
   } catch (err) {
+    secureLogger.error('PROFILE_GET_ME_ERROR', { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack?.split('\n').slice(0, 3).join(' | ') : undefined });
     return res.status(500).json({ error: 'Internal error' });
   }
 });

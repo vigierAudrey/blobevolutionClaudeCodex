@@ -281,7 +281,8 @@ export async function requireVerifiedEmail(req: Request, res: Response, next: Ne
     if (!found) return res.status(401).json({ error: 'Unauthorized' });
     if (!found.emailVerified) return res.status(403).json({ error: 'Email not verified' });
     return next();
-  } catch {
+  } catch (err) {
+    secureLogger.error('REQUIRE_VERIFIED_EMAIL_ERROR', { error: err instanceof Error ? err.message : String(err) });
     return res.status(500).json({ error: 'Internal error' });
   }
 }
