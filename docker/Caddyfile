@@ -40,6 +40,11 @@
     }
 }
 
+# ─── www → apex redirect ──────────────────────────────────────────────────────
+www.{$APP_DOMAIN} {
+    redir https://{$APP_DOMAIN}{uri} permanent
+}
+
 # ─── API Node.js ───────────────────────────────────────────────────────────────
 {$API_DOMAIN} {
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"
