@@ -51,7 +51,7 @@ describe('AdBanner', () => {
 
     render(<AdBanner slot="test-slot" />);
 
-    expect(screen.getByText(/Espace partenaire/i)).toBeInTheDocument();
+    expect(screen.getByText(/Blob House Ads/i)).toBeInTheDocument();
     expect(mockLoadAdSense).not.toHaveBeenCalled();
   });
 
