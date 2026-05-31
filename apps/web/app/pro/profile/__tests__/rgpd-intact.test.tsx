@@ -98,11 +98,11 @@ describe('ProProfilePage — non-regression RGPD', () => {
     });
   });
 
-  it('affiche la section Préférences Cookies', async () => {
+  it('affiche la section Préférences de confidentialité', async () => {
     render(<ProProfilePage />);
 
     await waitFor(() => {
-      expect(screen.getByText(/préférences cookies/i)).toBeInTheDocument();
+      expect(screen.getByText(/préférences de confidentialité/i)).toBeInTheDocument();
     });
   });
 
