@@ -46,16 +46,16 @@ describe('CookieConsent', () => {
 
     render(<CookieConsent />);
 
-    expect(await screen.findByText(/Publicités adaptées à tes goûts surf\/kite/)).toBeInTheDocument();
+    expect(await screen.findByText(/Vos préférences de confidentialité/)).toBeInTheDocument();
   });
 
-  it('continue d’afficher le consentement même sans AdSense quand le consentement manque', async () => {
+  it("continue d'afficher le consentement même sans AdSense quand le consentement manque", async () => {
     process.env.NEXT_PUBLIC_ADSENSE_ENABLED = 'false';
     mockUseConsent.mockReturnValue(createConsentState({ consentMode: 'none' }));
 
     render(<CookieConsent />);
 
-    expect(await screen.findByText(/Publicités adaptées/)).toBeInTheDocument();
+    expect(await screen.findByText(/Vos préférences de confidentialité/)).toBeInTheDocument();
   });
 
   it('calls updateConsent with npa for basic ads', async () => {
@@ -65,7 +65,7 @@ describe('CookieConsent', () => {
 
     render(<CookieConsent onConsentChange={onConsentChange} />);
 
-    const button = await screen.findByText(/Continuer avec les pubs basiques/);
+    const button = await screen.findByText(/Continuer avec le fonctionnel/);
     act(() => {
       fireEvent.click(button);
     });
@@ -83,7 +83,7 @@ describe('CookieConsent', () => {
 
     render(<CookieConsent onConsentChange={onConsentChange} />);
 
-    const button = await screen.findByText(/J'accepte les pubs personnalisées/);
+    const button = await screen.findByText(/Accepter l'expérience optimisée/);
     act(() => {
       fireEvent.click(button);
     });
@@ -100,7 +100,7 @@ describe('CookieConsent', () => {
 
     render(<CookieConsent />);
 
-    const button = await screen.findByText(/Utiliser les pubs limitées/);
+    const button = await screen.findByText(/Continuer sans statistiques/);
     act(() => {
       fireEvent.click(button);
     });
@@ -114,7 +114,7 @@ describe('CookieConsent', () => {
 
     render(<CookieConsent />);
 
-    const link = await screen.findByText(/Refuser toutes les publicités/i);
+    const link = await screen.findByText(/Tout refuser/i);
     act(() => {
       fireEvent.click(link);
     });

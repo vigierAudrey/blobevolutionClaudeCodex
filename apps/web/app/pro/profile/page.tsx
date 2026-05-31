@@ -125,26 +125,26 @@ export default function ProProfilePage() {
 
     const summaries: Record<string, Summary> = {
       personalized: {
-        label: 'Publicités personnalisées',
-        description: 'Équipements sélectionnés selon ton activité professionnelle. Aide à financer la plateforme.',
+        label: 'Expérience optimisée',
+        description: 'Navigation adaptée à vos habitudes sur Blob, avec statistiques d\'usage enrichies.',
         Icon: Target,
         badge: { text: 'Recommandé', className: `${baseBadge} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400` },
         cardClasses: 'border-blue-200 bg-blue-50/70 dark:border-blue-800/50 dark:bg-blue-950/20',
         iconClasses: 'text-blue-600 dark:text-blue-400',
       },
       essential: {
-        label: 'Publicités basiques',
-        description: 'Annonces générales sans profilage ; aucune donnée personnelle utilisée.',
+        label: 'Fonctionnel & mesure anonyme',
+        description: 'Session, sécurité et statistiques d\'usage sans identification personnelle.',
         Icon: Shield,
-        badge: { text: 'Essentiel', className: `${baseBadge} bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400` },
+        badge: { text: 'Actif', className: `${baseBadge} bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400` },
         cardClasses: 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-800/50 dark:bg-emerald-950/20',
         iconClasses: 'text-emerald-600 dark:text-emerald-400',
       },
       none: {
-        label: 'Publicités limitées',
-        description: 'Seules les annonces internes (House Ads) sont affichées.',
+        label: 'Essentiel uniquement',
+        description: 'Cookies strictement nécessaires, sans aucune statistique d\'usage.',
         Icon: Ban,
-        badge: { text: 'House ads', className: `${baseBadge} bg-slate-200 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300` },
+        badge: { text: 'Minimal', className: `${baseBadge} bg-slate-200 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300` },
         cardClasses: 'border-slate-200 bg-slate-50 dark:border-slate-800/50 dark:bg-slate-900/20',
         iconClasses: 'text-slate-500 dark:text-slate-400',
       },
@@ -393,12 +393,12 @@ export default function ProProfilePage() {
   // Handler pour rouvrir la modale de consentement cookies
   const handleReopenCookieConsent = async () => {
     // Confirmation utilisateur avant réinitialisation
-    if (!confirm('Réinitialiser vos préférences cookies ? Cette action ouvrira à nouveau la fenêtre de consentement.')) {
+    if (!confirm('Réinitialiser vos préférences de confidentialité ? Cette action ouvrira à nouveau le dialogue.')) {
       return;
     }
 
     if (!consentStateReady) {
-      toast('Préférences cookies en cours de chargement, réessaie dans un instant.', 'info');
+      toast('Préférences en cours de chargement, réessaie dans un instant.', 'info');
       return;
     }
 
@@ -707,7 +707,7 @@ export default function ProProfilePage() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <Cookie className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Préférences Cookies</h3>
+                    <h3 className="text-sm font-semibold">Préférences de confidentialité</h3>
                   </div>
                   {consentStateReady ? (
                     <div className="space-y-3">
@@ -730,7 +730,7 @@ export default function ProProfilePage() {
                         onClick={handleReopenCookieConsent}
                         className="w-full sm:w-auto"
                       >
-                        Gérer mes cookies
+                        Gérer mes préférences
                       </Button>
                     </div>
                   ) : (
