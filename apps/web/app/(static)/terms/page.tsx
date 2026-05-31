@@ -170,7 +170,7 @@ export default function TermsPage() {
             </p>
             <ul className="list-disc pl-6 space-y-1">
               <li>La messagerie de votre compte</li>
-              <li>La page de support (à venir)</li>
+              <li>La messagerie interne de la plateforme</li>
             </ul>
           </section>
 

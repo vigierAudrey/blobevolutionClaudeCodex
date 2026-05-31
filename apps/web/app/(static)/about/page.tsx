@@ -73,7 +73,7 @@ export default function AboutPage() {
           </div>
           <div>
             <h3 className="font-medium text-foreground">Promos & bons plans</h3>
-            <p>Un espace dédié aux offres communes et aux événements débarque bientôt. Tu pourras y retrouver des remises, des bons plans pour notre communauté.</p>
+            <p>Un espace dédié aux offres communes et aux événements pour la communauté. Remises, bons plans spots et découvertes partagées entre riders et pros.</p>
           </div>
         </CardContent>
       </Card>
