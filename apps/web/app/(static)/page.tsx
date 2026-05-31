@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { Metadata } from 'next';
-import { AdBannerSidebar, AdBannerFeed } from '@/components/ads/AdBannersClient';
+import { CommunitySpotlight } from '@/components/community/CommunitySpotlight';
+import { CommunityHighlight } from '@/components/community/CommunityHighlight';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Users, GraduationCap, Tag, BookOpen, ArrowRight } from 'lucide-react';
@@ -20,14 +21,11 @@ export const metadata: Metadata = {
 // Retiré: ancien bloc "Comment ça marche" (3 étapes)
 
 export default function Home() {
-  const leftSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_HOME_LEFT || 'home-left';
-  const rightSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_HOME_RIGHT || 'home-right';
-  const mobileFeedSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_HOME_MOBILE || 'home-mobile';
   return (
     <div className="xl:grid xl:grid-cols-[220px,1fr,220px] xl:gap-6">
-      {/* Left ad (desktop only) */}
-      <aside aria-label="Publicité latérale" className="sticky top-20 hidden xl:block">
-        <AdBannerSidebar slot={leftSlot} />
+      {/* Left community spotlight (desktop only) */}
+      <aside aria-label="Contenu communautaire" className="sticky top-20 hidden xl:block">
+        <CommunitySpotlight variant="partners" />
       </aside>
 
       {/* Main column */}
@@ -216,9 +214,9 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Mobile in-content ad (hidden on large screens) */}
+      {/* Mobile community highlight (hidden on large screens) */}
       <div className="lg:hidden">
-        <AdBannerFeed slot={mobileFeedSlot} className="my-4" />
+        <CommunityHighlight context="home" className="my-4" />
       </div>
 
       {/* STEPS supprimé pour alléger la page */}
@@ -306,9 +304,9 @@ export default function Home() {
       </section>
       </div>
 
-      {/* Right ad (very large screens only) */}
-      <aside aria-label="Publicité latérale" className="sticky top-20 hidden 2xl:block">
-        <AdBannerSidebar slot={rightSlot} />
+      {/* Right community spotlight (very large screens only) */}
+      <aside aria-label="Contenu communautaire" className="sticky top-20 hidden 2xl:block">
+        <CommunitySpotlight variant="community" />
       </aside>
       </div>
   );

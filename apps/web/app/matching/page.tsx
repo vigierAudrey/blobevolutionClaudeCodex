@@ -4,7 +4,6 @@
 export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import dynamicImport from 'next/dynamic';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { Button } from '../../components/ui/button';
@@ -15,13 +14,7 @@ import { Badge } from '../../components/ui/badge';
 import { Waves, Wind, Sparkles } from 'lucide-react';
 import { clearMatchingStorage } from './storage';
 
-const AdBannerFeed = dynamicImport(
-  () => import('../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
-  {
-    ssr: false,
-    loading: () => <div className="my-6 h-24 rounded-md bg-slate-200/60" aria-hidden="true" />,
-  },
-);
+import { CommunityHighlight } from '../../components/community/CommunityHighlight';
 
 const levelLabels: Record<Level, string> = { beginner: 'Débutant', intermediate: 'Intermédiaire', advanced: 'Confirmé', anytime: 'Peu importe' };
 const SPORT_KEY = 'matching.sport';
@@ -239,7 +232,7 @@ export default function MatchingPage() {
         </CardContent>
       </Card>
 
-      <AdBannerFeed slot="matching-selection" className="max-w-xl mx-auto" />
+      <CommunityHighlight context="matching" className="my-6 max-w-xl mx-auto" />
 
       {/* Actions de navigation */}
       <Card className="border-2">
