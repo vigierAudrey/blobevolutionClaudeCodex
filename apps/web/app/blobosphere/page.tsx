@@ -38,7 +38,7 @@ export const revalidate = 300;
 export const metadata: Metadata = {
   title: 'Blobosphère · Le guide surf & kite',
   description:
-    "Guides débutants pour bien t’équiper, rider responsable et rester en forme. Articles courts + liens utiles, et bientôt des interviews inspirantes. Par la communauté Blob.",
+    "Guides débutants pour bien t’équiper, rider responsable et rester en forme. Articles courts, liens utiles et interviews inspirantes. Par la communauté Blob.",
 };
 
 type BlobospherePageProps = {

@@ -26,8 +26,8 @@ const HOUSE_MESSAGES: Record<'loading' | 'config' | 'refused', { title: string; 
     description: 'Les annonces s’afficheront après la prise en compte de ton choix.',
   },
   config: {
-    title: 'Espace partenaire',
-    description: 'Paramètre AdSense pour activer les campagnes sur BlobConnect.',
+    title: 'Blob House Ads',
+    description: 'Découvre la Blobosphère, les bons plans spots et nos partenaires éthiques.',
   },
   refused: {
     title: 'Blob House Ads',
