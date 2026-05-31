@@ -14,7 +14,7 @@ import { getPasswordRequirementStatuses } from '../../api/src/utils/password-val
 import { PasswordRequirementsList } from './PasswordRequirementsList';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { BLOBOSPHERE_SIGNUP_ARTICLE_KEY, BLOBOSPHERE_SIGNUP_INTENT_KEY } from '@/components/blobosphere/BlobosphereAnalyticsLink';
-import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../lib/franceLaunch';
+import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../lib/franceLaunch';
 
 const PUBLIC_ROLES = [
   { value: 'RIDER', label: 'Rider' },
@@ -496,7 +496,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                   className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100"
                   role="status"
                 >
-                  {FRANCE_ONLY_INFO_MESSAGE}
+                  {PRO_BETA_INFO_MESSAGE}
                 </div>
               )}
             </div>
