@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AuthForm } from '../AuthForm';
 import { apiClient } from '../../lib/apiClient';
-import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../../lib/franceLaunch';
+import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../../lib/franceLaunch';
 
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
@@ -53,7 +53,7 @@ describe('AuthForm', () => {
 
     await user.selectOptions(screen.getByLabelText(/rôle/i), 'PRO');
 
-    expect(screen.getByText(FRANCE_ONLY_INFO_MESSAGE)).toBeInTheDocument();
+    expect(screen.getByText(PRO_BETA_INFO_MESSAGE)).toBeInTheDocument();
   });
 
   it("envoie countryCode=FR lors de l'inscription PRO", async () => {

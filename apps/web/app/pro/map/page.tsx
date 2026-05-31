@@ -11,7 +11,7 @@ import { useToast } from '../../../components/ui/toast';
 
 import { MapSkeleton } from '../../../components/ui/skeleton';
 import type { LessonRequest, LessonRequestResponse } from '@/types/pro';
-import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
+import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../../../lib/franceLaunch';
 
 // Force SSR due to Leaflet map (dynamic import with ssr:false)
 export const dynamic = 'force-dynamic';
@@ -320,7 +320,7 @@ export default function ProMapPage() {
         </CardHeader>
         <CardContent className="pt-6">
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
-            {FRANCE_ONLY_INFO_MESSAGE}
+            {PRO_BETA_INFO_MESSAGE}
           </div>
           {apiError && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-300" role="alert">

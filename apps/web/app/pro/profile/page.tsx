@@ -20,7 +20,7 @@ import { useToast } from '../../../components/ui/toast';
 import { Spinner } from '../../../components/ui/spinner';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../../components/cookies/CookieConsent';
 import { ChangePasswordCard } from '../../../components/profile/ChangePasswordCard';
-import { FRANCE_ONLY_COUNTRY_CODE, FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
+import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../../../lib/franceLaunch';
 
 // Configuration de sécurité pour l'upload de fichiers
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
@@ -564,7 +564,7 @@ export default function ProProfilePage() {
             </CardHeader>
             <CardContent className="pt-6">
               <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
-                {FRANCE_ONLY_INFO_MESSAGE}
+                {PRO_BETA_INFO_MESSAGE}
               </div>
               <form onSubmit={onSave} className="space-y-4">
                 <div className="space-y-2">
