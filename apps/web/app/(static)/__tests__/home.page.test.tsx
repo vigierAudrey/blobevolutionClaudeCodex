@@ -5,10 +5,10 @@ describe('Static Home page', () => {
   it('affiche un hero clair pour la communauté Surf & Kite avec CTA principaux', () => {
     render(<Home />);
 
-    expect(screen.getByText(/communauté Surf.*Kite connectée/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/communauté surf.*kite du Médoc Atlantique/i).length).toBeGreaterThan(0);
 
-    const createAccount = screen.getByRole('link', { name: /Créer un compte/i });
-    expect(createAccount).toBeInTheDocument();
+    const riderCta = screen.getByRole('link', { name: /Je suis rider/i });
+    expect(riderCta).toBeInTheDocument();
   });
 
   it('met en avant deux circuits avec CTAs explicites', () => {

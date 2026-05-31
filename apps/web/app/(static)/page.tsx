@@ -12,9 +12,9 @@ import { Users, GraduationCap, Tag, BookOpen, ArrowRight } from 'lucide-react';
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'Blob · Communauté Surf & Kite',
+  title: 'Blob · Communauté Surf & Kite du Médoc Atlantique',
   description:
-    'Rejoins la communauté surf & kite : trouve des partenaires, réserve un cours et organise tes sessions facilement.',
+    'Trouve un partenaire de session, réserve un cours et découvre les bons plans surf et kite sur Hourtin, Carcans et Lacanau.',
 };
 
 // Retiré: ancien bloc "Comment ça marche" (3 étapes)
@@ -33,7 +33,7 @@ export default function Home() {
       {/* Main column */}
       <div className="space-y-8">
       {/* Hero : vidéo océan + wordmark Blob */}
-      <section aria-label="Blob — Ta communauté Surf et Kite" className="space-y-4">
+      <section aria-label="Blob — La communauté surf & kite du Médoc Atlantique" className="space-y-4">
         <div className="home-hero-video-wrapper">
           <video
             className="home-hero-video"
@@ -56,24 +56,37 @@ export default function Home() {
             />
             <div className="h-px w-20 rounded-full bg-[#C8A96E]" aria-hidden="true" />
             <p className="text-white/90 text-base sm:text-lg lg:text-xl font-medium tracking-[0.2em] uppercase text-center drop-shadow-[0_1px_8px_rgba(0,0,0,0.6)]">
-              Ta communauté Surf &amp; Kite connectée
+              La communauté surf &amp; kite du Médoc Atlantique
+            </p>
+            <p className="text-white/60 text-xs sm:text-sm tracking-widest uppercase text-center drop-shadow-[0_1px_4px_rgba(0,0,0,0.5)]">
+              Bêta locale · Hourtin · Carcans · Lacanau
             </p>
           </div>
         </div>
       </section>
       {/* Section CTA */}
-      <section aria-label="Découvre la plateforme" className="space-y-6 pb-8">
-        <h2 className="text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          Matching, cours, promos et conseils
-        </h2>
+      <section aria-label="Rejoindre la communauté" className="space-y-6 pb-8">
+        <div className="space-y-2 text-center">
+          <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            Rejoins la communauté surf &amp; kite du Médoc Atlantique
+          </h2>
+          <p className="text-sm text-muted-foreground tracking-widest uppercase">
+            Bêta locale · Hourtin · Carcans · Lacanau
+          </p>
+        </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Button asChild size="lg" className="w-full sm:w-auto text-base px-8 py-6 shadow-lg hover:shadow-xl transition-all">
-            <Link href="/register">Créer un compte</Link>
+            <Link href="/register?intent=matching">Je suis rider</Link>
           </Button>
           <Button asChild variant="outline" size="lg" className="w-full sm:w-auto text-base px-8 py-6 hover:bg-accent transition-all">
-            <Link href="/login">Se connecter</Link>
+            <Link href="/register?intent=pro">Je suis pro</Link>
           </Button>
+        </div>
+        <div className="text-center">
+          <Link href="/login" className="text-sm text-muted-foreground hover:underline">
+            Déjà membre ? Se connecter
+          </Link>
         </div>
       </section>
 
@@ -86,10 +99,10 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <div className="h-1 w-1 rounded-full bg-blue-500" />
             <h2 id="choose-circuit" className="text-3xl font-semibold tracking-tight text-foreground">
-              Choisis ton circuit
+              Tu rides sur le Médoc Atlantique ?
             </h2>
           </div>
-          <p className="text-base text-muted-foreground">Tu viens pour rider avec quelqu&apos;un, ou pour trouver un pro ?</p>
+          <p className="text-base text-muted-foreground">Deux façons de rejoindre la communauté locale.</p>
         </div>
         <div className="grid gap-6 md:grid-cols-2">
           {/* Circuit 1: Ride à deux */}
@@ -117,7 +130,7 @@ export default function Home() {
                   Matching
                 </Badge>
               </div>
-              <CardDescription>Pas besoin d&apos;un pro ? Trouve ton binôme et organise la session.</CardDescription>
+              <CardDescription>Pas besoin d&apos;un pro ? Trouve un rider sur Hourtin, Carcans ou Lacanau et organise la session.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
               <ul className="text-sm text-muted-foreground space-y-2">
@@ -171,7 +184,7 @@ export default function Home() {
                   Cours
                 </Badge>
               </div>
-              <CardDescription>Signale que tu veux un cours. Les pros proches te contactent.</CardDescription>
+              <CardDescription>Signale que tu cherches un cours. Les pros locaux du Médoc te répondent.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
               <ul className="text-sm text-muted-foreground space-y-2">
@@ -228,7 +241,7 @@ export default function Home() {
                   </div>
                   <div>
                     <CardTitle className="text-2xl">Bons plans riders</CardTitle>
-                    <CardDescription className="mt-1">Offres spéciales pour la communauté kite et surf</CardDescription>
+                    <CardDescription className="mt-1">Offres exclusives pour les riders du Médoc Atlantique</CardDescription>
                   </div>
                 </div>
                 <Badge className="bg-amber-500 text-white hover:bg-amber-600 transition-colors">
@@ -238,7 +251,7 @@ export default function Home() {
             </CardHeader>
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground mb-4">
-                Profite d&apos;offres exclusives : matériel, spots, hébergements et services pour riders à prix réduits.
+                Profite d&apos;offres exclusives pour les riders du Médoc Atlantique : matériel, spots et hébergements à prix réduits.
               </p>
               <Button size="lg" className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 shadow-lg hover:shadow-xl transition-all group-hover:scale-105">
                 <span className="inline-flex items-center gap-2">
