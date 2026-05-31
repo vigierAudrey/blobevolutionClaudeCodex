@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../lib/apiClient';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -66,9 +66,15 @@ const getErrorMessage = (error: unknown, fallback = 'Une erreur est survenue') =
 
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const intentParam = mode === 'register' ? searchParams.get('intent') : null;
+  const hasIntent =
+    intentParam === 'pro' || intentParam === 'matching' || intentParam === 'lesson-request';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<PublicRole>('RIDER');
+  const [role, setRole] = useState<PublicRole>(intentParam === 'pro' ? 'PRO' : 'RIDER');
+  const [selectorVisible, setSelectorVisible] = useState(!hasIntent);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -227,7 +233,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
       if (mode === 'login' && normalized.includes('consent')) {
         setLoginConsentNeeded(true);
-        setError('Pour continuer, merci d’accepter les règles de sécurité des sessions.');
+        setError("Pour continuer, merci d'accepter les règles de sécurité des sessions.");
         setEmailNotVerified(false);
       } else if (mode === 'login' && normalized.includes('email not verified')) {
         setEmailNotVerified(true);
@@ -446,27 +452,44 @@ export function AuthForm({ mode }: AuthFormProps) {
           </div>
           {mode === 'register' && (
             <div className="space-y-2">
-              <Label htmlFor="role">Rôle</Label>
-              <select
-                id="role"
-                className={`h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${
-                  fieldErrors.role
-                    ? 'border-red-500 focus-visible:ring-red-500'
-                    : 'border-input bg-background focus-visible:ring-ring'
-                }`}
-                value={role}
-                onChange={(event) => setRole(event.target.value as PublicRole)}
-              >
-                {PUBLIC_ROLES.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.role && (
-                <p className="text-sm text-red-600" role="alert">
-                  {fieldErrors.role}
-                </p>
+              {!selectorVisible ? (
+                <div className="flex items-center justify-between rounded-md border border-input bg-muted/30 px-3 py-2">
+                  <span className="text-sm text-foreground">
+                    Tu t&apos;inscris comme : <strong>{role === 'PRO' ? 'Pro' : 'Rider'}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs text-primary underline hover:no-underline"
+                    onClick={() => setSelectorVisible(true)}
+                  >
+                    Changer de rôle
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Label htmlFor="role">Rôle</Label>
+                  <select
+                    id="role"
+                    className={`h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${
+                      fieldErrors.role
+                        ? 'border-red-500 focus-visible:ring-red-500'
+                        : 'border-input bg-background focus-visible:ring-ring'
+                    }`}
+                    value={role}
+                    onChange={(event) => setRole(event.target.value as PublicRole)}
+                  >
+                    {PUBLIC_ROLES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {fieldErrors.role && (
+                    <p className="text-sm text-red-600" role="alert">
+                      {fieldErrors.role}
+                    </p>
+                  )}
+                </>
               )}
               {role === 'PRO' && (
                 <div
@@ -519,7 +542,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                   <li>Interromps toute activité si tu ne te sens pas en sécurité.</li>
                 </ul>
                 <p className="mt-2 text-muted-foreground">
-                  En t’inscrivant, tu confirmes avoir lu et accepté ces règles de sécurité.
+                  En t&apos;inscrivant, tu confirmes avoir lu et accepté ces règles de sécurité.
                   Pour les détails, consulte la page «
                   <a className="underline text-primary" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
                     Sécurité des sessions
@@ -579,7 +602,7 @@ export function AuthForm({ mode }: AuthFormProps) {
               </div>
               <div className="flex gap-2">
                 <Button type="button" variant="secondary" disabled={resendStatus === 'loading' || !email} onClick={resend}>
-                  {resendStatus === 'loading' ? 'Envoi…' : 'Renvoyer l’email de vérification'}
+                  {resendStatus === 'loading' ? 'Envoi…' : "Renvoyer l'email de vérification"}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">Astuce : vérifie aussi le dossier spam.</p>
