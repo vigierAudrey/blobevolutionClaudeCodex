@@ -35,7 +35,9 @@
     reverse_proxy web:3000 {
         header_up Host              {host}
         header_up X-Real-IP         {remote_host}
-        header_up X-Forwarded-For   {header.X-Forwarded-For}
+        # Remplace tout XFF entrant par l'IP TCP réelle du client (anti-spoofing).
+        # {remote_host} = IP de la connexion entrante, non altérable par le client.
+        header_up X-Forwarded-For   {remote_host}
 
     }
 }
@@ -57,7 +59,9 @@ www.{$APP_DOMAIN} {
     reverse_proxy api:4000 {
         header_up Host              {host}
         header_up X-Real-IP         {remote_host}
-        header_up X-Forwarded-For   {header.X-Forwarded-For}
+        # Remplace tout XFF entrant par l'IP TCP réelle du client (anti-spoofing).
+        # {remote_host} = IP de la connexion entrante, non altérable par le client.
+        header_up X-Forwarded-For   {remote_host}
 
 
         transport http {
@@ -126,8 +130,9 @@ www.{$APP_DOMAIN} {
                 # {host} = valeur du Host header entrant = storage.blobsurf.com.
                 header_up Host              {host}
                 header_up X-Real-IP         {remote_host}
-                header_up X-Forwarded-For   {header.X-Forwarded-For}
-        
+                # Remplace tout XFF entrant par l'IP TCP réelle du client (anti-spoofing).
+                header_up X-Forwarded-For   {remote_host}
+
 
                 # Supprimer les headers CORS de MinIO pour éviter les doublons
                 # (MinIO peut ajouter ses propres ACAO si bucket CORS configuré)

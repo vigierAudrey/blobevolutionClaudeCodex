@@ -148,6 +148,46 @@ La valeur attendue est `https://$STORAGE_DOMAIN`.
 API_BASE_URL="https://${API_DOMAIN}" ./scripts/smoke-test-vps.sh
 ```
 
+### Diagnostic trust proxy (symptome : CSRF_NO_SECRET ou rate-limit sur IP Docker)
+
+Symptomes caracteristiques d'une misconfiguration `TRUSTED_PROXY_IPS` :
+
+- `POST /auth/register` retourne `403 CSRF_NO_SECRET` alors que `GET /csrf-token` repond
+- Les cles Redis de rate-limit contiennent `r:172.21.0.7` (IP Docker de Caddy) au lieu de l'IP client
+- `GET /csrf-token` ne retourne pas `Set-Cookie: ... Secure; HttpOnly` dans les logs Caddy
+
+Cause : `TRUSTED_PROXY_IPS` pointe vers un mauvais subnet. Express ne fait pas confiance a Caddy,
+`req.secure=false`, le cookie de session n'est pas pose correctement.
+
+Verifier la valeur active sur le VPS :
+
+```bash
+# Afficher TRUSTED_PROXY_IPS actif dans le conteneur api
+docker compose -f docker-compose.vps.yml --env-file .env.vps exec api \
+  printenv TRUSTED_PROXY_IPS
+# Valeur attendue : 172.21.0.0/16  (subnet du reseau Docker vps)
+
+# Verifier le subnet Docker effectif
+docker network inspect blobconnect-vps_vps | grep -A2 '"Subnet"'
+# Valeur attendue : 172.21.0.0/16
+```
+
+Corriger si necessaire dans `.env.vps` puis recreer le conteneur :
+
+```bash
+# Modifier .env.vps : TRUSTED_PROXY_IPS=172.21.0.0/16
+docker compose -f docker-compose.vps.yml --env-file .env.vps up -d api
+```
+
+Rappel des subnets par stack :
+
+| Stack                        | Subnet Docker    | TRUSTED_PROXY_IPS |
+|------------------------------|------------------|-------------------|
+| `docker-compose.vps.yml`     | 172.21.0.0/16    | 172.21.0.0/16     |
+| `docker-compose.blobsurf.yml`| 172.22.0.0/16    | 172.22.0.0/16     |
+
+Ne jamais croiser ces valeurs entre les deux stacks.
+
 ## Bucket policy
 
 Le bucket est configure en lecture anonyme GET-only, sans listing.
@@ -227,6 +267,8 @@ des donnees sans procedure de sauvegarde/restauration validee.
 | Bucket trop ouvert | Policy `download` uniquement: GET object, pas ListBucket ni PutObject. |
 | Presigned URL mal configuree | `MINIO_SERVER_URL` doit correspondre au host public Caddy. |
 | Confusion pre-VPS / VPS | `APP_ENV=vps`, project name et volumes dedies. |
+| TRUSTED_PROXY_IPS mauvais subnet | CSRF_NO_SECRET, rate-limit sur IP Docker. Corriger avec subnet du reseau VPS (`172.21.0.0/16`). |
+| IP spoofing via X-Forwarded-For | Caddy set `header_up X-Forwarded-For {remote_host}` (IP TCP relle, non alterable). |
 | Fallback silencieux vers Mailpit | `docker-compose.vps.yml` n'embarque aucun Mailpit; Brevo SMTP authentifie est requis. |
 | Credentials MinIO par defaut | `check-vps-env.sh` rejette les credentials faibles ou de demo. |
 | Acces console MinIO internet | Port 9001 non expose; tunnel SSH requis. |
