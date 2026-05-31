@@ -84,26 +84,26 @@ export default function ProfilePage() {
 
     const summaries: Record<string, Summary> = {
       personalized: {
-        label: 'Publicités personnalisées',
-        description: 'Équipements sélectionnés selon ton niveau et tes spots favoris. Aide aussi à financer la plateforme.',
+        label: 'Expérience optimisée',
+        description: 'Navigation adaptée à vos habitudes sur Blob, avec statistiques d\'usage enrichies.',
         Icon: Target,
         badge: { text: 'Recommandé', className: `${baseBadge} bg-blue-100 text-blue-700` },
         cardClasses: 'border-blue-200 bg-blue-50/70',
         iconClasses: 'text-blue-600',
       },
       essential: {
-        label: 'Publicités basiques',
-        description: 'Annonces générales sans profilage ; aucune donnée personnelle n\'est utilisée pour la personnalisation.',
+        label: 'Fonctionnel & mesure anonyme',
+        description: 'Session, sécurité et statistiques d\'usage sans identification personnelle.',
         Icon: Shield,
-        badge: { text: 'Essentiel', className: `${baseBadge} bg-emerald-100 text-emerald-700` },
+        badge: { text: 'Actif', className: `${baseBadge} bg-emerald-100 text-emerald-700` },
         cardClasses: 'border-emerald-200 bg-emerald-50/70',
         iconClasses: 'text-emerald-600',
       },
       none: {
-        label: 'Publicités limitées',
-        description: 'Seules les annonces internes (House Ads) sont affichées, sans cookies publicitaires.',
+        label: 'Essentiel uniquement',
+        description: 'Cookies strictement nécessaires, sans aucune statistique d\'usage.',
         Icon: Ban,
-        badge: { text: 'House ads', className: `${baseBadge} bg-slate-200 text-slate-700` },
+        badge: { text: 'Minimal', className: `${baseBadge} bg-slate-200 text-slate-700` },
         cardClasses: 'border-slate-200 bg-slate-50',
         iconClasses: 'text-slate-500',
       },
@@ -376,7 +376,7 @@ export default function ProfilePage() {
 
   const handleReopenCookieConsent = async () => {
     if (!consentStateReady) {
-      toast('Préférences cookies en cours de chargement, réessaie dans un instant.', 'info');
+      toast('Préférences en cours de chargement, réessaie dans un instant.', 'info');
       return;
     }
 
@@ -806,7 +806,7 @@ export default function ProfilePage() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <Cookie className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Préférences Cookies</h3>
+                    <h3 className="text-sm font-semibold">Préférences de confidentialité</h3>
                   </div>
                   {consentStateReady ? (
                     <div className="space-y-3">
@@ -829,7 +829,7 @@ export default function ProfilePage() {
                         onClick={handleReopenCookieConsent}
                         className="w-full sm:w-auto"
                       >
-                        Gérer mes cookies
+                        Gérer mes préférences
                       </Button>
                     </div>
                   ) : (

@@ -1,5 +1,4 @@
 "use client";
-import dynamicImport from 'next/dynamic';
 import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -18,13 +17,7 @@ import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, S
 import { clearMatchingStorage } from '../storage';
 import { FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
 
-const AdBannerFeed = dynamicImport(
-  () => import('../../../components/ads/AdBanner').then((mod) => mod.AdBannerFeed),
-  {
-    ssr: false,
-    loading: () => <div className="my-6 h-24 rounded-md bg-slate-200/60" aria-hidden="true" />,
-  },
-);
+import { CommunityHighlight } from '../../../components/community/CommunityHighlight';
 
 const levelLabels: Record<Level, string> = {
   beginner: 'Débutant',
@@ -459,9 +452,9 @@ export function CardsClient() {
                     </p>
                   </div>
 
-                  <AdBannerFeed
-                    slot="matching-end-feed"
-                    className="max-w-sm mx-auto"
+                  <CommunityHighlight
+                    context="matching-end"
+                    className="my-6 max-w-sm mx-auto"
                   />
 
                   <div className="flex flex-col gap-2">

@@ -1,7 +1,6 @@
 "use client";
 import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Sparkles, Tag, User } from 'lucide-react';
 import { NotificationBell } from '../../components/NotificationBell';
-import nextDynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -13,13 +12,7 @@ import { apiClient } from '../../lib/apiClient';
 import { requireClientSession, SessionRequiredError } from '../../lib/clientSession';
 import loadingBlob from '../../public/images/loading/favicon-96x96.png';
 
-const AdBannerSidebar = nextDynamic(
-  () => import('../../components/ads/AdBanner').then((mod) => mod.AdBannerSidebar),
-  {
-    ssr: false,
-    loading: () => <div className="hidden lg:block h-48 rounded-md bg-slate-200/60" aria-hidden="true" />,
-  },
-);
+import { CommunityHighlight } from '../../components/community/CommunityHighlight';
 
 // Force SSR due to auth context and dynamic user data
 export const dynamic = 'force-dynamic';
@@ -518,10 +511,10 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Publicité dashboard */}
-      <AdBannerSidebar
-        slot="dashboard-sidebar"
-        className="max-w-2xl mx-auto"
+      {/* Community dashboard */}
+      <CommunityHighlight
+        context="dashboard"
+        className="max-w-2xl mx-auto mt-4"
       />
     </div>
   );

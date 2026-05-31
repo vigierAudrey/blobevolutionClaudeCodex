@@ -1,23 +1,35 @@
-# Positionnement produit BlobConnect — Source de vérité MVP
+# Positionnement produit Blob — Source de vérité MVP
 
-> **Ce document est la référence officielle du périmètre fonctionnel de BlobConnect MVP.**
+> **Ce document est la référence officielle du périmètre fonctionnel de Blob MVP.**
 > En cas de divergence avec d'autres documents, **ce document prime sur tout le reste**.
 > Il doit être lu par toute IA avant d'implémenter une fonctionnalité liée à la mise en relation, au matching, au contact pro/rider, ou à la monétisation.
 >
-> Dernière mise à jour : 2026-05-07
+> Dernière mise à jour : 2026-05-31
+
+## Territoire pilote et positionnement
+
+| Élément | Valeur |
+|---|---|
+| Communes pilote | Hourtin, Carcans, Lacanau (Médoc Atlantique) |
+| Bassin d'acquisition | Bordeaux Métropole |
+| Extension nationale | Post-pilot uniquement — pas d'objectif national dans le MVP |
+
+**Blob est d'abord une communauté surf & kite locale.**
+Le matching, les pros, la BlobMap, les guides et les promotions sont au service de cette communauté.
+Blob n'est ni une marketplace nationale, ni une plateforme avec paiement, ni une plateforme gamifiée.
 
 ---
 
-## Ce que BlobConnect FAIT (périmètre MVP)
+## Ce que Blob FAIT (périmètre MVP)
 
 - **Publication de demandes géolocalisées** : un particulier publie une intention de cours (surf/kitesurf) avec ses préférences (sport, niveau, zone géographique).
 - **Matching géospatial** : les professionnels configurent un périmètre kilométrique et voient les demandes locales dans leur zone d'activité.
 - **Consultation réciproque des profils** : les deux parties peuvent consulter la fiche de l'autre avant de prendre contact.
 - **Messagerie intégrée** : prise de contact libre entre particulier et professionnel — aucun workflow imposé par la plateforme.
 - **BloboMap** : outil de visualisation à destination des professionnels pour identifier les demandes géolocalisées dans leur zone. Pas de partage de spots, pas de tracking communautaire live.
-- **Blobosphère** : hub éditorial (articles, interviews, contenus surf/kite) pour le SEO et la visibilité de BlobConnect.
+- **Blobosphère** : hub éditorial (articles, interviews, contenus surf/kite) pour le SEO et la visibilité de Blob.
 
-## Ce que BlobConnect NE FAIT PAS (hors scope MVP)
+## Ce que Blob NE FAIT PAS (hors scope MVP)
 
 Ces fonctionnalités sont **volontairement exclues**. Toute proposition les réintroduisant est hors scope MVP sauf décision produit explicite et documentée.
 
@@ -34,7 +46,7 @@ Ces fonctionnalités sont **volontairement exclues**. Toute proposition les réi
 | Facturation automatique | Hors scope |
 | Stripe Connect actif | Non intégré dans le MVP |
 | Workflow booking complet (request → confirm → complete) | Hors scope |
-| Marketplace transactionnelle | BlobConnect est une plateforme de mise en relation, pas une marketplace transactionnelle |
+| Marketplace transactionnelle | Blob est une plateforme de mise en relation, pas une marketplace transactionnelle |
 
 ## Le parcours utilisateur réel
 
@@ -83,7 +95,7 @@ Si le MVP valide un intérêt marché suffisant, certaines fonctionnalités prof
 
 ### Termes recommandés
 
-| Terme | Signification dans BlobConnect |
+| Terme | Signification dans Blob |
 |-------|-------------------------------|
 | Demande de cours | Ce qu'un rider publie pour trouver un pro |
 | Intention de cours | Synonyme de demande de cours |
@@ -103,6 +115,7 @@ Si le MVP valide un intérêt marché suffisant, certaines fonctionnalités prof
 | confirmed / cancelled / completed | Implique des statuts booking | n/a (hors scope) |
 | booking flow | Implique un workflow orchestré | parcours de mise en relation |
 | marketplace transactionnelle | Incorrect — pas de transaction | plateforme de mise en relation |
+| marketplace nationale | Incorrect — Blob est d'abord une communauté locale | communauté surf & kite locale |
 | Stripe actif | Non actif dans le MVP | hors scope MVP |
 | calendrier partagé | Hors scope | n/a |
 | planning pro | Suggère un calendrier géré par la plateforme | zone d'activité, périmètre pro |
@@ -131,4 +144,4 @@ Toute proposition réintroduisant les éléments suivants est **hors scope MVP**
 
 ---
 
-*Voir aussi : [README.md — Vision Produit](../README.md#-vision-produit)*
+*Voir aussi : [README.md — Vision Produit](../README.md#-vision-produit) · [ROADMAP.md](../ROADMAP.md)*

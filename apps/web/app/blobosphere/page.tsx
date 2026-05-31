@@ -6,7 +6,8 @@ import { loadBlobospherePreviews, type BlobosphereArticlePreview } from '@/lib/b
 import { cn } from '@/lib/utils';
 import { AlertCircle, BookOpen, Heart, Leaf, Sparkles, Users } from 'lucide-react';
 import type { Metadata } from 'next';
-import { AdBannerSidebar, AdBannerFeed } from '@/components/ads/AdBannersClient';
+import { CommunitySpotlight } from '@/components/community/CommunitySpotlight';
+import { CommunityHighlight } from '@/components/community/CommunityHighlight';
 import Link from 'next/link';
 import { blobosphereTopics, type BlobosphereTopicSlug } from './static';
 
@@ -53,9 +54,6 @@ function isBlobosphereTopic(value?: string): value is BlobosphereTopicSlug {
 }
 
 export default async function BlobospherePage({ searchParams }: BlobospherePageProps) {
-  const leftSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_LEFT || 'blobosphere-left';
-  const rightSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_RIGHT || 'blobosphere-right';
-  const mobileFeedSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BLOBOSPHERE_MOBILE || 'blobosphere-mobile';
   const resolvedSearchParams = await searchParams;
   const activeTopic: TopicFilterValue = isBlobosphereTopic(resolvedSearchParams?.topic) ? resolvedSearchParams!.topic : 'all';
   const allArticles = await loadBlobospherePreviews();
@@ -83,9 +81,9 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
 
   return (
     <div className="pb-12 xl:grid xl:grid-cols-[220px,1fr,220px] xl:gap-6">
-      {/* Left sidebar ad on desktop */}
-      <aside aria-label="Publicité latérale" className="sticky top-20 hidden xl:block">
-        <AdBannerSidebar slot={leftSlot} />
+      {/* Left community spotlight (desktop only) */}
+      <aside aria-label="Contenu communautaire" className="sticky top-20 hidden xl:block">
+        <CommunitySpotlight variant="partners" />
       </aside>
 
       <div className="space-y-14">
@@ -193,15 +191,15 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
         )}
       </section>
 
-      {/* Mobile in-content ad (hidden on large screens) */}
+      {/* Mobile community highlight (hidden on large screens) */}
       <div className="lg:hidden">
-        <AdBannerFeed slot={mobileFeedSlot} className="my-4" />
+        <CommunityHighlight context="blobosphere" className="my-4" />
       </div>
       </div>
 
-      {/* Right sidebar ad on desktop */}
-      <aside aria-label="Publicité latérale" className="sticky top-20 hidden 2xl:block">
-        <AdBannerSidebar slot={rightSlot} />
+      {/* Right community spotlight (very large screens only) */}
+      <aside aria-label="Contenu communautaire" className="sticky top-20 hidden 2xl:block">
+        <CommunitySpotlight variant="community" />
       </aside>
     </div>
   );

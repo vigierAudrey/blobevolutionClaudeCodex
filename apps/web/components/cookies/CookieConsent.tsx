@@ -91,13 +91,13 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
       <Card className="w-full max-w-lg mx-auto">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Target className="h-5 w-5" />
-            Publicités adaptées à tes goûts surf/kite
+            <Shield className="h-5 w-5" />
+            Vos préférences de confidentialité
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Pour t&apos;aider à découvrir les meilleures marques et équipements, nous aimerions personnaliser les publicités.
+            Pour assurer le bon fonctionnement de Blob et comprendre comment la plateforme est utilisée, nous utilisons des cookies. Vous choisissez ce que vous acceptez.
           </p>
 
           {/* Options de consentement */}
@@ -106,11 +106,11 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-green-500" />
-                  <span className="font-medium">Publicités basiques</span>
+                  <span className="font-medium">Fonctionnel &amp; mesure anonyme</span>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mb-3">
-                Pubs générales surf/kite sans tracking personnel
+                Session, sécurité et statistiques d&apos;usage sans identification personnelle
               </p>
               <Button
                 variant="outline"
@@ -118,7 +118,7 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
                 onClick={() => handleSelection('npa')}
                 className="w-full"
               >
-                Continuer avec les pubs basiques
+                Continuer avec le fonctionnel
               </Button>
             </div>
 
@@ -126,20 +126,20 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Target className="h-4 w-4 text-blue-500" />
-                  <span className="font-medium">Publicités personnalisées</span>
+                  <span className="font-medium">Expérience optimisée</span>
                   <Badge className="bg-blue-500">Recommandé</Badge>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mb-3">
-                ✨ Équipements adaptés à ton niveau et tes spots favoris
-                <br />💰 Soutient le développement de l&apos;app (revenus publicitaires)
+                ✨ Navigation adaptée à vos habitudes sur Blob
+                <br />💡 Aide à améliorer la plateforme pour tous
               </p>
               <Button
                 onClick={() => handleSelection('personalized')}
                 className="w-full"
                 size="sm"
               >
-                J&apos;accepte les pubs personnalisées
+                Accepter l&apos;expérience optimisée
               </Button>
             </div>
 
@@ -147,11 +147,11 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-amber-500" />
-                  <span className="font-medium">Publicités limitées</span>
+                  <span className="font-medium">Essentiel uniquement</span>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mb-3">
-                Annonces basiques fournies par Google sans aucun stockage de cookies publicitaires.
+                Uniquement les cookies indispensables, sans aucune statistique d&apos;usage.
               </p>
               <Button
                 variant="outline"
@@ -159,7 +159,7 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
                 onClick={() => handleSelection('npa')}
                 className="w-full"
               >
-                Utiliser les pubs limitées
+                Continuer sans statistiques
               </Button>
             </div>
           </div>
@@ -180,25 +180,25 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
                   <strong>Cookies essentiels :</strong> Fonctionnement de l&apos;app, sécurité, préférences
                 </div>
                 <div>
-                  <strong>Cookies publicitaires :</strong> AdSense, ciblage par intérêts, mesure performance
+                  <strong>Cookies de mesure :</strong> Statistiques d&apos;usage anonymes pour améliorer la plateforme
                 </div>
                 <div>
-                  <strong>Données utilisées :</strong> Pages visitées, sports/niveaux, localisation approximative
+                  <strong>Données utilisées :</strong> Pages visitées, fonctionnalités utilisées, préférences de navigation
                 </div>
                 <div>
-                  <strong>Partenaires :</strong> Google AdSense (voir leur politique de confidentialité)
+                  <strong>Conservation :</strong> Données agrégées, non identifiantes, conformes RGPD
                 </div>
               </div>
             )}
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Tu peux modifier tes préférences à tout moment.
+            Vous pouvez modifier vos préférences à tout moment.
             <button
               onClick={() => handleSelection('none')}
               className="underline hover:no-underline ml-1"
             >
-              Refuser toutes les publicités (House Ads)
+              Tout refuser
             </button>
             <button
               onClick={() => setShowDetails((prev) => !prev)}
