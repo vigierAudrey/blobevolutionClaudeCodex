@@ -33,7 +33,7 @@ const slides = [
     icon: GraduationCap,
     badge: 'Cours',
     badgeColor: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100',
-    description: 'Réserve un cours avec un moniteur autour de toi.',
+    description: 'Réserve un cours avec un moniteur local sur le Médoc Atlantique.',
     href: '/register?intent=lesson-request',
     ctaLabel: 'Trouver un cours',
     colorClass:
