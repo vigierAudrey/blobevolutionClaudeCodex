@@ -68,10 +68,10 @@ export default function Home() {
       <section aria-label="Rejoindre la communauté" className="space-y-6 pb-8">
         <div className="space-y-2 text-center">
           <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Rejoins la communauté surf &amp; kite du Médoc Atlantique
+            Prêt à rider ?
           </h2>
           <p className="text-sm text-muted-foreground tracking-widest uppercase">
-            Bêta locale · Hourtin · Carcans · Lacanau
+            Compte gratuit · Bêta locale ouverte · Sans engagement
           </p>
         </div>
 
