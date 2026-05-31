@@ -16,6 +16,9 @@ dans le dépôt, hors roadmap. Sinon il reste **Partiellement réalisé** ou
 - Le MVP actuel couvre la demande de cours, la découverte géolocalisée, la consultation de profils, la demande de contact et la messagerie.
 - Le paiement, la réservation orchestrée, les créneaux transactionnels et Stripe actif sont hors scope MVP.
 - La Blobosphère reste un levier de visibilité SEO, contenu éditorial et acquisition communautaire.
+- Le territoire pilote est **Hourtin, Carcans, Lacanau** (Médoc Atlantique). Le bassin d'acquisition principal est **Bordeaux Métropole**.
+- **Blob est d'abord une communauté surf & kite locale.** Le matching, les pros, la BlobMap, les guides et les promotions sont au service de cette communauté.
+- L'extension nationale est post-pilot : le MVP ne vise pas un déploiement national immédiat.
 
 Sources de vérité produit :
 
@@ -226,7 +229,7 @@ fois la préproduction privée stable et le PRA prouvé.
 
 Axes :
 
-- **Communauté** : renforcer l'entraide surf/kite, contenus locaux, confiance et sécurité des sessions.
+- **Communauté** : renforcer l'entraide surf & kite du Médoc Atlantique (Hourtin, Carcans, Lacanau), contenus locaux, confiance et sécurité des sessions. Extension nationale post-pilot.
 - **Blob IA** : assistance à la modération, aide éditoriale Blobosphère, support utilisateur et synthèse d'analytics, sans automatiser des décisions sensibles sans revue.
 - **Croissance** : SEO, Blobosphère, onboarding pros, activation locale et mesure conversion.
 - **Partenariats** : écoles, moniteurs indépendants, marques surf/kite, événements locaux.
@@ -276,7 +279,7 @@ Anciennes informations à ne plus utiliser comme priorités actives :
 
 ## Suivi de Mise à Jour
 
-- Dernière refonte roadmap : 2026-05-29.
+- Dernière refonte roadmap : 2026-05-31 (ajout territoire pilote Médoc Atlantique + positionnement communauté locale).
 - Source principale produit : `README.md` et `docs/product-positioning.md`.
 - Source principale infrastructure : `docker-compose.vps.yml`, `docker/Caddyfile`, `.github/workflows/deploy-vps.yml`.
 - Source principale ops : `docs/ops/deploy-vps.md`, `docs/ops/monitoring-blobsurf.md`, `scripts/*backup*`, `scripts/*restore*`, `scripts/security-health-check.sh`.
