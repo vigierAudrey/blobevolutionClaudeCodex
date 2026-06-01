@@ -142,6 +142,7 @@ jobs:
             git reset --hard "$PREV_SHA"
             docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build api web
             docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+            docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" restart caddy
             exit "$status"
           }
           trap rollback EXIT
@@ -156,6 +157,12 @@ jobs:
             sh -c "pnpm --filter @blobinfini/database exec prisma migrate deploy"
 
           docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+
+          # Caddy uses a pre-built image so `up -d` leaves it running with its
+          # in-memory config. The Caddyfile is bind-mounted, meaning the new
+          # file is on disk after `git reset --hard`, but Caddy must be
+          # restarted explicitly to pick it up (admin off -> caddy reload unusable).
+          docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" restart caddy
 
           set -a
           # shellcheck disable=SC1091
