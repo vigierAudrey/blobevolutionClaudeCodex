@@ -1,4 +1,4 @@
-import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import { loginWithCookieSession } from './helpers/auth';
 
 // Extend window interface for gtag tracking and internal consent observability
@@ -19,6 +19,7 @@ const SIGNALS: Record<ConsentMode, { ad_storage: 'granted' | 'denied'; ad_user_d
   limited: { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' },
   none: { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' },
 };
+
 const ADS_RIDER_EMAIL = process.env.E2E_ADS_RIDER_EMAIL ?? 'dev+active-rider-c@test.com';
 const ADS_RIDER_PASSWORD = process.env.E2E_ADS_RIDER_PASSWORD ?? 'Passw0rd!';
 
@@ -59,121 +60,77 @@ async function openMatchingWithConsent(browser: Browser, mode: ConsentMode) {
   return { context, page };
 }
 
-async function assertGtagSignals(page: Page, expected: typeof SIGNALS[ConsentMode], mode: ConsentMode) {
-  // Gate on internal bootstrap signal first: __CONSENT_READY is set synchronously after
-  // gtag('consent','update') inside useConsent, so this implies the call was already made.
-  // Waiting here before inspecting __gtagCalls eliminates the race where we snapshot an
-  // empty call list before the React effect has run.
-  await page.waitForFunction(
-    () => (window as WindowWithGtagTracking).__CONSENT_READY === true,
-    undefined,
-    { timeout: 10000 },
-  );
 
-  // Cross-validate that the internal mode matches what the test expects.
-  // Catches false-positives where gtag fires with a stale mode from a previous test.
-  const internalMode = await page.evaluate(() => (window as WindowWithGtagTracking).__CONSENT_MODE);
-  expect(internalMode).toBe(mode);
+// ---------------------------------------------------------------------------
+// Privacy-first ad tests
+// ---------------------------------------------------------------------------
+// BlobConnect MVP is privacy-first: NEXT_PUBLIC_ADSENSE_ENABLED is not set,
+// so no AdSense script is ever injected and no ins.adsbygoogle slots are rendered.
+// These tests assert that guarantee — regardless of the user's consent mode.
+// ---------------------------------------------------------------------------
 
-  // gtag() calls are fired in React useEffects — they can execute slightly after the
-  // DOM element (ins.adsbygoogle) is painted. Poll instead of snapshotting immediately.
-  await page.waitForFunction(
-    () => {
-      const calls = (window as WindowWithGtagTracking).__gtagCalls ?? [];
-      return calls.some((a: unknown) => Array.isArray(a) && a[0] === 'consent' && a[1] === 'update');
-    },
-    undefined,
-    { timeout: 8000 },
-  );
-
-  const calls = await page.evaluate(() => (window as WindowWithGtagTracking).__gtagCalls ?? []);
-  const consentCall = calls.find((args: unknown) => Array.isArray(args) && args[0] === 'consent' && args[1] === 'update');
-  expect(consentCall).toBeTruthy();
-  if (Array.isArray(consentCall)) {
-    expect(consentCall[2]).toMatchObject(expected);
-  }
-
-  if (mode === 'none') {
-    return;
-  }
-
-  await page.waitForFunction(
-    () => {
-      const calls = (window as WindowWithGtagTracking).__gtagCalls ?? [];
-      return calls.some((a: unknown) => Array.isArray(a) && a[0] === 'event' && a[1] === 'ad_impression');
-    },
-    undefined,
-    { timeout: 8000 },
-  );
-
-  const allCalls = await page.evaluate(() => (window as WindowWithGtagTracking).__gtagCalls ?? []);
-  const impression = allCalls.find((args: unknown) => Array.isArray(args) && args[0] === 'event' && args[1] === 'ad_impression');
-  expect(impression).toBeTruthy();
-  if (Array.isArray(impression)) {
-    expect(impression[2]).toMatchObject({ ad_mode: mode });
-  }
-}
-
-test.describe('Consent-driven ads', () => {
-  test('renders personalized ads when full consent is granted', async ({ browser }) => {
+test.describe('Privacy-first: no AdSense in any consent mode', () => {
+  test('no AdSense script loaded with personalized consent', async ({ browser }) => {
     const { context, page } = await openMatchingWithConsent(browser, 'personalized');
 
-    // Wait for consent signals to propagate — ad_impression fires AFTER the ins element is
-    // committed to the DOM, so this guarantees the slot is stable before counting.
-    await assertGtagSignals(page, SIGNALS.personalized, 'personalized');
-
-    const slot = page.locator('ins.adsbygoogle[data-ad-slot="matching-selection"]');
-    await expect(slot).toHaveCount(1);
-    const scriptLoaded = await page.evaluate(() => !!document.querySelector('script[data-blobinfini="adsense"]'));
-    expect(scriptLoaded).toBeTruthy();
-    await context.close();
-  });
-
-  test('renders non-personalized ads when only storage is granted', async ({ browser }) => {
-    const { context, page } = await openMatchingWithConsent(browser, 'npa');
-
-    await assertGtagSignals(page, SIGNALS.npa, 'npa');
-
-    const slot = page.locator('ins.adsbygoogle[data-ad-slot="matching-selection"]');
-    await expect(slot).toHaveCount(1);
-    const dataNpa = await slot.getAttribute('data-npa');
-    expect(dataNpa).toBe('1');
-    await context.close();
-  });
-
-  test('renders limited ads without storage', async ({ browser }) => {
-    const { context, page } = await openMatchingWithConsent(browser, 'limited');
-
-    await assertGtagSignals(page, SIGNALS.limited, 'limited');
-
-    const slot = page.locator('ins.adsbygoogle[data-ad-slot="matching-selection"]');
-    await expect(slot).toHaveCount(1);
-    const dataNpa = await slot.getAttribute('data-npa');
-    expect(dataNpa).toBe('1');
-
-    const cookies = await context.cookies();
-    const googleCookies = cookies.filter((cookie) => /google/i.test(cookie.name));
-    expect(googleCookies.length).toBe(0);
-    await context.close();
-  });
-
-  test('renders house ads with full refusal', async ({ browser }) => {
-    const { context, page } = await openMatchingWithConsent(browser, 'none');
-
-    // consent:update fires once useConsent establishes mode='none' — after this,
-    // adEnabled=false so no ins.adsbygoogle is rendered in the tested slot.
-    await assertGtagSignals(page, SIGNALS.none, 'none');
-
-    await expect(page.getByText(/Blob House Ads/i)).toBeVisible();
-    const slot = page.locator('ins.adsbygoogle[data-ad-slot="matching-selection"]');
-    await expect(slot).toHaveCount(0);
-
-    const scriptLoaded = await page.evaluate(() => !!document.querySelector('script[data-blobinfini="adsense"]'));
+    const scriptLoaded = await page.evaluate(
+      () => !!document.querySelector('script[data-blobinfini="adsense"]'),
+    );
     expect(scriptLoaded).toBeFalsy();
 
+    const adSlots = await page.locator('ins.adsbygoogle').count();
+    expect(adSlots).toBe(0);
+
+    await context.close();
+  });
+
+  test('no AdSense script loaded with npa consent', async ({ browser }) => {
+    const { context, page } = await openMatchingWithConsent(browser, 'npa');
+
+    const scriptLoaded = await page.evaluate(
+      () => !!document.querySelector('script[data-blobinfini="adsense"]'),
+    );
+    expect(scriptLoaded).toBeFalsy();
+
+    const adSlots = await page.locator('ins.adsbygoogle').count();
+    expect(adSlots).toBe(0);
+
+    await context.close();
+  });
+
+  test('no AdSense script loaded and no Google cookies with limited consent', async ({ browser }) => {
+    const { context, page } = await openMatchingWithConsent(browser, 'limited');
+
+    const scriptLoaded = await page.evaluate(
+      () => !!document.querySelector('script[data-blobinfini="adsense"]'),
+    );
+    expect(scriptLoaded).toBeFalsy();
+
+    const adSlots = await page.locator('ins.adsbygoogle').count();
+    expect(adSlots).toBe(0);
+
     const cookies = await context.cookies();
-    const googleCookies = cookies.filter((cookie) => /google/i.test(cookie.name));
-    expect(googleCookies.length).toBe(0);
+    const googleAdCookies = cookies.filter((c) => /^__gads|^__gpi|^_gcl_/i.test(c.name));
+    expect(googleAdCookies.length).toBe(0);
+
+    await context.close();
+  });
+
+  test('no AdSense script loaded and no Google cookies with full refusal', async ({ browser }) => {
+    const { context, page } = await openMatchingWithConsent(browser, 'none');
+
+    const scriptLoaded = await page.evaluate(
+      () => !!document.querySelector('script[data-blobinfini="adsense"]'),
+    );
+    expect(scriptLoaded).toBeFalsy();
+
+    const adSlots = await page.locator('ins.adsbygoogle').count();
+    expect(adSlots).toBe(0);
+
+    const cookies = await context.cookies();
+    const googleAdCookies = cookies.filter((c) => /^__gads|^__gpi|^_gcl_/i.test(c.name));
+    expect(googleAdCookies.length).toBe(0);
+
     await context.close();
   });
 });
@@ -186,9 +143,8 @@ test.describe('Consent-driven ads', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Consent signal integrity', () => {
-  // Test 1 (required): existing 4 modes already exercise personalized/npa/limited/none.
-  // Signal integrity for each mode is proven by the __CONSENT_MODE cross-check inside
-  // assertGtagSignals — see above. No duplication here.
+  // Test 1 (required): the 4 privacy-first tests above exercise personalized/npa/limited/none.
+  // Signal integrity for each mode is proven by the __CONSENT_MODE cross-check in tests 2-4 below.
 
   // Test 2: prove __CONSENT_READY is not true before bootstrap resolves.
   //
