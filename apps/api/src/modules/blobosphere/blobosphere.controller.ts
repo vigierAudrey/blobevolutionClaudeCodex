@@ -10,8 +10,17 @@ import { validate } from '../../middleware/validate';
 import { audit } from '../../middleware/audit';
 import { secureLogger } from '../../utils/secure-logger';
 
-const CONTENT_ROOT = path.join(process.cwd(), 'apps', 'web', 'content', 'blobosphere');
+function resolveContentRoot() {
+  const cwd = process.cwd();
+  if (path.basename(cwd) === 'api' && path.basename(path.dirname(cwd)) === 'apps') {
+    return path.join(path.dirname(cwd), 'web', 'content', 'blobosphere');
+  }
+  return path.join(cwd, 'apps', 'web', 'content', 'blobosphere');
+}
+
+const CONTENT_ROOT = resolveContentRoot();
 const exec = promisify(_exec);
+const BLOBOSPHERE_STATUSES = ['draft', 'review', 'published', 'archived'] as const;
 
 const PostSchema = z.object({
   title: z.string().min(1),
@@ -19,7 +28,7 @@ const PostSchema = z.object({
   category: z.enum(['surf', 'kitesurf', 'communaute', 'impact']),
   tags: z.array(z.string()).default([]),
   excerpt: z.string().default(''),
-  status: z.enum(['draft', 'published']).default('draft'),
+  status: z.enum(BLOBOSPHERE_STATUSES).default('draft'),
   publishedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(new Date().toISOString().slice(0, 10)),
   updatedAt: z.string().optional().nullable(),
   coverImage: z.string().optional().nullable(),

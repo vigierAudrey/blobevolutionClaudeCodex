@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { listMdxFiles } from './fs';
-import { BlobosphereCategory, BLOBOSPHERE_CATEGORIES, computeReadingTime } from './utils';
+import { BlobosphereCategory, BLOBOSPHERE_CATEGORIES, computeReadingTime, isPublicBlobosphereStatus } from './utils';
 
 export type BlobosphereArticlePreview = {
   slug: string;
@@ -30,8 +30,7 @@ export async function loadBlobospherePreviews(): Promise<BlobosphereArticlePrevi
   for (const filePath of paths) {
     const raw = await fs.readFile(filePath, 'utf8');
     const { data, content } = matter(raw);
-    const status = typeof data.status === 'string' ? data.status : 'draft';
-    if (status !== 'published') continue;
+    if (!isPublicBlobosphereStatus(data.status)) continue;
 
     const category = (typeof data.category === 'string' ? data.category.toLowerCase() : '') as BlobosphereCategory;
     if (!BLOBOSPHERE_CATEGORIES.includes(category)) continue;

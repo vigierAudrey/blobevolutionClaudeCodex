@@ -6,7 +6,15 @@ export function middleware(req: NextRequest) {
 
   // Generate a per-request nonce and build the CSP header.
   const nonce = generateNonce();
-  const csp = buildCsp(nonce);
+  const csp = buildCsp(
+    nonce,
+    pathname === '/admin/index.html'
+      ? {
+          scriptSrcExtra: ['https://unpkg.com'],
+          connectSrcExtra: ['https://api.github.com', 'https://api.netlify.com'],
+        }
+      : {},
+  );
 
   // --- Admin session guard ---
   // Defensive check (matcher also restricts to /admin paths).
@@ -49,4 +57,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|ttf|otf|eot)$).*)',
   ],
 };
-

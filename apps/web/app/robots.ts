@@ -12,7 +12,7 @@ function getSiteUrl(): string {
   }
 
   if (process.env.NODE_ENV === 'production') {
-    return 'https://blobinfini.com';
+    return 'https://blobsurf.com';
   }
 
   return 'http://localhost:3000';

@@ -73,6 +73,19 @@ describe('buildCsp', () => {
     expect(scriptSrc).not.toContain('unsafe-eval');
   });
 
+  it('can add route-scoped script and connect sources without changing the default policy', () => {
+    const defaultCsp = buildCsp('test');
+    const decapCsp = buildCsp('test', {
+      scriptSrcExtra: ['https://unpkg.com'],
+      connectSrcExtra: ['https://api.github.com', 'https://api.netlify.com'],
+    });
+
+    expect(directive(defaultCsp, 'script-src')).not.toContain('https://unpkg.com');
+    expect(directive(decapCsp, 'script-src')).toContain('https://unpkg.com');
+    expect(directive(decapCsp, 'connect-src')).toContain('https://api.github.com');
+    expect(directive(decapCsp, 'connect-src')).toContain('https://api.netlify.com');
+  });
+
   // --- Hard blocking directives ---
 
   it("blocks all plugins via object-src 'none'", () => {

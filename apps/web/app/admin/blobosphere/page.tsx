@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 export const dynamic = 'force-dynamic';
 
 export default function BlobosphereAdminDecapPage() {
+  const internalEditorEnabled = process.env.NODE_ENV !== 'production';
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="space-y-2">
@@ -19,22 +21,24 @@ export default function BlobosphereAdminDecapPage() {
         <CardHeader>
           <CardTitle>Accès éditeurs</CardTitle>
           <CardDescription>
-            Choisis l’expérience qui te convient pour créer ou éditer les articles. Les deux alimentent les fichiers
-            `apps/web/content/blobosphere`.
+            Décap CMS est la voie officielle de publication: modification GitHub, revue en PR et déploiement par CI.
+            L’éditeur interne reste réservé au développement local.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="font-medium">Éditeur interne (SSO admin)</p>
-            <p className="text-sm text-muted-foreground">
-              Ouvre le formulaire MDX natif pour les tests ou pour pré-remplir un article sans passer par GitHub.
-            </p>
-          </div>
-          <Button asChild variant="outline">
-            <Link href="/admin/blobosphere/editor">Ouvrir l’éditeur interne</Link>
-          </Button>
-        </CardContent>
-        <CardContent className="flex flex-col gap-3 border-t pt-6 md:flex-row md:items-center md:justify-between">
+        {internalEditorEnabled && (
+          <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Éditeur interne local</p>
+              <p className="text-sm text-muted-foreground">
+                Outil de développement uniquement. Il est désactivé en production pour éviter toute publication hors Git/CI.
+              </p>
+            </div>
+            <Button asChild variant="outline">
+              <Link href="/admin/blobosphere/editor">Ouvrir l’éditeur interne</Link>
+            </Button>
+          </CardContent>
+        )}
+        <CardContent className={`flex flex-col gap-3 md:flex-row md:items-center md:justify-between ${internalEditorEnabled ? 'border-t pt-6' : ''}`}>
           <div>
             <p className="font-medium">Décap CMS (GitHub)</p>
             <p className="text-sm text-muted-foreground">

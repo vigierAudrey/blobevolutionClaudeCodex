@@ -4,7 +4,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { buildUpdatePayload, type ParsedUpdatePayload } from '@/lib/blobosphere/payload';
 import { saveMdx, type SaveMdxPayload } from '@/lib/blobosphere/saveMdx';
-import { BLOBOSPHERE_CONTENT_ROOT, ensureCategory, sanitizeSlug } from '@/lib/blobosphere/utils';
+import { BLOBOSPHERE_CONTENT_ROOT, ensureCategory, normalizeBlobosphereStatus, sanitizeSlug } from '@/lib/blobosphere/utils';
 
 export const runtime = 'nodejs';
 
@@ -14,6 +14,24 @@ function isDevRequest() {
 
 function devOnlyResponse() {
   return NextResponse.json({ error: 'Blobosphère CMS accessible uniquement en local.' }, { status: 403 });
+}
+
+function hasAdminSession(req: NextRequest) {
+  return req.cookies.get('admin_session')?.value === '1';
+}
+
+function adminOnlyResponse() {
+  return NextResponse.json({ error: 'Session admin requise.' }, { status: 401 });
+}
+
+function guardLocalCms(req: NextRequest) {
+  if (!isDevRequest()) {
+    return devOnlyResponse();
+  }
+  if (!hasAdminSession(req)) {
+    return adminOnlyResponse();
+  }
+  return null;
 }
 
 async function resolveFile(category: string, slug: string): Promise<string> {
@@ -27,6 +45,9 @@ export async function GET(
   { params }: { params: Promise<{ category: string; slug: string }> },
 ) {
   const { category, slug } = await params;
+  const blocked = guardLocalCms(_req);
+  if (blocked) return blocked;
+
   try {
     const filePath = await resolveFile(category, slug);
     const raw = await fs.readFile(filePath, 'utf8');
@@ -46,9 +67,8 @@ export async function PUT(
   { params }: { params: Promise<{ category: string; slug: string }> },
 ) {
   const { category, slug } = await params;
-  if (!isDevRequest()) {
-    return devOnlyResponse();
-  }
+  const blocked = guardLocalCms(req);
+  if (blocked) return blocked;
   try {
     const currentPath = await resolveFile(category, slug);
     const raw = await fs.readFile(currentPath, 'utf8');
@@ -60,7 +80,7 @@ export async function PUT(
       category: ensureCategory(typeof data.category === 'string' ? data.category : category),
       excerpt: typeof data.excerpt === 'string' ? data.excerpt : '',
       tags: Array.isArray(data.tags) ? data.tags.map((tag) => String(tag)) : [],
-      status: data.status === 'published' ? 'published' : 'draft',
+      status: normalizeBlobosphereStatus(data.status),
       publishedAt: typeof data.publishedAt === 'string' ? data.publishedAt : undefined,
       updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined,
       coverImage: typeof data.coverImage === 'string' ? data.coverImage : '',
@@ -111,9 +131,8 @@ export async function DELETE(
   { params }: { params: Promise<{ category: string; slug: string }> },
 ) {
   const { category, slug } = await params;
-  if (!isDevRequest()) {
-    return devOnlyResponse();
-  }
+  const blocked = guardLocalCms(_req);
+  if (blocked) return blocked;
   try {
     const filePath = await resolveFile(category, slug);
     await fs.rm(filePath);

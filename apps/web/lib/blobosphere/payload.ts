@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { SaveMdxPayload } from './saveMdx';
-import { ensureCategory, sanitizeSlug, type BlobosphereCategory } from './utils';
+import { BLOBOSPHERE_STATUSES, ensureCategory, sanitizeSlug, type BlobosphereCategory, type BlobosphereStatus } from './utils';
 
 export const CATEGORY_VALUES = ['surf', 'kitesurf', 'communaute', 'impact'] as const;
 
@@ -11,7 +11,7 @@ const baseSchema = {
   category: z.enum(CATEGORY_VALUES),
   excerpt: z.string().optional(),
   tags: tagSchema.optional(),
-  status: z.enum(['draft', 'published']).optional(),
+  status: z.enum(BLOBOSPHERE_STATUSES).optional(),
   publishedAt: z.string().optional(),
   updatedAt: z.string().optional(),
   coverImage: z.string().optional(),
@@ -64,7 +64,7 @@ export type ParsedUpdatePayload = {
   category: BlobosphereCategory | undefined;
   excerpt?: string;
   tags: string[];
-  status?: 'draft' | 'published';
+  status?: BlobosphereStatus;
   publishedAt?: string;
   updatedAt?: string;
   coverImage?: string;
@@ -81,7 +81,7 @@ export function buildUpdatePayload(data: unknown): ParsedUpdatePayload {
     category?: BlobosphereCategory;
     excerpt?: string;
     tags?: string | string[];
-    status?: 'draft' | 'published';
+    status?: BlobosphereStatus;
     publishedAt?: string;
     updatedAt?: string;
     coverImage?: string;

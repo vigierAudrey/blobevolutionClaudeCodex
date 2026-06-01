@@ -1,7 +1,15 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 
-const CONTENT_ROOT = path.join(process.cwd(), 'apps', 'web', 'content', 'blobosphere');
+function resolveContentRoot() {
+  const cwd = process.cwd();
+  if (path.basename(cwd) === 'api' && path.basename(path.dirname(cwd)) === 'apps') {
+    return path.join(path.dirname(cwd), 'web', 'content', 'blobosphere');
+  }
+  return path.join(cwd, 'apps', 'web', 'content', 'blobosphere');
+}
+
+const CONTENT_ROOT = resolveContentRoot();
 const CATEGORIES = ['surf', 'kitesurf', 'communaute', 'impact'] as const;
 
 export type BlobosphereArticle = {

@@ -1,10 +1,22 @@
 import path from 'node:path';
 
-export const BLOBOSPHERE_CONTENT_ROOT = path.join(process.cwd(), 'apps', 'web', 'content', 'blobosphere');
+function resolveBlobosphereContentRoot(): string {
+  const cwd = process.cwd();
+  if (path.basename(cwd) === 'web' && path.basename(path.dirname(cwd)) === 'apps') {
+    return path.join(cwd, 'content', 'blobosphere');
+  }
+  return path.join(cwd, 'apps', 'web', 'content', 'blobosphere');
+}
+
+export const BLOBOSPHERE_CONTENT_ROOT = resolveBlobosphereContentRoot();
 
 export const BLOBOSPHERE_CATEGORIES = ['surf', 'kitesurf', 'communaute', 'impact'] as const;
 
 export type BlobosphereCategory = (typeof BLOBOSPHERE_CATEGORIES)[number];
+
+export const BLOBOSPHERE_STATUSES = ['draft', 'review', 'published', 'archived'] as const;
+
+export type BlobosphereStatus = (typeof BLOBOSPHERE_STATUSES)[number];
 
 export function ensureCategory(input: string): BlobosphereCategory {
   const normalized = input.toLowerCase() as BlobosphereCategory;
@@ -12,6 +24,21 @@ export function ensureCategory(input: string): BlobosphereCategory {
     throw new Error(`Catégorie Blobosphère invalide: ${input}`);
   }
   return normalized;
+}
+
+export function isBlobosphereStatus(input: unknown): input is BlobosphereStatus {
+  return typeof input === 'string' && BLOBOSPHERE_STATUSES.includes(input.toLowerCase() as BlobosphereStatus);
+}
+
+export function normalizeBlobosphereStatus(input: unknown): BlobosphereStatus {
+  if (isBlobosphereStatus(input)) {
+    return input.toLowerCase() as BlobosphereStatus;
+  }
+  return 'draft';
+}
+
+export function isPublicBlobosphereStatus(input: unknown): boolean {
+  return normalizeBlobosphereStatus(input) === 'published';
 }
 
 export function sanitizeSlug(input: string): string {

@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { listMdxFiles } from './fs';
-import { BLOBOSPHERE_CATEGORIES, type BlobosphereCategory, sanitizeSlug } from './utils';
+import { BLOBOSPHERE_CATEGORIES, isPublicBlobosphereStatus, type BlobosphereCategory, sanitizeSlug } from './utils';
 
 export type BlobosphereSitemapEntry = {
   slug: string;
@@ -11,14 +11,7 @@ export type BlobosphereSitemapEntry = {
 };
 
 function isBlobospherePostPublic(frontmatter: Record<string, unknown>, now: Date): boolean {
-  const publishedField = frontmatter.published;
-  const statusField = frontmatter.status;
-
-  const isPublished =
-    typeof publishedField === 'boolean'
-      ? publishedField
-      : (typeof statusField === 'string' && statusField.toLowerCase() === 'published');
-  if (!isPublished) return false;
+  if (!isPublicBlobosphereStatus(frontmatter.status)) return false;
 
   const publishedAtValue = typeof frontmatter.publishedAt === 'string' ? frontmatter.publishedAt.trim() : '';
   if (!publishedAtValue) return false;
