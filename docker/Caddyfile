@@ -36,16 +36,14 @@
     # Next.js standalone n'applique pas toujours headers() aux fichiers public/ —
     # Caddy est la couche la plus fiable pour forcer no-store avant Cloudflare.
     handle /sw.js {
-        header -Cache-Control
-        header Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
-        header Pragma "no-cache"
-        header Expires "0"
         reverse_proxy web:3000 {
             header_up Host              {host}
             header_up X-Real-IP         {remote_host}
-            # Remplace tout XFF entrant par l'IP TCP réelle du client (anti-spoofing).
-            # {remote_host} = IP de la connexion entrante, non altérable par le client.
             header_up X-Forwarded-For   {remote_host}
+            header_down -Cache-Control
+            header_down Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
+            header_down Pragma "no-cache"
+            header_down Expires "0"
         }
     }
 
