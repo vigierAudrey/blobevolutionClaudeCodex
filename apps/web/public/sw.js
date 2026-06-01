@@ -3,10 +3,12 @@
  * Handles push notifications for messages and alerts
  */
 
-// Cache name for this version
-const CACHE_NAME = 'blobinfini-v2';
+// Cache name for this version — bump this string to force cache invalidation on all clients.
+// IMPORTANT: never add HTML pages (like '/') to this list — they must always come from the
+// network so users see the latest deployed content rather than a stale cached version.
+const CACHE_NAME = 'blobinfini-v3';
+const CACHE_NAME_PREFIX = 'blobinfini-';
 const urlsToCache = [
-  '/',
   '/offline.html',
   '/icons/icon-192x192.png'
 ];
@@ -27,24 +29,27 @@ self.addEventListener('install', function(event) {
   self.skipWaiting();
 });
 
-// Activate event - clean up old caches
+// Activate event - purge ALL previous blobinfini-* caches so stale pages are cleared immediately.
 self.addEventListener('activate', function(event) {
   console.log('✅ BlobConnect SW: Activated');
 
   event.waitUntil(
     caches.keys().then(function(cacheNames) {
       return Promise.all(
-        cacheNames.map(function(cacheName) {
-          if (cacheName !== CACHE_NAME) {
+        cacheNames
+          .filter(function(cacheName) {
+            // Delete every blobinfini-* cache that is not the current version.
+            return cacheName.startsWith(CACHE_NAME_PREFIX) && cacheName !== CACHE_NAME;
+          })
+          .map(function(cacheName) {
             console.log('🗑️ SW: Deleting old cache:', cacheName);
             return caches.delete(cacheName);
-          }
-        })
+          })
       );
     })
   );
 
-  // Take control of all pages
+  // Take control of all pages immediately so the new SW handles all fetches.
   self.clients.claim();
 });
 
@@ -196,19 +201,33 @@ self.addEventListener('fetch', function(event) {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request)
-      .then(function(response) {
-        // Return cached version or fetch from network
-        return response || fetch(event.request)
-          .catch(function() {
-            // If both cache and network fail, show offline page for navigation requests
-            if (event.request.mode === 'navigate') {
-              return caches.match('/offline.html');
-            }
-          });
-      })
-  );
+  const url = new URL(event.request.url);
+
+  // Network-first for HTML navigations: always fetch fresh content from the server.
+  // Fall back to offline.html only when the network is completely unreachable.
+  // This prevents stale pages from being served after a deployment.
+  if (event.request.mode === 'navigate' || (event.request.headers.get('accept') || '').includes('text/html')) {
+    event.respondWith(
+      fetch(event.request)
+        .catch(function() {
+          return caches.match('/offline.html');
+        })
+    );
+    return;
+  }
+
+  // Cache-first for static assets (images, fonts, icons…) on the same origin.
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      caches.match(event.request)
+        .then(function(response) {
+          return response || fetch(event.request)
+            .catch(function() {
+              // Nothing to fall back to for static assets — let the browser handle it.
+            });
+        })
+    );
+  }
 });
 
 console.log('🏄 BlobConnect Service Worker loaded successfully!');

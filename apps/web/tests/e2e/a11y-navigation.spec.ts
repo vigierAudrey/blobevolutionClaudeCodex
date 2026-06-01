@@ -74,7 +74,7 @@ test.describe('A11y navigation primitives', () => {
     await expect(announcer).toHaveAttribute('aria-atomic', 'true');
     await expect(announcer).toHaveText('');
 
-    await page.getByRole('link', { name: /^Se connecter$/i }).click();
+    await page.getByRole('link', { name: /Se connecter/i }).click();
 
     await expect(page).toHaveURL(/\/login$/);
     await expect(announcer).toHaveText('Page chargée : login');
