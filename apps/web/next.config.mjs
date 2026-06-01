@@ -23,6 +23,20 @@ const nextConfig = {
       },
     ],
   },
+  async headers() {
+    return [
+      {
+        // Browsers must always re-fetch sw.js to detect service worker updates.
+        // Without no-store, CDNs (Cloudflare) cache the file for hours and delay
+        // SW updates reaching users after a deploy.
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+    ];
+  },
 };
 
 export default withNextIntl(nextConfig);

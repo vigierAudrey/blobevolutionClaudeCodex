@@ -192,27 +192,7 @@ async function waitForRiderMarkers(page: Page, timeout = 10_000) {
     .toBeGreaterThan(0);
 }
 
-async function dismissAdsModalIfPresent(page: Page) {
-  const modalHeading = page.getByRole('heading', { name: /Publicités adaptées à tes goûts surf\/kite/i });
-  // waitFor polls briefly so a late-appearing modal (rendered after initial paint) is caught.
-  // isVisible() is instantaneous and misses modals that appear after this call.
-  const appeared = await modalHeading
-    .waitFor({ state: 'visible', timeout: 2_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (appeared) {
-    const dismissButton = page
-      .getByRole('button', { name: /Continuer avec les pubs basiques|Utiliser les pubs limitées/i })
-      .first();
-    await dismissButton.click();
-    await expect(modalHeading).toBeHidden({ timeout: 10_000 });
-  }
-}
-
 async function loadVisibleLessonRequests(page: Page) {
-  // Callers already waited for .leaflet-container visibility — dismiss modal directly.
-  await dismissAdsModalIfPresent(page);
-
   // Disable Leaflet CSS transitions so markers are immediately stable after
   // flyToBounds — prevents the "element is not stable" / "intercepts pointer
   // events" race when the viewport animates on radius change.
@@ -227,7 +207,6 @@ async function loadVisibleLessonRequests(page: Page) {
     if ((await radiusInput.inputValue()) !== '200') {
       await radiusInput.fill('200');
     }
-    await dismissAdsModalIfPresent(page);
     const lessonsResponsePromise = page.waitForResponse(
       (response) =>
         response.request().method() === 'GET' &&
@@ -328,7 +307,6 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await openProMapWithValidSession(page);
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
-    await dismissAdsModalIfPresent(page);
 
     // Sport buttons are rendered unconditionally — hard assertion preserved from #147.
     const surfBtn = page.getByRole('button', { name: /surf/i }).first();
@@ -354,7 +332,6 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await openProMapWithValidSession(page);
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
-    await dismissAdsModalIfPresent(page);
 
     // Radius input (labeled "Rayon :") is always rendered — hard assertion preserved from #147.
     const radiusInput = page.getByLabel(/rayon/i);
@@ -375,7 +352,6 @@ test.describe('Pro Map (Blobomap)', () => {
     await setupConsent(page);
     await openProMapWithValidSession(page);
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
-    await dismissAdsModalIfPresent(page);
 
     // Fixture ensures at least 1 rider is visible → hard assertion preserved from #147.
     await expect(page.locator('text=/demande\\(s\\) trouvée\\(s\\)/i')).toBeVisible({ timeout: 10000 });
