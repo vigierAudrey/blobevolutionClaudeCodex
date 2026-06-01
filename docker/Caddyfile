@@ -35,16 +35,20 @@
     # sw.js doit être re-fetché à chaque page load pour détecter les mises à jour.
     # Next.js standalone n'applique pas toujours headers() aux fichiers public/ —
     # Caddy est la couche la plus fiable pour forcer no-store avant Cloudflare.
+    # header_down sans le préfixe `-` remplace directement — plus fiable que delete+add.
+    # header au niveau du bloc = filet de sécurité si header_down est ignoré sur 304.
     handle /sw.js {
         reverse_proxy web:3000 {
             header_up Host              {host}
             header_up X-Real-IP         {remote_host}
             header_up X-Forwarded-For   {remote_host}
-            header_down -Cache-Control
             header_down Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
             header_down Pragma "no-cache"
             header_down Expires "0"
         }
+        header Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
+        header Pragma "no-cache"
+        header Expires "0"
     }
 
     handle {
