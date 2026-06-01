@@ -624,12 +624,32 @@ if echo "$CORS_HOSTILE_ORIGIN" | grep -qF "attacker.example"; then
   echo "       DANGER: storage accepte des origins hostiles — CORS bypass possible"
 fi
 
+# ─── [22] sw.js — Cache-Control no-store ─────────────────────────────────────
+# sw.js ne doit jamais être mis en cache par Cloudflare ou le navigateur.
+# Un SW périmé peut verrouiller les utilisateurs sur une ancienne version après deploy.
+# Ce check valide que Caddy force bien no-store (correctif Caddyfile PR #228).
+echo "--- [22] sw.js Cache-Control no-store ---"
+# shellcheck disable=SC2086
+SW_HDR=$(curl -sk $CURL_RESOLVE -D - -o /dev/null "${WEB}/sw.js" 2>/dev/null \
+  | grep -i "^cache-control:" | tr -d '\r' | head -1)
+check_contains     "sw.js : no-store présent"              "$SW_HDR" "no-store"
+check_not_contains "sw.js : pas de public ni max-age>0"    "$SW_HDR" "max-age=[1-9]"
+if echo "$SW_HDR" | grep -qi "public"; then
+  printf "  \033[31mFAIL\033[0m sw.js : 'public' détecté dans Cache-Control — Cloudflare va cacher le SW\n"
+  printf "       Valeur reçue : '%s'\n" "$SW_HDR"
+  printf "       Vérifier docker/Caddyfile bloc 'handle /sw.js'\n"
+  FAIL=$((FAIL + 1))
+else
+  printf "  \033[32mOK\033[0m   sw.js : 'public' absent du Cache-Control\n"
+  PASS=$((PASS + 1))
+fi
+
 # ─── Résumé final ─────────────────────────────────────────────────────────────
 echo ""
 echo "======================================"
 TOTAL=$((PASS + FAIL))
 printf "  Résultat : %d/%d checks passés\n" "$PASS" "$TOTAL"
-printf "  Fonctionnel : 1-16 | S3 VPS proof : 17-21b\n"
+printf "  Fonctionnel : 1-16 | S3 VPS proof : 17-22\n"
 if [ "$SKIP" -gt 0 ]; then
   printf "  Checks ignorés (SKIP) : %d\n" "$SKIP"
 fi

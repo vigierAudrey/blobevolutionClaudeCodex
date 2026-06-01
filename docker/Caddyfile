@@ -32,13 +32,31 @@
 
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
-    reverse_proxy web:3000 {
-        header_up Host              {host}
-        header_up X-Real-IP         {remote_host}
-        # Remplace tout XFF entrant par l'IP TCP réelle du client (anti-spoofing).
-        # {remote_host} = IP de la connexion entrante, non altérable par le client.
-        header_up X-Forwarded-For   {remote_host}
+    # sw.js doit être re-fetché à chaque page load pour détecter les mises à jour.
+    # Next.js standalone n'applique pas toujours headers() aux fichiers public/ —
+    # Caddy est la couche la plus fiable pour forcer no-store avant Cloudflare.
+    handle /sw.js {
+        header -Cache-Control
+        header Cache-Control "no-cache, no-store, max-age=0, must-revalidate"
+        header Pragma "no-cache"
+        header Expires "0"
+        reverse_proxy web:3000 {
+            header_up Host              {host}
+            header_up X-Real-IP         {remote_host}
+            # Remplace tout XFF entrant par l'IP TCP réelle du client (anti-spoofing).
+            # {remote_host} = IP de la connexion entrante, non altérable par le client.
+            header_up X-Forwarded-For   {remote_host}
+        }
+    }
 
+    handle {
+        reverse_proxy web:3000 {
+            header_up Host              {host}
+            header_up X-Real-IP         {remote_host}
+            # Remplace tout XFF entrant par l'IP TCP réelle du client (anti-spoofing).
+            # {remote_host} = IP de la connexion entrante, non altérable par le client.
+            header_up X-Forwarded-For   {remote_host}
+        }
     }
 }
 
