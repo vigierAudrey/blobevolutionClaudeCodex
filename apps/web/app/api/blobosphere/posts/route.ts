@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { promises as fs } from 'fs';
+import path from 'path';
 import matter from 'gray-matter';
 import { listMdxFiles } from '@/lib/blobosphere/fs';
 import { buildCreatePayload } from '@/lib/blobosphere/payload';
@@ -17,6 +17,24 @@ function devOnlyResponse() {
   return NextResponse.json({ error: 'Blobosphère CMS accessible uniquement en local.' }, { status: 403 });
 }
 
+function hasAdminSession(req: NextRequest) {
+  return req.cookies.get('admin_session')?.value === '1';
+}
+
+function adminOnlyResponse() {
+  return NextResponse.json({ error: 'Session admin requise.' }, { status: 401 });
+}
+
+function guardLocalCms(req: NextRequest) {
+  if (!isDevRequest()) {
+    return devOnlyResponse();
+  }
+  if (!hasAdminSession(req)) {
+    return adminOnlyResponse();
+  }
+  return null;
+}
+
 type ListItem = {
   category: BlobosphereCategory;
   slug: string;
@@ -26,7 +44,10 @@ type ListItem = {
   path: string;
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const blocked = guardLocalCms(req);
+  if (blocked) return blocked;
+
   let files: string[] = [];
   try {
     files = await listMdxFiles();
@@ -66,9 +87,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  if (!isDevRequest()) {
-    return devOnlyResponse();
-  }
+  const blocked = guardLocalCms(req);
+  if (blocked) return blocked;
 
   try {
     const payload = buildCreatePayload(await req.json());

@@ -1,6 +1,22 @@
 # 🌐 Blobosphère - Guide Complet
 
+> État actuel 2026 : la Blobosphère est volontairement **file-based MDX** dans
+> `apps/web/content/blobosphere/`. Les sections ci-dessous qui décrivent des
+> modèles Prisma, commentaires ou médias avancés restent des pistes historiques
+> de scale, pas l'architecture MVP active.
+
 La Blobosphère est le hub éditorial de Blobinfini, conçu pour renforcer la visibilité SEO et l'engagement communautaire.
+
+## Workflow MVP actif
+
+- Source des articles : fichiers `.mdx` versionnés dans `apps/web/content/blobosphere/<category>/<slug>.mdx`.
+- Statuts supportés : `draft`, `review`, `published`, `archived`.
+- Seul `published` est visible publiquement sur `/blobosphere` et `/blobosphere/[slug]`.
+- `draft`, `review`, `archived` doivent rester inaccessibles publiquement et renvoyer 404 sur la page article.
+- Voie officielle de publication : Décap CMS écrit dans GitHub, puis la revue et le déploiement passent par Git/CI.
+- L'éditeur interne `/admin/blobosphere/editor` est réservé au développement local. Ses routes `/api/blobosphere/posts` sont désactivées hors `NODE_ENV=development` pour éviter toute fuite de brouillon ou publication depuis le VPS.
+- Publication : passer le frontmatter `status` à `published`, vérifier l'article sur `/blobosphere/<slug>`, puis relire/merger la PR.
+- Pas de migration Prisma pour les articles à ce stade : Git couvre l'historique, la revue et le rollback avec moins de coût opérationnel.
 
 > ⚠️ **IMPORTANT** : Ce module manipule des données publiques et personnelles. Le respect du RGPD et de la sécurité est **ABSOLU**.
 

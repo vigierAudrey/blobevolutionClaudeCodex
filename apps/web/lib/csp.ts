@@ -28,7 +28,12 @@ export function generateNonce(): string {
  * Reads NEXT_PUBLIC_API_URL and optional NEXT_PUBLIC_MEDIA_URL from the environment
  * (both are bundled at build time by Next.js for client-side use).
  */
-export function buildCsp(nonce: string): string {
+type CspOptions = {
+  scriptSrcExtra?: string[];
+  connectSrcExtra?: string[];
+};
+
+export function buildCsp(nonce: string, options: CspOptions = {}): string {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
   // Derive HTTP origin and WebSocket origin from the API URL.
@@ -73,7 +78,7 @@ export function buildCsp(nonce: string): string {
     // generated hydration <script> tags when the header is set in middleware.
     // 'unsafe-eval' is required in dev for Next.js HMR / react-refresh (eval-based
     // hot module replacement). Never included in production.
-    `script-src 'self' 'nonce-${nonce}'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
+    `script-src 'self' 'nonce-${nonce}'${options.scriptSrcExtra?.length ? ` ${options.scriptSrcExtra.join(' ')}` : ''}${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
 
     // 'unsafe-inline' is required for Next.js CSS-in-JS / Tailwind inline styles.
     // unpkg.com is needed for Leaflet CSS loaded dynamically in LocationPickerMap.
@@ -84,7 +89,7 @@ export function buildCsp(nonce: string): string {
     // Both HTTP (fetch/XHR/polling) and WS (Socket.IO websocket transport).
     // mediaOrigin (MinIO/S3) is included because presigned PUT uploads go directly
     // from the browser to the storage endpoint — blocked otherwise.
-    `connect-src 'self' ${apiOrigin} ${wsOrigin}${mediaOrigin ? ` ${mediaOrigin}` : ''}`,
+    `connect-src 'self' ${apiOrigin} ${wsOrigin}${mediaOrigin ? ` ${mediaOrigin}` : ''}${options.connectSrcExtra?.length ? ` ${options.connectSrcExtra.join(' ')}` : ''}`,
 
     // next/font serves fonts from /_next/static — covered by 'self'.
     // data: handles occasional inline font references.

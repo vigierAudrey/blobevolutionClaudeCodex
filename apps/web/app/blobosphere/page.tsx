@@ -37,9 +37,17 @@ const topicMap = new Map(blobosphereTopics.map((topic) => [topic.slug, topic]));
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'Blobosphère · Le guide surf & kite',
+  title: 'Blobosphère · Guides surf et kitesurf Médoc Atlantique',
   description:
-    "Guides débutants pour bien t’équiper, rider responsable et rester en forme. Articles courts, liens utiles et interviews inspirantes. Par la communauté Blob.",
+    "Guides surf et kitesurf pour débuter dans le Médoc Atlantique, choisir son matériel, rider avec prudence et rejoindre la communauté Blob.",
+  alternates: { canonical: 'https://blobsurf.com/blobosphere' },
+  openGraph: {
+    title: 'Blobosphère · Guides surf et kitesurf Médoc Atlantique',
+    description:
+      "Conseils locaux, sécurité, matériel et communauté pour pratiquer surf et kitesurf sans exposer les spots sensibles.",
+    url: 'https://blobsurf.com/blobosphere',
+    type: 'website',
+  },
 };
 
 type BlobospherePageProps = {
@@ -51,6 +59,10 @@ function isBlobosphereTopic(value?: string): value is BlobosphereTopicSlug {
     return false;
   }
   return blobosphereTopics.some((topic) => topic.slug === value);
+}
+
+function safeJsonLd(data: Record<string, unknown>): string {
+  return JSON.stringify(data).replace(/</g, '\\u003c');
 }
 
 export default async function BlobospherePage({ searchParams }: BlobospherePageProps) {
@@ -71,7 +83,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
       datePublished: article.publishedAt,
       inLanguage: 'fr-FR',
       about: topicMap.get(article.topic as BlobosphereTopicSlug)?.label,
-      url: `https://blobinfini.com/blobosphere#${article.slug}`,
+      url: `https://blobsurf.com/blobosphere/${article.slug}`,
     })),
     audience: {
       '@type': 'Audience',
@@ -89,7 +101,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
       <div className="space-y-14">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonLd(collectionJsonLd) }}
         suppressHydrationWarning
       />
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-blue-600 to-cyan-500 px-6 py-12 text-white shadow-xl sm:px-10 lg:py-16">
@@ -115,9 +127,8 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
           </div>
 
           <p className="text-lg text-white/90">
-            Des articles courts pour bien choisir ton matériel, comprendre l&apos;environnement (météo, spots, impact)
-            et prendre soin de ta santé. Bientôt: des interviews inspirantes. Chaque article
-            pointe aussi vers des ressources de confiance pour aller plus loin.
+            Des guides courts pour débuter autour du Médoc Atlantique, bien choisir ton matériel,
+            comprendre la sécurité et trouver des partenaires sans exposer les spots sensibles.
           </p>
 
           <div className="flex flex-wrap gap-4">
@@ -280,7 +291,7 @@ function ArticleCard({
   article: BlobosphereArticlePreview;
   topicLabel: string;
 }) {
-  const href = `/blobosphere?topic=${article.topic}#${article.slug}`;
+  const href = `/blobosphere/${article.slug}`;
   const IconComponent = topicIconsLucide[article.topic as BlobosphereTopicSlug] || BookOpen;
 
   return (

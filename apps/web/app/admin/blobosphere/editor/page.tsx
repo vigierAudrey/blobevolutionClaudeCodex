@@ -10,6 +10,7 @@ import { Label } from '../../../../components/ui/label';
 import { Textarea } from '../../../../components/ui/textarea';
 import { MdxRuntimePreview } from '@/components/blobosphere/MdxRuntimePreview';
 import type { BlobosphereArticlePreview } from '@/lib/blobosphere/loadBlobospherePreviews';
+import { BLOBOSPHERE_STATUSES, type BlobosphereStatus, normalizeBlobosphereStatus } from '@/lib/blobosphere/utils';
 
 type Category = 'surf'|'kitesurf'|'communaute'|'impact';
 
@@ -23,7 +24,7 @@ type SaveResponse = {
     category: Category;
     excerpt?: string;
     tags?: string[];
-    status?: 'draft' | 'published';
+    status?: BlobosphereStatus;
   };
 };
 
@@ -49,7 +50,7 @@ function BlobosphereEditorContent() {
   const [slug, setSlug] = useState('');
   const [title, setTitle] = useState('');
   const [excerpt, setExcerpt] = useState('');
-  const [status, setStatus] = useState<'draft'|'published'>('draft');
+  const [status, setStatus] = useState<BlobosphereStatus>('draft');
   const [tags, setTags] = useState('');
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
@@ -67,7 +68,7 @@ function BlobosphereEditorContent() {
     setSlug(resolvedSlug);
     setTitle(typeof data.title === 'string' ? data.title : resolvedSlug);
     setExcerpt(typeof data.excerpt === 'string' ? data.excerpt : '');
-    setStatus(data.status === 'published' ? 'published' : 'draft');
+    setStatus(normalizeBlobosphereStatus(data.status));
     const tagValue = Array.isArray(data.tags) ? data.tags.join(', ') : typeof data.tags === 'string' ? data.tags : '';
     setTags(tagValue);
     setBody(content);
@@ -210,7 +211,7 @@ function BlobosphereEditorContent() {
       );
       setPreviewArticle(preview.item ?? null);
       if (!preview.item) {
-        setPreviewError('Aucun article publié pour ce slug (status = draft ?).');
+        setPreviewError('Aucun article publié pour ce slug (status draft/review/archived ou slug introuvable).');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Impossible de charger la prévisualisation';
@@ -261,9 +262,10 @@ function BlobosphereEditorContent() {
               </div>
               <div>
                 <Label>Statut</Label>
-                <select className="h-9 w-full rounded-md border px-3" value={status} onChange={(e) => setStatus(e.target.value as 'draft'|'published')}>
-                  <option value="draft">draft</option>
-                  <option value="published">published</option>
+                <select className="h-9 w-full rounded-md border px-3" value={status} onChange={(e) => setStatus(normalizeBlobosphereStatus(e.target.value))}>
+                  {BLOBOSPHERE_STATUSES.map((workflowStatus) => (
+                    <option key={workflowStatus} value={workflowStatus}>{workflowStatus}</option>
+                  ))}
                 </select>
               </div>
               <div className="md:col-span-2">
@@ -321,8 +323,8 @@ function BlobosphereEditorContent() {
                   ))}
                 </div>
                 <Button asChild size="sm" variant="outline">
-                  <a href={`/blobosphere?topic=${previewArticle.topic}#${previewArticle.slug}`} target="_blank" rel="noreferrer">
-                    Ouvrir sur /blobosphere
+                  <a href={`/blobosphere/${previewArticle.slug}`} target="_blank" rel="noreferrer">
+                    Ouvrir l’article public
                   </a>
                 </Button>
               </CardContent>
@@ -359,6 +361,26 @@ function BlobosphereEditorContent() {
 }
 
 export default function BlobosphereEditorPage() {
+  if (process.env.NODE_ENV === 'production') {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Éditeur interne désactivé en production</CardTitle>
+            <CardDescription>
+              La publication Blobosphère passe par Décap CMS et GitHub afin de garder une revue en PR et un déploiement CI.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="outline">
+              <a href="/admin/blobosphere">Retour à Décap CMS</a>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <Suspense fallback={<div className="max-w-6xl mx-auto p-6">Chargement de l&apos;éditeur...</div>}>
       <BlobosphereEditorContent />

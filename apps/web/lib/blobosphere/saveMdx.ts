@@ -1,6 +1,6 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { BLOBOSPHERE_CONTENT_ROOT, BlobosphereCategory, computeReadingTime, ensureCategory, ensureDateString, sanitizeSlug } from './utils';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { BLOBOSPHERE_CONTENT_ROOT, BlobosphereCategory, BlobosphereStatus, computeReadingTime, ensureCategory, ensureDateString, normalizeBlobosphereStatus, sanitizeSlug } from './utils';
 
 export type SaveMdxPayload = {
   title: string;
@@ -8,7 +8,7 @@ export type SaveMdxPayload = {
   category: BlobosphereCategory | string;
   excerpt?: string;
   tags?: string[];
-  status?: 'draft' | 'published';
+  status?: BlobosphereStatus;
   publishedAt?: string;
   updatedAt?: string;
   coverImage?: string | null;
@@ -54,7 +54,7 @@ export async function saveMdx(payload: SaveMdxPayload, options: SaveMdxOptions =
     `category: ${JSON.stringify(category)}`,
     `excerpt: ${JSON.stringify(payload.excerpt ?? '')}`,
     `tags: ${JSON.stringify(tags)}`,
-    `status: ${JSON.stringify(payload.status ?? 'draft')}`,
+    `status: ${JSON.stringify(normalizeBlobosphereStatus(payload.status))}`,
     `publishedAt: ${JSON.stringify(publishedAt)}`,
     `updatedAt: ${JSON.stringify(updatedAt)}`,
     `coverImage: ${JSON.stringify(payload.coverImage ?? '')}`,

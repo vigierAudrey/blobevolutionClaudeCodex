@@ -9,7 +9,11 @@ const app = createApp();
 
 const slug = 'test-blobosphere-public';
 const category = 'surf';
-const contentDir = path.join(process.cwd(), 'apps', 'web', 'content', 'blobosphere', category);
+const contentRoot =
+  path.basename(process.cwd()) === 'api' && path.basename(path.dirname(process.cwd())) === 'apps'
+    ? path.join(path.dirname(process.cwd()), 'web', 'content', 'blobosphere')
+    : path.join(process.cwd(), 'apps', 'web', 'content', 'blobosphere');
+const contentDir = path.join(contentRoot, category);
 const filePath = path.join(contentDir, `${slug}.mdx`);
 
 const allowedKeys = ['title', 'slug', 'excerpt', 'publishedAt', 'cover'];

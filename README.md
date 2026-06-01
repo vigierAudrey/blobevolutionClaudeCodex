@@ -1089,10 +1089,12 @@ _Blob - Connecter les riders, simplifier les sessions, protéger l'océan_ 🌊
 
 ## ✍️ Blobosphère – MDX + Git + Décap CMS
 
-L’édition de la Blobosphère repose désormais uniquement sur des fichiers **MDX** versionnés. Décap CMS et l’éditeur interne écrivent directement dans `apps/web/content/blobosphere`. Aucune donnée n’est chargée depuis `data.ts` (supprimé).
+L’édition de la Blobosphère repose désormais uniquement sur des fichiers **MDX** versionnés. La voie officielle de publication est **Décap CMS + GitHub + CI** : les changements passent par Git, sont relus, puis déployés. L’éditeur interne reste un outil de développement local et ne doit pas servir à publier depuis le VPS.
 
-### ✅ To-do immédiat
-- [ ] **TODO**: remplacer `repo: "<OWNER>/<REPO>"` dans `apps/web/public/admin/config.yml` par le dépôt GitHub cible avant de lancer Décap.
+### Choix d'architecture actuel
+- La Blobosphère reste volontairement **file-based MDX** pour le MVP : les articles sont versionnés, relus en PR et déployés avec le web.
+- Pas de modèle Prisma ni de migration DB pour les articles à ce stade : le volume éditorial est faible, le besoin principal est SEO/social, et Git donne déjà l'historique de publication.
+- Le rendu public n'exécute pas le MDX comme du JavaScript : seuls les articles `status: "published"` sont chargés, et le contenu est rendu via un sous-ensemble Markdown sûr.
 
 ### Structure des fichiers
 - Racine contenu: `apps/web/content/blobosphere/`
@@ -1106,7 +1108,7 @@ slug: "titre-en-kebab"
 category: "surf" | "kitesurf" | "communaute" | "impact"
 excerpt: "Aperçu court"
 tags: ["tag1","tag2"]
-status: "draft" | "published"
+status: "draft" | "review" | "published" | "archived"
 publishedAt: "2025-01-08"
 updatedAt: "2025-01-08"
 coverImage: "/uploads/cover.jpg"
@@ -1115,22 +1117,23 @@ readingTime: 7
 ```
 
 - Création/écriture locale : `apps/web/lib/blobosphere/saveMdx.ts` (utilisé par les routes `/api/blobosphere/posts`).
-- Lecture côté Next : `apps/web/lib/blobosphere/loadBlobospherePreviews.ts` (utilisé par `/blobosphere`, filtre automatiquement les drafts).
+- Lecture côté Next : `apps/web/lib/blobosphere/loadBlobospherePreviews.ts` (utilisé par `/blobosphere`, filtre automatiquement tout sauf `published`).
+- Lecture article public : `apps/web/lib/blobosphere/loadBlobosphereArticle.ts` (utilisé par `/blobosphere/[slug]`, retourne `null` si le slug est absent ou non publié).
 
 ### Export automatique des articles
-- Routes Next.js dédiées (dev uniquement) :
+- Routes Next.js dédiées (développement local uniquement, désactivées hors `NODE_ENV=development`) :
   - `POST /api/blobosphere/posts` → crée `apps/web/content/blobosphere/<category>/<slug>.mdx`
   - `PUT /api/blobosphere/posts/:category/:slug` → met à jour le fichier MDX existant
   - `GET /api/blobosphere/posts` et `/posts/:category/:slug` → listent/chargent les fichiers pour l’éditeur interne
 - Les routes ci-dessus appellent `saveMdx.ts` et calculent automatiquement `readingTime`, `publishedAt`, etc.
-- L’éditeur interne (`/admin/blobosphere/editor`) consomme ces routes, pas besoin d’API externe pour tester en local.
+- L’éditeur interne (`/admin/blobosphere/editor`) consomme ces routes uniquement en local. En production, il est masqué/désactivé pour éviter toute divergence VPS/local et toute publication hors Git/CI.
 
 ### Lancer Décap CMS (GitHub backend)
 1. **Config `config.yml`**  
    ```yaml
    backend:
      name: github
-     repo: "<OWNER>/<REPO>"    # TODO à renseigner
+    repo: "VigierAudrey/blobevolutionClaudeCodex"
      branch: "main"
      base_url: "http://localhost:3002"
      auth_endpoint: "api/decap/auth"
@@ -1151,24 +1154,26 @@ readingTime: 7
    - Navigue vers `/admin/blobosphere` pour charger l’iframe Décap isolée.  
    - Le bouton “Ouvrir dans un nouvel onglet” pointe vers `/admin/index.html` si l’iframe est bloquée.
 
-### Exporter un article `.mdx`
-1. Via l’éditeur interne : `/admin/blobosphere/editor`
-   - Remplis le formulaire (slug + catégorie + contenu).  
-   - Clique “Enregistrer” → `POST /api/blobosphere/posts` → fichier écrit dans `apps/web/content/blobosphere/<cat>/<slug>.mdx`.
-2. Via Décap CMS : `/admin/index.html`
+### Publier un article `.mdx`
+1. Via Décap CMS : `/admin/index.html` ou `/admin/blobosphere`
    - Auth GitHub, sélectionne “Blobosphère”, crée ou édite un article.  
-   - Les commits GitHub contiennent directement les fichiers `.mdx`.
-3. Via API :  
+   - Les commits GitHub contiennent directement les fichiers `.mdx`; la publication réelle passe par Git/CI.
+   - Passe `status` à `published` uniquement après relecture.
+2. Via l’éditeur interne local : `/admin/blobosphere/editor`
+   - Réservé au développement local pour préparer ou tester un MDX.  
+   - Les routes associées répondent `403` hors développement.
+3. Via API locale :  
    ```bash
    curl -X POST http://localhost:3002/api/blobosphere/posts \
      -H "Content-Type: application/json" \
      -d '{"title":"Test","slug":"test","category":"surf","status":"draft","body":"Contenu"}'
    ```
+   Cette API ne doit jamais être utilisée pour publier depuis le VPS.
 
 ### Éditeur interne `/admin/blobosphere/editor`
 1. **Créer**  
    - Accède à `/admin/blobosphere/editor`.  
-   - Renseigne `title`, `slug`, `category`, `status` (draft/published), `excerpt`, `tags` et le contenu MDX.  
+   - Renseigne `title`, `slug`, `category`, `status` (`draft`, `review`, `published`, `archived`), `excerpt`, `tags` et le contenu MDX.  
    - Sauvegarde → appel `POST /api/blobosphere/posts` (validation simple) → `saveMdx.ts` écrit `apps/web/content/blobosphere/<categorie>/<slug>.mdx`.
 2. **Modifier**  
    - Sélectionne un article existant dans la liste.  
@@ -1176,7 +1181,7 @@ readingTime: 7
    - Après sauvegarde, l’éditeur recharge le fichier réel pour garder l’aperçu synchronisé.
 3. **Publier**  
    - Passe `status` à `published`, puis clique sur “Prévisualiser l’article final” pour recharger `loadBlobospherePreviews()` via `/api/blobosphere/previews`.  
-   - Si l’article est publié, un lien ouvre directement `/blobosphere?topic=<cat>#<slug>`.
+   - Si l’article est publié, un lien ouvre directement `/blobosphere/<slug>`.
 4. **Supprimer**  
    - Passe en mode édition (sélectionne l’article).  
    - Clique sur “Supprimer l’article” puis confirme : la route `DELETE /api/blobosphere/posts/<cat>/<slug>` supprime physiquement le fichier `.mdx`.  
@@ -1187,12 +1192,13 @@ readingTime: 7
 6. **Vérifier dans `/blobosphere`**  
    - `pnpm --filter @blobinfini/web dev`
    - Ouvre `http://localhost:3002/blobosphere` et filtre par catégorie : seuls les MDX `status: published` apparaissent (chargés par `loadBlobospherePreviews()`).
+   - Ouvre `http://localhost:3002/blobosphere/<slug>` : `draft`, `review` et `archived` renvoient 404.
 
 ### Vérifier la lecture côté `/blobosphere`
 1. `pnpm --filter @blobinfini/web dev`
 2. Ajoute/modifie un fichier dans `apps/web/content/blobosphere`
 3. Ouvre `http://localhost:3002/blobosphere` → les articles publiés doivent apparaître.  
-   - `loadBlobospherePreviews()` filtre automatiquement `status: draft` et calcule `readingTime`.
+   - `loadBlobospherePreviews()` filtre automatiquement `draft`, `review`, `archived` et calcule `readingTime`.
 
 ### Checklist debug (403 / 404 / proxy)
 - Next.js doit tourner sur **`http://localhost:3002`** (sinon adapter `base_url` dans `config.yml`).

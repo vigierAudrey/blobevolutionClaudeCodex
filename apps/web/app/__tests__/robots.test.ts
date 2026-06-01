@@ -18,7 +18,7 @@ describe('app robots', () => {
 
   it('contains Disallow: /admin and sitemap line', () => {
     replaceEnv({
-      SITE_URL: 'https://blobinfini.com',
+      SITE_URL: 'https://blobsurf.com',
       NEXT_PUBLIC_SITE_URL: undefined,
     });
 
@@ -33,7 +33,7 @@ describe('app robots', () => {
         }),
       ]),
     );
-    expect(result.sitemap).toBe('https://blobinfini.com/sitemap.xml');
+    expect(result.sitemap).toBe('https://blobsurf.com/sitemap.xml');
   });
 
   it('uses an absolute non-localhost sitemap URL in production fallback mode', () => {
@@ -45,7 +45,7 @@ describe('app robots', () => {
 
     const result = robots();
 
-    expect(result.sitemap).toBe('https://blobinfini.com/sitemap.xml');
+    expect(result.sitemap).toBe('https://blobsurf.com/sitemap.xml');
     expect(result.sitemap).toMatch(/^https:\/\//);
     expect(result.sitemap).not.toContain('localhost');
   });

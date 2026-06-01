@@ -36,6 +36,12 @@ collections:
       - label: "Publiés"
         field: status
         pattern: "published"
+      - label: "En revue"
+        field: status
+        pattern: "review"
+      - label: "Archivés"
+        field: status
+        pattern: "archived"
       - label: "Surf"
         field: category
         pattern: "surf"
@@ -86,7 +92,9 @@ collections:
         hint: "Seuls les articles publiés apparaissent sur le site"
         options:
           - { label: "Brouillon", value: "draft" }
+          - { label: "En revue", value: "review" }
           - { label: "Publié", value: "published" }
+          - { label: "Archivé", value: "archived" }
         default: "draft"
       - label: "Date de publication"
         name: "publishedAt"

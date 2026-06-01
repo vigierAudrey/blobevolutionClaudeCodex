@@ -26,13 +26,15 @@ describe('app sitemap', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.SITE_URL = 'https://blobinfini.com';
+    process.env.SITE_URL = 'https://blobsurf.com';
     delete process.env.NEXT_PUBLIC_SITE_URL;
     mockListMdxFiles.mockResolvedValue([
       '/repo/apps/web/content/blobosphere/surf/article-z.mdx',
       '/repo/apps/web/content/blobosphere/surf/article-a.mdx',
       '/repo/apps/web/content/blobosphere/surf/article-publie.mdx',
       '/repo/apps/web/content/blobosphere/surf/article-draft.mdx',
+      '/repo/apps/web/content/blobosphere/surf/article-review.mdx',
+      '/repo/apps/web/content/blobosphere/surf/article-archived.mdx',
       '/repo/apps/web/content/blobosphere/surf/article-futur.mdx',
     ]);
 
@@ -43,7 +45,6 @@ describe('app sitemap', () => {
 title: "Article Z"
 slug: "article-z"
 category: "surf"
-published: true
 status: "published"
 publishedAt: "2025-02-01T00:00:00.000Z"
 ---
@@ -55,7 +56,6 @@ Article Z`;
 title: "Article A"
 slug: "article-a"
 category: "surf"
-published: true
 status: "published"
 publishedAt: "2025-02-01T00:00:00.000Z"
 ---
@@ -67,11 +67,32 @@ Article A`;
 title: "Article draft"
 slug: "article-draft"
 category: "surf"
-published: false
 status: "draft"
 publishedAt: "2025-02-01T00:00:00.000Z"
 ---
 Draft`;
+      }
+
+      if (value.includes('article-review.mdx')) {
+        return `---
+title: "Article review"
+slug: "article-review"
+category: "surf"
+status: "review"
+publishedAt: "2025-02-01T00:00:00.000Z"
+---
+Review`;
+      }
+
+      if (value.includes('article-archived.mdx')) {
+        return `---
+title: "Article archived"
+slug: "article-archived"
+category: "surf"
+status: "archived"
+publishedAt: "2025-02-01T00:00:00.000Z"
+---
+Archived`;
       }
 
       if (value.includes('article-futur.mdx')) {
@@ -79,7 +100,6 @@ Draft`;
 title: "Article futur"
 slug: "article-futur"
 category: "surf"
-published: true
 status: "published"
 publishedAt: "2099-01-01T00:00:00.000Z"
 ---
@@ -90,7 +110,6 @@ Futur`;
 title: "Article publie"
 slug: "article-publie"
 category: "surf"
-published: true
 status: "published"
 publishedAt: "2025-01-01T00:00:00.000Z"
 updatedAt: "2025-01-05T00:00:00.000Z"
@@ -116,14 +135,14 @@ Publie`;
     const result = await sitemap();
     const urls = result.map((entry) => entry.url);
 
-    expect(urls).toContain('https://blobinfini.com/blobosphere');
+    expect(urls).toContain('https://blobsurf.com/blobosphere');
   });
 
   it('contains published article slug fixture', async () => {
     const result = await sitemap();
     const urls = result.map((entry) => entry.url);
 
-    expect(urls).toContain('https://blobinfini.com/blobosphere/article-publie');
+    expect(urls).toContain('https://blobsurf.com/blobosphere/article-publie');
   });
 
   it('keeps stable deterministic ordering (date desc, then slug asc)', async () => {
@@ -131,18 +150,20 @@ Publie`;
     const urls = result.map((entry) => entry.url);
 
     expect(urls).toEqual([
-      'https://blobinfini.com/blobosphere',
-      'https://blobinfini.com/blobosphere/article-a',
-      'https://blobinfini.com/blobosphere/article-z',
-      'https://blobinfini.com/blobosphere/article-publie',
+      'https://blobsurf.com/blobosphere',
+      'https://blobsurf.com/blobosphere/article-a',
+      'https://blobsurf.com/blobosphere/article-z',
+      'https://blobsurf.com/blobosphere/article-publie',
     ]);
   });
 
-  it('never includes draft or future fixtures', async () => {
+  it('never includes draft, review, archived or future fixtures', async () => {
     const result = await sitemap();
     const urls = result.map((entry) => entry.url);
 
-    expect(urls).not.toContain('https://blobinfini.com/blobosphere/article-draft');
-    expect(urls).not.toContain('https://blobinfini.com/blobosphere/article-futur');
+    expect(urls).not.toContain('https://blobsurf.com/blobosphere/article-draft');
+    expect(urls).not.toContain('https://blobsurf.com/blobosphere/article-review');
+    expect(urls).not.toContain('https://blobsurf.com/blobosphere/article-archived');
+    expect(urls).not.toContain('https://blobsurf.com/blobosphere/article-futur');
   });
 });

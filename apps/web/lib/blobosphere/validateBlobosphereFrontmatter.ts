@@ -1,9 +1,7 @@
-export function isBlobosphereFrontmatterPublished(frontmatter: Record<string, unknown>): boolean {
-  if (typeof frontmatter.published === 'boolean') {
-    return frontmatter.published;
-  }
+import { isPublicBlobosphereStatus } from './utils';
 
-  return typeof frontmatter.status === 'string' && frontmatter.status.toLowerCase() === 'published';
+export function isBlobosphereFrontmatterPublished(frontmatter: Record<string, unknown>): boolean {
+  return isPublicBlobosphereStatus(frontmatter.status);
 }
 
 export function validatePublishedBlobosphereCoverImage(frontmatter: Record<string, unknown>): string | null {

@@ -200,6 +200,12 @@ Les P1 soutiennent l'acquisition, la qualité du MVP et l'exploitation produit.
 | Emails produit | Partiellement réalisé | Brevo technique prouvé, templates et contacts publics à confirmer |
 | Documentation contributeur | Partiellement réalisé | README aligné, docs ops restantes à rationaliser |
 
+Contribution 2026-06-01 :
+
+- [x] Blobosphère : page article publique `/blobosphere/[slug]`, workflow MDX `draft/review/published/archived`, garde publique `published` uniquement, tests de non-exposition et documentation MVP file-based.
+- [x] Blobosphère : passe pré-publication SEO/UX, domaine canonique `blobsurf.com`, CTA article et contenus pilotes surf/kite/communauté sans exposition de spots sensibles.
+- [x] Blobosphère : audit final avant merge, fermeture des routes d'édition locales hors développement et choix Décap CMS/GitHub/CI comme voie officielle de publication.
+
 Definition of Done P1 :
 
 - Mesures analytics lisibles par l'équipe.
