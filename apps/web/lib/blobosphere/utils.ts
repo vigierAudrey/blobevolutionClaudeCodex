@@ -1,4 +1,4 @@
-import path from 'node:path';
+import path from 'path';
 
 function resolveBlobosphereContentRoot(): string {
   const cwd = process.cwd();

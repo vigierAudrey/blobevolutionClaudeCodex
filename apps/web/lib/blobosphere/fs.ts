@@ -1,5 +1,5 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { promises as fs } from 'fs';
+import path from 'path';
 import { BLOBOSPHERE_CONTENT_ROOT } from './utils';
 
 export async function listMdxFiles(rootDir: string = BLOBOSPHERE_CONTENT_ROOT): Promise<string[]> {

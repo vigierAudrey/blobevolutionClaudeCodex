@@ -1,5 +1,5 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { promises as fs } from 'fs';
+import path from 'path';
 import { BLOBOSPHERE_CONTENT_ROOT, BlobosphereCategory, BlobosphereStatus, computeReadingTime, ensureCategory, ensureDateString, normalizeBlobosphereStatus, sanitizeSlug } from './utils';
 
 export type SaveMdxPayload = {
