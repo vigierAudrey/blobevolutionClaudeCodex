@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { optionalAuth } from '../auth/auth.guard';
 import { ingestPublicAnalyticsEvent } from '../../services/analytics/events.service';
 import { secureLogger } from '../../utils/secure-logger';
+import { getClientIp } from '../../lib/client-ip';
 
 export const analyticsRouter = Router();
 analyticsRouter.use(optionalAuth);
@@ -18,8 +19,8 @@ const RATE_LIMIT_SALT = process.env.ANALYTICS_RATE_LIMIT_SALT || 'blobinfini-ana
 const rateMap = new Map<string, RateEntry>();
 
 const hashOrigin = (req: Request) => {
-  const forwarded = (req.headers['x-forwarded-for'] as string | undefined) || '';
-  const ip = forwarded.split(',')[0]?.trim() || req.ip || 'unknown';
+  // Use canonical IP (Cloudflare-aware via client-ip.ts) — never raw XFF or req.ip
+  const ip = getClientIp(req) ?? req.socket?.remoteAddress ?? 'unknown';
   const userAgent = req.get('user-agent') || 'unknown-agent';
   return crypto.createHash('sha256').update(`${ip}:${userAgent}:${RATE_LIMIT_SALT}`).digest('hex');
 };

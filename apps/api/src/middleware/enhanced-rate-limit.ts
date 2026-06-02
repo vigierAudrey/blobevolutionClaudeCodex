@@ -253,11 +253,13 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
         return true;
       }
 
-      // ✅ CORRIGÉ : Skip rate limiting in development for localhost
+      // Skip in development for localhost — use socket IP (not req.ip which may be
+      // Cloudflare-resolved when trust proxy is active)
       if (process.env.NODE_ENV === 'development') {
-        const isLocalhost = req.ip === '::1' ||
-                           req.ip === '127.0.0.1' ||
-                           req.ip === '::ffff:127.0.0.1' ||
+        const socketIp = req.socket?.remoteAddress;
+        const isLocalhost = socketIp === '::1' ||
+                           socketIp === '127.0.0.1' ||
+                           socketIp === '::ffff:127.0.0.1' ||
                            req.hostname === 'localhost';
         if (isLocalhost) {
           return true;
@@ -269,10 +271,13 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
         return true;
       }
 
-      // Skip for trusted IPs (if configured)
+      // Skip for trusted IPs — use canonical IP (Cloudflare-aware) not raw req.ip
       const trustedIPs = process.env.TRUSTED_IPS?.split(',') || [];
-      if (req.ip && trustedIPs.includes(req.ip)) {
-        return true;
+      if (trustedIPs.length > 0) {
+        const clientIp = getClientIp(req) ?? req.ip;
+        if (clientIp && trustedIPs.includes(clientIp)) {
+          return true;
+        }
       }
 
       return false;
@@ -303,17 +308,22 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
     }
   };
 
-  if (!customOptions?.keyGenerator && (profile === 'EMAIL_VERIFICATION' || profile === 'PASSWORD_RESET_EMAIL')) {
+  if (!customOptions?.keyGenerator) {
     options.keyGenerator = (req: Request) => {
-      const fromBody = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-      const fromQuery = typeof req.query?.email === 'string' ? String(req.query.email).trim().toLowerCase() : '';
-      const identifierSource = fromBody || fromQuery;
-
-      if (identifierSource) {
-        return `email:${hashEmailHmac(identifierSource)}`;
+      // Email-keyed endpoints: per-email limit (IP-independent, prevents ISP NAT bypass)
+      if (profile === 'EMAIL_VERIFICATION' || profile === 'PASSWORD_RESET_EMAIL') {
+        const fromBody = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+        const fromQuery = typeof req.query?.email === 'string' ? String(req.query.email).trim().toLowerCase() : '';
+        const identifierSource = fromBody || fromQuery;
+        if (identifierSource) {
+          return `email:${hashEmailHmac(identifierSource)}`;
+        }
       }
-
-      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress;
+      // Canonical IP key: uses CF-Connecting-IP when behind Cloudflare (see client-ip.ts).
+      // Never uses req.ip directly — req.ip may resolve to Cloudflare edge IP.
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp
+        ?? getClientIp(req)
+        ?? req.socket?.remoteAddress;
       return ip ? ipKeyGenerator(ip) : 'anonymous';
     };
   }
@@ -336,7 +346,8 @@ export function createGeoEndpointLimiter(endpointKey: string, profile: GeoRateLi
   const normalizedProfile = profile.toLowerCase();
   const keyGenerator = (req: Request) => {
     const userId = (req as Request & { user?: { id?: string } }).user?.id ?? 'anonymous';
-    const ip = req.ip || req.socket?.remoteAddress;
+    // Use canonical IP (Cloudflare-aware) — req.ip may be Cloudflare edge IP
+    const ip = getClientIp(req) ?? req.socket?.remoteAddress;
     const ipToken = ip ? ipKeyGenerator(ip) : 'ip:unknown';
     return `geo:${normalizedEndpoint}:${normalizedProfile}:u:${userId}:ip:${ipToken}`;
   };
@@ -469,10 +480,11 @@ export function createLazyCustomRateLimiter(
     const enableInTests = String(process.env.ENABLE_RATE_LIMIT_IN_TESTS ?? '').toLowerCase() === 'true';
     if (process.env.NODE_ENV === 'test' && !enableInTests) return true;
     if (process.env.NODE_ENV === 'development') {
+      const socketIp = req.socket?.remoteAddress;
       const isLocalhost =
-        req.ip === '::1' ||
-        req.ip === '127.0.0.1' ||
-        req.ip === '::ffff:127.0.0.1' ||
+        socketIp === '::1' ||
+        socketIp === '127.0.0.1' ||
+        socketIp === '::ffff:127.0.0.1' ||
         req.hostname === 'localhost';
       if (isLocalhost) return true;
     }

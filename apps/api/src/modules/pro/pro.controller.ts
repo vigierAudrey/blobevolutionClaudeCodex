@@ -42,7 +42,7 @@ const exportRateLimiter = createLazyCustomRateLimiter({
     if (userId) {
       return `user:${userId}`;
     }
-    const ip = req.ip || req.socket?.remoteAddress;
+    const ip = getClientIp(req) ?? req.socket?.remoteAddress;
     return ip ? ipKeyGenerator(ip) : 'anonymous';
   },
 }, 'pro_export');
@@ -59,7 +59,7 @@ const profileUpdateLimiter = createLazyCustomRateLimiter({
     if (userId) {
       return `user:${userId}:profile_update`;
     }
-    const ip = req.ip || req.socket?.remoteAddress;
+    const ip = getClientIp(req) ?? req.socket?.remoteAddress;
     return ip ? ipKeyGenerator(ip) : 'anonymous';
   },
   handler: (req: any, res: any) => {

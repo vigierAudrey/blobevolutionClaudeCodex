@@ -9,6 +9,7 @@
  * - Trust proxy ONLY when explicitly configured via TRUST_PROXY_MODE
  * - NEVER trust X-Forwarded-For without validating socket IP against TRUSTED_PROXY_IPS
  * - Support CIDR notation (e.g., 10.0.0.0/8, 172.16.0.0/12)
+ * - Cloudflare: CF-Connecting-IP trusted only when X-Forwarded-For matches Cloudflare CIDR
  * - Fail-fast in production if proxy mode is misconfigured
  *
  * @see https://expressjs.com/en/guide/behind-proxies.html
@@ -18,6 +19,112 @@ import { Request } from 'express';
 import type { IncomingHttpHeaders, IncomingMessage } from 'http';
 import * as ipaddr from 'ipaddr.js';
 import { secureLogger } from '../utils/secure-logger';
+
+/**
+ * Cloudflare edge IP ranges.
+ * Source: https://www.cloudflare.com/ips/
+ * Last updated: 2026-06-02
+ *
+ * MAINTENANCE: Review quarterly or when Cloudflare announces changes.
+ * Public lists: https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6
+ * API (needs CF key): https://api.cloudflare.com/client/v4/ips
+ *
+ * CONSEQUENCE OF A STALE CIDR LIST:
+ * If a new Cloudflare range is not listed here, traffic from that CF edge PoP falls
+ * back to standard behaviour (req.ips[0] = the CF edge IP, not the real client IP).
+ * This degrades rate-limit accuracy (multiple clients share one bucket) but is NOT
+ * a security regression — it is the same behaviour as before this fix.
+ * It CANNOT cause a spoofed IP to be trusted.
+ */
+const CLOUDFLARE_CIDR_STRINGS: readonly string[] = [
+  // IPv4 (15 ranges)
+  '103.21.244.0/22',
+  '103.22.200.0/22',
+  '103.31.4.0/22',
+  '104.16.0.0/13',
+  '104.24.0.0/14',
+  '108.162.192.0/18',
+  '131.0.72.0/22',
+  '141.101.64.0/18',
+  '162.158.0.0/15',
+  '172.64.0.0/13',
+  '173.245.48.0/20',
+  '188.114.96.0/20',
+  '190.93.240.0/20',
+  '197.234.240.0/22',
+  '198.41.128.0/17',
+  // IPv6 (7 ranges)
+  '2400:cb00::/32',
+  '2606:4700::/32',
+  '2803:f800::/32',
+  '2405:b500::/32',
+  '2405:8100::/32',
+  '2a06:98c0::/29',
+  '2c0f:f248::/32',
+];
+
+let parsedCloudflareRanges: Array<[ipaddr.IPv4 | ipaddr.IPv6, number]> | null = null;
+
+function getCloudflareRanges(): Array<[ipaddr.IPv4 | ipaddr.IPv6, number]> {
+  if (parsedCloudflareRanges !== null) {
+    return parsedCloudflareRanges;
+  }
+  const ranges: Array<[ipaddr.IPv4 | ipaddr.IPv6, number]> = [];
+  for (const cidr of CLOUDFLARE_CIDR_STRINGS) {
+    try {
+      const slashIdx = cidr.indexOf('/');
+      const addr = cidr.slice(0, slashIdx);
+      const prefix = parseInt(cidr.slice(slashIdx + 1), 10);
+      ranges.push([ipaddr.process(addr), prefix]);
+    } catch {
+      // Should never happen with hardcoded values
+    }
+  }
+  parsedCloudflareRanges = ranges;
+  return ranges;
+}
+
+/**
+ * Check if an IP address belongs to a known Cloudflare edge range.
+ * Used to validate CF-Connecting-IP header authenticity before trusting it.
+ *
+ * @see https://www.cloudflare.com/ips/
+ */
+export function isCloudflareIp(ip: string | undefined): boolean {
+  if (!ip) return false;
+  try {
+    const parsed = ipaddr.process(ip);
+    for (const [rangeAddr, prefix] of getCloudflareRanges()) {
+      if (parsed.kind() === rangeAddr.kind() && parsed.match(rangeAddr, prefix)) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extract and normalize CF-Connecting-IP header (real client IP set by Cloudflare edge).
+ *
+ * SECURITY: Only call this after verifying that X-Forwarded-For contains a Cloudflare IP.
+ * Otherwise an attacker bypassing Cloudflare could forge this header.
+ */
+function extractCfConnectingIp(headers: IncomingHttpHeaders): string | undefined {
+  const raw = headers['cf-connecting-ip'];
+  if (!raw) return undefined;
+  const val = Array.isArray(raw) ? raw[0] : raw;
+  return typeof val === 'string' && val.trim() ? normalizeIp(val.trim()) : undefined;
+}
+
+/**
+ * Reset cached Cloudflare ranges (useful for testing).
+ * @internal
+ */
+export function resetCloudflareRangesCache(): void {
+  parsedCloudflareRanges = null;
+}
 
 export type TrustProxyMode = 'disabled' | 'loopback' | 'ips' | 'true';
 
@@ -301,7 +408,7 @@ export function getClientIp(req: Request): string | undefined {
         return socketIp;
       }
 
-    case 'ips':
+    case 'ips': {
       // CRITICAL: Trust proxy ONLY if socket IP is in TRUSTED_PROXY_IPS
       const trustedConfig = parseTrustedProxies();
 
@@ -313,7 +420,19 @@ export function getClientIp(req: Request): string | undefined {
 
       // Validate socket IP against trusted list (supports CIDR)
       if (isIpTrusted(socketIp, trustedConfig)) {
-        // Socket IP is trusted proxy, extract client IP from headers
+        // Cloudflare path: Caddy sets X-Forwarded-For to {remote_host} (TCP IP connecting
+        // to Caddy = Cloudflare edge). Validate against known Cloudflare CIDRs, then
+        // trust CF-Connecting-IP as the real client IP. This prevents spoofing: a request
+        // bypassing Cloudflare will have a non-Cloudflare XFF, so CF-Connecting-IP is ignored.
+        const xffIp = getFirstForwardedFor(req.headers);
+        if (xffIp && isCloudflareIp(xffIp)) {
+          const cfIp = extractCfConnectingIp(req.headers);
+          if (cfIp) {
+            return cfIp;
+          }
+        }
+
+        // Standard path: non-Cloudflare proxy or CF-Connecting-IP absent
         const ips = (req as any).ips as string[] | undefined;
         if (ips && ips.length > 0) {
           // First IP in X-Forwarded-For chain is the original client
@@ -326,6 +445,7 @@ export function getClientIp(req: Request): string | undefined {
         // This prevents spoofing attacks
         return socketIp;
       }
+    }
 
     case 'true':
       // DANGEROUS: Trust all proxies (should be blocked in production)
@@ -367,7 +487,15 @@ export function getClientIpFromIncomingRequest(req: SocketReqLike): string | und
         secureLogger.warn('TRUSTED_PROXY_IPS_INVALID_SOCKET_FALLBACK');
         return socketIp;
       }
-      return isIpTrusted(socketIp, trustedConfig) ? (forwardedFor || socketIp) : socketIp;
+      if (isIpTrusted(socketIp, trustedConfig)) {
+        // Cloudflare path: validate XFF against Cloudflare CIDRs, then trust CF-Connecting-IP
+        if (forwardedFor && isCloudflareIp(forwardedFor)) {
+          const cfIp = extractCfConnectingIp(req.headers);
+          if (cfIp) return cfIp;
+        }
+        return forwardedFor || socketIp;
+      }
+      return socketIp;
     }
 
     case 'true':
