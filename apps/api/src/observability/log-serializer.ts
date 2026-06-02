@@ -55,6 +55,8 @@ const EMAIL_REGEX = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const BEARER_REGEX = /\bBearer\s+[A-Za-z0-9\-._~+/]+=*\b/gi;
 const TOKEN_VALUE_REGEX = /\b(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|secret|authorization|cookie)\s*[:=]\s*([^\s,;]+)/gi;
 const INLINE_IP_CANDIDATE_REGEX = /\[?[A-Fa-f0-9:.%]{2,}\]?/g;
+// Matches redis/rediss URLs containing credentials: redis://user:pass@host or redis://:pass@host
+const REDIS_CREDENTIALS_REGEX = /rediss?:\/\/[^@/\s]*:[^@/\s]+@/gi;
 
 type SerializationState = {
   seen: WeakSet<object>;
@@ -82,6 +84,7 @@ function redactInlineIp(match: string): string {
 
 export function sanitizeLogString(value: string): string {
   const scrubbed = sanitizeControlChars(value)
+    .replace(REDIS_CREDENTIALS_REGEX, 'redis://***@')
     .replace(BEARER_REGEX, 'Bearer [REDACTED]')
     .replace(TOKEN_VALUE_REGEX, (_match, tokenValue: string) => _match.replace(tokenValue, REDACTED))
     .replace(EMAIL_REGEX, REDACTED)

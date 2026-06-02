@@ -12,7 +12,7 @@
  */
 
 import { createClient } from 'redis';
-import { resolveRedisUrl } from './redisConfig';
+import { resolveRedisUrl, redactRedisUrl } from './redisConfig';
 import { secureLogger } from '../utils/secure-logger';
 
 type RedisClientType = ReturnType<typeof createClient>;
@@ -48,9 +48,7 @@ function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
 
 async function initializeRedis(): Promise<RedisClientType | null> {
   const redisUrl = resolveRedisUrl();
-  // Redact credentials from log (redis://:password@host → redis://***@host)
-  const redactedUrl = redisUrl.replace(/\/\/:([^@]+)@/, '//***@');
-  secureLogger.info('RATE_LIMIT_REDIS_CONNECTING', { redisUrl: redactedUrl });
+  secureLogger.info('RATE_LIMIT_REDIS_CONNECTING', { redisUrl: redactRedisUrl(redisUrl) });
 
   try {
     const client = createClient({
