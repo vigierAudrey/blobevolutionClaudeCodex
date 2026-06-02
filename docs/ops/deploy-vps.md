@@ -140,8 +140,14 @@ Smoke test manuel sur le VPS :
 
 ```bash
 cd "$VPS_DEPLOY_PATH"
-API_BASE_URL="https://api.blobinfini.fr" ./scripts/smoke-test-vps.sh
+API_BASE_URL="https://api.blobsurf.com" ./scripts/smoke-test-vps.sh
 ```
+
+Le script charge `.env.vps` et derive les endpoints publics depuis `API_DOMAIN`,
+`APP_DOMAIN`, `STORAGE_DOMAIN` ou `S3_PUBLIC_URL_BASE`. En production, il refuse
+les endpoints `*.local`, puis utilise l'origine navigateur autorisee
+(`ALLOWED_ORIGINS`, typiquement `https://blobsurf.com`) pour les appels soumis a
+la validation CORS.
 
 ## Désactivation temporaire
 

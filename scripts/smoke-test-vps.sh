@@ -13,7 +13,7 @@
 #
 # Prérequis : curl, jq
 # Usage    : ./scripts/smoke-test-vps.sh
-#            API_BASE_URL=https://api.blobinfini.fr ./scripts/smoke-test-vps.sh
+#            API_BASE_URL=https://api.blobsurf.com ./scripts/smoke-test-vps.sh
 
 set -uo pipefail
 
@@ -26,9 +26,98 @@ if [ -f ".env.vps" ]; then
   set +a
 fi
 
-API="${API_BASE_URL:-https://api.blobinfini.local}"
-WEB="${WEB_BASE_URL:-https://app.blobinfini.local}"
-STORAGE="${STORAGE_BASE_URL:-https://storage.blobinfini.local}"
+fail_config() {
+  printf "  \033[31mFAIL\033[0m Configuration smoke VPS invalide: %s\n" "$*" >&2
+  exit 1
+}
+
+first_csv_value() {
+  printf "%s" "${1:-}" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
+normalize_base_url() {
+  local value="${1:-}"
+  [ -n "$value" ] || return 1
+  case "$value" in
+    http://*|https://*) ;;
+    *) value="https://${value}" ;;
+  esac
+  printf "%s" "${value%/}"
+}
+
+url_origin() {
+  local value
+  value="$(normalize_base_url "${1:-}")" || return 1
+  case "$value" in
+    https://*) value="https://${value#https://}" ;;
+    http://*) value="http://${value#http://}" ;;
+  esac
+  printf "%s" "${value%%/*}"
+}
+
+extract_host() {
+  local value
+  value="$(url_origin "${1:-}")" || return 1
+  value="${value#https://}"
+  value="${value#http://}"
+  printf "%s" "${value%%:*}"
+}
+
+is_prod_smoke() {
+  [ "${APP_ENV:-}" = "vps" ] && return 0
+  [ "${NODE_ENV:-}" = "production" ] && return 0
+  [ "${APP_DOMAIN:-}" = "blobsurf.com" ] && return 0
+  return 1
+}
+
+assert_no_local_url() {
+  local name="$1"
+  local value="$2"
+  if is_prod_smoke && printf "%s" "$value" | grep -Eq '(^|[/:.])localhost([/:]|$)|\.local([/:]|$)|127\.0\.0\.1|0\.0\.0\.0|::1'; then
+    fail_config "$name ne doit pas utiliser un domaine local en production (valeur: $value)"
+  fi
+}
+
+API_RAW="${API_BASE_URL:-}"
+if [ -z "$API_RAW" ] && [ -n "${API_DOMAIN:-}" ]; then
+  API_RAW="https://${API_DOMAIN}"
+fi
+[ -n "$API_RAW" ] || fail_config "API_BASE_URL absent et API_DOMAIN manquant"
+API="$(normalize_base_url "$API_RAW")" || fail_config "API_BASE_URL/API_DOMAIN invalide"
+
+WEB_RAW="${WEB_BASE_URL:-${FRONTEND_URL:-}}"
+if [ -z "$WEB_RAW" ] && [ -n "${APP_DOMAIN:-}" ]; then
+  WEB_RAW="https://${APP_DOMAIN}"
+fi
+[ -n "$WEB_RAW" ] || fail_config "WEB_BASE_URL/FRONTEND_URL absent et APP_DOMAIN manquant"
+WEB="$(normalize_base_url "$WEB_RAW")" || fail_config "WEB_BASE_URL/FRONTEND_URL/APP_DOMAIN invalide"
+
+STORAGE_RAW="${STORAGE_BASE_URL:-}"
+if [ -z "$STORAGE_RAW" ] && [ -n "${S3_PUBLIC_URL_BASE:-}" ]; then
+  STORAGE_RAW="$(url_origin "$S3_PUBLIC_URL_BASE")"
+fi
+if [ -z "$STORAGE_RAW" ] && [ -n "${STORAGE_DOMAIN:-}" ]; then
+  STORAGE_RAW="https://${STORAGE_DOMAIN}"
+fi
+[ -n "$STORAGE_RAW" ] || fail_config "STORAGE_BASE_URL/S3_PUBLIC_URL_BASE absent et STORAGE_DOMAIN manquant"
+STORAGE="$(url_origin "$STORAGE_RAW")" || fail_config "STORAGE_BASE_URL/S3_PUBLIC_URL_BASE/STORAGE_DOMAIN invalide"
+
+SMOKE_ORIGIN_RAW="${SMOKE_ORIGIN:-${FRONTEND_URL:-}}"
+if [ -z "$SMOKE_ORIGIN_RAW" ]; then
+  SMOKE_ORIGIN_RAW="$(first_csv_value "${ALLOWED_ORIGINS:-${CORS_ORIGINS:-}}")"
+fi
+if [ -z "$SMOKE_ORIGIN_RAW" ]; then
+  SMOKE_ORIGIN_RAW="$WEB"
+fi
+SMOKE_ORIGIN="$(url_origin "$SMOKE_ORIGIN_RAW")" || fail_config "Origin smoke invalide"
+
+assert_no_local_url "API" "$API"
+assert_no_local_url "WEB" "$WEB"
+assert_no_local_url "STORAGE" "$STORAGE"
+assert_no_local_url "SMOKE_ORIGIN" "$SMOKE_ORIGIN"
+if is_prod_smoke && [ "${APP_DOMAIN:-}" = "blobsurf.com" ] && printf "%s" "$STORAGE" | grep -q "blobinfini.local"; then
+  fail_config "STORAGE pointe vers blobinfini.local alors que APP_DOMAIN=blobsurf.com"
+fi
 
 RIDER_A_EMAIL="rider.a@pre-vps.blobinfini.local"
 RIDER_A_PASS="RiderAlpha2026!PreVPS"
@@ -77,6 +166,33 @@ check_not_contains() {
   fi
 }
 
+echo "=== Smoke test VPS Runtime BlobConnect ==="
+printf "    API     : %s\n" "$API"
+printf "    Web     : %s\n" "$WEB"
+printf "    Storage : %s\n" "$STORAGE"
+printf "    Origin  : %s\n\n" "$SMOKE_ORIGIN"
+
+# Auto-détection DNS locale pour les environnements *.local uniquement.
+CURL_RESOLVE=""
+add_local_resolve_if_needed() {
+  local url="$1"
+  local host
+  host="$(extract_host "$url")" || return 0
+  case "$host" in
+    *.local)
+      if ! getent hosts "$host" >/dev/null 2>&1; then
+        CURL_RESOLVE="${CURL_RESOLVE:+$CURL_RESOLVE }--resolve ${host}:443:127.0.0.1 --resolve ${host}:80:127.0.0.1"
+      fi
+      ;;
+  esac
+}
+add_local_resolve_if_needed "$API"
+add_local_resolve_if_needed "$WEB"
+add_local_resolve_if_needed "$STORAGE"
+if [ -n "$CURL_RESOLVE" ]; then
+  echo "  INFO: domaines *.local absents de /etc/hosts — utilisation de --resolve (curl)"
+fi
+
 # shellcheck disable=SC2086
 http_status() {
   curl -sk $CURL_RESOLVE -o /dev/null -w "%{http_code}" "$@"
@@ -93,26 +209,37 @@ http_status_strict() {
   curl -s $CURL_RESOLVE -o /dev/null -w "%{http_code}" "$@"
 }
 
+wait_http_status() {
+  local label="$1"
+  local expected="$2"
+  local attempts="$3"
+  local delay="$4"
+  shift 4
+  local status="000"
+  local i
+
+  for i in $(seq 1 "$attempts"); do
+    status="$(http_status "$@")"
+    if [ "$status" = "$expected" ]; then
+      printf "       %s → HTTP %s\n" "$label" "$status" >&2
+      printf "%s" "$status"
+      return 0
+    fi
+    printf "       %s tentative %s/%s → HTTP %s\n" "$label" "$i" "$attempts" "$status" >&2
+    sleep "$delay"
+  done
+
+  printf "%s" "$status"
+}
+
 acquire_csrf() {
   local jar="$1"
   # shellcheck disable=SC2086
   curl -sk $CURL_RESOLVE -c "$jar" -b "$jar" \
-    -H "Origin: https://app.blobinfini.local" \
+    -H "Origin: $SMOKE_ORIGIN" \
     "$API/csrf-token" \
     | jq -r '.csrfToken // empty' 2>/dev/null || echo ""
 }
-
-echo "=== Smoke test VPS Runtime BlobConnect ==="
-printf "    API     : %s\n" "$API"
-printf "    Web     : %s\n" "$WEB"
-printf "    Storage : %s\n\n" "$STORAGE"
-
-# Auto-détection DNS
-CURL_RESOLVE=""
-if ! getent hosts api.blobinfini.local >/dev/null 2>&1; then
-  echo "  INFO: domaines absents de /etc/hosts — utilisation de --resolve (curl)"
-  CURL_RESOLVE="--resolve api.blobinfini.local:443:127.0.0.1 --resolve api.blobinfini.local:80:127.0.0.1 --resolve app.blobinfini.local:443:127.0.0.1 --resolve app.blobinfini.local:80:127.0.0.1 --resolve storage.blobinfini.local:443:127.0.0.1 --resolve storage.blobinfini.local:80:127.0.0.1"
-fi
 
 COOKIE_A=$(mktemp)
 COOKIE_B=$(mktemp)
@@ -126,7 +253,7 @@ trap 'rm -f "$COOKIE_A" "$COOKIE_B" "$COOKIE_RL" "$COOKIE_EMAIL" "$HEADERS_A" "$
 
 # ─── [1] API liveness ─────────────────────────────────────────────────────────
 echo "--- [1] API liveness ---"
-S=$(http_status "$API/health")
+S=$(wait_http_status "GET $API/health" "200" 12 3 "$API/health")
 check "GET /health → 200" "$S" "200"
 
 # ─── [2] API security health ──────────────────────────────────────────────────
@@ -170,7 +297,7 @@ else
       -D "$HEADERS_EMAIL" \
       -X POST "$API/auth/forgot-password" \
       -H "Content-Type: application/json" \
-      -H "Origin: https://app.blobinfini.local" \
+      -H "Origin: $SMOKE_ORIGIN" \
       -H "X-CSRF-Token: $EMAIL_CSRF" \
       "${REQUEST_ID_ARGS[@]}" \
       -d "{\"email\":\"$OPS_TEST_EMAIL\"}" \
@@ -203,7 +330,7 @@ fi
 echo "--- [5] HTTPS opérationnel ---"
 S=$(http_status -X POST "$API/auth/login" \
   -H "Content-Type: application/json" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -d '{"email":"smoke@test.invalid","password":"wrong"}')
 check "POST /auth/login via HTTPS répond (non 000)" \
   "$([ "$S" != "000" ] && echo ok || echo fail)" "ok"
@@ -212,7 +339,7 @@ check "POST /auth/login via HTTPS répond (non 000)" \
 echo "--- [5b] TLS strict (cert valide, sans -k) ---"
 if [ -n "$CURL_RESOLVE" ]; then
   echo "  SKIP [5b] mode local (CURL_RESOLVE actif — cert auto-signé attendu)"
-  echo "       ⚠ OBLIGATOIRE en prod : relancer avec API_BASE_URL=https://api.blobinfini.fr"
+  echo "       OBLIGATOIRE en prod : relancer avec API_BASE_URL=https://api.blobsurf.com"
   SKIP=$((SKIP + 1))
 else
   TLS_STATUS=$(http_status_strict "$API/health" 2>/dev/null || echo "000")
@@ -241,7 +368,7 @@ LOGIN_A_STATUS=$(curl -sk $CURL_RESOLVE \
   -D "$HEADERS_A" \
   -X POST "$API/auth/login" \
   -H "Content-Type: application/json" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "X-CSRF-Token: $CSRF_A" \
   -d "{\"email\":\"$RIDER_A_EMAIL\",\"password\":\"$RIDER_A_PASS\"}" \
   -o "$LOGIN_A_BODY_TMP" \
@@ -265,7 +392,7 @@ LOGIN_B_STATUS=$(curl -sk $CURL_RESOLVE -o /dev/null -w "%{http_code}" \
   -c "$COOKIE_B" -b "$COOKIE_B" \
   -X POST "$API/auth/login" \
   -H "Content-Type: application/json" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "X-CSRF-Token: $CSRF_B" \
   -d "{\"email\":\"$RIDER_B_EMAIL\",\"password\":\"$RIDER_B_PASS\"}")
 check "POST /auth/login rider B → 200" "$LOGIN_B_STATUS" "200"
@@ -274,18 +401,18 @@ CSRF_B_POST=$(acquire_csrf "$COOKIE_B")
 # ─── [9] Profil rider A ───────────────────────────────────────────────────────
 echo "--- [9] Profil rider A ---"
 PROFILE_A_STATUS=$(http_status -b "$COOKIE_A" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   "$API/profile/me")
 check "GET /profile/me rider A → 200" "$PROFILE_A_STATUS" "200"
 PROFILE_A=$(http_body -b "$COOKIE_A" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   "$API/profile/me")
 check_contains "Profil A contient UUID connu" "$PROFILE_A" "$RIDER_A_UUID"
 
 # ─── [10] Profil rider B ──────────────────────────────────────────────────────
 echo "--- [10] Profil rider B ---"
 PROFILE_B_STATUS=$(http_status -b "$COOKIE_B" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   "$API/profile/me")
 check "GET /profile/me rider B → 200" "$PROFILE_B_STATUS" "200"
 
@@ -295,7 +422,7 @@ echo "--- [11] Matching POST rider A ---"
 # shellcheck disable=SC2086
 MATCHING_STATUS=$(curl -sk $CURL_RESOLVE \
   -b "$COOKIE_A" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: ${CSRF_A_POST:-$CSRF_A}" \
   -X POST "$API/matching/search" \
@@ -321,7 +448,7 @@ echo "--- [12] Ouverture conversation A → B ---"
 # shellcheck disable=SC2086
 CONV_STATUS=$(curl -sk $CURL_RESOLVE -o /dev/null -w "%{http_code}" \
   -c "$COOKIE_A" -b "$COOKIE_A" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: ${CSRF_A_POST:-$CSRF_A}" \
   -X POST "$API/conversations/open" \
@@ -331,7 +458,7 @@ check "POST /conversations/open → 200 ou 201" \
 # shellcheck disable=SC2086
 CONV_BODY=$(curl -sk $CURL_RESOLVE \
   -b "$COOKIE_A" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: ${CSRF_A_POST:-$CSRF_A}" \
   -X POST "$API/conversations/open" \
@@ -344,7 +471,7 @@ if [ -n "$CONV_ID" ]; then
   # shellcheck disable=SC2086
   MSG_STATUS=$(curl -sk $CURL_RESOLVE -o /dev/null -w "%{http_code}" \
     -b "$COOKIE_A" \
-    -H "Origin: https://app.blobinfini.local" \
+    -H "Origin: $SMOKE_ORIGIN" \
     -H "Content-Type: application/json" \
     -H "X-CSRF-Token: ${CSRF_A_POST:-$CSRF_A}" \
     -X POST "$API/conversations/$CONV_ID/messages" \
@@ -361,7 +488,7 @@ echo "--- [14] CSRF protection ---"
 # shellcheck disable=SC2086
 CSRF_STATUS=$(curl -sk $CURL_RESOLVE -o /dev/null -w "%{http_code}" \
   -b "$COOKIE_A" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "Content-Type: application/json" \
   -X POST "$API/conversations/open" \
   -d "{\"targetUserId\":\"$RIDER_B_UUID\"}")
@@ -377,7 +504,7 @@ for i in 1 2 3 4 5 6 7; do
     -c "$COOKIE_RL" -b "$COOKIE_RL" \
     -X POST "$API/auth/login" \
     -H "Content-Type: application/json" \
-    -H "Origin: https://app.blobinfini.local" \
+    -H "Origin: $SMOKE_ORIGIN" \
     -H "X-CSRF-Token: $CSRF_RL" \
     -d '{"email":"ratelimit-smoke-vps@test.invalid","password":"wrong"}')
   if [ "$S" = "429" ]; then
@@ -420,14 +547,14 @@ if [ -f ".env.vps" ]; then
 fi
 
 S3_BUCKET_CHECK="${S3_BUCKET:-blobinfini-vps}"
-STORAGE_DOMAIN_CHECK="${STORAGE_DOMAIN:-storage.blobinfini.local}"
+STORAGE_DOMAIN_CHECK="$(extract_host "$STORAGE")"
 SMOKE_KEY="pros/smoke-test-vps/$(date +%s)-test.txt"
 SMOKE_CONTENT="smoke-test-vps-$(date +%s)"
 
 # ─── [17] Storage domain joignable via Caddy HTTPS (Let's Encrypt) ───────────
 echo "--- [17] Storage domain via Caddy HTTPS ---"
 # MinIO health endpoint est accessible publiquement (pas de policy sur /minio/health/live)
-STORAGE_S=$(http_status "$STORAGE/minio/health/live")
+STORAGE_S=$(wait_http_status "GET $STORAGE/minio/health/live" "200" 8 3 "$STORAGE/minio/health/live")
 check "GET $STORAGE/minio/health/live → 200" "$STORAGE_S" "200"
 
 # ─── [18] Presigned PUT URL sans localhost ─────────────────────────────────────
@@ -438,7 +565,7 @@ echo "--- [18] Presigned PUT URL — pas de localhost ---"
 # shellcheck disable=SC2086
 PRESIGN_RESP=$(curl -sk $CURL_RESOLVE \
   -b "$COOKIE_A" \
-  -H "Origin: https://app.blobinfini.local" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: ${CSRF_A_POST:-$CSRF_A}" \
   -X POST "$API/profile/photo/upload-url" \
@@ -580,9 +707,8 @@ fi
 # Sans ces headers, fetch(presignedUrl, {method:'PUT'}) est bloqué par le browser
 # (profile/page.tsx:486, pro/profile/page.tsx:481).
 echo "--- [21] CORS preflight OPTIONS (storage domain → app domain) ---"
-# L'origin testée est le domaine du frontend (APP_DOMAIN, chargé depuis .env.vps).
-# Exemples : https://blobsurf.com (prod), https://app.blobinfini.local (pré-vps).
-CORS_TEST_ORIGIN="https://${APP_DOMAIN:-app.blobinfini.local}"
+# L'origin testée est la même origine navigateur que les appels API du smoke.
+CORS_TEST_ORIGIN="$SMOKE_ORIGIN"
 CORS_RESP=$(curl -sk \
   $CURL_RESOLVE \
   -D - \
@@ -597,7 +723,7 @@ CORS_ORIGIN=$(echo "$CORS_RESP" | grep -i "access-control-allow-origin" | head -
 CORS_METHOD=$(echo "$CORS_RESP" | grep -i "access-control-allow-method" | head -1 | tr -d '\r')
 CORS_HDRS=$(echo "$CORS_RESP"  | grep -i "access-control-allow-header" | head -1 | tr -d '\r')
 
-check_contains "CORS OPTIONS → Access-Control-Allow-Origin présent" "$CORS_ORIGIN" "${APP_DOMAIN:-app.blobinfini.local}"
+check_contains "CORS OPTIONS → Access-Control-Allow-Origin présent" "$CORS_ORIGIN" "$SMOKE_ORIGIN"
 check_contains "CORS OPTIONS → Access-Control-Allow-Methods contient PUT" "$CORS_METHOD" "PUT"
 check_contains "CORS OPTIONS → Allow-Headers contient Content-Type" "$CORS_HDRS" "Content-Type"
 
@@ -671,7 +797,7 @@ if [ "$FAIL" -gt 0 ]; then
   exit 1
 elif [ "$SKIP" -gt 0 ]; then
   printf "  \033[33mVERDICT : GO LOCAL ONLY — TLS NON VALIDÉ (%d check(s) ignoré(s))\033[0m\n" "$SKIP"
-  printf "  Relancer en prod : API_BASE_URL=https://api.blobinfini.fr ./scripts/smoke-test-vps.sh\n"
+  printf "  Relancer en prod : API_BASE_URL=https://api.blobsurf.com ./scripts/smoke-test-vps.sh\n"
   echo "======================================"
   exit 2
 else
