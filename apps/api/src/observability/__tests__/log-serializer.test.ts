@@ -101,6 +101,18 @@ describe('log serializer', () => {
     ).toEqual({ four: '[Truncated]' });
   });
 
+  it('redacts Redis credentials embedded in strings', () => {
+    const withUser = sanitizeLogString('connecting redis://default:super-secret@redis:6379/0');
+    expect(withUser).not.toContain('super-secret');
+    expect(withUser).toContain('redis:6379');
+
+    const passOnly = sanitizeLogString('url: redis://:hunter2@localhost:6379');
+    expect(passOnly).not.toContain('hunter2');
+
+    const tls = sanitizeLogString('rediss://user:tls-secret@cache.example.com:6380/1');
+    expect(tls).not.toContain('tls-secret');
+  });
+
   it('protects against getters and header poisoning', () => {
     const headers = Object.create(null) as Record<string, unknown>;
     headers.authorization = 'Bearer secret';

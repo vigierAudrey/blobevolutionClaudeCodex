@@ -13,7 +13,7 @@
 
 import { RateLimiterRedis, RateLimiterMemory } from 'rate-limiter-flexible';
 import { createClient } from 'redis';
-import { resolveRedisUrl } from './redisConfig';
+import { resolveRedisUrl, redactRedisUrl } from './redisConfig';
 import { SocketErrorCode } from './socket-schemas';
 import type { SocketError } from './socket-schemas';
 import { secureLogger } from '../utils/secure-logger';
@@ -87,7 +87,7 @@ async function initRateLimitRedis(): Promise<any> {
 
     client.on('error', (error: Error) => {
       secureLogger.error('RATE_LIMIT_REDIS_ERROR', {
-        error: error.message,
+        error: redactRedisUrl(error.message),
         errorName: error.name
       });
     });

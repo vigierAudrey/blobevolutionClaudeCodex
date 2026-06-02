@@ -81,6 +81,7 @@ function loadModuleWithRedisMode(mode: ConnectMode, nodeEnv: 'production' | 'dev
   jest.doMock('../../lib/redisConfig', () => ({
     __esModule: true,
     resolveRedisUrl: () => 'redis://localhost:6379',
+    redactRedisUrl: (url: string) => url,
   }));
 
   const module =
