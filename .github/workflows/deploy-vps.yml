@@ -153,7 +153,7 @@ jobs:
 
           docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build api web
 
-          docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm -T api \
+          docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm -T --interactive=false api \
             sh -c "pnpm --filter @blobinfini/database exec prisma migrate deploy"
 
           docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
