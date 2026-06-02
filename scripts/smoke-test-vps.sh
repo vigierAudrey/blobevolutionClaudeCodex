@@ -138,6 +138,7 @@ RIDER_B_UUID="22222222-2222-4222-b222-222222222222"
 PASS=0
 FAIL=0
 SKIP=0
+OPTIONAL_SKIP=0
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 check() {
@@ -284,7 +285,7 @@ fi
 echo "--- [2b] Email runtime réel (optionnel) ---"
 if [ "${SMOKE_EMAIL_REAL:-0}" != "1" ]; then
   echo "  SKIP Email runtime réel désactivé (exporter SMOKE_EMAIL_REAL=1 pour activer)"
-  SKIP=$((SKIP + 1))
+  OPTIONAL_SKIP=$((OPTIONAL_SKIP + 1))
 else
   if [ -z "${OPS_TEST_EMAIL:-}" ]; then
     printf "  \033[31mFAIL\033[0m OPS_TEST_EMAIL absent — le smoke réel refuse de tourner sans boîte canari dédiée\n"
@@ -797,7 +798,10 @@ TOTAL=$((PASS + FAIL))
 printf "  Résultat : %d/%d checks passés\n" "$PASS" "$TOTAL"
 printf "  Fonctionnel : 1-16 | S3 VPS proof : 17-22\n"
 if [ "$SKIP" -gt 0 ]; then
-  printf "  Checks ignorés (SKIP) : %d\n" "$SKIP"
+  printf "  Checks bloquants ignorés (SKIP) : %d\n" "$SKIP"
+fi
+if [ "$OPTIONAL_SKIP" -gt 0 ]; then
+  printf "  Checks optionnels ignorés : %d\n" "$OPTIONAL_SKIP"
 fi
 if [ "$FAIL" -gt 0 ]; then
   printf "  \033[31mVERDICT : NO-GO (%d échec(s))\033[0m\n" "$FAIL"
