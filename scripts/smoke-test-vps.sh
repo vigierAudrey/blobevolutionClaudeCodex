@@ -421,7 +421,7 @@ fi
 
 S3_BUCKET_CHECK="${S3_BUCKET:-blobinfini-vps}"
 STORAGE_DOMAIN_CHECK="${STORAGE_DOMAIN:-storage.blobinfini.local}"
-SMOKE_KEY="smoke-test-vps/$(date +%s)-test.txt"
+SMOKE_KEY="pros/smoke-test-vps/$(date +%s)-test.txt"
 SMOKE_CONTENT="smoke-test-vps-$(date +%s)"
 
 # ─── [17] Storage domain joignable via Caddy HTTPS (Let's Encrypt) ───────────
@@ -526,12 +526,12 @@ if [ -n "$PRESIGN_URL" ] && [ "$UPLOAD_STATUS" = "200" ]; then
     -o /dev/null \
     -w "%{http_code}" \
     "$PUBLIC_READ_URL" 2>/dev/null || echo "000")
-  check "GET URL publique → 200 (bucket GET-only anonyme)" \
+  check "GET URL publique pro → 200 (préfixe pros/* GET-only anonyme)" \
     "$([ "$READ_STATUS" = "200" ] && echo ok || echo fail)" "ok"
   if [ "$READ_STATUS" != "200" ]; then
-    echo "       URL testée: $PUBLIC_READ_URL"
+    echo "       URL testée: ${STORAGE}/${S3_BUCKET_CHECK}/<redacted-public-pro-key>"
     echo "       HTTP status: $READ_STATUS"
-    echo "       Si 403 : vérifier mc anonymous set download sur le bucket"
+    echo "       Si 403 : vérifier scripts/minio-public-prefix-policy.sh --prefix 'pros/*'"
   fi
 
   # Test négatif : listing du bucket doit être interdit
@@ -557,6 +557,18 @@ if [ -n "$PRESIGN_URL" ] && [ "$UPLOAD_STATUS" = "200" ]; then
   if [ "$LIST_V2_STATUS" != "403" ]; then
     echo "       WARN: ListObjectsV2 retourne HTTP $LIST_V2_STATUS"
     echo "       Un attaquant peut énumérer tous les objets du bucket via ?list-type=2"
+  fi
+
+  # Test négatif : un préfixe non public doit rester inaccessible en lecture anonyme.
+  PRIVATE_PREFIX_STATUS=$(curl -sk \
+    $CURL_RESOLVE \
+    -o /dev/null \
+    -w "%{http_code}" \
+    "${STORAGE}/${S3_BUCKET_CHECK}/users/smoke-test-vps/private-probe.txt" 2>/dev/null || echo "000")
+  check "GET préfixe users/* non autorisé → 403/404 (pas de lecture publique large)" \
+    "$([ "$PRIVATE_PREFIX_STATUS" = "403" ] || [ "$PRIVATE_PREFIX_STATUS" = "404" ] && echo ok || echo fail)" "ok"
+  if [ "$PRIVATE_PREFIX_STATUS" != "403" ] && [ "$PRIVATE_PREFIX_STATUS" != "404" ]; then
+    echo "       WARN: users/* retourne HTTP $PRIVATE_PREFIX_STATUS"
   fi
 else
   printf "  \033[31mFAIL\033[0m [20] SKIP — upload [19] absent ou échoué, test de lecture sans valeur probante\n"
