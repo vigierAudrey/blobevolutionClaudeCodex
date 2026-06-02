@@ -11,7 +11,7 @@ import { secureLogger } from '../utils/secure-logger';
 
 // Ensure env is loaded when used standalone (tests or jobs)
 dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env') });
-const requireModule = createRequire(resolve(process.cwd(), 'package.json'));
+const requireModule = createRequire(__filename);
 
 const BREVO_SMTP_HOST = 'smtp-relay.brevo.com';
 const SMTP_CONNECTION_TIMEOUT_MS = 3000;
