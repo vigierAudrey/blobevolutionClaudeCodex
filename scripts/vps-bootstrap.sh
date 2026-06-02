@@ -9,7 +9,7 @@
 #   5. Reset volumes (optionnel avec --reset)
 #   6. Build des images Docker production
 #   7. Démarrage infrastructure (postgres, redis, minio)
-#   8. Configuration MinIO : bucket + policy GET anonyme
+#   8. Configuration MinIO : bucket + policy GET anonyme préfixée
 #   9. Migration Prisma (migrate deploy — jamais db push)
 #  10. Seed des comptes de test stables
 #  11. Démarrage API + frontend + Caddy (reverse proxy TLS Let's Encrypt)
@@ -18,7 +18,7 @@
 #   - docker-compose.vps.yml / .env.vps
 #   - Reverse proxy : Caddy (Let's Encrypt auto) — pre-vps utilise nginx + mkcert
 #   - CADDY_ACME_EMAIL requis dans .env.vps (port 80 doit être ouvert pour ACME HTTP-01)
-#   - Étape 8 : mc (MinIO Client) configure bucket policy GET anonyme
+#   - Étape 8 : mc (MinIO Client) configure bucket policy GET anonyme préfixée
 #     MinIO n'est pas exposé sur l'hôte → configuration via réseau Docker interne
 #
 # Usage :
@@ -179,7 +179,7 @@ timeout 60 bash -c "until $DC exec -T minio curl -sf http://localhost:9000/minio
 
 log "  Infrastructure OK"
 
-# ─── 8. Configuration MinIO : bucket + policy GET anonyme ────────────────────
+# ─── 8. Configuration MinIO : bucket + policy GET anonyme préfixée ───────────
 #
 # Pourquoi ici et pas via env var ?
 #   - MinIO ne supporte pas de policy bucket au démarrage via variable d'env
@@ -189,11 +189,11 @@ log "  Infrastructure OK"
 #   - Accès interne au réseau blobconnect-vps_vps (pas besoin de port hôte)
 #   - MC_HOST_minio : URL interne Docker minio:9000
 #   - `mb --ignore-existing` : crée le bucket s'il n'existe pas encore
-#   - `anonymous set-json` : policy custom GetObject-only (listing interdit)
+#   - `anonymous set-json` : policy custom GetObject-only sur préfixes publics
 #
 # Nota : si le bucket existe déjà (--no-reset), la commande est idempotente.
 
-log "8. Configuration MinIO (bucket + policy GET anonyme)..."
+log "8. Configuration MinIO (bucket + policy GET anonyme préfixée)..."
 
 MINIO_INT_URL="http://${S3_ACCESS_KEY_ID}:${S3_SECRET_ACCESS_KEY}@minio:9000"
 
@@ -207,28 +207,19 @@ docker run --rm \
 
 log "   Bucket '${BUCKET}' OK"
 
-# Définir la policy s3:GetObject anonyme SANS s3:ListBucket (listing interdit).
-#
-# POURQUOI set-json au lieu de "anonymous set download" ?
-#   - "anonymous set download" = GetObject + ListBucket → expose la liste des fichiers des users
-#   - policy JSON custom = GetObject uniquement → listing 403, fichiers lisibles par URL directe
+# Définir la policy s3:GetObject anonyme SANS s3:ListBucket (listing interdit)
+# et SANS rendre tout le bucket public. Par défaut, seules les photos publiques
+# de profils pros sont lisibles par URL directe : pros/*.
 #
 # Idempotent : si la policy existe déjà, set-json la remplace sans erreur.
+ENV_FILE="$ENV_FILE" \
+COMPOSE_FILE="$REPO_ROOT/docker-compose.vps.yml" \
+MC_IMAGE="$MC_IMAGE" \
+PUBLIC_READ_PREFIXES="${PUBLIC_READ_PREFIXES:-pros/*}" \
+  "$REPO_ROOT/scripts/minio-public-prefix-policy.sh" \
+  || die "Policy MinIO préfixée échouée"
 
-POLICY_JSON='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::'"${BUCKET}"'/*"]}]}'
-POLICY_TMPFILE=$(mktemp /tmp/minio-policy-XXXXXX.json)
-echo "$POLICY_JSON" > "$POLICY_TMPFILE"
-
-docker run --rm \
-  --network "blobconnect-vps_vps" \
-  -e "MC_HOST_minio=${MINIO_INT_URL}" \
-  -v "${POLICY_TMPFILE}:/tmp/policy.json:ro" \
-  "$MC_IMAGE" \
-  anonymous set-json /tmp/policy.json "minio/${BUCKET}" \
-  || { rm -f "$POLICY_TMPFILE"; die "mc anonymous set-json échoué"; }
-
-rm -f "$POLICY_TMPFILE"
-log "   Policy GetObject-only (listing interdit) définie sur '${BUCKET}' OK"
+log "   Policy GetObject-only préfixée (listing interdit) définie sur '${BUCKET}' OK"
 
 # Vérifier la policy (strict : "none" = absence de policy = échec)
 POLICY_RESULT=$(docker run --rm \

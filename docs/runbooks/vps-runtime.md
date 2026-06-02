@@ -90,6 +90,54 @@ S3_PUBLIC_URL_BASE  == https://$STORAGE_DOMAIN/$S3_BUCKET
 MINIO_SERVER_URL    == https://$STORAGE_DOMAIN
 ```
 
+## Lecture publique MinIO
+
+Les URLs renvoyees par `POST /pro/photo/finalize` sont des URLs publiques
+stables construites depuis `S3_PUBLIC_URL_BASE`. Elles ne doivent pas contenir de
+signature, de token ou de secret.
+
+La policy MinIO doit donc autoriser la lecture anonyme uniquement sur les
+prefixes de medias publics. Pour les photos de profil pro publiques, le prefixe
+autorise est `pros/*`. La policy ne doit pas accorder `s3:ListBucket` et ne doit
+pas rendre tout le bucket public.
+
+Audit sans modification :
+
+```bash
+ENV_FILE=.env.vps \
+COMPOSE_FILE=docker-compose.blobsurf.yml \
+scripts/minio-public-prefix-policy.sh --dry-run --prefix 'pros/*'
+```
+
+Application idempotente :
+
+```bash
+ENV_FILE=.env.vps \
+COMPOSE_FILE=docker-compose.blobsurf.yml \
+scripts/minio-public-prefix-policy.sh --prefix 'pros/*'
+```
+
+Rollback lecture publique pro :
+
+```bash
+ENV_FILE=.env.vps \
+COMPOSE_FILE=docker-compose.blobsurf.yml \
+scripts/minio-public-prefix-policy.sh --clear
+```
+
+Verification attendue apres application :
+
+```bash
+curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/pros/<profileUuid>/<imageUuid>.jpeg"
+# 200 pour un objet existant de photo pro publique
+
+curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/users/private-probe/nonexistent.jpeg"
+# 403 ou 404, mais jamais 200
+
+curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/?list-type=2"
+# 403
+```
+
 ## Deploiement automatique
 
 Le chemin de production est documente dans `docs/ops/deploy-vps.md`:
