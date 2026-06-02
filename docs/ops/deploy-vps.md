@@ -12,7 +12,9 @@ push main
 -> git reset --hard origin/main dans VPS_DEPLOY_PATH
 -> docker compose build api web
 -> prisma migrate deploy
+-> seed des comptes canaris de smoke
 -> docker compose up -d
+-> docker compose up -d --force-recreate caddy
 -> scripts/smoke-test-vps.sh
 ```
 
@@ -99,12 +101,21 @@ docker compose -f docker-compose.vps.yml --env-file .env.vps build api web
 docker compose -f docker-compose.vps.yml --env-file .env.vps run --rm api \
   sh -c "pnpm --filter @blobinfini/database exec prisma migrate deploy"
 
+docker compose -f docker-compose.vps.yml --env-file .env.vps run --rm api \
+  sh -c "ENV_FILE=/dev/null APP_ENV=pre-vps pnpm --filter @blobinfini/database exec tsx prisma/seed.pre-vps.ts"
+
 docker compose -f docker-compose.vps.yml --env-file .env.vps up -d
+docker compose -f docker-compose.vps.yml --env-file .env.vps up -d --force-recreate caddy
 
 API_BASE_URL="${API_BASE_URL:-https://${API_DOMAIN}}" ./scripts/smoke-test-vps.sh
 ```
 
 Le workflow refuse de démarrer si le worktree VPS contient des changements locaux non commités afin de ne pas les écraser silencieusement.
+
+Le seed canari est ciblé sur les comptes `@pre-vps.blobinfini.local` référencés
+par le smoke test. Il prépare les sessions RIDER, le match actif et les profils
+nécessaires aux checks authentifiés, matching, messagerie et photo; il ne modifie
+pas la policy MinIO.
 
 ## Rollback
 
