@@ -47,12 +47,20 @@ normalize_base_url() {
 
 url_origin() {
   local value
+  local scheme
+  local rest
   value="$(normalize_base_url "${1:-}")" || return 1
   case "$value" in
-    https://*) value="https://${value#https://}" ;;
-    http://*) value="http://${value#http://}" ;;
+    https://*)
+      scheme="https"
+      rest="${value#https://}"
+      ;;
+    http://*)
+      scheme="http"
+      rest="${value#http://}"
+      ;;
   esac
-  printf "%s" "${value%%/*}"
+  printf "%s://%s" "$scheme" "${rest%%/*}"
 }
 
 extract_host() {
