@@ -7,7 +7,7 @@
 # [17] Storage domain joignable via Caddy HTTPS (Let's Encrypt)
 # [18] Presigned PUT URL générée sans localhost
 # [19] Upload réel d'un fichier via presigned URL
-# [20] Lecture du fichier uploadé via URL publique
+# [20] Accès anonyme interdit sur l'objet users/* uploadé
 #
 # Exit 0 = GO, exit 1 = NO-GO.
 #
@@ -649,24 +649,24 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# ─── [20] Lecture via URL publique (GET anonyme) ──────────────────────────────
-echo "--- [20] Lecture via URL publique ---"
+# ─── [20] Lecture anonyme users/* interdite ───────────────────────────────────
+echo "--- [20] Lecture anonyme users/* interdite ---"
 if [ -n "$PRESIGN_URL" ] && [ "$UPLOAD_STATUS" = "200" ]; then
   # Extraire la clé depuis la presigned URL (path après le bucket)
   PRESIGN_PATH=$(echo "$PRESIGN_URL" | sed 's/?.*//' | sed "s|.*/${S3_BUCKET_CHECK}/||")
-  PUBLIC_READ_URL="${STORAGE}/${S3_BUCKET_CHECK}/${PRESIGN_PATH}"
+  UPLOADED_READ_URL="${STORAGE}/${S3_BUCKET_CHECK}/${PRESIGN_PATH}"
 
-  READ_STATUS=$(curl -sk \
+  UPLOADED_READ_STATUS=$(curl -sk \
     $CURL_RESOLVE \
     -o /dev/null \
     -w "%{http_code}" \
-    "$PUBLIC_READ_URL" 2>/dev/null || echo "000")
-  check "GET URL publique pro → 200 (préfixe pros/* GET-only anonyme)" \
-    "$([ "$READ_STATUS" = "200" ] && echo ok || echo fail)" "ok"
-  if [ "$READ_STATUS" != "200" ]; then
-    echo "       URL testée: ${STORAGE}/${S3_BUCKET_CHECK}/<redacted-public-pro-key>"
-    echo "       HTTP status: $READ_STATUS"
-    echo "       Si 403 : vérifier scripts/minio-public-prefix-policy.sh --prefix 'pros/*'"
+    "$UPLOADED_READ_URL" 2>/dev/null || echo "000")
+  check "GET objet users/* uploadé sans auth → 403/404" \
+    "$([ "$UPLOADED_READ_STATUS" = "403" ] || [ "$UPLOADED_READ_STATUS" = "404" ] && echo ok || echo fail)" "ok"
+  if [ "$UPLOADED_READ_STATUS" != "403" ] && [ "$UPLOADED_READ_STATUS" != "404" ]; then
+    echo "       URL testée: ${STORAGE}/${S3_BUCKET_CHECK}/<redacted-users-key>"
+    echo "       HTTP status: $UPLOADED_READ_STATUS"
+    echo "       DANGER: users/* est lisible anonymement alors que seule l'écriture par URL présignée est attendue."
   fi
 
   # Test négatif : listing du bucket doit être interdit

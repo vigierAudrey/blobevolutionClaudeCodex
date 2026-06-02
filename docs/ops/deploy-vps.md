@@ -117,6 +117,12 @@ par le smoke test. Il prépare les sessions RIDER, le match actif et les profils
 nécessaires aux checks authentifiés, matching, messagerie et photo; il ne modifie
 pas la policy MinIO.
 
+Le smoke de déploiement valide l'upload par URL présignée, le blocage XSS Caddy,
+le CORS storage et l'absence de lecture anonyme large sur `users/*`. La policy
+publique restreinte `pros/*` reste une opération séparée du runbook
+`docs/runbooks/vps-runtime.md` et ne doit pas être appliquée implicitement par le
+déploiement.
+
 ## Rollback
 
 En cas d'échec après la capture de `PREV_SHA`, le workflow exécute :
