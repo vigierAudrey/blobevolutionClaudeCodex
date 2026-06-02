@@ -100,7 +100,7 @@ const exportRateLimiter = rateLimit({
     if (userId) {
       return `user:${userId}`;
     }
-    const ip = req.ip || req.socket?.remoteAddress;
+    const ip = getClientIp(req) ?? req.socket?.remoteAddress;
     return ip ? ipKeyGenerator(ip) : 'anonymous';
   },
 });
