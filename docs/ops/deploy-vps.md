@@ -123,6 +123,11 @@ publique restreinte `pros/*` reste une opération séparée du runbook
 `docs/runbooks/vps-runtime.md` et ne doit pas être appliquée implicitement par le
 déploiement.
 
+Le check d'email réel est optionnel par défaut (`SMOKE_EMAIL_REAL=0`) et son
+skip ne bloque pas le déploiement. À l'inverse, le skip TLS strict reste
+bloquant: un run VPS doit valider le certificat public Let's Encrypt sans mode
+local `--resolve`.
+
 ## Rollback
 
 En cas d'échec après la capture de `PREV_SHA`, le workflow exécute :
