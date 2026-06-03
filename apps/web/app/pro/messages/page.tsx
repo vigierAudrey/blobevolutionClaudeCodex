@@ -200,13 +200,13 @@ export default function ProMessagesPage() {
                 <div>
                   <p>Aucune conversation pour le moment.</p>
                   <p className="text-sm mt-2">
-                    Les riders vous contacteront via votre offre de cours.
+                    Les riders vous contacteront via la BloboMap.
                   </p>
                 </div>
               ) : filter === 'RIDERS' ? (
                 <div>
                   <p>Aucune conversation avec des élèves.</p>
-                  <p className="text-sm mt-2">Les riders vous contacteront via votre offre de cours ou la BloboMap.</p>
+                  <p className="text-sm mt-2">Les riders vous contacteront via la BloboMap.</p>
                 </div>
               ) : (
                 <p>Aucune conversation dans cette catégorie.</p>
