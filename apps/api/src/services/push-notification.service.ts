@@ -14,8 +14,12 @@ const firebaseConfig = {
   privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
 };
 
+function isPushFeatureEnabled(): boolean {
+  return process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
+}
+
 // Initialize Firebase Admin (only once)
-if (!admin.apps.length && firebaseConfig.privateKey && firebaseConfig.clientEmail) {
+if (isPushFeatureEnabled() && !admin.apps.length && firebaseConfig.privateKey && firebaseConfig.clientEmail) {
   admin.initializeApp({
     credential: admin.credential.cert(firebaseConfig),
     projectId: firebaseConfig.projectId,
@@ -52,6 +56,11 @@ export class PushNotificationService {
 
   private async init() {
     try {
+      if (!isPushFeatureEnabled()) {
+        secureLogger.warn('PUSH_SERVICE_DISABLED', { reason: 'feature_flag_off' });
+        return;
+      }
+
       if (firebaseConfig.privateKey && firebaseConfig.clientEmail) {
         this.isInitialized = true;
         secureLogger.info('PUSH_SERVICE_INITIALIZED', { projectId: firebaseConfig.projectId });
@@ -68,8 +77,13 @@ export class PushNotificationService {
    * Save FCM token for a user
    */
   async saveToken(userId: string, token: string, userAgent?: string): Promise<boolean> {
+    if (!isPushFeatureEnabled()) {
+      secureLogger.warn('PUSH_TOKEN_SAVE_SKIPPED', { reason: 'feature_flag_off' });
+      return false;
+    }
+
     try {
-      secureLogger.info('PUSH_TOKEN_SAVE', { userId });
+      secureLogger.info('PUSH_TOKEN_SAVE', { authenticated: true });
 
       await prisma.pushToken.upsert({
         where: { token },
@@ -85,7 +99,7 @@ export class PushNotificationService {
 
       return true;
     } catch (error: any) {
-      secureLogger.error('PUSH_TOKEN_SAVE_FAILED', { userId, error: error?.message });
+      secureLogger.error('PUSH_TOKEN_SAVE_FAILED', { error: error?.message });
       return false;
     }
   }
@@ -94,8 +108,13 @@ export class PushNotificationService {
    * Remove FCM token for a user
    */
   async removeToken(userId: string, token?: string): Promise<boolean> {
+    if (!isPushFeatureEnabled()) {
+      secureLogger.warn('PUSH_TOKEN_REMOVE_SKIPPED', { reason: 'feature_flag_off' });
+      return false;
+    }
+
     try {
-      secureLogger.info('PUSH_TOKEN_REMOVE', { userId, hasToken: Boolean(token) });
+      secureLogger.info('PUSH_TOKEN_REMOVE', { hasToken: Boolean(token) });
       if (token) {
         await prisma.pushToken.deleteMany({ where: { token, userId } });
       } else {
@@ -104,7 +123,7 @@ export class PushNotificationService {
 
       return true;
     } catch (error: any) {
-      secureLogger.error('PUSH_TOKEN_REMOVE_FAILED', { userId, error: error?.message });
+      secureLogger.error('PUSH_TOKEN_REMOVE_FAILED', { error: error?.message });
       return false;
     }
   }
@@ -113,8 +132,13 @@ export class PushNotificationService {
    * Send push notification to a specific user
    */
   async sendToUser(userId: string, notification: PushNotificationData): Promise<boolean> {
+    if (!isPushFeatureEnabled()) {
+      secureLogger.warn('PUSH_SERVICE_DISABLED', { reason: 'feature_flag_off' });
+      return false;
+    }
+
     if (!this.isInitialized) {
-      secureLogger.warn('PUSH_SERVICE_NOT_INITIALIZED', { userId });
+      secureLogger.warn('PUSH_SERVICE_NOT_INITIALIZED', { reason: 'send_to_user' });
       return false;
     }
 
@@ -125,7 +149,7 @@ export class PushNotificationService {
         select: { pushEnabled: true },
       });
       if (prefs && !prefs.pushEnabled) {
-        secureLogger.info('PUSH_SKIPPED_BY_PREFERENCE', { userId });
+        secureLogger.info('PUSH_SKIPPED_BY_PREFERENCE', { preference: 'disabled' });
         return false;
       }
 
@@ -133,7 +157,7 @@ export class PushNotificationService {
       const tokens = await this.getUserTokens(userId);
 
       if (tokens.length === 0) {
-        secureLogger.warn('PUSH_NO_TOKENS', { userId });
+        secureLogger.warn('PUSH_NO_TOKENS', { tokenCount: 0 });
         return false;
       }
 
@@ -143,11 +167,11 @@ export class PushNotificationService {
 
       const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
 
-      secureLogger.info('PUSH_NOTIFICATION_SENT', { userId, successCount, total: tokens.length });
+      secureLogger.info('PUSH_NOTIFICATION_SENT', { successCount, total: tokens.length });
 
       return successCount > 0;
     } catch (error: any) {
-      secureLogger.error('PUSH_USER_SEND_FAILED', { userId, error: error?.message });
+      secureLogger.error('PUSH_USER_SEND_FAILED', { error: error?.message });
       return false;
     }
   }
@@ -156,6 +180,11 @@ export class PushNotificationService {
    * Send push notification to a specific token
    */
   async sendToToken(token: string, notification: PushNotificationData): Promise<boolean> {
+    if (!isPushFeatureEnabled()) {
+      secureLogger.warn('PUSH_SERVICE_DISABLED', { reason: 'feature_flag_off' });
+      return false;
+    }
+
     if (!this.isInitialized) {
       secureLogger.warn('PUSH_SERVICE_NOT_INITIALIZED', { reason: 'send_to_token' });
       return false;
@@ -187,6 +216,8 @@ export class PushNotificationService {
     message: string;
     conversationId: string;
   }): Promise<boolean> {
+    if (!isPushFeatureEnabled()) return false;
+
     const notification: PushNotificationData = {
       title: `💬 ${messageData.senderName}`,
       body: messageData.message.length > 50
@@ -214,6 +245,8 @@ export class PushNotificationService {
     startTime: string;
     hoursUntil: number;
   }): Promise<boolean> {
+    if (!isPushFeatureEnabled()) return false;
+
     const notification: PushNotificationData = {
       title: `⏰ Cours dans ${reminderData.hoursUntil}h !`,
       body: `Rendez-vous avec ${reminderData.proName} à ${reminderData.spotName}`,
@@ -233,6 +266,8 @@ export class PushNotificationService {
    * Send test notification
    */
   async sendTestNotification(userId: string): Promise<boolean> {
+    if (!isPushFeatureEnabled()) return false;
+
     const notification: PushNotificationData = {
       title: '🧪 Test Blob',
       body: 'Si tu vois ça, les notifications fonctionnent parfaitement ! 🎉',
@@ -252,6 +287,8 @@ export class PushNotificationService {
     matchedUserPhoto?: string;
     conversationId: string;
   }): Promise<boolean> {
+    if (!isPushFeatureEnabled()) return false;
+
     const notification: PushNotificationData = {
       title: '🎉 Nouveau match !',
       body: `Tu as matché avec ${matchData.matchedUserName} ! Envoie un message pour démarrer la conversation.`,
@@ -278,6 +315,8 @@ export class PushNotificationService {
     invitationId: string;
     memberCount: number;
   }): Promise<boolean> {
+    if (!isPushFeatureEnabled()) return false;
+
     const notification: PushNotificationData = {
       title: '👥 Invitation à un groupe',
       body: `${invitationData.inviterName} t'invite à rejoindre une conversation de groupe (${invitationData.memberCount} membres)`,
@@ -394,22 +433,26 @@ export class PushNotificationService {
       select: { token: true },
     });
     if (tokens.length === 0) {
-      secureLogger.debug('PUSH_LOOKUP_TOKENS_EMPTY', { userId });
+      secureLogger.debug('PUSH_LOOKUP_TOKENS_EMPTY', { tokenCount: 0 });
     }
     return tokens.map((t) => t.token);
   }
 
   async hasActiveTokens(userId: string): Promise<boolean> {
+    if (!isPushFeatureEnabled()) return false;
+
     try {
       const count = await prisma.pushToken.count({ where: { userId } });
       return count > 0;
     } catch (error: any) {
-      secureLogger.error('PUSH_TOKEN_STATUS_FAILED', { userId, error: error?.message });
+      secureLogger.error('PUSH_TOKEN_STATUS_FAILED', { error: error?.message });
       return false;
     }
   }
 
   private async cleanupInvalidTokens(token?: string): Promise<void> {
+    if (!isPushFeatureEnabled()) return;
+
     try {
       if (token) {
         await prisma.pushToken.deleteMany({ where: { token } });

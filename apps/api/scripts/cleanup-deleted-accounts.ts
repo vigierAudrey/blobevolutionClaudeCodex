@@ -110,7 +110,17 @@ async function anonymizeUserData(userId: string, email: string, role: string) {
 
     // Note: Les sessions Redis expireront automatiquement
 
-    // 9. Logger la suppression finale dans AuditLog
+    // 9. Supprimer les tokens et préférences d'alertes
+    const deletedPushTokens = await prisma.pushToken.deleteMany({
+      where: { userId },
+    });
+    console.log(`   Supprimé ${deletedPushTokens.count} tokens d'alertes`);
+
+    await prisma.notificationPreferences.deleteMany({
+      where: { userId },
+    });
+
+    // 10. Logger la suppression finale dans AuditLog
     await prisma.auditLog.create({
       data: {
         userId,

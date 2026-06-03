@@ -168,15 +168,15 @@ export default function ProNotificationsPage() {
           <Bell className="w-5 h-5" />
         </div>
         <div className="flex-1">
-          <h1 className="text-xl font-bold text-foreground">Notifications</h1>
-          <p className="text-sm text-muted-foreground">Choisis quelles alertes tu veux recevoir</p>
+          <h1 className="text-xl font-bold text-foreground">Préférences d&apos;alertes</h1>
+          <p className="text-sm text-muted-foreground">Choisis les alertes que tu veux recevoir dans Blob</p>
         </div>
       </div>
 
       <Card className="border-2 rounded-[1.75rem]">
         <CardHeader className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30">
-          <CardTitle className="text-base text-foreground">Préférences de Notification</CardTitle>
-          <CardDescription>Les notifications sont activées par défaut — désactive celles dont tu n&apos;as pas besoin.</CardDescription>
+          <CardTitle className="text-base text-foreground">Alertes dans Blob</CardTitle>
+          <CardDescription>Les alertes sont activées par défaut — désactive celles dont tu n&apos;as pas besoin.</CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
           {loadingPrefs ? (
@@ -198,15 +198,15 @@ export default function ProNotificationsPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Push Notifications Master Toggle */}
+              {/* Alert master toggle */}
               <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
                     <Bell className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-semibold">Notifications Push</h4>
-                    <p className="text-xs text-muted-foreground">Reçois des alertes instantanées</p>
+                    <h4 className="text-sm font-semibold">Alertes dans Blob</h4>
+                    <p className="text-xs text-muted-foreground">Choisis les alertes que tu veux recevoir dans Blob</p>
                   </div>
                 </div>
                 <button
@@ -215,7 +215,7 @@ export default function ProNotificationsPage() {
                   className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
                     notifPrefs.pushEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
                   }`}
-                  aria-label="Toggle push notifications"
+                  aria-label="Activer les alertes dans Blob"
                 >
                   <span
                     className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
@@ -343,15 +343,15 @@ export default function ProNotificationsPage() {
                 </div>
               </div>
 
-              {/* Info box when push disabled */}
+              {/* Info box when alerts are disabled */}
               {!notifPrefs.pushEnabled && (
                 <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3">
                   <div className="flex items-start gap-2">
                     <span className="text-lg">ℹ️</span>
                     <div className="flex-1">
-                      <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Notifications désactivées</p>
+                      <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Alertes dans Blob désactivées</p>
                       <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
-                        Active les notifications push pour recevoir des alertes en temps réel.
+                        Réactive les alertes dans Blob pour voir les messages et demandes de cours.
                       </p>
                     </div>
                   </div>

@@ -41,8 +41,17 @@ const setFirebaseEnv = (enabled: boolean) => {
   }
 };
 
-const createService = (withCredentials = true) => {
+const setPushFeatureFlag = (enabled: boolean) => {
+  if (enabled) {
+    process.env.PUSH_NOTIFICATIONS_ENABLED = 'true';
+  } else {
+    delete process.env.PUSH_NOTIFICATIONS_ENABLED;
+  }
+};
+
+const createService = (withCredentials = true, pushEnabled = true) => {
   setFirebaseEnv(withCredentials);
+  setPushFeatureFlag(pushEnabled);
   adminMock.apps.length = 0;
   return new PushNotificationService();
 };
@@ -67,6 +76,7 @@ describe('PushNotificationService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     adminMock.apps.length = 0;
+    setPushFeatureFlag(true);
     infoSpy = jest.spyOn(secureLogger, 'info').mockImplementation(() => {});
     warnSpy = jest.spyOn(secureLogger, 'warn').mockImplementation(() => {});
     errorSpy = jest.spyOn(secureLogger, 'error').mockImplementation(() => {});
@@ -78,6 +88,7 @@ describe('PushNotificationService', () => {
     warnSpy.mockRestore();
     errorSpy.mockRestore();
     debugSpy.mockRestore();
+    setPushFeatureFlag(true);
     setFirebaseEnv(true); // default back to valid
   });
 
@@ -114,6 +125,13 @@ describe('PushNotificationService', () => {
       expect(adminMock.initializeApp).not.toHaveBeenCalled();
       expect(secureLogger.warn).toHaveBeenCalledWith('PUSH_SERVICE_DISABLED', { reason: 'missing_credentials' });
     });
+
+    it('skips Firebase init when the push feature flag is off', () => {
+      createService(true, false);
+
+      expect(adminMock.initializeApp).not.toHaveBeenCalled();
+      expect(secureLogger.warn).toHaveBeenCalledWith('PUSH_SERVICE_DISABLED', { reason: 'feature_flag_off' });
+    });
   });
 
   describe('token lifecycle', () => {
@@ -122,7 +140,17 @@ describe('PushNotificationService', () => {
       const service = createService(false);
 
       await expect(service.saveToken('user-1', 'token-xyz')).resolves.toBe(true);
-      expect(secureLogger.info).toHaveBeenCalledWith('PUSH_TOKEN_SAVE', { userId: 'user-1' });
+      expect(secureLogger.info).toHaveBeenCalledWith('PUSH_TOKEN_SAVE', { authenticated: true });
+    });
+
+    it('does not save tokens when the push feature flag is off', async () => {
+      await ensureTestUser('user-1');
+      await prisma.pushToken.deleteMany({ where: { userId: 'user-1' } });
+      const service = createService(false, false);
+
+      await expect(service.saveToken('user-1', 'token-xyz')).resolves.toBe(false);
+      await expect(prisma.pushToken.count({ where: { userId: 'user-1' } })).resolves.toBe(0);
+      expect(secureLogger.warn).toHaveBeenCalledWith('PUSH_TOKEN_SAVE_SKIPPED', { reason: 'feature_flag_off' });
     });
 
     it('returns false when an error occurs while saving', async () => {
@@ -135,7 +163,7 @@ describe('PushNotificationService', () => {
       await expect(service.saveToken('user-1', 'token-xyz')).resolves.toBe(false);
       expect(secureLogger.error).toHaveBeenCalledWith(
         'PUSH_TOKEN_SAVE_FAILED',
-        expect.objectContaining({ userId: 'user-1', error: 'storage unavailable' })
+        expect.objectContaining({ error: 'storage unavailable' })
       );
       infoSpy.mockImplementation(() => {});
     });
@@ -145,7 +173,21 @@ describe('PushNotificationService', () => {
       const service = createService(false);
 
       await expect(service.removeToken('user-1', 'token-xyz')).resolves.toBe(true);
-      expect(secureLogger.info).toHaveBeenCalledWith('PUSH_TOKEN_REMOVE', { userId: 'user-1', hasToken: true });
+      expect(secureLogger.info).toHaveBeenCalledWith('PUSH_TOKEN_REMOVE', { hasToken: true });
+    });
+
+    it('does not remove tokens when the push feature flag is off', async () => {
+      await ensureTestUser('user-1');
+      await prisma.pushToken.upsert({
+        where: { token: 'token-xyz' },
+        create: { token: 'token-xyz', userId: 'user-1' },
+        update: { userId: 'user-1' },
+      });
+      const service = createService(false, false);
+
+      await expect(service.removeToken('user-1', 'token-xyz')).resolves.toBe(false);
+      await expect(prisma.pushToken.count({ where: { userId: 'user-1' } })).resolves.toBe(1);
+      expect(secureLogger.warn).toHaveBeenCalledWith('PUSH_TOKEN_REMOVE_SKIPPED', { reason: 'feature_flag_off' });
     });
 
     it('handles removal errors gracefully', async () => {
@@ -158,7 +200,7 @@ describe('PushNotificationService', () => {
       await expect(service.removeToken('user-1')).resolves.toBe(false);
       expect(secureLogger.error).toHaveBeenCalledWith(
         'PUSH_TOKEN_REMOVE_FAILED',
-        expect.objectContaining({ userId: 'user-1', error: 'db unavailable' })
+        expect.objectContaining({ error: 'db unavailable' })
       );
       infoSpy.mockImplementation(() => {});
     });
@@ -228,7 +270,7 @@ describe('PushNotificationService', () => {
       expect(messagingMock.send).toHaveBeenCalledTimes(2);
       expect(secureLogger.info).toHaveBeenCalledWith(
         'PUSH_NOTIFICATION_SENT',
-        expect.objectContaining({ userId: 'user-1', successCount: 2, total: 2 })
+        expect.objectContaining({ successCount: 2, total: 2 })
       );
     });
   });

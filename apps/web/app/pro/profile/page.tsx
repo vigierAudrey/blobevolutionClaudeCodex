@@ -882,11 +882,11 @@ export default function ProProfilePage() {
 
                 <hr className="border-t-2" />
 
-                {/* Notification Preferences */}
+                {/* Alert preferences */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <Bell className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Préférences de Notification</h3>
+                    <h3 className="text-sm font-semibold">Préférences d&apos;alertes</h3>
                   </div>
                   {loadingNotifPrefs ? (
                     <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
@@ -894,15 +894,15 @@ export default function ProProfilePage() {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {/* Push Notifications Master Toggle */}
+                      {/* Alert master toggle */}
                       <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
                         <div className="flex items-center gap-3">
                           <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
                             <Bell className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="text-sm font-semibold">Notifications Push</h4>
-                            <p className="text-xs text-muted-foreground">Reçois des alertes instantanées</p>
+                            <h4 className="text-sm font-semibold">Alertes dans Blob</h4>
+                            <p className="text-xs text-muted-foreground">Choisis les alertes que tu veux recevoir dans Blob</p>
                           </div>
                         </div>
                         <button
@@ -911,7 +911,7 @@ export default function ProProfilePage() {
                           className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
                             notificationPrefs.pushEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
                           }`}
-                          aria-label="Toggle push notifications"
+                          aria-label="Activer les alertes dans Blob"
                         >
                           <span
                             className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
@@ -1043,15 +1043,15 @@ export default function ProProfilePage() {
                         </div>
                       </div>
 
-                      {/* Info box when push disabled */}
+                      {/* Info box when alerts are disabled */}
                       {!notificationPrefs.pushEnabled && (
                         <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3">
                           <div className="flex items-start gap-2">
                             <span className="text-lg">ℹ️</span>
                             <div className="flex-1">
-                              <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Notifications désactivées</p>
+                              <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Alertes dans Blob désactivées</p>
                               <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
-                                Active les notifications push pour recevoir des alertes en temps réel.
+                                Réactive les alertes dans Blob pour voir les messages et demandes de cours.
                               </p>
                             </div>
                           </div>

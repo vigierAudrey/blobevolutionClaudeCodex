@@ -29,6 +29,8 @@ describe('profileRouter — AuthZ (PRO cannot access RIDER_ONLY routes)', () => 
 
   let proSession: TestSession;
   let riderSession: TestSession;
+  let proUserId: string;
+  let riderUserId: string;
 
   beforeEach(async () => {
     await resetDb();
@@ -41,6 +43,7 @@ describe('profileRouter — AuthZ (PRO cannot access RIDER_ONLY routes)', () => 
       role: Role.PRO,
     });
     proSession = proAuth.session;
+    proUserId = proAuth.userId;
 
     const riderAuth = await getAccessToken({
       app,
@@ -48,6 +51,7 @@ describe('profileRouter — AuthZ (PRO cannot access RIDER_ONLY routes)', () => 
       role: Role.RIDER,
     });
     riderSession = riderAuth.session;
+    riderUserId = riderAuth.userId;
   });
 
   afterAll(async () => {
@@ -143,6 +147,38 @@ describe('profileRouter — AuthZ (PRO cannot access RIDER_ONLY routes)', () => 
       .put('/profile/notifications')
       .send({ pushEnabled: true })
       .expect(200);
+  });
+
+  it('PUT /profile/notifications ignore userId client et reste scopé à la session', async () => {
+    await prisma.notificationPreferences.create({
+      data: {
+        userId: riderUserId,
+        pushEnabled: true,
+        notifyMessages: true,
+      },
+    });
+
+    await proSession
+      .put('/profile/notifications')
+      .send({
+        userId: riderUserId,
+        pushEnabled: false,
+        notifyProMessages: false,
+        notifyMessages: false,
+      })
+      .expect(200);
+
+    const proPrefs = await prisma.notificationPreferences.findUniqueOrThrow({
+      where: { userId: proUserId },
+    });
+    const riderPrefs = await prisma.notificationPreferences.findUnique({
+      where: { userId: riderUserId },
+    });
+
+    expect(proPrefs.pushEnabled).toBe(false);
+    expect(proPrefs.notifyProMessages).toBe(false);
+    expect(riderPrefs?.pushEnabled).toBe(true);
+    expect(riderPrefs?.notifyMessages).toBe(true);
   });
 
   // ── Routes déjà protégées inline : régression ────────────────────────────
