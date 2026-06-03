@@ -8,37 +8,57 @@ import { z } from 'zod';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { pushNotificationService } from '../../services/push-notification.service';
 import { secureLogger } from '../../utils/secure-logger';
+import { clientPrisma as prisma } from '@blobinfini/database';
 
 const router = Router();
-router.use(requireAuth, requireVerifiedEmail);
+
+function isPushFeatureEnabled(): boolean {
+  return process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
+}
+
+function requirePushFeatureEnabled(_req: Request, res: Response, next: () => void) {
+  if (!isPushFeatureEnabled()) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  return next();
+}
+
+async function ensurePushUserEligible(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { emailVerified: true, deletedAt: true },
+  });
+  return Boolean(user?.emailVerified && !user.deletedAt);
+}
+
+router.use(requireAuth, requireVerifiedEmail, requirePushFeatureEnabled);
 
 // Validation schemas
 const subscribeSchema = z.object({
-  token: z.string().min(1, 'FCM token is required'),
-  userId: z.string().optional(),
-  userAgent: z.string().optional(),
-  timestamp: z.number().optional()
-});
+  token: z.string().min(1, 'FCM token is required').max(4096, 'FCM token is too large'),
+  userAgent: z.string().max(512, 'User agent is too large').optional(),
+  timestamp: z.number().int().nonnegative().optional()
+}).strict();
 
 const unsubscribeSchema = z.object({
-  token: z.string().optional()
-});
+  token: z.string().min(1).max(4096).optional()
+}).strict();
 
 const testNotificationSchema = z.object({
-  title: z.string().min(1, 'Title is required'),
-  body: z.string().min(1, 'Body is required'),
+  title: z.string().min(1, 'Title is required').max(120, 'Title is too large'),
+  body: z.string().min(1, 'Body is required').max(500, 'Body is too large'),
   type: z.enum(['new_message', 'reminder', 'general']).default('general'),
-  url: z.string().optional()
-});
+  url: z.string().max(2048, 'URL is too large').optional()
+}).strict();
 
 const sendNotificationSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
-  title: z.string().min(1, 'Title is required'),
-  body: z.string().min(1, 'Body is required'),
+  title: z.string().min(1, 'Title is required').max(120, 'Title is too large'),
+  body: z.string().min(1, 'Body is required').max(500, 'Body is too large'),
   type: z.enum(['new_message', 'reminder', 'general']),
-  url: z.string().optional(),
-  data: z.record(z.any()).optional()
-});
+  url: z.string().max(2048, 'URL is too large').optional(),
+  data: z.record(z.union([z.string().max(500), z.number(), z.boolean(), z.null()])).optional()
+}).strict();
 
 const handleSubscribe = async (req: Request, res: Response) => {
   try {
@@ -58,7 +78,11 @@ const handleSubscribe = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    secureLogger.info('PUSH_ROUTE_SUBSCRIBE', { userId });
+    if (!(await ensurePushUserEligible(userId))) {
+      return res.status(403).json({ error: 'Account unavailable' });
+    }
+
+    secureLogger.info('PUSH_ROUTE_SUBSCRIBE', { authenticated: true });
 
     const success = await pushNotificationService.saveToken(userId, token, userAgent);
 
@@ -107,7 +131,11 @@ const handleUnsubscribe = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    secureLogger.info('PUSH_ROUTE_UNSUBSCRIBE', { userId });
+    if (!(await ensurePushUserEligible(userId))) {
+      return res.status(403).json({ error: 'Account unavailable' });
+    }
+
+    secureLogger.info('PUSH_ROUTE_UNSUBSCRIBE', { authenticated: true });
 
     const success = await pushNotificationService.removeToken(userId, validation.data.token);
 
@@ -136,6 +164,10 @@ router.post('/unregister', handleUnsubscribe);
  */
 router.post('/test', async (req: Request, res: Response) => {
   try {
+    if ((req as any).user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const validation = testNotificationSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -151,7 +183,11 @@ router.post('/test', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    secureLogger.info('PUSH_ROUTE_TEST_NOTIFICATION', { userId });
+    if (!(await ensurePushUserEligible(userId))) {
+      return res.status(403).json({ error: 'Account unavailable' });
+    }
+
+    secureLogger.info('PUSH_ROUTE_TEST_NOTIFICATION', { authenticated: true });
 
     const success = await pushNotificationService.sendToUser(userId, {
       ...validation.data,
@@ -196,7 +232,11 @@ router.post('/send', async (req: Request, res: Response) => {
 
     const { userId, title, body, type, url, data } = validation.data;
 
-    secureLogger.info('PUSH_ROUTE_SEND', { userId });
+    if (!(await ensurePushUserEligible(userId))) {
+      return res.status(404).json({ error: 'User not available' });
+    }
+
+    secureLogger.info('PUSH_ROUTE_SEND', { targetValidated: true });
 
     const success = await pushNotificationService.sendToUser(userId, {
       title,
@@ -235,10 +275,13 @@ router.get('/status', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
+    if (!(await ensurePushUserEligible(userId))) {
+      return res.status(403).json({ error: 'Account unavailable' });
+    }
+
     const hasActiveTokens = await pushNotificationService.hasActiveTokens(userId);
 
     res.status(200).json({
-      userId,
       hasActiveTokens,
       isConfigured: process.env.FIREBASE_PROJECT_ID ? true : false,
       timestamp: Date.now()
@@ -260,10 +303,11 @@ export async function notifyNewMessage(
     conversationId: string;
   }
 ): Promise<void> {
+  if (!isPushFeatureEnabled()) return;
   try {
     await pushNotificationService.sendNewMessage(userId, messageData);
   } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_NEW_MESSAGE_FAILED', { userId, error: (error as Error)?.message });
+    secureLogger.error('PUSH_NOTIFY_NEW_MESSAGE_FAILED', { error: (error as Error)?.message });
   }
 }
 
@@ -279,10 +323,11 @@ export async function notifyCourseReminder(
     hoursUntil: number;
   }
 ): Promise<void> {
+  if (!isPushFeatureEnabled()) return;
   try {
     await pushNotificationService.sendCourseReminder(userId, reminderData);
   } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_COURSE_REMINDER_FAILED', { userId, error: (error as Error)?.message });
+    secureLogger.error('PUSH_NOTIFY_COURSE_REMINDER_FAILED', { error: (error as Error)?.message });
   }
 }
 
@@ -297,10 +342,11 @@ export async function notifyNewMatchPush(
     conversationId: string;
   }
 ): Promise<void> {
+  if (!isPushFeatureEnabled()) return;
   try {
     await pushNotificationService.sendNewMatch(userId, matchData);
   } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_NEW_MATCH_FAILED', { userId, error: (error as Error)?.message });
+    secureLogger.error('PUSH_NOTIFY_NEW_MATCH_FAILED', { error: (error as Error)?.message });
   }
 }
 
@@ -316,10 +362,11 @@ export async function notifyGroupInvitation(
     memberCount: number;
   }
 ): Promise<void> {
+  if (!isPushFeatureEnabled()) return;
   try {
     await pushNotificationService.sendGroupInvitation(userId, invitationData);
   } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_GROUP_INVITATION_FAILED', { userId, error: (error as Error)?.message });
+    secureLogger.error('PUSH_NOTIFY_GROUP_INVITATION_FAILED', { error: (error as Error)?.message });
   }
 }
 
