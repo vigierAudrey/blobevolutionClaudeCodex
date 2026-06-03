@@ -2,7 +2,7 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../../components/BackBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -11,7 +11,7 @@ import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText, Bell, Eye } from 'lucide-react';
+import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText, Bell, Eye, RefreshCw } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { apiClient } from '../../../lib/apiClient';
@@ -92,6 +92,12 @@ export default function ProProfilePage() {
   // Geolocation state
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [deletingLocation, setDeletingLocation] = useState(false);
+  const [updatingLocation, setUpdatingLocation] = useState(false);
+  const [geolocPermissionDenied, setGeolocPermissionDenied] = useState(false);
+  const [radiusKm, setRadiusKm] = useState<number>(25);
+  const [savingRadius, setSavingRadius] = useState(false);
+  const radiusPersistRef = useRef<ReturnType<typeof setTimeout>>();
+  const lastSavedRadiusRef = useRef<number | null>(null);
 
   // Account deletion modal state
   const [showDeletionModal, setShowDeletionModal] = useState(false);
@@ -233,6 +239,11 @@ export default function ProProfilePage() {
         } else {
           setUserLocation(null);
         }
+
+        const storedRadius = typeof data.radiusKm === 'number' ? data.radiusKm : 25;
+        const clampedRadius = Math.max(1, Math.min(200, storedRadius));
+        setRadiusKm(clampedRadius);
+        lastSavedRadiusRef.current = clampedRadius;
       } catch (e) {
         setErr(sanitizeErrorMessage(e));
       } finally {
@@ -359,9 +370,50 @@ export default function ProProfilePage() {
     void checkDeletionStatus();
   }, [checkDeletionStatus]);
 
+  // Handler pour activer/actualiser la géolocalisation via GPS navigateur
+  const handleUpdateLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      toast('La géolocalisation n\'est pas supportée par ce navigateur.', 'error');
+      return;
+    }
+    setUpdatingLocation(true);
+    setGeolocPermissionDenied(false);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        try {
+          const t = ensureAuthenticated();
+          const response = await apiRequest('/pro/me', {
+            method: 'PUT',
+            body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, lat, lng }),
+            headers: { Authorization: `Bearer ${t.accessToken}` },
+          });
+          if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data?.message || data?.error || 'Erreur lors de la mise à jour');
+          }
+          setUserLocation({ lat, lng });
+          toast('Position mise à jour', 'success');
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Erreur lors de la mise à jour';
+          toast(message, 'error');
+        } finally {
+          setUpdatingLocation(false);
+        }
+      },
+      () => {
+        setGeolocPermissionDenied(true);
+        setUpdatingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
+  }, [ensureAuthenticated, toast]);
+
   // Handler pour supprimer la géolocalisation
   const handleDeleteLocation = async () => {
-    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver depuis la BloboMap ou vos Offres pour apparaître dans les recherches à proximité.')) {
+    if (!confirm('Supprimer votre géolocalisation ? Vous devrez la réactiver depuis la BloboMap pour apparaître dans les recherches à proximité.')) {
       return;
     }
 
@@ -389,6 +441,40 @@ export default function ProProfilePage() {
       setDeletingLocation(false);
     }
   };
+
+  // Sauvegarde du rayon avec debounce 500ms
+  useEffect(() => {
+    if (lastSavedRadiusRef.current === null || lastSavedRadiusRef.current === radiusKm) return;
+
+    const persist = async () => {
+      setSavingRadius(true);
+      try {
+        const t = ensureAuthenticated();
+        const response = await apiRequest('/pro/me', {
+          method: 'PATCH',
+          body: JSON.stringify({ countryCode: FRANCE_ONLY_COUNTRY_CODE, radiusKm }),
+          headers: { Authorization: `Bearer ${t.accessToken}` },
+        });
+        const body = await response.json().catch(() => ({})) as { message?: string; error?: string };
+        if (!response.ok) {
+          throw new Error(body.message || body.error || 'Erreur lors de la sauvegarde du rayon');
+        }
+        lastSavedRadiusRef.current = radiusKm;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde du rayon';
+        toast(message, 'error');
+      } finally {
+        setSavingRadius(false);
+      }
+    };
+
+    if (radiusPersistRef.current) clearTimeout(radiusPersistRef.current);
+    radiusPersistRef.current = setTimeout(() => { void persist(); }, 500);
+
+    return () => {
+      if (radiusPersistRef.current) clearTimeout(radiusPersistRef.current);
+    };
+  }, [radiusKm, ensureAuthenticated, toast]);
 
   // Handler pour rouvrir la modale de consentement cookies
   const handleReopenCookieConsent = async () => {
@@ -679,24 +765,78 @@ export default function ProProfilePage() {
                           </p>
                         </div>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="profileRadiusKm" className="text-sm font-medium whitespace-nowrap">
+                          Rayon de recherche :
+                        </label>
+                        <Input
+                          id="profileRadiusKm"
+                          type="number"
+                          min={1}
+                          max={200}
+                          value={radiusKm}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            if (Number.isFinite(v)) setRadiusKm(Math.max(1, Math.min(200, v)));
+                          }}
+                          className="w-20 text-center"
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          {savingRadius ? 'km (sauvegarde…)' : 'km'}
+                        </span>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={handleUpdateLocation}
+                          disabled={updatingLocation || deletingLocation}
+                          className="w-full sm:w-auto"
+                        >
+                          <RefreshCw className="h-3 w-3 mr-2" />
+                          {updatingLocation ? 'Mise à jour…' : 'Actualiser ma position'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={handleDeleteLocation}
+                          disabled={deletingLocation || updatingLocation}
+                          className="w-full sm:w-auto"
+                        >
+                          <Trash2 className="h-3 w-3 mr-2" />
+                          {deletingLocation ? 'Suppression...' : 'Supprimer ma position'}
+                        </Button>
+                      </div>
+                      {geolocPermissionDenied && (
+                        <p className="text-xs text-destructive">
+                          ⚠️ Permission refusée — autorise la géolocalisation dans les paramètres de ton navigateur, puis réessaie.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/20 p-4 space-y-3">
+                      <p className="text-sm text-muted-foreground flex items-start gap-2">
+                        <span>ℹ️</span>
+                        <span>Aucune géolocalisation enregistrée. Active-la pour apparaître dans les recherches à proximité.</span>
+                      </p>
                       <Button
                         variant="outline"
                         size="sm"
                         type="button"
-                        onClick={handleDeleteLocation}
-                        disabled={deletingLocation}
+                        onClick={handleUpdateLocation}
+                        disabled={updatingLocation}
                         className="w-full sm:w-auto"
                       >
-                        <Trash2 className="h-3 w-3 mr-2" />
-                        {deletingLocation ? 'Suppression...' : 'Supprimer ma position'}
+                        <MapPin className="h-3 w-3 mr-2" />
+                        {updatingLocation ? 'Localisation en cours…' : 'Activer ma géolocalisation'}
                       </Button>
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/20 p-4">
-                      <p className="text-sm text-muted-foreground flex items-start gap-2">
-                        <span>ℹ️</span>
-                        <span>Aucune géolocalisation enregistrée. Active-la depuis la BloboMap ou tes Offres pour apparaître dans les recherches à proximité.</span>
-                      </p>
+                      {geolocPermissionDenied && (
+                        <p className="text-xs text-destructive">
+                          ⚠️ Permission refusée — autorise la géolocalisation dans les paramètres de ton navigateur, puis réessaie.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
