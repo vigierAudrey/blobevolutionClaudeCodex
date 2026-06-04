@@ -69,7 +69,7 @@ export default function Home() {
             <Card className="group h-full overflow-hidden border-2 border-transparent hover:border-amber-400/60 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl animate-in fade-in-50" style={{ animationDelay: '120ms' }}>
               <div className="relative h-64 w-full overflow-hidden">
                 <Image
-                  src="/images/home/RideaDeux.png"
+                  src="/images/home/ride-a-deux-wide.webp"
                   alt="Riders organisant une session à deux"
                   fill
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
@@ -123,7 +123,7 @@ export default function Home() {
             <Card className="group h-full overflow-hidden border-2 border-transparent hover:border-amber-400/60 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl animate-in fade-in-50" style={{ animationDelay: '220ms' }}>
               <div className="relative h-64 w-full overflow-hidden">
                 <Image
-                  src="/images/home/CoursAvecPro.png"
+                  src="/images/home/cours-avec-pro-wide.webp"
                   alt="Cours de kite avec un professionnel"
                   fill
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
