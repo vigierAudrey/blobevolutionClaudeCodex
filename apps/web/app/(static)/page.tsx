@@ -1,4 +1,5 @@
 import { HomeFeatureCarousel } from '@/components/home/HomeFeatureCarousel';
+import { HomeConnectionSteps } from '@/components/home/HomeConnectionSteps';
 import { HomeHero } from '@/components/home/HomeHero';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,43 +34,10 @@ export default function Home() {
         {/* Hero unifié Dark Ocean — poster + CTA dans un seul bloc */}
         <HomeHero />
 
-        {/* Blob te connecte — 3 cartes, scroll-snap mobile, hover CSS, 0 JS client */}
-        <section aria-labelledby="blob-connects" className="space-y-6">
-          <div className="flex items-center gap-2">
-            <div className="h-1 w-1 rounded-full bg-amber-400" aria-hidden="true" />
-            <h2 id="blob-connects" className="text-2xl font-semibold tracking-tight text-foreground">
-              Blob te connecte
-            </h2>
-          </div>
-          <ol
-            className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-2 sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0"
-            aria-label="Comment Blob te connecte"
-          >
-            <li className="flex flex-col gap-2 rounded-xl border border-border bg-card p-5 snap-start flex-shrink-0 w-[82vw] sm:w-auto hover:shadow-lg hover:border-amber-400/60 motion-safe:transition-all motion-safe:duration-300 motion-safe:hover:-translate-y-1">
-              <span className="text-3xl font-bold text-amber-400" aria-hidden="true">1</span>
-              <p className="font-semibold text-foreground">Exprime ton envie</p>
-              <p className="text-sm text-muted-foreground">
-                Niveau, dispo, ambiance : tu poses ton intention.
-              </p>
-            </li>
-            <li className="flex flex-col gap-2 rounded-xl border border-border bg-card p-5 snap-start flex-shrink-0 w-[82vw] sm:w-auto hover:shadow-lg hover:border-amber-400/60 motion-safe:transition-all motion-safe:duration-300 motion-safe:hover:-translate-y-1">
-              <span className="text-3xl font-bold text-amber-400" aria-hidden="true">2</span>
-              <p className="font-semibold text-foreground">Rencontre les bons profils</p>
-              <p className="text-sm text-muted-foreground">
-                Riders ou pros locaux, selon ce que tu cherches vraiment.
-              </p>
-            </li>
-            <li className="flex flex-col gap-2 rounded-xl border border-border bg-card p-5 snap-start flex-shrink-0 w-[82vw] sm:w-auto hover:shadow-lg hover:border-amber-400/60 motion-safe:transition-all motion-safe:duration-300 motion-safe:hover:-translate-y-1">
-              <span className="text-3xl font-bold text-amber-400" aria-hidden="true">3</span>
-              <p className="font-semibold text-foreground">Ride en communauté</p>
-              <p className="text-sm text-muted-foreground">
-                Tu échanges, tu organises, tu gardes l&apos;esprit glisse.
-              </p>
-            </li>
-          </ol>
-        </section>
+        {/* "Blob te connecte" — Sand Paper + étapes éditoriales */}
+        <HomeConnectionSteps />
 
-        {/* Modules principaux */}
+        {/* Modules principaux — Dark Ocean strip */}
         <HomeFeatureCarousel />
 
         {/* Pourquoi Blob ? */}
