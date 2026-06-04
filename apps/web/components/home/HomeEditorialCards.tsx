@@ -109,13 +109,15 @@ export function HomeEditorialCards() {
                   {card.n}
                 </span>
 
-                {/* Carte 01 : "B" Adlery Pro — logo de marque Blob */}
+                {/* Carte 01 : monogramme "B" Adlery Pro dans un badge circulaire */}
                 {card.blobLogo && (
                   <span
-                    className="font-display text-blob-yellow text-[28px] leading-none select-none"
+                    className="flex items-center justify-center w-8 h-8 rounded-full bg-blob-yellow/15 border border-blob-yellow/25 shrink-0"
                     aria-hidden
                   >
-                    B
+                    <span className="font-display text-blob-yellow text-[22px] leading-none select-none">
+                      B
+                    </span>
                   </span>
                 )}
 
