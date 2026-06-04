@@ -1,12 +1,10 @@
-import { HomeFeatureCarousel } from '@/components/home/HomeFeatureCarousel';
+import { HomeHeader } from '@/components/home/HomeHeader';
+import { HomeHeroSplit } from '@/components/home/HomeHeroSplit';
 import { HomeConnectionSteps } from '@/components/home/HomeConnectionSteps';
-import { HomeHero } from '@/components/home/HomeHero';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { Metadata } from 'next';
-import { CommunitySpotlight } from '@/components/community/CommunitySpotlight';
-import { CommunityHighlight } from '@/components/community/CommunityHighlight';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Users, GraduationCap, Tag, BookOpen, ArrowRight } from 'lucide-react';
@@ -22,23 +20,17 @@ export const metadata: Metadata = {
 
 export default function Home() {
   return (
-    <div className="xl:grid xl:grid-cols-[220px,1fr,220px] xl:gap-6">
-      {/* Left community spotlight (desktop only) */}
-      <aside aria-label="Contenu communautaire" className="sticky top-20 hidden xl:block">
-        <CommunitySpotlight variant="partners" />
-      </aside>
+    <div>
+      {/* Header premium horizontal — sticky, full-bleed */}
+      <HomeHeader />
 
-      {/* Main column */}
-      <div className="space-y-8">
+      <div className="space-y-8 mt-6 sm:mt-8">
 
-        {/* Hero unifié Dark Ocean — poster + CTA dans un seul bloc */}
-        <HomeHero />
+        {/* Hero split + 4 cartes éditoriales — full-bleed */}
+        <HomeHeroSplit />
 
         {/* "Blob te connecte" — Sand Paper + étapes éditoriales */}
         <HomeConnectionSteps />
-
-        {/* Modules principaux — Dark Ocean strip */}
-        <HomeFeatureCarousel />
 
         {/* Pourquoi Blob ? */}
         <section aria-labelledby="why-blob" className="rounded-xl border border-border border-l-4 border-l-amber-400 bg-card p-6 space-y-4">
@@ -175,11 +167,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Mobile community highlight (hidden on large screens) */}
-        <div className="lg:hidden">
-          <CommunityHighlight context="home" className="my-4" />
-        </div>
-
         {/* BONS PLANS */}
         <section aria-labelledby="bons-plans" className="space-y-6">
           <div className="flex items-center gap-2">
@@ -239,7 +226,7 @@ export default function Home() {
                     </div>
                     <div>
                       <CardTitle className="text-2xl">Blobosphère</CardTitle>
-                      <CardDescription className="mt-1">Guides & conseils riders</CardDescription>
+                      <CardDescription className="mt-1">Guides &amp; conseils riders</CardDescription>
                     </div>
                   </div>
                   <Badge variant="secondary" className="bg-amber-50 text-amber-900 border border-amber-200 dark:bg-amber-950/30 dark:text-amber-100 dark:border-amber-800">
@@ -263,11 +250,6 @@ export default function Home() {
         </section>
 
       </div>
-
-      {/* Right community spotlight (very large screens only) */}
-      <aside aria-label="Contenu communautaire" className="sticky top-20 hidden 2xl:block">
-        <CommunitySpotlight variant="community" />
-      </aside>
     </div>
   );
 }
