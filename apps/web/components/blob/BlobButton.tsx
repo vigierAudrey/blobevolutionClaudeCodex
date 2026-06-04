@@ -23,30 +23,43 @@ const blobButtonVariants = cva(
     'focus-visible:outline-none focus-visible:ring-2',
     'focus-visible:ring-blob-yellow focus-visible:ring-offset-2',
     'disabled:pointer-events-none disabled:opacity-50',
-    'motion-safe:hover:scale-[1.02] active:scale-[0.98]',
+    /* Hover : léger lift + scale (effet affiche / tampon) */
+    'motion-safe:hover:-translate-y-0.5 motion-safe:hover:scale-[1.02]',
+    /* Active : snap back + compression (press sticker) */
+    'motion-safe:active:translate-y-0 motion-safe:active:scale-[0.97]',
   ].join(' '),
   {
     variants: {
       variant: {
         /* Jaune Blob — CTA prioritaire : hero rider, "Rejoindre" navbar */
         primaryYellow:
-          'bg-blob-yellow text-blob-black border-blob-yellow hover:bg-blob-yellow-dark hover:border-blob-yellow-dark',
+          'bg-blob-yellow text-blob-black border-blob-yellow ' +
+          'hover:bg-blob-yellow-dark hover:border-blob-yellow-dark ' +
+          'hover:shadow-[0_4px_20px_rgba(251,191,36,0.40)]',
 
-        /* Noir — CTA secondaire sur fond clair (cards, sections sand) */
+        /* Noir — CTA secondaire sur fond clair */
         dark:
-          'bg-blob-black text-white border-blob-black hover:bg-zinc-800 hover:border-zinc-800',
+          'bg-blob-black text-white border-blob-black ' +
+          'hover:bg-zinc-800 hover:border-zinc-800 ' +
+          'hover:shadow-[0_4px_16px_rgba(0,0,0,0.50)]',
 
-        /* Outline blanc — secondaire sur fond sombre (hero "Je suis pro", navbar "Se connecter") */
+        /* Outline blanc — secondaire sur fond sombre */
         outlineLight:
-          'bg-transparent text-white border-white hover:bg-white/10',
+          'bg-transparent text-white border-white ' +
+          'hover:bg-white/10 ' +
+          'hover:shadow-[0_4px_16px_rgba(255,255,255,0.12)]',
 
-        /* Outline noir — secondaire sur fond sable / blanc cassé */
+        /* Outline noir — secondaire sur fond sable */
         outlineDark:
-          'bg-transparent text-blob-black border-blob-black hover:bg-blob-black hover:text-white',
+          'bg-transparent text-blob-black border-blob-black ' +
+          'hover:bg-blob-black hover:text-white ' +
+          'hover:shadow-[0_4px_16px_rgba(0,0,0,0.20)]',
 
         /* Mode Yellow Signal — bouton noir sur fond jaune */
         yellowSignalDark:
-          'bg-blob-black text-white border-blob-black hover:bg-zinc-800 hover:border-zinc-800',
+          'bg-blob-black text-white border-blob-black ' +
+          'hover:bg-zinc-800 hover:border-zinc-800 ' +
+          'hover:shadow-[0_4px_16px_rgba(0,0,0,0.50)]',
       },
       size: {
         sm: 'px-4 py-2 text-xs',

@@ -36,15 +36,28 @@ export function BlobCard({
   return (
     <div
       className={cn(
-        'flex flex-col overflow-hidden rounded-sm border-2',
-        'transition-all duration-300 motion-safe:hover:-translate-y-1',
+        /* group pour cibler les enfants au hover */
+        'group flex flex-col overflow-hidden rounded-sm border-2',
+        'transition-all duration-400 motion-safe:hover:-translate-y-[6px]',
         modeBase[mode],
         modeHover[mode],
         className,
       )}
       {...props}
     >
-      {media && <div className="w-full shrink-0">{media}</div>}
+      {media && (
+        <div className="relative w-full shrink-0 overflow-hidden">
+          {/* Image scale organique au hover — vague qui gonfle */}
+          <div className="motion-safe:transition-transform motion-safe:duration-500 motion-safe:ease-out motion-safe:group-hover:scale-[1.04]">
+            {media}
+          </div>
+          {/* Renforcement contraste photo au hover */}
+          <div
+            className="absolute inset-0 bg-blob-black opacity-0 motion-safe:transition-opacity motion-safe:duration-400 motion-safe:group-hover:opacity-[0.18] pointer-events-none"
+            aria-hidden
+          />
+        </div>
+      )}
       <div className="flex flex-col flex-1 p-5">{children}</div>
     </div>
   );

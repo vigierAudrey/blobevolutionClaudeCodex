@@ -8,3 +8,4 @@ export { BlobCard } from './BlobCard';
 export type { BlobCardMode } from './BlobCard';
 
 export { BlobBrushDivider } from './BlobBrushDivider';
+export { BlobMediaFrame } from './BlobMediaFrame';

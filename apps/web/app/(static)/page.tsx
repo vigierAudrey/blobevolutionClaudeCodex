@@ -1,4 +1,5 @@
 import { HomeFeatureCarousel } from '@/components/home/HomeFeatureCarousel';
+import { HomeHero } from '@/components/home/HomeHero';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,63 +30,8 @@ export default function Home() {
       {/* Main column */}
       <div className="space-y-8">
 
-        {/* Hero : vidéo océan + wordmark Blob + H1 sémantique */}
-        <section aria-label="Blob — La communauté surf & kite du Médoc Atlantique" className="space-y-4">
-          <div className="home-hero-video-wrapper">
-            <video
-              className="home-hero-video"
-              src="/videos/surf-kite-full.webm#t=2,22"
-              autoPlay
-              loop
-              muted
-              playsInline
-            />
-            <div className="pointer-events-none absolute inset-0 bg-black/30" aria-hidden="true" />
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 px-4">
-              <Image
-                src="/images/home/blob-wordmark.png"
-                alt="Blob — Communauté surf & kite du Médoc Atlantique"
-                width={1150}
-                height={535}
-                priority
-                className="mx-auto w-72 sm:w-96 lg:w-[480px] drop-shadow-[0_2px_24px_rgba(0,0,0,0.5)]"
-                sizes="(min-width: 1024px) 33vw, (min-width: 640px) 40vw, 60vw"
-              />
-              {/* Séparateur amber-400 : signature visuelle de marque Blob */}
-              <div className="h-px w-24 rounded-full bg-amber-400" aria-hidden="true" />
-              <h1 className="text-white text-lg sm:text-xl lg:text-2xl font-bold tracking-[0.12em] uppercase text-center drop-shadow-[0_1px_10px_rgba(0,0,0,0.8)]">
-                Trouve ta communauté surf &amp; kite
-              </h1>
-              {/* Glass pill : accent de marque léger, sans JS */}
-              <span className="inline-flex items-center rounded-full border border-white/20 bg-black/25 px-3 py-1 text-xs font-medium tracking-widest uppercase text-white/65 drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
-                Bêta locale · Hourtin · Carcans · Lacanau
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* Section CTA — direct, sans titre intermédiaire */}
-        <section aria-label="Rejoindre la communauté" className="space-y-5 pb-4 text-center">
-          <p className="text-base text-foreground max-w-xl mx-auto leading-relaxed">
-            Riders, pros, débutants ou confirmés : trouve les bonnes personnes pour partager tes sessions.
-          </p>
-          <p className="text-xs text-muted-foreground tracking-widest uppercase">
-            Compte gratuit · Bêta locale ouverte · Sans engagement
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button asChild size="lg" className="w-full sm:w-auto text-base px-8 py-6 bg-zinc-950 text-white hover:bg-zinc-800 shadow-md transition-all">
-              <Link href="/register?intent=matching">Je suis rider</Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="w-full sm:w-auto text-base px-8 py-6 border-zinc-900 text-zinc-900 dark:border-zinc-200 dark:text-zinc-200 hover:bg-zinc-900 hover:text-white dark:hover:bg-zinc-200 dark:hover:text-zinc-900 transition-all">
-              <Link href="/register?intent=pro">Je suis pro</Link>
-            </Button>
-          </div>
-          <div>
-            <Link href="/login" className="text-sm text-muted-foreground hover:underline">
-              Déjà membre ? Se connecter
-            </Link>
-          </div>
-        </section>
+        {/* Hero unifié Dark Ocean — poster + CTA dans un seul bloc */}
+        <HomeHero />
 
         {/* Blob te connecte — 3 cartes, scroll-snap mobile, hover CSS, 0 JS client */}
         <section aria-labelledby="blob-connects" className="space-y-6">
