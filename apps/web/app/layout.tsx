@@ -20,12 +20,10 @@ export const dynamicParams = true;
 export const metadata: Metadata = {
   title: 'Blob · Auth',
   description: 'Inscription, connexion et gestion du compte',
+  manifest: '/site.webmanifest',
   icons: {
     icon: '/favicon.ico',
-    apple: [
-      { url: '/apple-icon-180.png', sizes: '180x180' },
-      { url: '/apple-icon-512.png', sizes: '512x512' },
-    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
   },
 };
 
