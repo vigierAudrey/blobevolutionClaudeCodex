@@ -8,6 +8,19 @@ const config: Config = {
     './components/**/*.{js,ts,jsx,tsx}',
     './lib/**/*.{js,ts,jsx,tsx}',
   ],
+  /*
+   * Safelist blob-* : les classes blob sont construites dans des Records/Maps
+   * (BlobButton, BlobSection, BlobCard, BlobBrushDivider, BlobMediaFrame, HomeHero).
+   * Next.js/PostCSS ne scanne pas toujours correctement les objets de mapping —
+   * le safelist garantit la génération de ces classes en dev ET en production.
+   */
+  safelist: [
+    { pattern: /^(bg|text|border|fill|ring)-blob-/ },
+    { pattern: /^hover:(bg|text|border|fill)-blob-/ },
+    { pattern: /^focus-visible:(ring)-blob-/ },
+    { pattern: /^(from|via|to)-blob-/ },
+    { pattern: /^group-hover:(border)-blob-/ },
+  ],
   theme: {
     container: {
       center: true,

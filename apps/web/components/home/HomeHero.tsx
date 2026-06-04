@@ -39,12 +39,12 @@ export function HomeHero() {
       {/* Contenu hero */}
       <div className="relative z-10 flex flex-col items-center justify-center text-center min-h-[560px] sm:min-h-[620px] px-6 py-14 gap-4 sm:gap-5">
 
-        {/* Logo Blob — no animation, rendu immédiat */}
+        {/* Logo Blob — no animation, rendu immédiat (WebP 34KB, alpha préservé) */}
         <Image
-          src="/images/home/blob-wordmark.png"
+          src="/images/brand/blob-wordmark.webp"
           alt="Blob — Communauté surf & kite du Médoc Atlantique"
-          width={1150}
-          height={535}
+          width={575}
+          height={268}
           priority
           className="w-40 sm:w-56 lg:w-64 drop-shadow-[0_2px_20px_rgba(0,0,0,0.7)]"
           sizes="(min-width: 1024px) 256px, (min-width: 640px) 224px, 160px"
