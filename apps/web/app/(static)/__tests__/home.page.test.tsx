@@ -22,24 +22,24 @@ describe('Static Home page', () => {
     ).toHaveAttribute('href', '/');
     expect(within(header).getByAltText('Blob')).toBeInTheDocument();
 
-    expectLinkWithHref(header, /Matching/i, '/matching');
-    expectLinkWithHref(header, /Cours/i, '/lesson-request');
+    // Matching et Cours pointent vers les routes register — pas de page de prévisualisation
+    expectLinkWithHref(header, /Matching/i, '/register?intent=matching');
+    expectLinkWithHref(header, /Cours/i, '/register?intent=lesson-request');
     expectLinkWithHref(header, /Bons plans/i, '/promos');
     expectLinkWithHref(header, /Guides/i, '/blobosphere');
     expectLinkWithHref(header, /Se connecter/i, '/login');
     expectLinkWithHref(header, /Rejoindre la communauté/i, '/register');
   });
 
-  it('a un H1 sémantique et mentionne la communauté surf & kite', () => {
+  it('a un H1 sémantique et mentionne surf & kite dans le Médoc', () => {
     render(<Home />);
 
-    // H1 unique et explicite — critique SEO
     const h1 = screen.getByRole('heading', { level: 1 });
     expect(h1).toBeInTheDocument();
     expect(h1).toHaveTextContent(/surf.*kite/i);
 
-    // La mention surf & kite dans le Médoc Atlantique reste présente (brand + SEO)
-    expect(screen.getAllByText(/communauté surf.*kite.*Médoc Atlantique/i).length).toBeGreaterThan(0);
+    // Le Médoc Atlantique est mentionné sur la page (hero, footer, WhyBlob)
+    expect(screen.getAllByText(/Médoc Atlantique/i).length).toBeGreaterThan(0);
   });
 
   it('affiche le hero split et ses CTA principaux', () => {
@@ -89,13 +89,55 @@ describe('Static Home page', () => {
     }
   });
 
-  it('affiche la section "Pourquoi Blob ?" avec la brand story', () => {
+  it('affiche la section "Pourquoi Blob ?" avec le messaging bêta', () => {
     render(<Home />);
 
     expect(screen.getByRole('heading', { name: /Pourquoi Blob/i })).toBeInTheDocument();
-    // Copy validée : communauté surf & kite vivante dans le Médoc
-    expect(screen.getAllByText(/communauté surf.*kite.*Médoc Atlantique/i).length).toBeGreaterThan(0);
-    // Esprit glisse préservé dans la brand story
-    expect(screen.getAllByText(/esprit glisse/i).length).toBeGreaterThan(0);
+
+    // "bêta locale" apparaît dans le texte et/ou les piliers (plusieurs occurrences possibles)
+    expect(screen.getAllByText(/bêta locale/i).length).toBeGreaterThan(0);
+
+    // Piliers attendus (labels de piliers — correspondance partielle)
+    expect(screen.getAllByText(/bêta locale/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/sans engagement/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Utile pour la communauté/i)).toBeInTheDocument();
+
+    // Ancre #why-blob accessible depuis le header (section id)
+    const section = document.getElementById('why-blob');
+    expect(section).not.toBeNull();
+  });
+
+  it('affiche le footer premium avec les routes sûres', () => {
+    render(<Home />);
+
+    const footer = screen.getByRole('contentinfo');
+    expect(footer).toBeInTheDocument();
+
+    // Logo Blob dans le footer
+    expect(within(footer).getByAltText('Blob')).toBeInTheDocument();
+
+    // Routes Plateforme
+    expectLinkWithHref(footer, /^Matching$/i, '/register?intent=matching');
+    expectLinkWithHref(footer, /^Cours$/i, '/register?intent=lesson-request');
+    expectLinkWithHref(footer, /^Bons plans$/i, '/promos');
+    expectLinkWithHref(footer, /^Guides$/i, '/blobosphere');
+
+    // Routes Communauté
+    expectLinkWithHref(footer, /Rejoindre la communauté/i, '/register');
+
+    // Routes À propos
+    expectLinkWithHref(footer, /Pourquoi Blob/i, '/#why-blob');
+    expectLinkWithHref(footer, /Se connecter/i, '/login');
+  });
+
+  it('ne contient pas de liens vers /matching ou /lesson-request directs', () => {
+    render(<Home />);
+
+    const allLinks = screen.getAllByRole('link');
+    const deadLinks = allLinks.filter((link) => {
+      const href = link.getAttribute('href');
+      return href === '/matching' || href === '/lesson-request';
+    });
+    expect(deadLinks).toHaveLength(0);
   });
 });

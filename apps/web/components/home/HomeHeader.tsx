@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { BlobButton } from '@/components/blob/BlobButton';
 
 const navLinks = [
-  { href: '/matching', label: 'Matching' },
-  { href: '/lesson-request', label: 'Cours' },
+  { href: '/register?intent=matching', label: 'Matching' },
+  { href: '/register?intent=lesson-request', label: 'Cours' },
   { href: '/promos', label: 'Bons plans' },
   { href: '/blobosphere', label: 'Guides' },
   { href: '/#why-blob', label: 'À propos' },

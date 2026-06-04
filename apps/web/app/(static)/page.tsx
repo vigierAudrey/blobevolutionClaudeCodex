@@ -2,6 +2,8 @@ import { HomeHeader } from '@/components/home/HomeHeader';
 import { HomeHeroSplit } from '@/components/home/HomeHeroSplit';
 import { HomeYellowBar } from '@/components/home/HomeYellowBar';
 import { HomeConnectionSteps } from '@/components/home/HomeConnectionSteps';
+import { HomeWhyBlob } from '@/components/home/HomeWhyBlob';
+import { HomeFooter } from '@/components/home/HomeFooter';
 import type { Metadata } from 'next';
 
 // ISR with 5min revalidation
@@ -23,34 +25,18 @@ export default function Home() {
       <HomeHeroSplit />
       <HomeYellowBar />
 
-      {/* Sections de corps — espacées normalement */}
-      <div className="space-y-8 mt-8 sm:mt-10">
-
-        {/* "Blob te connecte" — 3 étapes */}
+      {/* Section connexion — espacée dans le container */}
+      <div className="mt-8 sm:mt-10">
         <HomeConnectionSteps />
-
-        {/* Pourquoi Blob ? */}
-        <section
-          aria-labelledby="why-blob"
-          className="rounded-xl border border-border border-l-4 border-l-amber-400 bg-card p-6 space-y-4"
-        >
-          <div className="flex items-center gap-2">
-            <div className="h-1 w-1 rounded-full bg-amber-400" aria-hidden="true" />
-            <h2
-              id="why-blob"
-              className="text-2xl font-semibold tracking-tight text-foreground"
-            >
-              Pourquoi Blob ?
-            </h2>
-          </div>
-          <p className="text-base text-muted-foreground leading-relaxed">
-            Blob, c&apos;est une communauté surf &amp; kite vivante dans le Médoc Atlantique.
-            Elle aide riders, pros, débutants et confirmés à se trouver, à partager les bons
-            conseils et à préserver l&apos;esprit glisse.
-          </p>
-        </section>
-
       </div>
+
+      {/* Pourquoi Blob ? — full-bleed, fond sable, bêta messaging */}
+      <div className="mt-8 sm:mt-10">
+        <HomeWhyBlob />
+      </div>
+
+      {/* Footer premium — full-bleed, fond noir */}
+      <HomeFooter />
     </div>
   );
 }
