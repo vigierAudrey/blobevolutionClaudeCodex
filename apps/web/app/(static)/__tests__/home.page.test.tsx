@@ -1,7 +1,35 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import Home from '../page';
 
+function getLinksByHref(container: HTMLElement, href: string) {
+  return within(container)
+    .getAllByRole('link')
+    .filter((link) => link.getAttribute('href') === href);
+}
+
+function expectLinkWithHref(container: HTMLElement, name: RegExp, href: string) {
+  expect(within(container).getByRole('link', { name })).toHaveAttribute('href', href);
+}
+
 describe('Static Home page', () => {
+  it('affiche le logo Blob et la navigation premium', () => {
+    render(<Home />);
+
+    const header = screen.getByRole('banner', { name: /en-tête du site/i });
+
+    expect(
+      within(header).getByRole('link', { name: /blob.*retour à l'accueil/i }),
+    ).toHaveAttribute('href', '/');
+    expect(within(header).getByAltText('Blob')).toBeInTheDocument();
+
+    expectLinkWithHref(header, /Matching/i, '/matching');
+    expectLinkWithHref(header, /Cours/i, '/lesson-request');
+    expectLinkWithHref(header, /Bons plans/i, '/promos');
+    expectLinkWithHref(header, /Guides/i, '/blobosphere');
+    expectLinkWithHref(header, /Se connecter/i, '/login');
+    expectLinkWithHref(header, /Rejoindre la communauté/i, '/register');
+  });
+
   it('a un H1 sémantique et mentionne la communauté surf & kite', () => {
     render(<Home />);
 
@@ -14,14 +42,19 @@ describe('Static Home page', () => {
     expect(screen.getAllByText(/communauté surf.*kite.*Médoc Atlantique/i).length).toBeGreaterThan(0);
   });
 
-  it('affiche les CTA principaux dans le hero', () => {
+  it('affiche le hero split et ses CTA principaux', () => {
     render(<Home />);
 
-    const riderCta = screen.getByRole('link', { name: /Je suis rider/i });
-    expect(riderCta).toBeInTheDocument();
+    const hero = screen.getByRole('region', {
+      name: /Blob.*communauté surf.*kite.*Médoc Atlantique/i,
+    });
 
-    const proCta = screen.getByRole('link', { name: /Je suis pro/i });
-    expect(proCta).toBeInTheDocument();
+    expect(hero).toHaveTextContent(/la communauté/i);
+    expect(hero).toHaveTextContent(/surf & kite/i);
+    expect(hero).toHaveTextContent(/du Médoc Atlantique/i);
+
+    expectLinkWithHref(hero, /Je suis rider/i, '/register?intent=matching');
+    expectLinkWithHref(hero, /Je suis pro/i, '/register?intent=pro');
   });
 
   it('affiche la section "Blob te connecte" avec les 3 cartes communauté', () => {
@@ -33,13 +66,27 @@ describe('Static Home page', () => {
     expect(screen.getByText(/Ride en communauté/i)).toBeInTheDocument();
   });
 
-  it('affiche le texte CTA principal et la mention bêta', () => {
+  it('relie les cartes éditoriales et la barre jaune aux parcours clés', () => {
     render(<Home />);
 
-    // CTA direct, sans tiret long
-    expect(screen.getAllByText(/trouve les bonnes personnes.*sessions/i).length).toBeGreaterThan(0);
-    // Mention bêta visible et discrète
-    expect(screen.getAllByText(/Compte gratuit.*B.ta locale/i).length).toBeGreaterThan(0);
+    const hero = screen.getByRole('region', {
+      name: /Blob.*communauté surf.*kite.*Médoc Atlantique/i,
+    });
+    const quickAccess = screen.getByRole('region', {
+      name: /Accès rapide aux fonctionnalités Blob/i,
+    });
+
+    const expectedHrefs = [
+      '/register?intent=matching',
+      '/register?intent=lesson-request',
+      '/promos',
+      '/blobosphere',
+    ];
+
+    for (const href of expectedHrefs) {
+      expect(getLinksByHref(hero, href).length).toBeGreaterThan(0);
+      expect(getLinksByHref(quickAccess, href).length).toBeGreaterThan(0);
+    }
   });
 
   it('affiche la section "Pourquoi Blob ?" avec la brand story', () => {
@@ -50,31 +97,5 @@ describe('Static Home page', () => {
     expect(screen.getAllByText(/communauté surf.*kite.*Médoc Atlantique/i).length).toBeGreaterThan(0);
     // Esprit glisse préservé dans la brand story
     expect(screen.getAllByText(/esprit glisse/i).length).toBeGreaterThan(0);
-  });
-
-  it('met en avant deux circuits avec CTAs explicites', () => {
-    render(<Home />);
-
-    // Circuits - Use getAllByRole to handle multiple matches from carousel + circuits
-    const rideHeadings = screen.getAllByRole('heading', { name: /Ride à deux/i });
-    expect(rideHeadings.length).toBeGreaterThan(0);
-
-    const proHeadings = screen.getAllByRole('heading', { name: /Avec un pro/i });
-    expect(proHeadings.length).toBeGreaterThan(0);
-
-    // CTAs circuits → redirigent vers inscription
-    const matchingLinks = screen.getAllByRole('link', { name: /Commencer le matching/i });
-    expect(matchingLinks.some(link => link.getAttribute('href')?.includes('/register'))).toBe(true);
-
-    const demandLinks = screen.getAllByRole('link', { name: /Publier ma demande/i });
-    expect(demandLinks.some(link => link.getAttribute('href')?.includes('/register'))).toBe(true);
-
-    expect(screen.queryByRole('link', { name: /Voir les offres autour de moi/i })).not.toBeInTheDocument();
-  });
-
-  it('affiche les Bons plans et la Blobosphère', () => {
-    render(<Home />);
-    expect(screen.getByRole('link', { name: /Voir les bons plans/i })).toHaveAttribute('href', '/promos');
-    expect(screen.getByRole('link', { name: /Explorer/i })).toHaveAttribute('href', '/blobosphere');
   });
 });
