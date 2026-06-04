@@ -1,27 +1,60 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import Home from '../page';
 
+function getLinksByHref(container: HTMLElement, href: string) {
+  return within(container)
+    .getAllByRole('link')
+    .filter((link) => link.getAttribute('href') === href);
+}
+
+function expectLinkWithHref(container: HTMLElement, name: RegExp, href: string) {
+  expect(within(container).getByRole('link', { name })).toHaveAttribute('href', href);
+}
+
 describe('Static Home page', () => {
-  it('a un H1 sémantique et mentionne la communauté surf & kite', () => {
+  it('affiche le logo Blob et la navigation premium', () => {
     render(<Home />);
 
-    // H1 unique et explicite — critique SEO
+    const header = screen.getByRole('banner', { name: /en-tête du site/i });
+
+    expect(
+      within(header).getByRole('link', { name: /blob.*retour à l'accueil/i }),
+    ).toHaveAttribute('href', '/');
+    expect(within(header).getByAltText('Blob')).toBeInTheDocument();
+
+    // Matching et Cours pointent vers les routes register — pas de page de prévisualisation
+    expectLinkWithHref(header, /Matching/i, '/register?intent=matching');
+    expectLinkWithHref(header, /Cours/i, '/register?intent=lesson-request');
+    expectLinkWithHref(header, /Bons plans/i, '/promos');
+    expectLinkWithHref(header, /Guides/i, '/blobosphere');
+    expectLinkWithHref(header, /Se connecter/i, '/login');
+    expectLinkWithHref(header, /Rejoindre la communauté/i, '/register');
+  });
+
+  it('a un H1 sémantique et mentionne surf & kite dans le Médoc', () => {
+    render(<Home />);
+
     const h1 = screen.getByRole('heading', { level: 1 });
     expect(h1).toBeInTheDocument();
     expect(h1).toHaveTextContent(/surf.*kite/i);
 
-    // La mention surf & kite dans le Médoc Atlantique reste présente (brand + SEO)
-    expect(screen.getAllByText(/communauté surf.*kite.*Médoc Atlantique/i).length).toBeGreaterThan(0);
+    // Le Médoc Atlantique est mentionné sur la page (hero, footer, WhyBlob)
+    expect(screen.getAllByText(/Médoc Atlantique/i).length).toBeGreaterThan(0);
   });
 
-  it('affiche les CTA principaux dans le hero', () => {
+  it('affiche le hero split et ses CTA principaux', () => {
     render(<Home />);
 
-    const riderCta = screen.getByRole('link', { name: /Je suis rider/i });
-    expect(riderCta).toBeInTheDocument();
+    const hero = screen.getByRole('region', {
+      name: /Blob.*communauté surf.*kite.*Médoc Atlantique/i,
+    });
 
-    const proCta = screen.getByRole('link', { name: /Je suis pro/i });
-    expect(proCta).toBeInTheDocument();
+    expect(hero).toHaveTextContent(/la communauté/i);
+    expect(hero).toHaveTextContent(/surf & kite/i);
+    expect(hero).toHaveTextContent(/du Médoc Atlantique/i);
+
+    expectLinkWithHref(hero, /Je suis rider/i, '/register?intent=matching');
+    expectLinkWithHref(hero, /Je suis pro/i, '/register?intent=pro');
   });
 
   it('affiche la section "Blob te connecte" avec les 3 cartes communauté', () => {
@@ -33,48 +66,78 @@ describe('Static Home page', () => {
     expect(screen.getByText(/Ride en communauté/i)).toBeInTheDocument();
   });
 
-  it('affiche le sous-titre hero validé et la micro-phrase bêta', () => {
+  it('relie les cartes éditoriales et la barre jaune aux parcours clés', () => {
     render(<Home />);
 
-    // Sous-titre hero : texte validé, aucun tiret long
-    expect(screen.getAllByText(/Blob t.aide.*trouver les bonnes personnes/i).length).toBeGreaterThan(0);
-    // Micro-phrase bêta : discrète, non anxiogène
-    expect(screen.getByText(/Blob se construit avec les premiers riders/i)).toBeInTheDocument();
+    const hero = screen.getByRole('region', {
+      name: /Blob.*communauté surf.*kite.*Médoc Atlantique/i,
+    });
+    const quickAccess = screen.getByRole('region', {
+      name: /Accès rapide aux fonctionnalités Blob/i,
+    });
+
+    const expectedHrefs = [
+      '/register?intent=matching',
+      '/register?intent=lesson-request',
+      '/promos',
+      '/blobosphere',
+    ];
+
+    for (const href of expectedHrefs) {
+      expect(getLinksByHref(hero, href).length).toBeGreaterThan(0);
+      expect(getLinksByHref(quickAccess, href).length).toBeGreaterThan(0);
+    }
   });
 
-  it('affiche la section "Pourquoi Blob ?" avec la brand story', () => {
+  it('affiche la section "Pourquoi Blob ?" avec le messaging bêta', () => {
     render(<Home />);
 
     expect(screen.getByRole('heading', { name: /Pourquoi Blob/i })).toBeInTheDocument();
-    // Copy validée : communauté surf & kite vivante dans le Médoc (sans étymologie fragile)
-    expect(screen.getAllByText(/communauté surf.*kite.*Médoc Atlantique/i).length).toBeGreaterThan(0);
-    // Promesse produit : pas d'exposition de spots sensibles
-    expect(screen.getAllByText(/spots sensibles/i).length).toBeGreaterThan(0);
+
+    // "bêta locale" apparaît dans le texte et/ou les piliers (plusieurs occurrences possibles)
+    expect(screen.getAllByText(/bêta locale/i).length).toBeGreaterThan(0);
+
+    // Piliers attendus (labels de piliers — correspondance partielle)
+    expect(screen.getAllByText(/bêta locale/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/sans engagement/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Utile pour la communauté/i)).toBeInTheDocument();
+
+    // Ancre #why-blob accessible depuis le header (section id)
+    const section = document.getElementById('why-blob');
+    expect(section).not.toBeNull();
   });
 
-  it('met en avant deux circuits avec CTAs explicites', () => {
+  it('affiche le footer premium avec les routes sûres', () => {
     render(<Home />);
 
-    // Circuits - Use getAllByRole to handle multiple matches from carousel + circuits
-    const rideHeadings = screen.getAllByRole('heading', { name: /Ride à deux/i });
-    expect(rideHeadings.length).toBeGreaterThan(0);
+    const footer = screen.getByRole('contentinfo');
+    expect(footer).toBeInTheDocument();
 
-    const proHeadings = screen.getAllByRole('heading', { name: /Avec un pro/i });
-    expect(proHeadings.length).toBeGreaterThan(0);
+    // Logo Blob dans le footer
+    expect(within(footer).getByAltText('Blob')).toBeInTheDocument();
 
-    // CTAs circuits → redirigent vers inscription
-    const matchingLinks = screen.getAllByRole('link', { name: /Commencer le matching/i });
-    expect(matchingLinks.some(link => link.getAttribute('href')?.includes('/register'))).toBe(true);
+    // Routes Plateforme
+    expectLinkWithHref(footer, /^Matching$/i, '/register?intent=matching');
+    expectLinkWithHref(footer, /^Cours$/i, '/register?intent=lesson-request');
+    expectLinkWithHref(footer, /^Bons plans$/i, '/promos');
+    expectLinkWithHref(footer, /^Guides$/i, '/blobosphere');
 
-    const demandLinks = screen.getAllByRole('link', { name: /Publier ma demande/i });
-    expect(demandLinks.some(link => link.getAttribute('href')?.includes('/register'))).toBe(true);
+    // Routes Communauté
+    expectLinkWithHref(footer, /Rejoindre la communauté/i, '/register');
 
-    expect(screen.queryByRole('link', { name: /Voir les offres autour de moi/i })).not.toBeInTheDocument();
+    // Routes À propos
+    expectLinkWithHref(footer, /Pourquoi Blob/i, '/#why-blob');
+    expectLinkWithHref(footer, /Se connecter/i, '/login');
   });
 
-  it('affiche les Bons plans et la Blobosphère', () => {
+  it('ne contient pas de liens vers /matching ou /lesson-request directs', () => {
     render(<Home />);
-    expect(screen.getByRole('link', { name: /Voir les bons plans/i })).toHaveAttribute('href', '/promos');
-    expect(screen.getByRole('link', { name: /Explorer/i })).toHaveAttribute('href', '/blobosphere');
+
+    const allLinks = screen.getAllByRole('link');
+    const deadLinks = allLinks.filter((link) => {
+      const href = link.getAttribute('href');
+      return href === '/matching' || href === '/lesson-request';
+    });
+    expect(deadLinks).toHaveLength(0);
   });
 });
