@@ -50,6 +50,13 @@
   --input: 214.3 31.8% 91.4%;
   --ring: 221.2 83.2% 53.3%;
   --radius: 0.5rem;
+
+  /* Blob brand tokens */
+  --blob-yellow:      43 96% 53%;
+  --blob-yellow-dark: 38 92% 44%;
+  --blob-black:       220 14% 10%;
+  --blob-sand:        40 30% 94%;
+  --blob-sand-deep:   36 20% 86%;
 }
 
 .dark {

@@ -52,6 +52,13 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        blob: {
+          yellow:        'hsl(var(--blob-yellow))',
+          'yellow-dark': 'hsl(var(--blob-yellow-dark))',
+          black:         'hsl(var(--blob-black))',
+          sand:          'hsl(var(--blob-sand))',
+          'sand-deep':   'hsl(var(--blob-sand-deep))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
