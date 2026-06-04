@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { HTMLAttributes } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 
 /*
  * BlobCard — card avec mode DA Blob.
@@ -23,7 +23,7 @@ const modeHover: Record<BlobCardMode, string> = {
 interface BlobCardProps extends HTMLAttributes<HTMLDivElement> {
   mode?: BlobCardMode;
   /** Slot pour l'image en haut de la card (utiliser BlobMediaFrame) */
-  media?: React.ReactNode;
+  media?: ReactNode;
 }
 
 export function BlobCard({

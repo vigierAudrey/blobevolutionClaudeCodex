@@ -11,7 +11,7 @@ export type BlobSectionMode = 'dark' | 'sand' | 'yellow';
 
 const modeBase: Record<BlobSectionMode, string> = {
   dark:   'bg-blob-black text-white',
-  sand:   'bg-blob-sand  text-blob-black',
+  sand:   'bg-blob-sand text-blob-black',
   yellow: 'bg-blob-yellow text-blob-black',
 };
 
