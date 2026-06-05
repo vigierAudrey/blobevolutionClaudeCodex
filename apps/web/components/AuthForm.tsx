@@ -15,6 +15,7 @@ import { PasswordRequirementsList } from './PasswordRequirementsList';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { BLOBOSPHERE_SIGNUP_ARTICLE_KEY, BLOBOSPHERE_SIGNUP_INTENT_KEY } from '@/components/blobosphere/BlobosphereAnalyticsLink';
 import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../lib/franceLaunch';
+import { mapAuthErrorToFrench } from '../lib/mapAuthErrorToFrench';
 
 const PUBLIC_ROLES = [
   { value: 'RIDER', label: 'Rider' },
@@ -243,7 +244,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           email: "Cette adresse email est déjà utilisée. Essayez de vous connecter ou utilisez une autre adresse.",
         });
       } else {
-        setError(message);
+        setError(mapAuthErrorToFrench(message));
       }
     } finally {
       setLoading(false);

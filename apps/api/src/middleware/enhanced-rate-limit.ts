@@ -302,7 +302,6 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
       res.status(429).json({
         ...config.message,
         timestamp: new Date().toISOString(),
-        endpoint: req.path,
         retryAfterSeconds: retryAfter
       });
     }

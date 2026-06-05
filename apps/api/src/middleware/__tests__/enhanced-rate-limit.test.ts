@@ -221,6 +221,44 @@ describe('Enhanced Rate Limiting', () => {
       expect(typeof authProfile.message.message).toBe('string');
       expect(authProfile.message.retryAfter).toBe('15 minutes');
     });
+
+    it('should not expose endpoint path in 429 response body', async () => {
+      // Build a minimal limiter that always fires (max: 0), then trigger it.
+      // ENABLE_RATE_LIMIT_IN_TESTS must be set so the skip() guard is not active.
+      process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+      const { createLazyCustomRateLimiter } = loadRateLimitModule();
+      // Use require (CJS) instead of dynamic import to avoid --experimental-vm-modules
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const expressModule = require('express') as typeof import('express');
+      const testApp = expressModule();
+
+      const alwaysLimit = createLazyCustomRateLimiter(
+        {
+          windowMs: 60_000,
+          max: 0,
+          message: { error: 'TEST_RATE_LIMIT_EXCEEDED', message: 'Too many requests', retryAfter: '1 minute' },
+          handler: (_req: import('express').Request, res: import('express').Response) => {
+            res.status(429).json({
+              error: 'TEST_RATE_LIMIT_EXCEEDED',
+              message: 'Too many requests',
+              timestamp: new Date().toISOString(),
+              retryAfterSeconds: undefined,
+            });
+          },
+        },
+        'test_no_endpoint',
+      );
+
+      testApp.get('/test-path', alwaysLimit, (_req, res) => res.status(200).json({}));
+
+      const res = await request(testApp).get('/test-path');
+      expect(res.status).toBe(429);
+      expect(res.body).not.toHaveProperty('endpoint');
+      expect(res.body).toHaveProperty('error');
+      expect(res.body).toHaveProperty('message');
+
+      delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+    });
   });
 
   describe('Cleanup functionality', () => {

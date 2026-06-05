@@ -25,13 +25,15 @@ jest.mock('../../../lib/mailer', () => ({
     }
   },
   sendPasswordResetEmail: jest.fn(),
-  sendVerificationEmail: jest.fn()
+  sendVerificationEmail: jest.fn(),
+  sendPasswordChangedEmail: jest.fn().mockResolvedValue({ skipped: true }),
 }));
 
-import { MailDeliveryError, sendPasswordResetEmail, sendVerificationEmail } from '../../../lib/mailer';
+import { MailDeliveryError, sendPasswordChangedEmail, sendPasswordResetEmail, sendVerificationEmail } from '../../../lib/mailer';
 
 const mockSendPasswordResetEmail = sendPasswordResetEmail as jest.MockedFunction<typeof sendPasswordResetEmail>;
 const mockSendVerificationEmail = sendVerificationEmail as jest.MockedFunction<typeof sendVerificationEmail>;
+const mockSendPasswordChangedEmail = sendPasswordChangedEmail as jest.MockedFunction<typeof sendPasswordChangedEmail>;
 
 describe('AuthService', () => {
   let authService: AuthService;
@@ -602,6 +604,8 @@ describe('AuthService', () => {
     const newPassword = 'NewPass456!';
 
     beforeEach(async () => {
+      mockSendPasswordChangedEmail.mockReset();
+      mockSendPasswordChangedEmail.mockResolvedValue({ skipped: true });
       const result = await authService.register({
         email: 'change@example.com',
         password: originalPassword,
@@ -623,6 +627,33 @@ describe('AuthService', () => {
       const tokens = await prisma.refreshToken.findMany({ where: { userId: testUserId } });
       expect(tokens.length).toBeGreaterThan(0);
       expect(tokens.every((token) => token.revokedAt !== null)).toBe(true);
+    });
+
+    it('should send password-changed notification email on success', async () => {
+      mockSendPasswordChangedEmail.mockResolvedValue({ sent: true, provider: 'brevo', latencyMs: 10 });
+
+      await authService.changePassword(testUserId, originalPassword, newPassword);
+
+      // Allow the fire-and-forget promise to flush
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mockSendPasswordChangedEmail).toHaveBeenCalledTimes(1);
+      expect(mockSendPasswordChangedEmail).toHaveBeenCalledWith('change@example.com');
+    });
+
+    it('should not rollback password change if email notification fails', async () => {
+      mockSendPasswordChangedEmail.mockRejectedValue(
+        new MailDeliveryError({ type: 'password_changed', provider: 'brevo', latencyMs: 100, timedOut: false })
+      );
+
+      const result = await authService.changePassword(testUserId, originalPassword, newPassword);
+      expect(result.message).toBe('Password updated');
+
+      // Allow the fire-and-forget promise to flush
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const updated = await prisma.user.findUnique({ where: { id: testUserId } });
+      const matchesNew = await bcrypt.compare(newPassword, updated!.password);
+      expect(matchesNew).toBe(true);
     });
 
     it('should reject invalid current password', async () => {

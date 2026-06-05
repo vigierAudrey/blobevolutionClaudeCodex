@@ -23,7 +23,14 @@ function ResetPasswordInner() {
 
   useEffect(() => {
     const t = search.get('token');
-    if (t) setToken(t);
+    if (t) {
+      setToken(t);
+      // Remove token from URL bar immediately — token must not linger in address
+      // bar or browser history after being read (matches verify/page.tsx pattern).
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', '/reset-password');
+      }
+    }
   }, [search]);
 
   const onSubmit = async (e: React.FormEvent) => {

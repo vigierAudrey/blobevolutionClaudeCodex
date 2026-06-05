@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { BackBar } from '@/components/BackBar';
 import { Shield, Mail, Lock, CheckCircle2, AlertCircle, RefreshCw, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { mapAuthErrorToFrench } from '@/lib/mapAuthErrorToFrench';
 
 export default function ProLoginPage() {
   const router = useRouter();
@@ -43,7 +44,7 @@ export default function ProLoginPage() {
       } else if (msg.toLowerCase().includes('2fa disponible uniquement pour les pros')) {
         setError('La connexion 2FA est réservée aux comptes professionnels.');
       } else {
-        setError(msg);
+        setError(mapAuthErrorToFrench(msg));
       }
     } finally {
       setLoading(false);
@@ -77,7 +78,7 @@ export default function ProLoginPage() {
       if (msg.toLowerCase().includes('code incorrect') || msg.toLowerCase().includes('code expiré')) {
         setError('Code incorrect ou expiré. Réessaye ou demande un nouveau code.');
       } else {
-        setError(msg);
+        setError(mapAuthErrorToFrench(msg));
       }
     } finally {
       setLoading(false);
