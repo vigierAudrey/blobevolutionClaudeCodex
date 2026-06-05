@@ -3,16 +3,13 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../lib/apiClient';
-import {
-  BlobAlert,
-  BlobBadge,
-  BlobButton,
-  BlobFormCard,
-  BlobInput,
-} from './blob';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import type { ZodIssue } from 'zod';
 import type { DashboardUser, UserRole } from '@/types/user';
-import { Eye, EyeOff, Mail } from 'lucide-react';
+import { Eye, EyeOff, LogIn, UserPlus, AlertCircle, CheckCircle2, Mail } from 'lucide-react';
 import { getPasswordRequirementStatuses } from '../../api/src/utils/password-validator';
 import { PasswordRequirementsList } from './PasswordRequirementsList';
 import { useAnalytics } from '@/hooks/useAnalytics';
@@ -312,310 +309,341 @@ export function AuthForm({ mode }: AuthFormProps) {
   // ✅ NOUVEAU : Si 2FA est requis, afficher le formulaire 2FA
   if (requires2FA && twoFAChallengeId) {
     return (
-      <BlobFormCard className="space-y-5">
-        <header className="space-y-2">
-          <BlobBadge variant="dark" brandMark>2FA</BlobBadge>
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
-              <Mail size={20} aria-hidden="true" />
+      <Card className="border-2 border-transparent hover:border-emerald-300 transition-all">
+        <CardHeader className="bg-gradient-to-br from-emerald-50/80 to-transparent dark:from-emerald-950/30 dark:to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-600 to-teal-600 text-white">
+              <Mail size={20} />
             </div>
             <div>
-              <h2 className="text-xl font-black uppercase tracking-widest">
-                Vérification en deux étapes
-              </h2>
-              <p className="mt-1 text-sm leading-6 text-blob-black/70">
-                Un code de vérification a été envoyé à votre adresse email.
-              </p>
+              <CardTitle>Vérification en deux étapes</CardTitle>
+              <CardDescription>
+                Un code de vérification a été envoyé à votre adresse email
+              </CardDescription>
             </div>
           </div>
-        </header>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <form onSubmit={submit2FA} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="2fa-code">Code de vérification (6 chiffres)</Label>
+              <Input
+                id="2fa-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                required
+                autoComplete="one-time-code"
+                value={twoFACode}
+                onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, ''))}
+                placeholder="123456"
+                className="text-center text-2xl tracking-widest"
+              />
+            </div>
 
-        <form onSubmit={submit2FA} className="space-y-4">
-          <BlobInput
-            id="2fa-code"
-            label="Code de vérification (6 chiffres)"
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]{6}"
-            maxLength={6}
-            required
-            autoComplete="one-time-code"
-            value={twoFACode}
-            onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, ''))}
-            placeholder="123456"
-            className="text-center text-2xl tracking-widest"
-          />
+            {error && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30" role="alert">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-700 dark:text-red-400">
+                  {error}
+                </p>
+              </div>
+            )}
 
-          {error && <BlobAlert variant="error">{error}</BlobAlert>}
-          {info && <BlobAlert variant="success">{info}</BlobAlert>}
+            {info && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30" role="alert">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-green-700 dark:text-green-400">
+                  {info}
+                </p>
+              </div>
+            )}
 
-          <BlobButton
-            type="submit"
-            className="w-full"
-            disabled={loading || twoFACode.length !== 6}
-            loading={loading}
-            size="lg"
-          >
-            {loading ? 'Vérification...' : 'Vérifier le code'}
-          </BlobButton>
+            <Button
+              type="submit"
+              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg hover:shadow-xl transition-all"
+              disabled={loading || twoFACode.length !== 6}
+              size="lg"
+            >
+              {loading ? 'Vérification...' : 'Vérifier le code'}
+            </Button>
 
-          <BlobButton
-            type="button"
-            variant="outlineDark"
-            className="w-full"
-            onClick={() => {
-              setRequires2FA(false);
-              setTwoFAChallengeId(null);
-              setTwoFACode('');
-              setError(null);
-              setInfo(null);
-            }}
-          >
-            Annuler
-          </BlobButton>
-        </form>
-      </BlobFormCard>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setRequires2FA(false);
+                setTwoFAChallengeId(null);
+                setTwoFACode('');
+                setError(null);
+                setInfo(null);
+              }}
+            >
+              Annuler
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <BlobFormCard className="space-y-5">
-      <header className="space-y-2">
-        <BlobBadge variant="yellow" brandMark>
-          {mode === 'login' ? 'Accès membre' : 'Bêta locale'}
-        </BlobBadge>
-        <div>
-          <h2 className="text-2xl font-black uppercase tracking-widest">
-            {mode === 'login' ? 'Connexion' : 'Inscription'}
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-blob-black/70">
-            {mode === 'login' ? 'Accède à ton compte Blob.' : 'Rejoins la communauté Blob.'}
-          </p>
-        </div>
-      </header>
-
-      <form onSubmit={onSubmit} className="space-y-4">
-        <BlobInput
-          id="email"
-          label="Email"
-          type="email"
-          required
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          error={fieldErrors.email}
-        />
-
-        <div className="space-y-2">
-          <div className="relative">
-            <BlobInput
-              id="password"
-              label="Mot de passe"
-              type={showPassword ? 'text' : 'password'}
-              required
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              error={fieldErrors.password}
-              className="pr-10"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((prev) => !prev)}
-              className="absolute right-0 top-7 flex h-11 w-11 items-center justify-center text-blob-black/65 transition hover:text-blob-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
-              aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
-            >
-              {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-            </button>
+    <Card className="border-2 border-transparent hover:border-blue-300 transition-all">
+      <CardHeader className={`bg-gradient-to-br ${mode === 'login' ? 'from-indigo-50/80' : 'from-blue-50/80'} to-transparent dark:${mode === 'login' ? 'from-indigo-950/30' : 'from-blue-950/30'} dark:to-transparent`}>
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-lg bg-gradient-to-br ${mode === 'login' ? 'from-indigo-600 to-blue-600' : 'from-blue-500 to-cyan-500'} text-white`}>
+            {mode === 'login' ? <LogIn size={20} /> : <UserPlus size={20} />}
           </div>
-          {mode === 'register' && <PasswordRequirementsList statuses={passwordStatuses} />}
+          <div>
+            <CardTitle>{mode === 'login' ? 'Connexion' : 'Inscription'}</CardTitle>
+            <CardDescription>
+              {mode === 'login' ? 'Accède à ton compte Blob' : 'Rejoins la communauté Blob'}
+            </CardDescription>
+          </div>
         </div>
-
-        {mode === 'register' && (
+      </CardHeader>
+      <CardContent className="pt-6">
+        <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
-            {!selectorVisible ? (
-              <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-white px-3 py-2">
-                <span className="text-sm text-blob-black">
-                  Tu t&apos;inscris comme : <strong>{role === 'PRO' ? 'Pro' : 'Rider'}</strong>
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className={fieldErrors.email ? 'border-red-500 focus-visible:ring-red-500' : ''}
+            />
+            {fieldErrors.email && (
+              <p className="text-sm text-red-600" role="alert">
+                {fieldErrors.email}
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Mot de passe</Label>
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className={`${fieldErrors.password ? 'border-red-500 focus-visible:ring-red-500' : ''} pr-10`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+              </button>
+            </div>
+            {fieldErrors.password && (
+              <p className="text-sm text-red-600" role="alert">
+                {fieldErrors.password}
+              </p>
+            )}
+            {mode === 'register' && <PasswordRequirementsList statuses={passwordStatuses} />}
+          </div>
+          {mode === 'register' && (
+            <div className="space-y-2">
+              {!selectorVisible ? (
+                <div className="flex items-center justify-between rounded-md border border-input bg-muted/30 px-3 py-2">
+                  <span className="text-sm text-foreground">
+                    Tu t&apos;inscris comme : <strong>{role === 'PRO' ? 'Pro' : 'Rider'}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs text-primary underline hover:no-underline"
+                    onClick={() => setSelectorVisible(true)}
+                  >
+                    Changer de rôle
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Label htmlFor="role">Rôle</Label>
+                  <select
+                    id="role"
+                    className={`h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${
+                      fieldErrors.role
+                        ? 'border-red-500 focus-visible:ring-red-500'
+                        : 'border-input bg-background focus-visible:ring-ring'
+                    }`}
+                    value={role}
+                    onChange={(event) => setRole(event.target.value as PublicRole)}
+                  >
+                    {PUBLIC_ROLES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {fieldErrors.role && (
+                    <p className="text-sm text-red-600" role="alert">
+                      {fieldErrors.role}
+                    </p>
+                  )}
+                </>
+              )}
+              {role === 'PRO' && (
+                <div
+                  className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100"
+                  role="status"
+                >
+                  {PRO_BETA_INFO_MESSAGE}
+                </div>
+              )}
+            </div>
+          )}
+          {mode === 'register' && (
+            <div className="space-y-2 border rounded-md p-3 bg-blue-50/50 dark:bg-blue-950/20">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  id="ageConfirmed"
+                  type="checkbox"
+                  className={`mt-1 ${fieldErrors.ageConfirmation ? 'border-red-500' : ''}`}
+                  checked={ageConfirmed}
+                  onChange={(event) => setAgeConfirmed(event.target.checked)}
+                  required
+                />
+                <span className="font-medium">
+                  Je certifie avoir 18 ans ou plus et accepte les{' '}
+                  <a className="underline text-primary" href="/terms" target="_blank" rel="noopener noreferrer">
+                    Conditions Générales d&apos;Utilisation
+                  </a>
                 </span>
-                <button
-                  type="button"
-                  className="shrink-0 text-xs font-black uppercase tracking-[0.12em] text-blob-black underline decoration-blob-yellow decoration-2 underline-offset-4 hover:text-blob-yellow-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
-                  onClick={() => setSelectorVisible(true)}
-                >
-                  Changer de rôle
-                </button>
+              </label>
+              {fieldErrors.ageConfirmation && (
+                <p className="text-sm text-red-600 mt-2" role="alert">
+                  {fieldErrors.ageConfirmation}
+                </p>
+              )}
+            </div>
+          )}
+          {mode === 'register' && (
+            <div className="space-y-2 border rounded-md p-3 bg-muted/30">
+              <div className="text-sm text-foreground">
+                <p className="font-medium">Sécurité des sessions & responsabilité</p>
+                <p className="mt-1">
+                  Blob facilite la mise en relation entre personnes pour partager de bons moments.
+                  Tu restes toutefois seul responsable de tes choix, de ta sécurité et de tes biens.
+                  Blob ne fournit ni assurance, ni encadrement, ni garantie sur les activités organisées entre utilisateurs.
+                </p>
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                  <li>Donne rendez-vous dans un lieu public et préviens un proche.</li>
+                  <li>Reste vigilant face aux comportements inappropriés ou malveillants.</li>
+                  <li>Évalue toi-même les conditions (météo, niveau, matériel) avant de pratiquer.</li>
+                  <li>Interromps toute activité si tu ne te sens pas en sécurité.</li>
+                </ul>
+                <p className="mt-2 text-muted-foreground">
+                  En t&apos;inscrivant, tu confirmes avoir lu et accepté ces règles de sécurité.
+                  Pour les détails, consulte la page «
+                  <a className="underline text-primary" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
+                    Sécurité des sessions
+                  </a>
+                  ».
+                </p>
               </div>
-            ) : (
-              <>
-                <label htmlFor="role" className="block text-xs font-black uppercase tracking-[0.14em] text-current">
-                  Rôle
-                </label>
-                <select
-                  id="role"
-                  className={`min-h-11 w-full rounded-sm border-2 bg-white px-3 py-2 text-sm text-blob-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow focus-visible:ring-offset-2 ${
-                    fieldErrors.role ? 'border-red-700 focus-visible:ring-red-700' : 'border-blob-black/30'
-                  }`}
-                  value={role}
-                  onChange={(event) => setRole(event.target.value as PublicRole)}
-                  aria-invalid={fieldErrors.role ? true : undefined}
-                  aria-describedby={fieldErrors.role ? 'role-error' : undefined}
-                >
-                  {PUBLIC_ROLES.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                {fieldErrors.role && (
-                  <p id="role-error" className="text-xs font-semibold leading-5 text-red-700" role="alert">
-                    {fieldErrors.role}
-                  </p>
-                )}
-              </>
-            )}
-            {role === 'PRO' && (
-              <BlobAlert variant="warning" title="Bêta pro">
-                {PRO_BETA_INFO_MESSAGE}
-              </BlobAlert>
-            )}
-          </div>
-        )}
-
-        {mode === 'register' && (
-          <div className="space-y-2 rounded-sm border-2 border-blob-sand-deep bg-white p-3">
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                id="ageConfirmed"
-                type="checkbox"
-                className={`mt-1 h-4 w-4 accent-blob-yellow ${fieldErrors.ageConfirmation ? 'border-red-700' : ''}`}
-                checked={ageConfirmed}
-                onChange={(event) => setAgeConfirmed(event.target.checked)}
-                required
-              />
-              <span className="font-medium">
-                Je certifie avoir 18 ans ou plus et accepte les{' '}
-                <a className="font-semibold underline decoration-blob-yellow decoration-2 underline-offset-4" href="/terms" target="_blank" rel="noopener noreferrer">
-                  Conditions Générales d&apos;Utilisation
-                </a>
-              </span>
-            </label>
-            {fieldErrors.ageConfirmation && (
-              <p className="text-xs font-semibold leading-5 text-red-700" role="alert">
-                {fieldErrors.ageConfirmation}
-              </p>
-            )}
-          </div>
-        )}
-
-        {mode === 'register' && (
-          <div className="space-y-3 rounded-sm border-2 border-blob-sand-deep bg-white p-3">
-            <div className="text-sm text-blob-black">
-              <p className="font-black uppercase tracking-[0.12em]">Sécurité des sessions & responsabilité</p>
-              <p className="mt-2">
-                Blob facilite la mise en relation entre personnes pour partager de bons moments.
-                Tu restes toutefois seul responsable de tes choix, de ta sécurité et de tes biens.
-                Blob ne fournit ni assurance, ni encadrement, ni garantie sur les activités organisées entre utilisateurs.
-              </p>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>Donne rendez-vous dans un lieu public et préviens un proche.</li>
-                <li>Reste vigilant face aux comportements inappropriés ou malveillants.</li>
-                <li>Évalue toi-même les conditions (météo, niveau, matériel) avant de pratiquer.</li>
-                <li>Interromps toute activité si tu ne te sens pas en sécurité.</li>
-              </ul>
-              <p className="mt-2 text-blob-black/70">
-                En t&apos;inscrivant, tu confirmes avoir lu et accepté ces règles de sécurité.
-                Pour les détails, consulte la page «
-                <a className="font-semibold underline decoration-blob-yellow decoration-2 underline-offset-4" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
-                  Sécurité des sessions
-                </a>
-                ».
+              <label className="flex items-start gap-2 text-sm mt-2">
+                <input
+                  id="consentAccepted"
+                  type="checkbox"
+                  className={`mt-1 ${fieldErrors.consent ? 'border-red-500' : ''}`}
+                  checked={consentAccepted}
+                  onChange={(event) => setConsentAccepted(event.target.checked)}
+                  required
+                />
+                <span>J&apos;ai lu et j&apos;accepte les règles de sécurité des sessions.</span>
+              </label>
+              {fieldErrors.consent && (
+                <p className="text-sm text-red-600 mt-2" role="alert">
+                  {fieldErrors.consent}
+                </p>
+              )}
+            </div>
+          )}
+          {mode === 'login' && loginConsentNeeded && (
+            <div className="space-y-2 border rounded-md p-3 bg-muted/30">
+              <div className="text-sm text-foreground">
+                <p className="font-medium">Sécurité des sessions & responsabilité</p>
+                <p className="mt-1">
+                  Pour poursuivre la connexion, confirme avoir lu et accepté les règles de sécurité.
+                  Consulte la page «
+                  <a className="underline text-primary" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
+                    Sécurité des sessions
+                  </a>
+                  ».
+                </p>
+              </div>
+              <label className="flex items-start gap-2 text-sm mt-2">
+                <input
+                  id="loginConsentAccepted"
+                  type="checkbox"
+                  className="mt-1"
+                  checked={loginConsentAccepted}
+                  onChange={(event) => setLoginConsentAccepted(event.target.checked)}
+                  required
+                />
+                <span>J&apos;ai lu et j&apos;accepte les règles de sécurité des sessions.</span>
+              </label>
+            </div>
+          )}
+          {mode === 'login' && emailNotVerified && (
+            <div className="space-y-2 border rounded-md p-3 bg-amber-50 border-amber-200">
+              <div className="text-sm text-foreground">
+                <p className="font-medium">Email non vérifié</p>
+                <p className="mt-1">Avant de te connecter, confirme ton adresse email.</p>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" disabled={resendStatus === 'loading' || !email} onClick={resend}>
+                  {resendStatus === 'loading' ? 'Envoi…' : "Renvoyer l'email de vérification"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Astuce : vérifie aussi le dossier spam.</p>
+            </div>
+          )}
+          {error && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30" role="alert">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700 dark:text-red-400">
+                {error}
               </p>
             </div>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                id="consentAccepted"
-                type="checkbox"
-                className={`mt-1 h-4 w-4 accent-blob-yellow ${fieldErrors.consent ? 'border-red-700' : ''}`}
-                checked={consentAccepted}
-                onChange={(event) => setConsentAccepted(event.target.checked)}
-                required
-              />
-              <span>J&apos;ai lu et j&apos;accepte les règles de sécurité des sessions.</span>
-            </label>
-            {fieldErrors.consent && (
-              <p className="text-xs font-semibold leading-5 text-red-700" role="alert">
-                {fieldErrors.consent}
-              </p>
-            )}
-          </div>
-        )}
-
-        {mode === 'login' && loginConsentNeeded && (
-          <div className="space-y-3 rounded-sm border-2 border-blob-sand-deep bg-white p-3">
-            <div className="text-sm text-blob-black">
-              <p className="font-black uppercase tracking-[0.12em]">Sécurité des sessions & responsabilité</p>
-              <p className="mt-2">
-                Pour poursuivre la connexion, confirme avoir lu et accepté les règles de sécurité.
-                Consulte la page «
-                <a className="font-semibold underline decoration-blob-yellow decoration-2 underline-offset-4" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
-                  Sécurité des sessions
-                </a>
-                ».
-              </p>
+          )}
+          {info && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30">
+              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-green-700 dark:text-green-400">{info}</p>
             </div>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                id="loginConsentAccepted"
-                type="checkbox"
-                className="mt-1 h-4 w-4 accent-blob-yellow"
-                checked={loginConsentAccepted}
-                onChange={(event) => setLoginConsentAccepted(event.target.checked)}
-                required
-              />
-              <span>J&apos;ai lu et j&apos;accepte les règles de sécurité des sessions.</span>
-            </label>
-          </div>
-        )}
-
-        {mode === 'login' && emailNotVerified && (
-          <div className="space-y-3 rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 p-3">
-            <div className="text-sm text-blob-black">
-              <p className="font-black uppercase tracking-[0.12em]">Email non vérifié</p>
-              <p className="mt-1">Avant de te connecter, confirme ton adresse email.</p>
-            </div>
-            <BlobButton type="button" variant="outlineDark" size="sm" disabled={resendStatus === 'loading' || !email} onClick={resend}>
-              {resendStatus === 'loading' ? 'Envoi…' : "Renvoyer l'email de vérification"}
-            </BlobButton>
-            <p className="text-xs text-blob-black/65">Astuce : vérifie aussi le dossier spam.</p>
-          </div>
-        )}
-
-        {error && <BlobAlert variant="error">{error}</BlobAlert>}
-        {info && <BlobAlert variant="success">{info}</BlobAlert>}
-
-        <BlobButton
-          type="submit"
-          disabled={loading}
-          loading={loading}
-          className="w-full"
-          size="lg"
-        >
-          {loading ? 'En cours…' : mode === 'login' ? 'Se connecter' : 'Créer le compte'}
-        </BlobButton>
-      </form>
-
-      <div className="text-center text-sm text-blob-black/70">
-        {mode === 'login' ? (
-          <span>
-            Pas encore de compte ? <Link href="/register" className="font-semibold text-blob-black underline decoration-blob-yellow decoration-2 underline-offset-4">Inscription</Link>
-          </span>
-        ) : (
-          <span>
-            Déjà un compte ? <Link href="/login" className="font-semibold text-blob-black underline decoration-blob-yellow decoration-2 underline-offset-4">Connexion</Link>
-          </span>
-        )}
-      </div>
-    </BlobFormCard>
+          )}
+          <Button
+            type="submit"
+            disabled={loading}
+            className={`w-full bg-gradient-to-r ${mode === 'login' ? 'from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700' : 'from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700'} shadow-lg hover:shadow-xl transition-all`}
+            size="lg"
+          >
+            {loading ? 'En cours…' : mode === 'login' ? 'Se connecter' : 'Créer le compte'}
+          </Button>
+        </form>
+        <div className="mt-4 text-sm text-center text-muted-foreground">
+          {mode === 'login' ? (
+            <span>
+              Pas encore de compte ? <Link href="/register" className="text-primary underline">Inscription</Link>
+            </span>
+          ) : (
+            <span>
+              Déjà un compte ? <Link href="/login" className="text-primary underline">Connexion</Link>
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
