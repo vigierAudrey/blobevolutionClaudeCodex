@@ -42,35 +42,13 @@ export function HomeFooter() {
     >
       <div className="bg-blob-black px-4 sm:px-6 lg:px-10 xl:px-14 pt-12 sm:pt-14 pb-8 sm:pb-10">
 
-        {/* Grille principale : identité + colonnes */}
+        {/* Grille principale : colonnes + identité */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-6">
-
-          {/* Identité */}
-          <div className="col-span-2 md:col-span-1 space-y-4">
-            <Link
-              href="/"
-              aria-label="Blob — Retour à l'accueil"
-              className="inline-block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm"
-            >
-              <Image
-                src="/images/brand/blob-wordmark.webp"
-                alt="Blob"
-                width={80}
-                height={37}
-                className="w-[72px] sm:w-[80px] opacity-90 hover:opacity-100 transition-opacity duration-200"
-              />
-            </Link>
-            <p className="text-white/35 text-[11px] leading-relaxed uppercase tracking-[0.14em]">
-              Surf &amp; kite community
-              <br />
-              Médoc Atlantique
-            </p>
-          </div>
 
           {/* Colonnes de liens */}
           {footerColumns.map((col) => (
             <div key={col.label} className="space-y-4">
-              <p className="text-white/25 text-[10px] font-black uppercase tracking-[0.2em]">
+              <p className="text-white/75 text-[10px] font-black uppercase tracking-[0.2em]">
                 {col.label}
               </p>
               <ul className="space-y-2.5" role="list">
@@ -78,7 +56,7 @@ export function HomeFooter() {
                   <li key={`${col.label}-${link.href}`}>
                     <Link
                       href={link.href}
-                      className="text-white/50 text-[13px] leading-snug hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blob-yellow rounded-sm"
+                      className="text-white/60 text-[13px] leading-snug hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blob-yellow rounded-sm"
                     >
                       {link.label}
                     </Link>
@@ -87,6 +65,29 @@ export function HomeFooter() {
               </ul>
             </div>
           ))}
+
+          {/* Identité */}
+          <div className="col-span-2 md:col-span-1 space-y-4 md:text-right">
+            <Link
+              href="/"
+              aria-label="Blob — Retour à l'accueil"
+              className="inline-block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm"
+            >
+              <Image
+                src="/images/brand/blob-wordmark-yellow-white-details-transparent-shadow.png"
+                alt="Blob"
+                width={575}
+                height={268}
+                className="h-auto w-[82px] sm:w-[92px] opacity-95 hover:opacity-100 transition-opacity duration-200 md:ml-auto"
+                sizes="(min-width: 640px) 92px, 82px"
+              />
+            </Link>
+            <p className="text-white/60 text-[11px] leading-relaxed uppercase tracking-[0.14em]">
+              Surf &amp; kite community
+              <br />
+              Médoc Atlantique
+            </p>
+          </div>
 
         </div>
 

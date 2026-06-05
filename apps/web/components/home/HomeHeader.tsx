@@ -25,15 +25,17 @@ export function HomeHeader() {
         '-mx-4 sm:-mx-6 lg:-mx-8',
         /* Cancel container py-6 / sm:py-10 top padding so header touches viewport top */
         '-mt-6 sm:-mt-10',
+        /* Pull the hero underneath the header, matching the visual target overlay */
+        '-mb-[70px] sm:-mb-[80px] lg:-mb-[86px]',
         /* Sticky */
         'sticky top-0 z-50',
         /* Visual */
-        'bg-blob-black/96 backdrop-blur-md',
-        'border-b border-white/[0.08]',
+        'bg-[linear-gradient(90deg,rgba(14,16,18,0.90)_0%,rgba(18,18,16,0.78)_55%,rgba(28,25,18,0.66)_100%)] backdrop-blur-sm',
+        'border-b border-white/12 shadow-[0_8px_24px_rgba(0,0,0,0.28)]',
       ].join(' ')}
       aria-label="En-tête du site"
     >
-      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-10 xl:px-14 py-3.5">
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-10 xl:px-14 py-3">
 
         {/* Logo */}
         <Link
@@ -42,13 +44,13 @@ export function HomeHeader() {
           className="shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow focus-visible:ring-offset-2 focus-visible:ring-offset-blob-black rounded-sm"
         >
           <Image
-            src="/images/brand/blob-wordmark.webp"
+            src="/images/brand/blob-wordmark-yellow-white-details-transparent-shadow.png"
             alt="Blob"
-            width={120}
-            height={56}
+            width={575}
+            height={268}
             priority
-            className="w-[76px] sm:w-[90px] lg:w-[100px]"
-            sizes="100px"
+            className="h-auto w-[96px] sm:w-[118px] lg:w-[132px]"
+            sizes="(min-width: 1024px) 132px, (min-width: 640px) 118px, 96px"
           />
         </Link>
 
@@ -59,7 +61,7 @@ export function HomeHeader() {
               <li key={href}>
                 <Link
                   href={href}
-                  className="text-white/70 text-[11px] font-bold uppercase tracking-[0.12em] hover:text-blob-yellow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm py-1"
+                  className="text-white/90 text-[11px] font-bold uppercase tracking-[0.12em] drop-shadow-[0_1px_8px_rgba(0,0,0,0.55)] hover:text-blob-yellow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm py-1"
                 >
                   {label}
                 </Link>
@@ -72,7 +74,7 @@ export function HomeHeader() {
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <Link
             href="/login"
-            className="hidden sm:inline-block text-[11px] font-bold uppercase tracking-[0.12em] text-white/65 hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm px-2 py-1 whitespace-nowrap"
+            className="hidden sm:inline-flex min-h-9 items-center border border-white/45 bg-blob-black/22 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-white hover:border-blob-yellow hover:text-blob-yellow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm whitespace-nowrap"
           >
             Se connecter
           </Link>
