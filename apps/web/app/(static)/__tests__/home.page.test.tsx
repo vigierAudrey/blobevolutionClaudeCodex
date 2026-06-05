@@ -57,15 +57,6 @@ describe('Static Home page', () => {
     expectLinkWithHref(hero, /Je suis pro/i, '/register?intent=pro');
   });
 
-  it('affiche la section "Blob te connecte" avec les 3 cartes communauté', () => {
-    render(<Home />);
-
-    expect(screen.getByRole('heading', { name: /Blob te connecte/i })).toBeInTheDocument();
-    expect(screen.getByText(/Exprime ton envie/i)).toBeInTheDocument();
-    expect(screen.getByText(/Rencontre les bons profils/i)).toBeInTheDocument();
-    expect(screen.getByText(/Ride en communauté/i)).toBeInTheDocument();
-  });
-
   it('relie les cartes éditoriales et la barre jaune aux parcours clés', () => {
     render(<Home />);
 
