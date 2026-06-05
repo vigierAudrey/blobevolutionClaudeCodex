@@ -13,7 +13,7 @@ jest.mock('next/navigation', () => ({
 }));
 
 jest.mock('@/lib/apiClient', () => ({
-  apiClient: { me: jest.fn() },
+  apiClient: { me: jest.fn(), getTokens: jest.fn() },
 }));
 
 jest.mock('@/lib/csrf', () => ({
@@ -47,7 +47,7 @@ jest.mock('@/lib/franceLaunch', () => ({
 }));
 
 const mockUseRouter = useRouter as jest.Mock;
-const mockApiClient = apiClient as jest.Mocked<typeof apiClient>;
+const mockApiClient = apiClient as jest.Mocked<typeof apiClient> & { getTokens: jest.Mock };
 const mockApiRequest = apiRequest as jest.Mock;
 
 const makeResponse = (body: unknown, ok = true) => ({
@@ -69,6 +69,7 @@ beforeEach(() => {
   });
 
   mockApiClient.me.mockResolvedValue({ role: 'PRO' } as never);
+  mockApiClient.getTokens.mockReturnValue({ accessToken: 'test-token' });
   mockApiRequest.mockImplementation((url: string) => {
     if (url === '/pro/me') return Promise.resolve(makeResponse({ businessName: 'TestPro', bio: '', emailNotif: false }));
     if (url === '/pro/deletion-status') return Promise.resolve(makeResponse({ isScheduled: false }));
@@ -106,7 +107,28 @@ describe('ProProfilePage — non-regression RGPD', () => {
     });
   });
 
-  it.todo('ne contient plus les toggles de notifications push (section extraite) — audit pro/profile/page.tsx #143 apports en attente');
+  it('affiche des préférences d\'alertes pro sans promesse de push navigateur', async () => {
+    const requestPermission = jest.fn();
+    Object.defineProperty(window, 'Notification', {
+      configurable: true,
+      value: { permission: 'default', requestPermission },
+    });
+
+    render(<ProProfilePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/préférences d'alertes/i)).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText(/alertes dans blob/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/messages/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/demandes de cours/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/demandes surf/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/demandes kitesurf/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/notifications push/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/reçois des alertes instantanées/i)).not.toBeInTheDocument();
+    expect(requestPermission).not.toHaveBeenCalled();
+  });
 
   it('conserve le champ email notif dans le formulaire profil', async () => {
     render(<ProProfilePage />);

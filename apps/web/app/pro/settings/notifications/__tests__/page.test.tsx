@@ -65,6 +65,7 @@ const PRO_PREFS_RESPONSE = {
 describe('ProNotificationsPage', () => {
   const replace = jest.fn();
   const toastFn = jest.fn();
+  let requestPermission: jest.Mock;
 
   beforeEach(() => {
     // resetAllMocks vide les queues mockOnce ET les implementations
@@ -78,6 +79,11 @@ describe('ProNotificationsPage', () => {
       forward: jest.fn(),
       refresh: jest.fn(),
       prefetch: jest.fn(),
+    });
+    requestPermission = jest.fn();
+    Object.defineProperty(window, 'Notification', {
+      configurable: true,
+      value: { permission: 'default', requestPermission },
     });
   });
 
@@ -107,20 +113,30 @@ describe('ProNotificationsPage', () => {
 
   // ── Chargement des preferences ─────────────────────────────────────────────
 
-  it('charge et applique les preferences depuis l\'API', async () => {
+  it('charge et applique les preferences depuis l\'API avec un wording honnete', async () => {
     mockRequireClientRole.mockResolvedValueOnce({ role: 'PRO' });
     mockApiRequest.mockResolvedValueOnce(makeResponse(PRO_PREFS_RESPONSE));
 
     render(<ProNotificationsPage />);
 
-    // pushEnabled = false => info box visible
+    // pushEnabled = false => info box visible, sans promesse de push navigateur
     await waitFor(() => {
-      expect(screen.getByText(/notifications désactivées/i)).toBeInTheDocument();
+      expect(screen.getByText(/alertes dans blob désactivées/i)).toBeInTheDocument();
     });
+
+    expect(screen.getByRole('heading', { name: /préférences d'alertes/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/alertes dans blob/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/notifications push/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/reçois des alertes instantanées/i)).not.toBeInTheDocument();
+    expect(requestPermission).not.toHaveBeenCalled();
 
     // Les toggles PRO sont bien rendus
     expect(screen.getByRole('button', { name: /toggle lesson request notifications/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /toggle surf notifications/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/messages/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/demandes de cours/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/demandes surf/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/demandes kitesurf/i).length).toBeGreaterThan(0);
   });
 
   it('n\'injecte pas les champs fantomes dans le state (D2-FIX)', async () => {

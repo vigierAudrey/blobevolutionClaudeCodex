@@ -330,6 +330,30 @@ export class GDPRPurgeService {
   async anonymizeDeletedUsers(): Promise<GDPRUserAnonymizationStats> {
     const now = new Date();
 
+    // Les tokens d'alertes sont des données techniques liées au terminal.
+    // Ils n'ont plus de finalité dès qu'un compte est marqué supprimé.
+    const deletedUsers = await prisma.user.findMany({
+      where: { deletedAt: { not: null } },
+      select: { id: true },
+    });
+    const deletedUserIds = deletedUsers.map((user: { id: string }) => user.id);
+
+    if (deletedUserIds.length > 0) {
+      const [pushTokensResult, notificationPreferencesResult] = await Promise.all([
+        prisma.pushToken.deleteMany({
+          where: { userId: { in: deletedUserIds } },
+        }),
+        prisma.notificationPreferences.deleteMany({
+          where: { userId: { in: deletedUserIds } },
+        }),
+      ]);
+
+      secureLogger.info('GDPR_DELETED_USER_ALERT_DATA_PURGED', {
+        pushTokensDeleted: pushTokensResult.count,
+        notificationPreferencesDeleted: notificationPreferencesResult.count,
+      });
+    }
+
     // PHASE 1: Anonymiser profils détaillés après 7 jours
     const phase1Threshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const phase1Users = await prisma.user.findMany({
