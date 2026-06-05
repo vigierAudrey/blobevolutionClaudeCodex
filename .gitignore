@@ -27,3 +27,6 @@ docker/certs/vps/
 backups/
 *.sql.gz
 *.sql.bak
+
+# WSL metadata (Windows Zone.Identifier streams)
+*:Zone.Identifier
