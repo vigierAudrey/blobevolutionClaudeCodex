@@ -55,7 +55,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         )}
       </head>
       {/* Use design tokens so dark mode can flip background/foreground */}
-      <body className="min-h-screen bg-background text-foreground">
+      <body className="min-h-screen bg-background text-foreground" suppressHydrationWarning>
         <SkipLink />
         <RouteAnnouncer />
         <NextIntlClientProvider locale={locale} messages={messages}>

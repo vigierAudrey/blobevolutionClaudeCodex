@@ -66,39 +66,38 @@ const cards: EditorialCard[] = [
  * lg (1024px+) : colonne unique dans le panneau droit du hero split,
  *   chaque carte prend la place disponible (flex-1).
  *
- * Carte 01 : logo "B" en Adlery Pro (font-display) — zéro asset additionnel.
+ * Carte 01 : B marque transparent, sans fond jaune embarqué.
  * Assets images : tous vérifiés sur disque.
  */
 export function HomeEditorialCards() {
   return (
-    <div className="flex flex-col sm:grid sm:grid-cols-2 lg:flex lg:flex-col lg:h-full divide-y divide-white/[0.07] sm:divide-y-0 lg:divide-y">
+    <div className="flex flex-col sm:grid sm:grid-cols-2 lg:flex lg:flex-col lg:h-full gap-3">
       {cards.map((card) => {
         const Icon = card.Icon;
         return (
           <Link
             key={card.n}
             href={card.href}
-            className="group relative flex-1 flex flex-col overflow-hidden bg-blob-black hover:bg-[hsl(220_14%_12%)] transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blob-yellow"
+            className="group relative flex-1 grid overflow-hidden bg-[#fdfbf2] text-blob-black shadow-[0_1px_0_rgba(0,0,0,0.08)] ring-1 ring-blob-black/10 transition-colors duration-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blob-yellow lg:grid-cols-[1fr_42%]"
             aria-label={`${card.title} — ${card.cta}`}
           >
             {/* Image */}
-            <div className="relative w-full h-36 lg:h-32 xl:h-36 shrink-0 overflow-hidden">
+            <div className="relative h-40 w-full overflow-hidden lg:order-2 lg:h-full">
               <Image
                 src={card.imageSrc}
                 alt={card.imageAlt}
                 fill
                 className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-                sizes="(min-width: 1024px) 400px, (min-width: 640px) 50vw, 100vw"
+                sizes="(min-width: 1024px) 180px, (min-width: 640px) 50vw, 100vw"
               />
-              {/* Overlay bas → fondu vers le fond de la carte */}
               <div
-                className="absolute inset-0 bg-gradient-to-t from-blob-black/70 via-blob-black/10 to-transparent"
+                className="absolute inset-y-0 left-0 hidden w-12 bg-gradient-to-r from-[#fdfbf2] to-transparent lg:block"
                 aria-hidden
               />
             </div>
 
             {/* Contenu */}
-            <div className="flex flex-col flex-1 px-4 py-3 gap-1.5 min-h-[80px]">
+            <div className="flex min-h-[150px] flex-col gap-2 px-4 py-4 lg:min-h-0 xl:px-5 xl:py-5">
 
               {/* Numéro + icône/logo */}
               <div className="flex items-center justify-between gap-2">
@@ -109,15 +108,19 @@ export function HomeEditorialCards() {
                   {card.n}
                 </span>
 
-                {/* Carte 01 : monogramme "B" Adlery Pro dans un badge circulaire */}
+                {/* Carte 01 : B Blob transparent sur jaune du design system. */}
                 {card.blobLogo && (
                   <span
-                    className="flex items-center justify-center w-8 h-8 rounded-full bg-blob-yellow/15 border border-blob-yellow/25 shrink-0"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blob-yellow"
                     aria-hidden
                   >
-                    <span className="font-display text-blob-yellow text-[22px] leading-none select-none">
-                      B
-                    </span>
+                    <Image
+                      src="/images/brand/blob-b-mark-transparent.png"
+                      alt=""
+                      width={28}
+                      height={28}
+                      className="h-7 w-7 object-contain"
+                    />
                   </span>
                 )}
 
@@ -125,24 +128,24 @@ export function HomeEditorialCards() {
                 {Icon && !card.blobLogo && (
                   <Icon
                     size={18}
-                    className="text-blob-yellow/70 shrink-0"
+                    className="text-blob-black/70 shrink-0"
                     aria-hidden
                   />
                 )}
               </div>
 
               {/* Titre */}
-              <p className="text-white font-bold uppercase tracking-wide text-[11px] sm:text-xs leading-tight">
+              <p className="text-blob-black font-black uppercase tracking-wide text-sm sm:text-base lg:text-[15px] xl:text-base leading-tight">
                 {card.title}
               </p>
 
-              {/* Description — masquée sur lg compact, visible sur xl et mobile/tablet */}
-              <p className="text-white/50 text-[11px] leading-relaxed lg:hidden xl:block">
+              {/* Description */}
+              <p className="text-blob-black/70 text-[11px] leading-relaxed">
                 {card.description}
               </p>
 
               {/* CTA textuel */}
-              <span className="inline-flex items-center gap-1 text-white/60 text-[11px] font-bold uppercase tracking-widest mt-auto pt-1 group-hover:text-blob-yellow transition-colors duration-200">
+              <span className="mt-auto inline-flex w-fit items-center gap-2 bg-blob-black px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white transition-colors duration-200 group-hover:text-blob-yellow">
                 {card.cta}
                 <ArrowRight
                   size={11}

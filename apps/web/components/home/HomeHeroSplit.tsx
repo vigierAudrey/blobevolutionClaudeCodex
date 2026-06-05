@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { BlobButton } from '@/components/blob/BlobButton';
 import { HomeEditorialCards } from '@/components/home/HomeEditorialCards';
+import { HomeYellowBar } from '@/components/home/HomeYellowBar';
 
 /*
  * HomeHeroSplit — hero splitté 2 colonnes, Server Component.
@@ -14,7 +15,7 @@ import { HomeEditorialCards } from '@/components/home/HomeEditorialCards';
  *   - overlay dégradé sombre cinématique
  *   - titre uppercase fort + sous-titre Adlery Pro jaune + CTA
  *
- * Cartes droite : HomeEditorialCards (4 cartes éditoriales, dark)
+ * Cartes droite : HomeEditorialCards (4 cartes éditoriales, fond papier)
  *
  * Brise out du container via -mx pour couvrir toute la largeur viewport.
  */
@@ -24,12 +25,12 @@ export function HomeHeroSplit() {
       aria-label="Blob — La communauté surf & kite du Médoc Atlantique"
       className="-mx-4 sm:-mx-6 lg:-mx-8"
     >
-      <div className="flex flex-col lg:flex-row">
+      <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_390px] xl:grid-cols-[minmax(0,1fr)_430px]">
 
         {/* ============================================================
             GAUCHE — Hero immersif
         ============================================================ */}
-        <div className="relative flex-1 min-h-[520px] lg:min-h-[640px] overflow-hidden">
+        <div className="relative order-1 min-h-[520px] overflow-hidden lg:col-start-1 lg:row-start-1 lg:min-h-[640px]">
 
           {/* Poster — LCP */}
           <Image
@@ -48,7 +49,7 @@ export function HomeHeroSplit() {
           />
 
           {/* Contenu hero */}
-          <div className="relative z-10 flex flex-col justify-end h-full px-6 sm:px-10 lg:px-12 xl:px-16 pb-12 pt-20 gap-4 sm:gap-5">
+          <div className="relative z-10 flex flex-col justify-start h-full px-7 sm:px-12 lg:pl-16 lg:pr-12 xl:pl-20 xl:pr-16 pt-28 sm:pt-32 lg:pt-34 xl:pt-36 pb-12 gap-4 sm:gap-5">
 
             {/* H1 — sémantique SEO, uppercase fort */}
             <h1 className="text-white font-black uppercase leading-[0.95] tracking-tight text-4xl sm:text-5xl lg:text-5xl xl:text-6xl drop-shadow-[0_2px_20px_rgba(0,0,0,0.9)] max-w-xl">
@@ -86,8 +87,12 @@ export function HomeHeroSplit() {
         {/* ============================================================
             DROITE — 4 cartes éditoriales
         ============================================================ */}
-        <div className="lg:w-[360px] xl:w-[400px] shrink-0 bg-blob-black border-t border-white/[0.07] lg:border-t-0 lg:border-l lg:border-white/[0.07]">
+        <div className="order-2 shrink-0 bg-[#f7f5ed] px-3 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:px-3 lg:pb-3 lg:pt-[96px] xl:px-4 xl:pb-4 xl:pt-[100px] border-t border-blob-black/10 lg:border-t-0 lg:border-l lg:border-white/70">
           <HomeEditorialCards />
+        </div>
+
+        <div className="order-3 lg:col-start-1 lg:row-start-2">
+          <HomeYellowBar />
         </div>
 
       </div>

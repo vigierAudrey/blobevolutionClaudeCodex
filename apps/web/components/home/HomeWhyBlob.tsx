@@ -1,23 +1,24 @@
-import { MapPin, Unlock, Users } from 'lucide-react';
+import Image from 'next/image';
+import { Unlock, Users } from 'lucide-react';
 
 const pillars = [
   {
     id: 'beta-locale',
-    Icon: MapPin,
+    brandIcon: true,
     label: 'Bêta locale',
-    body: 'On commence sur le Médoc Atlantique — Lacanau, Carcans, Hourtin — avec les riders du coin, les pros locaux, et celles et ceux qui viennent de Bordeaux rider le week-end.',
+    body: 'On commence dans le Médoc Atlantique, sans fermer la porte aux riders bordelais.',
   },
   {
     id: 'gratuit',
     Icon: Unlock,
     label: 'Gratuit & sans engagement',
-    body: "L'inscription est gratuite pendant la phase de test. Le but : apprendre vite, comprendre les usages réels et améliorer Blob avec la communauté.",
+    body: "Pendant la phase de test, l'inscription est gratuite. L'idée est d'observer les usages réels et d'améliorer Blob avec les retours de la communauté.",
   },
   {
     id: 'utile',
     Icon: Users,
     label: 'Utile pour la communauté',
-    body: "Des articles, conseils et bons plans arriveront progressivement. Plus la communauté grandira, plus Blob pourra négocier des offres pertinentes pour les riders, les débutants et les pros.",
+    body: "Articles, conseils et bons plans arriveront progressivement. Plus la communauté grandira, plus Blob pourra aller chercher des offres intéressantes pour les riders, les débutants et les pros.",
   },
 ] as const;
 
@@ -59,21 +60,30 @@ export function HomeWhyBlob() {
             <p className="text-sm sm:text-base leading-relaxed text-blob-black/65">
               L&apos;idée est simple : tester si une communauté peut aider les riders, les
               débutants et les pros à se trouver plus facilement, partager les bonnes infos et
-              construire des avantages utiles ensemble. L&apos;inscription est gratuite et sans
-              engagement pendant la phase de test.
+              construire des avantages utiles ensemble.
             </p>
           </div>
 
           {/* 3 piliers */}
           <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8">
-            {pillars.map(({ id, Icon, label, body }) => (
+            {pillars.map(({ id, label, body, ...pillar }) => (
               <div key={id} className="flex flex-col gap-3">
                 <div className="flex items-center gap-2.5">
                   <span
                     className="flex items-center justify-center w-8 h-8 rounded-full bg-blob-yellow/30 shrink-0"
                     aria-hidden
                   >
-                    <Icon size={15} className="text-blob-black" />
+                    {'brandIcon' in pillar ? (
+                      <Image
+                        src="/android-chrome-192x192.png"
+                        alt=""
+                        width={22}
+                        height={22}
+                        className="h-[22px] w-[22px] rounded-full object-cover"
+                      />
+                    ) : (
+                      <pillar.Icon size={15} className="text-blob-black" />
+                    )}
                   </span>
                   <p className="text-[11px] font-black uppercase tracking-[0.14em] text-blob-black">
                     {label}

@@ -1,7 +1,5 @@
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { HomeHeroSplit } from '@/components/home/HomeHeroSplit';
-import { HomeYellowBar } from '@/components/home/HomeYellowBar';
-import { HomeConnectionSteps } from '@/components/home/HomeConnectionSteps';
 import { HomeWhyBlob } from '@/components/home/HomeWhyBlob';
 import { HomeFooter } from '@/components/home/HomeFooter';
 import type { Metadata } from 'next';
@@ -21,14 +19,8 @@ export default function Home() {
       {/* Header premium horizontal — sticky, full-bleed */}
       <HomeHeader />
 
-      {/* Bloc full-bleed : hero + barre jaune brush, collés sans gap */}
+      {/* Bloc full-bleed : hero + carrousel + barre jaune intégrée */}
       <HomeHeroSplit />
-      <HomeYellowBar />
-
-      {/* Section connexion — espacée dans le container */}
-      <div className="mt-8 sm:mt-10">
-        <HomeConnectionSteps />
-      </div>
 
       {/* Pourquoi Blob ? — full-bleed, fond sable, bêta messaging */}
       <div className="mt-8 sm:mt-10">

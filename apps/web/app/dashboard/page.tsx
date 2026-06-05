@@ -10,7 +10,6 @@ import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { apiClient } from '../../lib/apiClient';
 import { requireClientSession, SessionRequiredError } from '../../lib/clientSession';
-import loadingBlob from '../../public/images/loading/favicon-96x96.png';
 
 import { CommunityHighlight } from '../../components/community/CommunityHighlight';
 
@@ -195,7 +194,7 @@ export default function DashboardPage() {
         <div className="text-center space-y-3">
           <div className="inline-flex items-center justify-center rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/40 p-3 animate-pulse shadow-lg">
             <Image
-              src={loadingBlob}
+              src="/android-chrome-192x192.png"
               alt="Chargement Blob"
               width={64}
               height={64}
