@@ -23,6 +23,7 @@ export type MailType =
   | 'email_verification'
   | 'email_verification_resend'
   | 'password_reset'
+  | 'password_changed'
   | 'two_factor_code'
   | 'account_deletion'
   | 'account_deletion_cancelled'
@@ -288,6 +289,16 @@ export async function sendPasswordResetEmail(to: string, token: string) {
   const text = `Tu as demandé à réinitialiser ton mot de passe. Clique ici: ${link}`;
   const html = `<p>Tu as demandé à réinitialiser ton mot de passe.</p><p><a href="${link}">Réinitialiser mon mot de passe</a></p>`;
   return sendMail({ to, subject: 'Réinitialisation du mot de passe', text, html, type: 'password_reset' });
+}
+
+export async function sendPasswordChangedEmail(to: string) {
+  const text = `Votre mot de passe Blob a été modifié.
+
+Si vous n'êtes pas à l'origine de cette action, contactez immédiatement le support à support@blobinfini.com.
+
+L'équipe Blob`;
+  const html = `<p>Votre mot de passe Blob a été modifié.</p><p>Si vous n'êtes pas à l'origine de cette action, contactez immédiatement le support : <a href="mailto:support@blobinfini.com">support@blobinfini.com</a>.</p><p style="color:#6b7280;">L'équipe Blob</p>`;
+  return sendMail({ to, subject: 'Votre mot de passe Blob a été modifié', text, html, type: 'password_changed' });
 }
 
 export async function send2FACode(to: string, code: string) {

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { MailDeliveryError, sendPasswordResetEmail, sendVerificationEmail } from '../../lib/mailer';
+import { MailDeliveryError, sendPasswordChangedEmail, sendPasswordResetEmail, sendVerificationEmail } from '../../lib/mailer';
 import { secureLogger } from '../../utils/secure-logger';
 import { AVAILABLE_PERMISSIONS } from '../admin/permissions';
 import { hashIpHmac } from '../../lib/hash-ip';
@@ -480,6 +480,14 @@ export class AuthService {
     ]);
     await invalidateSessionCache(userId);
     secureLogger.info('PASSWORD_CHANGE_SUCCESS', { userId });
+
+    sendPasswordChangedEmail(user.email).catch((err) => {
+      secureLogger.error('PASSWORD_CHANGE_EMAIL_FAILED', {
+        userId,
+        timedOut: err instanceof MailDeliveryError ? err.timedOut : false,
+      });
+    });
+
     return { message: 'Password updated' };
   }
 
