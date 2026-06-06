@@ -3,9 +3,8 @@
 export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BackBar } from '@/components/BackBar';
+import { BlobAlert, BlobAuthLayout, BlobButton, BlobFormCard } from '@/components/blob';
 
 function VerifyInner() {
   const search = useSearchParams();
@@ -63,44 +62,40 @@ function VerifyInner() {
   }, [status, redirectTo, router]);
 
   return (
-    <div className="max-w-md mx-auto">
-      <BackBar fallbackHref="/" />
-      <Card>
-        <CardHeader>
-          <CardTitle>Vérification de l&apos;email</CardTitle>
-          <CardDescription>Cette page confirme la validation de ton compte.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {status === 'idle' && (
-              <p className="text-sm text-muted-foreground">Vérification en cours…</p>
-            )}
-            {status === 'loading' && (
-              <p className="text-sm text-muted-foreground">Vérification en cours…</p>
-            )}
-            {message && (
-              <p className={`text-sm ${status === 'success' ? 'text-green-600' : status === 'error' ? 'text-red-600' : 'text-muted-foreground'}`}>{message}</p>
-            )}
-            {status === 'success' && (
-              <Button type="button" className="w-full" onClick={() => router.replace(redirectTo)}>
-                Aller à la connexion maintenant
-              </Button>
-            )}
-            {status === 'error' && (
-              <Button type="button" variant="outline" className="w-full" onClick={() => router.replace('/login')}>
-                Retour à la connexion
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <BlobAuthLayout
+      title="Vérification email"
+      subtitle="Cette page confirme la validation de ton compte."
+    >
+      <BackBar fallbackHref="/" tone="blobDark" />
+      <BlobFormCard>
+        <div className="space-y-4">
+          {(status === 'idle' || status === 'loading') && (
+            <BlobAlert variant="info">Vérification en cours…</BlobAlert>
+          )}
+          {message && (
+            <BlobAlert variant={status === 'success' ? 'success' : status === 'error' ? 'error' : 'info'}>
+              {message}
+            </BlobAlert>
+          )}
+          {status === 'success' && (
+            <BlobButton type="button" className="w-full" onClick={() => router.replace(redirectTo)}>
+              Aller à la connexion maintenant
+            </BlobButton>
+          )}
+          {status === 'error' && (
+            <BlobButton type="button" variant="outlineDark" className="w-full" onClick={() => router.replace('/login')}>
+              Retour à la connexion
+            </BlobButton>
+          )}
+        </div>
+      </BlobFormCard>
+    </BlobAuthLayout>
   );
 }
 
 export default function VerifyPage() {
   return (
-    <Suspense fallback={<div className="max-w-md mx-auto">Chargement…</div>}>
+    <Suspense fallback={<div className="mx-auto max-w-md rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-4">Chargement…</div>}>
       <VerifyInner />
     </Suspense>
   );

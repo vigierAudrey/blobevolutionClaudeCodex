@@ -6,15 +6,13 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
-import { Badge } from '../../../components/ui/badge';
-import { Button } from '../../../components/ui/button';
 import { Spinner } from '../../../components/ui/spinner';
 import { BackBar } from '../../../components/BackBar';
 import { Eye } from 'lucide-react';
 import { apiClient } from '../../../lib/apiClient';
 import type { UserProfile, Gender } from '@/types/user';
 import type { Level, Sport } from '@/types/matching';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobPageHeader } from '@/components/blob';
 
 type PublicRiderProfile = {
   displayName?: string | null;
@@ -118,7 +116,7 @@ export default function ProfilePreviewPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-xl pt-12 flex justify-center" aria-live="polite">
+      <div className="mx-auto flex max-w-xl justify-center bg-blob-sand pt-12" aria-live="polite">
         <Spinner />
       </div>
     );
@@ -130,97 +128,93 @@ export default function ProfilePreviewPage() {
   const genderLabel = profile.sex && profile.sex !== 'UNSPECIFIED' ? GENDER_LABELS[profile.sex] : null;
 
   return (
-    <div className="mx-auto max-w-xl space-y-6 pb-16 px-4">
+    <div className="mx-auto max-w-xl space-y-6 bg-blob-sand px-4 pb-16 pt-4 text-blob-black">
       <BackBar fallbackHref="/profile" />
 
-      <div
+      <BlobPageHeader
+        title="Aperçu Profil"
+        subtitle="Prévisualisation privée de ta fiche matching."
+      />
+
+      <BlobAlert
+        variant="warning"
+        title="Aperçu privé"
+      >
+        <div
         role="status"
         aria-label="Aperçu privé"
         data-testid="preview-banner"
-        className="flex items-center gap-3 rounded-2xl border-2 border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 px-4 py-3"
       >
-        <Eye className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0" aria-hidden="true" />
-        <div>
-          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <Eye className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
             Aperçu privé — visible uniquement par vous
           </p>
-          <p className="text-xs text-amber-700 dark:text-amber-400">
+          <p className="mt-1 text-xs">
             Voici comment les autres riders voient ton profil dans le matching.
           </p>
         </div>
-      </div>
+      </BlobAlert>
 
       {missingFields.length > 0 && (
-        <div
-          role="alert"
-          data-testid="incomplete-warning"
-          className="rounded-xl border-2 border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30 px-4 py-3 space-y-2"
-        >
-          <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">
-            Profil incomplet — tu n&apos;apparaîtras pas dans le matching
-          </p>
-          <ul className="text-sm text-orange-700 dark:text-orange-400 list-disc list-inside space-y-0.5">
+        <BlobAlert variant="warning" title="Profil incomplet">
+          <div role="alert" data-testid="incomplete-warning" className="space-y-2">
+            <p>Tu n&apos;apparaîtras pas dans le matching tant que ces éléments manquent.</p>
+            <ul className="list-inside list-disc space-y-0.5 text-sm">
             {missingFields.map((f) => (
               <li key={f.key}>{f.label} manquant(e)</li>
             ))}
-          </ul>
-          <Link
-            href="/profile"
-            className="inline-block text-xs text-orange-700 dark:text-orange-400 underline underline-offset-2 mt-1"
-          >
-            Compléter mon profil
-          </Link>
-        </div>
+            </ul>
+            <BlobButton asChild variant="outlineDark" size="sm" className="mt-2">
+              <Link href="/profile">Compléter mon profil</Link>
+            </BlobButton>
+          </div>
+        </BlobAlert>
       )}
 
-      <Card className="border-2 shadow-xl rounded-[2rem]">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Ton profil public</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-[1.75rem] border-2 p-5 sm:p-6 bg-gradient-to-br from-white via-white to-purple-50/50 dark:from-slate-800 dark:via-slate-800 dark:to-slate-800">
-            <div className="flex flex-col items-center gap-4 mb-4">
+      <BlobCard className="bg-white">
+        <div className="space-y-5">
+          <h2 className="text-xl font-black uppercase tracking-widest">Ton profil public</h2>
+          <div className="rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-5 sm:p-6">
+            <div className="mb-4 flex flex-col items-center gap-4">
               {profile.photoUrl ? (
                 <Image
                   src={profile.photoUrl}
                   alt={profile.displayName ?? 'Photo de profil'}
                   width={256}
                   height={256}
-                  className="w-64 h-64 rounded-[2rem] object-cover border-4 border-border shadow-2xl"
+                  className="h-64 w-64 rounded-sm border-4 border-white object-cover shadow-lg"
                   unoptimized
                   priority
                 />
               ) : (
-                <div className="w-64 h-64 rounded-[2rem] bg-muted flex items-center justify-center border-4 border-border shadow-2xl text-6xl">
+                <div className="flex h-64 w-64 items-center justify-center rounded-sm border-4 border-white bg-white text-6xl shadow-lg">
                   <span aria-hidden="true">👤</span>
                 </div>
               )}
 
-              <div className="w-full text-center space-y-2">
+              <div className="w-full space-y-2 text-center">
                 <div
                   data-testid="profile-display-name"
-                  className="text-2xl font-bold text-foreground flex items-center justify-center gap-2 flex-wrap"
+                  className="flex flex-wrap items-center justify-center gap-2 text-2xl font-black uppercase tracking-widest"
                 >
                   {profile.displayName ?? (
-                    <span className="text-muted-foreground italic text-lg">Nom non défini</span>
+                    <span className="text-lg italic normal-case tracking-normal text-blob-black/56">Nom non défini</span>
                   )}
                   {profile.wantsLesson && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-3 py-1 text-xs font-medium">
-                      Cours
-                    </span>
+                    <BlobBadge variant="success">Cours</BlobBadge>
                   )}
                 </div>
 
-                <div className="text-base text-muted-foreground font-medium flex flex-wrap items-center justify-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2 text-base font-medium text-blob-black/64">
                   {genderLabel && <span>{genderLabel}</span>}
                   {disciplines.length > 0
                     ? disciplines.map((d) => (
-                        <Badge key={`${d.sport}-${d.level}`} variant="secondary" className="text-xs">
+                        <BlobBadge key={`${d.sport}-${d.level}`} variant="sand">
                           {SPORT_LABELS[d.sport]} · {LEVEL_LABELS[d.level]}
-                        </Badge>
+                        </BlobBadge>
                       ))
                     : (
-                        <span className="text-muted-foreground italic text-sm">
+                        <span className="text-sm italic text-blob-black/56">
                           Aucune discipline renseignée
                         </span>
                       )
@@ -230,15 +224,15 @@ export default function ProfilePreviewPage() {
             </div>
 
             {profile.bio && (
-              <div className="text-base text-muted-foreground italic bg-white/80 dark:bg-slate-700/50 border border-muted/40 dark:border-slate-600 p-4 rounded-2xl mb-4 text-center">
+              <div className="mb-4 rounded-sm border-2 border-blob-sand-deep bg-white p-4 text-center text-base italic text-blob-black/72">
                 &laquo;&nbsp;{profile.bio}&nbsp;&raquo;
               </div>
             )}
 
             {profile.wantsLesson &&
               (profile.lessonPlace || profile.lessonDate || profile.lessonStudentCount != null) && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 dark:border-emerald-800 dark:bg-emerald-950/20 p-3 space-y-1 text-sm text-emerald-800 dark:text-emerald-300">
-                  <p className="font-semibold">Détails du cours souhaité</p>
+                <div className="space-y-1 rounded-sm border-2 border-green-800 bg-green-50 p-3 text-sm text-green-950">
+                  <p className="font-black uppercase tracking-widest">Détails du cours souhaité</p>
                   {profile.lessonPlace && <p>Lieu : {profile.lessonPlace}</p>}
                   {profile.lessonDate && <p>Date : {formatDate(profile.lessonDate)}</p>}
                   {profile.lessonStudentCount != null && (
@@ -247,13 +241,13 @@ export default function ProfilePreviewPage() {
                 </div>
               )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </BlobCard>
 
       <div className="flex justify-center">
-        <Button asChild variant="outline" size="sm">
+        <BlobButton asChild variant="outlineDark" size="sm">
           <Link href="/profile">Modifier mon profil</Link>
-        </Button>
+        </BlobButton>
       </div>
     </div>
   );

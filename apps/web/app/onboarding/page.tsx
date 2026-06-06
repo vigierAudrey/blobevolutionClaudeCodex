@@ -69,16 +69,6 @@ export default function OnboardingPage() {
   const hasDiscipline = (disciplines?.length || 0) > 0;
   const hasPhoto = !!profile?.photoUrl;
 
-  // Debug info
-  console.log('Onboarding status:', {
-    hasName,
-    displayName: profile?.displayName,
-    hasDiscipline,
-    disciplinesCount: disciplines?.length,
-    hasPhoto,
-    photoUrl: profile?.photoUrl,
-  });
-
   // Auto-redirect when everything is complete
   useEffect(() => {
     if (loading || error) return;

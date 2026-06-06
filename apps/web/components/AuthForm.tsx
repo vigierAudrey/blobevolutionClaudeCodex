@@ -52,7 +52,7 @@ const isZodIssueArray = (value: unknown): value is ZodIssue[] => {
   );
 };
 
-const getErrorMessage = (error: unknown, fallback = 'Une erreur est survenue') => {
+const getTechnicalErrorMessage = (error: unknown, fallback = 'Une erreur est survenue') => {
   if (error instanceof Error && error.message) {
     return error.message;
   }
@@ -63,6 +63,11 @@ const getErrorMessage = (error: unknown, fallback = 'Une erreur est survenue') =
     }
   }
   return fallback;
+};
+
+const getSafeAuthErrorMessage = (message: string) => {
+  const mapped = mapAuthErrorToFrench(message);
+  return mapped === message ? 'Une erreur est survenue. Vérifie tes informations et réessaie.' : mapped;
 };
 
 export function AuthForm({ mode }: AuthFormProps) {
@@ -217,7 +222,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         router.push('/dashboard');
       }
     } catch (submissionError) {
-      const message = getErrorMessage(submissionError);
+      const message = getTechnicalErrorMessage(submissionError);
 
       if (
         message === 'Invalid input' &&
@@ -244,7 +249,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           email: "Cette adresse email est déjà utilisée. Essayez de vous connecter ou utilisez une autre adresse.",
         });
       } else {
-        setError(mapAuthErrorToFrench(message));
+        setError(getSafeAuthErrorMessage(message));
       }
     } finally {
       setLoading(false);
@@ -262,7 +267,8 @@ export function AuthForm({ mode }: AuthFormProps) {
       setInfo('Email de vérification renvoyé. Vérifie ta boîte mail.');
     } catch (resendError) {
       setResendStatus('error');
-      setError(getErrorMessage(resendError, "Impossible de renvoyer l'email"));
+      const resendMessage = getTechnicalErrorMessage(resendError, '');
+      setError(resendMessage ? getSafeAuthErrorMessage(resendMessage) : "Impossible de renvoyer l'email pour le moment.");
     }
   };
 
@@ -299,7 +305,13 @@ export function AuthForm({ mode }: AuthFormProps) {
         router.push('/dashboard');
       }
     } catch (verifyError) {
-      setError(getErrorMessage(verifyError, 'Code invalide ou expiré'));
+      const verifyMessage = getTechnicalErrorMessage(verifyError, '');
+      const normalized = verifyMessage.toLowerCase();
+      if (normalized.includes('code incorrect') || normalized.includes('code expiré') || normalized.includes('invalid')) {
+        setError('Code invalide ou expiré.');
+      } else {
+        setError('Impossible de vérifier le code pour le moment.');
+      }
       setTwoFACode('');
     } finally {
       setLoading(false);

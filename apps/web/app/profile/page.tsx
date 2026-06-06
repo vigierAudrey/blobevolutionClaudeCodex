@@ -4,12 +4,6 @@
 export const dynamic = 'force-dynamic';
 import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import { Label } from '../../components/ui/label';
-import { Input } from '../../components/ui/input';
-import { Textarea } from '../../components/ui/textarea';
-import { Button } from '../../components/ui/button';
-import { Badge } from '../../components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { apiClient } from '../../lib/apiClient';
 import { useRouter } from 'next/navigation';
@@ -18,12 +12,13 @@ import { useToast } from '../../components/ui/toast';
 import { Spinner } from '../../components/ui/spinner';
 import { apiRequest } from '../../lib/csrf';
 import Link from 'next/link';
-import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, User, Waves, Bell, Settings, Sparkles, Eye } from 'lucide-react';
+import { MapPin, Cookie, FileText, Trash2, Target, Shield, Ban, AlertTriangle, Camera, Waves, Bell, Settings, Sparkles, Eye } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { DisciplinePreference, Gender, UserProfile, UserProfileUpdate } from '@/types/user';
 import type { Level } from '@/types/matching';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../components/cookies/CookieConsent';
 import { ChangePasswordCard } from '../../components/profile/ChangePasswordCard';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobInput, BlobPageHeader } from '@/components/blob';
 
 type SexOption = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
 type LevelOption = '' | Level;
@@ -40,6 +35,15 @@ type ProfileUpdatePayload = {
   sex: Gender;
   emailNotif: boolean;
 };
+
+const PROFILE_PHOTO_MAX_SIZE_BYTES = 5 * 1024 * 1024;
+const PROFILE_PHOTO_ACCEPT = 'image/jpeg,image/png,image/webp';
+const PROFILE_PHOTO_TYPES = new Set(PROFILE_PHOTO_ACCEPT.split(','));
+const GENERIC_PROFILE_ERROR = 'Impossible de mettre à jour le profil pour le moment.';
+const GENERIC_DELETE_ERROR = 'Impossible de traiter la suppression pour le moment.';
+const GENERIC_EXPORT_ERROR = 'Impossible de générer l’export pour le moment.';
+const GENERIC_NOTIFICATION_ERROR = 'Impossible de sauvegarder les préférences pour le moment.';
+const GENERIC_PHOTO_ERROR = 'Impossible de traiter la photo pour le moment.';
 
 const labelToGender = (label: SexOption): Gender => {
   switch (label) {
@@ -77,35 +81,30 @@ export default function ProfilePage() {
       description: string;
       Icon: LucideIcon;
       badge?: { text: string; className?: string };
-      cardClasses: string;
-      iconClasses: string;
+      variant: 'yellow' | 'success' | 'sand';
     };
-    const baseBadge = 'border-none text-xs font-semibold';
 
     const summaries: Record<string, Summary> = {
       personalized: {
         label: 'Expérience optimisée',
         description: 'Navigation adaptée à vos habitudes sur Blob, avec statistiques d\'usage enrichies.',
         Icon: Target,
-        badge: { text: 'Recommandé', className: `${baseBadge} bg-blue-100 text-blue-700` },
-        cardClasses: 'border-blue-200 bg-blue-50/70',
-        iconClasses: 'text-blue-600',
+        badge: { text: 'Recommandé' },
+        variant: 'yellow',
       },
       essential: {
         label: 'Fonctionnel & mesure anonyme',
         description: 'Session, sécurité et statistiques d\'usage sans identification personnelle.',
         Icon: Shield,
-        badge: { text: 'Actif', className: `${baseBadge} bg-emerald-100 text-emerald-700` },
-        cardClasses: 'border-emerald-200 bg-emerald-50/70',
-        iconClasses: 'text-emerald-600',
+        badge: { text: 'Actif' },
+        variant: 'success',
       },
       none: {
         label: 'Essentiel uniquement',
         description: 'Cookies strictement nécessaires, sans aucune statistique d\'usage.',
         Icon: Ban,
-        badge: { text: 'Minimal', className: `${baseBadge} bg-slate-200 text-slate-700` },
-        cardClasses: 'border-slate-200 bg-slate-50',
-        iconClasses: 'text-slate-500',
+        badge: { text: 'Minimal' },
+        variant: 'sand',
       },
     };
 
@@ -122,6 +121,11 @@ export default function ProfilePage() {
   const onPickPhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!PROFILE_PHOTO_TYPES.has(file.type) || file.size > PROFILE_PHOTO_MAX_SIZE_BYTES) {
+      event.target.value = '';
+      toast('Photo refusée : utilise un fichier JPG, PNG ou WebP de 5 Mo maximum.', 'error');
+      return;
+    }
     setPhotoFile(file);
     setPhotoPreviewUrl((previous) => {
       if (previous) URL.revokeObjectURL(previous);
@@ -184,8 +188,8 @@ export default function ProfilePage() {
             setNotificationPrefs((prev) => ({ ...prev, ...data.preferences }));
           }
         }
-      } catch (error) {
-        console.error('Error loading notification preferences:', error);
+      } catch {
+        // Preference loading is non-blocking for the profile page.
       } finally {
         setLoadingNotifPrefs(false);
       }
@@ -274,9 +278,8 @@ export default function ProfilePage() {
       await apiClient.updateProfile({ lat: undefined, lng: undefined });
       setUserLocation(null);
       toast('Géolocalisation supprimée', 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erreur lors de la suppression';
-      toast(message, 'error');
+    } catch {
+      toast('Impossible de supprimer la géolocalisation pour le moment.', 'error');
     } finally {
       setDeletingLocation(false);
     }
@@ -295,9 +298,8 @@ export default function ProfilePage() {
       setPhotoFile(null);
       toast('Photo supprimée. Ajoute une nouvelle photo pour réactiver le matching.', 'info');
       setDeletePhotoModalOpen(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erreur lors de la suppression';
-      toast(message, 'error');
+    } catch {
+      toast(GENERIC_PHOTO_ERROR, 'error');
     } finally {
       setRemovingPhoto(false);
     }
@@ -314,8 +316,8 @@ export default function ProfilePage() {
         const data = await response.json();
         setDeletionStatus(data);
       }
-    } catch (error) {
-      console.error('Error checking deletion status:', error);
+    } catch {
+      // Deletion status is shown only when available.
     }
   };
 
@@ -330,7 +332,7 @@ export default function ProfilePage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Erreur lors de la demande de suppression');
+        throw new Error('DELETE_REQUEST_FAILED');
       }
 
       setDeletionStatus({
@@ -342,9 +344,8 @@ export default function ProfilePage() {
 
       toast('Demande de suppression enregistrée. Vous avez 30 jours pour annuler.', 'success');
       setShowDeletionModal(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erreur lors de la demande';
-      toast(message, 'error');
+    } catch {
+      toast(GENERIC_DELETE_ERROR, 'error');
     } finally {
       setLoadingDeletion(false);
     }
@@ -358,17 +359,14 @@ export default function ProfilePage() {
         method: 'POST',
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || 'Erreur lors de l\'annulation');
+        throw new Error('DELETE_CANCEL_FAILED');
       }
 
       setDeletionStatus({ isScheduled: false });
       toast('Suppression de compte annulée avec succès', 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erreur lors de l\'annulation';
-      toast(message, 'error');
+    } catch {
+      toast(GENERIC_DELETE_ERROR, 'error');
     } finally {
       setLoadingDeletion(false);
     }
@@ -391,8 +389,7 @@ export default function ProfilePage() {
           window.localStorage.removeItem('cookie-consent');
         }
         window.dispatchEvent(new Event(COOKIE_CONSENT_REOPEN_EVENT));
-      } catch (error) {
-        console.warn('Impossible de rouvrir immédiatement la fenêtre de consentement', error);
+      } catch {
         window.location.reload();
       }
     }
@@ -414,14 +411,12 @@ export default function ProfilePage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Erreur lors de la sauvegarde');
+        throw new Error('NOTIFICATION_SAVE_FAILED');
       }
 
       toast('Préférences de notification sauvegardées', 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde';
-      toast(message, 'error');
+    } catch {
+      toast(GENERIC_NOTIFICATION_ERROR, 'error');
     } finally {
       setSavingNotifPrefs(false);
     }
@@ -504,9 +499,8 @@ export default function ProfilePage() {
       } else {
         setShowDashboardShortcut(true);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde';
-      toast(message, 'error');
+    } catch {
+      toast(GENERIC_PROFILE_ERROR, 'error');
     } finally {
       setSaving(false);
     }
@@ -514,135 +508,121 @@ export default function ProfilePage() {
 
   return (
     <>
-      <div className="mx-auto max-w-6xl space-y-6 pb-24">
+      <div className="mx-auto max-w-6xl space-y-6 bg-blob-sand px-4 pb-24 pt-4 text-blob-black sm:px-6">
         <BackBar fallbackHref="/dashboard" />
 
-        {/* Page Header */}
-        <div className="flex items-center justify-between gap-3 pb-2 border-b">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-              <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Mon Profil</h1>
-              <p className="text-sm text-muted-foreground">Personnalise ton profil pour un matching optimal</p>
-            </div>
-          </div>
-          <Button asChild variant="outline" size="sm" className="flex-shrink-0 gap-1.5">
+        <div className="flex flex-col gap-4 border-b-2 border-blob-sand-deep pb-5 sm:flex-row sm:items-end sm:justify-between">
+          <BlobPageHeader
+            title="Mon Profil"
+            subtitle="Personnalise ta cabine membre pour le matching."
+            showSeparator
+          />
+          <BlobButton asChild variant="outlineDark" size="sm" className="w-full sm:w-auto">
             <Link href="/profile/preview">
               <Eye className="h-4 w-4" />
-              <span className="hidden sm:inline">Voir mon profil</span>
-              <span className="sm:hidden">Aperçu</span>
+              Voir mon profil
             </Link>
-          </Button>
+          </BlobButton>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-6">
-          {/* Section Identité */}
-          <div className="space-y-3">
+          <section className="space-y-3">
             <div className="flex items-center gap-2">
-              <div className="h-1 w-1 rounded-full bg-indigo-500" />
-              <h2 className="text-lg font-semibold text-foreground">Identité</h2>
+              <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
+              <h2 className="text-lg font-black uppercase tracking-widest">Identité</h2>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Photo Card */}
-              <Card className="overflow-hidden border-2 hover:shadow-lg transition-all bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-950/30 dark:to-violet-950/30">
-                <CardHeader>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <BlobCard className="bg-white">
+                <div className="space-y-4">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 text-white">
-                      <Camera size={20}/>
+                    <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow">
+                      <Camera size={20} />
+                    </span>
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-widest">Photo de Profil</h3>
+                      <p className="mt-1 text-sm text-blob-black/64">Visible dans le matching.</p>
                     </div>
-                    <CardTitle>Photo de Profil</CardTitle>
                   </div>
-                  <CardDescription>Ta photo visible dans le matching</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
                   <div className="flex flex-col items-center gap-4">
-                    <div className="relative group">
-                      <div className="rounded-2xl border-4 border-indigo-300 p-1.5 bg-white dark:bg-slate-900">
-                        <div className="relative h-56 w-44 overflow-hidden rounded-xl bg-muted">
-                          {displayedPhotoSrc ? (
-                            <Image
-                              src={displayedPhotoSrc}
-                              alt={photoAlt}
-                              fill
-                              className="object-cover"
-                              sizes="176px"
-                              unoptimized
-                            />
-                          ) : (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 gap-2">
-                              <Camera size={32} className="text-muted-foreground/40" />
-                              <span className="text-xs text-muted-foreground">Aucune photo</span>
-                            </div>
-                          )}
-                        </div>
+                    <div className="rounded-sm border-2 border-blob-black bg-blob-sand p-1.5">
+                      <div className="relative h-56 w-44 overflow-hidden rounded-sm border-2 border-white bg-white">
+                        {displayedPhotoSrc ? (
+                          <Image
+                            src={displayedPhotoSrc}
+                            alt={photoAlt}
+                            fill
+                            className="object-cover"
+                            sizes="176px"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                            <Camera size={32} className="text-blob-black/35" />
+                            <span className="text-xs font-medium text-blob-black/60">Aucune photo</span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={onPickPhoto}
-                      className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-gradient-to-r file:from-indigo-600 file:to-violet-600 file:px-4 file:py-2.5 file:text-white file:font-medium hover:file:from-indigo-700 hover:file:to-violet-700 file:transition-all"
-                    />
+                    <div className="w-full space-y-2">
+                      <input
+                        type="file"
+                        accept={PROFILE_PHOTO_ACCEPT}
+                        onChange={onPickPhoto}
+                        className="block w-full rounded-sm border-2 border-blob-black bg-white text-sm text-blob-black file:mr-4 file:border-0 file:border-r-2 file:border-blob-black file:bg-blob-black file:px-4 file:py-2.5 file:text-xs file:font-black file:uppercase file:tracking-widest file:text-white"
+                      />
+                      <p className="text-xs text-blob-black/56">JPG, PNG ou WebP. 5 Mo maximum.</p>
+                    </div>
                     {(photoUrl || showPhotoWarning) && (
                       <div className="w-full space-y-2">
                         {photoUrl && (
-                          <Button
+                          <BlobButton
                             type="button"
-                            variant="outline"
+                            variant="outlineDark"
                             size="sm"
                             className="w-full"
                             onClick={() => setDeletePhotoModalOpen(true)}
                           >
-                            <Trash2 className="mr-2 h-3.5 w-3.5" />
+                            <Trash2 className="h-3.5 w-3.5" />
                             Supprimer la photo
-                          </Button>
+                          </BlobButton>
                         )}
                         {showPhotoWarning && (
-                          <div className="flex items-start gap-2 rounded-lg border-2 border-amber-300 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-900">
-                            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                            <span>Sans photo, le matching est bloqué. Ajoute une photo pour débloquer !</span>
-                          </div>
+                          <BlobAlert variant="warning">
+                            Sans photo, le matching est bloqué. Ajoute une photo pour débloquer.
+                          </BlobAlert>
                         )}
                       </div>
                     )}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </BlobCard>
 
-              {/* Nom & Bio Card */}
-              <Card className="overflow-hidden border-2 hover:shadow-lg transition-all">
-                <CardHeader>
+              <BlobCard className="bg-white">
+                <div className="space-y-4">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
-                      <Sparkles size={20}/>
-                    </div>
+                    <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand">
+                      <Sparkles size={20} />
+                    </span>
                     <div>
-                      <CardTitle>Nom & Bio</CardTitle>
-                      <CardDescription>Comment tu apparais dans le matching</CardDescription>
+                      <h3 className="text-xl font-black uppercase tracking-widest">Nom & Bio</h3>
+                      <p className="mt-1 text-sm text-blob-black/64">Comment tu apparais dans le matching.</p>
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
+                  <BlobInput
+                    id="displayName"
+                    label="Nom affiché"
+                    placeholder="Ex : GlissDad, KookSurf, DadouKite..."
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    hint="Requis pour apparaître dans le matching."
+                  />
                   <div className="space-y-2">
-                    <Label htmlFor="displayName" className="flex items-center gap-2">
-                      <span className="text-sm font-medium">Nom affiché</span>
-                      <Badge variant="secondary" className="text-xs">Requis</Badge>
-                    </Label>
-                    <Input
-                      id="displayName"
-                      placeholder="Ex : GlissDad, KookSurf, DadouKite…"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      className="text-base"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="sex">Sexe</Label>
+                    <label htmlFor="sex" className="text-xs font-black uppercase tracking-[0.14em] text-blob-black/70">
+                      Sexe
+                    </label>
                     <select
                       id="sex"
-                      className="h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="h-11 w-full rounded-sm border-2 border-blob-black bg-white px-3 py-2 text-sm text-blob-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
                       value={sex}
                       onChange={(event) => setSex(event.target.value as SexOption)}
                     >
@@ -653,341 +633,209 @@ export default function ProfilePage() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="bio">Ta présentation</Label>
-                    <Textarea
+                    <label htmlFor="bio" className="text-xs font-black uppercase tracking-[0.14em] text-blob-black/70">
+                      Ta présentation
+                    </label>
+                    <textarea
                       id="bio"
-                      placeholder="Surfeur depuis 4 ans, je fais régulièrement Bordeaux → côte et je cherche quelqu'un pour partager le trajet et les sessions. Plutôt fish-board, prêt à marcher 20 min pour s'éloigner des spots saturés."
+                      placeholder="Surfeur depuis 4 ans, je fais régulièrement Bordeaux - côte et je cherche quelqu'un pour partager le trajet et les sessions."
                       value={bio}
                       onChange={(e) => setBio(e.target.value)}
                       rows={4}
-                      className="resize-none"
+                      className="w-full resize-none rounded-sm border-2 border-blob-black bg-white px-3 py-2 text-sm text-blob-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      {bio.length}/1000 caractères
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Section Mes Glisses */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="h-1 w-1 rounded-full bg-cyan-500" />
-              <h2 className="text-lg font-semibold text-foreground">Mes Glisses</h2>
-            </div>
-            <Card className="overflow-hidden border-2 hover:shadow-lg transition-shadow">
-              <CardHeader className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-950/30 dark:to-blue-950/30">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 text-white">
-                    <Waves size={20}/>
-                  </div>
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      Disciplines & Niveaux
-                      <Badge variant="secondary" className="text-xs">Au moins 1 requis</Badge>
-                    </CardTitle>
-                    <CardDescription>Sélectionne ton niveau pour trouver des partenaires adaptés</CardDescription>
+                    <p className="text-xs text-blob-black/56">{bio.length}/1000 caractères</p>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              </BlobCard>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
+              <h2 className="text-lg font-black uppercase tracking-widest">Mes Glisses</h2>
+            </div>
+            <BlobCard className="bg-white">
+              <div className="space-y-5">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand">
+                    <Waves size={20} />
+                  </span>
+                  <div>
+                    <h3 className="flex flex-wrap items-center gap-2 text-xl font-black uppercase tracking-widest">
+                      Disciplines & Niveaux
+                      <BlobBadge variant="yellow">Au moins 1 requis</BlobBadge>
+                    </h3>
+                    <p className="mt-1 text-sm text-blob-black/64">Sélectionne ton niveau pour trouver des partenaires adaptés.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label className="flex items-center gap-2 text-base font-medium">
-                      Surf
-                    </Label>
+                    <label className="text-xs font-black uppercase tracking-[0.14em] text-blob-black/70">Surf</label>
                     <select
-                      className="h-11 w-full rounded-lg border-2 border-input bg-background px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-all"
+                      className="h-11 w-full rounded-sm border-2 border-blob-black bg-white px-4 py-2 text-sm text-blob-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
                       value={surfLevel}
                       onChange={(event) => setSurfLevel(event.target.value as LevelOption)}
                     >
-                      <option value="">— Aucun —</option>
+                      <option value="">- Aucun -</option>
                       <option value="beginner">Débutant</option>
                       <option value="intermediate">Intermédiaire</option>
                       <option value="advanced">Confirmé</option>
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <Label className="flex items-center gap-2 text-base font-medium">
-                      Kitesurf
-                    </Label>
+                    <label className="text-xs font-black uppercase tracking-[0.14em] text-blob-black/70">Kitesurf</label>
                     <select
-                      className="h-11 w-full rounded-lg border-2 border-input bg-background px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 transition-all"
+                      className="h-11 w-full rounded-sm border-2 border-blob-black bg-white px-4 py-2 text-sm text-blob-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
                       value={kiteLevel}
                       onChange={(event) => setKiteLevel(event.target.value as LevelOption)}
                     >
-                      <option value="">— Aucun —</option>
+                      <option value="">- Aucun -</option>
                       <option value="beginner">Débutant</option>
                       <option value="intermediate">Intermédiaire</option>
                       <option value="advanced">Confirmé</option>
                     </select>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </BlobCard>
+          </section>
 
-          {/* Section Sécurité */}
-          <div className="space-y-3">
+          <section className="space-y-3">
             <div className="flex items-center gap-2">
-              <div className="h-1 w-1 rounded-full bg-red-500" />
-              <h2 className="text-lg font-semibold text-foreground">Sécurité</h2>
+              <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
+              <h2 className="text-lg font-black uppercase tracking-widest">Sécurité</h2>
             </div>
             <ChangePasswordCard />
-          </div>
+          </section>
 
-          {/* Section Confidentialité & Données */}
-          <div className="space-y-3">
+          <section className="space-y-3">
             <div className="flex items-center gap-2">
-              <div className="h-1 w-1 rounded-full bg-slate-500" />
-              <h2 className="text-lg font-semibold text-foreground">Confidentialité & Données</h2>
+              <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
+              <h2 className="text-lg font-black uppercase tracking-widest">Confidentialité & Données</h2>
             </div>
-            <Card className="border-2">
-              <CardHeader>
+            <BlobCard className="bg-white">
+              <div className="space-y-6">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-slate-600 to-slate-700 text-white">
-                    <Settings size={20}/>
-                  </div>
+                  <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-black text-white">
+                    <Settings size={20} />
+                  </span>
                   <div>
-                    <CardTitle>Mes Données Personnelles</CardTitle>
-                    <CardDescription>Gestion RGPD et confidentialité</CardDescription>
+                    <h3 className="text-xl font-black uppercase tracking-widest">Mes Données Personnelles</h3>
+                    <p className="mt-1 text-sm text-blob-black/64">Gestion RGPD et confidentialité.</p>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
 
-                {/* Geolocation */}
-                <div className="space-y-3">
+                <div className="space-y-3 border-t-2 border-blob-sand-deep pt-5">
                   <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Géolocalisation</h3>
+                    <MapPin className="h-4 w-4 text-blob-black/64" />
+                    <h3 className="text-sm font-black uppercase tracking-widest">Géolocalisation</h3>
                   </div>
                   {userLocation ? (
-                    <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
-                      <div className="flex items-start gap-2">
-                        <span className="text-emerald-600 text-lg">📍</span>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
-                            Position active
-                          </p>
-                          <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
-                            Lat: {userLocation.lat.toFixed(4)}, Lng: {userLocation.lng.toFixed(4)}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-2">Utilisée pour le matching géolocalisé</p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
+                    <BlobAlert variant="success" title="Position active">
+                      <p>Position approximative: {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}.</p>
+                      <p className="mt-1 text-xs">Utilisée pour le matching géolocalisé.</p>
+                      <BlobButton
+                        variant="outlineDark"
                         size="sm"
                         type="button"
                         onClick={handleDeleteLocation}
                         disabled={deletingLocation}
-                        className="w-full sm:w-auto"
+                        className="mt-3 w-full sm:w-auto"
                       >
-                        <Trash2 className="h-3 w-3 mr-2" />
+                        <Trash2 className="h-3 w-3" />
                         {deletingLocation ? 'Suppression...' : 'Supprimer ma position'}
-                      </Button>
-                    </div>
+                      </BlobButton>
+                    </BlobAlert>
                   ) : (
-                    <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:bg-slate-900/20 p-4">
-                      <p className="text-sm text-muted-foreground flex items-start gap-2">
-                        <span>ℹ️</span>
-                        <span>Aucune géolocalisation enregistrée. Active-la depuis Matching pour trouver des partenaires près de toi.</span>
-                      </p>
-                    </div>
+                    <BlobAlert variant="info">
+                      Aucune géolocalisation enregistrée. Active-la depuis Matching pour trouver des partenaires près de toi.
+                    </BlobAlert>
                   )}
                 </div>
 
-                <hr className="border-t-2" />
-
-                {/* Cookie Preferences */}
-                <div className="space-y-3">
+                <div className="space-y-3 border-t-2 border-blob-sand-deep pt-5">
                   <div className="flex items-center gap-2">
-                    <Cookie className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Préférences de confidentialité</h3>
+                    <Cookie className="h-4 w-4 text-blob-black/64" />
+                    <h3 className="text-sm font-black uppercase tracking-widest">Préférences de confidentialité</h3>
                   </div>
                   {consentStateReady ? (
                     <div className="space-y-3">
-                      <div className={`flex items-start gap-3 rounded-xl border-2 p-4 ${consentSummary.cardClasses}`}>
-                        <consentSummary.Icon className={`h-5 w-5 ${consentSummary.iconClasses} flex-shrink-0 mt-0.5`} />
+                      <div className="flex items-start gap-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-4">
+                        <consentSummary.Icon className="mt-0.5 h-5 w-5 flex-shrink-0 text-blob-black" />
                         <div className="flex-1 space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold text-foreground">{consentSummary.label}</p>
+                            <p className="text-sm font-black uppercase tracking-widest">{consentSummary.label}</p>
                             {consentSummary.badge && (
-                              <Badge className={consentSummary.badge.className}>{consentSummary.badge.text}</Badge>
+                              <BlobBadge variant={consentSummary.variant}>{consentSummary.badge.text}</BlobBadge>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground">{consentSummary.description}</p>
+                          <p className="text-xs text-blob-black/64">{consentSummary.description}</p>
                         </div>
                       </div>
-                      <Button
-                        variant="outline"
+                      <BlobButton
+                        variant="outlineDark"
                         size="sm"
                         type="button"
                         onClick={handleReopenCookieConsent}
                         className="w-full sm:w-auto"
                       >
                         Gérer mes préférences
-                      </Button>
+                      </BlobButton>
                     </div>
                   ) : (
-                    <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
-                      Chargement des préférences…
-                    </div>
+                    <BlobAlert variant="info">Chargement des préférences...</BlobAlert>
                   )}
                 </div>
 
-                <hr className="border-t-2" />
-
-                {/* Alert preferences */}
-                <div className="space-y-3">
+                <div className="space-y-3 border-t-2 border-blob-sand-deep pt-5">
                   <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Préférences d&apos;alertes</h3>
+                    <Bell className="h-4 w-4 text-blob-black/64" />
+                    <h3 className="text-sm font-black uppercase tracking-widest">Préférences d&apos;alertes</h3>
                   </div>
                   {loadingNotifPrefs ? (
-                    <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
-                      Chargement des préférences…
-                    </div>
+                    <BlobAlert variant="info">Chargement des préférences...</BlobAlert>
                   ) : (
                     <div className="space-y-4">
-                      {/* Alert master toggle */}
-                      <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
-                            <Bell className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-semibold">Alertes dans Blob</h4>
-                            <p className="text-xs text-muted-foreground">Choisis les alertes que tu veux recevoir dans Blob</p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleNotificationPref('pushEnabled')}
-                          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-                            notificationPrefs.pushEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
-                          }`}
-                          aria-label="Activer les alertes dans Blob"
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                              notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-
-                      {/* Rider-specific preferences */}
+                      <NotificationToggle
+                        label="Alertes dans Blob"
+                        description="Choisis les alertes que tu veux recevoir dans Blob."
+                        checked={notificationPrefs.pushEnabled}
+                        onClick={() => toggleNotificationPref('pushEnabled')}
+                      />
                       <div className="space-y-2">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Messagerie & Matching</h4>
-
-                        {/* Messages */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-cyan-300 dark:hover:border-cyan-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">💬</span>
-                            <div>
-                              <p className="text-sm font-medium">Messages</p>
-                              <p className="text-xs text-muted-foreground">Quand tu reçois un nouveau message</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleNotificationPref('notifyMessages')}
-                            disabled={!notificationPrefs.pushEnabled}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              notificationPrefs.notifyMessages && notificationPrefs.pushEnabled
-                                ? 'bg-cyan-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle message notifications"
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyMessages && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-
-                        {/* Matches */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-pink-300 dark:hover:border-pink-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">🎉</span>
-                            <div>
-                              <p className="text-sm font-medium">Nouveaux matchs</p>
-                              <p className="text-xs text-muted-foreground">Quand tu matches avec un autre rider</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleNotificationPref('notifyMatches')}
-                            disabled={!notificationPrefs.pushEnabled}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              notificationPrefs.notifyMatches && notificationPrefs.pushEnabled
-                                ? 'bg-pink-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle match notifications"
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyMatches && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-
-                        {/* Group Invitations */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">👥</span>
-                            <div>
-                              <p className="text-sm font-medium">Invitations groupe</p>
-                              <p className="text-xs text-muted-foreground">Quand on t&apos;invite dans une conversation</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleNotificationPref('notifyInvitations')}
-                            disabled={!notificationPrefs.pushEnabled}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              notificationPrefs.notifyInvitations && notificationPrefs.pushEnabled
-                                ? 'bg-indigo-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle invitation notifications"
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyInvitations && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
+                        <h4 className="text-xs font-black uppercase tracking-widest text-blob-black/56">Messagerie & Matching</h4>
+                        <NotificationToggle
+                          label="Messages"
+                          description="Quand tu reçois un nouveau message."
+                          checked={notificationPrefs.notifyMessages && notificationPrefs.pushEnabled}
+                          disabled={!notificationPrefs.pushEnabled}
+                          onClick={() => toggleNotificationPref('notifyMessages')}
+                        />
+                        <NotificationToggle
+                          label="Nouveaux matchs"
+                          description="Quand tu matches avec un autre rider."
+                          checked={notificationPrefs.notifyMatches && notificationPrefs.pushEnabled}
+                          disabled={!notificationPrefs.pushEnabled}
+                          onClick={() => toggleNotificationPref('notifyMatches')}
+                        />
+                        <NotificationToggle
+                          label="Invitations groupe"
+                          description="Quand on t’invite dans une conversation."
+                          checked={notificationPrefs.notifyInvitations && notificationPrefs.pushEnabled}
+                          disabled={!notificationPrefs.pushEnabled}
+                          onClick={() => toggleNotificationPref('notifyInvitations')}
+                        />
                       </div>
-
-                      {/* Info box when alerts are disabled */}
                       {!notificationPrefs.pushEnabled && (
-                        <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3">
-                          <div className="flex items-start gap-2">
-                            <span className="text-lg">ℹ️</span>
-                            <div className="flex-1">
-                              <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Alertes dans Blob désactivées</p>
-                              <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
-                                Réactive les alertes dans Blob pour voir les messages, matchs et invitations.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
+                        <BlobAlert variant="warning">
+                          Réactive les alertes dans Blob pour voir les messages, matchs et invitations.
+                        </BlobAlert>
                       )}
-
-                      {/* Save button */}
-                      <Button
+                      <BlobButton
                         type="button"
-                        variant="outline"
+                        variant="outlineDark"
                         size="sm"
                         onClick={saveNotificationPreferences}
                         disabled={savingNotifPrefs}
@@ -999,33 +847,30 @@ export default function ProfilePage() {
                             Sauvegarde...
                           </span>
                         ) : (
-                          '💾 Sauvegarder mes préférences'
+                          'Sauvegarder mes préférences'
                         )}
-                      </Button>
+                      </BlobButton>
                     </div>
                   )}
                 </div>
 
-                <hr className="border-t-2" />
-
-                {/* RGPD Rights */}
-                <div className="space-y-3">
+                <div className="space-y-3 border-t-2 border-blob-sand-deep pt-5">
                   <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Vos Droits RGPD</h3>
+                    <FileText className="h-4 w-4 text-blob-black/64" />
+                    <h3 className="text-sm font-black uppercase tracking-widest">Vos Droits RGPD</h3>
                   </div>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm leading-6 text-blob-black/64">
                     Conformément au RGPD, vous disposez d&apos;un droit d&apos;accès, de rectification, de suppression et de portabilité de vos données.
                   </p>
                   <div className="flex flex-wrap gap-3">
-                    <Link href="/about">
-                      <Button variant="outline" size="sm">
-                        <FileText className="h-3.5 w-3.5 mr-2" />
+                    <BlobButton asChild variant="outlineDark" size="sm">
+                      <Link href="/about">
+                        <FileText className="h-3.5 w-3.5" />
                         Politique RGPD
-                      </Button>
-                    </Link>
-                    <Button
-                      variant="outline"
+                      </Link>
+                    </BlobButton>
+                    <BlobButton
+                      variant="outlineDark"
                       size="sm"
                       type="button"
                       onClick={async () => {
@@ -1038,8 +883,7 @@ export default function ProfilePage() {
                           });
 
                           if (!response.ok) {
-                            const errorData = await response.json().catch(() => ({}));
-                            throw new Error(errorData.error || 'Erreur lors de l\'export');
+                            throw new Error('EXPORT_FAILED');
                           }
 
                           const blob = await response.blob();
@@ -1053,144 +897,129 @@ export default function ProfilePage() {
                           document.body.removeChild(a);
 
                           toast('Export téléchargé avec succès', 'success');
-                        } catch (error) {
-                          const message = error instanceof Error ? error.message : 'Erreur lors de l\'export';
-                          toast(message, 'error');
+                        } catch {
+                          toast(GENERIC_EXPORT_ERROR, 'error');
                         }
                       }}
                     >
-                      📥 Exporter mes données
-                    </Button>
+                      Exporter mes données
+                    </BlobButton>
                     {deletionStatus?.isScheduled ? (
-                      <Button
-                        variant="outline"
+                      <BlobButton
+                        variant="outlineDark"
                         size="sm"
                         type="button"
                         onClick={handleCancelDeletion}
                         disabled={loadingDeletion}
-                        className="border-orange-300 text-orange-700 hover:bg-orange-50"
                       >
-                        ⚠️ Annuler suppression ({deletionStatus.daysRemaining}j)
-                      </Button>
+                        Annuler suppression ({deletionStatus.daysRemaining}j)
+                      </BlobButton>
                     ) : (
-                      <Button
-                        variant="outline"
+                      <BlobButton
+                        variant="outlineDark"
                         size="sm"
                         type="button"
                         onClick={() => setShowDeletionModal(true)}
-                        className="border-red-300 text-red-700 hover:bg-red-50"
+                        className="border-red-700 text-red-800 hover:bg-red-50"
                       >
-                        <Trash2 className="h-3.5 w-3.5 mr-2" />
+                        <Trash2 className="h-3.5 w-3.5" />
                         Supprimer mon compte
-                      </Button>
+                      </BlobButton>
                     )}
                   </div>
                 </div>
+              </div>
+            </BlobCard>
+          </section>
 
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Bouton Sauvegarder */}
           <div className="space-y-4 pt-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-muted-foreground">
-                💡 Pense à sauvegarder tes modifications avant de quitter
-              </p>
-              <Button
+              <p className="text-sm text-blob-black/64">Pense à sauvegarder tes modifications avant de quitter.</p>
+              <BlobButton
                 type="submit"
-                className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-lg hover:shadow-xl transition-all text-base px-8 py-6"
+                className="w-full sm:w-auto"
                 disabled={saving}
               >
                 {saving ? (
-                  <span className="inline-flex items-center gap-2"><Spinner /> Enregistrement…</span>
+                  <span className="inline-flex items-center gap-2"><Spinner /> Enregistrement...</span>
                 ) : (
                   <span className="inline-flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" />
+                    <Sparkles className="h-4 w-4" />
                     Enregistrer mon profil
                   </span>
                 )}
-              </Button>
+              </BlobButton>
             </div>
             {showDashboardShortcut && (
-              <div className="rounded-xl border-2 border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between shadow-sm">
-                <div className="flex items-start gap-3">
-                  <Sparkles className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-emerald-900">Profil à jour ! ✅</p>
-                    <p className="text-sm text-emerald-800">Tu peux retourner sur le dashboard pour explorer les sessions et messages.</p>
-                  </div>
+              <BlobAlert variant="success" title="Profil à jour">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p>Tu peux retourner sur le dashboard pour explorer les sessions et messages.</p>
+                  <BlobButton
+                    type="button"
+                    variant="outlineDark"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    onClick={() => router.push('/dashboard')}
+                  >
+                    Retour au dashboard
+                  </BlobButton>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full sm:w-auto border-emerald-300 hover:bg-emerald-100"
-                  onClick={() => router.push('/dashboard')}
-                >
-                  Retour au dashboard →
-                </Button>
-              </div>
+              </BlobAlert>
             )}
           </div>
         </form>
 
-        {/* Account Deletion Modal */}
         {showDeletionModal && (
           <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
             onClick={() => setShowDeletionModal(false)}
           >
-            <Card
-              className="max-w-lg w-full"
+            <BlobCard
+              className="w-full max-w-lg bg-white"
               onClick={(e) => e.stopPropagation()}
             >
-              <CardHeader>
-                <CardTitle className="text-xl text-red-600 flex items-center gap-2">
-                  <AlertTriangle className="w-6 h-6" />
-                  Suppression de compte
-                </CardTitle>
-                <CardDescription>
-                  Cette action entraînera la suppression définitive de votre compte dans 30 jours
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4 space-y-2">
-                  <h3 className="font-semibold text-sm flex items-center gap-2">
-                    <span>📅</span> Comment fonctionne la suppression ?
-                  </h3>
-                  <ol className="text-sm space-y-1.5 list-decimal list-inside text-muted-foreground">
+              <div className="space-y-4">
+                <div>
+                  <h2 className="flex items-center gap-2 text-xl font-black uppercase tracking-widest text-red-800">
+                    <AlertTriangle className="h-6 w-6" />
+                    Suppression de compte
+                  </h2>
+                  <p className="mt-1 text-sm text-blob-black/64">
+                    Cette action entraînera la suppression définitive de votre compte dans 30 jours.
+                  </p>
+                </div>
+
+                <BlobAlert variant="warning" title="Fonctionnement">
+                  <ol className="list-inside list-decimal space-y-1.5 text-sm">
                     <li>Votre compte sera <strong>immédiatement désactivé</strong></li>
                     <li>Vos données seront <strong>conservées pendant 30 jours</strong></li>
                     <li>Vous pourrez <strong>annuler</strong> la suppression durant cette période</li>
                     <li>Après 30 jours, vos données seront <strong>définitivement supprimées</strong></li>
                   </ol>
-                </div>
+                </BlobAlert>
 
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 space-y-2">
-                  <h3 className="font-semibold text-sm flex items-center gap-2">
-                    <span>💡</span> Avant de supprimer
-                  </h3>
-                  <ul className="text-sm space-y-1.5 list-disc list-inside text-muted-foreground">
-                    <li>Vous pouvez <strong>exporter vos données</strong> (droit RGPD)</li>
+                <BlobAlert variant="info" title="Avant de supprimer">
+                  <ul className="list-inside list-disc space-y-1.5 text-sm">
+                    <li>Vous pouvez <strong>exporter vos données</strong> avant de lancer la demande</li>
                     <li>Pensez à <strong>annuler vos réservations</strong> en cours</li>
                     <li>Vos messages seront supprimés définitivement</li>
                   </ul>
-                </div>
+                </BlobAlert>
 
-                <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
-                  <Button
+                <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
+                  <BlobButton
                     type="button"
-                    variant="outline"
+                    variant="outlineDark"
                     className="flex-1"
                     onClick={() => setShowDeletionModal(false)}
                     disabled={loadingDeletion}
                   >
                     Annuler
-                  </Button>
-                  <Button
+                  </BlobButton>
+                  <BlobButton
                     type="button"
-                    variant="destructive"
-                    className="flex-1"
+                    variant="dark"
+                    className="flex-1 border-red-800 bg-red-700 hover:bg-red-800"
                     onClick={handleRequestDeletion}
                     disabled={loadingDeletion}
                   >
@@ -1201,10 +1030,10 @@ export default function ProfilePage() {
                     ) : (
                       'Confirmer la suppression'
                     )}
-                  </Button>
+                  </BlobButton>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </BlobCard>
           </div>
         )}
       </div>
@@ -1221,15 +1050,54 @@ export default function ProfilePage() {
             Sans photo de profil, les autres riders ne pourront plus te voir dans le matching. Ajoute-en une nouvelle dès que possible.
           </p>
           <DialogFooter className="mt-6">
-            <Button type="button" variant="outline" onClick={() => setDeletePhotoModalOpen(false)} disabled={removingPhoto}>
+            <BlobButton type="button" variant="outlineDark" onClick={() => setDeletePhotoModalOpen(false)} disabled={removingPhoto}>
               Annuler
-            </Button>
-            <Button type="button" variant="destructive" onClick={handleConfirmDeletePhoto} disabled={removingPhoto}>
+            </BlobButton>
+            <BlobButton type="button" variant="dark" className="border-red-800 bg-red-700 hover:bg-red-800" onClick={handleConfirmDeletePhoto} disabled={removingPhoto}>
               {removingPhoto ? 'Suppression…' : 'Supprimer'}
-            </Button>
+            </BlobButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function NotificationToggle({
+  label,
+  description,
+  checked,
+  disabled = false,
+  onClick,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-sm border-2 border-blob-sand-deep bg-white p-3">
+      <div>
+        <p className="text-sm font-black uppercase tracking-[0.12em] text-blob-black">{label}</p>
+        <p className="mt-1 text-xs text-blob-black/56">{description}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-sm border-2 border-blob-black transition-colors ${
+          checked ? 'bg-blob-yellow' : 'bg-blob-sand-deep'
+        } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+        aria-pressed={checked}
+        aria-label={label}
+      >
+        <span
+          className={`inline-block h-5 w-5 transform rounded-sm border-2 border-blob-black bg-white transition-transform ${
+            checked ? 'translate-x-5' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
+    </div>
   );
 }
