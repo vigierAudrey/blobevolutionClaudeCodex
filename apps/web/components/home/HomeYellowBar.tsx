@@ -37,17 +37,14 @@ const items: YellowBarItem[] = [
   },
 ];
 
-/* Vague océane — rappelle l'esprit surf/kite, en cohérence avec la marque Blob.
- * gradId unique pour éviter les conflits SVG entre top et bottom. */
-function WaveEdge({ flip = false, gradId }: { flip?: boolean; gradId: string }) {
+function WaveEdge({ gradId }: { gradId: string }) {
   return (
     <div
-      className="h-5 sm:h-7 overflow-hidden leading-none"
+      className="h-2.5 sm:h-3 overflow-hidden leading-none"
       aria-hidden
-      style={flip ? { transform: 'scaleY(-1)' } : undefined}
     >
       <svg
-        viewBox="0 0 1440 44"
+        viewBox="0 0 1440 24"
         preserveAspectRatio="none"
         xmlns="http://www.w3.org/2000/svg"
         className="block h-full w-full"
@@ -62,53 +59,30 @@ function WaveEdge({ flip = false, gradId }: { flip?: boolean; gradId: string }) 
           </linearGradient>
         </defs>
 
-        {/* Corps principal de la vague */}
         <path
           fill={`url(#${gradId})`}
           d="
-            M0 27
-            C80 22, 160 10, 260 9
-            C340 8, 400 24, 480 31
-            C560 37, 640 35, 720 24
-            C800 12, 862 5, 944 8
-            C1010 11, 1068 24, 1148 29
-            C1228 34, 1304 28, 1382 20
-            C1408 16, 1428 15, 1440 16
-            L1440 44 L0 44 Z
+            M0 15
+            C118 11, 214 7, 332 9
+            C470 11, 548 18, 692 17
+            C826 16, 914 8, 1048 8
+            C1182 8, 1292 15, 1440 11
+            L1440 24 L0 24 Z
           "
         />
 
-        {/* Liseré d'écume — fin trait blanc sur la crête */}
         <path
-          stroke="rgba(255,255,255,0.42)"
-          strokeWidth="1.6"
+          stroke="rgba(255,255,255,0.72)"
+          strokeWidth="1"
           fill="none"
           strokeLinecap="round"
           d="
-            M0 27
-            C80 22, 160 10, 260 9
-            C340 8, 400 24, 480 31
-            C560 37, 640 35, 720 24
-            C800 12, 862 5, 944 8
-            C1010 11, 1068 24, 1148 29
-            C1228 34, 1304 28, 1382 20
-            C1408 16, 1428 15, 1440 16
+            M0 15
+            C118 11, 214 7, 332 9
+            C470 11, 548 18, 692 17
+            C826 16, 914 8, 1048 8
+            C1182 8, 1292 15, 1440 11
           "
-        />
-
-        {/* Ombre portée douce sous la crête */}
-        <path
-          fill="rgba(0,0,0,0.07)"
-          d="
-            M0 30
-            C80 25, 160 13, 260 12
-            C340 11, 400 27, 480 34
-            C560 40, 640 38, 720 27
-            C800 15, 862 8, 944 11
-            C1010 14, 1068 27, 1148 32
-            L1148 44 L0 44 Z
-          "
-          opacity="0.5"
         />
       </svg>
     </div>
@@ -121,54 +95,51 @@ export function HomeYellowBar() {
       aria-label="Accès rapide aux fonctionnalités Blob"
       className="relative z-20"
     >
-      {/* Vague supérieure — transition dark → jaune */}
       <div className="bg-blob-black overflow-hidden">
-        <WaveEdge gradId="ybw-top" />
+        <WaveEdge gradId="home-ribbon-wave" />
       </div>
 
-      {/* Bande jaune */}
       <div
-        className="relative overflow-hidden"
-        style={{
-          background:
-            'linear-gradient(90deg, #E9AA2A 0%, #FAB914 22%, #FFD83A 54%, #F4C234 76%, #EAB03B 100%)',
-        }}
+        className="relative overflow-visible border-b border-blob-sand-deep bg-blob-sand"
       >
-        {/* Texture de lumière subtile */}
         <div
-          className="pointer-events-none absolute inset-0 opacity-20"
+          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-blob-yellow/80"
           aria-hidden
-          style={{
-            backgroundImage:
-              'radial-gradient(circle at 12% 30%, rgba(255,255,255,0.38) 0 1px, transparent 1px), radial-gradient(circle at 78% 70%, rgba(0,0,0,0.20) 0 1px, transparent 1px)',
-            backgroundSize: '34px 28px, 42px 36px',
-          }}
         />
 
-        <div className="relative px-4 sm:px-6 lg:px-10 xl:px-14 py-2 sm:py-2.5">
+        <div className="relative px-4 sm:px-6 lg:px-10 xl:px-14 py-2.5 sm:py-3">
           <ul
-            className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y divide-[rgba(17,19,24,0.15)] sm:divide-y-0"
+            className="grid grid-cols-2 sm:grid-cols-4"
             role="list"
           >
-            {items.map((item) => {
+            {items.map((item, index) => {
               const Icon = item.Icon;
               return (
-                <li key={item.href}>
+                <li
+                  key={item.href}
+                  className={[
+                    index % 2 === 1 ? 'border-l border-blob-sand-deep' : '',
+                    index > 1 ? 'border-t border-blob-sand-deep' : '',
+                    index > 0 ? 'sm:border-l sm:border-t-0' : '',
+                  ].join(' ')}
+                >
                   <Link
                     href={item.href}
                     className={[
-                      'group flex flex-col items-center text-center gap-1.5',
-                      'px-3 py-2 sm:px-4 sm:py-2',
-                      'rounded-sm',
-                      'hover:bg-white/10',
-                      'transition-colors duration-200',
+                      'group relative flex min-h-[72px] items-center justify-center gap-2.5 text-left',
+                      'px-3 py-2 sm:min-h-[68px] sm:px-4 lg:px-5',
+                      'bg-blob-sand',
+                      'hover:bg-white/55',
+                      'transition-colors duration-200 motion-reduce:transition-none',
                       'focus-visible:outline-none focus-visible:ring-2',
-                      'focus-visible:ring-inset focus-visible:ring-blob-black',
+                      'focus-visible:ring-inset focus-visible:ring-blob-yellow',
                     ].join(' ')}
                   >
-                    {/* Icône */}
                     <span
-                      className="flex items-center justify-center w-8 h-8 rounded-full bg-blob-black/10 group-hover:bg-blob-black/18 transition-colors duration-200"
+                      className={[
+                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blob-yellow/30 ring-1 ring-blob-black/5 transition-colors duration-200 group-hover:bg-blob-yellow/45 motion-reduce:transition-none',
+                        item.blobLogo ? 'home-blob-pulse' : '',
+                      ].join(' ')}
                       aria-hidden
                     >
                       {item.blobLogo && (
@@ -185,14 +156,13 @@ export function HomeYellowBar() {
                       )}
                     </span>
 
-                    {/* Label */}
-                    <span className="max-w-[16ch] font-bold uppercase tracking-wide text-blob-black text-[10px] sm:text-[11px] leading-tight">
-                      {item.label}
-                    </span>
-
-                    {/* Description — visible uniquement sur grand écran */}
-                    <span className="hidden lg:block max-w-[22ch] text-blob-black/65 text-[10px] leading-snug">
-                      {item.description}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-bold uppercase tracking-wide text-blob-black text-[10px] sm:text-[11px] leading-tight">
+                        {item.label}
+                      </span>
+                      <span className="hidden max-w-[22ch] pt-0.5 text-[10px] leading-snug text-blob-black/58 sm:block lg:absolute lg:left-1/2 lg:top-[calc(100%-4px)] lg:z-30 lg:w-max lg:max-w-[210px] lg:-translate-x-1/2 lg:rounded-[4px] lg:border lg:border-blob-black/10 lg:bg-white lg:px-2.5 lg:py-1.5 lg:text-center lg:opacity-0 lg:shadow-[0_10px_24px_rgba(17,19,24,0.14)] lg:transition-opacity lg:duration-150 lg:group-hover:opacity-100 lg:group-focus-visible:opacity-100 lg:motion-reduce:transition-none">
+                        {item.description}
+                      </span>
                     </span>
                   </Link>
                 </li>
@@ -201,11 +171,37 @@ export function HomeYellowBar() {
           </ul>
         </div>
       </div>
+      <style>{`
+        .home-blob-pulse {
+          animation: homeBlobPulse 3.2s ease-out infinite;
+          transform-origin: center;
+        }
 
-      {/* Vague inférieure — transition jaune → fond page */}
-      <div className="bg-background overflow-hidden">
-        <WaveEdge gradId="ybw-bottom" flip />
-      </div>
+        @keyframes homeBlobPulse {
+          0% {
+            transform: scale(1);
+            box-shadow: 0 0 0 rgba(245, 192, 62, 0);
+          }
+          8% {
+            transform: scale(1.08);
+            box-shadow: 0 0 0 6px rgba(245, 192, 62, 0.18);
+          }
+          16% {
+            transform: scale(1);
+            box-shadow: 0 0 0 12px rgba(245, 192, 62, 0);
+          }
+          100% {
+            transform: scale(1);
+            box-shadow: 0 0 0 rgba(245, 192, 62, 0);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .home-blob-pulse {
+            animation: none;
+          }
+        }
+      `}</style>
     </section>
   );
 }

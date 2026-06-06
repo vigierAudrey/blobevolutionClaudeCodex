@@ -35,10 +35,10 @@ export function HomeWhyBlob() {
       aria-labelledby="why-blob-title"
       className="-mx-4 sm:-mx-6 lg:-mx-8"
     >
-      <div className="bg-blob-sand px-4 sm:px-6 lg:px-10 xl:px-14 py-14 sm:py-16 lg:py-20">
+      <div className="bg-blob-sand px-4 pb-14 pt-16 sm:px-6 sm:pb-16 sm:pt-20 lg:px-10 lg:pb-20 lg:pt-24 xl:px-14">
 
         {/* Titre */}
-        <div className="mb-10 sm:mb-12">
+        <div className="mb-10 sm:mb-12 lg:mb-14">
           <h2
             id="why-blob-title"
             className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-widest text-blob-black"
@@ -49,7 +49,7 @@ export function HomeWhyBlob() {
         </div>
 
         {/* Corps : intro + 3 piliers */}
-        <div className="space-y-10 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-12 xl:gap-16">
+        <div className="space-y-10 lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-14 lg:space-y-0 xl:gap-20">
 
           {/* Texte brand story */}
           <div className="space-y-4 max-w-prose">
@@ -65,7 +65,7 @@ export function HomeWhyBlob() {
           </div>
 
           {/* 3 piliers */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-8 lg:grid-cols-1 lg:pt-2 xl:grid-cols-3">
             {pillars.map(({ id, label, body, ...pillar }) => (
               <div key={id} className="flex flex-col gap-3">
                 <div className="flex items-center gap-2.5">
