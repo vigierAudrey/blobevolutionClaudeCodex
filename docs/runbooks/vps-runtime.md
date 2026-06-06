@@ -252,7 +252,7 @@ MINIO_INT_URL="http://${S3_ACCESS_KEY_ID}:${S3_SECRET_ACCESS_KEY}@minio:9000"
 docker run --rm \
   --network blobconnect-vps_vps \
   -e "MC_HOST_minio=${MINIO_INT_URL}" \
-  quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z \
+  quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z \
   anonymous get "minio/${S3_BUCKET}"
 ```
 
@@ -262,7 +262,7 @@ Re-appliquer la policy si necessaire:
 docker run --rm \
   --network blobconnect-vps_vps \
   -e "MC_HOST_minio=${MINIO_INT_URL}" \
-  quay.io/minio/mc:RELEASE.2025-09-07T16-13-09Z \
+  quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z \
   anonymous set download "minio/${S3_BUCKET}"
 ```
 

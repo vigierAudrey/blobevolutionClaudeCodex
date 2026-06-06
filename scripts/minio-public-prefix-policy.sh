@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env.vps}"
 COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.blobsurf.yml}"
-MC_IMAGE="${MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-09-11T05-28-16Z}"
+MC_IMAGE="${MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z}"
 ALIAS="${MINIO_ALIAS:-minio}"
 PREFIXES="${PUBLIC_READ_PREFIXES:-pros/*}"
 DRY_RUN=0
