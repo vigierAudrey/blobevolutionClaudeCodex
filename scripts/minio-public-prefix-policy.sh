@@ -142,17 +142,12 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-NETWORK="$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" config --format json \
-  | node -e '
-const fs = require("fs");
-const cfg = JSON.parse(fs.readFileSync(0, "utf8"));
-const service = cfg.services?.minio;
-const networks = service?.networks ? Object.keys(service.networks) : [];
-if (!networks.length) process.exit(1);
-const project = cfg.name || "blobconnect-blobsurf";
-const name = networks[0].startsWith(project + "_") ? networks[0] : `${project}_${networks[0]}`;
-process.stdout.write(name);
-' )"
+MINIO_CONTAINER="$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps -q minio)"
+[ -n "$MINIO_CONTAINER" ] || { echo "MinIO container not found" >&2; exit 1; }
+
+NETWORK="$(docker inspect -f '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$MINIO_CONTAINER" \
+  | head -n 1)"
+[ -n "$NETWORK" ] || { echo "MinIO Docker network not found" >&2; exit 1; }
 
 MINIO_INT_URL="http://${S3_ACCESS_KEY_ID}:${S3_SECRET_ACCESS_KEY}@minio:9000"
 
