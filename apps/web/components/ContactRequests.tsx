@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, Clock } from 'lucide-react';
 import { apiClient, type PendingContactRequest } from '../lib/apiClient';
-import { Button } from './ui/button';
+import { BlobButton, BlobCard } from './blob';
 
 type RequestState =
   | { kind: 'idle' }
@@ -45,8 +45,32 @@ export function ContactRequests() {
 
   useEffect(() => {
     void load();
-    const interval = setInterval(() => void load(), 60_000);
-    return () => clearInterval(interval);
+    let interval: number | null = null;
+    const start = () => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+      if (interval != null) window.clearInterval(interval);
+      interval = window.setInterval(() => void load(), 60_000);
+    };
+    const stop = () => {
+      if (interval != null) {
+        window.clearInterval(interval);
+        interval = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void load();
+        start();
+      } else {
+        stop();
+      }
+    };
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   async function load() {
@@ -116,22 +140,22 @@ export function ContactRequests() {
         const isLoading = state.kind === 'loading';
 
         return (
-          <div
+          <BlobCard
             key={req.id}
-            className="flex flex-col gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800"
+            className="bg-white"
             data-testid={`contact-request-${req.id}`}
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-white font-semibold flex-shrink-0">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand font-black text-blob-black">
                 {proName.charAt(0).toUpperCase()}
               </div>
 
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-foreground">
+                <div className="text-sm font-medium text-blob-black">
                   <span className="font-semibold">{proName}</span> souhaite vous contacter
                 </div>
                 {req.message && (
-                  <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                  <div className="mt-0.5 line-clamp-2 text-xs text-blob-black/56">
                     {req.message}
                   </div>
                 )}
@@ -139,33 +163,31 @@ export function ContactRequests() {
 
               {state.kind === 'idle' || state.kind === 'loading' || state.kind === 'error' ? (
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <Button
-                    variant="default"
+                  <BlobButton
+                    variant="dark"
                     size="sm"
                     onClick={() => void handleRespond(req.id, 'ACCEPT')}
                     disabled={isLoading}
                     aria-label={`Ouvrir la mise en relation avec ${proName}`}
-                    className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700"
                     data-testid={`accept-${req.id}`}
                   >
                     <Check size={14} />
                     Ouvrir
-                  </Button>
-                  <Button
-                    variant="outline"
+                  </BlobButton>
+                  <BlobButton
+                    variant="outlineDark"
                     size="sm"
                     onClick={() => void handleRespond(req.id, 'REJECT')}
                     disabled={isLoading}
                     aria-label={`Ne pas retenir la demande de ${proName}`}
-                    className="flex items-center gap-1"
                     data-testid={`reject-${req.id}`}
                   >
                     <X size={14} />
                     Ne pas retenir
-                  </Button>
+                  </BlobButton>
                 </div>
               ) : state.kind === 'done' ? (
-                <div className="flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300 flex-shrink-0">
+                <div className="flex flex-shrink-0 items-center gap-1 text-xs text-green-900">
                   <Check size={14} />
                   {state.finalStatus === 'ACCEPTED' ? 'Mise en relation ouverte' : state.finalStatus === 'REJECTED' ? 'Non retenue' : 'Enregistré'}
                 </div>
@@ -173,22 +195,22 @@ export function ContactRequests() {
             </div>
 
             {state.kind === 'loading' && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground pl-13">
+              <div className="flex items-center gap-1.5 pl-13 text-xs text-blob-black/56">
                 <Clock size={12} className="animate-spin" />
                 {state.action === 'ACCEPT' ? 'Ouverture de la mise en relation…' : 'Réponse en cours…'}
               </div>
             )}
 
             {state.kind === 'done' && (
-              <p className="text-xs text-emerald-700 dark:text-emerald-400 pl-13">{state.label}</p>
+              <p className="pl-13 text-xs text-green-900">{state.label}</p>
             )}
 
             {state.kind === 'error' && (
-              <div className="flex items-center justify-between text-xs text-red-600 dark:text-red-400 pl-13">
+              <div className="flex items-center justify-between pl-13 text-xs text-red-700">
                 <span>{state.message}</span>
                 {state.retryable && (
                   <button
-                    className="ml-2 underline text-xs hover:text-red-800"
+                    className="ml-2 text-xs underline hover:text-red-800"
                     onClick={() => setStates(prev => ({ ...prev, [req.id]: { kind: 'idle' } }))}
                   >
                     Réessayer
@@ -196,7 +218,7 @@ export function ContactRequests() {
                 )}
               </div>
             )}
-          </div>
+          </BlobCard>
         );
       })}
     </div>

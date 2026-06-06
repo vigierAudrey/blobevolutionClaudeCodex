@@ -1,14 +1,11 @@
 "use client";
 
 import { useMemo, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Label } from '../ui/label';
-import { Input } from '../ui/input';
-import { Button } from '../ui/button';
 import { PasswordRequirementsList } from '../PasswordRequirementsList';
 import { getPasswordRequirementStatuses } from '../../../api/src/utils/password-validator';
 import { apiClient } from '../../lib/apiClient';
 import { useToast } from '../ui/toast';
+import { BlobAlert, BlobButton, BlobCard, BlobInput } from '@/components/blob';
 
 export function ChangePasswordCard() {
   const toast = useToast();
@@ -39,8 +36,8 @@ export function ChangePasswordCard() {
       setNewPassword('');
       setConfirmPassword('');
       toast('Mot de passe mis à jour', 'success');
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Impossible de mettre à jour le mot de passe';
+    } catch {
+      const errorMessage = 'Impossible de mettre à jour le mot de passe pour le moment.';
       setStatus('error');
       setMessage(errorMessage);
       toast(errorMessage, 'error');
@@ -52,77 +49,71 @@ export function ChangePasswordCard() {
   const isSubmitting = status === 'loading';
 
   return (
-    <Card>
-      <CardHeader
-        className="flex cursor-pointer flex-row items-center justify-between"
+    <BlobCard className="bg-white">
+      <button
+        type="button"
+        className="flex w-full cursor-pointer flex-row items-center justify-between gap-4 text-left"
         onClick={() => setIsOpen((prev) => !prev)}
-        role="button"
         aria-expanded={isOpen}
       >
         <div className="space-y-1.5">
-          <CardTitle className="text-base">🔐 Sécurité du compte</CardTitle>
-          <CardDescription>
+          <h3 className="text-base font-black uppercase tracking-widest">Sécurité du compte</h3>
+          <p className="text-sm leading-6 text-blob-black/64">
             Modifie ton mot de passe actuel. Tous les appareils seront déconnectés après mise à jour.
-          </CardDescription>
+          </p>
         </div>
-        <span className="ml-4 text-sm text-muted-foreground">
+        <span className="ml-4 text-xs font-black uppercase tracking-widest text-blob-black/64">
           {isOpen ? 'Masquer' : 'Modifier'}
         </span>
-      </CardHeader>
+      </button>
       {isOpen && (
-        <CardContent>
+        <div className="mt-5 border-t-2 border-blob-sand-deep pt-5">
           <form onSubmit={onSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="current-password">Mot de passe actuel</Label>
-              <Input
-                id="current-password"
-                type="password"
-                autoComplete="current-password"
-                value={currentPassword}
-                onChange={(event) => setCurrentPassword(event.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-password">Nouveau mot de passe</Label>
-              <Input
-                id="new-password"
-                type="password"
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-                required
-              />
-            </div>
+            <BlobInput
+              id="current-password"
+              type="password"
+              label="Mot de passe actuel"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              required
+            />
+            <BlobInput
+              id="new-password"
+              type="password"
+              label="Nouveau mot de passe"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              required
+            />
             <PasswordRequirementsList statuses={passwordStatuses} />
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirmer le mot de passe</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                required
-              />
-            </div>
+            <BlobInput
+              id="confirm-password"
+              type="password"
+              label="Confirmer le mot de passe"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+            />
 
             {message && (
-              <p className={`text-sm ${status === 'error' ? 'text-red-600' : 'text-green-600'}`} role="alert">
+              <BlobAlert variant={status === 'error' ? 'error' : 'success'}>
                 {message}
-              </p>
+              </BlobAlert>
             )}
 
-            <Button
+            <BlobButton
               type="submit"
               className="w-full sm:w-auto"
               disabled={isSubmitting || !currentPassword || !newPassword || !confirmPassword}
             >
               {isSubmitting ? 'Mise à jour…' : 'Mettre à jour le mot de passe'}
-            </Button>
+            </BlobButton>
           </form>
-        </CardContent>
+        </div>
       )}
-    </Card>
+    </BlobCard>
   );
 }

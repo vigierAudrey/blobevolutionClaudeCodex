@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Bell, X, CheckCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useNotifications, type NotificationItem } from '../hooks/useNotifications';
+import { BlobBadge, BlobButton, BlobEmptyState } from './blob';
 
 const TYPE_ICON: Record<string, string> = {
   NEW_MESSAGE: '💬',
@@ -24,18 +25,18 @@ function NotificationRow({
 
   const content = (
     <div
-      className={`flex gap-3 px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer ${isUnread ? 'bg-blue-50/60 dark:bg-blue-950/20' : ''}`}
+      className={`flex cursor-pointer gap-3 px-4 py-3 transition-colors hover:bg-blob-sand ${isUnread ? 'bg-blob-yellow/15' : ''}`}
       onClick={() => { if (isUnread) onRead(item.id); }}
     >
-      <span className="text-xl mt-0.5 shrink-0">{icon}</span>
+      <span className="mt-0.5 shrink-0 text-xl">{icon}</span>
       <div className="flex-1 min-w-0">
-        <p className={`text-sm truncate ${isUnread ? 'font-semibold' : 'font-normal'}`}>
+        <p className={`truncate text-sm ${isUnread ? 'font-black' : 'font-medium'}`}>
           {item.title}
         </p>
-        <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{item.body}</p>
+        <p className="mt-0.5 line-clamp-2 text-xs text-blob-black/56">{item.body}</p>
       </div>
       {isUnread && (
-        <span className="mt-1.5 shrink-0 w-2 h-2 rounded-full bg-blue-500" />
+        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-sm bg-blob-yellow" />
       )}
     </div>
   );
@@ -71,15 +72,12 @@ export function NotificationBell() {
         type="button"
         onClick={toggle}
         aria-label={`Notifications${unreadCount > 0 ? ` — ${unreadCount} non lues` : ''}`}
-        className="relative p-2 rounded-xl hover:bg-muted/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="relative rounded-sm border-2 border-transparent p-2 transition-colors hover:border-blob-black hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
       >
-        <Bell className="w-5 h-5 text-foreground" />
+        <Bell className="h-5 w-5 text-blob-black" />
         {unreadCount > 0 && (
-          <span
-            className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-blue-600 text-white text-[10px] font-bold px-1 tabular-nums"
-            aria-hidden
-          >
-            {unreadCount > 99 ? '99+' : unreadCount}
+          <span className="absolute -right-2 -top-2" aria-hidden>
+            <BlobBadge variant="yellow">{unreadCount > 99 ? '99+' : unreadCount}</BlobBadge>
           </span>
         )}
       </button>
@@ -98,27 +96,22 @@ export function NotificationBell() {
           <div
             role="dialog"
             aria-label="Notifications"
-            className="absolute right-0 top-full mt-2 z-50 w-80 sm:w-96 rounded-2xl border-2 bg-background shadow-xl overflow-hidden"
+            className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-sm border-2 border-blob-black bg-white text-blob-black shadow-xl sm:w-96"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
-              <h2 className="text-sm font-semibold">Notifications</h2>
+            <div className="flex items-center justify-between border-b-2 border-blob-sand-deep bg-blob-sand px-4 py-3">
+              <h2 className="text-sm font-black uppercase tracking-widest">Notifications</h2>
               <div className="flex items-center gap-2">
                 {unreadCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleMarkAllRead}
-                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                    title="Tout marquer comme lu"
-                  >
+                  <BlobButton type="button" variant="outlineDark" size="sm" onClick={handleMarkAllRead} title="Tout marquer comme lu">
                     <CheckCheck className="w-3.5 h-3.5" />
                     Tout lire
-                  </button>
+                  </BlobButton>
                 )}
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="p-1 rounded-lg hover:bg-muted transition-colors"
+                  className="rounded-sm border-2 border-transparent p-1 transition-colors hover:border-blob-black hover:bg-white"
                   aria-label="Fermer"
                 >
                   <X className="w-4 h-4" />
@@ -127,15 +120,14 @@ export function NotificationBell() {
             </div>
 
             {/* List */}
-            <div className="max-h-[60vh] overflow-y-auto divide-y divide-border/50">
+            <div className="max-h-[60vh] divide-y-2 divide-blob-sand-deep overflow-y-auto">
               {loading ? (
-                <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                <div className="px-4 py-8 text-center text-sm text-blob-black/56">
                   Chargement…
                 </div>
               ) : notifications.length === 0 ? (
-                <div className="px-4 py-8 text-center">
-                  <Bell className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">Aucune notification</p>
+                <div className="p-4">
+                  <BlobEmptyState title="Aucune notification" />
                 </div>
               ) : (
                 <>
@@ -150,7 +142,7 @@ export function NotificationBell() {
                     <button
                       type="button"
                       onClick={loadMore}
-                      className="w-full py-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      className="w-full py-3 text-xs font-black uppercase tracking-widest text-blob-black/64 transition-colors hover:bg-blob-sand hover:text-blob-black"
                     >
                       Voir plus
                     </button>

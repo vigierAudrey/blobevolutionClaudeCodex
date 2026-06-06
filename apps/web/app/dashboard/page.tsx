@@ -1,13 +1,11 @@
 "use client";
-import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Sparkles, Tag, User } from 'lucide-react';
+import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Tag, User } from 'lucide-react';
 import { NotificationBell } from '../../components/NotificationBell';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobDashboardShell } from '@/components/blob';
 import { apiClient } from '../../lib/apiClient';
 import { requireClientSession, SessionRequiredError } from '../../lib/clientSession';
 
@@ -173,8 +171,7 @@ export default function DashboardPage() {
         setMatchingHref('/matching');
         setHasMatchingShortcut(false);
       }
-    } catch (err) {
-      console.warn('Matching shortcut unavailable', err);
+    } catch {
       setMatchingHref('/matching');
       setHasMatchingShortcut(false);
     }
@@ -192,7 +189,7 @@ export default function DashboardPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/40 p-3 animate-pulse shadow-lg">
+          <div className="inline-flex items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand p-3 shadow-sm animate-pulse">
             <Image
               src="/android-chrome-192x192.png"
               alt="Chargement Blob"
@@ -219,294 +216,244 @@ export default function DashboardPage() {
     : 'Swipe, matche et organise ta prochaine session avec des riders de ton niveau.';
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-8">
-      {/* Hero Header avec gradient */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-500 via-cyan-500 to-teal-400 p-8 text-white shadow-xl">
-        <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute bottom-0 left-0 -mb-8 -ml-8 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="space-y-2">
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight flex items-center gap-2">
-              {greeting}
-            </h1>
-            <p className="text-blue-50 text-sm sm:text-base">
-              Prêt·e pour ta prochaine session ? Explore, connecte, ride ! 🏄‍♀️
+    <BlobDashboardShell
+      title={greeting}
+      nav={[
+        { label: 'Dashboard', href: '/dashboard', icon: <Map size={16} /> },
+        { label: 'Matching', href: matchingHref, icon: <Map size={16} /> },
+        { label: 'Messages', href: '/messages', icon: <MessageSquare size={16} /> },
+        { label: 'Profil', href: '/profile', icon: <User size={16} /> },
+        { label: 'Compte', href: '/account', icon: <Info size={16} /> },
+      ]}
+    >
+      <div className="space-y-6 pb-8">
+        <div className="rounded-sm border-2 border-blob-black bg-white p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="max-w-2xl text-sm leading-6 text-blob-black/72">
+              Prêt·e pour ta prochaine session ? Explore, connecte, ride.
             </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="text-white [&_button]:text-white [&_button]:hover:bg-white/20">
+            <div className="flex flex-wrap items-center gap-2">
               <NotificationBell />
+              <BlobButton asChild variant="outlineDark" size="sm">
+                <Link href="/account">Mon compte</Link>
+              </BlobButton>
+              <BlobButton
+                variant="dark"
+                size="sm"
+                onClick={logout}
+              >
+                <LogOut size={14} /> Déconnexion
+              </BlobButton>
             </div>
-            <Link href="/account">
-              <Button variant="secondary" size="sm" className="bg-white/20 hover:bg-white/30 text-white border-white/30">
-                Mon compte
-              </Button>
-            </Link>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={logout}
-              className="bg-white/20 hover:bg-white/30 text-white border-white/30 inline-flex items-center gap-1.5"
-            >
-              <LogOut size={14}/> Déconnexion
-            </Button>
           </div>
         </div>
-      </div>
 
       {/* Alerts */}
       {showProfilePrompt && (
-        <div className="rounded-[1.75rem] border border-amber-200/70 dark:border-amber-500/40 bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-100 px-5 py-4 shadow-sm dark:from-slate-950/70 dark:via-amber-950/30 dark:to-slate-900/40">
-          <div className="flex items-start gap-3">
-            <Sparkles className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0 dark:text-amber-300" />
-            <div className="flex-1">
-              <p className="font-medium text-amber-900 dark:text-amber-100">Première connexion détectée !</p>
-              <p className="text-sm text-amber-800 mt-1 dark:text-amber-100/80">
-                Complète ton profil pour débloquer le matching et trouver des partenaires de session.
-              </p>
-              <div className="mt-3 flex gap-3">
-                <Link href="/profile">
-                  <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white dark:text-white">
-                    Compléter mon profil
-                  </Button>
-                </Link>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowProfilePrompt(false)}
-                  className="text-amber-900 hover:bg-amber-100 dark:text-amber-100 dark:hover:bg-white/10"
-                >
-                  Plus tard
-                </Button>
-              </div>
-            </div>
+        <BlobAlert variant="warning" title="Première connexion">
+          <p>Complète ton profil pour débloquer le matching et trouver des partenaires de session.</p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <BlobButton asChild size="sm">
+              <Link href="/profile">Compléter mon profil</Link>
+            </BlobButton>
+            <BlobButton
+              size="sm"
+              variant="outlineDark"
+              onClick={() => setShowProfilePrompt(false)}
+            >
+              Plus tard
+            </BlobButton>
           </div>
-        </div>
+        </BlobAlert>
       )}
 
       {!user?.emailVerified && (
-        <div className="rounded-[1.75rem] border border-blue-200/70 dark:border-blue-500/40 bg-gradient-to-r from-blue-50 via-cyan-50 to-blue-100 px-5 py-4 shadow-sm dark:from-slate-950/70 dark:via-blue-950/30 dark:to-slate-900/40">
-          <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0 dark:text-blue-200" />
-            <div className="flex-1">
-              <p className="font-medium text-blue-900 dark:text-blue-100">Email non vérifié</p>
-              <p className="text-sm text-blue-800 mt-1 dark:text-blue-100/80">
-                Confirme ton adresse email pour sécuriser ton compte.
-              </p>
-              <Link href="/account" className="inline-block mt-2">
-                <Button size="sm" variant="ghost" className="text-blue-700 p-0 h-auto hover:bg-transparent dark:text-blue-200 dark:hover:bg-white/10">
-                  Vérifier maintenant →
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
+        <BlobAlert variant="info" title="Email non vérifié">
+          <p>Confirme ton adresse email pour sécuriser ton compte.</p>
+          <BlobButton asChild size="sm" variant="outlineDark" className="mt-3">
+            <Link href="/account">Vérifier maintenant</Link>
+          </BlobButton>
+        </BlobAlert>
       )}
 
       {/* Section Actions Principales */}
-      <div className="space-y-3">
+      <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <div className="h-1 w-1 rounded-full bg-blue-500" />
-          <h2 className="text-lg font-semibold text-foreground">Ride à deux</h2>
+          <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
+          <h2 className="text-lg font-black uppercase tracking-widest text-blob-black">Ride à deux</h2>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Matching - Hero Card */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Matching */}
           <Link href={matchingHref} className="group block">
-            <Card className="h-full overflow-hidden rounded-[1.75rem] border border-blue-200/70 dark:border-white/8 bg-gradient-to-br from-white via-blue-50 to-cyan-50 dark:from-slate-950/70 dark:via-blue-950/30 dark:to-slate-900/40 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
-              <CardHeader>
-                <div className="flex items-start justify-between">
+            <BlobCard className="h-full bg-white">
+              <div className="flex h-full flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-lg group-hover:scale-110 transition-transform">
-                      <Map size={24}/>
-                    </div>
+                    <span className="flex h-11 w-11 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                      <Map size={24} />
+                    </span>
                     <div>
-                      <CardTitle className="text-2xl">Matching</CardTitle>
-                      <CardDescription className="text-base mt-1">Trouve des partenaires proches</CardDescription>
+                      <h3 className="text-2xl font-black uppercase tracking-widest">Matching</h3>
+                      <p className="mt-1 text-sm text-blob-black/64">Trouve des partenaires proches</p>
                     </div>
                   </div>
                   {hasMatchingShortcut && (
-                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-100 border border-blue-200/80 dark:border-white/10">
-                      Reprise
-                    </Badge>
+                    <BlobBadge variant="yellow">Reprise</BlobBadge>
                   )}
                 </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
+                <p className="text-sm leading-6 text-blob-black/72">
                   {matchingCardText}
                 </p>
-                <div className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 font-medium group-hover:gap-3 transition-all">
+                <span className="mt-auto inline-flex items-center gap-2 text-sm font-black uppercase tracking-widest text-blob-black transition-all group-hover:gap-3">
                   {matchingCtaLabel}
-                  <span className="group-hover:translate-x-1 transition-transform">→</span>
-                </div>
-              </CardContent>
-            </Card>
+                  <span aria-hidden="true">→</span>
+                </span>
+              </div>
+            </BlobCard>
           </Link>
 
-          {/* Messages - Hero Card */}
+          {/* Messages */}
           <Link href="/messages" className="group block">
-            <Card className="h-full overflow-hidden rounded-[1.75rem] border border-pink-200/70 dark:border-white/8 bg-gradient-to-br from-white via-pink-50 to-rose-100 dark:from-slate-950/70 dark:via-purple-950/30 dark:to-slate-900/40 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
-              <CardHeader>
-                <div className="flex items-start justify-between">
+            <BlobCard className="h-full bg-white">
+              <div className="flex h-full flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="relative p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg group-hover:scale-110 transition-transform">
-                      <MessageSquare size={24}/>
+                    <span className="relative flex h-11 w-11 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-black text-white">
+                      <MessageSquare size={24} />
                       {unreadTotal > 0 && (
-                        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-white animate-pulse">
+                        <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-sm border-2 border-white bg-red-600 px-1 text-[10px] font-black text-white">
                           {unreadTotal}
                         </span>
                       )}
-                    </div>
+                    </span>
                     <div>
-                      <CardTitle className="text-2xl flex items-center gap-2">
+                      <h3 className="flex flex-wrap items-center gap-2 text-2xl font-black uppercase tracking-widest">
                         Messagerie
                         {unreadTotal > 0 && (
-                          <span className="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5 text-xs font-semibold text-red-700 dark:text-red-400">
+                          <BlobBadge variant="error">
                             {unreadTotal} nouveau{unreadTotal > 1 ? 'x' : ''}
-                          </span>
+                          </BlobBadge>
                         )}
-                      </CardTitle>
-                      <CardDescription className="text-base mt-1">Tes conversations</CardDescription>
+                      </h3>
+                      <p className="mt-1 text-sm text-blob-black/64">Tes conversations</p>
                     </div>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
+                <p className="text-sm leading-6 text-blob-black/72">
                   Discute avec tes matchs, organise les détails de vos sessions.
                 </p>
-                <div className="inline-flex items-center gap-2 text-purple-600 dark:text-purple-400 font-medium group-hover:gap-3 transition-all">
+                <span className="mt-auto inline-flex items-center gap-2 text-sm font-black uppercase tracking-widest text-blob-black transition-all group-hover:gap-3">
                   Voir mes messages
-                  <span className="group-hover:translate-x-1 transition-transform">→</span>
-                </div>
-              </CardContent>
-            </Card>
+                  <span aria-hidden="true">→</span>
+                </span>
+              </div>
+            </BlobCard>
           </Link>
         </div>
-      </div>
+      </section>
 
       {/* Section Progresser */}
-      <div className="space-y-3">
+      <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <div className="h-1 w-1 rounded-full bg-emerald-500" />
-          <h2 className="text-lg font-semibold text-foreground">Progresser avec un pro</h2>
+          <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
+          <h2 className="text-lg font-black uppercase tracking-widest text-blob-black">Progresser avec un pro</h2>
         </div>
-        <Card className="overflow-hidden border-2 border-transparent hover:border-emerald-400 transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
-          <CardHeader className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
+        <BlobCard className="bg-white">
+          <div className="flex flex-col gap-5">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white">
-                <GraduationCap size={20}/>
-              </div>
+              <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand text-blob-black">
+                <GraduationCap size={20} />
+              </span>
               <div>
-                <CardTitle className="flex items-center gap-2">
+                <h3 className="flex items-center gap-2 text-xl font-black uppercase tracking-widest">
                   Cours & Bons Plans
-                  <Tag size={16} className="text-muted-foreground" />
-                </CardTitle>
-                <CardDescription>Trouve un moniteur ou profite de promos exclusives</CardDescription>
+                  <Tag size={16} className="text-blob-black/60" />
+                </h3>
+                <p className="mt-1 text-sm text-blob-black/64">Trouve un moniteur ou profite de promos exclusives</p>
               </div>
             </div>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Bouton 1 : Demander un cours - AVEC TOOLTIP */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="relative group/tooltip">
-              <Link href="/lesson-request" className="block">
-                <Button
-                  size="lg"
-                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-base font-semibold"
-                >
-                    <RadioTower size={18} className="mr-2" />
-                    📡 Demander un cours
-                  </Button>
-                </Link>
-                {/* Tooltip custom */}
-                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-3 w-72 opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-300 pointer-events-none z-50">
-                  <div className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white px-4 py-3 rounded-2xl shadow-2xl border-2 border-white/20 animate-in fade-in slide-in-from-bottom-2">
-                    <p className="text-sm font-medium flex items-start gap-2 leading-relaxed">
-                      <span className="text-lg flex-shrink-0">💡</span>
-                      <span>Les pros voient ta demande sur leur BloboMap et peuvent te proposer un cours adapté à ton niveau</span>
+                <BlobButton asChild variant="dark" className="w-full">
+                  <Link href="/lesson-request">
+                    <RadioTower size={18} />
+                    Demander un cours
+                  </Link>
+                </BlobButton>
+                <div className="absolute bottom-full left-1/2 z-50 mb-3 w-72 -translate-x-1/2 opacity-0 transition-opacity duration-200 group-hover/tooltip:opacity-100 pointer-events-none">
+                  <div className="rounded-sm border-2 border-blob-black bg-white px-4 py-3 text-blob-black shadow-lg">
+                    <p className="text-sm font-medium leading-relaxed">
+                      Les pros voient ta demande sur leur BloboMap et peuvent te proposer un cours adapté à ton niveau.
                     </p>
-                    {/* Flèche du tooltip */}
-                    <div className="absolute left-1/2 -translate-x-1/2 top-full -mt-px">
-                      <div className="w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-indigo-600"></div>
-                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Bouton 3 : Voir les promos */}
-              <Link href="/promos" className="group">
-                <Button
-                  size="lg"
-                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-base font-semibold border-2 border-amber-400/50"
-                >
-                  <Tag size={18} className="mr-2" />
-                  🏷️ Voir les promos
-                </Button>
-              </Link>
+              <BlobButton asChild className="w-full">
+                <Link href="/promos">
+                  <Tag size={18} />
+                  Voir les promos
+                </Link>
+              </BlobButton>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </BlobCard>
+      </section>
 
       {/* Section Découvrir & Compte - Grille 2 colonnes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* Blobosphère */}
         <Link href="/blobosphere" className="group">
-          <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-blue-300">
-            <CardHeader>
+          <BlobCard className="h-full bg-white">
+            <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-500 text-white group-hover:scale-110 transition-transform">
-                  <BookOpen size={20}/>
-                </div>
+                <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand text-blob-black">
+                  <BookOpen size={20} />
+                </span>
                 <div>
-                  <CardTitle>Blobosphère</CardTitle>
-                  <CardDescription>Guides & conseils riders</CardDescription>
+                  <h3 className="text-xl font-black uppercase tracking-widest">Blobosphère</h3>
+                  <p className="mt-1 text-sm text-blob-black/64">Guides & conseils riders</p>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm leading-6 text-blob-black/72">
                 Équipement, environnement, santé : tout pour rider en conscience.
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </BlobCard>
         </Link>
 
         {/* Profil */}
         <Link href="/profile" className="group">
-          <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-amber-300">
-            <CardHeader>
+          <BlobCard className="h-full bg-white">
+            <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white group-hover:scale-110 transition-transform">
-                  <User size={20}/>
-                </div>
+                <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                  <User size={20} />
+                </span>
                 <div>
-                  <CardTitle>Mon Profil</CardTitle>
-                  <CardDescription>Personnalise ton compte</CardDescription>
+                  <h3 className="text-xl font-black uppercase tracking-widest">Mon Profil</h3>
+                  <p className="mt-1 text-sm text-blob-black/64">Personnalise ton compte</p>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm leading-6 text-blob-black/72">
                 Photo, bio, disciplines : rends ton profil attractif pour le matching.
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </BlobCard>
         </Link>
-      </div>
+      </section>
 
       {/* À propos - Discret en bas */}
-      <div className="pt-4 border-t">
-        <Link href="/about" className="group flex items-center justify-between p-4 rounded-lg hover:bg-accent transition-colors">
+      <div className="border-t-2 border-blob-sand-deep pt-4">
+        <Link href="/about" className="group flex items-center justify-between rounded-sm border-2 border-transparent p-4 transition-colors hover:border-blob-black hover:bg-white">
           <div className="flex items-center gap-3">
-            <Info size={18} className="text-muted-foreground" />
+            <Info size={18} className="text-blob-black/64" />
             <div>
-              <p className="text-sm font-medium">À propos & RGPD</p>
-              <p className="text-xs text-muted-foreground">Sécurité, données et fonctionnement</p>
+              <p className="text-sm font-black uppercase tracking-widest">À propos & RGPD</p>
+              <p className="text-xs text-blob-black/64">Sécurité, données et fonctionnement</p>
             </div>
           </div>
-          <span className="text-muted-foreground group-hover:translate-x-1 transition-transform">→</span>
+          <span className="text-blob-black/64 transition-transform group-hover:translate-x-1">→</span>
         </Link>
       </div>
 
@@ -515,6 +462,7 @@ export default function DashboardPage() {
         context="dashboard"
         className="max-w-2xl mx-auto mt-4"
       />
-    </div>
+      </div>
+    </BlobDashboardShell>
   );
 }

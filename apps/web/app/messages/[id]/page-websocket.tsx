@@ -12,8 +12,7 @@ import { MoreVertical, Shield, ShieldOff, Wifi, WifiOff } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackBar } from '../../../components/BackBar';
-import { Button } from '../../../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
+import { BlobButton, BlobCard } from '../../../components/blob';
 import { useChat } from '../../../hooks/useChat';
 import { apiClient } from '../../../lib/apiClient';
 import { getUserFacingMessage } from '../../../lib/getUserFacingMessage';
@@ -58,19 +57,14 @@ function generateClientMsgId(): string {
 }
 
 /**
- * Log unknown error codes for telemetry
- * @param appErr - Normalized AppError
+ * Client telemetry is intentionally silent here: no console payloads from chat flows.
  */
 function logUnknownCode(appErr: { code: string; source: string; debug?: unknown }) {
   const isServerCode = Object.values(ERROR_CODES).some(v => v === appErr.code);
   const isClientCode = KNOWN_CLIENT_CODES.has(appErr.code);
 
   if (!isServerCode && !isClientCode) {
-    console.warn('[UNKNOWN_ERROR_CODE]', {
-      code: appErr.code,
-      source: appErr.source, // debug/telemetry only
-      debug: appErr.debug,
-    });
+    return;
   }
 }
 
@@ -95,6 +89,7 @@ export default function ConversationPage() {
   const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
   const [optimisticMessages, setOptimisticMessages] = useState<OptimisticMessage[]>([]);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const sendingRef = useRef(false);
 
   const scrollToBottom = () => {
     window.requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }));
@@ -188,9 +183,8 @@ export default function ConversationPage() {
       setMessages(data.items ?? []);
       setError(null);
       scrollToBottom();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      setError(message || 'Erreur chargement');
+    } catch {
+      setError('Impossible de charger les messages pour le moment.');
     } finally {
       setLoading(false);
     }
@@ -201,7 +195,7 @@ export default function ConversationPage() {
       const convInfo = await apiClient.findConversationById(id);
       setConversationInfo(convInfo);
     } catch {
-      // ✅ E-REVIEW P0 #4: Pas de console.error, erreur silencieuse ou UI
+      // Erreur silencieuse ou UI uniquement.
       setError('Erreur de chargement des informations');
     }
   }, [id]);
@@ -301,8 +295,10 @@ export default function ConversationPage() {
   const send = async () => {
     if (!input.trim()) return;
     if (rateLimitedUntil && Date.now() < rateLimitedUntil) return; // Prevent send during cooldown
+    if (sendingRef.current || optimisticMessages.some(m => m.inFlight)) return;
 
     const trimmedInput = input.trim();
+    sendingRef.current = true;
 
     // C3.1 FIX 2: Guard removed - buttons already disabled during inFlight
     // Input also disabled below to prevent Enter spam
@@ -340,6 +336,7 @@ export default function ConversationPage() {
       }
       // WS: le message serveur arrivera via onNewMessage (réconciliation safety net)
 
+      sendingRef.current = false;
       return;
     }
 
@@ -370,12 +367,15 @@ export default function ConversationPage() {
     }
 
     setError(userMsg.text);
+    sendingRef.current = false;
   };
 
   const sendProposal = async () => {
     if (!pDate || !pPlace) return;
+    if (sendingRef.current || optimisticMessages.some(m => m.inFlight)) return;
 
     // C3.1 FIX 2: Guard removed - button already disabled during inFlight
+    sendingRef.current = true;
 
     const meta: MessageMeta = { date: pDate, place: pPlace, note: pNote || undefined };
     const content = `Proposition de session ${pDate} @ ${pPlace}`;
@@ -417,6 +417,7 @@ export default function ConversationPage() {
       }
       // WS: le message serveur arrivera via onNewMessage
 
+      sendingRef.current = false;
       return;
     }
 
@@ -447,6 +448,7 @@ export default function ConversationPage() {
     }
 
     setError(userMsg.text);
+    sendingRef.current = false;
   };
 
   // C3: Retry failed message
@@ -534,7 +536,7 @@ export default function ConversationPage() {
       await refreshConversationInfo();
       setShowMenu(false);
     } catch {
-      // ✅ E-REVIEW P0 #4: Pas de console.error, UI uniquement
+      // Erreur UI uniquement.
       setError('Erreur lors du blocage ou du déblocage');
     }
   };
@@ -542,46 +544,46 @@ export default function ConversationPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-4">
       <BackBar fallbackHref="/messages" />
-      <Card>
-        <CardHeader>
+      <BlobCard mode="sand" className="motion-safe:hover:translate-y-0">
+        <div className="border-b-2 border-blob-sand-deep pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+            <h1 className="flex items-center gap-2 text-xl font-black uppercase tracking-widest text-blob-black">
               Conversation
               {conversationInfo?.otherDisplayName && (
-                <span className="text-base font-normal">
+                <span className="text-base font-bold normal-case tracking-normal">
                   avec {conversationInfo.otherDisplayName}
                 </span>
               )}
               {/* ✨ Indicateur de connexion WebSocket */}
               {connected ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-700 px-2 py-1 text-xs">
+                <span className="inline-flex items-center gap-1 rounded-sm border-2 border-green-800 bg-green-50 px-2 py-1 text-xs font-black text-green-800">
                   <Wifi size={12}/> Temps réel
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 text-gray-700 px-2 py-1 text-xs">
+                <span className="inline-flex items-center gap-1 rounded-sm border-2 border-blob-black/30 bg-white px-2 py-1 text-xs font-black text-blob-black/72">
                   <WifiOff size={12}/> Hors ligne
                 </span>
               )}
               {conversationInfo?.blocked && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-1 text-xs">
+                <span className="inline-flex items-center gap-1 rounded-sm border-2 border-red-800 bg-red-50 px-2 py-1 text-xs font-black text-red-800">
                   <Shield size={12}/> Bloqué
                 </span>
               )}
-            </CardTitle>
+            </h1>
             <div className="relative">
-              <Button
-                variant="ghost"
+              <BlobButton
+                variant="outlineDark"
                 size="sm"
                 onClick={() => setShowMenu(!showMenu)}
                 className="p-2"
               >
                 <MoreVertical size={16} />
-              </Button>
+              </BlobButton>
               {showMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white border rounded-md shadow-lg z-10 min-w-[180px]">
+                <div className="absolute right-0 top-full z-10 mt-1 min-w-[180px] rounded-sm border-2 border-blob-black bg-white shadow-[4px_4px_0_#111]">
                   <button
                     onClick={handleBlock}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-bold text-blob-black hover:bg-blob-sand"
                   >
                     {conversationInfo?.blocked ? (
                       <>
@@ -599,8 +601,8 @@ export default function ConversationPage() {
               )}
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
+        </div>
+        <div className="pt-4">
           {error && <p className="text-sm text-red-600">{error}</p>}
           {loading && messages.length === 0 && <p className="text-sm text-muted-foreground">Chargement…</p>}
           <div className="space-y-2 min-h-[300px]">
@@ -642,7 +644,7 @@ export default function ConversationPage() {
                         {!rateLimitedUntil && !opt.inFlight && (
                           <button
                             onClick={() => retryMessage(opt.clientMsgId)}
-                            className="ml-2 underline text-blue-600 hover:text-blue-800"
+                            className="ml-2 font-bold underline text-blob-black hover:text-blob-yellow-dark"
                           >
                             Réessayer
                           </button>
@@ -669,7 +671,7 @@ export default function ConversationPage() {
           </div>
 
           {conversationInfo?.blocked ? (
-            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
+            <div className="mt-3 rounded-sm border-2 border-red-800 bg-red-50 p-3">
               <div className="flex items-center gap-2 text-red-700 text-sm">
                 <Shield size={16} />
                 <span>Ce contact est bloqué. Vous ne pouvez plus envoyer de messages.</span>
@@ -678,7 +680,7 @@ export default function ConversationPage() {
           ) : (
             <div className="mt-3 flex items-center gap-2">
               <input
-                className="flex-1 rounded-md border border-input px-3 py-2 text-sm"
+                className="flex-1 rounded-sm border-2 border-blob-black bg-white px-3 py-2 text-sm text-blob-black placeholder:text-blob-black/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
                 placeholder="Écrire un message"
                 value={input}
                 onChange={(e)=>setInput(e.target.value)}
@@ -692,8 +694,9 @@ export default function ConversationPage() {
               />
               {/* ✅ PATCH 3 (P1 #4): Disable button + countdown pendant rate limit */}
               {/* C3: Disable also si message inFlight */}
-              <Button
+              <BlobButton
                 onClick={send}
+                size="sm"
                 disabled={
                   !!rateLimitedUntil ||
                   !input.trim() ||
@@ -701,37 +704,39 @@ export default function ConversationPage() {
                 }
               >
                 {cooldownSeconds > 0 ? `Attendre ${cooldownSeconds}s` : 'Envoyer'}
-              </Button>
-              <Button
-                variant="secondary"
+              </BlobButton>
+              <BlobButton
+                variant="outlineDark"
+                size="sm"
                 onClick={()=>setShowProposal((v)=>!v)}
                 disabled={!!rateLimitedUntil || optimisticMessages.some(m => m.inFlight)}
               >
                 Proposer une session
-              </Button>
+              </BlobButton>
             </div>
           )}
           {showProposal && !conversationInfo?.blocked && (
-            <div className="mt-3 rounded-md border p-3 space-y-2">
+            <div className="mt-3 space-y-2 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-3">
               <div className="text-sm font-medium">Proposition de session</div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input type="date" className="rounded-md border px-2 py-1 text-sm" value={pDate} onChange={(e)=>setPDate(e.target.value)} />
-                <input type="text" className="rounded-md border px-2 py-1 text-sm" placeholder="Lieu" value={pPlace} onChange={(e)=>setPPlace(e.target.value)} />
-                <input type="text" className="rounded-md border px-2 py-1 text-sm" placeholder="Note (facultatif)" value={pNote} onChange={(e)=>setPNote(e.target.value)} />
+                <input type="date" className="rounded-sm border-2 border-blob-black bg-white px-2 py-1 text-sm text-blob-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow" value={pDate} onChange={(e)=>setPDate(e.target.value)} />
+                <input type="text" className="rounded-sm border-2 border-blob-black bg-white px-2 py-1 text-sm text-blob-black placeholder:text-blob-black/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow" placeholder="Lieu" value={pPlace} onChange={(e)=>setPPlace(e.target.value)} />
+                <input type="text" className="rounded-sm border-2 border-blob-black bg-white px-2 py-1 text-sm text-blob-black placeholder:text-blob-black/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow" placeholder="Note (facultatif)" value={pNote} onChange={(e)=>setPNote(e.target.value)} />
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={()=>setShowProposal(false)}>Annuler</Button>
-                <Button
+                <BlobButton variant="outlineDark" size="sm" onClick={()=>setShowProposal(false)}>Annuler</BlobButton>
+                <BlobButton
+                  size="sm"
                   onClick={sendProposal}
                   disabled={optimisticMessages.some(m => m.inFlight)}
                 >
                   Envoyer la proposition
-                </Button>
+                </BlobButton>
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </BlobCard>
     </div>
   );
 }

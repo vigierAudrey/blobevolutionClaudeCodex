@@ -40,6 +40,7 @@ describe('ForgotPasswordPage', () => {
     await user.click(screen.getByRole('button', { name: /envoyer/i }));
 
     expect(mockedApiClient.requestPasswordReset).toHaveBeenCalled();
-    expect(await screen.findByText(/erreur réseau/i)).toBeInTheDocument();
+    expect(await screen.findByText(/impossible de traiter la demande/i)).toBeInTheDocument();
+    expect(screen.queryByText(/erreur réseau/i)).not.toBeInTheDocument();
   });
 });

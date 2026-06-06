@@ -10,8 +10,8 @@
  *   - REJECT après REJECTED (statut final)     → 409 CONTACT_REQUEST_ALREADY_RESOLVED
  *   - Concurrence ACCEPT simultanée            → [200, 409]
  *   - Cohérence ConversationMember après ACCEPT → pro ajouté exactement une fois
- *   - Pro ne peut pas répondre à sa propre demande → 403
- *   - Rider hors conversation                  → 403
+ *   - Pro ne peut pas répondre à sa propre demande → 404 neutre tant qu'il n'est pas membre
+ *   - Rider hors conversation                  → 404 neutre
  *   - ContactRequest inexistant               → 404
  */
 
@@ -290,18 +290,20 @@ describe('POST /contact/respond — race condition', () => {
 // ─── Autorisation ─────────────────────────────────────────────────────────────
 
 describe('POST /contact/respond — autorisation', () => {
-  it('le pro ne peut pas répondre à sa propre demande → 403', async () => {
+  it('le pro ne peut pas répondre à sa propre demande → 404 neutre tant qu’il n’est pas membre', async () => {
     const id = await createPendingRequest(fixture);
 
     const res = await respond(fixture.proToken, id, 'ACCEPT');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Contact request not found');
   });
 
-  it('un rider hors conversation → 403', async () => {
+  it('un rider hors conversation → 404 neutre', async () => {
     const id = await createPendingRequest(fixture);
 
     const res = await respond(fixture.outsiderToken, id, 'ACCEPT');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Contact request not found');
   });
 
   it('contactRequestId inexistant → 404', async () => {

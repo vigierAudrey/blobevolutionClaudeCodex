@@ -60,7 +60,7 @@ describe('ChangePasswordCard', () => {
     expect(await screen.findByText(/ne correspondent pas/i)).toBeInTheDocument();
   });
 
-  it('affiche une erreur si l’API échoue', async () => {
+  it('affiche une erreur générique si l’API échoue', async () => {
     mockedApiClient.changePassword.mockRejectedValueOnce(new Error('Invalid current password'));
 
     render(<ChangePasswordCard />);
@@ -73,6 +73,7 @@ describe('ChangePasswordCard', () => {
     await user.click(screen.getByRole('button', { name: /mettre à jour le mot de passe/i }));
 
     expect(mockedApiClient.changePassword).toHaveBeenCalled();
-    expect(await screen.findByText(/invalid current password/i)).toBeInTheDocument();
+    expect(await screen.findByText(/impossible de mettre à jour le mot de passe/i)).toBeInTheDocument();
+    expect(screen.queryByText(/invalid current password/i)).not.toBeInTheDocument();
   });
 });

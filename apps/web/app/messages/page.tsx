@@ -1,15 +1,15 @@
 "use client";
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEventHandler, ReactNode } from 'react';
 import Link from 'next/link';
 import { Star, StarOff, Trash2, Inbox, Heart, Trash, Mail, Users, Briefcase, Shield, ShieldOff, MessageSquare, Sparkles } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { apiClient } from '../../lib/apiClient';
 import type { ThreadSummary, ThreadListQuery } from '@/types/messages';
-import { Button } from '../../components/ui/button';
 import { ConversationInvitations } from '../../components/ConversationInvitations';
 import { ContactRequests } from '../../components/ContactRequests';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobDashboardShell, BlobEmptyState } from '@/components/blob';
 
 // Force SSR for real-time messaging
 export const dynamic = 'force-dynamic';
@@ -21,18 +21,18 @@ export default function MessagesPage() {
   // Pagination API réelle : stocker le curseur pour la page suivante
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  // Compteur d'appels API pour debug (non affiché en UI)
-  const apiCallCount = useRef(0);
+  const loadingRef = useRef(false);
 
   const load = useCallback(async (softRefresh = false) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     try {
       const opts: ThreadListQuery = { includeTrashed: filter === 'TRASH', limit: 100 };
       if (filter === 'RIDERS') opts.type = 'RIDER_TO_RIDER';
       if (filter === 'PROS') opts.type = 'RIDER_TO_PRO';
 
-      apiCallCount.current += 1;
       const page = await apiClient.listConversations(opts);
-      console.debug('[Conversations] Loaded', page.items?.length ?? 0, 'items, API calls total:', apiCallCount.current);
+      setError(null);
 
       if (softRefresh) {
         // Polling : on met à jour les items existants et on préfixe les nouveaux,
@@ -49,9 +49,10 @@ export default function MessagesPage() {
         setItems(page.items ?? []);
         setNextCursor(page.nextCursor ?? null);
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      setError(message || 'Erreur');
+    } catch {
+      setError('Impossible de charger les conversations pour le moment.');
+    } finally {
+      loadingRef.current = false;
     }
   }, [filter]);
 
@@ -64,9 +65,7 @@ export default function MessagesPage() {
       if (filter === 'RIDERS') opts.type = 'RIDER_TO_RIDER';
       if (filter === 'PROS') opts.type = 'RIDER_TO_PRO';
 
-      apiCallCount.current += 1;
       const page = await apiClient.listConversations(opts);
-      console.debug('[Conversations] Loaded more:', page.items?.length ?? 0, 'items, API calls total:', apiCallCount.current);
       // Append sans duplication (dedup par id)
       setItems(prev => {
         const existingIds = new Set(prev.map(i => i.id));
@@ -74,9 +73,8 @@ export default function MessagesPage() {
         return [...prev, ...newItems];
       });
       setNextCursor(page.nextCursor ?? null);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      setError(message || 'Erreur lors du chargement');
+    } catch {
+      setError('Impossible de charger plus de conversations pour le moment.');
     } finally {
       setLoadingMore(false);
     }
@@ -87,9 +85,35 @@ export default function MessagesPage() {
     setItems([]);
     setNextCursor(null);
     void load();
-    // softRefresh=true : le polling ne détruit pas les pages accumulées via "Charger plus"
-    const t = setInterval(() => void load(true), 15000);
-    return () => clearInterval(t);
+    let intervalId: number | null = null;
+
+    const startPolling = () => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+      if (intervalId != null) window.clearInterval(intervalId);
+      // softRefresh=true : le polling ne détruit pas les pages accumulées via "Charger plus"
+      intervalId = window.setInterval(() => void load(true), 15000);
+    };
+    const stopPolling = () => {
+      if (intervalId != null) {
+        window.clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void load(true);
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    startPolling();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [filter, load]);
 
   const counts = useMemo(() => {
@@ -117,151 +141,64 @@ export default function MessagesPage() {
   );
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-8">
-      <BackBar fallbackHref="/dashboard" />
+    <BlobDashboardShell
+      title="Messagerie"
+      nav={[
+        { label: 'Dashboard', href: '/dashboard', icon: <Inbox size={16} /> },
+        { label: 'Messages', href: '/messages', icon: <MessageSquare size={16} /> },
+        { label: 'Profil', href: '/profile', icon: <Users size={16} /> },
+      ]}
+    >
+      <div className="mx-auto max-w-4xl space-y-6 pb-8">
+        <BackBar fallbackHref="/dashboard" />
 
-      {/* Page Header */}
-      <div className="flex items-center justify-between pb-2 border-b">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
-            <MessageSquare className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Messagerie</h1>
-            <p className="text-sm text-muted-foreground">Organise tes conversations et tes matchs</p>
-          </div>
+        <div className="flex flex-col gap-3 border-b-2 border-blob-sand-deep pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm leading-6 text-blob-black/72">Organise tes conversations et tes matchs.</p>
+          {totalUnread > 0 && (
+            <BlobBadge variant="yellow">
+              <Sparkles className="h-3 w-3" />
+              {totalUnread} nouveau{totalUnread > 1 ? 'x' : ''}
+            </BlobBadge>
+          )}
         </div>
-        {totalUnread > 0 && (
-          <div className="flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 px-3 py-1.5 text-sm font-medium text-purple-700 dark:text-purple-300">
-            <Sparkles className="w-3 h-3" />
-            {totalUnread} nouveau{totalUnread > 1 ? 'x' : ''}
-          </div>
-        )}
-      </div>
 
-      {error && (
-        <div className="rounded-xl border-2 border-red-300 bg-red-50 px-5 py-4 text-red-900">
-          <p className="font-medium">{error}</p>
-        </div>
-      )}
+        {error && <BlobAlert variant="error">{error}</BlobAlert>}
 
-      {/* Invitations en attente */}
-      <ConversationInvitations />
+        <ConversationInvitations />
+        <ContactRequests />
 
-      {/* Demandes de contact de pros en attente (rider uniquement) */}
-      <ContactRequests />
-
-      {/* Filtres */}
-      <Card className="border-2">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Inbox className="w-5 h-5 text-muted-foreground" />
-            <CardTitle>Filtres</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Filtres principaux */}
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={()=>setFilter('ALL')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
-                filter==='ALL'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md'
-                  : 'border-2 border-input text-muted-foreground hover:border-blue-300 hover:bg-blue-50'
-              }`}
-            >
-              <Inbox size={16}/>
-              Tous
-              {counts.all > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='ALL' ? 'bg-white/20' : 'bg-blue-100 text-blue-700'}`}>{counts.all}</span>}
-            </button>
-
-            <button
-              onClick={()=>setFilter('UNREAD')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
-                filter==='UNREAD'
-                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md'
-                  : 'border-2 border-input text-muted-foreground hover:border-purple-300 hover:bg-purple-50'
-              }`}
-            >
-              <Mail size={16}/>
-              Non lus
-              {counts.unread > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='UNREAD' ? 'bg-white/20' : 'bg-purple-100 text-purple-700'}`}>{counts.unread}</span>}
-            </button>
-
-            <button
-              onClick={()=>setFilter('FAVORITES')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
-                filter==='FAVORITES'
-                  ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md'
-                  : 'border-2 border-input text-muted-foreground hover:border-amber-300 hover:bg-amber-50'
-              }`}
-            >
-              <Heart size={16}/>
-              Favoris
-              {counts.fav > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='FAVORITES' ? 'bg-white/20' : 'bg-amber-100 text-amber-700'}`}>{counts.fav}</span>}
-            </button>
-
-            <button
-              onClick={()=>setFilter('TRASH')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
-                filter==='TRASH'
-                  ? 'bg-gradient-to-r from-slate-600 to-slate-700 text-white shadow-md'
-                  : 'border-2 border-input text-muted-foreground hover:border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              <Trash size={16}/>
-              Corbeille
-              {counts.trash > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='TRASH' ? 'bg-white/20' : 'bg-slate-100 text-slate-700'}`}>{counts.trash}</span>}
-            </button>
-          </div>
-
-          {/* Séparation par type */}
-          <div className="pt-3 border-t space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Par type de contact</p>
+        <BlobCard className="bg-white">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Inbox className="h-5 w-5 text-blob-black/64" />
+              <h2 className="text-xl font-black uppercase tracking-widest">Filtres</h2>
+            </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={()=>setFilter('RIDERS')}
-                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
-                  filter==='RIDERS'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-md'
-                    : 'border-2 border-input text-muted-foreground hover:border-blue-300 hover:bg-blue-50'
-                }`}
-              >
-                <Users size={16}/>
-                Riders
-                {counts.riders > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='RIDERS' ? 'bg-white/20' : 'bg-blue-100 text-blue-700'}`}>{counts.riders}</span>}
-              </button>
-
-              <button
-                onClick={()=>setFilter('PROS')}
-                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
-                  filter==='PROS'
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md'
-                    : 'border-2 border-input text-muted-foreground hover:border-emerald-300 hover:bg-emerald-50'
-                }`}
-              >
-                <Briefcase size={16}/>
-                Pros
-                {counts.pros > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${filter==='PROS' ? 'bg-white/20' : 'bg-emerald-100 text-emerald-700'}`}>{counts.pros}</span>}
-              </button>
+              <FilterButton active={filter === 'ALL'} onClick={() => setFilter('ALL')} icon={<Inbox size={16} />} label="Tous" count={counts.all} />
+              <FilterButton active={filter === 'UNREAD'} onClick={() => setFilter('UNREAD')} icon={<Mail size={16} />} label="Non lus" count={counts.unread} />
+              <FilterButton active={filter === 'FAVORITES'} onClick={() => setFilter('FAVORITES')} icon={<Heart size={16} />} label="Favoris" count={counts.fav} />
+              <FilterButton active={filter === 'TRASH'} onClick={() => setFilter('TRASH')} icon={<Trash size={16} />} label="Corbeille" count={counts.trash} />
+            </div>
+            <div className="space-y-2 border-t-2 border-blob-sand-deep pt-3">
+              <p className="text-xs font-black uppercase tracking-widest text-blob-black/56">Par type de contact</p>
+              <div className="flex flex-wrap gap-2">
+                <FilterButton active={filter === 'RIDERS'} onClick={() => setFilter('RIDERS')} icon={<Users size={16} />} label="Riders" count={counts.riders} />
+                <FilterButton active={filter === 'PROS'} onClick={() => setFilter('PROS')} icon={<Briefcase size={16} />} label="Pros" count={counts.pros} />
+              </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </BlobCard>
 
-      {/* Liste des conversations */}
-      <Card className="border-2">
         {filter === 'TRASH' && counts.trash > 0 && (
-          <CardHeader className="border-b">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Trash className="w-5 h-5 text-slate-500" />
-                <CardTitle className="text-base">Corbeille ({counts.trash})</CardTitle>
-              </div>
-              <Button
-                variant="destructive"
+          <BlobAlert variant="warning" title={`Corbeille (${counts.trash})`}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p>Les conversations supprimées peuvent être vidées définitivement.</p>
+              <BlobButton
+                variant="dark"
                 size="sm"
-                onClick={async ()=>{
+                type="button"
+                className="border-red-800 bg-red-700 hover:bg-red-800"
+                onClick={async () => {
                   if (!confirm(`Êtes-vous sûr de vouloir vider la corbeille définitivement ? Cette action est irréversible et supprimera ${counts.trash} conversation${counts.trash > 1 ? 's' : ''}.`)) {
                     return;
                   }
@@ -270,220 +207,219 @@ export default function MessagesPage() {
                     await load();
                     alert(`${result.count} conversation${result.count > 1 ? 's ont été supprimées' : ' a été supprimée'} définitivement.`);
                   } catch {
-                    alert('Erreur lors de la suppression des conversations');
+                    setError('Impossible de vider la corbeille pour le moment.');
                   }
                 }}
-                className="gap-2"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="h-4 w-4" />
                 Vider la corbeille
-              </Button>
+              </BlobButton>
             </div>
-          </CardHeader>
+          </BlobAlert>
         )}
-        <CardContent className="p-0">
-          {visible.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-              <div className="rounded-full bg-gradient-to-br from-slate-100 to-slate-200 p-6 mb-4">
-                <MessageSquare className="w-8 h-8 text-slate-400" />
-              </div>
-              <p className="text-sm font-medium text-foreground mb-1">Aucune conversation</p>
-              <p className="text-xs text-muted-foreground">
-                {filter === 'TRASH' ? 'La corbeille est vide' : 'Commence à matcher pour démarrer des conversations'}
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y">
-              {visible.map((it) => (
-                <div
-                  key={it.id}
-                  className={`group flex items-center justify-between p-4 transition-all hover:bg-gradient-to-r hover:from-slate-50 hover:to-transparent ${
-                    it.unread > 0 ? 'bg-blue-50/30' : ''
-                  }`}
-                >
-                  <Link href={`/messages/${it.id}`} className="flex-1 flex items-start gap-4">
-                    {/* Photo de profil */}
+
+        {visible.length === 0 ? (
+          <BlobEmptyState
+            title="Aucune conversation"
+            description={filter === 'TRASH' ? 'La corbeille est vide.' : 'Commence à matcher pour démarrer des conversations.'}
+          />
+        ) : (
+          <div className="space-y-3">
+            {visible.map((it) => (
+              <BlobCard key={it.id} className={`bg-white ${it.unread > 0 ? 'border-blob-yellow' : ''}`}>
+                <div className="flex items-start justify-between gap-4">
+                  <Link href={`/messages/${it.id}`} className="flex min-w-0 flex-1 items-start gap-4">
                     <div className="relative flex-shrink-0">
                       {it.isGroup ? (
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                        <div className="flex h-14 w-14 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-black text-white">
                           <Users size={28} />
                         </div>
                       ) : it.otherPhotoUrl ? (
-                        <div className="relative">
-                          <Image
-                            src={it.otherPhotoUrl}
-                            alt={it.otherDisplayName}
-                            width={56}
-                            height={56}
-                            className={`w-14 h-14 rounded-full object-cover border-3 ${
-                              it.otherRole === 'PRO'
-                                ? 'border-emerald-300'
-                                : 'border-blue-300'
-                            }`}
-                            unoptimized
-                          />
-                          {it.unread > 0 && (
-                            <div className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white text-xs font-bold ring-2 ring-white animate-pulse">
-                              {it.unread}
-                            </div>
-                          )}
-                        </div>
+                        <Image
+                          src={it.otherPhotoUrl}
+                          alt={it.otherDisplayName}
+                          width={56}
+                          height={56}
+                          className="h-14 w-14 rounded-sm border-2 border-blob-black object-cover"
+                          unoptimized
+                        />
                       ) : (
-                        <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${
-                          it.otherRole === 'PRO'
-                            ? 'from-emerald-400 to-teal-500'
-                            : 'from-blue-400 to-indigo-500'
-                        } flex items-center justify-center text-white font-bold text-lg shadow-lg`}>
+                        <div className="flex h-14 w-14 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand text-lg font-black">
                           {it.otherDisplayName.charAt(0).toUpperCase()}
                         </div>
                       )}
-
-                      {/* Badge rôle ou unread pour groupe */}
-                      {it.isGroup ? (
-                        it.unread > 0 && (
-                          <div className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-white text-xs font-bold ring-2 ring-white animate-pulse">
-                            {it.unread}
-                          </div>
-                        )
-                      ) : (
-                        <div className={`absolute -bottom-1 -right-1 rounded-full p-1 shadow-md ${
-                          it.otherRole === 'PRO'
-                            ? 'bg-gradient-to-br from-emerald-500 to-teal-500'
-                            : 'bg-gradient-to-br from-blue-500 to-indigo-500'
-                        }`}>
-                          {it.otherRole === 'PRO' ? (
-                            <Briefcase size={12} className="text-white" />
-                          ) : (
-                            <Users size={12} className="text-white" />
-                          )}
-                        </div>
+                      {it.unread > 0 && (
+                        <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-sm border-2 border-white bg-blob-yellow px-1 text-[10px] font-black text-blob-black">
+                          {it.unread}
+                        </span>
                       )}
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className={`text-base ${it.unread > 0 ? 'font-bold' : 'font-semibold'}`}>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span className={`text-base ${it.unread > 0 ? 'font-black' : 'font-bold'}`}>
                           {it.otherDisplayName}
                         </span>
-                        {it.isGroup && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 px-2 py-0.5 text-xs font-medium">
-                            <Users size={10} /> Groupe
-                          </span>
-                        )}
-                        {it.favorite && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 text-amber-700 px-2 py-0.5 text-xs font-medium">
-                            <Star size={10} className="fill-current"/> Favori
-                          </span>
-                        )}
-                        {it.blocked && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-red-100 to-rose-100 text-red-700 px-2 py-0.5 text-xs font-medium">
-                            <Shield size={10}/> Bloqué
-                          </span>
-                        )}
-                        {!it.isGroup && it.otherRole === 'PRO' && (
-                          <span className="inline-flex items-center rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 px-2 py-0.5 text-xs font-medium">
-                            PRO
-                          </span>
-                        )}
+                        {it.isGroup && <BlobBadge variant="dark"><Users size={10} /> Groupe</BlobBadge>}
+                        {it.favorite && <BlobBadge variant="yellow"><Star size={10} className="fill-current" /> Favori</BlobBadge>}
+                        {it.blocked && <BlobBadge variant="error"><Shield size={10} /> Bloqué</BlobBadge>}
+                        {!it.isGroup && it.otherRole === 'PRO' && <BlobBadge variant="success">PRO</BlobBadge>}
                       </div>
-                      <p className={`text-sm line-clamp-2 ${
-                        it.unread > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'
-                      }`}>
+                      <p className={`line-clamp-2 text-sm ${it.unread > 0 ? 'font-medium text-blob-black' : 'text-blob-black/64'}`}>
                         {it.lastMessage}
                       </p>
                     </div>
                   </Link>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 ml-4">
-                    {filter !== 'TRASH' && (
+                  <div className="ml-1 flex flex-shrink-0 flex-col gap-2 sm:flex-row">
+                    {filter !== 'TRASH' ? (
                       <>
-                        <button
+                        <IconAction
                           title={it.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-                          onClick={async (e)=>{
+                          onClick={async (e) => {
                             e.preventDefault();
-                            await apiClient.favoriteConversation(it.id, !it.favorite);
-                            await load();
+                            try {
+                              await apiClient.favoriteConversation(it.id, !it.favorite);
+                              await load();
+                            } catch {
+                              setError('Impossible de mettre à jour cette conversation.');
+                            }
                           }}
-                          className="p-2 rounded-lg hover:bg-amber-100 transition-colors"
                         >
-                          {it.favorite ? (
-                            <Star className="text-amber-500 fill-current" size={18}/>
-                          ) : (
-                            <StarOff className="text-slate-400 hover:text-amber-500" size={18}/>
-                          )}
-                        </button>
-
-                        <button
+                          {it.favorite ? <Star className="fill-current" size={18} /> : <StarOff size={18} />}
+                        </IconAction>
+                        <IconAction
                           title={it.blocked ? 'Débloquer ce contact' : 'Bloquer ce contact'}
-                          onClick={async (e)=>{
+                          danger
+                          onClick={async (e) => {
                             e.preventDefault();
-                            if (it.blocked) {
-                              await apiClient.unblockConversation(it.id);
-                            } else {
-                              if (confirm('Êtes-vous sûr de vouloir bloquer ce contact ? Il ne pourra plus vous envoyer de messages.')) {
+                            try {
+                              if (it.blocked) {
+                                await apiClient.unblockConversation(it.id);
+                              } else if (confirm('Êtes-vous sûr de vouloir bloquer ce contact ? Il ne pourra plus vous envoyer de messages.')) {
                                 await apiClient.blockConversation(it.id);
                               }
+                              await load();
+                            } catch {
+                              setError('Impossible de mettre à jour cette conversation.');
                             }
-                            await load();
                           }}
-                          className={`p-2 rounded-lg transition-colors ${
-                            it.blocked
-                              ? 'text-red-600 hover:bg-red-100'
-                              : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                          }`}
                         >
-                          {it.blocked ? <ShieldOff size={18}/> : <Shield size={18}/>}
-                        </button>
-
-                        <button
+                          {it.blocked ? <ShieldOff size={18} /> : <Shield size={18} />}
+                        </IconAction>
+                        <IconAction
                           title="Mettre à la corbeille"
-                          onClick={async (e)=>{
+                          danger
+                          onClick={async (e) => {
                             e.preventDefault();
-                            await apiClient.trashConversation(it.id);
-                            await load();
+                            try {
+                              await apiClient.trashConversation(it.id);
+                              await load();
+                            } catch {
+                              setError('Impossible de mettre cette conversation à la corbeille.');
+                            }
                           }}
-                          className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                         >
                           <Trash2 size={18} />
-                        </button>
+                        </IconAction>
                       </>
-                    )}
-
-                    {filter === 'TRASH' && (
-                      <Button
+                    ) : (
+                      <BlobButton
                         size="sm"
-                        variant="outline"
-                        onClick={async (e)=>{
+                        variant="outlineDark"
+                        type="button"
+                        onClick={async (e) => {
                           e.preventDefault();
-                          await apiClient.untrashConversation(it.id);
-                          await load();
+                          try {
+                            await apiClient.untrashConversation(it.id);
+                            await load();
+                          } catch {
+                            setError('Impossible de restaurer cette conversation.');
+                          }
                         }}
                       >
                         Restaurer
-                      </Button>
+                      </BlobButton>
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              </BlobCard>
+            ))}
+          </div>
+        )}
 
-      {/* Charger plus : appel API réel via nextCursor (pas slice mémoire) */}
-      {nextCursor && (
-        <div className="flex justify-center">
-          <Button
-            variant="outline"
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="border-2"
-          >
-            {loadingMore ? 'Chargement…' : 'Charger plus'}
-          </Button>
-        </div>
+        {nextCursor && (
+          <div className="flex justify-center">
+            <BlobButton
+              variant="outlineDark"
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? 'Chargement...' : 'Charger plus'}
+            </BlobButton>
+          </div>
+        )}
+      </div>
+    </BlobDashboardShell>
+  );
+}
+
+function FilterButton({
+  active,
+  onClick,
+  icon,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  label: string;
+  count: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex min-h-10 items-center gap-2 rounded-sm border-2 px-4 py-2 text-xs font-black uppercase tracking-widest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow ${
+        active
+          ? 'border-blob-black bg-blob-black text-white'
+          : 'border-blob-black bg-white text-blob-black hover:bg-blob-sand'
+      }`}
+    >
+      {icon}
+      {label}
+      {count > 0 && (
+        <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] ${active ? 'border-white/30' : 'border-blob-black/20 bg-blob-sand'}`}>
+          {count}
+        </span>
       )}
-    </div>
+    </button>
+  );
+}
+
+function IconAction({
+  title,
+  children,
+  onClick,
+  danger = false,
+}: {
+  title: string;
+  children: ReactNode;
+  onClick: MouseEventHandler<HTMLButtonElement>;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className={`flex h-9 w-9 items-center justify-center rounded-sm border-2 border-blob-black bg-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow ${
+        danger ? 'text-red-800 hover:bg-red-50' : 'text-blob-black hover:bg-blob-sand'
+      }`}
+    >
+      {children}
+    </button>
   );
 }

@@ -13,6 +13,14 @@ import {
 export const notificationsRouter = Router();
 notificationsRouter.use(requireAuth, requireVerifiedEmail);
 
+function safeErrorMeta(error: unknown): { errorName?: string; errorCode?: string } {
+  const record = error && typeof error === 'object' ? error as { name?: unknown; code?: unknown } : null;
+  return {
+    ...(typeof record?.name === 'string' ? { errorName: record.name } : {}),
+    ...(typeof record?.code === 'string' ? { errorCode: record.code } : {}),
+  };
+}
+
 // Rate limit: 60/min/user — polling-friendly, not per-request tight
 const notificationsListLimiter = createLazyCustomRateLimiter(
   {
@@ -71,7 +79,7 @@ notificationsRouter.get('/', notificationsListLimiter, async (req: Request, res:
       nextCursor: result.nextCursor,
     });
   } catch (err) {
-    secureLogger.error('NOTIFICATIONS_LIST_ERROR', { userId, error: String(err) });
+    secureLogger.error('NOTIFICATIONS_LIST_ERROR', safeErrorMeta(err));
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -86,7 +94,7 @@ notificationsRouter.get('/unread-count', notificationsListLimiter, async (req: R
     res.setHeader('Cache-Control', 'private, no-store');
     return res.json({ count });
   } catch (err) {
-    secureLogger.error('NOTIFICATIONS_UNREAD_COUNT_ERROR', { userId, error: String(err) });
+    secureLogger.error('NOTIFICATIONS_UNREAD_COUNT_ERROR', safeErrorMeta(err));
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -104,7 +112,7 @@ notificationsRouter.patch('/:id/read', notificationsReadLimiter, async (req: Req
     res.setHeader('Cache-Control', 'private, no-store');
     return res.json({ ok: true });
   } catch (err) {
-    secureLogger.error('NOTIFICATIONS_MARK_READ_ERROR', { userId, error: String(err) });
+    secureLogger.error('NOTIFICATIONS_MARK_READ_ERROR', safeErrorMeta(err));
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -119,7 +127,7 @@ notificationsRouter.post('/read-all', notificationsReadLimiter, async (req: Requ
     res.setHeader('Cache-Control', 'private, no-store');
     return res.json({ ok: true });
   } catch (err) {
-    secureLogger.error('NOTIFICATIONS_READ_ALL_ERROR', { userId, error: String(err) });
+    secureLogger.error('NOTIFICATIONS_READ_ALL_ERROR', safeErrorMeta(err));
     return res.status(500).json({ error: 'Internal error' });
   }
 });

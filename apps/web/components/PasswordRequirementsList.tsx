@@ -8,15 +8,15 @@ interface PasswordRequirementsListProps {
 
 export function PasswordRequirementsList({ statuses }: PasswordRequirementsListProps) {
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+    <div className="rounded-sm border-2 border-blob-sand-deep bg-white p-3 text-sm text-blob-black">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-blob-black/60">
         Ton mot de passe doit inclure :
       </p>
       <ul className="mt-2 space-y-1">
         {statuses.map((status) => (
           <li
             key={status.id}
-            className={`flex items-center gap-2 ${status.satisfied ? 'text-emerald-600' : 'text-slate-500 dark:text-slate-400'}`}
+            className={`flex items-center gap-2 ${status.satisfied ? 'text-green-800' : 'text-blob-black/58'}`}
           >
             {status.satisfied ? (
               <CheckCircle2 className="h-4 w-4" aria-hidden="true" />

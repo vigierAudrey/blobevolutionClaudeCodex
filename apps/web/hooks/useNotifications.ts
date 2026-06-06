@@ -67,14 +67,14 @@ export function useNotifications(options: UseNotificationsOptions = {}): UseNoti
         setNotifications(data.items);
       }
       setNextCursor(data.nextCursor);
-      setUnreadCount(data.items.filter((n) => n.readAt === null).length +
-        (cursor ? unreadCount : 0));
+      const unreadInPage = data.items.filter((n) => n.readAt === null).length;
+      setUnreadCount((prev) => unreadInPage + (cursor ? prev : 0));
     } catch {
       // silently ignore
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [unreadCount]);
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -122,12 +122,16 @@ export function useNotifications(options: UseNotificationsOptions = {}): UseNoti
   // Polling — pauses when tab is hidden
   useEffect(() => {
     const start = () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(() => {
         if (!document.hidden) void fetchUnreadCount();
       }, pollMs);
     };
     const stop = () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
     const onVisibility = () => {
       if (document.hidden) { stop(); } else { void fetchUnreadCount(); start(); }

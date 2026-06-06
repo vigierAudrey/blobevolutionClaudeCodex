@@ -82,18 +82,44 @@ interface BlobButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof blobButtonVariants> {
   asChild?: boolean;
+  loading?: boolean;
 }
 
 const BlobButton = forwardRef<HTMLButtonElement, BlobButtonProps>(
-  ({ className, variant, size, asChild = false, type, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, type, loading = false, disabled, children, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
+
+    if (asChild) {
+      return (
+        <Comp
+          ref={ref}
+          className={cn(blobButtonVariants({ variant, size }), className)}
+          aria-busy={loading || undefined}
+          aria-disabled={disabled || loading ? true : undefined}
+          {...props}
+        >
+          {children}
+        </Comp>
+      );
+    }
+
     return (
       <Comp
         ref={ref}
-        type={asChild ? undefined : (type ?? 'button')}
+        type={type ?? 'button'}
         className={cn(blobButtonVariants({ variant, size }), className)}
+        disabled={disabled || loading}
+        aria-busy={loading || undefined}
         {...props}
-      />
+      >
+        {loading && (
+          <span
+            className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+            aria-hidden="true"
+          />
+        )}
+        {children}
+      </Comp>
     );
   },
 );

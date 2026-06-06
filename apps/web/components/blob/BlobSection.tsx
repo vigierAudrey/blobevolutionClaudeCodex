@@ -22,12 +22,20 @@ interface BlobSectionProps extends HTMLAttributes<HTMLElement> {
   /** Active un conteneur max-w centré à l'intérieur */
   container?: boolean;
   containerClassName?: string;
+  py?: 'sm' | 'md' | 'lg';
 }
+
+const pyClass: Record<NonNullable<BlobSectionProps['py']>, string> = {
+  sm: 'py-8',
+  md: 'py-14',
+  lg: 'py-20',
+};
 
 export function BlobSection({
   mode = 'sand',
   as: Tag = 'section',
   container = true,
+  py = 'md',
   className,
   containerClassName,
   children,
@@ -38,7 +46,8 @@ export function BlobSection({
       {container ? (
         <div
           className={cn(
-            'mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8',
+            'mx-auto max-w-5xl px-4 sm:px-6 lg:px-8',
+            pyClass[py],
             containerClassName,
           )}
         >
