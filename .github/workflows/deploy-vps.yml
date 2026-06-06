@@ -132,6 +132,14 @@ jobs:
           PREV_SHA="$(git rev-parse HEAD)"
           echo "Previous SHA: $PREV_SHA"
 
+          restart_caddy() {
+            caddy_container="$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps -q caddy)"
+            [ -n "$caddy_container" ] || fail "caddy container not found"
+
+            docker exec -T "$caddy_container" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            docker restart "$caddy_container"
+          }
+
           rollback() {
             status=$?
             if [ "$status" -eq 0 ]; then
@@ -142,7 +150,7 @@ jobs:
             git reset --hard "$PREV_SHA"
             docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build api web
             docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
-            docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" restart caddy
+            restart_caddy
             exit "$status"
           }
           trap rollback EXIT
@@ -161,9 +169,9 @@ jobs:
 
           docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 
-          # Caddy uses a pre-built image and its Caddyfile is bind-mounted, so
-          # restart the existing service after git reset instead of recreating it.
-          docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" restart caddy
+          # Caddy's admin API is disabled in production, so validate the
+          # bind-mounted Caddyfile and restart the container directly.
+          restart_caddy
 
           set -a
           # shellcheck disable=SC1091
