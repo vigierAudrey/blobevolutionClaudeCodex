@@ -45,6 +45,14 @@ const NOTIFICATION_SELECT = {
 const MAX_PER_PAGE = 20;
 const MAX_LIMIT = 50;
 
+function safeErrorMeta(error: unknown): { errorName?: string; errorCode?: string } {
+  const record = error && typeof error === 'object' ? error as { name?: unknown; code?: unknown } : null;
+  return {
+    ...(typeof record?.name === 'string' ? { errorName: record.name } : {}),
+    ...(typeof record?.code === 'string' ? { errorCode: record.code } : {}),
+  };
+}
+
 export async function createNotification(input: CreateNotificationInput): Promise<NotificationRow> {
   return prisma.notification.create({
     data: input,
@@ -103,9 +111,8 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
 export function createNotificationSilent(input: CreateNotificationInput): void {
   void createNotification(input).catch((err: unknown) => {
     secureLogger.warn('NOTIFICATION_CREATE_FAILED', {
-      userId: input.userId,
       type: input.type,
-      error: String(err),
+      ...safeErrorMeta(err),
     });
   });
 }

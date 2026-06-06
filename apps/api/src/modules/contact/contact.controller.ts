@@ -9,6 +9,14 @@ import { secureLogger } from '../../utils/secure-logger';
 export const contactRouter = Router();
 contactRouter.use(requireAuth, requireVerifiedEmail);
 
+function safeErrorMeta(error: unknown): { errorName?: string; errorCode?: string } {
+  const record = error && typeof error === 'object' ? error as { name?: unknown; code?: unknown } : null;
+  return {
+    ...(typeof record?.name === 'string' ? { errorName: record.name } : {}),
+    ...(typeof record?.code === 'string' ? { errorCode: record.code } : {}),
+  };
+}
+
 // 5 demandes de contact / 10 min / userId — intentionnel : un pro ne spamme pas.
 const contactRequestLimiter = createLazyCustomRateLimiter(
   {
@@ -97,8 +105,16 @@ contactRouter.post('/request', contactRequestLimiter, async (req, res) => {
     const { conversationId, message } = createContactRequestSchema.parse(req.body);
 
     // Vérifier que la conversation existe et contient des riders avec demande de cours.
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: conversationId },
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        id: conversationId,
+        match: {
+          OR: [
+            { userOneId: userId },
+            { userTwoId: userId },
+          ],
+        },
+      },
       include: {
         match: {
           include: {
@@ -110,15 +126,6 @@ contactRouter.post('/request', contactRequestLimiter, async (req, res) => {
     });
 
     if (!conversation || !conversation.match) {
-      return res.status(404).json({ error: 'Conversation or match not found' });
-    }
-
-    // IDOR guard : seuls les participants du match (userOneId / userTwoId) peuvent
-    // initier un ContactRequest pour cette conversation.
-    // Réponse 404 neutre — même message que "conversation not found" pour éviter
-    // toute discrimination observable qui permettrait d'énumérer les conversations.
-    const { userOneId, userTwoId } = conversation.match;
-    if (userId !== userOneId && userId !== userTwoId) {
       return res.status(404).json({ error: 'Conversation or match not found' });
     }
 
@@ -193,10 +200,7 @@ contactRouter.post('/request', contactRequestLimiter, async (req, res) => {
       throw createErr;
     }
 
-    secureLogger.info('CONTACT_REQUEST_CREATED', {
-      conversationId,
-      lessonRequestId,
-    });
+    secureLogger.info('CONTACT_REQUEST_CREATED', { hasLessonRequestId: Boolean(lessonRequestId) });
 
     return res.json({
       success: true,
@@ -242,8 +246,13 @@ contactRouter.post('/respond', contactRespondLimiter, async (req, res) => {
       finalStatus = await prisma.$transaction(
         async (tx: Prisma.TransactionClient): Promise<RespondStatus> => {
           // 1. Charger la demande et ses membres dans la transaction
-          const contactRequest = await tx.contactRequest.findUnique({
-            where: { id: contactRequestId },
+          const contactRequest = await tx.contactRequest.findFirst({
+            where: {
+              id: contactRequestId,
+              conversation: {
+                members: { some: { userId } },
+              },
+            },
             include: { conversation: { include: { members: true } } },
           });
 
@@ -369,7 +378,7 @@ contactRouter.post('/respond', contactRespondLimiter, async (req, res) => {
       throw txErr;
     }
 
-    secureLogger.info('CONTACT_RESPOND', { contactRequestId, response, finalStatus });
+    secureLogger.info('CONTACT_RESPOND', { finalStatus });
 
     return res.json({
       success: true,
@@ -386,7 +395,7 @@ contactRouter.post('/respond', contactRespondLimiter, async (req, res) => {
     if ((err as any)?.name === 'ZodError') {
       return res.status(400).json({ error: 'Invalid input', details: (err as any).errors });
     }
-    secureLogger.error('CONTACT_RESPOND_ERROR', { error: (err as any)?.message });
+    secureLogger.error('CONTACT_RESPOND_ERROR', safeErrorMeta(err));
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -451,7 +460,7 @@ contactRouter.get('/requests', contactRequestsListLimiter, async (req, res) => {
     return res.json({ requests });
 
   } catch (err) {
-    secureLogger.error('CONTACT_REQUESTS_LIST_ERROR', { error: (err as any)?.message });
+    secureLogger.error('CONTACT_REQUESTS_LIST_ERROR', safeErrorMeta(err));
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -470,6 +479,7 @@ contactRouter.get('/pending', contactPendingLimiter, async (req, res) => {
     const rows = await prisma.contactRequest.findMany({
       where: {
         status: 'PENDING',
+        proUserId: { not: userId },
         conversation: {
           members: { some: { userId } },
         },
@@ -504,7 +514,7 @@ contactRouter.get('/pending', contactPendingLimiter, async (req, res) => {
     return res.json({ requests });
 
   } catch (err) {
-    secureLogger.error('CONTACT_PENDING_ERROR', { error: (err as any)?.message });
+    secureLogger.error('CONTACT_PENDING_ERROR', safeErrorMeta(err));
     return res.status(500).json({ error: 'Internal error' });
   }
 });

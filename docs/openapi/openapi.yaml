@@ -1169,7 +1169,9 @@ paths:
           schema:
             type: integer
             default: 50
+            minimum: 1
             maximum: 100
+          description: Nombre de messages à retourner. Les valeurs hors borne retournent 400.
       responses:
         '200':
           description: Messages paginés
@@ -1528,9 +1530,17 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Interdit pour un utilisateur autorisé à voir la demande mais non autorisé à cette action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Demande introuvable ou masquée par politique anti-énumération.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: |
             Conflit — trois cas possibles selon `error` :
