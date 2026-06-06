@@ -80,6 +80,23 @@ describe('Static Home page', () => {
     }
   });
 
+  it('affiche la transition communautaire entre le hero et Pourquoi Blob', () => {
+    render(<Home />);
+
+    const transition = screen.getByRole('region', {
+      name: /On commence là où la communauté ride déjà/i,
+    });
+
+    expect(
+      within(transition).getByRole('heading', {
+        name: /On commence là où la communauté ride déjà/i,
+      }),
+    ).toBeInTheDocument();
+    expect(within(transition).getByText(/Première zone de test/i)).toBeInTheDocument();
+    expect(within(transition).getByText(/Hourtin, Carcans, Lacanau et Bordeaux/i)).toBeInTheDocument();
+    expect(within(transition).getByLabelText('HOURTIN • CARCANS • LACANAU • BORDEAUX')).toBeInTheDocument();
+  });
+
   it('affiche la section "Pourquoi Blob ?" avec le messaging bêta', () => {
     render(<Home />);
 

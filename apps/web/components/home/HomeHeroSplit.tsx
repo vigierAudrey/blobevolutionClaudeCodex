@@ -23,14 +23,14 @@ export function HomeHeroSplit() {
   return (
     <section
       aria-label="Blob — La communauté surf & kite du Médoc Atlantique"
-      className="-mx-4 sm:-mx-6 lg:-mx-8"
+      className="-mx-4 bg-blob-sand sm:-mx-6 lg:-mx-8"
     >
       <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_390px] xl:grid-cols-[minmax(0,1fr)_430px]">
 
         {/* ============================================================
             GAUCHE — Hero immersif
         ============================================================ */}
-        <div className="relative order-1 min-h-[520px] overflow-hidden lg:col-start-1 lg:row-start-1 lg:min-h-[640px]">
+        <div className="relative order-1 min-h-[520px] overflow-hidden lg:col-start-1 lg:row-start-1 lg:min-h-[740px]">
 
           {/* Poster — LCP */}
           <Image

@@ -1,5 +1,6 @@
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { HomeHeroSplit } from '@/components/home/HomeHeroSplit';
+import { HomeOceanTransition } from '@/components/home/HomeOceanTransition';
 import { HomeWhyBlob } from '@/components/home/HomeWhyBlob';
 import { HomeFooter } from '@/components/home/HomeFooter';
 import type { Metadata } from 'next';
@@ -22,8 +23,11 @@ export default function Home() {
       {/* Bloc full-bleed : hero + carrousel + barre jaune intégrée */}
       <HomeHeroSplit />
 
+      {/* Transition légère : fil océan + promesse communautaire */}
+      <HomeOceanTransition />
+
       {/* Pourquoi Blob ? — full-bleed, fond sable, bêta messaging */}
-      <div className="mt-8 sm:mt-10">
+      <div>
         <HomeWhyBlob />
       </div>
 
