@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { apiClient } from '../lib/apiClient';
-import { Button } from './ui/button';
 import { UserPlus, X, Search, UserMinus, LogOut } from 'lucide-react';
+import { BlobButton } from './blob';
 
 interface ConversationMembersProps {
   conversationId: string;
@@ -42,8 +42,8 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
     try {
       const data = await apiClient.getConversationMembers(conversationId);
       setMembers(data.items);
-    } catch (err) {
-      console.error('Error loading members:', err);
+    } catch {
+      // Members are optional metadata for the conversation view.
     } finally {
       setLoadingMembers(false);
     }
@@ -66,8 +66,7 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
       try {
         const data = await apiClient.searchUsers(searchQuery.trim());
         setSearchResults(data.items);
-      } catch (err) {
-        console.error('Error searching users:', err);
+      } catch {
         setSearchResults([]);
       } finally {
         setSearching(false);
@@ -91,16 +90,8 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
       alert('✓ Invitation envoyée ! L\'utilisateur pourra accepter ou refuser votre invitation.');
       await loadMembers();
       onMemberAdded?.();
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (errorMessage?.includes('already a member')) {
-        alert('Cet utilisateur est déjà membre de la conversation');
-      } else if (errorMessage?.includes('already pending')) {
-        alert('Une invitation est déjà en attente pour cet utilisateur');
-      } else {
-        alert('Erreur lors de l\'envoi de l\'invitation');
-      }
-      console.error('Error sending invitation:', err);
+    } catch {
+      alert('Impossible d\'envoyer cette invitation pour le moment');
     } finally {
       setAdding(false);
     }
@@ -122,25 +113,23 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
       await apiClient.removeConversationMember(conversationId, userId);
       await loadMembers();
       onMemberRemoved?.();
-    } catch (err) {
+    } catch {
       alert('Erreur lors de la suppression du membre');
-      console.error('Error removing member:', err);
     } finally {
       setRemoving(null);
     }
   };
 
   return (
-    <div className="border-t pt-3 mt-3">
+    <div className="mt-3 border-t-2 border-blob-sand-deep pt-3">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold text-foreground">
+        <h3 className="text-sm font-black uppercase tracking-widest text-blob-black">
           Membres ({members.length})
         </h3>
-        <Button
-          variant="outline"
+        <BlobButton
+          variant="outlineDark"
           size="sm"
           onClick={() => setShowAddMember(!showAddMember)}
-          className="flex items-center gap-1"
         >
           {showAddMember ? (
             <>
@@ -153,18 +142,18 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
               Ajouter
             </>
           )}
-        </Button>
+        </BlobButton>
       </div>
 
       {/* Current members list */}
       {loadingMembers ? (
-        <p className="text-xs text-muted-foreground py-2">Chargement des membres...</p>
+        <p className="py-2 text-xs text-blob-black/56">Chargement des membres...</p>
       ) : (
         <div className="space-y-1 mb-3">
           {members.map((member) => (
             <div
               key={member.id}
-              className="flex items-center gap-2 p-2 rounded-md bg-accent border border-border"
+              className="flex items-center gap-2 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-2"
             >
               {member.photoUrl ? (
                 <Image
@@ -172,30 +161,30 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
                   alt={member.name || 'User'}
                   width={32}
                   height={32}
-                  className="rounded-full object-cover"
+                  className="rounded-sm border-2 border-blob-black object-cover"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">
+                <div className="flex h-8 w-8 items-center justify-center rounded-sm border-2 border-blob-black bg-white text-xs font-black text-blob-black">
                   {(member.name || 'U')[0].toUpperCase()}
                 </div>
               )}
               <div className="flex-1">
-                <div className="text-sm font-medium text-foreground">
+                <div className="text-sm font-medium text-blob-black">
                   {member.name || 'Utilisateur'}
                   {member.isCurrentUser && (
-                    <span className="ml-1 text-xs text-muted-foreground">(vous)</span>
+                    <span className="ml-1 text-xs text-blob-black/56">(vous)</span>
                   )}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-xs text-blob-black/56">
                   {member.role === 'PRO' ? 'Professionnel' : 'Rider'}
                 </div>
               </div>
-              <Button
-                variant="ghost"
+              <BlobButton
+                variant="outlineDark"
                 size="sm"
                 onClick={() => handleRemoveMember(member.id, member.isCurrentUser)}
                 disabled={removing === member.id}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                className="border-red-800 text-red-800 hover:bg-red-50"
                 title={member.isCurrentUser ? 'Quitter la conversation' : 'Retirer ce membre'}
               >
                 {member.isCurrentUser ? (
@@ -203,21 +192,21 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
                 ) : (
                   <UserMinus size={14} />
                 )}
-              </Button>
+              </BlobButton>
             </div>
           ))}
         </div>
       )}
 
       {showAddMember && (
-        <div className="mb-3 p-3 bg-accent rounded-lg border border-border">
+        <div className="mb-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-3">
           <div className="relative mb-2">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blob-black/56">
               <Search size={16} />
             </div>
             <input
               type="text"
-              className="w-full pl-9 pr-3 py-2 rounded-md border border-input bg-background text-foreground text-sm placeholder:text-muted-foreground"
+              className="w-full rounded-sm border-2 border-blob-black bg-white py-2 pl-9 pr-3 text-sm text-blob-black placeholder:text-blob-black/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
               placeholder="Rechercher par nom..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -226,11 +215,11 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
           </div>
 
           {searching && (
-            <p className="text-xs text-muted-foreground py-2">Recherche...</p>
+            <p className="py-2 text-xs text-blob-black/56">Recherche...</p>
           )}
 
           {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
-            <p className="text-xs text-muted-foreground py-2">Aucun utilisateur trouvé</p>
+            <p className="py-2 text-xs text-blob-black/56">Aucun utilisateur trouvé</p>
           )}
 
           {searchResults.length > 0 && (
@@ -240,7 +229,7 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
                   key={user.id}
                   onClick={() => handleAddMember(user.id)}
                   disabled={adding}
-                  className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-background border border-transparent hover:border-border transition-colors disabled:opacity-50"
+                  className="flex w-full items-center gap-2 rounded-sm border-2 border-transparent p-2 transition-colors hover:border-blob-black hover:bg-white disabled:opacity-50"
                 >
                   {user.photoUrl ? (
                     <Image
@@ -248,29 +237,29 @@ export function ConversationMembers({ conversationId, onMemberAdded, onMemberRem
                       alt={user.name || 'User'}
                       width={32}
                       height={32}
-                      className="rounded-full object-cover"
+                      className="rounded-sm border-2 border-blob-black object-cover"
                     />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-sm border-2 border-blob-black bg-white text-xs font-black text-blob-black">
                       {(user.name || 'U')[0].toUpperCase()}
                     </div>
                   )}
                   <div className="flex-1 text-left">
-                    <div className="text-sm font-medium text-foreground">
+                    <div className="text-sm font-medium text-blob-black">
                       {user.name || 'Utilisateur'}
                     </div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-blob-black/56">
                       {user.role === 'PRO' ? 'Professionnel' : 'Rider'}
                     </div>
                   </div>
-                  <UserPlus size={16} className="text-muted-foreground" />
+                  <UserPlus size={16} className="text-blob-black/56" />
                 </button>
               ))}
             </div>
           )}
 
           {searchQuery.trim().length < 2 && (
-            <p className="text-xs text-muted-foreground py-2">
+            <p className="py-2 text-xs text-blob-black/56">
               Entrez au moins 2 caractères pour rechercher
             </p>
           )}

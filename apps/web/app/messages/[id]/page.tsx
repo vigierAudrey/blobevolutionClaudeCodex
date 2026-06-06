@@ -5,12 +5,11 @@ export const dynamic = 'force-dynamic';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { BackBar } from '../../../components/BackBar';
-import { Button } from '../../../components/ui/button';
 import { Shield, ShieldOff, MoreVertical, Users, Clock, AlertCircle, ArrowDown } from 'lucide-react';
 import { apiClient } from '../../../lib/apiClient';
 import { ConversationMembers } from '../../../components/ConversationMembers';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobDashboardShell, BlobEmptyState } from '@/components/blob';
 import type {
   Message,
   MessageListResponse,
@@ -63,8 +62,11 @@ export default function ConversationPage() {
   const [conversationInfo, setConversationInfo] = useState<ThreadSummary | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   const pollingRef = useRef<number | null>(null);
+  const loadingRef = useRef(false);
+  const sendingRef = useRef(false);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => {
@@ -72,17 +74,19 @@ export default function ConversationPage() {
   };
 
   const loadMessages = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     try {
       setLoading(true);
       const data = await apiClient.getMessages(id) as MessageListResponse;
       setMessages(data.items ?? []);
       setError(null);
       scrollToBottom();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      setError(message || 'Erreur chargement');
+    } catch {
+      setError('Impossible de charger les messages pour le moment.');
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   }, [id]);
 
@@ -90,14 +94,37 @@ export default function ConversationPage() {
     try {
       const convInfo = await apiClient.findConversationById(id);
       setConversationInfo(convInfo);
-    } catch (err) {
-      console.error('Error loading conversation info:', err);
+    } catch {
+      setConversationInfo(null);
     }
   }, [id]);
 
   // Load user info and conversation details
   useEffect(() => {
     let active = true;
+    const stopPolling = () => {
+      if (pollingRef.current !== null) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+    const startPolling = () => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+      stopPolling();
+      pollingRef.current = window.setInterval(() => {
+        void loadMessages();
+      }, 10000);
+    };
+    const onVisibility = () => {
+      if (!active) return;
+      if (document.visibilityState === 'visible') {
+        void loadMessages();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
     const initialize = async () => {
       try {
         await apiClient.me();
@@ -114,21 +141,17 @@ export default function ConversationPage() {
 
       if (!active) return;
       await Promise.all([refreshConversationInfo(), loadMessages()]);
-      if (pollingRef.current === null) {
-        pollingRef.current = window.setInterval(() => {
-          void loadMessages();
-        }, 10000);
-      }
+      if (!active) return;
+      startPolling();
     };
 
-    initialize();
+    void initialize();
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       active = false;
-      if (pollingRef.current !== null) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
+      document.removeEventListener('visibilitychange', onVisibility);
+      stopPolling();
     };
   }, [id, loadMessages, refreshConversationInfo, router]);
 
@@ -158,7 +181,9 @@ export default function ConversationPage() {
   }, []);
 
   const send = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || sendingRef.current || conversationInfo?.blocked) return;
+    sendingRef.current = true;
+    setSending(true);
     const payload: SendMessagePayload = { type: 'TEXT', content: input.trim() };
     const messageContent = input.trim();
     setInput(''); // Clear input immediately
@@ -183,14 +208,17 @@ export default function ConversationPage() {
       await apiClient.sendMessage(id, payload);
       // Reload to get the real message with server ID
       await loadMessages();
-    } catch (err) {
-      console.error('Failed to send message', err);
+    } catch {
+      setError('Impossible d’envoyer le message pour le moment.');
       // Mark message as failed
       setMessages(prev => prev.map(m =>
         m.id === tempMessage.id
           ? { ...m, meta: { ...m.meta, failed: true, sending: false } }
           : m
       ));
+    } finally {
+      setSending(false);
+      sendingRef.current = false;
     }
   };
 
@@ -209,94 +237,94 @@ export default function ConversationPage() {
 
       await refreshConversationInfo();
       setShowMenu(false);
-    } catch (err) {
-      console.error('Error blocking/unblocking:', err);
-      alert('Erreur lors du blocage ou du déblocage');
+    } catch {
+      setError('Impossible de modifier le statut de cette conversation.');
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
-      <BackBar fallbackHref="/messages" />
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-1 flex-1">
-              <CardTitle className="flex items-center gap-2 flex-wrap">
-                {conversationInfo?.isGroup ? (
-                  <>
-                    <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1.5 text-sm font-semibold">
-                      <Users size={16} />
-                      Groupe
-                    </span>
-                    <span className="text-base font-normal text-muted-foreground">
-                      {conversationInfo.memberCount} membres
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    Conversation
-                    {conversationInfo?.otherDisplayName && (
-                      <span className="text-base font-normal">
-                        avec {conversationInfo.otherDisplayName}
+    <BlobDashboardShell
+      title={conversationInfo?.isGroup ? 'Conversation groupe' : 'Conversation'}
+      nav={[
+        { label: 'Liste', href: '/messages', icon: <Users size={16} /> },
+        { label: 'Dashboard', href: '/dashboard', icon: <Shield size={16} /> },
+      ]}
+    >
+      <div className="mx-auto max-w-2xl space-y-4 pb-8">
+        <BackBar fallbackHref="/messages" />
+        <BlobCard className="bg-white">
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b-2 border-blob-sand-deep pb-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  {conversationInfo?.isGroup ? (
+                    <>
+                      <BlobBadge variant="dark"><Users size={16} /> Groupe</BlobBadge>
+                      <span className="text-sm font-medium text-blob-black/64">
+                        {conversationInfo.memberCount} membres
                       </span>
-                    )}
-                  </>
-                )}
-                {conversationInfo?.blocked && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-1 text-xs">
-                    <Shield size={12}/> Bloqué
-                  </span>
-                )}
-              </CardTitle>
-              {conversationInfo?.matchedAt && (
-                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Clock size={12} />
-                  Matchés le {new Date(conversationInfo.matchedAt).toLocaleDateString('fr-FR', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric'
-                  })}
-                </p>
-              )}
-            </div>
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowMenu(!showMenu)}
-                className="p-2"
-              >
-                <MoreVertical size={16} />
-              </Button>
-              {showMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-border rounded-md shadow-lg z-10 min-w-[180px]">
-                  <button
-                    onClick={handleBlock}
-                    className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2"
-                  >
-                    {conversationInfo?.blocked ? (
-                      <>
-                        <ShieldOff size={14} />
-                        Débloquer ce contact
-                      </>
-                    ) : (
-                      <>
-                        <Shield size={14} />
-                        Bloquer ce contact
-                      </>
-                    )}
-                  </button>
+                    </>
+                  ) : (
+                    <h2 className="text-xl font-black uppercase tracking-widest">
+                      {conversationInfo?.otherDisplayName ? `Avec ${conversationInfo.otherDisplayName}` : 'Conversation'}
+                    </h2>
+                  )}
+                  {conversationInfo?.blocked && (
+                    <BlobBadge variant="error"><Shield size={12} /> Bloqué</BlobBadge>
+                  )}
                 </div>
-              )}
+                {conversationInfo?.matchedAt && (
+                  <p className="mt-2 flex items-center gap-1 text-xs text-blob-black/56">
+                    <Clock size={12} />
+                    Matchés le {new Date(conversationInfo.matchedAt).toLocaleDateString('fr-FR', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </p>
+                )}
+              </div>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowMenu(!showMenu)}
+                  className="flex h-9 w-9 items-center justify-center rounded-sm border-2 border-blob-black bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
+                  aria-label="Options de conversation"
+                >
+                  <MoreVertical size={16} />
+                </button>
+                {showMenu && (
+                  <div className="absolute right-0 top-full z-10 mt-1 min-w-[190px] rounded-sm border-2 border-blob-black bg-white shadow-lg">
+                    <button
+                      type="button"
+                      onClick={handleBlock}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-blob-black hover:bg-blob-sand"
+                    >
+                      {conversationInfo?.blocked ? (
+                        <>
+                          <ShieldOff size={14} />
+                          Débloquer ce contact
+                        </>
+                      ) : (
+                        <>
+                          <Shield size={14} />
+                          Bloquer ce contact
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          {loading && messages.length === 0 && <p className="text-sm text-muted-foreground">Chargement…</p>}
-          <div className="space-y-1 min-h-[300px]" ref={messagesContainerRef}>
-            {messages.map((m, index) => {
+
+            {error && <BlobAlert variant="error">{error}</BlobAlert>}
+            {loading && messages.length === 0 && <BlobAlert variant="info">Chargement...</BlobAlert>}
+            {!loading && messages.length === 0 && (
+              <BlobEmptyState title="Aucun message" description="Le poste de liaison est prêt pour le premier message." />
+            )}
+
+            <div className="min-h-[300px] space-y-1" ref={messagesContainerRef} aria-live="polite">
+              {messages.map((m, index) => {
               const isCurrentUser = m.isCurrentUser;
               const senderName = m.senderName || 'Utilisateur';
               const senderPhotoUrl = m.senderPhotoUrl;
@@ -318,8 +346,8 @@ export default function ConversationPage() {
                 <div key={m.id}>
                   {/* Date separator */}
                   {showDateSeparator && (
-                    <div className="flex items-center justify-center my-4">
-                      <div className="px-3 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium">
+                    <div className="my-4 flex items-center justify-center">
+                      <div className="rounded-sm border-2 border-blob-sand-deep bg-blob-sand px-3 py-1 text-xs font-black uppercase tracking-widest text-blob-black/64">
                         {formatDateSeparator(m.createdAt)}
                       </div>
                     </div>
@@ -336,11 +364,11 @@ export default function ConversationPage() {
                             alt={senderName}
                             width={32}
                             height={32}
-                            className="rounded-full object-cover"
+                            className="rounded-sm border-2 border-blob-black object-cover"
                           />
                         ) : (
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
-                            isCurrentUser ? 'bg-blue-500' : 'bg-gray-500'
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-sm border-2 border-blob-black text-xs font-black ${
+                            isCurrentUser ? 'bg-blob-yellow text-blob-black' : 'bg-blob-black text-white'
                           }`}>
                             {senderName[0].toUpperCase()}
                           </div>
@@ -351,31 +379,29 @@ export default function ConversationPage() {
                     </div>
 
                     {/* Message bubble */}
-                    <div className={`flex flex-col ${isCurrentUser ? 'items-end' : 'items-start'} max-w-[70%]`}>
+                    <div className={`flex max-w-[78%] flex-col ${isCurrentUser ? 'items-end' : 'items-start'}`}>
                       {!isCurrentUser && !shouldGroup && (
-                        <span className="text-xs text-muted-foreground mb-1 px-1">{senderName}</span>
+                        <span className="mb-1 px-1 text-xs font-medium text-blob-black/56">{senderName}</span>
                       )}
-                      <div className={`rounded-lg px-3 py-2 ${
+                      <div className={`rounded-sm border-2 px-3 py-2 ${
                         m.type === 'PROPOSAL'
-                          ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800'
+                          ? 'border-blob-yellow-dark bg-blob-yellow/20 text-blob-black'
                           : isCurrentUser
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-accent text-foreground'
+                            ? 'border-blob-black bg-blob-black text-white'
+                            : 'border-blob-sand-deep bg-blob-sand text-blob-black'
                       } ${isFailed ? 'opacity-60' : ''}`}>
                         <div className="text-sm break-words">{m.content}</div>
                         {m.type === 'PROPOSAL' && m.meta && (
-                          <div className="text-xs text-muted-foreground dark:text-amber-300 mt-1">
+                          <div className="mt-1 text-xs text-blob-black/64">
                             {m.meta?.date} • {m.meta?.place} {m.meta?.note ? `• ${m.meta.note}` : ''}
                           </div>
                         )}
                       </div>
                       {/* Time and status */}
-                      <div className={`flex items-center gap-1 text-xs mt-1 px-1 ${
-                        isCurrentUser ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
-                      }`}>
+                      <div className="mt-1 flex items-center gap-1 px-1 text-xs text-blob-black/56">
                         {formatTime(m.createdAt)}
                         {isCurrentUser && !isSending && !isFailed && (
-                          <span className="text-gray-400" title="Envoyé">✓✓</span>
+                          <span title="Envoyé">✓✓</span>
                         )}
                         {isSending && <Clock size={12} className="animate-pulse" />}
                         {isFailed && (
@@ -388,7 +414,7 @@ export default function ConversationPage() {
                                 setInput(m.content);
                                 setTimeout(() => send(), 100);
                               }}
-                              className="text-red-500 underline text-xs"
+                              className="text-xs font-medium text-red-700 underline"
                             >
                               Réessayer
                             </button>
@@ -404,22 +430,30 @@ export default function ConversationPage() {
           </div>
 
           {conversationInfo?.blocked ? (
-            <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
-              <div className="flex items-center gap-2 text-red-700 dark:text-red-300 text-sm">
+            <BlobAlert variant="error">
+              <div className="flex items-center gap-2 text-sm">
                 <Shield size={16} />
                 <span>Ce contact est bloqué. Vous ne pouvez plus envoyer de messages.</span>
               </div>
-            </div>
+            </BlobAlert>
           ) : (
-            <div className="mt-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="mt-3 flex flex-col items-stretch gap-2 border-t-2 border-blob-sand-deep pt-4 sm:flex-row sm:items-center">
               <input
-                className="flex-1 rounded-md border border-input bg-background text-foreground px-3 py-2 text-sm placeholder:text-muted-foreground"
+                className="flex-1 rounded-sm border-2 border-blob-black bg-white px-3 py-2 text-sm text-blob-black placeholder:text-blob-black/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
                 placeholder="Écrire un message"
                 value={input}
                 onChange={(e)=>setInput(e.target.value)}
-                onKeyDown={(e)=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } }}
+                onKeyDown={(e)=>{ if(e.key==='Enter' && !sending){ e.preventDefault(); void send(); } }}
+                disabled={sending}
               />
-              <Button onClick={send} className="w-full sm:w-auto">Envoyer</Button>
+              <BlobButton
+                type="button"
+                onClick={() => void send()}
+                className="w-full sm:w-auto"
+                disabled={sending || !input.trim()}
+              >
+                {sending ? 'Envoi...' : 'Envoyer'}
+              </BlobButton>
             </div>
           )}
 
@@ -434,19 +468,20 @@ export default function ConversationPage() {
               void refreshConversationInfo();
             }}
           />
-        </CardContent>
-      </Card>
+          </div>
+        </BlobCard>
 
       {/* Scroll to bottom button */}
       {showScrollButton && (
         <button
           onClick={scrollToBottom}
-          className="fixed bottom-24 right-6 rounded-full bg-blue-500 hover:bg-blue-600 text-white p-3 shadow-lg transition-all duration-200 z-50 animate-in fade-in slide-in-from-bottom-2"
+          className="fixed bottom-24 right-6 z-50 rounded-sm border-2 border-blob-black bg-blob-yellow p-3 text-blob-black shadow-lg transition-all duration-200"
           aria-label="Descendre en bas de la conversation"
         >
           <ArrowDown size={24} />
         </button>
       )}
-    </div>
+      </div>
+    </BlobDashboardShell>
   );
 }
