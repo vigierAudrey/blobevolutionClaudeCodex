@@ -137,7 +137,13 @@ jobs:
             [ -n "$caddy_container" ] || fail "caddy container not found"
 
             docker exec "$caddy_container" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-            docker restart "$caddy_container"
+            if ! docker restart "$caddy_container"; then
+              echo "Caddy restart reported a non-zero exit code; checking container state before failing." >&2
+            fi
+
+            sleep 3
+            caddy_running="$(docker inspect -f '{{.State.Running}}' "$caddy_container" 2>/dev/null || true)"
+            [ "$caddy_running" = "true" ] || fail "caddy container is not running after restart"
           }
 
           rollback() {
