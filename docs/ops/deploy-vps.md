@@ -114,14 +114,13 @@ Le workflow refuse de démarrer si le worktree VPS contient des changements loca
 
 Le seed canari est ciblé sur les comptes `@pre-vps.blobinfini.local` référencés
 par le smoke test. Il prépare les sessions RIDER, le match actif et les profils
-nécessaires aux checks authentifiés, matching, messagerie et photo; il ne modifie
-pas la policy MinIO.
+nécessaires aux checks authentifiés, matching, messagerie et photo.
 
 Le smoke de déploiement valide l'upload par URL présignée, le blocage XSS Caddy,
-le CORS storage et l'absence de lecture anonyme large sur `users/*`. La policy
-publique restreinte `pros/*` reste une opération séparée du runbook
-`docs/runbooks/vps-runtime.md` et ne doit pas être appliquée implicitement par le
-déploiement.
+le CORS storage et l'absence de lecture anonyme large sur `users/*`. Avant ce
+smoke, le workflow réapplique de façon idempotente la policy MinIO publique
+restreinte aux préfixes autorisés (`pros/*` par défaut) pour corriger toute
+dérive vers une lecture anonyme trop large.
 
 Le check d'email réel est optionnel par défaut (`SMOKE_EMAIL_REAL=0`) et son
 skip ne bloque pas le déploiement. À l'inverse, le skip TLS strict reste

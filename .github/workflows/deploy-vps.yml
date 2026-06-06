@@ -175,14 +175,19 @@ jobs:
 
           docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 
-          # Caddy's admin API is disabled in production, so validate the
-          # bind-mounted Caddyfile and restart the container directly.
-          restart_caddy
-
           set -a
           # shellcheck disable=SC1091
           . "$ENV_FILE"
           set +a
+
+          ENV_FILE="$ENV_FILE" \
+          COMPOSE_FILE="$COMPOSE_FILE" \
+          PUBLIC_READ_PREFIXES="${PUBLIC_READ_PREFIXES:-pros/*}" \
+            ./scripts/minio-public-prefix-policy.sh
+
+          # Caddy's admin API is disabled in production, so validate the
+          # bind-mounted Caddyfile and restart the container directly.
+          restart_caddy
 
           SMOKE_API_BASE_URL="${API_BASE_URL:-}"
           if [ -z "$SMOKE_API_BASE_URL" ]; then
