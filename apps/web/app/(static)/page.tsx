@@ -17,6 +17,9 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <div>
+      {/* Ambient background — home only, zero cost on authenticated pages */}
+      <div aria-hidden="true" className="home-wallpaper-bg" />
+
       {/* Header premium horizontal — sticky, full-bleed */}
       <HomeHeader />
 
