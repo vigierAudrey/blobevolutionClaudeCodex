@@ -80,25 +80,29 @@ describe('Photo Finalize Security (RIDER)', () => {
       .send({ key })
       .expect(200);
 
-    expect(res.body).toHaveProperty('photoUrl');
-    expect(typeof res.body.photoUrl).toBe('string');
+    // API ne retourne plus le chemin MinIO interne — retourne le proxy endpoint
+    expect(res.body.hasPhoto).toBe(true);
+    expect(res.body.photoEndpoint).toBe(`/media/users/${userId1}/photo`);
+    expect(res.body).not.toHaveProperty('photoUrl');
 
-    // Vérifier que la DB a bien été mise à jour
+    // DB conserve le chemin MinIO interne (détail serveur)
     const profile = await prisma.riderProfile.findUnique({ where: { userId: userId1 } });
-    expect(profile?.photoUrl).toBe(res.body.photoUrl);
+    expect(profile?.photoUrl).not.toBeNull();
 
     const updateRes = await session1
       .put('/profile/me')
       .set('Authorization', `Bearer ${token1}`)
       .send({ displayName: 'BlobTest', bio: 'test', sex: 'MALE', emailNotif: false })
       .expect(200);
-    expect(updateRes.body.photoUrl).toBe(res.body.photoUrl);
+    expect(updateRes.body.hasPhoto).toBe(true);
+    expect(updateRes.body.photoEndpoint).toBe(res.body.photoEndpoint);
 
     const getRes = await session1
       .get('/profile/me')
       .set('Authorization', `Bearer ${token1}`)
       .expect(200);
-    expect(getRes.body.photoUrl).toBe(res.body.photoUrl);
+    expect(getRes.body.hasPhoto).toBe(true);
+    expect(getRes.body.photoEndpoint).toBe(res.body.photoEndpoint);
   });
 
   it.each(VALID_IMAGE_CASES)('compat image — %s valide → finalize accepte et sauvegarde', async (contentType, magicBytes) => {
@@ -111,9 +115,10 @@ describe('Photo Finalize Security (RIDER)', () => {
       .send({ key })
       .expect(200);
 
-    expect(typeof res.body.photoUrl).toBe('string');
+    expect(res.body.hasPhoto).toBe(true);
+    expect(res.body).not.toHaveProperty('photoUrl');
     const profile = await prisma.riderProfile.findUnique({ where: { userId: userId1 } });
-    expect(profile?.photoUrl).toBe(res.body.photoUrl);
+    expect(profile?.photoUrl).not.toBeNull();
   });
 
   it('photoUrl null via PUT /me → supprime la photo sans accepter de string', async () => {
@@ -132,7 +137,8 @@ describe('Photo Finalize Security (RIDER)', () => {
       .send({ photoUrl: null })
       .expect(200);
 
-    expect(res.body.photoUrl).toBeNull();
+    expect(res.body.hasPhoto).toBe(false);
+    expect(res.body.photoEndpoint).toBeNull();
     const profile = await prisma.riderProfile.findUnique({ where: { userId: userId1 } });
     expect(profile?.photoUrl).toBeNull();
   });

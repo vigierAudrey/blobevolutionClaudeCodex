@@ -38,7 +38,7 @@ import MatchingPage from '../page';
 const mockUseRouter = useRouter as jest.Mock;
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>;
 
-const completeProfile = { displayName: 'Alice', photoUrl: 'https://cdn/photo.jpg' };
+const completeProfile = { displayName: 'Alice', hasPhoto: true };
 const completeDisciplines = [{ sport: 'surf', level: 'intermediate' }];
 
 describe('MatchingPage — auth guard', () => {
@@ -113,7 +113,7 @@ describe('MatchingPage — auth guard', () => {
 
   it('redirects to /onboarding (not /login) when profile is incomplete', async () => {
     mockedApiClient.me.mockResolvedValueOnce({ role: 'RIDER' } as never);
-    mockedApiClient.getProfile.mockResolvedValue({ displayName: null, photoUrl: null } as never);
+    mockedApiClient.getProfile.mockResolvedValue({ displayName: null, hasPhoto: false } as never);
     mockedApiClient.getDisciplines.mockResolvedValue([] as never);
 
     render(<MatchingPage />);

@@ -67,7 +67,7 @@ export default function OnboardingPage() {
 
   const hasName = !!profile?.displayName;
   const hasDiscipline = (disciplines?.length || 0) > 0;
-  const hasPhoto = !!profile?.photoUrl;
+  const hasPhoto = Boolean(profile?.hasPhoto);
 
   // Auto-redirect when everything is complete
   useEffect(() => {

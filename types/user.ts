@@ -32,7 +32,8 @@ export interface UserProfile {
   lessonStudentCount?: number | null;
   lat?: number | null;
   lng?: number | null;
-  photoUrl?: string | null;
+  hasPhoto?: boolean;
+  photoEndpoint?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

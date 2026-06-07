@@ -16,7 +16,8 @@ import { ProfilePhoto } from '@/components/media/ProfilePhoto';
 
 type PublicRiderProfile = {
   displayName?: string | null;
-  photoUrl?: string | null;
+  hasPhoto?: boolean;
+  photoEndpoint?: string | null;
   bio?: string | null;
   sex?: Gender | null;
   wantsLesson?: boolean;
@@ -49,7 +50,8 @@ const GENDER_LABELS: Record<Gender, string> = {
 function toPublicProfile(raw: UserProfile): PublicRiderProfile {
   return {
     displayName: raw.displayName,
-    photoUrl: raw.photoUrl,
+    hasPhoto: raw.hasPhoto,
+    photoEndpoint: raw.photoEndpoint,
     bio: raw.bio,
     sex: raw.sex,
     wantsLesson: raw.wantsLesson,
@@ -76,7 +78,7 @@ type MissingField = { key: string; label: string };
 function getMissingFields(profile: PublicRiderProfile, disciplines: Discipline[]): MissingField[] {
   const missing: MissingField[] = [];
   if (!profile.displayName) missing.push({ key: 'displayName', label: 'Nom affiché' });
-  if (!profile.photoUrl) missing.push({ key: 'photoUrl', label: 'Photo de profil' });
+  if (!profile.hasPhoto) missing.push({ key: 'photoUrl', label: 'Photo de profil' });
   if (disciplines.length === 0) missing.push({ key: 'disciplines', label: 'Discipline(s) pratiquée(s)' });
   return missing;
 }
@@ -176,9 +178,9 @@ export default function ProfilePreviewPage() {
           <h2 className="text-xl font-black uppercase tracking-widest">Ton profil public</h2>
           <div className="rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-5 sm:p-6">
             <div className="mb-4 flex flex-col items-center gap-4">
-              {profile.photoUrl ? (
+              {profile.hasPhoto ? (
                 <ProfilePhoto
-                  src={profile.photoUrl}
+                  src={profile.photoEndpoint}
                   alt={profile.displayName ?? 'Photo de profil'}
                   width={256}
                   height={256}

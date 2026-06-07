@@ -63,7 +63,7 @@ export function CardsClient() {
 
         // Vérifier si le profil est complet avant d'accéder au matching
         const hasName = !!profile?.displayName;
-        const hasPhoto = !!profile?.photoUrl;
+        const hasPhoto = Boolean(profile?.hasPhoto);
         const hasDiscipline = Array.isArray(disciplines) && disciplines.length > 0;
         const incomplete = !hasName || !hasPhoto || !hasDiscipline;
 

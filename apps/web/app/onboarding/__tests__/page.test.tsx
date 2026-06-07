@@ -55,7 +55,8 @@ describe('OnboardingPage — auth guard', () => {
     // Default profile setup: incomplete (triggers onboarding display)
     mockedApiClient.getProfile.mockResolvedValue({
       displayName: null,
-      photoUrl: null,
+      hasPhoto: false,
+      photoEndpoint: null,
     } as never);
     mockedApiClient.getDisciplines.mockResolvedValue([]);
   });

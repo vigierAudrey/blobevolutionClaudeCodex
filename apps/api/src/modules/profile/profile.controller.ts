@@ -65,6 +65,15 @@ function locationMovedOver100m(
 export const profileRouter = Router();
 profileRouter.use(requireAuth, requireVerifiedEmail);
 
+function riderProfileToResponse(
+  rp: { photoUrl?: string | null } & Record<string, unknown>,
+  userId: string,
+) {
+  const { photoUrl, ...rest } = rp;
+  const hasPhoto = photoUrl !== null && photoUrl !== undefined;
+  return { ...rest, hasPhoto, photoEndpoint: hasPhoto ? `/media/users/${userId}/photo` : null };
+}
+
 // Finalize rate limiter : 10 req/5min/userId.
 // Justification : un finalize légitime coûte 1 Lua + 1 HeadObject + 1 GetObject.
 // Sans limite, un user authentifié peut saturer Redis/MinIO via boucle de finalizations.
@@ -199,7 +208,7 @@ profileRouter.get('/me', async (req, res) => { // authz-guard-ok: role-dispatche
           // eslint-disable-next-line no-console
           secureLogger.debug('PROFILE_CACHE_HIT', { userId });
         }
-        return res.json(cachedProfile);
+        return res.json(riderProfileToResponse(cachedProfile as { photoUrl?: string | null } & Record<string, unknown>, userId));
       }
 
       // Comportement existant pour les riders, sécurisé contre les accès concurrents
@@ -210,7 +219,7 @@ profileRouter.get('/me', async (req, res) => { // authz-guard-ok: role-dispatche
         update: {},
       });
 
-      // Cache the profile for future requests
+      // Cache the profile for future requests (raw DB object — transform happens at response boundary)
       if (cacheService.isAvailable()) {
         await cacheService.setProfile(userId, rp, 600); // 10 minutes cache
         if (process.env.NODE_ENV !== 'production') {
@@ -219,7 +228,7 @@ profileRouter.get('/me', async (req, res) => { // authz-guard-ok: role-dispatche
         }
       }
 
-      return res.json(rp);
+      return res.json(riderProfileToResponse(rp, userId));
     }
 
     // Invalid role
@@ -405,7 +414,7 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => { // authz-
         // eslint-disable-next-line no-console
         secureLogger.debug('PROFILE_RIDER_UPDATED', { userId, profileId: rp.id });
       }
-      return res.json(rp);
+      return res.json(riderProfileToResponse(rp, userId));
     }
 
     // Invalid role
@@ -663,7 +672,7 @@ profileRouter.post('/photo/finalize', finalizeRateLimiter, async (req, res) => {
     }
 
     secureLogger.info('UPLOAD_FINALIZE_SUCCESS', { userId, detectedMime });
-    return res.json({ photoUrl });
+    return res.json({ hasPhoto: true, photoEndpoint: `/media/users/${userId}/photo` });
   } catch (err: any) {
     secureLogger.error('UPLOAD_FINALIZE_ERROR', {
       error: err instanceof Error ? err.message : String(err),
