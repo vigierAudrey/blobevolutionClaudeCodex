@@ -2,7 +2,6 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -12,6 +11,7 @@ import { Button } from '../../../components/ui/button';
 import { apiClient } from '../../../lib/apiClient';
 import type { ThreadSummary, ThreadListQuery } from '@/types/messages';
 import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../../../lib/clientSession';
+import { ProfilePhoto } from '../../../components/media/ProfilePhoto';
 
 export default function ProMessagesPage() {
   const router = useRouter();
@@ -220,13 +220,13 @@ export default function ProMessagesPage() {
                 <Link href={`/messages/${it.id}`} className="flex-1 flex items-start gap-3">
                   <div className="relative flex-shrink-0">
                     {it.otherPhotoUrl ? (
-                      <Image
+                      <ProfilePhoto
                         src={it.otherPhotoUrl}
                         alt={it.otherDisplayName}
                         width={40}
                         height={40}
                         className="w-10 h-10 rounded-full object-cover border-2 border-gray-200"
-                        unoptimized
+                        fallbackClassName="w-10 h-10 rounded-full bg-muted flex items-center justify-center border-2 border-gray-200 px-1 text-center text-[8px] text-muted-foreground"
                       />
                     ) : (
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-semibold text-sm">

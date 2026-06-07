@@ -61,11 +61,18 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB — cohérent avec nginx cli
 
 // Mock injectable en NODE_ENV=test uniquement
 let _testMockFirstBytes: Buffer | null = null;
+let _testMockObjectBuffer: Buffer | null = null;
 
 /** Injecte des bytes fictifs pour les tests. Interdit en dehors de NODE_ENV=test. */
 export function __setTestGetObjectMock(bytes: Buffer | null): void {
   if (process.env.NODE_ENV !== 'test') throw new Error('__setTestGetObjectMock is test-only');
   _testMockFirstBytes = bytes;
+}
+
+/** Injecte un objet complet fictif pour les tests de lecture média privée. */
+export function __setTestGetObjectBufferMock(bytes: Buffer | null): void {
+  if (process.env.NODE_ENV !== 'test') throw new Error('__setTestGetObjectBufferMock is test-only');
+  _testMockObjectBuffer = bytes;
 }
 
 /**
@@ -105,6 +112,33 @@ export async function getObjectFirstBytes(key: string): Promise<Buffer | null> {
 }
 
 /**
+ * Lit un objet S3 complet après vérification de taille.
+ * Réservé aux médias utilisateur privés, plafonnés à MAX_UPLOAD_BYTES.
+ */
+export async function getObjectBuffer(key: string): Promise<Buffer | null> {
+  if (process.env.NODE_ENV === 'test') return _testMockObjectBuffer ?? _testMockFirstBytes;
+
+  const { bucket } = getEnv();
+  if (!bucket) return null;
+  const s3 = getS3();
+
+  try {
+    const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    const size = head.ContentLength ?? 0;
+    if (size === 0 || size > MAX_UPLOAD_BYTES) return null;
+
+    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of resp.Body as AsyncIterable<Uint8Array>) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Supprime un objet S3. Utilisé pour cleanup post-finalize-rejeté.
  * Non-fatal : log en cas d'erreur, l'objet orphelin sera purgé par lifecycle rule.
  */
@@ -117,7 +151,6 @@ export async function deleteObject(key: string): Promise<void> {
     await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
   } catch (err) {
     secureLogger.warn('S3_DELETE_OBJECT_FAILED', {
-      keyPrefix: key.slice(0, 40),
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -135,4 +168,35 @@ export function publicUrlForKey(key: string) {
     );
   }
   return `${base}/${key}`;
+}
+
+export function storageKeyFromPublicUrl(value: string): string | null {
+  const candidate = value.trim();
+  if (/^(users|pros)\//.test(candidate)) return candidate;
+
+  const { publicBase, endpoint, bucket } = getEnv();
+  const bases = [
+    publicBase,
+    endpoint && bucket ? `${endpoint.replace(/\/$/, '')}/${bucket}` : undefined,
+  ].filter((base): base is string => Boolean(base));
+
+  for (const base of bases) {
+    const normalizedBase = base.replace(/\/$/, '');
+    if (candidate.startsWith(`${normalizedBase}/`)) {
+      return decodeURIComponent(candidate.slice(normalizedBase.length + 1));
+    }
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const usersIndex = parts.indexOf('users');
+    if (usersIndex >= 0) return parts.slice(usersIndex).map((part) => decodeURIComponent(part)).join('/');
+    const prosIndex = parts.indexOf('pros');
+    if (prosIndex >= 0) return parts.slice(prosIndex).map((part) => decodeURIComponent(part)).join('/');
+  } catch {
+    return null;
+  }
+
+  return null;
 }

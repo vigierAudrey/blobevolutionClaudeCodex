@@ -1,5 +1,4 @@
 "use client";
-import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
@@ -16,6 +15,7 @@ import { formatDateForDisplay } from './utils';
 import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, Sport, Level } from '@/types';
 import { clearMatchingStorage } from '../storage';
 import { FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
+import { ProfilePhoto } from '../../../components/media/ProfilePhoto';
 
 import { CommunityHighlight } from '../../../components/community/CommunityHighlight';
 
@@ -513,13 +513,13 @@ export function CardsClient() {
                     {/* Photo de profil - Affichage vertical centré */}
                     <div className="flex flex-col items-center gap-4 mb-4 relative z-10">
                       {current.photoUrl ? (
-                        <Image
+                        <ProfilePhoto
                           src={current.photoUrl}
                           alt={current.displayName ?? 'Photo de profil'}
                           width={320}
                           height={320}
                           className="w-64 h-64 sm:w-72 sm:h-72 lg:w-80 lg:h-80 rounded-[2rem] object-cover border-4 border-border shadow-2xl"
-                          unoptimized
+                          fallbackClassName="w-64 h-64 sm:w-72 sm:h-72 lg:w-80 lg:h-80 rounded-[2rem] bg-muted flex items-center justify-center border-4 border-border shadow-2xl px-4 text-center text-sm text-muted-foreground"
                           priority
                         />
                       ) : (
@@ -630,13 +630,13 @@ export function CardsClient() {
                         <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 via-blue-500 to-sky-500 rounded-full blur-2xl opacity-40 animate-pulse" style={{ transform: 'scale(1.3)' }} />
 
                         {newMatch.photoUrl ? (
-                          <Image
+                          <ProfilePhoto
                             src={newMatch.photoUrl}
                             alt={newMatch.otherDisplayName}
                             width={160}
                             height={160}
                             className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-2xl"
-                            unoptimized
+                            fallbackClassName="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center border-4 border-white dark:border-slate-800 shadow-2xl px-4 text-center text-xs text-white"
                           />
                         ) : (
                           <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-7xl border-4 border-white dark:border-slate-800 shadow-2xl">

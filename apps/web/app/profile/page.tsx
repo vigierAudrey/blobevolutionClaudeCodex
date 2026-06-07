@@ -2,7 +2,6 @@
 
 // Force SSR for dynamic user-specific features
 export const dynamic = 'force-dynamic';
-import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { apiClient } from '../../lib/apiClient';
@@ -19,6 +18,7 @@ import type { Level } from '@/types/matching';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../components/cookies/CookieConsent';
 import { ChangePasswordCard } from '../../components/profile/ChangePasswordCard';
 import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobInput, BlobPageHeader } from '@/components/blob';
+import { ProfilePhoto } from '@/components/media/ProfilePhoto';
 
 type SexOption = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
 type LevelOption = '' | Level;
@@ -547,13 +547,13 @@ export default function ProfilePage() {
                     <div className="rounded-sm border-2 border-blob-black bg-blob-sand p-1.5">
                       <div className="relative h-56 w-44 overflow-hidden rounded-sm border-2 border-white bg-white">
                         {displayedPhotoSrc ? (
-                          <Image
+                          <ProfilePhoto
                             src={displayedPhotoSrc}
                             alt={photoAlt}
                             fill
                             className="object-cover"
+                            fallbackClassName="absolute inset-0 flex items-center justify-center bg-white px-3 text-center text-blob-black/60"
                             sizes="176px"
-                            unoptimized
                           />
                         ) : (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">

@@ -605,7 +605,7 @@ profileRouter.post('/photo/finalize', finalizeRateLimiter, async (req, res) => {
 
     // Vérification précoce : la clé appartient bien à cet userId
     if (!key.startsWith(`users/${userId}/`)) {
-      secureLogger.warn('UPLOAD_FINALIZE_KEY_NOT_OWNED', { userId, keyPrefix: key.slice(0, 50) });
+      secureLogger.warn('UPLOAD_FINALIZE_KEY_NOT_OWNED', { userId });
       return res.status(403).json({ error: 'Key does not belong to this user' });
     }
 

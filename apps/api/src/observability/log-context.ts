@@ -14,6 +14,7 @@ export type LogContext = {
 const ANONYMOUS_ACTOR_REF = 'anonymous';
 const SYSTEM_ACTOR_REF = 'system';
 const logContextStorage = new AsyncLocalStorage<LogContext>();
+const UUID_PATH_SEGMENT_RE = /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi;
 
 function resolveActorSecret(): string {
   const configured = process.env.LOG_ACTOR_SECRET?.trim();
@@ -28,9 +29,13 @@ function resolveActorSecret(): string {
   return 'blobinfini-dev-log-actor-secret';
 }
 
+export function sanitizeHttpPath(path: string): string {
+  return path.replace(UUID_PATH_SEGMENT_RE, '/:uuid');
+}
+
 function normalizeRoute(req: Request): string {
   const path = req.path || req.originalUrl || '/';
-  return `${req.method.toUpperCase()} ${path}`;
+  return `${req.method.toUpperCase()} ${sanitizeHttpPath(path)}`;
 }
 
 export function createActorRef(userId?: string | null): string {

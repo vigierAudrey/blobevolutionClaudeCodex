@@ -153,6 +153,30 @@ describe('buildCsp', () => {
     expect(imgSrc).toContain('localhost:9000');
   });
 
+  // --- img-src: API origin for private media route ---
+
+  it('includes default API origin in img-src (private photo route /media/users/:id/photo)', () => {
+    delete process.env.NEXT_PUBLIC_API_URL;
+    const imgSrc = directive(buildCsp('test'), 'img-src');
+    // Default fallback is localhost:4000
+    expect(imgSrc).toContain('localhost:4000');
+  });
+
+  it('includes HTTPS API origin in img-src when NEXT_PUBLIC_API_URL is HTTPS', () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.blobsurf.com';
+    const imgSrc = directive(buildCsp('test'), 'img-src');
+    expect(imgSrc).toContain('https://api.blobsurf.com');
+  });
+
+  it('does not use bare wildcard tokens in img-src', () => {
+    const imgSrc = directive(buildCsp('test'), 'img-src');
+    // Tokens are space-separated — match standalone '*', 'http:', 'https:' (not within a URL)
+    const tokens = imgSrc?.split(/\s+/) ?? [];
+    expect(tokens).not.toContain('*');
+    expect(tokens).not.toContain('http:');
+    expect(tokens).not.toContain('https:');
+  });
+
   it('includes data: and blob: in img-src', () => {
     const imgSrc = directive(buildCsp('test'), 'img-src');
     expect(imgSrc).toContain('data:');
