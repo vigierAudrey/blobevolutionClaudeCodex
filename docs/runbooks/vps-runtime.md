@@ -92,14 +92,24 @@ MINIO_SERVER_URL    == https://$STORAGE_DOMAIN
 
 ## Lecture publique MinIO
 
+> **Cible securite actuelle (2026-06-07)**
+> Prefixe public autorise : `pros/*` uniquement — `s3:GetObject` sans
+> `s3:ListBucket`.
+> Les objets `users/*` doivent rester interdits en lecture anonyme.
+> Si un environnement historique a ouvert `users/*`, traiter cela comme une
+> remediation RGPD et reposer une policy `pros/*` seulement apres validation
+> humaine.
+>
+> Rappel securite : a terme, preferer un prefixe plus strict pour reduire la
+> surface, par exemple `public/pros/photos/*` au lieu de `pros/*`.
+
 Les URLs renvoyees par `POST /pro/photo/finalize` sont des URLs publiques
 stables construites depuis `S3_PUBLIC_URL_BASE`. Elles ne doivent pas contenir de
 signature, de token ou de secret.
 
-La policy MinIO doit donc autoriser la lecture anonyme uniquement sur les
-prefixes de medias publics. Pour les photos de profil pro publiques, le prefixe
-autorise est `pros/*`. La policy ne doit pas accorder `s3:ListBucket` et ne doit
-pas rendre tout le bucket public.
+La policy MinIO autorise la lecture anonyme uniquement sur les prefixes de
+medias publics. La cible actuelle est `pros/*` public et `users/*` prive. La
+policy n'accorde pas `s3:ListBucket` et ne rend pas tout le bucket public.
 
 Audit sans modification :
 
@@ -109,7 +119,7 @@ COMPOSE_FILE=docker-compose.blobsurf.yml \
 scripts/minio-public-prefix-policy.sh --dry-run --prefix 'pros/*'
 ```
 
-Application idempotente :
+Application idempotente (prefixe pros/* seulement) :
 
 ```bash
 ENV_FILE=.env.vps \
@@ -117,7 +127,7 @@ COMPOSE_FILE=docker-compose.blobsurf.yml \
 scripts/minio-public-prefix-policy.sh --prefix 'pros/*'
 ```
 
-Rollback lecture publique pro :
+Rollback lecture publique :
 
 ```bash
 ENV_FILE=.env.vps \
@@ -125,17 +135,23 @@ COMPOSE_FILE=docker-compose.blobsurf.yml \
 scripts/minio-public-prefix-policy.sh --clear
 ```
 
-Verification attendue apres application :
+Verification attendue apres application ou remediation :
 
 ```bash
-curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/pros/<profileUuid>/<imageUuid>.jpeg"
-# 200 pour un objet existant de photo pro publique
+curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/users/<uuid>/<uuid>.png"
+# HTTP/2 403 — media rider non accessible anonymement
 
-curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/users/private-probe/nonexistent.jpeg"
-# 403 ou 404, mais jamais 200
+curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/pros/<uuid>/<uuid>.png"
+# HTTP/2 200 — photo pro accessible
 
-curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/?list-type=2"
-# 403
+curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/pros/<uuid>/<uuid>.jpeg"
+# HTTP/2 200 — photo pro jpeg accessible
+
+curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/"
+# HTTP/2 403 — racine bucket inaccessible
+
+curl -I "https://$STORAGE_DOMAIN/$S3_BUCKET/hostile-audit/test.txt"
+# HTTP/2 403 — prefixe non autorise inaccessible
 ```
 
 ## Deploiement automatique

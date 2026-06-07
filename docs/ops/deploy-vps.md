@@ -117,10 +117,10 @@ par le smoke test. Il prépare les sessions RIDER, le match actif et les profils
 nécessaires aux checks authentifiés, matching, messagerie et photo.
 
 Le smoke de déploiement valide l'upload par URL présignée, le blocage XSS Caddy,
-le CORS storage et l'absence de lecture anonyme large sur `users/*`. Avant ce
-smoke, le workflow réapplique de façon idempotente la policy MinIO publique
-restreinte aux préfixes autorisés (`pros/*` par défaut) pour corriger toute
-dérive vers une lecture anonyme trop large.
+le CORS storage et l'absence de lecture anonyme non contrôlée. La policy publique
+attendue est désormais `pros/*` uniquement — voir `docs/runbooks/vps-runtime.md`.
+`users/*` doit rester privé en lecture anonyme. La policy ne doit pas être
+réappliquée ou écrasée implicitement par le déploiement.
 
 Le check d'email réel est optionnel par défaut (`SMOKE_EMAIL_REAL=0`) et son
 skip ne bloque pas le déploiement. À l'inverse, le skip TLS strict reste

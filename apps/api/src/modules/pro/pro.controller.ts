@@ -439,7 +439,7 @@ proRouter.post('/photo/finalize', requireProRole, finalizeRateLimiter, async (re
     }
 
     if (!key.startsWith(`pros/${userId}/`)) {
-      secureLogger.warn('UPLOAD_FINALIZE_PRO_KEY_NOT_OWNED', { userId, keyPrefix: key.slice(0, 50) });
+      secureLogger.warn('UPLOAD_FINALIZE_PRO_KEY_NOT_OWNED', { userId });
       return res.status(403).json({ error: 'Key does not belong to this user' });
     }
 

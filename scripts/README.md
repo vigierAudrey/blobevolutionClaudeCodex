@@ -146,3 +146,30 @@ Step 8/8: Running tests...
 **Créé le :** 2025-10-14
 **Auteur :** Claude Code
 **Version :** 1.0.0
+
+---
+
+## `upload-media-fixtures-minio.sh` - Fixtures media MinIO local/test
+
+Upload les images synthetiques de `apps/api/fixtures/media` vers MinIO pour
+tester les affichages profils pro/rider sans donnees personnelles.
+
+Le script ne modifie jamais la policy MinIO. Il verifie apres upload :
+
+- `pros/test-fixtures/*` : GET anonyme `200`.
+- `users/test-fixtures/*` : GET anonyme `403`.
+- listing bucket : `403`.
+- `Content-Type` objet : `image/*`.
+
+Usage local :
+
+```bash
+ENV_FILE=.env scripts/upload-media-fixtures-minio.sh
+```
+
+Si le GET anonyme `pros/*` retourne `403`, appliquer la policy publique locale
+separement, sans ouvrir `users/*` :
+
+```bash
+ENV_FILE=.env scripts/minio-public-prefix-policy.sh --prefix 'pros/*'
+```

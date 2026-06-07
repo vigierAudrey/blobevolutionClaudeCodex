@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import Image from 'next/image';
 import { apiClient } from '../lib/apiClient';
 import { X, Check } from 'lucide-react';
 import { BlobButton, BlobCard } from './blob';
+import { ProfilePhoto } from './media/ProfilePhoto';
 
 interface ConversationInvitation {
   id: string;
@@ -96,24 +96,25 @@ export function ConversationInvitations() {
         >
           <div className="flex items-center gap-3">
             {invitation.inviterPhotoUrl ? (
-              <Image
+              <ProfilePhoto
                 src={invitation.inviterPhotoUrl}
                 alt={invitation.inviterName}
                 width={40}
                 height={40}
-                className="rounded-sm border-2 border-blob-black object-cover"
+                className="rounded-sm border-2 border-blob-black dark:border-white/30 object-cover"
+                fallbackClassName="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black dark:border-white/30 bg-blob-sand dark:bg-[hsl(220_14%_18%)] px-1 text-center text-[8px] text-blob-black/60 dark:text-white/60"
               />
             ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand font-black text-blob-black">
+              <div className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black dark:border-white/30 bg-blob-sand dark:bg-[hsl(220_14%_18%)] font-black text-blob-black dark:text-white">
                 {invitation.inviterName[0].toUpperCase()}
               </div>
             )}
 
             <div className="flex-1">
-              <div className="text-sm font-black uppercase tracking-[0.08em] text-blob-black">
+              <div className="text-sm font-black uppercase tracking-[0.08em] text-blob-black dark:text-white">
                 {invitation.inviterName} vous invite à rejoindre une conversation
               </div>
-              <div className="text-xs text-blob-black/56">
+              <div className="text-xs text-blob-black/56 dark:text-white/55">
                 {invitation.memberCount} {invitation.memberCount > 1 ? 'membres' : 'membre'}
               </div>
             </div>

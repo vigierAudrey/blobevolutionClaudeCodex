@@ -4,12 +4,12 @@
 export const dynamic = 'force-dynamic';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { BackBar } from '../../../components/BackBar';
 import { Shield, ShieldOff, MoreVertical, Users, Clock, AlertCircle, ArrowDown } from 'lucide-react';
 import { apiClient } from '../../../lib/apiClient';
 import { ConversationMembers } from '../../../components/ConversationMembers';
 import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobDashboardShell, BlobEmptyState } from '@/components/blob';
+import { ProfilePhoto } from '@/components/media/ProfilePhoto';
 import type {
   Message,
   MessageListResponse,
@@ -359,12 +359,13 @@ export default function ConversationPage() {
                     <div className="flex-shrink-0">
                       {!shouldGroup ? (
                         senderPhotoUrl ? (
-                          <Image
+                          <ProfilePhoto
                             src={senderPhotoUrl}
                             alt={senderName}
                             width={32}
                             height={32}
                             className="rounded-sm border-2 border-blob-black object-cover"
+                            fallbackClassName="flex h-8 w-8 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand px-1 text-center text-[8px] text-blob-black/60"
                           />
                         ) : (
                           <div className={`flex h-8 w-8 items-center justify-center rounded-sm border-2 border-blob-black text-xs font-black ${

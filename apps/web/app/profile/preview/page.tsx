@@ -3,7 +3,6 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Spinner } from '../../../components/ui/spinner';
@@ -13,6 +12,7 @@ import { apiClient } from '../../../lib/apiClient';
 import type { UserProfile, Gender } from '@/types/user';
 import type { Level, Sport } from '@/types/matching';
 import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobPageHeader } from '@/components/blob';
+import { ProfilePhoto } from '@/components/media/ProfilePhoto';
 
 type PublicRiderProfile = {
   displayName?: string | null;
@@ -177,13 +177,13 @@ export default function ProfilePreviewPage() {
           <div className="rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-5 sm:p-6">
             <div className="mb-4 flex flex-col items-center gap-4">
               {profile.photoUrl ? (
-                <Image
+                <ProfilePhoto
                   src={profile.photoUrl}
                   alt={profile.displayName ?? 'Photo de profil'}
                   width={256}
                   height={256}
                   className="h-64 w-64 rounded-sm border-4 border-white object-cover shadow-lg"
-                  unoptimized
+                  fallbackClassName="flex h-64 w-64 items-center justify-center rounded-sm border-4 border-white bg-white px-3 text-center text-sm text-blob-black/60 shadow-lg"
                   priority
                 />
               ) : (

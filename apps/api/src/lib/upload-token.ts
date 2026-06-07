@@ -58,7 +58,7 @@ export async function registerPendingUpload(
       _memPending.set(key, userId);
       return;
     }
-    secureLogger.warn('UPLOAD_TOKEN_REDIS_UNAVAILABLE_ON_REGISTER', { keyPrefix: key.slice(0, 40) });
+    secureLogger.warn('UPLOAD_TOKEN_REDIS_UNAVAILABLE_ON_REGISTER');
     return; // fail-open sur register — fail-secure sur claim
   }
   try {

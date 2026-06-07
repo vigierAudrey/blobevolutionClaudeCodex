@@ -64,6 +64,7 @@ export function buildCsp(nonce: string, options: CspOptions = {}): string {
     "'self'",
     'data:',                        // Next.js image placeholders, inline SVG via data URI
     'blob:',                        // Object URLs (canvas, generated images)
+    apiOrigin,                      // Private media route GET /media/users/:id/photo (authenticated, same API origin)
     'localhost:9000',               // MinIO (dev / pre-vps)
     'cdnjs.cloudflare.com',        // Leaflet marker icon images
     '*.tile.openstreetmap.org',    // OpenStreetMap tile images (Leaflet TileLayer)

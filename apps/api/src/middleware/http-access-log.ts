@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { secureLogger } from '../utils/secure-logger';
-import { getActorRef } from '../observability/log-context';
+import { getActorRef, sanitizeHttpPath } from '../observability/log-context';
 import { isExcludedPath } from '../lib/http-metrics';
 
 /**
@@ -32,7 +32,7 @@ export function httpAccessLog(req: Request, res: Response, next: NextFunction): 
 
     secureLogger.info('HTTP_ACCESS', {
       method: req.method,
-      path: req.path,
+      path: sanitizeHttpPath(req.path),
       status: res.statusCode,
       duration_ms: durationMs,
       ...(requestId !== undefined ? { request_id: requestId } : {}),

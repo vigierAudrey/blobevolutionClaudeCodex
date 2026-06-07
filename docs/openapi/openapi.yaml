@@ -32,6 +32,8 @@ tags:
     description: Recherche et décisions de matching
   - name: Conversations
     description: Messagerie temps réel et gestion de conversations
+  - name: Media
+    description: Lecture authentifiée des médias privés
   - name: Contact
     description: Demandes de contact rider ⇄ pro
   - name: Push
@@ -625,6 +627,57 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+  /media/users/{userId}/photo:
+    get:
+      tags: [Media]
+      summary: Sert la photo rider privée du compte connecté
+      description: |
+        Route authentifiée pour les objets `users/*`. Le serveur résout la photo
+        officielle depuis le profil rider, vérifie que l'objet appartient au compte
+        connecté, refuse les clés hors préfixe `users/{userId}/` et répond avec
+        `Cache-Control: private`. Cette route ne sert pas `pros/*`.
+      operationId: mediaGetOwnUserPhoto
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Image privée du rider connecté
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: private, max-age=300
+            X-Content-Type-Options:
+              schema:
+                type: string
+                example: nosniff
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /pro/me:
     get:

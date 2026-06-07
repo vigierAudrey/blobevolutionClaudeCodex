@@ -1,5 +1,4 @@
 "use client";
-import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEventHandler, ReactNode } from 'react';
 import Link from 'next/link';
@@ -10,6 +9,7 @@ import type { ThreadSummary, ThreadListQuery } from '@/types/messages';
 import { ConversationInvitations } from '../../components/ConversationInvitations';
 import { ContactRequests } from '../../components/ContactRequests';
 import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobDashboardShell, BlobEmptyState } from '@/components/blob';
+import { ProfilePhoto } from '@/components/media/ProfilePhoto';
 
 // Force SSR for real-time messaging
 export const dynamic = 'force-dynamic';
@@ -235,13 +235,13 @@ export default function MessagesPage() {
                           <Users size={28} />
                         </div>
                       ) : it.otherPhotoUrl ? (
-                        <Image
+                        <ProfilePhoto
                           src={it.otherPhotoUrl}
                           alt={it.otherDisplayName}
                           width={56}
                           height={56}
                           className="h-14 w-14 rounded-sm border-2 border-blob-black object-cover"
-                          unoptimized
+                          fallbackClassName="flex h-14 w-14 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand px-1 text-center text-[10px] font-medium text-blob-black/60"
                         />
                       ) : (
                         <div className="flex h-14 w-14 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand text-lg font-black">

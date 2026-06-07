@@ -184,6 +184,11 @@ Definition of Done P0 :
 - Monitoring uptime + metrics + disque relié à un canal d'alerte.
 - Cron ops aligné uniquement sur des scripts existants.
 
+Contribution 2026-06-07 :
+
+- [x] MinIO fixtures média local/test : images WebP synthétiques sans données personnelles, script d'upload/vérification sans modification de policy, cible `pros/*` public et `users/*` privé.
+- Risque : vérifier les environnements historiques qui auraient ouvert `users/*` en lecture anonyme et reposer une policy `pros/*` seulement après validation humaine.
+
 ## 6. Chantiers P1
 
 Les P1 soutiennent l'acquisition, la qualité du MVP et l'exploitation produit.
@@ -205,6 +210,10 @@ Contribution 2026-06-01 :
 - [x] Blobosphère : page article publique `/blobosphere/[slug]`, workflow MDX `draft/review/published/archived`, garde publique `published` uniquement, tests de non-exposition et documentation MVP file-based.
 - [x] Blobosphère : passe pré-publication SEO/UX, domaine canonique `blobsurf.com`, CTA article et contenus pilotes surf/kite/communauté sans exposition de spots sensibles.
 - [x] Blobosphère : audit final avant merge, fermeture des routes d'édition locales hors développement et choix Décap CMS/GitHub/CI comme voie officielle de publication.
+
+Contribution 2026-06-07 :
+
+- [x] Média rider privé : route authentifiée owner-only pour servir `users/*`, front converti vers cette route, tests anti-IDOR et conservation de `pros/*` public.
 
 Definition of Done P1 :
 
