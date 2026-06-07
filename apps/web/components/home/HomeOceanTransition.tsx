@@ -42,7 +42,7 @@ export function HomeOceanTransition() {
   return (
     <section
       aria-labelledby="home-ocean-transition-title"
-      className="home-ocean-transition -mx-4 overflow-hidden bg-blob-sand sm:-mx-6 lg:-mx-8"
+      className="home-ocean-transition -mx-4 overflow-hidden bg-blob-sand dark:bg-blob-black sm:-mx-6 lg:-mx-8"
     >
       <div className="relative flex min-h-[150px] items-center px-4 py-5 sm:min-h-[164px] sm:px-6 sm:py-6 lg:min-h-[188px] lg:px-10 lg:py-7 xl:px-14">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_72%_100%,rgba(185,220,221,0.42),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0)_0%,rgba(185,220,221,0.16)_100%)]" aria-hidden />
@@ -50,23 +50,23 @@ export function HomeOceanTransition() {
 
         <div className="relative z-10 grid w-full max-w-6xl gap-4 lg:grid-cols-[minmax(0,0.82fr)_minmax(360px,1fr)] lg:items-center lg:gap-10">
           <div>
-            <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-blob-black/58 sm:text-[11px]">
+            <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-blob-black/58 dark:text-white/50 sm:text-[11px]">
               PREMIÈRE ZONE DE TEST
             </p>
             <h2
               id="home-ocean-transition-title"
-              className="max-w-xl text-xl font-black leading-tight tracking-normal text-blob-black sm:text-2xl lg:text-[28px]"
+              className="max-w-xl text-xl font-black leading-tight tracking-normal text-blob-black dark:text-white sm:text-2xl lg:text-[28px]"
             >
               On commence là où la communauté ride déjà.
             </h2>
           </div>
 
           <div className="border-blob-yellow/50 lg:border-l lg:pl-8">
-            <p className="max-w-2xl text-xs leading-relaxed text-blob-black/64 sm:text-sm">
+            <p className="max-w-2xl text-xs leading-relaxed text-blob-black/64 dark:text-white/60 sm:text-sm">
               Blob démarre entre Hourtin, Carcans, Lacanau et Bordeaux pour tester une idée simple : mieux connecter les riders, les pros et les bons plans utiles à l’échelle locale.
             </p>
             <p
-              className="home-city-list mt-3 flex flex-wrap gap-x-1.5 gap-y-1 text-[10px] font-black uppercase leading-relaxed tracking-[0.12em] text-blob-black/64 sm:text-[11px]"
+              className="home-city-list mt-3 flex flex-wrap gap-x-1.5 gap-y-1 text-[10px] font-black uppercase leading-relaxed tracking-[0.12em] text-blob-black/64 dark:text-white/55 sm:text-[11px]"
               aria-label={tags.join(' • ')}
             >
               {tags.map((tag, index) => (

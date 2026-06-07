@@ -10,13 +10,13 @@ export type BlobCardMode = 'dark' | 'sand' | 'yellowSignal';
 
 const modeBase: Record<BlobCardMode, string> = {
   dark:        'bg-blob-black   text-white         border-white/10',
-  sand:        'bg-blob-sand    text-blob-black     border-blob-sand-deep',
+  sand:        'bg-blob-sand    dark:bg-[hsl(220_14%_14%)]  text-blob-black  dark:text-white  border-blob-sand-deep  dark:border-white/10',
   yellowSignal:'bg-blob-yellow  text-blob-black     border-blob-yellow-dark/40',
 };
 
 const modeHover: Record<BlobCardMode, string> = {
   dark:        'hover:border-blob-yellow/60  hover:shadow-[0_4px_24px_rgba(0,0,0,0.5)]',
-  sand:        'hover:border-blob-yellow/60  hover:shadow-[0_4px_24px_rgba(0,0,0,0.12)]',
+  sand:        'hover:border-blob-yellow/60  hover:shadow-[0_4px_24px_rgba(0,0,0,0.12)]  dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.5)]',
   yellowSignal:'hover:border-blob-black/30   hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)]',
 };
 

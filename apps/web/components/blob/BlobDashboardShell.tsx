@@ -17,7 +17,7 @@ export type BlobDashboardShellProps = {
 
 export function BlobDashboardShell({ title, nav = [], children }: BlobDashboardShellProps) {
   return (
-    <div className="min-h-screen bg-blob-sand text-blob-black">
+    <div className="min-h-screen bg-blob-sand dark:bg-blob-black text-blob-black dark:text-white">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:grid lg:grid-cols-[240px_1fr] lg:px-8">
         <aside className="rounded-sm border-2 border-blob-black bg-blob-black p-4 text-white lg:min-h-[calc(100vh-3rem)]">
           <div className="mb-6">
@@ -43,8 +43,8 @@ export function BlobDashboardShell({ title, nav = [], children }: BlobDashboardS
         </aside>
 
         <main className="min-w-0 space-y-6">
-          <header className="rounded-sm border-2 border-blob-sand-deep bg-white px-4 py-5 sm:px-6">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blob-black/55">
+          <header className="rounded-sm border-2 border-blob-sand-deep dark:border-white/10 bg-white dark:bg-[hsl(220_14%_14%)] px-4 py-5 sm:px-6">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blob-black/55 dark:text-white/50">
               Tableau de bord
             </p>
             <h1 className="mt-2 text-2xl font-black uppercase tracking-widest sm:text-3xl">

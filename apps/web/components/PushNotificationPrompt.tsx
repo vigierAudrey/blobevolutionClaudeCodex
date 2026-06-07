@@ -28,25 +28,25 @@ export default function PushNotificationPrompt() {
     <div className={`fixed bottom-4 left-4 right-4 md:left-auto md:max-w-md z-50 transition-all duration-500 ease-in-out ${
       isAnimating ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'
     }`}>
-      <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4 space-y-3">
+      <div className="bg-white dark:bg-[hsl(220_14%_14%)] border border-blob-sand-deep dark:border-white/10 rounded-sm shadow-lg p-4 space-y-3">
         {/* Header */}
         <div className="flex items-start space-x-3">
           <div className="flex-shrink-0">
-            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-blob-yellow/20 dark:bg-blob-yellow/15 rounded-full flex items-center justify-center">
               <span className="text-lg">🔔</span>
             </div>
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-blob-black dark:text-white">
               Activer les notifications ?
             </h3>
-            <p className="text-xs text-gray-600 mt-1">
+            <p className="text-xs text-blob-black/60 dark:text-white/55 mt-1">
               Reçois des alertes pour tes cours et messages importants
             </p>
           </div>
           <button
             onClick={handleDismiss}
-            className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+            className="flex-shrink-0 text-blob-black/40 dark:text-white/40 hover:text-blob-black dark:hover:text-white transition-colors"
             aria-label="Fermer"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -57,15 +57,15 @@ export default function PushNotificationPrompt() {
 
         {/* Benefits */}
         <div className="space-y-1">
-          <div className="flex items-center text-xs text-gray-600">
+          <div className="flex items-center text-xs text-blob-black/60 dark:text-white/55">
             <span className="mr-2">🏄</span>
             <span>Confirmations de cours</span>
           </div>
-          <div className="flex items-center text-xs text-gray-600">
+          <div className="flex items-center text-xs text-blob-black/60 dark:text-white/55">
             <span className="mr-2">💬</span>
             <span>Nouveaux messages</span>
           </div>
-          <div className="flex items-center text-xs text-gray-600">
+          <div className="flex items-center text-xs text-blob-black/60 dark:text-white/55">
             <span className="mr-2">⏰</span>
             <span>Rappels avant les cours</span>
           </div>
@@ -75,13 +75,13 @@ export default function PushNotificationPrompt() {
         <div className="flex space-x-2 pt-2">
           <button
             onClick={handleDismiss}
-            className="flex-1 px-3 py-2 text-xs text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+            className="flex-1 px-3 py-2 text-xs text-blob-black/60 dark:text-white/55 border border-blob-sand-deep dark:border-white/15 rounded-sm hover:bg-blob-sand dark:hover:bg-white/6 transition-colors"
           >
             Pas maintenant
           </button>
           <button
             onClick={handleAccept}
-            className="flex-1 px-3 py-2 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            className="flex-1 px-3 py-2 text-xs bg-blob-yellow text-blob-black font-bold rounded-sm hover:bg-blob-yellow-dark transition-colors"
           >
             Activer
           </button>
@@ -106,19 +106,19 @@ export function CompactPushPrompt({
   className?: string;
 }) {
   return (
-    <div className={`bg-blue-50 border border-blue-200 rounded-lg p-3 ${className}`}>
+    <div className={`bg-blob-sand dark:bg-[hsl(220_14%_14%)] border border-blob-sand-deep dark:border-white/10 rounded-sm p-3 ${className}`}>
       <div className="flex items-center space-x-2">
-        <span className="text-blue-600">🔔</span>
-        <p className="text-sm text-blue-800 flex-1">{message}</p>
+        <span>🔔</span>
+        <p className="text-sm text-blob-black dark:text-white flex-1">{message}</p>
         <button
           onClick={onAccept}
-          className="text-xs bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 transition-colors"
+          className="text-xs bg-blob-yellow text-blob-black font-bold px-3 py-1 rounded-sm hover:bg-blob-yellow-dark transition-colors"
         >
           Activer
         </button>
         <button
           onClick={onDismiss}
-          className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+          className="text-xs text-blob-black/55 dark:text-white/50 hover:text-blob-black dark:hover:text-white transition-colors"
         >
           ✕
         </button>
@@ -155,16 +155,16 @@ export function PushNotificationToggle() {
   };
 
   return (
-    <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+    <div className="flex items-center justify-between p-4 border border-blob-sand-deep dark:border-white/10 rounded-sm bg-white dark:bg-[hsl(220_14%_14%)]">
       <div className="flex items-start space-x-3">
-        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+        <div className="w-8 h-8 bg-blob-yellow/20 dark:bg-blob-yellow/15 rounded-full flex items-center justify-center">
           <span className="text-sm">🔔</span>
         </div>
         <div>
-          <h3 className="text-sm font-medium text-gray-900">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-blob-black dark:text-white">
             Notifications push
           </h3>
-          <p className="text-xs text-gray-600">
+          <p className="text-xs text-blob-black/60 dark:text-white/55">
             Reçois des alertes pour tes cours et messages
           </p>
         </div>
@@ -172,8 +172,8 @@ export function PushNotificationToggle() {
       <button
         onClick={handleToggle}
         disabled={isLoading}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-          isEnabled ? 'bg-blue-600' : 'bg-gray-200'
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blob-yellow focus:ring-offset-2 ${
+          isEnabled ? 'bg-blob-yellow' : 'bg-blob-sand-deep dark:bg-white/20'
         } ${isLoading ? 'opacity-50' : ''}`}
       >
         <span
