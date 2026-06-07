@@ -28,16 +28,20 @@ function requestWithAdminCookie(value?: string) {
   } as never;
 }
 
+function setNodeEnv(value: string | undefined): void {
+  Object.defineProperty(process.env, 'NODE_ENV', { value, writable: true, configurable: true });
+}
+
 describe('/api/blobosphere/posts/[category]/[slug] route', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
-    process.env.NODE_ENV = originalNodeEnv;
+    setNodeEnv(originalNodeEnv);
     jest.clearAllMocks();
   });
 
   it('does not expose raw MDX outside development', async () => {
-    process.env.NODE_ENV = 'production';
+    setNodeEnv('production');
 
     const response = await GET(requestWithAdminCookie(), {
       params: Promise.resolve({ category: 'surf', slug: 'draft' }),
@@ -50,7 +54,7 @@ describe('/api/blobosphere/posts/[category]/[slug] route', () => {
   });
 
   it('requires an admin session cookie in development', async () => {
-    process.env.NODE_ENV = 'development';
+    setNodeEnv('development');
 
     const response = await GET(requestWithAdminCookie(), {
       params: Promise.resolve({ category: 'surf', slug: 'draft' }),
