@@ -40,12 +40,12 @@ export default function MatchingPage() {
 
         // Vérifier si le profil est complet avant d'accéder au matching
         const [profile, disciplines] = await Promise.all([
-          apiClient.getProfile() as Promise<Partial<DashboardUser> & { displayName?: string | null; photoUrl?: string | null }>,
+          apiClient.getProfile() as Promise<Partial<DashboardUser> & { displayName?: string | null; hasPhoto?: boolean }>,
           apiClient.getDisciplines().catch(() => []) as Promise<Array<{ sport: Sport; level: Level }>>,
         ]);
 
         const hasName = Boolean(profile?.displayName);
-        const hasPhoto = Boolean(profile?.photoUrl);
+        const hasPhoto = Boolean(profile?.hasPhoto);
         const hasDiscipline = Array.isArray(disciplines) && disciplines.length > 0;
         const incomplete = !hasName || !hasPhoto || !hasDiscipline;
 

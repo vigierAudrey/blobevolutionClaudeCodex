@@ -156,7 +156,7 @@ const mockUser = {
 
 const mockUserProfile = {
   displayName: 'Test User',
-  photoUrl: 'https://example.com/photo.jpg',
+  hasPhoto: true,
 };
 
 const mockDisciplines: DisciplinesResponse = [
@@ -266,7 +266,7 @@ describe('Matching Cards Component', () => {
     });
 
     it('should redirect to onboarding if incomplete profile', async () => {
-      mockApiClient.getProfile.mockResolvedValue({ displayName: null, photoUrl: null });
+      mockApiClient.getProfile.mockResolvedValue({ displayName: null, hasPhoto: false });
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));

@@ -111,7 +111,7 @@ export default function ProfilePage() {
     return summaries[consentLevel] ?? summaries.none;
   }, [consentLevel]);
   // Photo upload + preview
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoEndpoint, setPhotoEndpoint] = useState<string | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [deletePhotoModalOpen, setDeletePhotoModalOpen] = useState(false);
@@ -203,7 +203,6 @@ export default function ProfilePage() {
     const loadProfile = async () => {
       try {
         const profile = (await apiClient.getProfile()) as UserProfile & {
-          photoUrl?: string | null;
           lat?: number | null;
           lng?: number | null;
         };
@@ -212,7 +211,7 @@ export default function ProfilePage() {
         setBio(profile.bio ?? '');
         setSex(genderToLabel(profile.sex));
         setEmailNotif(Boolean(profile.emailNotif));
-        setPhotoUrl(profile.photoUrl ?? null);
+        setPhotoEndpoint(profile.photoEndpoint ?? null);
         setPhotoPreviewUrl((previous) => {
           if (previous) URL.revokeObjectURL(previous);
           return null;
@@ -234,20 +233,20 @@ export default function ProfilePage() {
   }, [router]);
 
   useEffect(() => {
-    setHasEverHadPhoto((prev) => prev || Boolean(photoUrl));
-  }, [photoUrl]);
+    setHasEverHadPhoto((prev) => prev || Boolean(photoEndpoint));
+  }, [photoEndpoint]);
 
   // Disciplines state
   const [surfLevel, setSurfLevel] = useState<LevelOption>('');
   const [kiteLevel, setKiteLevel] = useState<LevelOption>('');
   const [showDashboardShortcut, setShowDashboardShortcut] = useState(false);
 
-  const displayedPhotoSrc = photoPreviewUrl ?? photoUrl;
+  const displayedPhotoSrc = photoPreviewUrl ?? photoEndpoint;
   const photoAlt = useMemo(
     () => (displayName ? `Photo de ${displayName}` : 'Photo du profil'),
     [displayName],
   );
-  const showPhotoWarning = hasEverHadPhoto && !photoPreviewUrl && !photoUrl;
+  const showPhotoWarning = hasEverHadPhoto && !photoPreviewUrl && !photoEndpoint;
 
   useEffect(() => {
     let isMounted = true;
@@ -290,7 +289,7 @@ export default function ProfilePage() {
     setRemovingPhoto(true);
     try {
       await apiClient.updateProfile({ photoUrl: null });
-      setPhotoUrl(null);
+      setPhotoEndpoint(null);
       setPhotoPreviewUrl((previous) => {
         if (previous) URL.revokeObjectURL(previous);
         return null;
@@ -435,7 +434,7 @@ export default function ProfilePage() {
       emailNotif,
     };
 
-    let nextPhotoUrl = photoUrl;
+    let nextPhotoEndpoint = photoEndpoint;
 
     try {
       // Auth via httpOnly cookie — no hint check, no Authorization header.
@@ -457,7 +456,7 @@ export default function ProfilePage() {
         if (!putResponse.ok) {
           throw new Error('Échec du téléversement');
         }
-        // Finalize: valide le contenu côté serveur et retourne la photoUrl officielle
+        // Finalize: valide le contenu côté serveur — retourne l'endpoint API de la photo
         const finalizeResponse = await apiRequest('/profile/photo/finalize', {
           method: 'POST',
           body: JSON.stringify({ key: uploadData.key }),
@@ -465,11 +464,11 @@ export default function ProfilePage() {
         if (!finalizeResponse.ok) {
           throw new Error('Échec de la validation de la photo');
         }
-        const { photoUrl: finalizedUrl } = (await finalizeResponse.json()) as { photoUrl: string };
-        // photoUrl est déjà sauvée en DB par /finalize — ne pas la repasser à updateProfile
+        const { photoEndpoint: finalizedEndpoint } = (await finalizeResponse.json()) as { hasPhoto: boolean; photoEndpoint: string | null };
+        // Photo sauvée en DB par /finalize — ne pas la repasser à updateProfile
         // (le schéma PUT /profile/me n'accepte que null, pas une string arbitraire)
-        nextPhotoUrl = finalizedUrl;
-        setPhotoUrl(finalizedUrl);
+        nextPhotoEndpoint = finalizedEndpoint ?? null;
+        setPhotoEndpoint(finalizedEndpoint ?? null);
         setPhotoPreviewUrl((previous) => {
           if (previous) URL.revokeObjectURL(previous);
           return null;
@@ -490,7 +489,7 @@ export default function ProfilePage() {
 
       const nextDisplayName = (payload.displayName ?? displayName ?? '').trim();
       const hasDisplayName = nextDisplayName.length > 0;
-      const hasPhoto = Boolean(nextPhotoUrl);
+      const hasPhoto = Boolean(nextPhotoEndpoint);
       const hasDisciplines = disciplinesPayload.length > 0;
 
       toast('Profil sauvegardé', 'success');
@@ -572,9 +571,9 @@ export default function ProfilePage() {
                       />
                       <p className="text-xs text-blob-black/56">JPG, PNG ou WebP. 5 Mo maximum.</p>
                     </div>
-                    {(photoUrl || showPhotoWarning) && (
+                    {(photoEndpoint || showPhotoWarning) && (
                       <div className="w-full space-y-2">
-                        {photoUrl && (
+                        {photoEndpoint && (
                           <BlobButton
                             type="button"
                             variant="outlineDark"

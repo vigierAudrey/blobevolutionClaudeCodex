@@ -76,7 +76,7 @@ export default function DashboardPage() {
           setDisplayName(p.displayName);
         }
         const hasName = !!p?.displayName;
-        const hasPhoto = !!p?.photoUrl;
+        const hasPhoto = Boolean(p?.hasPhoto);
         const hasDiscipline = Array.isArray(d) && d.length > 0;
         const incomplete = !hasName || !hasPhoto || !hasDiscipline;
         if (incomplete) {

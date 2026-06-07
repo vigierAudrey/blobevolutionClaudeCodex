@@ -37,7 +37,8 @@ const fullProfile = {
   displayName: 'Blobmama',
   bio: 'Surfeuse depuis 10 ans',
   sex: 'FEMALE' as const,
-  photoUrl: 'https://cdn.example.com/photo.jpg',
+  hasPhoto: true,
+  photoEndpoint: '/media/users/user-abc/photo',
   wantsLesson: false,
   lessonPlace: null,
   lessonDate: null,
@@ -128,11 +129,12 @@ describe('ProfilePreviewPage', () => {
       expect(screen.getByTestId('profile-display-name')).toHaveTextContent('Blobmama');
     });
 
-    it('renders photo when photoUrl is set', async () => {
+    it('renders photo when hasPhoto is true', async () => {
       render(<ProfilePreviewPage />);
       await waitFor(() => screen.getByTestId('preview-banner'));
       const img = screen.getByRole('img', { name: 'Blobmama' });
-      expect(img).toHaveAttribute('src', 'https://cdn.example.com/photo.jpg');
+      // resolveProfilePhotoSrc converts /media/users/:id/photo → ${API_URL}/media/users/:id/photo
+      expect(img).toHaveAttribute('src', expect.stringContaining('/media/users/user-abc/photo'));
     });
 
     it('renders discipline badge', async () => {
@@ -173,12 +175,12 @@ describe('ProfilePreviewPage', () => {
       expect(html).not.toContain('emailNotif');
     });
 
-    it('does not render internal IDs', async () => {
+    it('does not render internal DB profile id', async () => {
       render(<ProfilePreviewPage />);
       await waitFor(() => screen.getByTestId('preview-banner'));
       const html = document.body.innerHTML;
-      // userId and profile id must not leak into the rendered output
-      expect(html).not.toContain('user-abc');
+      // DB profile id must not leak into the rendered output
+      // Note: userId appears in the photo media URL by design (API proxy endpoint)
       expect(html).not.toContain('profile-xyz');
     });
 
@@ -195,7 +197,8 @@ describe('ProfilePreviewPage', () => {
       (apiClient.getProfile as jest.Mock).mockResolvedValue({
         ...fullProfile,
         displayName: null,
-        photoUrl: null,
+        hasPhoto: false,
+        photoEndpoint: null,
       });
       (apiClient.getDisciplines as jest.Mock).mockResolvedValue([]);
       render(<ProfilePreviewPage />);
