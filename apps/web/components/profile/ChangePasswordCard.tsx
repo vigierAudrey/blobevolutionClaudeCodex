@@ -58,16 +58,17 @@ export function ChangePasswordCard() {
       >
         <div className="space-y-1.5">
           <h3 className="text-base font-black uppercase tracking-widest">Sécurité du compte</h3>
-          <p className="text-sm leading-6 text-blob-black/64">
+          <p className="text-sm leading-6 text-blob-black/64 dark:text-white/60">
             Modifie ton mot de passe actuel. Tous les appareils seront déconnectés après mise à jour.
           </p>
         </div>
-        <span className="ml-4 text-xs font-black uppercase tracking-widest text-blob-black/64">
+        <span className="ml-4 text-xs font-black uppercase tracking-widest text-blob-black/64 dark:text-white/55">
           {isOpen ? 'Masquer' : 'Modifier'}
         </span>
+
       </button>
       {isOpen && (
-        <div className="mt-5 border-t-2 border-blob-sand-deep pt-5">
+        <div className="mt-5 border-t-2 border-blob-sand-deep dark:border-white/10 pt-5">
           <form onSubmit={onSubmit} className="space-y-4">
             <BlobInput
               id="current-password"

@@ -146,16 +146,16 @@ export function ContactRequests() {
             data-testid={`contact-request-${req.id}`}
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand font-black text-blob-black">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-sm border-2 border-blob-black dark:border-white/30 bg-blob-sand dark:bg-[hsl(220_14%_18%)] font-black text-blob-black dark:text-white">
                 {proName.charAt(0).toUpperCase()}
               </div>
 
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-blob-black">
+                <div className="text-sm font-medium text-blob-black dark:text-white">
                   <span className="font-semibold">{proName}</span> souhaite vous contacter
                 </div>
                 {req.message && (
-                  <div className="mt-0.5 line-clamp-2 text-xs text-blob-black/56">
+                  <div className="mt-0.5 line-clamp-2 text-xs text-blob-black/56 dark:text-white/55">
                     {req.message}
                   </div>
                 )}
@@ -187,7 +187,7 @@ export function ContactRequests() {
                   </BlobButton>
                 </div>
               ) : state.kind === 'done' ? (
-                <div className="flex flex-shrink-0 items-center gap-1 text-xs text-green-900">
+                <div className="flex flex-shrink-0 items-center gap-1 text-xs text-green-900 dark:text-green-400">
                   <Check size={14} />
                   {state.finalStatus === 'ACCEPTED' ? 'Mise en relation ouverte' : state.finalStatus === 'REJECTED' ? 'Non retenue' : 'Enregistré'}
                 </div>
@@ -195,18 +195,18 @@ export function ContactRequests() {
             </div>
 
             {state.kind === 'loading' && (
-              <div className="flex items-center gap-1.5 pl-13 text-xs text-blob-black/56">
+              <div className="flex items-center gap-1.5 pl-13 text-xs text-blob-black/56 dark:text-white/55">
                 <Clock size={12} className="animate-spin" />
                 {state.action === 'ACCEPT' ? 'Ouverture de la mise en relation…' : 'Réponse en cours…'}
               </div>
             )}
 
             {state.kind === 'done' && (
-              <p className="pl-13 text-xs text-green-900">{state.label}</p>
+              <p className="pl-13 text-xs text-green-900 dark:text-green-400">{state.label}</p>
             )}
 
             {state.kind === 'error' && (
-              <div className="flex items-center justify-between pl-13 text-xs text-red-700">
+              <div className="flex items-center justify-between pl-13 text-xs text-red-700 dark:text-red-400">
                 <span>{state.message}</span>
                 {state.retryable && (
                   <button
