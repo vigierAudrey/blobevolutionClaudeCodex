@@ -118,10 +118,10 @@ nécessaires aux checks authentifiés, matching, messagerie et photo; il ne modi
 pas la policy MinIO.
 
 Le smoke de déploiement valide l'upload par URL présignée, le blocage XSS Caddy,
-le CORS storage et l'absence de lecture anonyme large sur `users/*`. La policy
-publique restreinte `pros/*` reste une opération séparée du runbook
-`docs/runbooks/vps-runtime.md` et ne doit pas être appliquée implicitement par le
-déploiement.
+le CORS storage et l'absence de lecture anonyme non contrôlée. La policy publique
+attendue est désormais `pros/*` uniquement — voir `docs/runbooks/vps-runtime.md`.
+`users/*` doit rester privé en lecture anonyme. La policy ne doit pas être
+réappliquée ou écrasée implicitement par le déploiement.
 
 Le check d'email réel est optionnel par défaut (`SMOKE_EMAIL_REAL=0`) et son
 skip ne bloque pas le déploiement. À l'inverse, le skip TLS strict reste

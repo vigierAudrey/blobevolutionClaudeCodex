@@ -184,6 +184,11 @@ Definition of Done P0 :
 - Monitoring uptime + metrics + disque relié à un canal d'alerte.
 - Cron ops aligné uniquement sur des scripts existants.
 
+Contribution 2026-06-07 :
+
+- [x] MinIO fixtures média local/test : images WebP synthétiques sans données personnelles, script d'upload/vérification sans modification de policy, cible `pros/*` public et `users/*` privé.
+- Risque : vérifier les environnements historiques qui auraient ouvert `users/*` en lecture anonyme et reposer une policy `pros/*` seulement après validation humaine.
+
 ## 6. Chantiers P1
 
 Les P1 soutiennent l'acquisition, la qualité du MVP et l'exploitation produit.
