@@ -227,9 +227,9 @@ export default function DashboardPage() {
       ]}
     >
       <div className="space-y-6 pb-8">
-        <div className="rounded-sm border-2 border-blob-black bg-white p-4 sm:p-5">
+        <div className="rounded-sm border-2 border-blob-black dark:border-white/20 bg-white dark:bg-[hsl(220_14%_14%)] p-4 sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-2xl text-sm leading-6 text-blob-black/72">
+            <p className="max-w-2xl text-sm leading-6 text-blob-black/72 dark:text-white/70">
               Prêt·e pour ta prochaine session ? Explore, connecte, ride.
             </p>
             <div className="flex flex-wrap items-center gap-2">
@@ -280,7 +280,7 @@ export default function DashboardPage() {
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
-          <h2 className="text-lg font-black uppercase tracking-widest text-blob-black">Ride à deux</h2>
+          <h2 className="text-lg font-black uppercase tracking-widest text-blob-black dark:text-white">Ride à deux</h2>
         </div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {/* Matching */}
@@ -294,17 +294,17 @@ export default function DashboardPage() {
                     </span>
                     <div>
                       <h3 className="text-2xl font-black uppercase tracking-widest">Matching</h3>
-                      <p className="mt-1 text-sm text-blob-black/64">Trouve des partenaires proches</p>
+                      <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Trouve des partenaires proches</p>
                     </div>
                   </div>
                   {hasMatchingShortcut && (
                     <BlobBadge variant="yellow">Reprise</BlobBadge>
                   )}
                 </div>
-                <p className="text-sm leading-6 text-blob-black/72">
+                <p className="text-sm leading-6 text-blob-black/72 dark:text-white/70">
                   {matchingCardText}
                 </p>
-                <span className="mt-auto inline-flex items-center gap-2 text-sm font-black uppercase tracking-widest text-blob-black transition-all group-hover:gap-3">
+                <span className="mt-auto inline-flex items-center gap-2 text-sm font-black uppercase tracking-widest text-blob-black dark:text-white transition-all group-hover:gap-3">
                   {matchingCtaLabel}
                   <span aria-hidden="true">→</span>
                 </span>
@@ -318,7 +318,7 @@ export default function DashboardPage() {
               <div className="flex h-full flex-col gap-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <span className="relative flex h-11 w-11 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-black text-white">
+                    <span className="relative flex h-11 w-11 items-center justify-center rounded-sm border-2 border-blob-black dark:border-white/40 bg-blob-black text-white">
                       <MessageSquare size={24} />
                       {unreadTotal > 0 && (
                         <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-sm border-2 border-white bg-red-600 px-1 text-[10px] font-black text-white">
@@ -335,14 +335,14 @@ export default function DashboardPage() {
                           </BlobBadge>
                         )}
                       </h3>
-                      <p className="mt-1 text-sm text-blob-black/64">Tes conversations</p>
+                      <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Tes conversations</p>
                     </div>
                   </div>
                 </div>
-                <p className="text-sm leading-6 text-blob-black/72">
+                <p className="text-sm leading-6 text-blob-black/72 dark:text-white/70">
                   Discute avec tes matchs, organise les détails de vos sessions.
                 </p>
-                <span className="mt-auto inline-flex items-center gap-2 text-sm font-black uppercase tracking-widest text-blob-black transition-all group-hover:gap-3">
+                <span className="mt-auto inline-flex items-center gap-2 text-sm font-black uppercase tracking-widest text-blob-black dark:text-white transition-all group-hover:gap-3">
                   Voir mes messages
                   <span aria-hidden="true">→</span>
                 </span>
@@ -356,20 +356,20 @@ export default function DashboardPage() {
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
-          <h2 className="text-lg font-black uppercase tracking-widest text-blob-black">Progresser avec un pro</h2>
+          <h2 className="text-lg font-black uppercase tracking-widest text-blob-black dark:text-white">Progresser avec un pro</h2>
         </div>
         <BlobCard className="bg-white">
           <div className="flex flex-col gap-5">
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand text-blob-black">
+              <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black dark:border-white/30 bg-blob-sand dark:bg-white/10 text-blob-black dark:text-white">
                 <GraduationCap size={20} />
               </span>
               <div>
                 <h3 className="flex items-center gap-2 text-xl font-black uppercase tracking-widest">
                   Cours & Bons Plans
-                  <Tag size={16} className="text-blob-black/60" />
+                  <Tag size={16} className="text-blob-black/60 dark:text-white/50" />
                 </h3>
-                <p className="mt-1 text-sm text-blob-black/64">Trouve un moniteur ou profite de promos exclusives</p>
+                <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Trouve un moniteur ou profite de promos exclusives</p>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -381,7 +381,7 @@ export default function DashboardPage() {
                   </Link>
                 </BlobButton>
                 <div className="absolute bottom-full left-1/2 z-50 mb-3 w-72 -translate-x-1/2 opacity-0 transition-opacity duration-200 group-hover/tooltip:opacity-100 pointer-events-none">
-                  <div className="rounded-sm border-2 border-blob-black bg-white px-4 py-3 text-blob-black shadow-lg">
+                  <div className="rounded-sm border-2 border-blob-black dark:border-white/20 bg-white dark:bg-[hsl(220_14%_14%)] px-4 py-3 text-blob-black dark:text-white shadow-lg">
                     <p className="text-sm font-medium leading-relaxed">
                       Les pros voient ta demande sur leur BloboMap et peuvent te proposer un cours adapté à ton niveau.
                     </p>
@@ -407,15 +407,15 @@ export default function DashboardPage() {
           <BlobCard className="h-full bg-white">
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-sand text-blob-black">
+                <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black dark:border-white/30 bg-blob-sand dark:bg-white/10 text-blob-black dark:text-white">
                   <BookOpen size={20} />
                 </span>
                 <div>
                   <h3 className="text-xl font-black uppercase tracking-widest">Blobosphère</h3>
-                  <p className="mt-1 text-sm text-blob-black/64">Guides & conseils riders</p>
+                  <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Guides & conseils riders</p>
                 </div>
               </div>
-              <p className="text-sm leading-6 text-blob-black/72">
+              <p className="text-sm leading-6 text-blob-black/72 dark:text-white/70">
                 Équipement, environnement, santé : tout pour rider en conscience.
               </p>
             </div>
@@ -432,10 +432,10 @@ export default function DashboardPage() {
                 </span>
                 <div>
                   <h3 className="text-xl font-black uppercase tracking-widest">Mon Profil</h3>
-                  <p className="mt-1 text-sm text-blob-black/64">Personnalise ton compte</p>
+                  <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Personnalise ton compte</p>
                 </div>
               </div>
-              <p className="text-sm leading-6 text-blob-black/72">
+              <p className="text-sm leading-6 text-blob-black/72 dark:text-white/70">
                 Photo, bio, disciplines : rends ton profil attractif pour le matching.
               </p>
             </div>
@@ -444,16 +444,16 @@ export default function DashboardPage() {
       </section>
 
       {/* À propos - Discret en bas */}
-      <div className="border-t-2 border-blob-sand-deep pt-4">
-        <Link href="/about" className="group flex items-center justify-between rounded-sm border-2 border-transparent p-4 transition-colors hover:border-blob-black hover:bg-white">
+      <div className="border-t-2 border-blob-sand-deep dark:border-white/10 pt-4">
+        <Link href="/about" className="group flex items-center justify-between rounded-sm border-2 border-transparent p-4 transition-colors hover:border-blob-black dark:hover:border-white/40 hover:bg-white dark:hover:bg-white/5">
           <div className="flex items-center gap-3">
-            <Info size={18} className="text-blob-black/64" />
+            <Info size={18} className="text-blob-black/64 dark:text-white/60" />
             <div>
-              <p className="text-sm font-black uppercase tracking-widest">À propos & RGPD</p>
-              <p className="text-xs text-blob-black/64">Sécurité, données et fonctionnement</p>
+              <p className="text-sm font-black uppercase tracking-widest dark:text-white">À propos & RGPD</p>
+              <p className="text-xs text-blob-black/64 dark:text-white/60">Sécurité, données et fonctionnement</p>
             </div>
           </div>
-          <span className="text-blob-black/64 transition-transform group-hover:translate-x-1">→</span>
+          <span className="text-blob-black/64 dark:text-white/60 transition-transform group-hover:translate-x-1">→</span>
         </Link>
       </div>
 
