@@ -100,7 +100,7 @@ export function HomeYellowBar() {
       </div>
 
       <div
-        className="relative overflow-visible border-b border-blob-sand-deep bg-blob-sand"
+        className="relative overflow-visible border-b border-blob-sand-deep dark:border-white/10 bg-blob-sand dark:bg-blob-black"
       >
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-px bg-blob-yellow/80"
@@ -118,9 +118,9 @@ export function HomeYellowBar() {
                 <li
                   key={item.href}
                   className={[
-                    index % 2 === 1 ? 'border-l border-blob-sand-deep' : '',
-                    index > 1 ? 'border-t border-blob-sand-deep' : '',
-                    index > 0 ? 'sm:border-l sm:border-t-0' : '',
+                    index % 2 === 1 ? 'border-l border-blob-sand-deep dark:border-white/10' : '',
+                    index > 1 ? 'border-t border-blob-sand-deep dark:border-white/10' : '',
+                    index > 0 ? 'sm:border-l sm:border-t-0 dark:sm:border-white/10' : '',
                   ].join(' ')}
                 >
                   <Link
@@ -128,8 +128,8 @@ export function HomeYellowBar() {
                     className={[
                       'group relative flex min-h-[72px] items-center justify-center gap-2.5 text-left',
                       'px-3 py-2 sm:min-h-[68px] sm:px-4 lg:px-5',
-                      'bg-blob-sand',
-                      'hover:bg-white/55',
+                      'bg-blob-sand dark:bg-blob-black',
+                      'hover:bg-white/55 dark:hover:bg-white/6',
                       'transition-colors duration-200 motion-reduce:transition-none',
                       'focus-visible:outline-none focus-visible:ring-2',
                       'focus-visible:ring-inset focus-visible:ring-blob-yellow',
@@ -152,15 +152,15 @@ export function HomeYellowBar() {
                         />
                       )}
                       {Icon && !item.blobLogo && (
-                        <Icon size={16} className="text-blob-black" />
+                        <Icon size={16} className="text-blob-black dark:text-white/80" />
                       )}
                     </span>
 
                     <span className="flex min-w-0 flex-col">
-                      <span className="font-bold uppercase tracking-wide text-blob-black text-[10px] sm:text-[11px] leading-tight">
+                      <span className="font-bold uppercase tracking-wide text-blob-black dark:text-white text-[10px] sm:text-[11px] leading-tight">
                         {item.label}
                       </span>
-                      <span className="hidden max-w-[22ch] pt-0.5 text-[10px] leading-snug text-blob-black/58 sm:block lg:absolute lg:left-1/2 lg:top-[calc(100%-4px)] lg:z-30 lg:w-max lg:max-w-[210px] lg:-translate-x-1/2 lg:rounded-[4px] lg:border lg:border-blob-black/10 lg:bg-white lg:px-2.5 lg:py-1.5 lg:text-center lg:opacity-0 lg:shadow-[0_10px_24px_rgba(17,19,24,0.14)] lg:transition-opacity lg:duration-150 lg:group-hover:opacity-100 lg:group-focus-visible:opacity-100 lg:motion-reduce:transition-none">
+                      <span className="hidden max-w-[22ch] pt-0.5 text-[10px] leading-snug text-blob-black/58 dark:text-white/50 sm:block lg:absolute lg:left-1/2 lg:top-[calc(100%-4px)] lg:z-30 lg:w-max lg:max-w-[210px] lg:-translate-x-1/2 lg:rounded-[4px] lg:border lg:border-blob-black/10 dark:lg:border-white/10 lg:bg-white dark:lg:bg-[hsl(220_14%_16%)] lg:px-2.5 lg:py-1.5 lg:text-center lg:opacity-0 lg:shadow-[0_10px_24px_rgba(17,19,24,0.14)] dark:lg:shadow-[0_10px_24px_rgba(0,0,0,0.5)] lg:transition-opacity lg:duration-150 lg:group-hover:opacity-100 lg:group-focus-visible:opacity-100 lg:motion-reduce:transition-none">
                         {item.description}
                       </span>
                     </span>

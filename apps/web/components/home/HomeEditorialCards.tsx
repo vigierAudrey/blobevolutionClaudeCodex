@@ -78,7 +78,7 @@ export function HomeEditorialCards() {
           <Link
             key={card.n}
             href={card.href}
-            className="group relative flex-1 grid overflow-hidden bg-[#fdfbf2] text-blob-black shadow-[0_1px_0_rgba(0,0,0,0.08)] ring-1 ring-blob-black/10 transition-colors duration-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blob-yellow lg:grid-cols-[1fr_42%]"
+            className="group relative flex-1 grid overflow-hidden bg-blob-sand dark:bg-[hsl(220_14%_14%)] text-blob-black dark:text-white shadow-[0_1px_0_rgba(0,0,0,0.08)] dark:shadow-none ring-1 ring-blob-black/10 dark:ring-white/8 transition-colors duration-300 hover:bg-white dark:hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blob-yellow lg:grid-cols-[1fr_42%]"
             aria-label={`${card.title} — ${card.cta}`}
           >
             {/* Image */}
@@ -91,7 +91,7 @@ export function HomeEditorialCards() {
                 sizes="(min-width: 1024px) 180px, (min-width: 640px) 50vw, 100vw"
               />
               <div
-                className="absolute inset-y-0 left-0 hidden w-12 bg-gradient-to-r from-[#fdfbf2] to-transparent lg:block"
+                className="absolute inset-y-0 left-0 hidden w-12 bg-gradient-to-r from-blob-sand dark:from-[hsl(220_14%_14%)] to-transparent lg:block"
                 aria-hidden
               />
             </div>
@@ -128,19 +128,19 @@ export function HomeEditorialCards() {
                 {Icon && !card.blobLogo && (
                   <Icon
                     size={18}
-                    className="text-blob-black/70 shrink-0"
+                    className="text-blob-black/70 dark:text-white/55 shrink-0"
                     aria-hidden
                   />
                 )}
               </div>
 
               {/* Titre */}
-              <p className="text-blob-black font-black uppercase tracking-wide text-sm sm:text-base lg:text-[15px] xl:text-base leading-tight">
+              <p className="text-blob-black dark:text-white font-black uppercase tracking-wide text-sm sm:text-base lg:text-[15px] xl:text-base leading-tight">
                 {card.title}
               </p>
 
               {/* Description */}
-              <p className="text-blob-black/70 text-[11px] leading-relaxed">
+              <p className="text-blob-black/70 dark:text-white/65 text-[11px] leading-relaxed">
                 {card.description}
               </p>
 

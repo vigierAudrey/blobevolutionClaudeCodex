@@ -74,9 +74,10 @@ export function HomeHeader() {
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <Link
             href="/login"
-            className="hidden sm:inline-flex min-h-9 items-center border border-white/45 bg-blob-black/22 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-white hover:border-blob-yellow hover:text-blob-yellow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm whitespace-nowrap"
+            className="inline-flex min-h-9 items-center border border-white/45 bg-blob-black/22 px-3 sm:px-4 py-2 text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.10em] sm:tracking-[0.12em] text-white hover:border-blob-yellow hover:text-blob-yellow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm whitespace-nowrap"
           >
-            Se connecter
+            <span className="sm:hidden">Connexion</span>
+            <span className="hidden sm:inline">Se connecter</span>
           </Link>
           <BlobButton asChild variant="primaryYellow" size="sm">
             <Link href="/register" className="whitespace-nowrap">

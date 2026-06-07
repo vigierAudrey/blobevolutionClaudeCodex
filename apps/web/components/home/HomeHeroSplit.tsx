@@ -23,7 +23,7 @@ export function HomeHeroSplit() {
   return (
     <section
       aria-label="Blob — La communauté surf & kite du Médoc Atlantique"
-      className="-mx-4 bg-blob-sand sm:-mx-6 lg:-mx-8"
+      className="-mx-4 bg-blob-sand dark:bg-blob-black sm:-mx-6 lg:-mx-8"
     >
       <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_390px] xl:grid-cols-[minmax(0,1fr)_430px]">
 
@@ -87,7 +87,7 @@ export function HomeHeroSplit() {
         {/* ============================================================
             DROITE — 4 cartes éditoriales
         ============================================================ */}
-        <div className="order-2 shrink-0 bg-[#f7f5ed] px-3 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:px-3 lg:pb-3 lg:pt-[96px] xl:px-4 xl:pb-4 xl:pt-[100px] border-t border-blob-black/10 lg:border-t-0 lg:border-l lg:border-white/70">
+        <div className="order-2 shrink-0 bg-blob-sand dark:bg-[hsl(220_14%_12%)] px-3 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:px-3 lg:pb-3 lg:pt-[96px] xl:px-4 xl:pb-4 xl:pt-[100px] border-t border-blob-black/10 dark:border-white/10 lg:border-t-0 lg:border-l lg:border-white/70 dark:lg:border-white/15">
           <HomeEditorialCards />
         </div>
 
