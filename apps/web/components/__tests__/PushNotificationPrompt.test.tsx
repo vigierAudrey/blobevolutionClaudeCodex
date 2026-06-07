@@ -114,16 +114,16 @@ describe('PushNotificationToggle', () => {
     render(<PushNotificationToggle />);
 
     const toggle = screen.getByRole('button', { hidden: true });
-    expect(toggle.className).toMatch(/bg-gray-200/);
+    expect(toggle.className).toMatch(/bg-blob-sand-deep/);
 
     await act(async () => {
       await user.click(toggle);
     });
-    expect(toggle.className).toMatch(/bg-blue-600/);
+    expect(toggle.className).toMatch(/bg-blob-yellow/);
 
     await act(async () => {
       await user.click(toggle);
     });
-    expect(toggle.className).toMatch(/bg-gray-200/);
+    expect(toggle.className).toMatch(/bg-blob-sand-deep/);
   });
 });
