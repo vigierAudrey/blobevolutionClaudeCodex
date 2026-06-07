@@ -8,10 +8,10 @@ export type BlobAlertProps = {
 };
 
 const variantClass: Record<NonNullable<BlobAlertProps['variant']>, string> = {
-  info: 'border-blob-black/30 bg-white text-blob-black',
-  success: 'border-green-800 bg-green-50 text-green-950',
-  warning: 'border-blob-yellow-dark bg-blob-yellow/20 text-blob-black',
-  error: 'border-red-800 bg-red-50 text-red-950',
+  info: 'border-blob-black/30 dark:border-white/20 bg-white dark:bg-[hsl(220_14%_14%)] text-blob-black dark:text-white',
+  success: 'border-green-800 bg-green-50 text-green-950 dark:border-green-500 dark:bg-green-950/40 dark:text-green-100',
+  warning: 'border-blob-yellow-dark bg-blob-yellow/20 dark:bg-blob-yellow/10 text-blob-black dark:text-white',
+  error: 'border-red-800 bg-red-50 text-red-950 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100',
 };
 
 const labelByVariant: Record<NonNullable<BlobAlertProps['variant']>, string> = {

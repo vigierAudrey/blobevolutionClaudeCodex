@@ -49,10 +49,12 @@ const blobButtonVariants = cva(
           'hover:bg-white/10 ' +
           'hover:shadow-[0_4px_16px_rgba(255,255,255,0.12)]',
 
-        /* Outline noir — secondaire sur fond sable */
+        /* Outline noir — secondaire sur fond sable ; outline blanc en dark */
         outlineDark:
           'bg-transparent text-blob-black border-blob-black ' +
+          'dark:text-white dark:border-white/70 ' +
           'hover:bg-blob-black hover:text-white ' +
+          'dark:hover:bg-white/15 dark:hover:border-white ' +
           'hover:shadow-[0_4px_16px_rgba(0,0,0,0.20)]',
 
         /* Mode Yellow Signal — bouton noir sur fond jaune */
