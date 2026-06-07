@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env.vps}"
 COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.blobsurf.yml}"
-MC_IMAGE="${MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-09-11T05-28-16Z}"
+MC_IMAGE="${MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z}"
 ALIAS="${MINIO_ALIAS:-minio}"
 PREFIXES="${PUBLIC_READ_PREFIXES:-pros/*}"
 DRY_RUN=0
@@ -142,17 +142,12 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-NETWORK="$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" config --format json \
-  | node -e '
-const fs = require("fs");
-const cfg = JSON.parse(fs.readFileSync(0, "utf8"));
-const service = cfg.services?.minio;
-const networks = service?.networks ? Object.keys(service.networks) : [];
-if (!networks.length) process.exit(1);
-const project = cfg.name || "blobconnect-blobsurf";
-const name = networks[0].startsWith(project + "_") ? networks[0] : `${project}_${networks[0]}`;
-process.stdout.write(name);
-' )"
+MINIO_CONTAINER="$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps -q minio)"
+[ -n "$MINIO_CONTAINER" ] || { echo "MinIO container not found" >&2; exit 1; }
+
+NETWORK="$(docker inspect -f '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$MINIO_CONTAINER" \
+  | head -n 1)"
+[ -n "$NETWORK" ] || { echo "MinIO Docker network not found" >&2; exit 1; }
 
 MINIO_INT_URL="http://${S3_ACCESS_KEY_ID}:${S3_SECRET_ACCESS_KEY}@minio:9000"
 

@@ -114,8 +114,7 @@ Le workflow refuse de démarrer si le worktree VPS contient des changements loca
 
 Le seed canari est ciblé sur les comptes `@pre-vps.blobinfini.local` référencés
 par le smoke test. Il prépare les sessions RIDER, le match actif et les profils
-nécessaires aux checks authentifiés, matching, messagerie et photo; il ne modifie
-pas la policy MinIO.
+nécessaires aux checks authentifiés, matching, messagerie et photo.
 
 Le smoke de déploiement valide l'upload par URL présignée, le blocage XSS Caddy,
 le CORS storage et l'absence de lecture anonyme non contrôlée. La policy publique

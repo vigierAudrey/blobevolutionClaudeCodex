@@ -132,6 +132,20 @@ jobs:
           PREV_SHA="$(git rev-parse HEAD)"
           echo "Previous SHA: $PREV_SHA"
 
+          restart_caddy() {
+            caddy_container="$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps -q caddy)"
+            [ -n "$caddy_container" ] || fail "caddy container not found"
+
+            docker exec "$caddy_container" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            if ! docker restart "$caddy_container"; then
+              echo "Caddy restart reported a non-zero exit code; checking container state before failing." >&2
+            fi
+
+            sleep 3
+            caddy_running="$(docker inspect -f '{{.State.Running}}' "$caddy_container" 2>/dev/null || true)"
+            [ "$caddy_running" = "true" ] || fail "caddy container is not running after restart"
+          }
+
           rollback() {
             status=$?
             if [ "$status" -eq 0 ]; then
@@ -142,7 +156,7 @@ jobs:
             git reset --hard "$PREV_SHA"
             docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build api web
             docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
-            docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --force-recreate caddy
+            restart_caddy
             exit "$status"
           }
           trap rollback EXIT
@@ -161,16 +175,19 @@ jobs:
 
           docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 
-          # Caddy uses a pre-built image so `up -d` leaves it running with its
-          # in-memory config. The Caddyfile is bind-mounted, meaning the new
-          # file is on disk after `git reset --hard`, but Caddy must be
-          # force-recreate picks up the new bind-mounted Caddyfile (restart would reuse cached config).
-          docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --force-recreate caddy
-
           set -a
           # shellcheck disable=SC1091
           . "$ENV_FILE"
           set +a
+
+          ENV_FILE="$ENV_FILE" \
+          COMPOSE_FILE="$COMPOSE_FILE" \
+          PUBLIC_READ_PREFIXES="${PUBLIC_READ_PREFIXES:-pros/*}" \
+            ./scripts/minio-public-prefix-policy.sh
+
+          # Caddy's admin API is disabled in production, so validate the
+          # bind-mounted Caddyfile and restart the container directly.
+          restart_caddy
 
           SMOKE_API_BASE_URL="${API_BASE_URL:-}"
           if [ -z "$SMOKE_API_BASE_URL" ]; then
