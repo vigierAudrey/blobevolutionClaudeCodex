@@ -194,8 +194,8 @@ export default function ProProfilePage() {
             setNotificationPrefs((prev) => ({ ...prev, ...data.preferences }));
           }
         }
-      } catch (error) {
-        console.error('Error loading notification preferences:', error);
+      } catch {
+        // silent: preference loading is non-blocking
       } finally {
         setLoadingNotifPrefs(false);
       }
@@ -303,8 +303,8 @@ export default function ProProfilePage() {
         const data = await response.json();
         setDeletionStatus(data);
       }
-    } catch (error) {
-      console.error('Error checking deletion status:', error);
+    } catch {
+      // silent: deletion status is shown only when available
     }
   }, [ensureAuthenticated]);
 
@@ -501,15 +501,13 @@ export default function ProProfilePage() {
             window.localStorage.removeItem('cookie-consent');
           }
           window.dispatchEvent(new Event(COOKIE_CONSENT_REOPEN_EVENT));
-        } catch (error) {
-          console.warn('Impossible de rouvrir immédiatement la fenêtre de consentement', error);
+        } catch {
           toast('Erreur lors de la réinitialisation. Rafraîchissez la page.', 'error');
           // Reload seulement en dernier recours après 2 secondes
           setTimeout(() => window.location.reload(), 2000);
         }
       }
-    } catch (error) {
-      console.error('Erreur handleReopenCookieConsent:', error);
+    } catch {
       toast('Erreur lors de la réinitialisation des préférences.', 'error');
     }
   };
@@ -625,7 +623,7 @@ export default function ProProfilePage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
         </div>
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-foreground">Profil Professionnel 💼</h1>
           <p className="text-sm text-muted-foreground">Gère tes informations visibles par les clients</p>
         </div>
@@ -674,13 +672,20 @@ export default function ProProfilePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Photo/Logo</Label>
+                  <label
+                    htmlFor="pro-photo-upload"
+                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-amber-600 bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700"
+                  >
+                    {file ? '✓ Photo sélectionnée' : photoUrl ? 'Changer ma photo / logo' : 'Choisir une photo / logo'}
+                  </label>
                   <input
+                    id="pro-photo-upload"
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/gif"
                     onChange={onPick}
-                    aria-label="Sélectionner une photo de profil"
+                    className="sr-only"
                   />
+                  <p className="text-xs text-muted-foreground">JPG, PNG, WebP ou GIF. 5 Mo maximum.</p>
                   {photoUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -943,7 +948,7 @@ export default function ProProfilePage() {
                                 ? 'bg-amber-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
                             } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle lesson request notifications"
+                            aria-label="Activer les alertes de demandes de cours"
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -971,7 +976,7 @@ export default function ProProfilePage() {
                                 ? 'bg-blue-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
                             } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle message notifications"
+                            aria-label="Activer les alertes de messages"
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -1004,7 +1009,7 @@ export default function ProProfilePage() {
                                 ? 'bg-blue-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
                             } ${!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle surf notifications"
+                            aria-label="Activer les alertes de surf"
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -1032,7 +1037,7 @@ export default function ProProfilePage() {
                                 ? 'bg-cyan-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
                             } ${!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle kitesurf notifications"
+                            aria-label="Activer les alertes de kitesurf"
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${

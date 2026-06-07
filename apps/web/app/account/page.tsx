@@ -103,11 +103,15 @@ export default function AccountPage() {
               </div>
               <div className="flex items-center justify-between gap-4 border-b border-blob-sand-deep/70 pb-3">
                 <dt className="font-black uppercase tracking-[0.12em] text-blob-black/56">Rôle</dt>
-                <dd className="font-medium text-blob-black">{user?.role}</dd>
+                <dd className="font-medium text-blob-black">
+                  {user?.role === 'RIDER' ? 'Rider' : user?.role === 'PRO' ? 'Pro' : user?.role === 'ADMIN' ? 'Administrateur' : (user?.role ?? '')}
+                </dd>
               </div>
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                 <dt className="font-black uppercase tracking-[0.12em] text-blob-black/56">Email vérifié</dt>
-                <dd className="font-medium text-blob-black">{user?.emailVerified ? 'Oui' : 'Non'}</dd>
+                <dd className={`font-medium ${user?.emailVerified ? 'text-blob-black' : 'text-amber-700'}`}>
+                  {user?.emailVerified ? 'Adresse email vérifiée.' : 'Adresse email non vérifiée.'}
+                </dd>
               </div>
             </dl>
 

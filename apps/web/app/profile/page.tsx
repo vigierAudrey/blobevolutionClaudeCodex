@@ -564,11 +564,21 @@ export default function ProfilePage() {
                       </div>
                     </div>
                     <div className="w-full space-y-2">
+                      <label
+                        htmlFor="photo-upload"
+                        className="flex w-full cursor-pointer items-center gap-3 rounded-sm border-2 border-blob-black bg-blob-black px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white transition-colors hover:bg-blob-black/90"
+                      >
+                        <Camera className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                        <span className="truncate">
+                          {photoFile ? '✓ Photo sélectionnée' : photoUrl ? 'Changer ma photo' : 'Choisir une photo'}
+                        </span>
+                      </label>
                       <input
+                        id="photo-upload"
                         type="file"
                         accept={PROFILE_PHOTO_ACCEPT}
                         onChange={onPickPhoto}
-                        className="block w-full rounded-sm border-2 border-blob-black bg-white text-sm text-blob-black file:mr-4 file:border-0 file:border-r-2 file:border-blob-black file:bg-blob-black file:px-4 file:py-2.5 file:text-xs file:font-black file:uppercase file:tracking-widest file:text-white"
+                        className="sr-only"
                       />
                       <p className="text-xs text-blob-black/56">JPG, PNG ou WebP. 5 Mo maximum.</p>
                     </div>
