@@ -91,19 +91,20 @@
     min-height: 100vh;
     overflow-x: hidden;
   }
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url('/hero-wallpaper.webp');
-    background-size: cover;
-    background-position: center;
-    filter: blur(40px);
-    opacity: 0.35;
-    transform: scale(1.05);
-    pointer-events: none;
-    z-index: -1;
-  }
+}
+
+/* Ambient wallpaper — home page only via .home-wallpaper-bg div, not loaded on dashboard/profile */
+.home-wallpaper-bg {
+  position: fixed;
+  inset: 0;
+  background-image: url('/hero-wallpaper.webp');
+  background-size: cover;
+  background-position: center;
+  filter: blur(40px);
+  opacity: 0.35;
+  transform: scale(1.05);
+  pointer-events: none;
+  z-index: -1;
 }
 
 /* Simple responsive container */

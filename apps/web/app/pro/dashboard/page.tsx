@@ -65,9 +65,9 @@ export default function ProDashboardPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="mx-auto max-w-6xl space-y-4">
         <PageHeaderSkeleton />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <CardSkeleton key={i} />
           ))}
@@ -201,7 +201,7 @@ export default function ProDashboardPage() {
 
       {/* Stats MVP */}
       <Card className="rounded-[1.75rem] border overflow-hidden">
-        <CardContent className="p-4">
+        <CardContent className="p-4 min-h-[260px]">
           {stats ? (
             <ProStatsSection stats={stats} />
           ) : (
