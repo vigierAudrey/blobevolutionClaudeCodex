@@ -103,7 +103,7 @@ export function HomeYellowBar() {
         className="relative overflow-visible border-b border-blob-sand-deep dark:border-white/10 bg-blob-sand dark:bg-blob-black"
       >
         <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-blob-yellow/80"
+          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-blob-yellow/80 home-yellow-line"
           aria-hidden
         />
 
@@ -137,7 +137,7 @@ export function HomeYellowBar() {
                   >
                     <span
                       className={[
-                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blob-yellow/30 ring-1 ring-blob-black/5 transition-colors duration-200 group-hover:bg-blob-yellow/45 motion-reduce:transition-none',
+                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blob-yellow/30 ring-1 ring-blob-black/5 transition duration-200 group-hover:bg-blob-yellow/45 motion-safe:group-hover:scale-110 motion-reduce:transition-none',
                         item.blobLogo ? 'home-blob-pulse' : '',
                       ].join(' ')}
                       aria-hidden
