@@ -24,13 +24,21 @@ const getErrorMessage = (error: unknown, fallback = 'Erreur') => {
   return fallback;
 };
 
+const ONBOARDING_DONE_KEY = 'blob_onboarding_complete';
+
 export default function OnboardingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [disciplines, setDisciplines] = useState<DisciplinePreference[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [redirecting, setRedirecting] = useState(false);
+
+  // Fast-path: if onboarding was already completed in a previous session, skip straight to dashboard.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) === '1') {
+      router.replace('/dashboard');
+    }
+  }, [router]);
 
   useEffect(() => {
     // No local hint check — truth comes from the server session.
@@ -74,9 +82,8 @@ export default function OnboardingPage() {
     if (loading || error) return;
     const complete = hasName && hasDiscipline && hasPhoto;
     if (complete) {
-      setRedirecting(true);
-      const id = setTimeout(() => router.replace('/dashboard'), 800);
-      return () => clearTimeout(id);
+      if (typeof window !== 'undefined') localStorage.setItem(ONBOARDING_DONE_KEY, '1');
+      router.replace('/dashboard');
     }
   }, [loading, error, hasName, hasDiscipline, hasPhoto, router]);
 
@@ -90,16 +97,6 @@ export default function OnboardingPage() {
         <p>Chargement…</p>
       ) : error ? (
         <p className="text-red-600">{error}</p>
-      ) : redirecting ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Tout est prêt !</CardTitle>
-            <CardDescription>Redirection vers le tableau de bord…</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => router.replace('/dashboard')}>Aller au dashboard</Button>
-          </CardContent>
-        </Card>
       ) : (
         <Card>
           <CardHeader>
