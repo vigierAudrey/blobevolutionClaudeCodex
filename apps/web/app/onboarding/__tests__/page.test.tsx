@@ -51,6 +51,7 @@ describe('OnboardingPage — auth guard', () => {
     });
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('blob_session_hint');
+      window.localStorage.removeItem('blob_onboarding_complete');
     }
     // Default profile setup: incomplete (triggers onboarding display)
     mockedApiClient.getProfile.mockResolvedValue({
