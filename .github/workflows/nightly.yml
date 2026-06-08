@@ -122,18 +122,19 @@ jobs:
         run: pnpm run db:migrate:deploy
 
       - name: Run active-user-simulation (isolated)
-        # maxWorkers=1 + runInBand: prevents any other suite from running concurrently.
+        # jest.simulation.config.cjs has the correct testMatch for this file.
+        # jest.config.cjs excludes it (nightly-only) — do not use it here.
         # NIGHTLY_ISOLATION=true signals test code that it runs with a guaranteed clean DB.
         env:
           JEST_DB_PREPARED: 'true'
           NIGHTLY_ISOLATION: 'true'
         run: |
           pnpm --filter @blobinfini/api exec jest \
-            --config jest.config.cjs \
-            --testPathPatterns "active-user-simulation\.e2e\.test\.ts" \
+            --config jest.simulation.config.cjs \
             --runInBand \
             --forceExit \
             --verbose
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # JOB 3 — Abuse controls tests (active-user-abuse-controls)
@@ -302,15 +303,17 @@ jobs:
         run: pnpm run db:migrate:deploy
 
       - name: Run all socket tests in strict sequence
+        # jest.socket.config.cjs targets src/lib/__tests__/socket*.test.ts exclusively.
+        # jest.config.cjs excludes all socket tests — do not use it here.
         env:
           JEST_DB_PREPARED: 'true'
         run: |
           pnpm --filter @blobinfini/api exec jest \
-            --config jest.config.cjs \
-            --testPathPatterns "src/lib/__tests__/socket-" \
+            --config jest.socket.config.cjs \
             --runInBand \
             --forceExit \
             --verbose
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # JOB 5 — Migration drift deep check (full migration chain replay)
