@@ -529,18 +529,30 @@ export default function ProProfilePage() {
         return;
       }
 
-      const response = await apiRequest('/profile/notifications', {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
-        body: JSON.stringify(notificationPrefs),
-      });
+      // Sauvegarde in-app/push toggles + emailNotif en parallèle.
+      const [notifRes, proRes] = await Promise.all([
+        apiRequest('/profile/notifications', {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${tokens.accessToken}` },
+          body: JSON.stringify(notificationPrefs),
+        }),
+        apiRequest('/pro/me', {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${tokens.accessToken}` },
+          body: JSON.stringify({ emailNotif, countryCode: FRANCE_ONLY_COUNTRY_CODE }),
+        }),
+      ]);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Erreur lors de la sauvegarde');
+      if (!notifRes.ok) {
+        const errorData = await notifRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(errorData.error || 'Erreur lors de la sauvegarde des alertes');
+      }
+      if (!proRes.ok) {
+        const errorData = await proRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(errorData.error || 'Erreur lors de la sauvegarde des préférences email');
       }
 
-      toast('Préférences de notification sauvegardées', 'success');
+      toast('Préférences sauvegardées', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde';
       toast(message, 'error');
@@ -595,7 +607,6 @@ export default function ProProfilePage() {
         body: JSON.stringify({
           businessName: businessName || undefined,
           bio: bio || undefined,
-          emailNotif,
           countryCode: FRANCE_ONLY_COUNTRY_CODE,
         }),
         headers: { Authorization: `Bearer ${t.accessToken}` },
@@ -690,16 +701,6 @@ export default function ProProfilePage() {
                       referrerPolicy="no-referrer"
                     />
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    id="notif"
-                    type="checkbox"
-                    checked={emailNotif}
-                    onChange={(e)=>setEmailNotif(e.target.checked)}
-                    aria-label="Recevoir des emails pour les nouvelles demandes"
-                  />
-                  <Label htmlFor="notif" className="!m-0">Recevoir des emails pour les nouvelles demandes</Label>
                 </div>
                 {err && (
                   <div
@@ -894,24 +895,75 @@ export default function ProProfilePage() {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {/* Alert master toggle */}
+                      {/* ── Email alerts ─────────────────────────────────── */}
+                      <div className="rounded-xl border-2 border-emerald-200/70 dark:border-emerald-800/50 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white flex-shrink-0">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <label htmlFor="emailNotifToggle" className="text-sm font-semibold cursor-pointer">
+                                Alertes par email
+                              </label>
+                              <p className="text-xs text-muted-foreground" id="emailNotif-desc">
+                                Reçois un email quand un rider t&apos;envoie une demande, même si tu n&apos;es pas connecté.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            id="emailNotifToggle"
+                            type="button"
+                            onClick={() => setEmailNotif((v) => !v)}
+                            aria-pressed={emailNotif}
+                            aria-describedby="emailNotif-desc emailNotif-help"
+                            className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                              emailNotif ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'
+                            }`}
+                            aria-label={emailNotif ? 'Désactiver les alertes email' : 'Activer les alertes email'}
+                          >
+                            <span
+                              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                                emailNotif ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                        <p id="emailNotif-help" className="text-xs text-emerald-800 dark:text-emerald-200 leading-relaxed">
+                          Blob n&apos;envoie jamais ton adresse email au rider. Ces emails servent uniquement à te prévenir qu&apos;une demande t&apos;attend dans ton espace pro. Ils ne remplacent pas les alertes dans Blob.
+                        </p>
+                        {emailNotif && (
+                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                            ✓ Activé — tu recevras un email pour chaque nouvelle demande pertinente.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* ── In-app master toggle ──────────────────────────── */}
                       <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
                         <div className="flex items-center gap-3">
                           <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
                             <Bell className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="text-sm font-semibold">Alertes dans Blob</h4>
-                            <p className="text-xs text-muted-foreground">Choisis les alertes que tu veux recevoir dans Blob</p>
+                            <h4 className="text-sm font-semibold" id="inapp-toggle-label">Alertes dans Blob</h4>
+                            <p className="text-xs text-muted-foreground" id="inapp-toggle-desc">
+                              Ces alertes apparaissent dans ton espace Blob lorsque tu es connecté.
+                            </p>
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => toggleNotificationPref('pushEnabled')}
-                          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                          aria-pressed={notificationPrefs.pushEnabled}
+                          aria-labelledby="inapp-toggle-label"
+                          aria-describedby="inapp-toggle-desc"
+                          className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 ${
                             notificationPrefs.pushEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
                           }`}
-                          aria-label="Activer les alertes dans Blob"
+                          aria-label={notificationPrefs.pushEnabled ? 'Désactiver les alertes dans Blob' : 'Activer les alertes dans Blob'}
                         >
                           <span
                             className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
@@ -921,29 +973,33 @@ export default function ProProfilePage() {
                         </button>
                       </div>
 
-                      {/* PRO-specific preferences */}
+                      {/* ── PRO-specific in-app preferences ─────────────── */}
                       <div className="space-y-2">
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activité professionnelle</h4>
 
                         {/* Lesson Requests */}
                         <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-amber-300 dark:hover:border-amber-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">🗺️</span>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="text-xl flex-shrink-0">🗺️</span>
                             <div>
-                              <p className="text-sm font-medium">Demandes de cours (BloboMap)</p>
-                              <p className="text-xs text-muted-foreground">Riders cherchant un cours</p>
+                              <p className="text-sm font-medium" id="notifyLesson-label">Demandes de cours (BloboMap)</p>
+                              <p className="text-xs text-muted-foreground" id="notifyLesson-desc">
+                                Sois alerté lorsqu&apos;un rider t&apos;envoie une demande liée à un cours ou un accompagnement.
+                              </p>
                             </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => toggleNotificationPref('notifyLessonRequests')}
                             disabled={!notificationPrefs.pushEnabled}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            aria-pressed={notificationPrefs.notifyLessonRequests && notificationPrefs.pushEnabled}
+                            aria-labelledby="notifyLesson-label"
+                            aria-describedby="notifyLesson-desc"
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 ${
                               notificationPrefs.notifyLessonRequests && notificationPrefs.pushEnabled
                                 ? 'bg-amber-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
                             } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle lesson request notifications"
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -955,23 +1011,27 @@ export default function ProProfilePage() {
 
                         {/* PRO Messages */}
                         <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">💬</span>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="text-xl flex-shrink-0">💬</span>
                             <div>
-                              <p className="text-sm font-medium">Messages</p>
-                              <p className="text-xs text-muted-foreground">Messages des riders</p>
+                              <p className="text-sm font-medium" id="notifyMessages-label">Messages</p>
+                              <p className="text-xs text-muted-foreground" id="notifyMessages-desc">
+                                Sois alerté lorsqu&apos;un rider t&apos;écrit dans la messagerie Blob.
+                              </p>
                             </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => toggleNotificationPref('notifyProMessages')}
                             disabled={!notificationPrefs.pushEnabled}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            aria-pressed={notificationPrefs.notifyProMessages && notificationPrefs.pushEnabled}
+                            aria-labelledby="notifyMessages-label"
+                            aria-describedby="notifyMessages-desc"
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
                               notificationPrefs.notifyProMessages && notificationPrefs.pushEnabled
                                 ? 'bg-blue-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
                             } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle message notifications"
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -982,29 +1042,33 @@ export default function ProProfilePage() {
                         </div>
                       </div>
 
-                      {/* Sport filters */}
+                      {/* ── Sport filters ─────────────────────────────────── */}
                       <div className="space-y-2">
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Filtres par sport</h4>
 
                         {/* Surf */}
                         <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">🏄</span>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="text-xl flex-shrink-0">🏄</span>
                             <div>
-                              <p className="text-sm font-medium">Demandes Surf</p>
-                              <p className="text-xs text-muted-foreground">Cours de surf uniquement</p>
+                              <p className="text-sm font-medium" id="notifySurf-label">Demandes Surf</p>
+                              <p className="text-xs text-muted-foreground" id="notifySurf-desc">
+                                Sois alerté pour les demandes liées au surf.
+                              </p>
                             </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => toggleNotificationPref('notifyForSurf')}
                             disabled={!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            aria-pressed={notificationPrefs.notifyForSurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests}
+                            aria-labelledby="notifySurf-label"
+                            aria-describedby="notifySurf-desc"
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
                               notificationPrefs.notifyForSurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests
                                 ? 'bg-blue-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
                             } ${!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle surf notifications"
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -1016,23 +1080,27 @@ export default function ProProfilePage() {
 
                         {/* Kitesurf */}
                         <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-cyan-300 dark:hover:border-cyan-700 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">🪁</span>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="text-xl flex-shrink-0">🪁</span>
                             <div>
-                              <p className="text-sm font-medium">Demandes Kitesurf</p>
-                              <p className="text-xs text-muted-foreground">Cours de kitesurf uniquement</p>
+                              <p className="text-sm font-medium" id="notifyKitesurf-label">Demandes Kitesurf</p>
+                              <p className="text-xs text-muted-foreground" id="notifyKitesurf-desc">
+                                Sois alerté pour les demandes liées au kitesurf.
+                              </p>
                             </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => toggleNotificationPref('notifyForKitesurf')}
                             disabled={!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            aria-pressed={notificationPrefs.notifyForKitesurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests}
+                            aria-labelledby="notifyKitesurf-label"
+                            aria-describedby="notifyKitesurf-desc"
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 ${
                               notificationPrefs.notifyForKitesurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests
                                 ? 'bg-cyan-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
                             } ${!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            aria-label="Toggle kitesurf notifications"
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -1043,15 +1111,15 @@ export default function ProProfilePage() {
                         </div>
                       </div>
 
-                      {/* Info box when alerts are disabled */}
+                      {/* Info box when in-app alerts are disabled */}
                       {!notificationPrefs.pushEnabled && (
-                        <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3">
+                        <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3" role="status">
                           <div className="flex items-start gap-2">
-                            <span className="text-lg">ℹ️</span>
+                            <span className="text-lg" aria-hidden="true">ℹ️</span>
                             <div className="flex-1">
                               <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Alertes dans Blob désactivées</p>
                               <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
-                                Réactive les alertes dans Blob pour voir les messages et demandes de cours.
+                                Réactive les alertes dans Blob pour voir les messages et demandes de cours. Les alertes email fonctionnent indépendamment.
                               </p>
                             </div>
                           </div>

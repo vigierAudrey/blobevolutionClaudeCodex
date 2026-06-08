@@ -27,7 +27,8 @@ export type MailType =
   | 'two_factor_code'
   | 'account_deletion'
   | 'account_deletion_cancelled'
-  | 'security_alert';
+  | 'security_alert'
+  | 'new_lesson_request';
 
 type Mail = {
   to: string;
@@ -427,5 +428,58 @@ L'équipe Blob`;
 
 export async function sendAccountDeletionCancelledEmail(to: string, role: string | null | undefined, supportEmail = 'support@blobinfini.com') {
   const mail = buildAccountDeletionCancellationEmail(to, role, supportEmail);
+  return sendMail(mail);
+}
+
+export type LessonRequestMailParams = {
+  /** Adresse email du professionnel destinataire — jamais exposée au rider. */
+  proEmail: string;
+  /** Sport de la demande : 'surf' | 'kitesurf' | null (générique). */
+  sport: string | null;
+};
+
+export function buildNewLessonRequestEmail(params: LessonRequestMailParams): Mail {
+  const { proEmail, sport } = params;
+  const sportLabel = sport === 'surf' ? 'surf' : sport === 'kitesurf' ? 'kitesurf' : 'cours';
+  const proUrl = buildWebUrl('/pro/dashboard');
+
+  const subject = 'Nouvelle demande sur Blob';
+  const text = `Bonjour,
+
+Un rider vient de vous envoyer une nouvelle demande sur Blob.
+Sport : ${sportLabel}
+
+Consultez votre espace pro pour répondre.
+
+${proUrl}
+
+À bientôt,
+Blob`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #d97706;">🏄 Nouvelle demande sur Blob</h2>
+      <p>Bonjour,</p>
+      <p>Un rider vient de vous envoyer une nouvelle demande sur Blob.</p>
+      <table style="background:#fef3c7;border-left:4px solid #f59e0b;padding:12px;border-radius:4px;margin:16px 0;width:100%;">
+        <tr><td><strong>Sport :</strong> ${sportLabel}</td></tr>
+      </table>
+      <p>Consultez votre espace pro pour répondre rapidement.</p>
+      <p style="margin:24px 0;">
+        <a href="${proUrl}" style="display:inline-block;padding:12px 24px;background:#d97706;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">Voir la demande</a>
+      </p>
+      <p style="color:#6b7280;font-size:13px;">
+        Cet email vous a été envoyé car vous avez activé les alertes email dans votre espace pro.<br>
+        Vous pouvez désactiver ces notifications dans vos préférences.
+      </p>
+      <p style="color:#6b7280;">À bientôt,<br>L'équipe Blob</p>
+    </div>
+  `;
+
+  return { to: proEmail, subject, text, html, type: 'new_lesson_request' };
+}
+
+export async function sendNewLessonRequestEmailToPro(params: LessonRequestMailParams) {
+  const mail = buildNewLessonRequestEmail(params);
   return sendMail(mail);
 }
