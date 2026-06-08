@@ -93,9 +93,9 @@ test.describe('Pro Profile Management', () => {
     await page.goto('/pro/profile');
     await expect(page).toHaveURL(/\/pro\/profile/);
 
-    // Targets <input id="notif"> via associated <Label htmlFor="notif"> text
-    const emailCheckbox = page.getByRole('checkbox', { name: /recevoir des emails pour les nouvelles demandes/i });
-    await expect(emailCheckbox).toBeVisible({ timeout: 10_000 });
+    // Toggle button with htmlFor="emailNotifToggle" linked via label "Alertes par email"
+    const emailToggle = page.getByRole('button', { name: /alertes par email/i });
+    await expect(emailToggle).toBeVisible({ timeout: 10_000 });
 
     await context.close();
   });
