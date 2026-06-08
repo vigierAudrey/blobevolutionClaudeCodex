@@ -585,8 +585,13 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
     // /pro/photo/upload-url has its own user-keyed uploadUrlRateLimiter in the route.
     // Excluding it from the shared IP bucket prevents premature 429 when finalize and
     // upload-url exhaust the same 10/10min counter. Falls through to apiStandard (POST).
+    // /profile/photo/finalize and /pro/photo/finalize have a dedicated per-userId
+    // finalizeRateLimiter wired directly on the route — bypassing the shared IP bucket
+    // here prevents double-counting that causes spurious 429 for legitimate users.
     if (path.endsWith('/photo/upload-url')) {
       limiter = rateLimiters.apiStandard;
+    } else if (path.endsWith('/photo/finalize')) {
+      return next();
     } else {
       limiter = rateLimiters.upload;
     }
