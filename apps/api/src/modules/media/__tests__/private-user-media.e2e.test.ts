@@ -48,6 +48,7 @@ describe('Private user media route', () => {
 
     expect(res.headers['content-type']).toMatch(/^image\/webp/);
     expect(res.headers['cache-control']).toBe('private, max-age=300');
+    expect(res.headers['cross-origin-resource-policy']).toBe('same-site');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.body).toEqual(WEBP_MAGIC);
   });
@@ -98,5 +99,37 @@ describe('Private user media route', () => {
       .get(`/media/users/${rider1.userId}/photo`)
       .set('Authorization', `Bearer ${rider1.accessToken}`)
       .expect(404);
+  });
+
+  it('userId inexistant → réponse neutre sans révéler existence (403)', async () => {
+    const nonExistentId = '00000000-0000-0000-0000-000000000999';
+    const res = await rider1.session
+      .get(`/media/users/${nonExistentId}/photo`)
+      .set('Authorization', `Bearer ${rider1.accessToken}`)
+      .expect(403);
+    expect(res.body).toEqual({ error: 'Forbidden' });
+  });
+
+  it('la réponse 403 ne contient pas de chemin MinIO ni de clé de stockage', async () => {
+    const res = await rider2.session
+      .get(`/media/users/${rider1.userId}/photo`)
+      .set('Authorization', `Bearer ${rider2.accessToken}`)
+      .expect(403);
+
+    const body = JSON.stringify(res.body);
+    expect(body).not.toMatch(/users\//);
+    expect(body).not.toMatch(/photoUrl/i);
+    expect(body).not.toMatch(/minio/i);
+    expect(body).not.toMatch(/bucket/i);
+  });
+
+  it('la réponse 403 est cache private et non stockée', async () => {
+    const res = await rider2.session
+      .get(`/media/users/${rider1.userId}/photo`)
+      .set('Authorization', `Bearer ${rider2.accessToken}`)
+      .expect(403);
+
+    const cc = res.headers['cache-control'] ?? '';
+    expect(cc).not.toMatch(/public/i);
   });
 });

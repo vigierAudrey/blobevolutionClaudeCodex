@@ -5,6 +5,7 @@ import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { getObjectBuffer, storageKeyFromPublicUrl } from '../../lib/s3';
 import { detectMagicBytes } from '../../lib/magic-bytes';
 import { secureLogger } from '../../utils/secure-logger';
+import { canViewUserPhoto } from './media.service';
 
 export const mediaRouter = Router();
 
@@ -25,16 +26,9 @@ mediaRouter.get('/users/:userId/photo', async (req, res) => {
     const requesterId = (req as any).user?.id as string | undefined;
     if (!requesterId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const requester = await prisma.user.findUnique({
-      where: { id: requesterId },
-      select: { role: true },
-    });
-
-    if (!requester || requester.role !== 'RIDER' || requesterId !== targetUserId) {
-      secureLogger.warn('PRIVATE_USER_MEDIA_FORBIDDEN', {
-        requesterRole: requester?.role ?? 'UNKNOWN',
-        sameUser: requesterId === targetUserId,
-      });
+    const authorized = await canViewUserPhoto(requesterId, targetUserId);
+    if (!authorized) {
+      secureLogger.warn('PRIVATE_USER_MEDIA_FORBIDDEN');
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -72,6 +66,7 @@ mediaRouter.get('/users/:userId/photo', async (req, res) => {
     res.setHeader('Content-Type', detectedMime);
     res.setHeader('Content-Length', object.length);
     res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.status(200).send(object);
   } catch (err) {
