@@ -93,8 +93,9 @@ test.describe('Pro Profile Management', () => {
     await page.goto('/pro/profile');
     await expect(page).toHaveURL(/\/pro\/profile/);
 
-    // Toggle button with htmlFor="emailNotifToggle" linked via label "Alertes par email"
-    const emailToggle = page.getByRole('button', { name: /alertes par email/i });
+    // The toggle is a <button id="emailNotifToggle"> with dynamic aria-label
+    // ("Activer/Désactiver les alertes email") — target by ID for reliability.
+    const emailToggle = page.locator('#emailNotifToggle');
     await expect(emailToggle).toBeVisible({ timeout: 10_000 });
 
     await context.close();
