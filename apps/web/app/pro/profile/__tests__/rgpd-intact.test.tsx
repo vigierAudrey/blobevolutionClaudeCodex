@@ -130,11 +130,16 @@ describe('ProProfilePage — non-regression RGPD', () => {
     expect(requestPermission).not.toHaveBeenCalled();
   });
 
-  it('conserve le champ email notif dans le formulaire profil', async () => {
+  it('conserve la préférence email notif dans la section alertes', async () => {
     render(<ProProfilePage />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/recevoir des emails pour les nouvelles demandes/i)).toBeInTheDocument();
+      expect(screen.getByText(/alertes par email/i)).toBeInTheDocument();
     });
+
+    // Le toggle email est un bouton accessible avec aria-label
+    expect(
+      screen.getByRole('button', { name: /activer les alertes email/i }),
+    ).toBeInTheDocument();
   });
 });
