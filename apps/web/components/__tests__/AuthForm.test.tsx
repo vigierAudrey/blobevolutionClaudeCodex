@@ -77,6 +77,89 @@ describe('AuthForm', () => {
     });
   });
 
+  describe('bloc de confirmation post-inscription', () => {
+    const fillAndSubmit = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.type(screen.getByLabelText(/email/i), 'blob@test.com');
+      await user.type(screen.getByLabelText(/^mot de passe$/i), 'Passw0rd!');
+      await user.click(screen.getByLabelText(/18 ans ou plus/i));
+      await user.click(screen.getByLabelText(/j'ai lu et j'accepte les règles de sécurité des sessions/i));
+      await user.click(screen.getByRole('button', { name: /créer le compte/i }));
+    };
+
+    it('affiche le bloc confirmation après inscription réussie', async () => {
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+      await fillAndSubmit(user);
+
+      expect(screen.getByText(/vérifie ta boîte mail/i)).toBeInTheDocument();
+      expect(screen.getByText(/blob@test\.com/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /aller à la connexion/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /renvoyer l'email/i })).toBeInTheDocument();
+    });
+
+    it('ne redirige pas automatiquement après inscription', async () => {
+      const mockPush = jest.fn();
+      mockUseRouter.mockReturnValue({ push: mockPush, replace: jest.fn(), back: jest.fn(), forward: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() });
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+      await fillAndSubmit(user);
+
+      expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it('navigue vers /login via le bouton "Aller à la connexion"', async () => {
+      const mockPush = jest.fn();
+      mockUseRouter.mockReturnValue({ push: mockPush, replace: jest.fn(), back: jest.fn(), forward: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() });
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+      await fillAndSubmit(user);
+
+      await user.click(screen.getByRole('button', { name: /aller à la connexion/i }));
+
+      expect(mockPush).toHaveBeenCalledWith('/login');
+      expect(mockPush).toHaveBeenCalledTimes(1);
+    });
+
+    it("appelle resendVerification et désactive le bouton pendant l'envoi", async () => {
+      let resolveResend!: () => void;
+      mockedApiClient.resendVerification.mockReturnValue(new Promise<void>((res) => { resolveResend = res; }));
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+      await fillAndSubmit(user);
+
+      const btn = screen.getByRole('button', { name: /renvoyer l'email/i });
+      await user.click(btn);
+
+      expect(mockedApiClient.resendVerification).toHaveBeenCalledWith('blob@test.com');
+      expect(screen.getByRole('button', { name: /envoi/i })).toBeDisabled();
+
+      resolveResend();
+      await screen.findByText(/email renvoyé/i);
+    });
+
+    it('affiche un message neutre si resend échoue', async () => {
+      mockedApiClient.resendVerification.mockRejectedValue(new Error('network error'));
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+      await fillAndSubmit(user);
+
+      await user.click(screen.getByRole('button', { name: /renvoyer l'email/i }));
+
+      await screen.findByText(/impossible de renvoyer l'email pour le moment/i);
+    });
+
+    it('"Changer d\'adresse email" revient au formulaire sans l\'email dans l\'URL', async () => {
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+      await fillAndSubmit(user);
+
+      await user.click(screen.getByRole('button', { name: /changer d'adresse email/i }));
+
+      expect(screen.getByRole('button', { name: /créer le compte/i })).toBeInTheDocument();
+      expect(window.location.search).not.toContain('blob@test.com');
+    });
+  });
+
   describe('paramètre intent URL', () => {
     it('intent=pro → rôle PRO pré-sélectionné et sélecteur masqué', () => {
       mockUseSearchParams.mockReturnValue(new URLSearchParams('intent=pro'));

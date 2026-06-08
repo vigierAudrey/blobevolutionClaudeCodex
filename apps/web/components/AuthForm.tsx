@@ -99,6 +99,8 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [requires2FA, setRequires2FA] = useState(false);
   const [twoFAChallengeId, setTwoFAChallengeId] = useState<string | null>(null);
   const [twoFACode, setTwoFACode] = useState('');
+  const [registered, setRegistered] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -184,8 +186,8 @@ export function AuthForm({ mode }: AuthFormProps) {
             trackEvent({ eventType: 'BLOBOSPHERE_SIGNUP', ...(articleId ? { contentId: articleId } : {}) });
           }
         }
-        setInfo('Compte créé. Vérifie ta boîte mail pour valider ton email.');
-        setTimeout(() => router.push('/login'), 800);
+        setRegisteredEmail(email);
+        setRegistered(true);
         return;
       }
 
@@ -396,6 +398,83 @@ export function AuthForm({ mode }: AuthFormProps) {
               Annuler
             </Button>
           </form>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (registered) {
+    return (
+      <Card className="border-2 border-transparent hover:border-blue-300 transition-all">
+        <CardHeader className="bg-gradient-to-br from-blue-50/80 to-transparent dark:from-blue-950/30 dark:to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
+              <Mail size={20} />
+            </div>
+            <div>
+              <CardTitle>Vérifie ta boîte mail !</CardTitle>
+              <CardDescription>Ton compte Blob est presque prêt</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6 space-y-4">
+          <p className="text-sm text-foreground">
+            On vient d&apos;envoyer un lien de confirmation à{' '}
+            <strong className="font-semibold">{registeredEmail}</strong>.
+            Clique dessus pour activer ton compte Blob.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Pas de mail en vue ? Pense à vérifier tes spams, ça arrive !
+          </p>
+
+          {resendStatus === 'sent' && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30" role="alert">
+              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-green-700 dark:text-green-400">
+                Email renvoyé. Vérifie ta boîte mail.
+              </p>
+            </div>
+          )}
+          {resendStatus === 'error' && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30" role="alert">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700 dark:text-red-400">
+                Impossible de renvoyer l&apos;email pour le moment. Réessaie dans quelques instants.
+              </p>
+            </div>
+          )}
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={resendStatus === 'loading'}
+            onClick={resend}
+          >
+            {resendStatus === 'loading' ? 'Envoi…' : "Renvoyer l'email de vérification"}
+          </Button>
+
+          <Button
+            type="button"
+            className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-lg hover:shadow-xl transition-all"
+            onClick={() => router.push('/login')}
+          >
+            Aller à la connexion
+          </Button>
+
+          <div className="text-center">
+            <button
+              type="button"
+              className="text-sm text-muted-foreground underline hover:no-underline"
+              onClick={() => {
+                setRegistered(false);
+                setRegisteredEmail('');
+                setResendStatus('idle');
+              }}
+            >
+              Changer d&apos;adresse email
+            </button>
+          </div>
         </CardContent>
       </Card>
     );

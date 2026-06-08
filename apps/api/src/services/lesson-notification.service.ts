@@ -5,9 +5,14 @@ import { hashRiderRef, makeLessonRequestId, recordFanout, type FanoutTriggerReas
 import type { NotificationRow } from './notification.service';
 import { secureLogger } from '../utils/secure-logger';
 import { computeZoneLarge } from './analytics/events.service';
+import { sendNewLessonRequestEmailToPro } from '../lib/mailer';
+import { hashEmail } from '../modules/auth/login-attempt.util';
 
 /** Max pros notifiés par demande de cours (cap dur MVP). */
 export const MAX_PROS_TO_NOTIFY = 100;
+
+/** Max emails envoyés en parallèle : respecte les limites Brevo et le pool SMTP. */
+export const EMAIL_CONCURRENCY = 5;
 
 /**
  * Taille des lots pour les inserts de notifications.
@@ -42,6 +47,7 @@ export interface LessonNotificationInput {
 interface EligibleProRow {
   userId: string;
   distanceKm: number;
+  emailNotif: boolean;
 }
 
 function toDistanceBucket(km: number): string {
@@ -131,7 +137,8 @@ async function findEligiblePros(input: LessonNotificationInput): Promise<Eligibl
           ST_SetSRID(ST_MakePoint(pp."lng", pp."lat"), 4326)::geography,
           ST_SetSRID(ST_MakePoint(${lessonLng}, ${lessonLat}), 4326)::geography
         ) / 1000.0
-      )::float AS "distanceKm"
+      )::float AS "distanceKm",
+      pp."emailNotif"
     FROM "ProProfile" pp
     LEFT JOIN "NotificationPreferences" np ON np."userId" = pp."userId"
     WHERE pp."verified" = true
@@ -149,6 +156,66 @@ async function findEligiblePros(input: LessonNotificationInput): Promise<Eligibl
   `);
 
   return rows;
+}
+
+/**
+ * Envoie les emails aux pros ayant emailNotif=true, en lots de EMAIL_CONCURRENCY.
+ *
+ * Sécurité :
+ *   - proEmail relu depuis la DB server-side (jamais du client)
+ *   - hashEmail utilisé dans les logs, jamais l'adresse en clair
+ *   - Une erreur Brevo sur un pro ne bloque pas les autres
+ *   - Fire-and-forget : n'impacte pas la réponse HTTP rider
+ *
+ * Performance :
+ *   - Une seule query findMany pour tous les emails (pas de N+1)
+ *   - Concurrence limitée à EMAIL_CONCURRENCY = 5
+ *   - Ne s'exécute que si au moins un pro a emailNotif=true
+ */
+export async function sendEmailsToOptedInPros(
+  pros: EligibleProRow[],
+  sport: string | null,
+): Promise<void> {
+  const optedIn = pros.filter((p) => p.emailNotif);
+  if (optedIn.length === 0) return;
+
+  const proIds = optedIn.map((p) => p.userId);
+
+  // Batch fetch des emails — un seul aller/retour DB, select minimal.
+  let users: { id: string; email: string }[];
+  try {
+    users = await prisma.user.findMany({
+      where: { id: { in: proIds } },
+      select: { id: true, email: true },
+    });
+  } catch (err: unknown) {
+    secureLogger.error('LESSON_EMAIL_FETCH_PROS_FAILED', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  const emailMap = new Map(users.map((u) => [u.id, u.email]));
+
+  // Envoi par lots de EMAIL_CONCURRENCY.
+  for (let i = 0; i < optedIn.length; i += EMAIL_CONCURRENCY) {
+    const chunk = optedIn.slice(i, i + EMAIL_CONCURRENCY);
+    await Promise.allSettled(
+      chunk.map(async (pro) => {
+        const proEmail = emailMap.get(pro.userId);
+        if (!proEmail) return;
+        try {
+          await sendNewLessonRequestEmailToPro({ proEmail, sport });
+        } catch (err: unknown) {
+          // Log neutre : email hashé, pas de PII en clair.
+          secureLogger.warn('LESSON_EMAIL_SEND_FAILED', {
+            proEmailHash: hashEmail(proEmail),
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }),
+    );
+  }
 }
 
 /**
@@ -241,6 +308,14 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
   }
 
   secureLogger.info('LESSON_NOTIF_FANOUT_DONE', { notified });
+
+  // Envoi emails aux pros ayant emailNotif=true — fire-and-forget.
+  // Une erreur Brevo ne bloque pas et ne casse pas la demande rider.
+  void sendEmailsToOptedInPros(pros, lessonSport).catch((err: unknown) => {
+    secureLogger.warn('LESSON_EMAIL_FANOUT_FAILED', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 
   await recordFanout({
     riderRef,
