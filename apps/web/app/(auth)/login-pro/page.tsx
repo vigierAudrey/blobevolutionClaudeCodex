@@ -36,7 +36,7 @@ export default function ProLoginPage() {
       // Security: API returns a generic message to prevent email/user enumeration.
       // UX: reflect the backend message instead of asserting an email was sent.
       const baseMessage = result?.message || 'Si un compte PRO correspondant existe, un code a été envoyé.';
-      setInfo(`${baseMessage} (Dev: Mailpit sur :8025)`);
+      setInfo(`${baseMessage} (Dev: Mailpit sur :8026)`);
     } catch (err: unknown) {
       const msg = getErrorMessage(err) || 'Une erreur est survenue';
       if (msg.toLowerCase().includes('utilisateur non trouvé')) {
@@ -93,7 +93,7 @@ export default function ProLoginPage() {
     try {
       const result = (await apiClient.send2FA(email)) as { message?: string };
       const baseMessage = result?.message || 'Si un compte PRO correspondant existe, un code a été envoyé.';
-      setInfo(`${baseMessage} (Dev: Mailpit sur :8025)`);
+      setInfo(`${baseMessage} (Dev: Mailpit sur :8026)`);
     } catch (err: unknown) {
       setError(getErrorMessage(err) || 'Impossible de renvoyer le code');
     } finally {

@@ -12,10 +12,10 @@ export type BlobBadgeProps = {
 const variantClass: Record<NonNullable<BlobBadgeProps['variant']>, string> = {
   yellow: 'border-blob-yellow bg-blob-yellow text-blob-black',
   dark: 'border-blob-black bg-blob-black text-white',
-  sand: 'border-blob-sand-deep bg-blob-sand text-blob-black',
+  sand:    'border-blob-sand-deep dark:border-white/20 bg-blob-sand dark:bg-white/10 text-blob-black dark:text-white',
   outline: 'border-current bg-transparent text-current',
-  success: 'border-green-800 bg-green-50 text-green-950',
-  error: 'border-red-800 bg-red-50 text-red-950',
+  success: 'border-green-800 dark:border-green-500 bg-green-50 dark:bg-green-950/40 text-green-950 dark:text-green-100',
+  error:   'border-red-800 dark:border-red-500 bg-red-50 dark:bg-red-950/40 text-red-950 dark:text-red-100',
 };
 
 const sizeClass: Record<NonNullable<BlobBadgeProps['size']>, string> = {

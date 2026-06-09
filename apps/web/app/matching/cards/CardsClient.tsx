@@ -17,7 +17,6 @@ import { clearMatchingStorage } from '../storage';
 import { FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
 import { ProfilePhoto } from '../../../components/media/ProfilePhoto';
 
-import { CommunityHighlight } from '../../../components/community/CommunityHighlight';
 
 const levelLabels: Record<Level, string> = {
   beginner: 'Débutant',
@@ -451,11 +450,6 @@ export function CardsClient() {
                       Pas de match immédiat, mais la communauté grandit chaque jour. Relance une recherche avec un rayon plus large ou repasse un peu plus tard.
                     </p>
                   </div>
-
-                  <CommunityHighlight
-                    context="matching-end"
-                    className="my-6 max-w-sm mx-auto"
-                  />
 
                   <div className="flex flex-col gap-2">
                     <Button onClick={() => router.push('/dashboard')} className="w-full">

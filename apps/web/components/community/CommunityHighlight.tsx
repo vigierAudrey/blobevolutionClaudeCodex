@@ -11,9 +11,9 @@ type HighlightContent = {
   badge: string;
   title: string;
   body: string;
-  cta: string;
-  href: string;
-  scheme: 'blue' | 'emerald';
+  cta?: string;
+  href?: string;
+  scheme: 'dark' | 'sand' | 'yellow';
 };
 
 const CONTENT: Record<HighlightContext, HighlightContent> = {
@@ -23,7 +23,7 @@ const CONTENT: Record<HighlightContext, HighlightContent> = {
     body: 'Trouve des riders qui partagent ton niveau et tes envies de session dans le Médoc Atlantique.',
     cta: 'Rejoindre la communauté',
     href: '/register?intent=matching',
-    scheme: 'blue',
+    scheme: 'dark',
   },
   'matching-end': {
     badge: 'Communauté Blob',
@@ -31,7 +31,7 @@ const CONTENT: Record<HighlightContext, HighlightContent> = {
     body: 'De nouveaux riders rejoignent Blob dans le Médoc Atlantique. Repasse dans quelques jours ou élargis ta zone.',
     cta: 'Explorer la Blobosphère',
     href: '/blobosphere',
-    scheme: 'blue',
+    scheme: 'dark',
   },
   home: {
     badge: 'Partenaires fondateurs',
@@ -39,7 +39,7 @@ const CONTENT: Record<HighlightContext, HighlightContent> = {
     body: 'Écoles, moniteurs, shops et assos qui construisent Blob dans le Médoc Atlantique.',
     cta: 'Rejoindre les premiers pros',
     href: '/register?intent=pro',
-    scheme: 'emerald',
+    scheme: 'sand',
   },
   blobosphere: {
     badge: 'Communauté Blob',
@@ -47,54 +47,69 @@ const CONTENT: Record<HighlightContext, HighlightContent> = {
     body: 'Trouve des riders qui partagent ton niveau et tes envies de session.',
     cta: 'Commencer le matching',
     href: '/register?intent=matching',
-    scheme: 'blue',
+    scheme: 'dark',
   },
   dashboard: {
     badge: 'Partenaires fondateurs',
-    title: 'Pros du Médoc Atlantique',
-    body: 'Écoles, moniteurs, shops et assos qui construisent Blob dans le Médoc Atlantique.',
-    cta: 'Rejoindre les premiers pros',
-    href: '/register?intent=pro',
-    scheme: 'emerald',
+    title: 'Soutiens le projet Blob',
+    body: 'Tu fais partie des premiers riders à construire une communauté locale. Parle-en autour de toi, chaque rider compte.',
+    scheme: 'yellow',
+  },
+};
+
+const schemeStyles = {
+  dark: {
+    wrap: 'bg-blob-black text-white border-white/10',
+    badge: 'text-blob-yellow',
+    dot: 'bg-blob-yellow',
+    title: 'text-white',
+    body: 'text-white/70',
+    cta: 'bg-blob-yellow text-blob-black hover:bg-blob-yellow-dark',
+  },
+  sand: {
+    wrap: 'bg-blob-sand dark:bg-[hsl(220_14%_14%)] text-blob-black dark:text-white border-blob-sand-deep dark:border-white/10',
+    badge: 'text-blob-black/60 dark:text-white/50',
+    dot: 'bg-blob-black dark:bg-white',
+    title: 'text-blob-black dark:text-white',
+    body: 'text-blob-black/72 dark:text-white/70',
+    cta: 'bg-blob-black text-white hover:bg-blob-black/80 dark:bg-white dark:text-blob-black dark:hover:bg-white/90',
+  },
+  yellow: {
+    wrap: 'bg-blob-yellow text-blob-black border-blob-yellow-dark/40',
+    badge: 'text-blob-black/60',
+    dot: 'bg-blob-black',
+    title: 'text-blob-black',
+    body: 'text-blob-black/72',
+    cta: 'bg-blob-black text-white hover:bg-blob-black/80',
   },
 };
 
 export function CommunityHighlight({ context = 'home', className = '' }: CommunityHighlightProps) {
   const content = CONTENT[context];
-  const isBlue = content.scheme === 'blue';
+  const s = schemeStyles[content.scheme];
 
   return (
-    <div
-      className={`rounded-2xl border px-6 py-5 ${
-        isBlue
-          ? 'border-blue-200/60 bg-gradient-to-br from-blue-50 to-cyan-50 dark:border-blue-800/40 dark:from-blue-950/30 dark:to-cyan-950/20'
-          : 'border-emerald-200/60 bg-gradient-to-br from-emerald-50 to-teal-50 dark:border-emerald-800/40 dark:from-emerald-950/30 dark:to-teal-950/20'
-      } ${className}`}
-    >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+    <div className={`rounded-sm border-2 px-6 py-5 ${s.wrap} ${className}`}>
+      <div className={`flex flex-col gap-4 ${content.cta ? 'sm:flex-row sm:items-center' : ''}`}>
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${isBlue ? 'bg-blue-500' : 'bg-emerald-500'}`} />
-            <span
-              className={`text-xs font-semibold uppercase tracking-wider ${
-                isBlue ? 'text-blue-700 dark:text-blue-400' : 'text-emerald-700 dark:text-emerald-400'
-              }`}
-            >
+            <div className={`h-2 w-2 rounded-full ${s.dot}`} />
+            <span className={`text-xs font-black uppercase tracking-widest ${s.badge}`}>
               {content.badge}
             </span>
           </div>
-          <p className="font-semibold text-slate-800 dark:text-slate-100">{content.title}</p>
-          <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400">{content.body}</p>
+          <p className={`font-black uppercase tracking-widest ${s.title}`}>{content.title}</p>
+          <p className={`text-sm leading-relaxed ${s.body}`}>{content.body}</p>
         </div>
-        <Link
-          href={content.href}
-          className={`inline-flex flex-none items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium text-white shadow-sm transition active:scale-95 ${
-            isBlue ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
-          }`}
-        >
-          {content.cta}
-          <span aria-hidden="true">→</span>
-        </Link>
+        {content.cta && content.href && (
+          <Link
+            href={content.href}
+            className={`inline-flex flex-none items-center justify-center gap-2 rounded-sm border-2 border-transparent px-5 py-2.5 text-sm font-black uppercase tracking-widest shadow-sm transition active:scale-95 ${s.cta}`}
+          >
+            {content.cta}
+            <span aria-hidden="true">→</span>
+          </Link>
+        )}
       </div>
     </div>
   );
