@@ -14,7 +14,6 @@ import { Badge } from '../../components/ui/badge';
 import { Waves, Wind, Sparkles } from 'lucide-react';
 import { clearMatchingStorage } from './storage';
 
-import { CommunityHighlight } from '../../components/community/CommunityHighlight';
 
 const levelLabels: Record<Level, string> = { beginner: 'Débutant', intermediate: 'Intermédiaire', advanced: 'Confirmé', anytime: 'Peu importe' };
 const SPORT_KEY = 'matching.sport';
@@ -231,8 +230,6 @@ export default function MatchingPage() {
           )}
         </CardContent>
       </Card>
-
-      <CommunityHighlight context="matching" className="my-6 max-w-xl mx-auto" />
 
       {/* Actions de navigation */}
       <Card className="border-2">

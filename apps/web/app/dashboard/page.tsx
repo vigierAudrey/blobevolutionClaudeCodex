@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobDashboardShell } from '@/components/blob';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobDashboardShell, BlobMark } from '@/components/blob';
 import { apiClient } from '../../lib/apiClient';
 import { requireClientSession, SessionRequiredError } from '../../lib/clientSession';
 
@@ -220,33 +220,24 @@ export default function DashboardPage() {
       title={greeting}
       nav={[
         { label: 'Dashboard', href: '/dashboard', icon: <Map size={16} /> },
-        { label: 'Matching', href: matchingHref, icon: <Map size={16} /> },
+        { label: 'Matching', href: matchingHref, icon: <BlobMark size={16} decorative className="icon-blob-yellow" /> },
         { label: 'Messages', href: '/messages', icon: <MessageSquare size={16} /> },
         { label: 'Profil', href: '/profile', icon: <User size={16} /> },
         { label: 'Compte', href: '/account', icon: <Info size={16} /> },
       ]}
+      actions={
+        <>
+          <NotificationBell />
+          <BlobButton asChild variant="outlineDark" size="sm">
+            <Link href="/account">Mon compte</Link>
+          </BlobButton>
+          <BlobButton variant="dark" size="sm" onClick={logout}>
+            <LogOut size={14} /> Déconnexion
+          </BlobButton>
+        </>
+      }
     >
       <div className="space-y-6 pb-8">
-        <div className="rounded-sm border-2 border-blob-black dark:border-white/20 bg-white dark:bg-[hsl(220_14%_14%)] p-4 sm:p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-2xl text-sm leading-6 text-blob-black/72 dark:text-white/70">
-              Prêt·e pour ta prochaine session ? Explore, connecte, ride.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <NotificationBell />
-              <BlobButton asChild variant="outlineDark" size="sm">
-                <Link href="/account">Mon compte</Link>
-              </BlobButton>
-              <BlobButton
-                variant="dark"
-                size="sm"
-                onClick={logout}
-              >
-                <LogOut size={14} /> Déconnexion
-              </BlobButton>
-            </div>
-          </div>
-        </div>
 
       {/* Alerts */}
       {showProfilePrompt && (
@@ -285,15 +276,15 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {/* Matching */}
           <Link href={matchingHref} className="group block">
-            <BlobCard className="h-full bg-white">
+            <BlobCard mode="white" className="h-full">
               <div className="flex h-full flex-col gap-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
-                      <Map size={24} />
+                    <span className="flex h-11 w-11 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow">
+                      <BlobMark size={28} decorative />
                     </span>
                     <div>
-                      <h3 className="text-2xl font-black uppercase tracking-widest">Matching</h3>
+                      <h3 className="text-2xl font-black uppercase tracking-widest dark:text-white">Matching</h3>
                       <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Trouve des partenaires proches</p>
                     </div>
                   </div>
@@ -314,7 +305,7 @@ export default function DashboardPage() {
 
           {/* Messages */}
           <Link href="/messages" className="group block">
-            <BlobCard className="h-full bg-white">
+            <BlobCard mode="white" className="h-full">
               <div className="flex h-full flex-col gap-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
@@ -327,7 +318,7 @@ export default function DashboardPage() {
                       )}
                     </span>
                     <div>
-                      <h3 className="flex flex-wrap items-center gap-2 text-2xl font-black uppercase tracking-widest">
+                      <h3 className="flex flex-wrap items-center gap-2 text-2xl font-black uppercase tracking-widest dark:text-white">
                         Messagerie
                         {unreadTotal > 0 && (
                           <BlobBadge variant="error">
@@ -358,14 +349,14 @@ export default function DashboardPage() {
           <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
           <h2 className="text-lg font-black uppercase tracking-widest text-blob-black dark:text-white">Progresser avec un pro</h2>
         </div>
-        <BlobCard className="bg-white">
+        <BlobCard mode="white">
           <div className="flex flex-col gap-5">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black dark:border-white/30 bg-blob-sand dark:bg-white/10 text-blob-black dark:text-white">
                 <GraduationCap size={20} />
               </span>
               <div>
-                <h3 className="flex items-center gap-2 text-xl font-black uppercase tracking-widest">
+                <h3 className="flex items-center gap-2 text-xl font-black uppercase tracking-widest dark:text-white">
                   Cours & Bons Plans
                   <Tag size={16} className="text-blob-black/60 dark:text-white/50" />
                 </h3>
@@ -373,20 +364,16 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="relative group/tooltip">
+              <div className="flex flex-col gap-2">
                 <BlobButton asChild variant="dark" className="w-full">
                   <Link href="/lesson-request">
                     <RadioTower size={18} />
                     Demander un cours
                   </Link>
                 </BlobButton>
-                <div className="absolute bottom-full left-1/2 z-50 mb-3 w-72 -translate-x-1/2 opacity-0 transition-opacity duration-200 group-hover/tooltip:opacity-100 pointer-events-none">
-                  <div className="rounded-sm border-2 border-blob-black dark:border-white/20 bg-white dark:bg-[hsl(220_14%_14%)] px-4 py-3 text-blob-black dark:text-white shadow-lg">
-                    <p className="text-sm font-medium leading-relaxed">
-                      Les pros voient ta demande sur leur BloboMap et peuvent te proposer un cours adapté à ton niveau.
-                    </p>
-                  </div>
-                </div>
+                <p className="text-xs text-blob-black/55 dark:text-white/45 leading-relaxed">
+                  Les pros voient ta demande sur leur BloboMap et peuvent te proposer un cours adapté à ton niveau.
+                </p>
               </div>
 
               <BlobButton asChild className="w-full">
@@ -404,14 +391,14 @@ export default function DashboardPage() {
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* Blobosphère */}
         <Link href="/blobosphere" className="group">
-          <BlobCard className="h-full bg-white">
+          <BlobCard mode="white" className="h-full">
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black dark:border-white/30 bg-blob-sand dark:bg-white/10 text-blob-black dark:text-white">
                   <BookOpen size={20} />
                 </span>
                 <div>
-                  <h3 className="text-xl font-black uppercase tracking-widest">Blobosphère</h3>
+                  <h3 className="text-xl font-black uppercase tracking-widest dark:text-white">Blobosphère</h3>
                   <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Guides & conseils riders</p>
                 </div>
               </div>
@@ -424,14 +411,14 @@ export default function DashboardPage() {
 
         {/* Profil */}
         <Link href="/profile" className="group">
-          <BlobCard className="h-full bg-white">
+          <BlobCard mode="white" className="h-full">
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
                   <User size={20} />
                 </span>
                 <div>
-                  <h3 className="text-xl font-black uppercase tracking-widest">Mon Profil</h3>
+                  <h3 className="text-xl font-black uppercase tracking-widest dark:text-white">Mon Profil</h3>
                   <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Personnalise ton compte</p>
                 </div>
               </div>

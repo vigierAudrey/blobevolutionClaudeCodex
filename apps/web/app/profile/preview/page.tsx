@@ -118,7 +118,7 @@ export default function ProfilePreviewPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto flex max-w-xl justify-center bg-blob-sand pt-12" aria-live="polite">
+      <div className="mx-auto flex max-w-xl justify-center bg-blob-sand dark:bg-blob-black pt-12" aria-live="polite">
         <Spinner />
       </div>
     );
@@ -130,7 +130,7 @@ export default function ProfilePreviewPage() {
   const genderLabel = profile.sex && profile.sex !== 'UNSPECIFIED' ? GENDER_LABELS[profile.sex] : null;
 
   return (
-    <div className="mx-auto max-w-xl space-y-6 bg-blob-sand px-4 pb-16 pt-4 text-blob-black">
+    <div className="mx-auto max-w-xl space-y-6 bg-blob-sand dark:bg-blob-black px-4 pb-16 pt-4 text-blob-black dark:text-white">
       <BackBar fallbackHref="/profile" />
 
       <BlobPageHeader
@@ -173,10 +173,10 @@ export default function ProfilePreviewPage() {
         </BlobAlert>
       )}
 
-      <BlobCard className="bg-white">
+      <BlobCard mode="white">
         <div className="space-y-5">
           <h2 className="text-xl font-black uppercase tracking-widest">Ton profil public</h2>
-          <div className="rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-5 sm:p-6">
+          <div className="rounded-sm border-2 border-blob-sand-deep dark:border-white/10 bg-blob-sand dark:bg-[hsl(220_14%_18%)] p-5 sm:p-6">
             <div className="mb-4 flex flex-col items-center gap-4">
               {profile.hasPhoto ? (
                 <ProfilePhoto
@@ -200,14 +200,14 @@ export default function ProfilePreviewPage() {
                   className="flex flex-wrap items-center justify-center gap-2 text-2xl font-black uppercase tracking-widest"
                 >
                   {profile.displayName ?? (
-                    <span className="text-lg italic normal-case tracking-normal text-blob-black/56">Nom non défini</span>
+                    <span className="text-lg italic normal-case tracking-normal text-blob-black/56 dark:text-white/40">Nom non défini</span>
                   )}
                   {profile.wantsLesson && (
                     <BlobBadge variant="success">Cours</BlobBadge>
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-center justify-center gap-2 text-base font-medium text-blob-black/64">
+                <div className="flex flex-wrap items-center justify-center gap-2 text-base font-medium text-blob-black/64 dark:text-white/60">
                   {genderLabel && <span>{genderLabel}</span>}
                   {disciplines.length > 0
                     ? disciplines.map((d) => (
@@ -216,7 +216,7 @@ export default function ProfilePreviewPage() {
                         </BlobBadge>
                       ))
                     : (
-                        <span className="text-sm italic text-blob-black/56">
+                        <span className="text-sm italic text-blob-black/56 dark:text-white/40">
                           Aucune discipline renseignée
                         </span>
                       )
@@ -226,14 +226,14 @@ export default function ProfilePreviewPage() {
             </div>
 
             {profile.bio && (
-              <div className="mb-4 rounded-sm border-2 border-blob-sand-deep bg-white p-4 text-center text-base italic text-blob-black/72">
+              <div className="mb-4 rounded-sm border-2 border-blob-sand-deep dark:border-white/20 bg-white dark:bg-white/10 p-4 text-center text-base italic text-blob-black/72 dark:text-white/80">
                 &laquo;&nbsp;{profile.bio}&nbsp;&raquo;
               </div>
             )}
 
             {profile.wantsLesson &&
               (profile.lessonPlace || profile.lessonDate || profile.lessonStudentCount != null) && (
-                <div className="space-y-1 rounded-sm border-2 border-green-800 bg-green-50 p-3 text-sm text-green-950">
+                <div className="space-y-1 rounded-sm border-2 border-green-800 dark:border-green-500 bg-green-50 dark:bg-green-950/40 p-3 text-sm text-green-950 dark:text-green-100">
                   <p className="font-black uppercase tracking-widest">Détails du cours souhaité</p>
                   {profile.lessonPlace && <p>Lieu : {profile.lessonPlace}</p>}
                   {profile.lessonDate && <p>Date : {formatDate(profile.lessonDate)}</p>}
