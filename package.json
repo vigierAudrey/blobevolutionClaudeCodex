@@ -62,6 +62,7 @@
     "db:preflight:allow-pending": "pnpm --filter @blobinfini/database exec prisma migrate status || true",
     "db:migrate:nolock": "PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 pnpm --filter @blobinfini/database migrate",
     "db:studio": "pnpm --filter @blobinfini/database studio",
+    "db:studio:vps": "bash scripts/prisma-studio-vps.sh",
     "db:seed": "pnpm --filter @blobinfini/database seed",
     "db:seed:active-tests": "pnpm --filter @blobinfini/database seed:active-tests",
     "db:seed:pre-vps": "APP_ENV=pre-vps pnpm --filter @blobinfini/database seed:pre-vps",
