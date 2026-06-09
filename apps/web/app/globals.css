@@ -320,3 +320,25 @@ html[data-reduce-motion='true'] *::after {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* Teinte blob-yellow (hsl 43 96% 53%) sur icônes PNG noires */
+.icon-blob-yellow {
+  filter: brightness(0) saturate(100%) invert(81%) sepia(84%) saturate(671%) hue-rotate(345deg) brightness(102%);
+}
+
+/* Yellow ribbon — dessin gauche→droite au chargement de la homepage */
+@keyframes blobLineReveal {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.home-yellow-line {
+  transform-origin: left center;
+  animation: blobLineReveal 0.9s 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-yellow-line {
+    animation: none;
+  }
+}
