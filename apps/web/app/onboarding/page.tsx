@@ -24,8 +24,6 @@ const getErrorMessage = (error: unknown, fallback = 'Erreur') => {
   return fallback;
 };
 
-const ONBOARDING_DONE_KEY = 'blob_onboarding_complete';
-
 export default function OnboardingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -33,19 +31,16 @@ export default function OnboardingPage() {
   const [disciplines, setDisciplines] = useState<DisciplinePreference[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Fast-path: if onboarding was already completed in a previous session, skip straight to dashboard.
-  useEffect(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem(ONBOARDING_DONE_KEY) === '1') {
-      router.replace('/dashboard');
-    }
-  }, [router]);
-
   useEffect(() => {
     // No local hint check — truth comes from the server session.
     requireClientSession()
       .then((user) => {
         if (user.role === 'PRO') {
           router.replace('/pro/onboarding');
+          return;
+        }
+        if (user.role === 'ADMIN') {
+          router.replace('/admin/dashboard');
           return;
         }
 
@@ -82,7 +77,6 @@ export default function OnboardingPage() {
     if (loading || error) return;
     const complete = hasName && hasDiscipline && hasPhoto;
     if (complete) {
-      if (typeof window !== 'undefined') localStorage.setItem(ONBOARDING_DONE_KEY, '1');
       router.replace('/dashboard');
     }
   }, [loading, error, hasName, hasDiscipline, hasPhoto, router]);
