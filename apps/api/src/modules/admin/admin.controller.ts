@@ -2220,7 +2220,7 @@ adminRouter.get(
 //
 // SECURITY SURFACE:
 //   P0 — Accidental mass purge: dryRun=true by default, confirm="CONFIRM" required for real.
-//   P1 — Admin spam: adminSecurityRateLimit (module-level, shared with GET).
+//   P1 — Admin spam: adminPurgeRateLimit (route-level, 5/5min) + smartRateLimit ADMIN bucket (300/5min).
 //   P2 — Unauthorized access: requirePermissions('system.configure') gate.
 //
 // Retention rules enforced server-side (not exposed in body):

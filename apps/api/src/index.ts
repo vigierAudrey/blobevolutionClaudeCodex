@@ -22,9 +22,6 @@ import fs from 'fs';
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { createServer } from 'http';
 
-// Initialize Sentry BEFORE any other imports (must be after dotenv)
-import './instrument';
-
 // Standard logging for monitoring (Clever Cloud logs)
 import express from 'express';
 import session from 'express-session';
