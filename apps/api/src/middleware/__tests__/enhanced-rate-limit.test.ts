@@ -76,6 +76,9 @@ describe('Enhanced Rate Limiting', () => {
 
       expect(RATE_LIMIT_PROFILES.GLOBAL.max).toBe(1000);
       expect(RATE_LIMIT_PROFILES.GLOBAL.windowMs).toBe(15 * 60 * 1000);
+      // Admin dashboard fires 5-7 parallel requests per page load; must allow ~40 page loads per window.
+      expect(RATE_LIMIT_PROFILES.ADMIN.windowMs).toBe(5 * 60 * 1000);
+      expect(RATE_LIMIT_PROFILES.ADMIN.max).toBeGreaterThanOrEqual(200);
     });
 
     it('should have appropriate error messages for each profile', () => {

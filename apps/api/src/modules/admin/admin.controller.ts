@@ -9,7 +9,7 @@ import { audit } from '../../middleware/audit';
 import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
 import { requirePermissions, requireAnyPermission } from './admin.guard';
 import { enforceAdminAllowedIp, requireAdminStepUp } from './admin.security-guard';
-import { createRateLimiter, createLazyRateLimiter, createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { createLazyRateLimiter, createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 import { secureLogger } from '../../utils/secure-logger';
 import { invalidateSessionCache } from '../../lib/auth-session-store';
 import { disconnectUserSockets } from '../../lib/socket';
@@ -2001,12 +2001,9 @@ function pseudonymizeIP(ip: string | null): string {
   return 'xxx.xxx.xxx.xxx'; // Fallback
 }
 
-// Rate limiting pour endpoints admin sécurité (login-attempts)
-// GET browsing: shared ADMIN limit (50 req/5min).
-const adminSecurityRateLimit = createRateLimiter('ADMIN');
-
-// Purge endpoint: dedicated tighter limit — prevents accidental spam and protects
-// the shared ADMIN quota from being consumed by purge calls.
+// Purge endpoint: dedicated tighter limit — prevents accidental spam.
+// GET /security/login-attempts is already covered by the global smartRateLimit
+// ADMIN bucket (300/5min), so no per-route limiter is needed there.
 // 5 purge calls / 5 min is sufficient for any legitimate use.
 const adminPurgeRateLimit = createLazyCustomRateLimiter(
   {
@@ -2062,7 +2059,6 @@ const loginAttemptsQuerySchema = z.object({
 
 adminRouter.get(
   '/security/login-attempts',
-  adminSecurityRateLimit,
   requireAnyPermission('security.read', 'system.configure'),
   audit('admin:security:login-attempts', () => 'admin:security:login-attempts'),
   async (req, res) => {
