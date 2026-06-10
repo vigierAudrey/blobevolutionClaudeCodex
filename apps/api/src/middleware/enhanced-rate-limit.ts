@@ -188,10 +188,23 @@ export const RATE_LIMIT_PROFILES = {
     }
   },
 
-  // Email verification resend - prevent spam (P2-5)
+  // Email verification resend — short cooldown per email (R5: prevents button spam)
+  EMAIL_VERIFICATION_COOLDOWN: {
+    windowMs: 60 * 1000, // 1 minute
+    max: 1, // 1 per minute per email
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'EMAIL_VERIFICATION_COOLDOWN',
+      message: 'Please wait before requesting another verification email.',
+      retryAfter: '1 minute'
+    }
+  },
+
+  // Email verification resend — hourly quota per email (P2-5)
   EMAIL_VERIFICATION: {
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: 3, // 3 resend attempts per hour per email
+    max: 5, // 5 resend attempts per hour per email (raised from 3 since cooldown filters button spam)
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -310,7 +323,7 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
   if (!customOptions?.keyGenerator) {
     options.keyGenerator = (req: Request) => {
       // Email-keyed endpoints: per-email limit (IP-independent, prevents ISP NAT bypass)
-      if (profile === 'EMAIL_VERIFICATION' || profile === 'PASSWORD_RESET_EMAIL') {
+      if (profile === 'EMAIL_VERIFICATION' || profile === 'EMAIL_VERIFICATION_COOLDOWN' || profile === 'PASSWORD_RESET_EMAIL') {
         const fromBody = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
         const fromQuery = typeof req.query?.email === 'string' ? String(req.query.email).trim().toLowerCase() : '';
         const identifierSource = fromBody || fromQuery;

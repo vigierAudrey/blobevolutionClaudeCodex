@@ -87,7 +87,7 @@ describe('AuthService', () => {
 
       const result = await authService.register(userData, { consentIp: '127.0.0.1' });
 
-      expect(result.message).toBe('Account created. Please verify your email.');
+      expect(result.message).toBe('Account created. Please check your inbox for the verification email.');
       expect(result.userId).toBeDefined();
       expect(result.verificationToken).toBeDefined(); // In test env
 
@@ -136,7 +136,9 @@ describe('AuthService', () => {
         });
     });
 
-    it('should rollback registration when verification email delivery fails', async () => {
+    it('should create account even when email delivery fails (R4: no rollback)', async () => {
+      // R4: Brevo failure no longer rollbacks the account.
+      // The user is created, emailSent is false, resend button handles recovery.
       mockSendVerificationEmail.mockRejectedValue(new MailDeliveryError({
         type: 'email_verification',
         provider: 'brevo',
@@ -150,8 +152,15 @@ describe('AuthService', () => {
         role: 'RIDER' as const
       };
 
-      await expect(authService.register(userData)).rejects.toEqual({ code: 'EMAIL_DELIVERY_UNAVAILABLE' });
-      await expect(prisma.user.findUnique({ where: { email: userData.email } })).resolves.toBeNull();
+      const result = await authService.register(userData);
+      expect(result.emailSent).toBe(false);
+      expect(result.message).toContain('resend button');
+      expect(result.userId).toBeDefined();
+
+      // User must exist in DB — NOT rolled back
+      const user = await prisma.user.findUnique({ where: { email: userData.email } });
+      expect(user).not.toBeNull();
+      expect(user!.emailVerified).toBe(false);
     });
 
     it('should create user with PRO role', async () => {

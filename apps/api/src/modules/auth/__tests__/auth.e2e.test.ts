@@ -493,7 +493,9 @@ describe('Auth E2E', () => {
   });
 
   describe('Rate Limiting (P2-5)', () => {
-    it('should apply rate limiting on /resend-verification', async () => {
+    it('should apply rate limiting on /resend-verification (cooldown 1/min, quota 5/h)', async () => {
+      // R5: 3-layer rate limit — the cooldown (1/60s/email) now fires before the hourly quota.
+      // First request passes, second immediate request is blocked by EMAIL_VERIFICATION_COOLDOWN.
       const testEmail = `rate-limit-test-${Date.now()}@example.com`;
 
       const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
@@ -502,18 +504,18 @@ describe('Auth E2E', () => {
       const rlSession = await createTestSession(rlApp);
 
       try {
-        for (let i = 0; i < 3; i++) {
-          const res = await rlSession
-            .post('/auth/resend-verification')
-            .send({ email: testEmail });
-          expect([200, 404]).toContain(res.status);
-        }
+        // First request: passes (200 for unknown email = generic response)
+        const firstRes = await rlSession
+          .post('/auth/resend-verification')
+          .send({ email: testEmail });
+        expect(firstRes.status).toBe(200);
 
-        const res = await rlSession
+        // Second immediate request: blocked by cooldown (1/60s per email)
+        const secondRes = await rlSession
           .post('/auth/resend-verification')
           .send({ email: testEmail })
           .expect(429);
-        expect(res.body.error).toContain('EMAIL_VERIFICATION_RATE_LIMIT_EXCEEDED');
+        expect(secondRes.body.error).toBe('EMAIL_VERIFICATION_COOLDOWN');
       } finally {
         if (previousFlag === undefined) {
           delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
