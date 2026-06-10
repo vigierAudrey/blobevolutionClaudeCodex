@@ -339,9 +339,6 @@ authRouter.post('/register', validate(registerSchema), async (req, res) => {
     if (err?.code === 'EMAIL_ALREADY_EXISTS') {
       return res.status(409).json({ error: 'Email already registered' });
     }
-    if (err?.code === 'EMAIL_DELIVERY_UNAVAILABLE') {
-      return res.status(503).json({ error: 'Registration temporarily unavailable' });
-    }
     return res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -616,10 +613,11 @@ authRouter.post('/verify-email', async (req, res) => {
 });
 
 // Resend verification email (generic response)
-// P2-5: Rate limiting to prevent email spam (3 attempts/hour per email)
+// R5: 3-layer rate limit — IP (5/15min), cooldown (1/60s/email), quota (5/hour/email)
 authRouter.post(
   '/resend-verification',
   resendVerificationIpLimiter,
+  createLazyRateLimiter('EMAIL_VERIFICATION_COOLDOWN'),
   createLazyRateLimiter('EMAIL_VERIFICATION'),
   async (req, res) => {
     try {

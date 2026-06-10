@@ -180,10 +180,14 @@ export class AuthService {
       });
       // Génère un token de vérification email
       const verification = await this.createEmailVerification(user.id);
+      let emailSent = true;
       try {
         await sendVerificationEmail(user.email, verification.token);
       } catch (error) {
         if (error instanceof MailDeliveryError) {
+          // R4: ne pas rollbacker le compte — Brevo temporairement indisponible.
+          // L'utilisateur peut renvoyer l'email via /resend-verification.
+          emailSent = false;
           secureLogger.warn('REGISTER_EMAIL_DELIVERY_FAILED', {
             userId: user.id,
             emailHash: hashEmailHmac(user.email),
@@ -191,18 +195,16 @@ export class AuthService {
             latencyMs: error.latencyMs,
             ...(typeof error.smtpCode === 'number' ? { smtpCode: error.smtpCode } : {}),
           });
-          try {
-            await prisma.user.delete({ where: { id: user.id } });
-          } catch {
-            secureLogger.error('REGISTER_EMAIL_ROLLBACK_FAILED', { userId: user.id });
-          }
-          throw { code: 'EMAIL_DELIVERY_UNAVAILABLE' };
+        } else {
+          throw error;
         }
-        throw error;
       }
       return {
-        message: 'Account created. Please verify your email.',
+        message: emailSent
+          ? 'Account created. Please check your inbox for the verification email.'
+          : 'Account created. If you don\'t receive the email, use the resend button.',
         userId: user.id,
+        emailSent,
         // En test uniquement, on expose le token brut pour simplifier les tests
         ...(process.env.NODE_ENV === 'test' ? { verificationToken: verification.token } : {}),
       };
