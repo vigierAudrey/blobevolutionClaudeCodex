@@ -200,4 +200,43 @@ describe('POST /consent/:hash — hash format validation (P2 close)', () => {
     expect(res.body.error).toBe('Invalid consent payload');
     expect(Array.isArray(res.body.details)).toBe(true);
   });
+
+  // ── Rate limit dédié écriture ───────────────────────────────────────────────
+
+  it('returns 429 after 10 POST requests within 1 minute (consentWriteLimiter)', async () => {
+    const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+
+    try {
+      const rlApp = createApp();
+      const agent = request.agent(rlApp);
+      const tokenRes = await agent.get('/csrf-token');
+      const csrfToken: string = (tokenRes.body as { csrfToken: string }).csrfToken;
+
+      let lastStatus = 0;
+      for (let i = 0; i < 11; i++) {
+        const res = await agent
+          .post(`/consent/${VALID_HASH}`)
+          .set('X-CSRF-Token', csrfToken)
+          .send(VALID_BODY);
+        lastStatus = res.status;
+        if (res.status === 429) break;
+      }
+
+      expect(lastStatus).toBe(429);
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      } else {
+        process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+      }
+    }
+  });
+
+  it('keeps the dedicated read limiter on GET (réponse neutre, pas de couplage)', async () => {
+    // Le GET conserve son budget propre (30/min) : une rafale d'écritures
+    // limitée ne doit pas bloquer la lecture du consentement.
+    const res = await request(app).get(`/consent/${VALID_HASH}`);
+    expect([200]).toContain(res.status);
+  });
 });

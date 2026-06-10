@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
+import { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import {
   createOrUpdateConsent,
@@ -7,6 +8,7 @@ import {
 } from '../../services/consent.service';
 import { secureLogger } from '../../utils/secure-logger';
 import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
+import { getClientIp } from '../../lib/client-ip';
 
 export const consentRouter = Router();
 
@@ -21,6 +23,24 @@ const consentReadLimiter = createLazyCustomRateLimiter(
     message: { error: 'CONSENT_RATE_LIMIT_EXCEEDED' },
   },
   'consent_read',
+);
+
+// Écriture non authentifiée (bannière cookies anonyme) : budget bien plus
+// serré que la lecture — un visiteur légitime ne change son consentement
+// que quelques fois par minute au maximum.
+const consentWriteLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'CONSENT_RATE_LIMIT_EXCEEDED' },
+    keyGenerator: (req: Request) => {
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `consent_write:ip:${ipKeyGenerator(ip)}`;
+    },
+  },
+  'consent_write',
 );
 
 const consentBodySchema = z.object({
@@ -50,7 +70,7 @@ consentRouter.get('/:hash', consentReadLimiter, async (req, res) => {
   }
 });
 
-consentRouter.post('/:hash', async (req, res) => {
+consentRouter.post('/:hash', consentWriteLimiter, async (req, res) => {
   const { hash } = req.params;
   if (!hash || !HASH_REGEX.test(hash)) {
     return res.status(400).json({ error: 'Invalid hash format' });

@@ -139,12 +139,6 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
               <Link href="/login">Déjà membre ? Se connecter</Link>
             </Button>
             <Button asChild variant="ghost" size="lg" className="bg-transparent text-white hover:bg-white/10">
-              <Link href="/promos" className="inline-flex items-center gap-2">
-                Voir les promos actives
-                <span aria-hidden="true">→</span>
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="lg" className="bg-transparent text-white hover:bg-white/10">
               <Link href="/">← Retour à l&apos;accueil</Link>
             </Button>
           </div>
