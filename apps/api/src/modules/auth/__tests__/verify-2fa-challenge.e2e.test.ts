@@ -89,6 +89,26 @@ async function createAdmin() {
   return { email, password, userId: user.id };
 }
 
+// Admin promu directement en base (sans adminProfile) — reproduit le cas prod réel
+async function createAdminWithoutProfile() {
+  const email = `admin-noprofile-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
+  const password = 'AdminPassw0rd!!';
+  const hashed = await bcrypt.hash(password, 10);
+
+  const user = await prisma.user.create({
+    data: {
+      email,
+      password: hashed,
+      role: 'ADMIN',
+      emailVerified: true,
+      consentedAt: new Date(),
+      consentVersion: 'v1.0.0',
+    },
+  });
+
+  return { email, password, userId: user.id };
+}
+
 async function start2FALogin(app: ReturnType<typeof createApp>, email: string, password: string, ip: string) {
   const { cookies, csrfToken } = await getCsrf(app);
   return request(app)
@@ -233,5 +253,95 @@ describe('Auth verify-2fa flow', () => {
       .expect(401);
 
     expect(JSON.stringify(res.body)).not.toContain(admin.email);
+  });
+
+  // H2: adminProfile absent => doit retourner 200, jamais 500
+  it('admin sans adminProfile (promu en base) => verify-2fa reussie sans 500', async () => {
+    const admin = await createAdminWithoutProfile();
+    const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.20');
+    expect(login.status).toBe(200);
+    expect(login.body).toMatchObject({ requires2FA: true, challengeId: expect.any(String) });
+
+    const code = lastSentCode();
+    const res = await verify2FA(
+      app,
+      { challengeId: login.body.challengeId as string, code },
+      '203.0.113.20',
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    // adminProfile doit avoir été créé par upsert
+    const profile = await prisma.adminProfile.findUnique({ where: { userId: admin.userId } });
+    expect(profile).not.toBeNull();
+    expect(profile?.lastLoginAt).not.toBeNull();
+  });
+
+  // H1: code invalide => 401, jamais 500
+  it('code invalide => 401 propre, pas 500', async () => {
+    const admin = await createAdmin();
+    const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.21');
+
+    const res = await verify2FA(
+      app,
+      { challengeId: login.body.challengeId as string, code: '000000' },
+      '203.0.113.21',
+    );
+
+    expect(res.status).toBe(401);
+    // Aucune fuite de détails internes (stack trace, code Prisma, etc.)
+    const body = JSON.stringify(res.body);
+    expect(body).not.toMatch(/stack|P2025|PrismaClient|at Object\.|at async/i);
+  });
+
+  // Session 2FA absente => 401 propre
+  it('session 2FA absente (challengeId inconnu) => 401 propre', async () => {
+    const res = await verify2FA(
+      app,
+      { challengeId: randomUUID(), code: '123456' },
+      '203.0.113.22',
+    );
+
+    expect(res.status).toBe(401);
+  });
+
+  // Payload invalide => 400 propre (strict schema)
+  it('payload sans challengeId => 400 propre', async () => {
+    const { cookies, csrfToken } = await getCsrf(app);
+    const res = await request(app)
+      .post('/auth/verify-2fa')
+      .set('Cookie', cookies)
+      .set('X-CSRF-Token', csrfToken)
+      .send({ code: '123456' });
+
+    expect(res.status).toBe(400);
+  });
+
+  // Pas de session admin complète avant 2FA validée
+  it('cookies admin_session absents tant que 2FA non validée', async () => {
+    const admin = await createAdmin();
+    const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.23');
+    // Après login initial (2FA requis), pas de cookies d'accès admin
+    const loginCookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+    expect(loginCookies.find((c) => c.startsWith('accessToken='))).toBeUndefined();
+    expect(loginCookies.find((c) => c.startsWith('admin_session='))).toBeUndefined();
+  });
+
+  // Aucun code/token/secret dans les réponses
+  it('la réponse verify-2fa reussie n expose ni token ni code', async () => {
+    const admin = await createAdmin();
+    const login = await start2FALogin(app, admin.email, admin.password, '203.0.113.24');
+    const code = lastSentCode();
+
+    const res = await verify2FA(
+      app,
+      { challengeId: login.body.challengeId as string, code },
+      '203.0.113.24',
+    );
+
+    expect(res.status).toBe(200);
+    const body = JSON.stringify(res.body);
+    // Aucune valeur sensible dans le body JSON
+    expect(body).not.toMatch(/password|hash|token|secret|code/i);
   });
 });

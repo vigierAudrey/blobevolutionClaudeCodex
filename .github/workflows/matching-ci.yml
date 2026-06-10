@@ -75,20 +75,8 @@ jobs:
     runs-on: ubuntu-22.04
     needs: matching-guard
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: blobinfini
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # No `services:` block — GitHub Actions services have no retry on Docker Hub timeouts.
+    # Postgres is started manually below with an explicit pull-retry loop.
     env:
       NODE_ENV: test
       NODE_OPTIONS: --max-old-space-size=4096
@@ -103,6 +91,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Pull Postgres image (with retry)
+        # The `services:` block has no retry — transient Docker Hub timeouts cause job failure.
+        # This loop retries up to 5 times with linear backoff (15s, 30s, 45s, 60s).
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            echo "Pulling postgis/postgis:16-3.4 (attempt ${attempt}/5)..."
+            if docker pull postgis/postgis:16-3.4; then
+              echo "Pull succeeded."
+              break
+            fi
+            if [ "${attempt}" -eq 5 ]; then
+              echo "All 5 pull attempts failed." >&2
+              exit 1
+            fi
+            sleep $((attempt * 15))
+          done
+
+      - name: Start Postgres container
+        run: |
+          docker run -d \
+            --name postgres \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=blobinfini \
+            -p 5432:5432 \
+            postgis/postgis:16-3.4
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6

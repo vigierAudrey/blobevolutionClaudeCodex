@@ -269,6 +269,32 @@ const loginEmailLimiter = createLazyCustomRateLimiter(
   'auth_login_email',
 );
 
+// Rate limit HTTP-level sur /verify-2fa (défense en profondeur, avant la résolution du challenge).
+// Le Lua script fournit déjà des counters Redis par user/IP/user+IP, mais ces contrôles
+// ne s'activent qu'après résolution du challengeId. Ce limiter bloque les floods raw avant
+// toute interaction avec Redis 2FA.
+const verify2FALimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `verify_2fa:ip:${ipKeyGenerator(ip)}`;
+    },
+    handler: (_req: Request, res: Response) => {
+      res.status(429).json({
+        error: 'TOO_MANY_2FA_ATTEMPTS',
+        message: 'Trop de tentatives. Réessaie dans quelques minutes.',
+        retryAfter: '15 minutes',
+      });
+    },
+    skip: () => process.env.NODE_ENV === 'test' && !process.env.ENABLE_RATE_LIMIT_IN_TESTS,
+  },
+  'verify_2fa_ip',
+);
+
 const stepUpLimiter = createLazyRateLimiter('AUTH', {
   keyGenerator: (req: Request & { user?: { id?: string }; canonicalIp?: string }): string => {
     const userId = req.user?.id;
@@ -473,7 +499,7 @@ const verify2FASchema = z.object({
   consentAccepted: z.boolean().optional().default(false),
 }).strict();
 
-authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
+authRouter.post('/verify-2fa', verify2FALimiter, validate(verify2FASchema), async (req, res) => {
   try {
     const { challengeId, code, consentAccepted } = req.body as z.infer<typeof verify2FASchema>;
 
@@ -509,10 +535,12 @@ authRouter.post('/verify-2fa', validate(verify2FASchema), async (req, res) => {
       }
     }
 
-    // Mettre à jour lastLoginAt
-    await prisma.adminProfile.update({
+    // Upsert safe : crée le profil si absent (compte promu ADMIN en base sans profil créé),
+    // sinon met à jour lastLoginAt. Évite P2025 → 500 sur adminProfile absent.
+    await prisma.adminProfile.upsert({
       where: { userId: user.id },
-      data: { lastLoginAt: new Date() }
+      create: { userId: user.id, lastLoginAt: new Date() },
+      update: { lastLoginAt: new Date() },
     });
 
     // Générer les tokens
