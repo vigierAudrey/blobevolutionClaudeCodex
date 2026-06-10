@@ -1,11 +1,15 @@
 /**
- * Auth guard tests for OnboardingPage.
+ * Tests for OnboardingPage.
  *
  * Invariants verified:
- *   1. Valid server session + no localStorage hint → page renders, no /login redirect
- *   2. Invalid server session (SESSION_EXPIRED) → redirect to /login
- *   3. PRO role → redirect to /pro/onboarding, not /login
- *   4. getTokens() is never called (hint not consulted)
+ *   1. Valid server session + profil incomplet → affiche la checklist onboarding
+ *   2. Invalid server session (SESSION_EXPIRED) → redirect vers /login
+ *   3. PRO role → redirect vers /pro/onboarding
+ *   4. Profil complet → redirect automatique vers /dashboard
+ *   5. Pas de fast-path localStorage : même avec une ancienne clé blob_onboarding_complete,
+ *      la page vérifie le serveur avant de rediriger
+ *   6. getTokens() n'est jamais appelé (hint local non consulté)
+ *   7. Pas de double router.replace (une seule direction de sortie par cas)
  */
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -20,7 +24,7 @@ jest.mock('next/navigation', () => ({
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
     me: jest.fn(),
-    getTokens: jest.fn(), // must NOT be called
+    getTokens: jest.fn(),
     getProfile: jest.fn(),
     getDisciplines: jest.fn(),
   },
@@ -49,11 +53,11 @@ describe('OnboardingPage — auth guard', () => {
       refresh: jest.fn(),
       prefetch: jest.fn(),
     });
+    // Nettoie localStorage — aucune trace d'ancienne session
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('blob_session_hint');
-      window.localStorage.removeItem('blob_onboarding_complete');
     }
-    // Default profile setup: incomplete (triggers onboarding display)
+    // Profil incomplet par défaut (déclenche l'affichage de la checklist)
     mockedApiClient.getProfile.mockResolvedValue({
       displayName: null,
       hasPhoto: false,
@@ -62,7 +66,7 @@ describe('OnboardingPage — auth guard', () => {
     mockedApiClient.getDisciplines.mockResolvedValue([]);
   });
 
-  it('renders onboarding when session is valid — even with no local hint', async () => {
+  it('affiche la checklist onboarding quand le profil est incomplet', async () => {
     mockedApiClient.me.mockResolvedValueOnce({ role: 'RIDER' } as never);
 
     render(<OnboardingPage />);
@@ -72,10 +76,11 @@ describe('OnboardingPage — auth guard', () => {
     });
 
     expect(replace).not.toHaveBeenCalledWith('/login');
+    expect(replace).not.toHaveBeenCalledWith('/dashboard');
     expect(mockedApiClient.me).toHaveBeenCalledTimes(1);
   });
 
-  it('redirects to /login on SESSION_EXPIRED — not before checking the server', async () => {
+  it('redirige vers /login quand la session expire — vérifie le serveur en premier', async () => {
     const err = Object.assign(new Error('expired'), { code: 'SESSION_EXPIRED' });
     mockedApiClient.me.mockRejectedValueOnce(err);
 
@@ -84,11 +89,11 @@ describe('OnboardingPage — auth guard', () => {
     await waitFor(() => {
       expect(replace).toHaveBeenCalledWith('/login');
     });
-    // Profile should not have been fetched — session gate fires first
+    // getProfile ne doit pas être appelé — la session gate bloque en premier
     expect(mockedApiClient.getProfile).not.toHaveBeenCalled();
   });
 
-  it('redirects PRO to /pro/onboarding — not /login', async () => {
+  it('redirige PRO vers /pro/onboarding — pas /login', async () => {
     mockedApiClient.me.mockResolvedValueOnce({ role: 'PRO' } as never);
 
     render(<OnboardingPage />);
@@ -99,7 +104,21 @@ describe('OnboardingPage — auth guard', () => {
     expect(replace).not.toHaveBeenCalledWith('/login');
   });
 
-  it('does not call getTokens() — hint is never consulted', async () => {
+  it('redirige ADMIN vers /admin/dashboard — pas onboarding ni /login', async () => {
+    mockedApiClient.me.mockResolvedValueOnce({ role: 'ADMIN' } as never);
+
+    render(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/admin/dashboard');
+    });
+    expect(replace).not.toHaveBeenCalledWith('/login');
+    expect(replace).not.toHaveBeenCalledWith('/onboarding');
+    // getProfile ne doit pas être appelé — l'ADMIN est redirigé immédiatement
+    expect(mockedApiClient.getProfile).not.toHaveBeenCalled();
+  });
+
+  it('ne consulte jamais getTokens() — pas de hint local', async () => {
     mockedApiClient.me.mockResolvedValueOnce({ role: 'RIDER' } as never);
 
     render(<OnboardingPage />);
@@ -109,5 +128,64 @@ describe('OnboardingPage — auth guard', () => {
     });
 
     expect(mockedApiClient.getTokens).not.toHaveBeenCalled();
+  });
+
+  it('redirige vers /dashboard quand le profil est complet', async () => {
+    mockedApiClient.me.mockResolvedValueOnce({ role: 'RIDER' } as never);
+    mockedApiClient.getProfile.mockResolvedValueOnce({
+      displayName: 'Audrey',
+      hasPhoto: true,
+      photoEndpoint: '/photo/123',
+    } as never);
+    mockedApiClient.getDisciplines.mockResolvedValueOnce([
+      { sport: 'SURF', level: 'INTERMEDIATE' },
+    ] as never);
+
+    render(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/dashboard');
+    });
+    expect(replace).not.toHaveBeenCalledWith('/login');
+  });
+
+  it('PAS de bounce loop — même avec une ancienne clé localStorage, vérifie le serveur', async () => {
+    // Simule un état localStorage d'une ancienne session (clé supprimée mais on teste la robustesse)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('blob_onboarding_complete', '1');
+    }
+    mockedApiClient.me.mockResolvedValueOnce({ role: 'RIDER' } as never);
+
+    render(<OnboardingPage />);
+
+    // La page doit attendre le résultat serveur, pas rediriger immédiatement
+    await waitFor(() => {
+      expect(mockedApiClient.me).toHaveBeenCalled();
+    });
+
+    // Profil incomplet → checklist affichée, pas de redirect vers dashboard
+    await waitFor(() => {
+      expect(screen.queryByText('Chargement…')).not.toBeInTheDocument();
+    });
+
+    expect(replace).not.toHaveBeenCalledWith('/dashboard');
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('blob_onboarding_complete');
+    }
+  });
+
+  it('un seul replace() par cas — pas de double redirect', async () => {
+    mockedApiClient.me.mockResolvedValueOnce({ role: 'RIDER' } as never);
+
+    render(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(mockedApiClient.me).toHaveBeenCalled();
+    });
+
+    // Au maximum un appel replace sur le trajet incomplet
+    expect(replace.mock.calls.filter((c) => c[0] === '/login').length).toBeLessThanOrEqual(1);
+    expect(replace.mock.calls.filter((c) => c[0] === '/dashboard').length).toBeLessThanOrEqual(1);
   });
 });

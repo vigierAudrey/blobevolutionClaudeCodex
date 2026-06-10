@@ -43,53 +43,69 @@ export default function DashboardPage() {
   const [hasMatchingShortcut, setHasMatchingShortcut] = useState(false);
 
   useEffect(() => {
-    // No local hint check — truth comes from the server session.
-    requireClientSession()
-      .then((u) => {
-        setUser(u as DashboardUser);
-        // First-login banner heuristic: show once per user until dismissed
-        const key = `visited-dashboard-${u?.id}`;
-        const visited = typeof window !== 'undefined' ? localStorage.getItem(key) : '1';
-        if (!visited) setShowProfilePrompt(true);
-        if (typeof window !== 'undefined') localStorage.setItem(key, '1');
-      })
-      .catch((err) => {
-        if (err instanceof SessionRequiredError) {
-          router.replace('/login');
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [router]);
-
-  // Load profile to get displayName
-  useEffect(() => {
-    if (!user) return;
     let active = true;
     (async () => {
       try {
-        const [p, d] = await Promise.all([
-          apiClient.getProfile(),
-          apiClient.getDisciplines().catch(() => []),
-        ]);
+        const u = await requireClientSession();
         if (!active) return;
-        if (p?.displayName) {
-          setDisplayName(p.displayName);
+
+        const typedUser = u as DashboardUser;
+
+        // Redirect non-RIDER users before any dashboard content renders.
+        // active=false keeps the loader visible until navigation completes.
+        if (typedUser.role === 'PRO') {
+          router.replace('/pro/dashboard');
+          active = false;
+          return;
         }
-        const hasName = !!p?.displayName;
-        const hasPhoto = Boolean(p?.hasPhoto);
-        const hasDiscipline = Array.isArray(d) && d.length > 0;
-        const incomplete = !hasName || !hasPhoto || !hasDiscipline;
-        if (incomplete) {
-          router.replace('/onboarding');
-        } else {
-          setShowProfilePrompt(false);
+        if (typedUser.role === 'ADMIN') {
+          router.replace('/admin/dashboard');
+          active = false;
+          return;
         }
-      } catch {
-        // ignore
+
+        // Profile completeness check runs before setLoading(false) so the
+        // dashboard never renders and then redirects — it redirects silently.
+        try {
+          const [p, d] = await Promise.all([
+            apiClient.getProfile(),
+            apiClient.getDisciplines().catch(() => []),
+          ]);
+          if (!active) return;
+
+          const hasName = !!p?.displayName;
+          const hasPhoto = Boolean((p as { hasPhoto?: boolean } | null)?.hasPhoto);
+          const hasDiscipline = Array.isArray(d) && d.length > 0;
+
+          if (!hasName || !hasPhoto || !hasDiscipline) {
+            router.replace('/onboarding');
+            active = false;
+            return;
+          }
+
+          if (p?.displayName) setDisplayName(p.displayName);
+        } catch {
+          // Profile check failed — show dashboard, degrade gracefully
+        }
+
+        setUser(typedUser);
+        // First-login banner: show once per user until dismissed
+        const key = `visited-dashboard-${typedUser.id}`;
+        const visited = typeof window !== 'undefined' ? localStorage.getItem(key) : '1';
+        if (!visited) setShowProfilePrompt(true);
+        if (typeof window !== 'undefined') localStorage.setItem(key, '1');
+      } catch (err) {
+        if (!active) return;
+        if (err instanceof SessionRequiredError) {
+          router.replace('/login');
+          active = false;
+        }
+      } finally {
+        if (active) setLoading(false);
       }
     })();
     return () => { active = false; };
-  }, [user, router]);
+  }, [router]);
 
   // Load aggregated unread count for conversations
   useEffect(() => {
@@ -138,13 +154,6 @@ export default function DashboardPage() {
       if (intervalId != null) window.clearInterval(intervalId);
     };
   }, []);
-
-  useEffect(() => {
-    if (user?.role === 'PRO') {
-      router.replace('/pro/dashboard');
-      return;
-    }
-  }, [user, router]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
