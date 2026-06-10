@@ -162,10 +162,13 @@ export const RATE_LIMIT_PROFILES = {
     }
   },
 
-  // Admin endpoints - moderate limits but tracked
+  // Admin endpoints — dashboard fires 5-7 parallel requests per page load.
+  // 300/5min (= 60/min) allows ~60 page loads per window while still rate-limiting
+  // unauthenticated probing. Auth, IP-allowlist, role checks and step-up provide
+  // the real security; this limit only guards against mass unauthenticated probing.
   ADMIN: {
     windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 50, // 50 admin actions per window
+    max: 300, // 300 admin requests per window
     standardHeaders: true,
     legacyHeaders: false,
     message: {
