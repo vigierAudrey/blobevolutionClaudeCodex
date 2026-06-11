@@ -40,6 +40,7 @@ describe('ResetPasswordPage', () => {
     render(<ResetPasswordPage />);
     const user = userEvent.setup();
 
+    expect(await screen.findByRole('heading', { name: /nouveau mot de passe/i })).toBeInTheDocument();
     const passwordInput = await screen.findByLabelText(/nouveau mot de passe/i);
     await waitFor(() => expect(screen.getByLabelText(/token/i)).toHaveValue('abc123'));
     await user.type(passwordInput, 'NewPass123!');
@@ -47,6 +48,7 @@ describe('ResetPasswordPage', () => {
 
     expect(mockedApiClient.resetPassword).toHaveBeenCalledWith({ token: 'abc123', password: 'NewPass123!' });
     expect(await screen.findByText(/mot de passe mis à jour/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /aller à la connexion/i })).toBeInTheDocument();
   });
 
   it('affiche une erreur si la réinitialisation échoue', async () => {
