@@ -290,7 +290,7 @@ export function createRateLimiter(profile: keyof typeof RATE_LIMIT_PROFILES, cus
       // Skip for trusted IPs — use canonical IP (Cloudflare-aware) not raw req.ip
       const trustedIPs = process.env.TRUSTED_IPS?.split(',') || [];
       if (trustedIPs.length > 0) {
-        const clientIp = getClientIp(req) ?? req.ip;
+        const clientIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress;
         if (clientIp && trustedIPs.includes(clientIp)) {
           return true;
         }

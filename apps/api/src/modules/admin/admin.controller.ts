@@ -224,6 +224,39 @@ const adminAlertCreateLimiter = createLazyCustomRateLimiter(
   'admin_alert_create',
 );
 
+// Diffusion de messages admin : 3 / heure / admin.
+// Justification : un broadcast fan-out vers potentiellement tous les utilisateurs
+// (amplification 1 requête → N conversations + N messages). C'est une action de
+// communication planifiée, rare. 3/heure couvre un correctif de message raté.
+// Defense-in-depth : requirePermissions('reports.moderate') + requireAdminStepUp
+// restent les verrous fonctionnels. keyGenerator userId-based → compteur par admin,
+// jamais dépendant de l'IP seule.
+const adminBroadcastLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 60 * 1000,
+    max: 3,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: any) =>
+      process.env.NODE_ENV === 'test' &&
+      String(process.env.ENABLE_RATE_LIMIT_IN_TESTS ?? '').toLowerCase() !== 'true',
+    keyGenerator: (req: any) => {
+      const userId = (req as any).user?.id;
+      return userId ? `admin_broadcast:${userId}` : 'admin_broadcast:anonymous';
+    },
+    handler: (_req: any, res: any) => {
+      secureLogger.warn('ADMIN_BROADCAST_RATE_LIMIT_EXCEEDED', { endpoint: '/admin/conversations/broadcast' });
+      res.status(429).json({
+        error: 'ADMIN_BROADCAST_RATE_LIMIT_EXCEEDED',
+        message: 'Limite de diffusions atteinte. Maximum 3 par heure.',
+        retryAfter: 3600,
+        timestamp: new Date().toISOString(),
+      });
+    },
+  },
+  'admin_broadcast',
+);
+
 // Toutes les routes admin nécessitent une authentification, un email vérifié et le rôle admin
 adminRouter.use(requireAuth, requireVerifiedEmail);
 adminRouter.use(requireAdmin);
@@ -1329,6 +1362,7 @@ const conversationBroadcastSchema = z.object({
 
 adminRouter.post(
   '/conversations/broadcast',
+  adminBroadcastLimiter,
   requirePermissions('reports.moderate'),
   requireAdminStepUp,
   audit('admin:conversations:broadcast', () => 'admin:conversations:broadcast'),
@@ -1386,22 +1420,32 @@ adminRouter.post(
         });
       }
 
+      // Fan-out par lots : ensureAdminConversation reste appelée par destinataire
+      // (garantit l'unicité de la conversation ADMIN_TO_USER), mais en parallèle
+      // par chunks bornés, puis écritures groupées createMany/updateMany.
+      // Limite restante : pas de transaction globale — un échec en cours de fan-out
+      // laisse les lots précédents envoyés (comportement identique à l'ancienne boucle).
+      const BROADCAST_CHUNK_SIZE = 25;
       let sentCount = 0;
-      for (const recipient of recipients) {
-        const conversationId = await ensureAdminConversation(adminId, recipient.id);
-        await prisma.message.create({
-          data: {
+      const broadcastAt = new Date();
+      for (let i = 0; i < recipients.length; i += BROADCAST_CHUNK_SIZE) {
+        const chunk = recipients.slice(i, i + BROADCAST_CHUNK_SIZE);
+        const conversationIds: string[] = await Promise.all(
+          chunk.map((recipient) => ensureAdminConversation(adminId, recipient.id))
+        );
+        await prisma.message.createMany({
+          data: conversationIds.map((conversationId) => ({
             conversationId,
             senderId: adminId,
-            type: 'TEXT',
+            type: 'TEXT' as const,
             content: message
-          }
+          }))
         });
-        await prisma.conversation.update({
-          where: { id: conversationId },
-          data: { updatedAt: new Date() }
+        await prisma.conversation.updateMany({
+          where: { id: { in: conversationIds } },
+          data: { updatedAt: broadcastAt }
         });
-        sentCount++;
+        sentCount += chunk.length;
       }
 
       res.locals.auditMetadata = {

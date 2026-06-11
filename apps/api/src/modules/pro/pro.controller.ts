@@ -214,12 +214,27 @@ const toDistanceBucket = (distanceKm: number): '<5km' | '5-15km' | '15-30km' | '
   return '>30km';
 };
 
+// Minimisation owner-only : seuls les champs consommés par l'UI d'édition pro
+// (profil, onboarding, carte) sont exposés. Exclus volontairement : id, userId,
+// pricePerHour, verified, verifiedAt, createdAt, updatedAt.
+const ownerProProfileSelect = {
+  businessName: true,
+  bio: true,
+  emailNotif: true,
+  photoUrl: true,
+  countryCode: true,
+  lat: true,
+  lng: true,
+  radiusKm: true,
+  notificationPreferences: true,
+} as const;
+
 proRouter.get('/me', requireProRole, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    let pp = await prisma.proProfile.findUnique({ where: { userId } });
-    if (!pp) pp = await prisma.proProfile.create({ data: { userId } });
+    let pp = await prisma.proProfile.findUnique({ where: { userId }, select: ownerProProfileSelect });
+    if (!pp) pp = await prisma.proProfile.create({ data: { userId }, select: ownerProProfileSelect });
     return res.json(pp);
   } catch {
     return res.status(500).json({ error: 'Internal error' });

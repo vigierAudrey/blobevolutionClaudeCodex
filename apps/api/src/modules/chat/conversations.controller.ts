@@ -388,7 +388,9 @@ const conversationInvitationSendLimiter = createLazyCustomRateLimiter(
     legacyHeaders: false,
     keyGenerator: (req: Request) => {
       const userId = (req as Request & { user?: { id?: string } }).user?.id;
-      return userId ? `conversation_invitation_send:user:${userId}` : `conversation_invitation_send:ip:${ipKeyGenerator(req.ip ?? '')}`;
+      if (userId) return `conversation_invitation_send:user:${userId}`;
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `conversation_invitation_send:ip:${ipKeyGenerator(canonicalIp)}`;
     },
     handler: buildEnvelopeAwareRateLimitHandler(
       'Trop d’invitations envoyées en peu de temps. Réessaie dans quelques instants.',
@@ -407,7 +409,9 @@ const conversationInvitationRespondLimiter = createLazyCustomRateLimiter(
     legacyHeaders: false,
     keyGenerator: (req: Request) => {
       const userId = (req as Request & { user?: { id?: string } }).user?.id;
-      return userId ? `conversation_invitation_respond:user:${userId}` : `conversation_invitation_respond:ip:${ipKeyGenerator(req.ip ?? '')}`;
+      if (userId) return `conversation_invitation_respond:user:${userId}`;
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `conversation_invitation_respond:ip:${ipKeyGenerator(canonicalIp)}`;
     },
     handler: buildEnvelopeAwareRateLimitHandler(
       'Trop de réponses aux invitations. Réessaie dans quelques instants.',
@@ -1022,7 +1026,9 @@ const openConversationLimiter = createLazyCustomRateLimiter(
     legacyHeaders: false,
     keyGenerator: (req: Request) => {
       const userId = (req as Request & { user?: { id?: string } }).user?.id;
-      return userId ? `conversation_open:user:${userId}` : ipKeyGenerator(req.ip ?? '');
+      if (userId) return `conversation_open:user:${userId}`;
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return ipKeyGenerator(canonicalIp);
     },
     handler: buildEnvelopeAwareRateLimitHandler(
       'Merci, message déjà envoyé récemment. Réessaie dans quelques instants.',
