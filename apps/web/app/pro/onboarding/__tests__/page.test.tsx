@@ -47,6 +47,7 @@ describe('ProOnboardingPage', () => {
   });
 
   it('ne redirige pas vers /login quand la session cookie est valide mais le hint local est absent', async () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
     mockedApiClient.me.mockResolvedValueOnce({ role: 'PRO' } as never);
     (global.fetch as jest.Mock).mockResolvedValueOnce(
       createJsonResponse({ id: 'pro_1', businessName: 'Blob Pro', bio: 'Coach', photoUrl: null }, { ok: true })
@@ -58,6 +59,8 @@ describe('ProOnboardingPage', () => {
     expect(mockedApiClient.me).toHaveBeenCalledTimes(1);
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(replace).not.toHaveBeenCalledWith('/login');
+    expect(logSpy).not.toHaveBeenCalled();
+    logSpy.mockRestore();
   });
 
   it('redirige vers /login uniquement après échec réel de session', async () => {

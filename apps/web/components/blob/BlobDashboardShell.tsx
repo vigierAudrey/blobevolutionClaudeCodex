@@ -32,15 +32,12 @@ export function BlobDashboardShell({ title, nav = [], actions, children }: BlobD
           {nav.length > 0 && (
             <nav aria-label="Navigation du tableau de bord">
               {/* Mobile : barre horizontale scrollable */}
-              <ul
-                className="flex flex-row gap-1 overflow-x-auto px-3 py-2 lg:hidden"
-                role="list"
-              >
+              <ul className="flex flex-row gap-2 overflow-x-auto px-3 py-3 lg:hidden" role="list">
                 {nav.map((item) => (
                   <li key={item.href} className="shrink-0">
                     <Link
                       href={item.href}
-                      className="flex items-center gap-1.5 rounded-sm border border-white/15 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-white transition-colors hover:border-blob-yellow hover:text-blob-yellow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow whitespace-nowrap"
+                      className="flex min-h-10 items-center gap-1.5 rounded-sm border border-white/15 px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-white transition-colors hover:border-blob-yellow hover:text-blob-yellow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow whitespace-nowrap"
                     >
                       {item.icon && <span aria-hidden="true" className="[&>svg]:h-3 [&>svg]:w-3 [&>img]:h-3 [&>img]:w-3">{item.icon}</span>}
                       <span>{item.label}</span>
@@ -69,17 +66,17 @@ export function BlobDashboardShell({ title, nav = [], actions, children }: BlobD
 
         <main className="min-w-0 space-y-6 px-4 py-4 sm:px-6 lg:px-0 lg:py-0">
           <header className="rounded-sm border-2 border-blob-sand-deep dark:border-white/10 bg-white dark:bg-[hsl(220_14%_14%)] px-4 py-5 sm:px-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blob-black/55 dark:text-white/50">
                   Tableau de bord
                 </p>
-                <h1 className="mt-2 text-2xl font-black uppercase tracking-widest sm:text-3xl">
+                <h1 className="mt-2 break-words text-2xl font-black uppercase tracking-widest sm:text-3xl">
                   {title}
                 </h1>
               </div>
               {actions && (
-                <div className="flex shrink-0 items-center gap-2 pt-1">
+                <div className="flex w-full flex-wrap items-center gap-2 pt-1 sm:w-auto sm:shrink-0 sm:justify-end">
                   {actions}
                 </div>
               )}

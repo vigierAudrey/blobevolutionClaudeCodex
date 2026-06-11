@@ -21,6 +21,7 @@ import { Spinner } from '../../../components/ui/spinner';
 import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../../components/cookies/CookieConsent';
 import { ChangePasswordCard } from '../../../components/profile/ChangePasswordCard';
 import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../../../lib/franceLaunch';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobMark } from '@/components/blob';
 
 // Configuration de sécurité pour l'upload de fichiers
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
@@ -194,8 +195,8 @@ export default function ProProfilePage() {
             setNotificationPrefs((prev) => ({ ...prev, ...data.preferences }));
           }
         }
-      } catch (error) {
-        console.error('Error loading notification preferences:', error);
+      } catch {
+        // Préférences optionnelles : l'écran reste utilisable sans exposer l'erreur brute.
       } finally {
         setLoadingNotifPrefs(false);
       }
@@ -303,8 +304,8 @@ export default function ProProfilePage() {
         const data = await response.json();
         setDeletionStatus(data);
       }
-    } catch (error) {
-      console.error('Error checking deletion status:', error);
+    } catch {
+      // Statut RGPD non bloquant : ne pas logger de détail de compte côté client.
     }
   }, [ensureAuthenticated]);
 
@@ -501,15 +502,13 @@ export default function ProProfilePage() {
             window.localStorage.removeItem('cookie-consent');
           }
           window.dispatchEvent(new Event(COOKIE_CONSENT_REOPEN_EVENT));
-        } catch (error) {
-          console.warn('Impossible de rouvrir immédiatement la fenêtre de consentement', error);
+        } catch {
           toast('Erreur lors de la réinitialisation. Rafraîchissez la page.', 'error');
           // Reload seulement en dernier recours après 2 secondes
           setTimeout(() => window.location.reload(), 2000);
         }
       }
-    } catch (error) {
-      console.error('Erreur handleReopenCookieConsent:', error);
+    } catch {
       toast('Erreur lors de la réinitialisation des préférences.', 'error');
     }
   };
@@ -626,41 +625,49 @@ export default function ProProfilePage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-8">
+    <div className="mx-auto max-w-2xl space-y-6 pb-8">
       <BackBar fallbackHref="/pro/dashboard" />
 
-      {/* Header compact avec style océan */}
-      <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/20 dark:to-orange-900/20 p-4 border-2 border-amber-200/50 dark:border-amber-800/50">
-        <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-        </div>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-foreground">Profil Professionnel 💼</h1>
-          <p className="text-sm text-muted-foreground">Gère tes informations visibles par les clients</p>
-        </div>
-        <Button asChild variant="outline" size="sm" className="flex-shrink-0 gap-1.5" data-testid="preview-button">
+      <BlobCard mode="yellowSignal">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-black text-blob-yellow">
+              <BlobMark size={26} decorative />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="break-words text-2xl font-black uppercase tracking-widest text-blob-black">
+                  Profil professionnel
+                </h1>
+                <BlobBadge variant="dark">Pro</BlobBadge>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-blob-black/72">
+                Gère les informations visibles par les riders.
+              </p>
+            </div>
+          </div>
+          <BlobButton asChild variant="yellowSignalDark" size="sm" className="w-full sm:w-auto" data-testid="preview-button">
           <Link href="/pro/profile/preview">
             <Eye className="h-4 w-4" />
             Voir mon profil
           </Link>
-        </Button>
-      </div>
+          </BlobButton>
+        </div>
+      </BlobCard>
 
       {loading ? (
-        <div className="text-center py-8">
-          <p className="text-muted-foreground">Chargement…</p>
-        </div>
+        <BlobAlert title="Chargement">
+          Chargement de ton profil pro...
+        </BlobAlert>
       ) : (
         <>
-          <Card className="border-2 rounded-[1.75rem]">
-            <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30">
-              <CardTitle className="text-foreground">Mes infos pro</CardTitle>
-              <CardDescription>Ces informations seront visibles par les clients.</CardDescription>
+          <Card className="overflow-hidden rounded-sm border-2 border-blob-sand-deep bg-white text-blob-black dark:border-white/10 dark:bg-[hsl(220_14%_14%)] dark:text-white">
+            <CardHeader className="border-b-2 border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5">
+              <CardTitle className="text-xl font-black uppercase tracking-widest text-blob-black dark:text-white">Mes infos pro</CardTitle>
+              <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">Ces informations seront visibles par les riders.</CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
-              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+              <div className="mb-4 rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 px-4 py-3 text-sm text-blob-black dark:bg-blob-yellow/10 dark:text-white">
                 {PRO_BETA_INFO_MESSAGE}
               </div>
               <form onSubmit={onSave} className="space-y-4">
@@ -672,6 +679,7 @@ export default function ProProfilePage() {
                     onChange={(e) => setBusinessName(e.target.value)}
                     placeholder="Ex: BlobPro School"
                     maxLength={100}
+                    className="min-h-11 rounded-sm border-2 border-blob-black/30 focus-visible:ring-blob-yellow"
                   />
                 </div>
                 <div className="space-y-2">
@@ -682,6 +690,7 @@ export default function ProProfilePage() {
                     onChange={(e)=>setBio(e.target.value)}
                     placeholder="Ce que tu proposes, ton expérience, ton spot préféré…"
                     maxLength={500}
+                    className="min-h-32 rounded-sm border-2 border-blob-black/30 focus-visible:ring-blob-yellow"
                   />
                 </div>
                 <div className="space-y-2">
@@ -691,32 +700,27 @@ export default function ProProfilePage() {
                     accept="image/jpeg,image/png,image/webp,image/gif"
                     onChange={onPick}
                     aria-label="Sélectionner une photo de profil"
+                    className="block min-h-11 w-full rounded-sm border-2 border-blob-black/30 bg-white px-3 py-2 text-sm text-blob-black file:mr-3 file:rounded-sm file:border-0 file:bg-blob-black file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-widest file:text-white"
                   />
                   {photoUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={photoUrl}
                       alt="Aperçu de la photo de profil"
-                      className="h-32 w-32 object-cover rounded"
+                      className="h-32 w-32 rounded-sm border-2 border-blob-black object-cover"
                       referrerPolicy="no-referrer"
                     />
                   )}
                 </div>
                 {err && (
-                  <div
-                    className="rounded-2xl border-2 border-red-200 dark:border-red-800/50 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 p-4"
-                    role="alert"
-                    aria-live="assertive"
-                  >
-                    <p className="text-sm text-red-700 dark:text-red-300 font-medium">
-                      ❌ {err}
-                    </p>
-                  </div>
+                  <BlobAlert variant="error" title="Erreur">
+                    <p>{err}</p>
+                  </BlobAlert>
                 )}
-                <Button
+                <BlobButton
                   type="submit"
                   disabled={saving}
-                  className="w-full sm:w-auto bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto"
                 >
                   {saving ? (
                     <span className="inline-flex items-center gap-2">
@@ -726,7 +730,7 @@ export default function ProProfilePage() {
                   ) : (
                     'Enregistrer'
                   )}
-                </Button>
+                </BlobButton>
               </form>
             </CardContent>
           </Card>
@@ -735,9 +739,9 @@ export default function ProProfilePage() {
           <ChangePasswordCard />
 
           {/* RGPD & Privacy Section */}
-          <Card className="border-2 rounded-[1.75rem]">
-            <CardHeader className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30">
-              <CardTitle className="text-base text-foreground">🔒 Confidentialité & RGPD</CardTitle>
+          <Card className="overflow-hidden rounded-sm border-2 border-blob-sand-deep bg-white text-blob-black dark:border-white/10 dark:bg-[hsl(220_14%_14%)] dark:text-white">
+            <CardHeader className="border-b-2 border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5">
+              <CardTitle className="text-base font-black uppercase tracking-widest text-blob-black dark:text-white">Confidentialité &amp; RGPD</CardTitle>
             </CardHeader>
             <CardContent className="pt-6">
               <div className="space-y-6">
