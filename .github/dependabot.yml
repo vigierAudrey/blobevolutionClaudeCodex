@@ -19,3 +19,14 @@ updates:
       # Advisory GHSA-5j98-mcp5-4vw2: Command injection only via CLI -c flag
       - dependency-name: "glob"
         update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+      # React stack pinned to 18.2.0 until a dedicated React 19 migration sprint.
+      # Majors must not arrive piecemeal (react-dom 19 with react 18 breaks at runtime).
+      # Minors/patches (incl. security) stay allowed.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]

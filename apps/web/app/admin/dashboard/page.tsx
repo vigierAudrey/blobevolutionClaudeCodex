@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { apiClient, type AdminBlockedConversation, type AdminSecurityEvent, type AdminSecuritySummary, type SecurityHealth, type SystemAlert } from '../../../lib/apiClient';
-import { Users, MessageSquare, ShieldCheck, Settings, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity, BookOpen, PenSquare, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Users, MessageSquare, ShieldCheck, TrendingUp, AlertTriangle, BarChart3, Lock, Shield, Activity, BookOpen, PenSquare, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 // Force SSR for admin auth and dynamic stats
@@ -470,30 +470,6 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings size={20} />
-              Configuration
-            </CardTitle>
-            <CardDescription>
-              Paramètres de la plateforme et maintenance
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
-                Paramètres généraux
-              </Button>
-              <Button variant="outline" className="w-full justify-start">
-                Monétisation & publicités
-              </Button>
-              <Button variant="outline" className="w-full justify-start">
-                Maintenance système
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Insights Sécurité & Modération */}

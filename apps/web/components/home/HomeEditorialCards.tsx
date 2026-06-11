@@ -4,7 +4,7 @@ import { useRef } from 'react';
 import { motion, useInView, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
-import { GraduationCap, Tag, BookOpen, ArrowRight, type LucideIcon } from 'lucide-react';
+import { GraduationCap, BookOpen, ArrowRight, type LucideIcon } from 'lucide-react';
 
 type EditorialCard = {
   n: string;
@@ -31,8 +31,8 @@ const cards: EditorialCard[] = [
   },
   {
     n: '02',
-    title: 'Réserve avec des pros locaux',
-    description: 'Cours particuliers ou collectifs, choisis ton spot et ton pro.',
+    title: 'Progresse avec des pros locaux',
+    description: 'Demande un cours particulier ou collectif, choisis ton spot et ton pro.',
     cta: 'Voir les pros',
     href: '/register?intent=lesson-request',
     imageSrc: '/images/home/lessons-square.webp',
@@ -41,16 +41,6 @@ const cards: EditorialCard[] = [
   },
   {
     n: '03',
-    title: 'Bons plans exclusifs',
-    description: 'Promos, matos, stages, événements réservés à la communauté.',
-    cta: 'Voir les offres',
-    href: '/promos',
-    imageSrc: '/images/home/bons-plans-riders-square-700.webp',
-    imageAlt: 'Planches de surf et matériel kite dans un shop local du Médoc',
-    Icon: Tag,
-  },
-  {
-    n: '04',
     title: 'Conseils & guides',
     description: 'Sécurité, météo, matos, spots — tous nos conseils pour progresser.',
     cta: 'Lire les guides',

@@ -2,12 +2,13 @@
  * Tests e2e — rate limits ciblés sur actions admin sensibles
  *
  * Vérifie que :
- * - POST /admin/gdpr/run-purge : max 3/heure → 4e requête bloquée (429)
- * - POST /admin/alerts         : max 10/heure → 11e requête bloquée (429)
+ * - POST /admin/gdpr/run-purge          : max 3/heure → 4e requête bloquée (429)
+ * - POST /admin/alerts                  : max 10/heure → 11e requête bloquée (429)
+ * - POST /admin/conversations/broadcast : max 3/heure → 4e requête bloquée (429)
  * - Les protections existantes (requirePermissions, requireAdminStepUp) ne sont pas altérées
  *
  * Chaque test utilise un userId distinct pour isoler les compteurs mémoire
- * (clé = `admin_gdpr_purge:${userId}` / `admin_alert_create:${userId}`).
+ * (clé = `admin_gdpr_purge:${userId}` / `admin_alert_create:${userId}` / `admin_broadcast:${userId}`).
  *
  * ENABLE_RATE_LIMIT_IN_TESTS=true active les limiteurs en NODE_ENV=test.
  */
@@ -179,6 +180,92 @@ describe('Admin — rate limits ciblés', () => {
       expect(typeof blocked.body.retryAfter).toBe('number');
 
       await deleteTestAdmin(admin.userId);
+    });
+  });
+
+  // ─── POST /admin/conversations/broadcast — max 3/heure ───────────────────
+  //
+  // Contrainte : le smartRateLimit global MESSAGING (10/min/IP) compte aussi les
+  // requêtes sur ce path. Le total de requêtes broadcast de cette suite doit
+  // rester ≤ 10 pour ne tester QUE adminBroadcastLimiter — d'où la fusion du
+  // scénario d'isolation par adminId dans le test over-quota.
+
+  describe('POST /admin/conversations/broadcast', () => {
+    it('3 requêtes sous le seuil → aucune 429 (403 car pas de permission)', async () => {
+      const admin = await createTestAdmin('broadcast-under');
+      const agent = request.agent(app);
+      const csrf = await getCsrf(agent);
+
+      for (let i = 0; i < 3; i++) {
+        const res = await agent
+          .post('/admin/conversations/broadcast')
+          .set('Authorization', `Bearer ${admin.token}`)
+          .set('X-CSRF-Token', csrf)
+          .send({ message: 'diffusion test', target: 'ALL' });
+        // Le rate limiter laisse passer, requirePermissions rejette — jamais 429
+        expect(res.status).not.toBe(429);
+        expect(res.status).toBe(403);
+      }
+
+      await deleteTestAdmin(admin.userId);
+    });
+
+    it('4e requête → 429 neutre, compteur isolé par adminId (pas par IP)', async () => {
+      const admin = await createTestAdmin('broadcast-over');
+      const adminOther = await createTestAdmin('broadcast-other');
+      const agent = request.agent(app);
+      const csrf = await getCsrf(agent);
+
+      // 3 requêtes : passent le limiter (retournent 403 — pas de permission)
+      for (let i = 0; i < 3; i++) {
+        const res = await agent
+          .post('/admin/conversations/broadcast')
+          .set('Authorization', `Bearer ${admin.token}`)
+          .set('X-CSRF-Token', csrf)
+          .send({ message: 'diffusion test', target: 'ALL' });
+        expect(res.status).not.toBe(429);
+      }
+
+      // 4e requête : bloquée par le rate limiter
+      const blocked = await agent
+        .post('/admin/conversations/broadcast')
+        .set('Authorization', `Bearer ${admin.token}`)
+        .set('X-CSRF-Token', csrf)
+        .send({ message: 'diffusion test', target: 'ALL' });
+
+      expect(blocked.status).toBe(429);
+      expect(blocked.body.error).toBe('ADMIN_BROADCAST_RATE_LIMIT_EXCEEDED');
+      expect(typeof blocked.body.retryAfter).toBe('number');
+      // Message public neutre : aucun détail interne (stack, requête, identifiants)
+      const publicBody = JSON.stringify(blocked.body);
+      expect(publicBody).not.toContain(admin.userId);
+      expect(publicBody).not.toContain(admin.email);
+      expect(blocked.body).not.toHaveProperty('stack');
+
+      // Un autre admin (même IP de test) reste sous quota — clé userId, pas IP
+      const other = await agent
+        .post('/admin/conversations/broadcast')
+        .set('Authorization', `Bearer ${adminOther.token}`)
+        .set('X-CSRF-Token', csrf)
+        .send({ message: 'diffusion test', target: 'ALL' });
+      expect(other.status).not.toBe(429);
+      expect(other.status).toBe(403);
+
+      await deleteTestAdmin(admin.userId);
+      await deleteTestAdmin(adminOther.userId);
+    });
+
+    it('non-admin → 401 même sous le seuil (protection auth non dégradée)', async () => {
+      const agent = request.agent(app);
+      const csrf = await getCsrf(agent);
+
+      const res = await agent
+        .post('/admin/conversations/broadcast')
+        .set('Authorization', 'Bearer invalid-token')
+        .set('X-CSRF-Token', csrf)
+        .send({ message: 'diffusion test', target: 'ALL' });
+
+      expect(res.status).toBe(401);
     });
   });
 });

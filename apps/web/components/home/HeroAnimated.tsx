@@ -62,7 +62,7 @@ export function HeroAnimated() {
         variants={item}
         className="text-white/75 text-sm sm:text-base max-w-sm sm:max-w-md leading-relaxed"
       >
-        Trouve ton binôme, réserve avec un pro, découvre les bons plans et progresse avec des conseils utiles.
+        Trouve ton binôme, demande un cours à un pro et progresse avec des conseils utiles.
       </motion.p>
 
       <motion.div

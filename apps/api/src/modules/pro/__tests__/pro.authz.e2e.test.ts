@@ -136,6 +136,32 @@ describe('proRouter — AuthZ (RIDER cannot access PRO_ONLY routes)', () => {
     await proSession.get('/pro/me').expect(200);
   });
 
+  it('GET /pro/me — minimisation owner-only : champs UI seulement, pas de métadonnées internes', async () => {
+    const res = await proSession.get('/pro/me').expect(200);
+
+    // Champs consommés par l'UI d'édition pro (profil/onboarding/carte)
+    const expectedKeys = [
+      'businessName',
+      'bio',
+      'emailNotif',
+      'photoUrl',
+      'countryCode',
+      'lat',
+      'lng',
+      'radiusKm',
+      'notificationPreferences',
+    ];
+    for (const key of expectedKeys) {
+      expect(res.body).toHaveProperty(key);
+    }
+
+    // Sur-exposition owner-only corrigée : aucune métadonnée interne
+    for (const key of ['id', 'userId', 'pricePerHour', 'verified', 'verifiedAt', 'createdAt', 'updatedAt']) {
+      expect(res.body).not.toHaveProperty(key);
+    }
+    expect(Object.keys(res.body).sort()).toEqual([...expectedKeys].sort());
+  });
+
   it('GET /pro/deletion-status — PRO → 200', async () => {
     const res = await proSession.get('/pro/deletion-status').expect(200);
     expect(res.body).toHaveProperty('isScheduled', false);

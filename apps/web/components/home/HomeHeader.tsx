@@ -5,7 +5,6 @@ import { BlobButton } from '@/components/blob/BlobButton';
 const navLinks = [
   { href: '/register?intent=matching', label: 'Matching' },
   { href: '/register?intent=lesson-request', label: 'Cours' },
-  { href: '/promos', label: 'Bons plans' },
   { href: '/blobosphere', label: 'Guides' },
   { href: '/#why-blob', label: 'À propos' },
 ] as const;

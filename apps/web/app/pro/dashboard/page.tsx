@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Bell,
-  Gift,
   Info,
   LogOut,
   Map,
@@ -166,7 +165,6 @@ export default function ProDashboardPage() {
         { label: 'Carte', href: '/pro/map', icon: <Map size={16} /> },
         { label: 'Messages', href: '/pro/messages', icon: <MessageSquare size={16} /> },
         { label: 'Profil', href: '/pro/profile', icon: <User size={16} /> },
-        { label: 'Promos', href: '/pro/promos', icon: <Gift size={16} /> },
       ]}
       actions={
         <>
@@ -277,14 +275,6 @@ export default function ProDashboardPage() {
         </section>
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <ProActionCard
-            href="/pro/promos"
-            icon={<Gift size={22} />}
-            title="Promos"
-            description="Découvre les opportunités de visibilité et de collaboration compatibles avec le MVP."
-            cta="Voir les promos"
-            mode="sand"
-          />
           <ProActionCard
             href="/pro/settings/notifications"
             icon={<Settings size={22} />}

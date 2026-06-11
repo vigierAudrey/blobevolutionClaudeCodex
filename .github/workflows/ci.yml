@@ -87,6 +87,9 @@ jobs:
       - name: Guard — Caddyfile XFF correct ({remote_host}) et subnet VPS cohérent
         run: bash scripts/guard-caddyfile-xff.sh
 
+      - name: Guard — no direct req.ip / x-forwarded-for access outside canonical helpers
+        run: bash apps/api/scripts/no-direct-ip-access.sh
+
       - name: Self-test ci-block-db-push (poison pill + variantes pnpm exec/npx/unsafe/continuation)
         # Prouve que le guard bloque les formes d'invocation de db push dans un workflow.
         # Chaque fichier poison est un workflow YAML valide (name/on/jobs/steps) pour tester
