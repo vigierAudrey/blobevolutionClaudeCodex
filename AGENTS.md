@@ -40,6 +40,25 @@ Si une consigne est ambiguë, escalader vers l’humain; ne faites jamais d’hy
 - **Alignement typages** : synchroniser les types partagés (`packages/shared`, Zod) avec les contrats documentés pour éviter les divergences front/back.
 - **CI & lint** : ajouter ou mettre à jour les jobs qui valident le schéma (ex. `npm run openapi:lint`, `spectral lint openapi.yaml`) et les tests visuels Storybook/Playwright. Une PR qui modifie API/UI doit faire passer ces vérifications.
 
+## 📱 Mobile-first obligatoire
+- Le site Blob est consulté en priorité sur téléphone : riders sur la plage ou en déplacement, vacanciers, pros entre deux cours, réseau mobile parfois moyen.
+- Toute modification UI doit être conçue et vérifiée mobile-first avant tablette et desktop.
+- **Largeur minimale lisible** : 360px sans débordement horizontal ni élément important caché hors écran.
+- **Navigation** : simple, évidente, sans panneau latéral envahissant sur mobile.
+- **CTA principal** : visible rapidement, libellé court, zone tactile confortable.
+- **Boutons et contrôles** : faciles à toucher au pouce, espacés, sans cible minuscule.
+- **Textes** : courts, hiérarchie claire, aucune décoration qui bloque la lecture.
+- **Formulaires** : utilisables au pouce, champs lisibles, erreurs proches des champs concernés.
+- **États UI** : loading, error et empty states visibles et actionnables sur petit écran.
+- **Cards, dashboards, modales et footer** : aucune information essentielle ne doit être inaccessible ou écrasée en mobile.
+- **Performance mobile** : images optimisées et lazy-loadées, pas d’import lourd inutile côté client, pas d’animation qui gêne la lecture ou ralentit le téléphone.
+- Priorité UX mobile :
+  1. Comprendre rapidement où je suis.
+  2. Savoir quoi faire.
+  3. Cliquer sans se tromper.
+  4. Ne pas attendre inutilement.
+  5. Ne jamais être bloqué par un élément décoratif.
+
 ## 🏷️ PR & revue
 - Chaque PR doit porter le ou les labels `agent:codex` / `agent:claude` + domaines concernés (`area:web`, `area:api`, `area:docs`, …).
 - Utiliser `CODEOWNERS` pour solliciter les reviewers adaptés (mettre à jour les handles GitHub si nécessaire).
@@ -47,11 +66,14 @@ Si une consigne est ambiguë, escalader vers l’humain; ne faites jamais d’hy
 - Inclure la checklist Contrats/UI :
   - [ ] Changement contrat API → `openapi.yaml` + Swagger mis à jour
   - [ ] Changement UI/props → stories Storybook + tests visuels actualisés
+  - [ ] Changement UI/page → vérification responsive 360px, 390px/430px, 768px, 1280px
 
 ## ✅ Tests & Qualité
 - **Frontend web** : Jest + React Testing Library (`apps/web/jest.config.js`). Mettre les tests dans `__tests__` avec suffixe `.test.tsx`.
 - **API / Services** : Jest côté `@blobinfini/api`. Utiliser `__tests__` dans `apps/api` et isoler les dépendances (Redis, Prisma) via mocks.
 - **E2E** : Playwright (`npm run test:e2e`) si modif touchant les flux critiques (paiement, matching complet).
+- **Vérification responsive** : pour chaque page modifiée, contrôler manuellement ou via tests/inspection les largeurs 360px, 390px/430px, 768px et 1280px. Vérifier au minimum header/navigation, CTA, formulaires, cards, dashboards, messages d’erreur, modales éventuelles et footer.
+- **Blocage mobile** : si une page n’est pas acceptable sur mobile, ne pas la considérer terminée.
 - **Flaky** : ne pas masquer un test rouge sans accord explicit. Marquer TODO ou ouvrir un ticket dans `ROADMAP.md`.
 
 ## 🔒 Sécurité & RGPD (rappel rapide)
@@ -96,4 +118,4 @@ Checklist persona rapide : `Objectif → Persona → Raison`. Inclure cette lign
 
 ---
 
-**Dernière mise à jour** : 2025-09-26
+**Dernière mise à jour** : 2026-06-11

@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../lib/apiClient';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import type { ZodIssue } from 'zod';
 import type { DashboardUser, UserRole } from '@/types/user';
@@ -16,6 +15,8 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 import { BLOBOSPHERE_SIGNUP_ARTICLE_KEY, BLOBOSPHERE_SIGNUP_INTENT_KEY } from '@/components/blobosphere/BlobosphereAnalyticsLink';
 import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../lib/franceLaunch';
 import { mapAuthErrorToFrench } from '../lib/mapAuthErrorToFrench';
+import { BlobButton } from './blob/BlobButton';
+import { BlobMark } from './blob/BlobMark';
 
 const PUBLIC_ROLES = [
   { value: 'RIDER', label: 'Rider' },
@@ -69,6 +70,18 @@ const getSafeAuthErrorMessage = (message: string) => {
   const mapped = mapAuthErrorToFrench(message);
   return mapped === message ? 'Une erreur est survenue. Vérifie tes informations et réessaie.' : mapped;
 };
+
+const authCardClass =
+  'overflow-hidden rounded-sm border-2 border-blob-sand-deep bg-white text-blob-black shadow-[0_10px_30px_rgba(22,24,28,0.10)] dark:border-white/10 dark:bg-[hsl(220_14%_14%)] dark:text-white';
+const authHeaderClass = 'border-b-2 border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5';
+const authIconClass =
+  'flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black';
+const authNoticeClass =
+  'rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-3 text-sm text-blob-black dark:border-white/10 dark:bg-white/5 dark:text-white';
+const authErrorClass =
+  'flex items-start gap-2 rounded-sm border-2 border-red-800 bg-red-50 p-3 text-red-950 dark:border-red-500 dark:bg-red-950/40 dark:text-red-100';
+const authSuccessClass =
+  'flex items-start gap-2 rounded-sm border-2 border-green-800 bg-green-50 p-3 text-green-950 dark:border-green-500 dark:bg-green-950/40 dark:text-green-100';
 
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
@@ -323,15 +336,15 @@ export function AuthForm({ mode }: AuthFormProps) {
   // ✅ NOUVEAU : Si 2FA est requis, afficher le formulaire 2FA
   if (requires2FA && twoFAChallengeId) {
     return (
-      <Card className="border-2 border-transparent hover:border-emerald-300 transition-all">
-        <CardHeader className="bg-gradient-to-br from-emerald-50/80 to-transparent dark:from-emerald-950/30 dark:to-transparent">
+      <Card className={authCardClass}>
+        <CardHeader className={authHeaderClass}>
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-600 to-teal-600 text-white">
+            <div className={authIconClass}>
               <Mail size={20} />
             </div>
-            <div>
-              <CardTitle>Vérification en deux étapes</CardTitle>
-              <CardDescription>
+            <div className="min-w-0">
+              <CardTitle className="text-xl font-black uppercase tracking-widest">Vérification en deux étapes</CardTitle>
+              <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">
                 Un code de vérification a été envoyé à votre adresse email
               </CardDescription>
             </div>
@@ -357,35 +370,35 @@ export function AuthForm({ mode }: AuthFormProps) {
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30" role="alert">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700 dark:text-red-400">
+              <div className={authErrorClass} role="alert">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <p className="text-sm">
                   {error}
                 </p>
               </div>
             )}
 
             {info && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30" role="alert">
-                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-green-700 dark:text-green-400">
+              <div className={authSuccessClass} role="alert">
+                <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <p className="text-sm">
                   {info}
                 </p>
               </div>
             )}
 
-            <Button
+            <BlobButton
               type="submit"
-              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg hover:shadow-xl transition-all"
+              className="w-full"
               disabled={loading || twoFACode.length !== 6}
               size="lg"
             >
               {loading ? 'Vérification...' : 'Vérifier le code'}
-            </Button>
+            </BlobButton>
 
-            <Button
+            <BlobButton
               type="button"
-              variant="outline"
+              variant="outlineDark"
               className="w-full"
               onClick={() => {
                 setRequires2FA(false);
@@ -396,7 +409,7 @@ export function AuthForm({ mode }: AuthFormProps) {
               }}
             >
               Annuler
-            </Button>
+            </BlobButton>
           </form>
         </CardContent>
       </Card>
@@ -405,15 +418,15 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   if (registered) {
     return (
-      <Card className="border-2 border-transparent hover:border-blue-300 transition-all">
-        <CardHeader className="bg-gradient-to-br from-blue-50/80 to-transparent dark:from-blue-950/30 dark:to-transparent">
+      <Card className={authCardClass}>
+        <CardHeader className={authHeaderClass}>
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white">
+            <div className={authIconClass}>
               <Mail size={20} />
             </div>
-            <div>
-              <CardTitle>Vérifie ta boîte mail !</CardTitle>
-              <CardDescription>Ton compte Blob est presque prêt</CardDescription>
+            <div className="min-w-0">
+              <CardTitle className="text-xl font-black uppercase tracking-widest">Vérifie ta boîte mail !</CardTitle>
+              <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">Ton compte Blob est presque prêt</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -428,44 +441,44 @@ export function AuthForm({ mode }: AuthFormProps) {
           </p>
 
           {resendStatus === 'sent' && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30" role="alert">
-              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-green-700 dark:text-green-400">
+            <div className={authSuccessClass} role="alert">
+              <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p className="text-sm">
                 Email renvoyé. Vérifie ta boîte mail.
               </p>
             </div>
           )}
           {resendStatus === 'error' && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30" role="alert">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700 dark:text-red-400">
+            <div className={authErrorClass} role="alert">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p className="text-sm">
                 Impossible de renvoyer l&apos;email pour le moment. Réessaie dans quelques instants.
               </p>
             </div>
           )}
 
-          <Button
+          <BlobButton
             type="button"
-            variant="outline"
+            variant="outlineDark"
             className="w-full"
             disabled={resendStatus === 'loading'}
             onClick={resend}
           >
             {resendStatus === 'loading' ? 'Envoi…' : "Renvoyer l'email de vérification"}
-          </Button>
+          </BlobButton>
 
-          <Button
+          <BlobButton
             type="button"
-            className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-lg hover:shadow-xl transition-all"
+            className="w-full"
             onClick={() => router.push('/login')}
           >
             Aller à la connexion
-          </Button>
+          </BlobButton>
 
           <div className="text-center">
             <button
               type="button"
-              className="text-sm text-muted-foreground underline hover:no-underline"
+              className="min-h-10 text-sm font-semibold text-blob-black/70 underline hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow dark:text-white/70"
               onClick={() => {
                 setRegistered(false);
                 setRegisteredEmail('');
@@ -481,15 +494,15 @@ export function AuthForm({ mode }: AuthFormProps) {
   }
 
   return (
-    <Card className="border-2 border-transparent hover:border-blue-300 transition-all">
-      <CardHeader className={`bg-gradient-to-br ${mode === 'login' ? 'from-indigo-50/80' : 'from-blue-50/80'} to-transparent dark:${mode === 'login' ? 'from-indigo-950/30' : 'from-blue-950/30'} dark:to-transparent`}>
+    <Card className={authCardClass}>
+      <CardHeader className={authHeaderClass}>
         <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg bg-gradient-to-br ${mode === 'login' ? 'from-indigo-600 to-blue-600' : 'from-blue-500 to-cyan-500'} text-white`}>
+          <div className={authIconClass}>
             {mode === 'login' ? <LogIn size={20} /> : <UserPlus size={20} />}
           </div>
-          <div>
-            <CardTitle>{mode === 'login' ? 'Connexion' : 'Inscription'}</CardTitle>
-            <CardDescription>
+          <div className="min-w-0">
+            <CardTitle className="text-xl font-black uppercase tracking-widest">{mode === 'login' ? 'Connexion' : 'Inscription'}</CardTitle>
+            <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">
               {mode === 'login' ? 'Accède à ton compte Blob' : 'Rejoins la communauté Blob'}
             </CardDescription>
           </div>
@@ -545,13 +558,13 @@ export function AuthForm({ mode }: AuthFormProps) {
           {mode === 'register' && (
             <div className="space-y-2">
               {!selectorVisible ? (
-                <div className="flex items-center justify-between rounded-md border border-input bg-muted/30 px-3 py-2">
+                <div className={authNoticeClass}>
                   <span className="text-sm text-foreground">
                     Tu t&apos;inscris comme : <strong>{role === 'PRO' ? 'Pro' : 'Rider'}</strong>
                   </span>
                   <button
                     type="button"
-                    className="text-xs text-primary underline hover:no-underline"
+                    className="ml-3 min-h-10 text-xs font-black uppercase tracking-widest text-blob-black underline hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow dark:text-white"
                     onClick={() => setSelectorVisible(true)}
                   >
                     Changer de rôle
@@ -562,10 +575,10 @@ export function AuthForm({ mode }: AuthFormProps) {
                   <Label htmlFor="role">Rôle</Label>
                   <select
                     id="role"
-                    className={`h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${
+                    className={`min-h-11 w-full rounded-sm border-2 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow ${
                       fieldErrors.role
-                        ? 'border-red-500 focus-visible:ring-red-500'
-                        : 'border-input bg-background focus-visible:ring-ring'
+                        ? 'border-red-700 focus-visible:ring-red-700'
+                        : 'border-blob-black/30 bg-white text-blob-black'
                     }`}
                     value={role}
                     onChange={(event) => setRole(event.target.value as PublicRole)}
@@ -585,7 +598,7 @@ export function AuthForm({ mode }: AuthFormProps) {
               )}
               {role === 'PRO' && (
                 <div
-                  className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100"
+                  className="rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 px-3 py-2 text-sm text-blob-black dark:bg-blob-yellow/10 dark:text-white"
                   role="status"
                 >
                   {PRO_BETA_INFO_MESSAGE}
@@ -594,12 +607,12 @@ export function AuthForm({ mode }: AuthFormProps) {
             </div>
           )}
           {mode === 'register' && (
-            <div className="space-y-2 border rounded-md p-3 bg-blue-50/50 dark:bg-blue-950/20">
+            <div className={authNoticeClass}>
               <label className="flex items-start gap-2 text-sm">
                 <input
                   id="ageConfirmed"
                   type="checkbox"
-                  className={`mt-1 ${fieldErrors.ageConfirmation ? 'border-red-500' : ''}`}
+                  className={`mt-1 h-5 w-5 ${fieldErrors.ageConfirmation ? 'border-red-500' : ''}`}
                   checked={ageConfirmed}
                   onChange={(event) => setAgeConfirmed(event.target.checked)}
                   required
@@ -619,7 +632,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             </div>
           )}
           {mode === 'register' && (
-            <div className="space-y-2 border rounded-md p-3 bg-muted/30">
+            <div className={authNoticeClass}>
               <div className="text-sm text-foreground">
                 <p className="font-medium">Sécurité des sessions & responsabilité</p>
                 <p className="mt-1">
@@ -646,7 +659,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                 <input
                   id="consentAccepted"
                   type="checkbox"
-                  className={`mt-1 ${fieldErrors.consent ? 'border-red-500' : ''}`}
+                  className={`mt-1 h-5 w-5 ${fieldErrors.consent ? 'border-red-500' : ''}`}
                   checked={consentAccepted}
                   onChange={(event) => setConsentAccepted(event.target.checked)}
                   required
@@ -661,7 +674,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             </div>
           )}
           {mode === 'login' && loginConsentNeeded && (
-            <div className="space-y-2 border rounded-md p-3 bg-muted/30">
+            <div className={authNoticeClass}>
               <div className="text-sm text-foreground">
                 <p className="font-medium">Sécurité des sessions & responsabilité</p>
                 <p className="mt-1">
@@ -677,7 +690,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                 <input
                   id="loginConsentAccepted"
                   type="checkbox"
-                  className="mt-1"
+                  className="mt-1 h-5 w-5"
                   checked={loginConsentAccepted}
                   onChange={(event) => setLoginConsentAccepted(event.target.checked)}
                   required
@@ -687,41 +700,42 @@ export function AuthForm({ mode }: AuthFormProps) {
             </div>
           )}
           {mode === 'login' && emailNotVerified && (
-            <div className="space-y-2 border rounded-md p-3 bg-amber-50 border-amber-200">
+            <div className="space-y-2 rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 p-3 text-blob-black">
               <div className="text-sm text-foreground">
                 <p className="font-medium">Email non vérifié</p>
                 <p className="mt-1">Avant de te connecter, confirme ton adresse email.</p>
               </div>
               <div className="flex gap-2">
-                <Button type="button" variant="secondary" disabled={resendStatus === 'loading' || !email} onClick={resend}>
+                <BlobButton type="button" size="sm" variant="yellowSignalDark" disabled={resendStatus === 'loading' || !email} onClick={resend}>
                   {resendStatus === 'loading' ? 'Envoi…' : "Renvoyer l'email de vérification"}
-                </Button>
+                </BlobButton>
               </div>
               <p className="text-xs text-muted-foreground">Astuce : vérifie aussi le dossier spam.</p>
             </div>
           )}
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30" role="alert">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700 dark:text-red-400">
+            <div className={authErrorClass} role="alert">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p className="text-sm">
                 {error}
               </p>
             </div>
           )}
           {info && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30">
-              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-green-700 dark:text-green-400">{info}</p>
+            <div className={authSuccessClass}>
+              <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p className="text-sm">{info}</p>
             </div>
           )}
-          <Button
+          <BlobButton
             type="submit"
             disabled={loading}
-            className={`w-full bg-gradient-to-r ${mode === 'login' ? 'from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700' : 'from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700'} shadow-lg hover:shadow-xl transition-all`}
+            className="w-full"
             size="lg"
           >
+            <BlobMark size={18} decorative />
             {loading ? 'En cours…' : mode === 'login' ? 'Se connecter' : 'Créer le compte'}
-          </Button>
+          </BlobButton>
         </form>
         <div className="mt-4 text-sm text-center text-muted-foreground">
           {mode === 'login' ? (

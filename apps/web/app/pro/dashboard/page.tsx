@@ -2,19 +2,107 @@
 
 // Force SSR for dynamic pro/messaging features
 export const dynamic = 'force-dynamic';
-import { useEffect, useRef, useState } from 'react';
+
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { optimizedApiClient } from '../../../lib/optimizedApiClient';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
-import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
-import { User, Map, Info, LogOut, MessageSquare, Sparkles, TrendingUp } from 'lucide-react';
+import {
+  Bell,
+  Info,
+  LogOut,
+  Map,
+  MessageSquare,
+  RadioTower,
+  Settings,
+  Sparkles,
+  TrendingUp,
+  User,
+} from 'lucide-react';
 import { NotificationBell } from '../../../components/NotificationBell';
-import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
 import { useAnalytics } from '@/hooks/useAnalytics';
+import { optimizedApiClient } from '../../../lib/optimizedApiClient';
+import {
+  BlobAlert,
+  BlobBadge,
+  BlobButton,
+  BlobCard,
+  BlobDashboardShell,
+} from '@/components/blob';
 import { ProStatsSection } from './ProStatsSection';
 import type { ProDashboardStats } from './ProStatsSection';
+
+type ProActionCardProps = {
+  href: string;
+  icon: ReactNode;
+  title: string;
+  description: string;
+  cta: string;
+  badge?: string;
+  mode?: 'white' | 'sand' | 'yellowSignal';
+};
+
+function ProActionCard({
+  href,
+  icon,
+  title,
+  description,
+  cta,
+  badge,
+  mode = 'white',
+}: ProActionCardProps) {
+  return (
+    <Link href={href} className="group block h-full">
+      <BlobCard mode={mode} className="h-full">
+        <div className="flex h-full flex-col gap-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black dark:border-white/40">
+              {icon}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="break-words text-xl font-black uppercase tracking-widest text-blob-black dark:text-white">
+                  {title}
+                </h3>
+                {badge && <BlobBadge variant="yellow">{badge}</BlobBadge>}
+              </div>
+              <p className="mt-1 text-sm leading-6 text-blob-black/64 dark:text-white/60">
+                {description}
+              </p>
+            </div>
+          </div>
+          <span className="mt-auto inline-flex items-center gap-2 text-sm font-black uppercase tracking-widest text-blob-black transition-all group-hover:gap-3 dark:text-white">
+            {cta}
+            <span aria-hidden="true">→</span>
+          </span>
+        </div>
+      </BlobCard>
+    </Link>
+  );
+}
+
+function ProDashboardLoading() {
+  return (
+    <BlobDashboardShell title="Espace pro">
+      <div className="space-y-4 pb-8" aria-busy="true" aria-live="polite">
+        <BlobAlert title="Chargement">
+          Préparation de ton espace professionnel...
+        </BlobAlert>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <BlobCard key={index} mode="white" className="min-h-36 animate-pulse">
+              <div className="space-y-3">
+                <div className="h-4 w-2/3 rounded-sm bg-blob-sand-deep dark:bg-white/15" />
+                <div className="h-3 w-full rounded-sm bg-blob-sand-deep dark:bg-white/15" />
+                <div className="h-3 w-3/4 rounded-sm bg-blob-sand-deep dark:bg-white/15" />
+              </div>
+            </BlobCard>
+          ))}
+        </div>
+      </div>
+    </BlobDashboardShell>
+  );
+}
 
 export default function ProDashboardPage() {
   const router = useRouter();
@@ -38,7 +126,7 @@ export default function ProDashboardPage() {
           return;
         }
         setUser(u);
-        // Fetch stats sans bloquer l'affichage principal
+        // Fetch stats sans bloquer l'affichage principal.
         optimizedApiClient.getProDashboardStats().then(setStats).catch(() => null);
       })
       .catch(() => {
@@ -64,224 +152,161 @@ export default function ProDashboardPage() {
   };
 
   if (loading) {
-    return (
-      <div className="mx-auto max-w-6xl space-y-4">
-        <PageHeaderSkeleton />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <CardSkeleton key={i} />
-          ))}
-        </div>
-      </div>
-    );
+    return <ProDashboardLoading />;
   }
   if (!user) return null;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-8">
-      {/* Header compact avec style océan */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-blue-100 to-cyan-100 dark:from-blue-900/20 dark:to-cyan-900/20 p-4 border-2 border-blue-200/50 dark:border-blue-800/50">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-md">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Dashboard Professionnel 💼</h1>
-            <p className="text-sm text-muted-foreground">Bienvenue, {user?.email}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+    <BlobDashboardShell
+      title="Espace pro"
+      nav={[
+        { label: 'Dashboard', href: '/pro/dashboard', icon: <Sparkles size={16} /> },
+        { label: 'Demandes', href: '/pro/contact-requests', icon: <RadioTower size={16} /> },
+        { label: 'Carte', href: '/pro/map', icon: <Map size={16} /> },
+        { label: 'Messages', href: '/pro/messages', icon: <MessageSquare size={16} /> },
+        { label: 'Profil', href: '/pro/profile', icon: <User size={16} /> },
+      ]}
+      actions={
+        <>
           <NotificationBell />
-          <Link href="/account">
-            <Button variant="ghost" size="sm">
-              Mon compte
-            </Button>
+          <BlobButton asChild variant="outlineDark" size="sm">
+            <Link href="/account">Mon compte</Link>
+          </BlobButton>
+          <BlobButton variant="dark" size="sm" onClick={logout}>
+            <LogOut size={14} /> Déconnexion
+          </BlobButton>
+        </>
+      }
+    >
+      <div className="space-y-6 pb-8">
+        <BlobCard mode="yellowSignal">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blob-black/65">
+                Pro Blob
+              </p>
+              <h2 className="mt-2 text-2xl font-black uppercase tracking-widest text-blob-black">
+                Pilote tes demandes
+              </h2>
+              <p className="mt-2 break-words text-sm leading-6 text-blob-black/72">
+                Connecte-toi aux riders proches de ta zone, sans réservation ni paiement sur la plateforme.
+              </p>
+            </div>
+            <BlobBadge variant="dark">Compte pro</BlobBadge>
+          </div>
+        </BlobCard>
+
+        {!user.emailVerified && (
+          <BlobAlert variant="info" title="Email non vérifié">
+            <p>Confirme ton adresse email pour sécuriser ton compte pro.</p>
+            <BlobButton asChild size="sm" variant="outlineDark" className="mt-3">
+              <Link href="/account">Vérifier maintenant</Link>
+            </BlobButton>
+          </BlobAlert>
+        )}
+
+        <BlobAlert variant="warning" title="Localisation pro">
+          <p>
+            Ta latitude/longitude sont obligatoires pour apparaître dans la recherche des riders et calculer les distances.
+            Ton adresse précise n&apos;est pas affichée.
+          </p>
+          <BlobButton asChild size="sm" variant="outlineDark" className="mt-3">
+            <Link href="/pro/profile">Mettre à jour ma localisation</Link>
+          </BlobButton>
+        </BlobAlert>
+
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
+            <h2 className="text-lg font-black uppercase tracking-widest text-blob-black dark:text-white">
+              Actions rapides
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <ProActionCard
+              href="/pro/profile"
+              icon={<User size={24} />}
+              title="Profil pro"
+              description="Nom commercial, bio, logo et zone d'activité pour inspirer confiance aux riders."
+              cta="Ouvrir mon profil"
+            />
+            <ProActionCard
+              href="/pro/messages"
+              icon={<MessageSquare size={24} />}
+              title="Messages"
+              description="Gère les échanges avec les riders et transforme les demandes en mise en relation claire."
+              cta="Ouvrir mes messages"
+            />
+            <ProActionCard
+              href="/pro/map"
+              icon={<Map size={24} />}
+              title="BloboMap"
+              description="Repère les demandes de cours autour de ta zone, sans exposer d'adresse privée."
+              cta="Voir la carte"
+              badge="Terrain"
+            />
+            <ProActionCard
+              href="/pro/contact-requests"
+              icon={<Bell size={24} />}
+              title="Demandes"
+              description="Suis les demandes de contact et traite les opportunités encore en attente."
+              cta="Gérer les demandes"
+            />
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="h-1 w-12 rounded-sm bg-blob-yellow" />
+            <h2 className="text-lg font-black uppercase tracking-widest text-blob-black dark:text-white">
+              Activité pro
+            </h2>
+          </div>
+          <BlobCard mode="white">
+            {stats ? (
+              <ProStatsSection stats={stats} />
+            ) : (
+              <div className="flex min-h-32 items-center gap-3 text-sm text-blob-black/70 dark:text-white/70" aria-live="polite">
+                <TrendingUp className="h-5 w-5 animate-pulse text-blob-black dark:text-white" />
+                Chargement des statistiques...
+              </div>
+            )}
+          </BlobCard>
+        </section>
+
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ProActionCard
+            href="/pro/settings/notifications"
+            icon={<Settings size={22} />}
+            title="Notifications"
+            description="Choisis les alertes de demandes de cours utiles entre deux sessions."
+            cta="Régler mes alertes"
+            mode="sand"
+          />
+        </section>
+
+        <div className="border-t-2 border-blob-sand-deep pt-4 dark:border-white/10">
+          <Link
+            href="/about"
+            className="group flex items-center justify-between rounded-sm border-2 border-transparent p-4 transition-colors hover:border-blob-black hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow dark:hover:border-white/40 dark:hover:bg-white/5"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <Info size={18} className="shrink-0 text-blob-black/64 dark:text-white/60" />
+              <div className="min-w-0">
+                <p className="text-sm font-black uppercase tracking-widest text-blob-black dark:text-white">
+                  À propos &amp; RGPD
+                </p>
+                <p className="text-xs text-blob-black/64 dark:text-white/60">
+                  Sécurité, données et fonctionnement
+                </p>
+              </div>
+            </div>
+            <span className="shrink-0 text-blob-black/64 transition-transform group-hover:translate-x-1 dark:text-white/60">
+              →
+            </span>
           </Link>
-          <Button variant="ghost" size="sm" onClick={logout} className="inline-flex items-center gap-1.5">
-            <LogOut size={14}/> Déconnexion
-          </Button>
         </div>
       </div>
-
-      {/* Alertes */}
-      {!user?.emailVerified && (
-        <div className="rounded-[1.75rem] border border-blue-200/70 dark:border-blue-500/40 bg-gradient-to-r from-blue-50 via-cyan-50 to-blue-100 px-5 py-4 shadow-sm dark:from-slate-950/70 dark:via-blue-950/30 dark:to-slate-900/40">
-          <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0 dark:text-blue-200" />
-            <div className="flex-1">
-              <p className="font-medium text-blue-900 dark:text-blue-100">Email non vérifié</p>
-              <p className="text-sm text-blue-800 mt-1 dark:text-blue-100/80">
-                Confirme ton adresse email pour sécuriser ton compte pro.
-              </p>
-              <Link href="/account" className="inline-block mt-2">
-                <Button size="sm" variant="ghost" className="text-blue-700 p-0 h-auto hover:bg-transparent dark:text-blue-200 dark:hover:bg-white/10">
-                  Vérifier maintenant →
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="rounded-[1.75rem] border border-amber-200/70 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100 px-5 py-4 shadow-sm dark:border-amber-900/40 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
-        <div className="flex items-start gap-3">
-          <Map className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0 dark:text-amber-300" />
-          <div className="flex-1">
-            <p className="font-medium text-amber-900 dark:text-amber-100">Renseigne ta localisation</p>
-            <p className="text-sm text-amber-800 mt-1 dark:text-amber-100/80">
-              Ta latitude/longitude sont obligatoires pour apparaître dans la recherche des riders et calculer les distances. Ton adresse précise n’est pas affichée.
-            </p>
-            <Link href="/pro/profile" className="inline-block mt-2">
-              <Button size="sm" variant="ghost" className="text-amber-800 p-0 h-auto hover:bg-transparent dark:text-amber-100 dark:hover:bg-white/10">
-                Mettre à jour ma localisation →
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Ligne 1 : Profil Pro + Messages */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Profil Pro - Hero Card */}
-        <Link href="/pro/profile" className="group block">
-          <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-amber-200/70 dark:border-white/10 bg-gradient-to-br from-white via-amber-50 to-orange-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg group-hover:scale-110 transition-transform">
-                    <User size={24}/>
-                  </div>
-                  <div>
-                    <CardTitle className="text-2xl">Profil Pro</CardTitle>
-                    <CardDescription className="text-base mt-1">Renseigne tes infos professionnelles</CardDescription>
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                Nom commercial, bio, tarif, logo : tout pour attirer tes futurs élèves.
-              </p>
-              <div className="inline-flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium group-hover:gap-3 transition-all">
-                Ouvrir mon profil
-                <span className="group-hover:translate-x-1 transition-transform">→</span>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-
-        {/* Messages - Hero Card */}
-        <Link href="/pro/messages" className="group block">
-          <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-purple-200/70 dark:border-white/10 bg-gradient-to-br from-white via-purple-50 to-pink-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg group-hover:scale-110 transition-transform">
-                    <MessageSquare size={24}/>
-                  </div>
-                  <div>
-                    <CardTitle className="text-2xl">Messages</CardTitle>
-                    <CardDescription className="text-base mt-1">Communiquer avec tes riders</CardDescription>
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                Gère tes conversations avec tes élèves et futurs élèves.
-              </p>
-              <div className="inline-flex items-center gap-2 text-purple-600 dark:text-purple-400 font-medium group-hover:gap-3 transition-all">
-                Ouvrir mes messages
-                <span className="group-hover:translate-x-1 transition-transform">→</span>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
-
-      {/* Stats MVP */}
-      <Card className="rounded-[1.75rem] border overflow-hidden">
-        <CardContent className="p-4 min-h-[260px]">
-          {stats ? (
-            <ProStatsSection stats={stats} />
-          ) : (
-            <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
-              <TrendingUp className="w-4 h-4 animate-pulse" />
-              Chargement des statistiques…
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* BloboMap */}
-      <div className="grid grid-cols-1 gap-4">
-        <Link href="/pro/map" className="group block">
-          <Card className="h-full overflow-hidden rounded-[1.75rem] border-2 border-cyan-200/70 dark:border-white/10 bg-gradient-to-br from-white via-cyan-50 to-blue-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 text-white shadow-lg group-hover:scale-110 transition-transform">
-                    <Map size={24}/>
-                  </div>
-                  <div>
-                    <CardTitle className="text-2xl">BloboMap</CardTitle>
-                    <CardDescription className="text-base mt-1">Demandes de cours autour de toi</CardDescription>
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                Carte interactive des riders qui cherchent un coach près de toi.
-              </p>
-              <div className="inline-flex items-center gap-2 text-cyan-600 dark:text-cyan-400 font-medium group-hover:gap-3 transition-all">
-                Voir la carte
-                <span className="group-hover:translate-x-1 transition-transform">→</span>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
-
-      {/* Ligne 3 : Notifications */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Link href="/pro/settings/notifications" className="group">
-          <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-purple-300 rounded-[1.75rem]">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white group-hover:scale-110 transition-transform">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                  </svg>
-                </div>
-                <div>
-                  <CardTitle>Notifications</CardTitle>
-                  <CardDescription>Personnalise tes alertes</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Choisis quelles demandes de cours tu veux recevoir.
-              </p>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
-
-      {/* À propos - Discret en bas */}
-      <div className="pt-4 border-t">
-        <Link href="/about" className="group flex items-center justify-between p-4 rounded-lg hover:bg-accent transition-colors">
-          <div className="flex items-center gap-3">
-            <Info size={18} className="text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium">À propos & RGPD</p>
-              <p className="text-xs text-muted-foreground">Sécurité, données et fonctionnement</p>
-            </div>
-          </div>
-          <span className="text-muted-foreground group-hover:translate-x-1 transition-transform">→</span>
-        </Link>
-      </div>
-    </div>
+    </BlobDashboardShell>
   );
 }

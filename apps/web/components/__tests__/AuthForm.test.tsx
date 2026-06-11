@@ -198,4 +198,19 @@ describe('AuthForm', () => {
       expect(screen.queryByText(/tu t'inscris comme/i)).not.toBeInTheDocument();
     });
   });
+
+  describe('états de soumission', () => {
+    it('désactive le CTA de connexion pendant la requête', async () => {
+      mockedApiClient.login.mockReturnValue(new Promise(() => undefined));
+      render(<AuthForm mode="login" />);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/email/i), 'rider@test.com');
+      await user.type(screen.getByLabelText(/^mot de passe$/i), 'Passw0rd!');
+      await user.click(screen.getByRole('button', { name: /se connecter/i }));
+
+      expect(screen.getByRole('button', { name: /en cours/i })).toBeDisabled();
+      expect(mockedApiClient.login).toHaveBeenCalledTimes(1);
+    });
+  });
 });

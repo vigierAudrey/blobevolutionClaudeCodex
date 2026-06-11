@@ -25,6 +25,14 @@ Sources de vérité produit :
 - `README.md`
 - `docs/product-positioning.md`
 
+Priorité de ce sprint :
+
+1. Harmoniser les pages visibles en mobile-first.
+2. Corriger les incohérences visuelles les plus visibles sur téléphone.
+3. Supprimer ou corriger les boutons/CTA non reliés.
+4. Préserver tous les parcours MVP rider/pro/admin.
+5. Laisser le desktop propre, mais ne pas sacrifier le mobile.
+
 Vocabulaire canonique 2026 :
 
 | Terme | Usage |
@@ -214,6 +222,11 @@ Contribution 2026-06-01 :
 Contribution 2026-06-07 :
 
 - [x] Média rider privé : route authentifiée owner-only pour servir `users/*`, front converti vers cette route, tests anti-IDOR et conservation de `pros/*` public.
+
+Contribution 2026-06-11 :
+
+- [x] Sprint mobile-first : harmonisation du dashboard pro avec les composants Blob, nav dashboard plus tactile sur mobile et tests web associés.
+- [x] Sprint front sensible : harmonisation AuthForm, onboarding pro et haut de profil pro en mobile-first, suppression des logs debug pro et tests web associés.
 
 Definition of Done P1 :
 

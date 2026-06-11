@@ -7,9 +7,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiRequest } from '../../../lib/csrf';
 import { BackBar } from '../../../components/BackBar';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
-import { Button } from '../../../components/ui/button';
 import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../../../lib/clientSession';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobMark } from '@/components/blob';
 
 type ProProfile = {
   id: string;
@@ -67,8 +66,7 @@ function ProOnboardingInner() {
           router.replace('/login');
           return;
         }
-        console.error('❌ Error loading profile:', e);
-        setError(e instanceof Error ? e.message : 'Erreur');
+        setError('Impossible de charger ton profil pro pour le moment.');
       } finally {
         if (active) {
           setLoading(false);
@@ -99,64 +97,74 @@ function ProOnboardingInner() {
   }, [loading, error, hasBusinessName, hasBio, hasPhoto, router]);
 
   return (
-    <div className="max-w-md mx-auto space-y-6 pb-8">
+    <div className="mx-auto max-w-md space-y-6 pb-8">
       <BackBar fallbackHref="/pro/dashboard" />
 
-      {/* Header compact avec style océan */}
-      <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-blue-100 to-cyan-100 dark:from-blue-900/20 dark:to-cyan-900/20 p-4 border-2 border-blue-200/50 dark:border-blue-800/50">
-        <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-md">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-          </svg>
+      <BlobCard mode="yellowSignal">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-black text-blob-yellow">
+            <BlobMark size={26} decorative />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="break-words text-2xl font-black uppercase tracking-widest text-blob-black">
+                Bienvenue sur Blob Pro
+              </h1>
+              <BlobBadge variant="dark">Pro</BlobBadge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-blob-black/72">
+              Complète ton profil professionnel pour recevoir des demandes utiles autour de ta zone.
+            </p>
+          </div>
         </div>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-foreground">Bienvenue sur Blob Pro ! 👋</h1>
-          <p className="text-sm text-muted-foreground">Complète ton profil professionnel</p>
-        </div>
-      </div>
+      </BlobCard>
 
       {loading ? (
-        <div className="text-center py-8">
-          <p className="text-muted-foreground">Chargement…</p>
-        </div>
+        <BlobAlert title="Chargement">
+          Vérification de ton espace pro...
+        </BlobAlert>
       ) : error ? (
-        <div className="rounded-2xl border-2 border-red-200 dark:border-red-800/50 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 p-4">
-          <p className="text-sm text-red-700 dark:text-red-300 font-medium">❌ {error}</p>
-        </div>
+        <BlobAlert variant="error" title="Profil indisponible">
+          <p>{error}</p>
+        </BlobAlert>
       ) : redirecting ? (
-        <Card className="border-2 rounded-[1.75rem]">
-          <CardHeader className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
-            <CardTitle className="text-emerald-900 dark:text-emerald-100">✅ Profil professionnel prêt !</CardTitle>
-            <CardDescription className="text-emerald-800 dark:text-emerald-200">
-              Redirection vers ton dashboard pro…
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <Button onClick={() => router.replace('/pro/dashboard')} className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700">
+        <BlobCard mode="white">
+          <div className="space-y-4">
+            <BlobAlert variant="success" title="Profil professionnel prêt">
+              Redirection vers ton dashboard pro...
+            </BlobAlert>
+            <BlobButton onClick={() => router.replace('/pro/dashboard')} className="w-full">
               Aller au dashboard pro
-            </Button>
-          </CardContent>
-        </Card>
+            </BlobButton>
+          </div>
+        </BlobCard>
       ) : (
-        <Card className="border-2 rounded-[1.75rem]">
-          <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30">
-            <CardTitle className="text-foreground">Compléter mon profil professionnel</CardTitle>
-            <CardDescription>Toutes ces informations sont requises pour commencer à recevoir des demandes.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-6">
+        <BlobCard mode="white">
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-widest text-blob-black dark:text-white">
+                Compléter mon profil professionnel
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-blob-black/64 dark:text-white/60">
+                Ces informations sont requises pour commencer à recevoir des demandes.
+              </p>
+            </div>
             <ChecklistItem done={hasBusinessName} label="Nom de l'entreprise / activité" />
             <ChecklistItem done={hasBio} label="Description de tes services" />
             <ChecklistItem done={hasPhoto} label="Photo de profil ou logo" />
-            <div className="pt-2 flex flex-col sm:flex-row gap-3">
-              <Button onClick={() => router.push('/pro/profile')} className="flex-1 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700">
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+              <BlobButton onClick={() => router.push('/pro/profile')} className="w-full sm:flex-1">
                 Compléter mon profil pro
-              </Button>
-              <Link href="/pro/dashboard" className="flex-1 inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm hover:bg-accent">
+              </BlobButton>
+              <Link
+                href="/pro/dashboard"
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-sm border-2 border-blob-black px-4 py-2 text-xs font-black uppercase tracking-widest text-blob-black transition-colors hover:bg-blob-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow dark:border-white/70 dark:text-white dark:hover:bg-white/15 sm:flex-1"
+              >
                 Accéder au dashboard
               </Link>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </BlobCard>
       )}
     </div>
   );
@@ -165,17 +173,17 @@ function ProOnboardingInner() {
 function ChecklistItem({ done, label }: { done: boolean; label: string }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <span className={`inline-flex h-5 w-5 items-center justify-center rounded-sm border-2 ${done ? 'bg-green-600 border-green-600' : 'bg-white border-gray-300'} text-white font-bold`}>
+      <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border-2 ${done ? 'border-blob-black bg-blob-yellow text-blob-black' : 'border-blob-black/30 bg-white text-transparent'} font-black`}>
         {done ? '✓' : ''}
       </span>
-      <span className={done ? 'line-through text-muted-foreground' : ''}>{label}</span>
+      <span className={done ? 'text-blob-black/55 line-through dark:text-white/50' : 'text-blob-black dark:text-white'}>{label}</span>
     </div>
   );
 }
 
 export default function ProOnboardingPage() {
   return (
-    <Suspense fallback={<div className="max-w-md mx-auto space-y-4"><BackBar fallbackHref="/pro/dashboard" /><p>Chargement…</p></div>}>
+    <Suspense fallback={<div className="mx-auto max-w-md space-y-4"><BackBar fallbackHref="/pro/dashboard" /><BlobAlert title="Chargement">Préparation...</BlobAlert></div>}>
       <ProOnboardingInner />
     </Suspense>
   );

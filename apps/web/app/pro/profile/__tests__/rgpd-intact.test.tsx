@@ -78,6 +78,16 @@ beforeEach(() => {
 });
 
 describe('ProProfilePage — non-regression RGPD', () => {
+  it('affiche le header Blob du profil pro avec CTA aperçu', async () => {
+    render(<ProProfilePage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /profil professionnel/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('preview-button')).toHaveAttribute('href', '/pro/profile/preview');
+  });
+
   it('affiche toujours la section RGPD', async () => {
     render(<ProProfilePage />);
 
