@@ -356,8 +356,8 @@ importers:
         specifier: ^8.6.15
         version: 8.6.18(react@18.2.0)(storybook@8.6.18)
       '@storybook/blocks':
-        specifier: ^8.6.15
-        version: 8.6.15(react-dom@18.2.0(react@18.2.0))(react@18.2.0)(storybook@8.6.18)
+        specifier: ^8.6.18
+        version: 8.6.18(react-dom@18.2.0(react@18.2.0))(react@18.2.0)(storybook@8.6.18)
       '@storybook/react':
         specifier: ^8.6.15
         version: 8.6.15(@storybook/test@8.6.15(storybook@8.6.18))(react-dom@18.2.0(react@18.2.0))(react@18.2.0)(storybook@8.6.18)(typescript@5.9.3)
@@ -3446,6 +3446,18 @@ packages:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       storybook: ^8.6.15
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
+        optional: true
+
+  '@storybook/blocks@8.6.18':
+    resolution: {integrity: sha512-esZv4msPQ9LxgTb8YUIZhhxVMuI6BPi5bkXtk8c7w7sWuAsqsCe/RnVInn7ooUry2gjnD4hd9+8Eqj0b8oTVoA==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      storybook: ^8.6.18
     peerDependenciesMeta:
       react:
         optional: true
@@ -9555,6 +9567,10 @@ packages:
     resolution: {integrity: sha512-q5W7tVM71e2xjHZTlgfTDoPF/SmqKG5hddq9SzR49CH2hayqRKJtQ4mtRlSxKaJlR/+9rEM+mnBHf7I2/BQcpQ==}
     engines: {node: '>=6.10'}
 
+  ts-dedent@2.3.0:
+    resolution: {integrity: sha512-JfJeIHke7y2egdGGgRAvpCwYFUsHlM2gPcrVOxFkznt/4uzQ7HFmvE63iFHVLBJNDuyDOQgijDK/tXH/f6Msjg==}
+    engines: {node: '>=6.10'}
+
   ts-interface-checker@0.1.13:
     resolution: {integrity: sha512-Y/arvbn+rrz3JCKl9C4kVNfTfSm2/mEp5FSz5EsZSANGPSlQrpRI5M4PKF+mJnE52jOO90PnPSc3Ur3bTQw0gA==}
 
@@ -14228,14 +14244,14 @@ snapshots:
       '@storybook/global': 5.0.0
       memoizerific: 1.11.3
       storybook: 8.6.18
-      ts-dedent: 2.2.0
+      ts-dedent: 2.3.0
 
   '@storybook/addon-controls@8.6.15(storybook@8.6.18)':
     dependencies:
       '@storybook/global': 5.0.0
       dequal: 2.0.3
       storybook: 8.6.18
-      ts-dedent: 2.2.0
+      ts-dedent: 2.3.0
 
   '@storybook/addon-docs@8.6.15(@types/react@18.3.28)(storybook@8.6.18)':
     dependencies:
@@ -14246,7 +14262,7 @@ snapshots:
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
       storybook: 8.6.18
-      ts-dedent: 2.2.0
+      ts-dedent: 2.3.0
     transitivePeerDependencies:
       - '@types/react'
 
@@ -14298,7 +14314,7 @@ snapshots:
     dependencies:
       '@storybook/global': 5.0.0
       storybook: 8.6.18
-      ts-dedent: 2.2.0
+      ts-dedent: 2.3.0
 
   '@storybook/addon-toolbars@8.6.15(storybook@8.6.18)':
     dependencies:
@@ -14313,7 +14329,16 @@ snapshots:
     dependencies:
       '@storybook/icons': 1.6.0(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       storybook: 8.6.18
-      ts-dedent: 2.2.0
+      ts-dedent: 2.3.0
+    optionalDependencies:
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
+
+  '@storybook/blocks@8.6.18(react-dom@18.2.0(react@18.2.0))(react@18.2.0)(storybook@8.6.18)':
+    dependencies:
+      '@storybook/icons': 1.6.0(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      storybook: 8.6.18
+      ts-dedent: 2.3.0
     optionalDependencies:
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
@@ -14337,7 +14362,7 @@ snapshots:
       storybook: 8.6.18
       style-loader: 3.3.4(webpack@5.105.2(@swc/core@1.15.40)(esbuild@0.27.3))
       terser-webpack-plugin: 5.3.16(@swc/core@1.15.40)(esbuild@0.27.3)(webpack@5.105.2(@swc/core@1.15.40)(esbuild@0.27.3))
-      ts-dedent: 2.2.0
+      ts-dedent: 2.3.0
       url: 0.11.4
       util: 0.12.5
       util-deprecate: 1.0.2
@@ -14373,7 +14398,7 @@ snapshots:
       storybook: 8.6.18
       style-loader: 3.3.4(webpack@5.105.2(esbuild@0.25.12))
       terser-webpack-plugin: 5.3.16(esbuild@0.25.12)(webpack@5.105.2(esbuild@0.25.12))
-      ts-dedent: 2.2.0
+      ts-dedent: 2.3.0
       url: 0.11.4
       util: 0.12.5
       util-deprecate: 1.0.2
@@ -14397,7 +14422,7 @@ snapshots:
   '@storybook/core-webpack@8.6.15(storybook@8.6.18)':
     dependencies:
       storybook: 8.6.18
-      ts-dedent: 2.2.0
+      ts-dedent: 2.3.0
 
   '@storybook/core@8.6.18(storybook@8.6.18)':
     dependencies:
@@ -22386,6 +22411,8 @@ snapshots:
       typescript: 5.9.3
 
   ts-dedent@2.2.0: {}
+
+  ts-dedent@2.3.0: {}
 
   ts-interface-checker@0.1.13: {}
 
