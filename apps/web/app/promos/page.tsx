@@ -1,7 +1,13 @@
+import type { Metadata } from 'next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { BackBar } from '../../components/BackBar';
 import { Badge } from '../../components/ui/badge';
 import { Sparkles, Tag } from 'lucide-react';
+
+// Placeholder non MVP : ne pas indexer tant que la fonctionnalité n'existe pas.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default function PromosPage() {
   return (

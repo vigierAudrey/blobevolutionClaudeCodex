@@ -1,5 +1,5 @@
 "use client";
-import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, Tag, User } from 'lucide-react';
+import { BookOpen, GraduationCap, Info, LogOut, Map, MessageSquare, RadioTower, User } from 'lucide-react';
 import { NotificationBell } from '../../components/NotificationBell';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -366,13 +366,12 @@ export default function DashboardPage() {
               </span>
               <div>
                 <h3 className="flex items-center gap-2 text-xl font-black uppercase tracking-widest dark:text-white">
-                  Cours & Bons Plans
-                  <Tag size={16} className="text-blob-black/60 dark:text-white/50" />
+                  Cours
                 </h3>
-                <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Trouve un moniteur ou profite de promos exclusives</p>
+                <p className="mt-1 text-sm text-blob-black/64 dark:text-white/60">Trouve un moniteur près de chez toi</p>
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4">
               <div className="flex flex-col gap-2">
                 <BlobButton asChild variant="dark" className="w-full">
                   <Link href="/lesson-request">
@@ -384,13 +383,6 @@ export default function DashboardPage() {
                   Les pros voient ta demande sur leur BloboMap et peuvent te proposer un cours adapté à ton niveau.
                 </p>
               </div>
-
-              <BlobButton asChild className="w-full">
-                <Link href="/promos">
-                  <Tag size={18} />
-                  Voir les promos
-                </Link>
-              </BlobButton>
             </div>
           </div>
         </BlobCard>

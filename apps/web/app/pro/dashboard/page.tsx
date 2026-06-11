@@ -8,7 +8,7 @@ import { optimizedApiClient } from '../../../lib/optimizedApiClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
-import { User, Map, Info, LogOut, MessageSquare, Gift, Sparkles, TrendingUp } from 'lucide-react';
+import { User, Map, Info, LogOut, MessageSquare, Sparkles, TrendingUp } from 'lucide-react';
 import { NotificationBell } from '../../../components/NotificationBell';
 import { CardSkeleton, PageHeaderSkeleton } from '../../../components/ui/skeleton';
 import type { DashboardUser } from '@/types/user';
@@ -243,29 +243,8 @@ export default function ProDashboardPage() {
         </Link>
       </div>
 
-      {/* Ligne 3 : Offres Promotionnelles + Notifications - Centrées */}
+      {/* Ligne 3 : Notifications */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Link href="/pro/promos" className="group">
-          <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-amber-300 rounded-[1.75rem]">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white group-hover:scale-110 transition-transform">
-                  <Gift size={20}/>
-                </div>
-                <div>
-                  <CardTitle>Offres Promotionnelles</CardTitle>
-                  <CardDescription>Partenariats et promotions</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Découvre les opportunités de visibilité et de collaboration.
-              </p>
-            </CardContent>
-          </Card>
-        </Link>
-
         <Link href="/pro/settings/notifications" className="group">
           <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-0.5 border-2 border-transparent hover:border-purple-300 rounded-[1.75rem]">
             <CardHeader>

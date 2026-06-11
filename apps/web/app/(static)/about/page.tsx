@@ -72,8 +72,8 @@ export default function AboutPage() {
             <p>Quand tu indiques que tu cherches un coach, ta demande peut apparaître aux pros dont la zone couvre ta distance. La fonctionnalité se déploie progressivement : selon ton spot, il peut y avoir peu de réponses au début.</p>
           </div>
           <div>
-            <h3 className="font-medium text-foreground">Promos & bons plans</h3>
-            <p>Un espace dédié aux offres communes et aux événements pour la communauté. Remises, bons plans spots et découvertes partagées entre riders et pros.</p>
+            <h3 className="font-medium text-foreground">Promos & bons plans (à venir)</h3>
+            <p>Des bons plans et partenariats locaux pourront arriver progressivement, quand la communauté et les usages seront suffisamment validés. Rien n&apos;est disponible pour le moment.</p>
           </div>
         </CardContent>
       </Card>

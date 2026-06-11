@@ -49,7 +49,7 @@ export default function AdminSecurityPage() {
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link href="/admin" className="hover:text-foreground transition-colors">Administration</Link>
+        <Link href="/admin/dashboard" className="hover:text-foreground transition-colors">Administration</Link>
         <ChevronRight className="h-3 w-3" />
         <span className="text-foreground font-medium">Sécurité</span>
       </nav>

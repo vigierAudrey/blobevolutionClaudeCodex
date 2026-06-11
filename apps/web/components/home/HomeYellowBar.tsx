@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { GraduationCap, Tag, BookOpen, type LucideIcon } from 'lucide-react';
+import { GraduationCap, BookOpen, type LucideIcon } from 'lucide-react';
 
 type YellowBarItem = {
   label: string;
@@ -19,15 +19,9 @@ const items: YellowBarItem[] = [
   },
   {
     label: 'Cours avec un pro',
-    description: 'Réserve un cours avec des pros locaux.',
+    description: 'Demande un cours à des pros locaux.',
     href: '/register?intent=lesson-request',
     Icon: GraduationCap,
-  },
-  {
-    label: 'Bons plans',
-    description: 'Promos, matos, stages, événements.',
-    href: '/promos',
-    Icon: Tag,
   },
   {
     label: 'Guides & conseils',
@@ -109,7 +103,7 @@ export function HomeYellowBar() {
 
         <div className="relative px-4 sm:px-6 lg:px-10 xl:px-14 py-2.5 sm:py-3">
           <ul
-            className="grid grid-cols-2 sm:grid-cols-4"
+            className="grid grid-cols-2 sm:grid-cols-3"
             role="list"
           >
             {items.map((item, index) => {
@@ -119,7 +113,7 @@ export function HomeYellowBar() {
                   key={item.href}
                   className={[
                     index % 2 === 1 ? 'border-l border-blob-sand-deep dark:border-white/10' : '',
-                    index > 1 ? 'border-t border-blob-sand-deep dark:border-white/10' : '',
+                    index > 1 ? 'col-span-2 border-t border-blob-sand-deep dark:border-white/10 sm:col-span-1' : '',
                     index > 0 ? 'sm:border-l sm:border-t-0 dark:sm:border-white/10' : '',
                   ].join(' ')}
                 >

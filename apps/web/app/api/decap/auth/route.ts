@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isDecapAuthProxyEnabled } from './enabled';
 
 export const runtime = 'nodejs';
 
 const DECAP_AUTH_URL = 'https://api.netlify.com/api/v1/auth/github';
 
+// Host upstream fixe — jamais dérivé de la requête.
+// Proxy coupé en production via isDecapAuthProxyEnabled (./enabled).
+
 async function proxyAuth(req: NextRequest) {
+  if (!isDecapAuthProxyEnabled()) {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const target = new URL(DECAP_AUTH_URL);
   if (req.nextUrl.search) {
     target.search = req.nextUrl.search;

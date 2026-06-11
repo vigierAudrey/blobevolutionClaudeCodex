@@ -7,7 +7,6 @@ const footerColumns = [
     links: [
       { label: 'Matching', href: '/register?intent=matching' },
       { label: 'Cours', href: '/register?intent=lesson-request' },
-      { label: 'Bons plans', href: '/promos' },
       { label: 'Guides', href: '/blobosphere' },
     ],
   },

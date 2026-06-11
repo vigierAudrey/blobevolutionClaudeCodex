@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { Users, GraduationCap, Tag, BookOpen, ArrowRight } from 'lucide-react';
+import { Users, GraduationCap, BookOpen, ArrowRight } from 'lucide-react';
 import { BlobButton } from '@/components/blob/BlobButton';
 import { BlobCard } from '@/components/blob/BlobCard';
 import { BlobMediaFrame } from '@/components/blob/BlobMediaFrame';
@@ -30,23 +30,11 @@ const slides = [
     title: 'Cours avec un pro',
     icon: GraduationCap,
     badge: 'Cours',
-    description: 'Réserve un cours avec un moniteur local sur le Médoc Atlantique.',
+    description: 'Demande un cours à un moniteur local sur le Médoc Atlantique.',
     href: '/register?intent=lesson-request',
     ctaLabel: 'Trouver un cours',
     imageSrc: '/images/home/lessons-square.webp',
     imageAlt: 'Moniteur de kite donnant un cours dans les vagues',
-    priority: false,
-  },
-  {
-    id: 'promos',
-    title: 'Promos & bons plans',
-    icon: Tag,
-    badge: 'Promos',
-    description: 'Réductions matos, stages et bons plans réservés à la communauté.',
-    href: '/promos',
-    ctaLabel: 'Voir les promos',
-    imageSrc: '/images/home/bons-plans-riders-square-700.webp',
-    imageAlt: 'Matériel surf et kite dans un shop local',
     priority: false,
   },
   {
@@ -68,7 +56,7 @@ export function HomeFeatureCarousel() {
     <section aria-label="Fonctionnalités de la plateforme">
       <div
         id="home-feature-carousel"
-        className="flex gap-4 overflow-x-auto pb-4 pt-1 lg:grid lg:grid-cols-4 lg:gap-4 lg:overflow-visible lg:pb-0 scrollbar-hide"
+        className="flex gap-4 overflow-x-auto pb-4 pt-1 lg:grid lg:grid-cols-3 lg:gap-4 lg:overflow-visible lg:pb-0 scrollbar-hide"
       >
         {slides.map((slide, index) => {
           const Icon = slide.icon;

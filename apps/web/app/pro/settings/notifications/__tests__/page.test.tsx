@@ -113,25 +113,32 @@ describe('ProNotificationsPage', () => {
 
   // ── Chargement des preferences ─────────────────────────────────────────────
 
-  it('charge et applique les preferences depuis l\'API avec un wording honnete', async () => {
+  it('charge et applique les preferences depuis l\'API avec un wording honnete (alertes email, pas de push)', async () => {
     mockRequireClientRole.mockResolvedValueOnce({ role: 'PRO' });
     mockApiRequest.mockResolvedValueOnce(makeResponse(PRO_PREFS_RESPONSE));
 
     render(<ProNotificationsPage />);
 
-    // pushEnabled = false => info box visible, sans promesse de push navigateur
     await waitFor(() => {
-      expect(screen.getByText(/alertes dans blob désactivées/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /toggle lesson request notifications/i })).toBeInTheDocument();
     });
-
     expect(screen.getByRole('heading', { name: /préférences d'alertes/i })).toBeInTheDocument();
-    expect(screen.getAllByText(/alertes dans blob/i).length).toBeGreaterThan(0);
+
+    // MVP: le toggle pushEnabled n'est plus visible — push navigateur non câblé
+    expect(screen.queryByRole('button', { name: /activer les alertes dans blob/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/notifications push/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/reçois des alertes instantanées/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/alertes dans blob désactivées/i)).not.toBeInTheDocument();
     expect(requestPermission).not.toHaveBeenCalled();
 
-    // Les toggles PRO sont bien rendus
-    expect(screen.getByRole('button', { name: /toggle lesson request notifications/i })).toBeInTheDocument();
+    // Le wording parle d'alertes email
+    expect(screen.getAllByText(/email/i).length).toBeGreaterThan(0);
+
+    // Les toggles PRO sont bien rendus et actifs malgré pushEnabled=false en DB
+    const lessonToggle = screen.getByRole('button', { name: /toggle lesson request notifications/i });
+    const messagesToggle = screen.getByRole('button', { name: /toggle message notifications/i });
+    expect(lessonToggle).toBeEnabled();
+    expect(messagesToggle).toBeEnabled();
     expect(screen.getByRole('button', { name: /toggle surf notifications/i })).toBeInTheDocument();
     expect(screen.getAllByText(/messages/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/demandes de cours/i).length).toBeGreaterThan(0);
@@ -158,21 +165,27 @@ describe('ProNotificationsPage', () => {
       expect(putCall).toBeDefined();
       const payload = JSON.parse(putCall![1].body as string);
 
-      // Champs fantomes absents du payload
+      // Champs fantomes absents du payload — pushEnabled inclus : la valeur
+      // stockée en DB ne doit jamais être réécrite par cette page MVP
       expect(payload).not.toHaveProperty('notifyBookingAccepted');
       expect(payload).not.toHaveProperty('notifyBookingRejected');
       expect(payload).not.toHaveProperty('emailEnabled');
       expect(payload).not.toHaveProperty('emailDigestFrequency');
+      expect(payload).not.toHaveProperty('pushEnabled');
 
-      // Exactement les 5 cles booleennes de l'UI
+      // Exactement les 4 cles booleennes de l'UI
       expect(Object.keys(payload).sort()).toEqual([
         'notifyForKitesurf',
         'notifyForSurf',
         'notifyLessonRequests',
         'notifyProMessages',
-        'pushEnabled',
       ]);
     });
+
+    // Aucun appel front vers /push/* — la page ne pilote que /profile/notifications
+    for (const call of mockApiRequest.mock.calls) {
+      expect(String(call[0])).toMatch(/^\/profile\/notifications/);
+    }
   });
 
   // ── Erreur de chargement ────────────────────────────────────────────────────
@@ -234,10 +247,35 @@ describe('ProNotificationsPage', () => {
       const putCall = mockApiRequest.mock.calls.find((c) => c[1]?.method === 'PUT');
       expect(putCall).toBeDefined();
       const payload = JSON.parse(putCall![1].body as string);
-      // Valeurs issues de l'API
-      expect(payload.pushEnabled).toBe(false);
+      // Valeurs issues de l'API — pushEnabled n'est plus piloté par la page
+      expect(payload).not.toHaveProperty('pushEnabled');
       expect(payload.notifyProMessages).toBe(false);
       expect(payload.notifyLessonRequests).toBe(true);
     });
+  });
+
+  it('permet d\'activer/désactiver une alerte email et la sauvegarde (flux pro)', async () => {
+    mockRequireClientRole.mockResolvedValueOnce({ role: 'PRO' });
+    mockApiRequest
+      .mockResolvedValueOnce(makeResponse(PRO_PREFS_RESPONSE))  // GET
+      .mockResolvedValueOnce(makeResponse({ success: true }));   // PUT
+
+    render(<ProNotificationsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /toggle lesson request notifications/i })).toBeInTheDocument();
+    });
+
+    // notifyLessonRequests true → false via le toggle (alerte email demandes de cours)
+    fireEvent.click(screen.getByRole('button', { name: /toggle lesson request notifications/i }));
+    fireEvent.click(screen.getByRole('button', { name: /sauvegarder/i }));
+
+    await waitFor(() => {
+      const putCall = mockApiRequest.mock.calls.find((c) => c[1]?.method === 'PUT');
+      expect(putCall).toBeDefined();
+      const payload = JSON.parse(putCall![1].body as string);
+      expect(payload.notifyLessonRequests).toBe(false);
+    });
+    expect(toastFn).toHaveBeenCalledWith('Préférences de notification sauvegardées', 'success');
   });
 });

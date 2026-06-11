@@ -180,7 +180,7 @@ export default function AdminLoginAttemptsPage() {
         <div className="space-y-2">
           {/* Breadcrumb */}
           <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-            <Link href="/admin" className="hover:text-foreground transition-colors">Administration</Link>
+            <Link href="/admin/dashboard" className="hover:text-foreground transition-colors">Administration</Link>
             <ChevronRight className="h-3 w-3" />
             <Link href="/admin/security" className="hover:text-foreground transition-colors">Sécurité</Link>
             <ChevronRight className="h-3 w-3" />

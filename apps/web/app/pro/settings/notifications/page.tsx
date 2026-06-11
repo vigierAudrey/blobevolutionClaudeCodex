@@ -15,8 +15,9 @@ import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../.
 // D1-FIX: type restreint aux seules clés booléennes affichées dans l'UI.
 // emailDigestFrequency (string) et emailEnabled sont intentionnellement exclus
 // — ils n'ont pas de contrôle dans cette page et ne doivent pas être toggleables.
+// MVP: pushEnabled est exclu — les push navigateur ne sont pas câblées
+// (aucun token enregistré) ; la page ne pilote que les alertes email/in-app.
 type BooleanNotifKey =
-  | 'pushEnabled'
   | 'notifyLessonRequests'
   | 'notifyProMessages'
   | 'notifyForSurf'
@@ -25,7 +26,6 @@ type BooleanNotifKey =
 type NotifPrefs = Record<BooleanNotifKey, boolean>;
 
 const DEFAULT_PREFS: NotifPrefs = {
-  pushEnabled: true,
   notifyLessonRequests: true,
   notifyProMessages: true,
   notifyForSurf: true,
@@ -34,13 +34,13 @@ const DEFAULT_PREFS: NotifPrefs = {
 
 // D2-FIX: valide et extrait uniquement les clés booléennes connues depuis la
 // réponse API. Exclut les champs fantômes (notifyBookingAccepted/Rejected,
-// emailEnabled, emailDigestFrequency) qui ne sont pas gérés par cette page.
+// emailEnabled, emailDigestFrequency, pushEnabled) qui ne sont pas gérés
+// par cette page.
 function parseApiPrefs(raw: unknown): Partial<NotifPrefs> {
   if (!raw || typeof raw !== 'object') return {};
   const src = raw as Record<string, unknown>;
   const result: Partial<NotifPrefs> = {};
   const keys: BooleanNotifKey[] = [
-    'pushEnabled',
     'notifyLessonRequests',
     'notifyProMessages',
     'notifyForSurf',
@@ -169,14 +169,14 @@ export default function ProNotificationsPage() {
         </div>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-foreground">Préférences d&apos;alertes</h1>
-          <p className="text-sm text-muted-foreground">Choisis les alertes que tu veux recevoir dans Blob</p>
+          <p className="text-sm text-muted-foreground">Choisis les alertes que tu veux recevoir dans Blob et par email</p>
         </div>
       </div>
 
       <Card className="border-2 rounded-[1.75rem]">
         <CardHeader className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30">
-          <CardTitle className="text-base text-foreground">Alertes dans Blob</CardTitle>
-          <CardDescription>Les alertes sont activées par défaut — désactive celles dont tu n&apos;as pas besoin.</CardDescription>
+          <CardTitle className="text-base text-foreground">Alertes email et dans Blob</CardTitle>
+          <CardDescription>Les alertes sont activées par défaut — désactive celles dont tu n&apos;as pas besoin. Les alertes email sont envoyées à l&apos;adresse de ton compte si tu as activé les notifications email dans ton profil pro.</CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
           {loadingPrefs ? (
@@ -198,33 +198,6 @@ export default function ProNotificationsPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Alert master toggle */}
-              <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
-                    <Bell className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold">Alertes dans Blob</h4>
-                    <p className="text-xs text-muted-foreground">Choisis les alertes que tu veux recevoir dans Blob</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => toggle('pushEnabled')}
-                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-                    notifPrefs.pushEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
-                  }`}
-                  aria-label="Activer les alertes dans Blob"
-                >
-                  <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                      notifPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-
               {/* PRO-specific preferences */}
               <div className="space-y-2">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activité professionnelle</h4>
@@ -234,23 +207,22 @@ export default function ProNotificationsPage() {
                     <span className="text-xl">🗺️</span>
                     <div>
                       <p className="text-sm font-medium">Demandes de cours (BloboMap)</p>
-                      <p className="text-xs text-muted-foreground">Riders cherchant un cours</p>
+                      <p className="text-xs text-muted-foreground">Riders cherchant un cours — alerte dans Blob et par email</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => toggle('notifyLessonRequests')}
-                    disabled={!notifPrefs.pushEnabled}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifPrefs.notifyLessonRequests && notifPrefs.pushEnabled
+                      notifPrefs.notifyLessonRequests
                         ? 'bg-amber-600'
                         : 'bg-gray-300 dark:bg-gray-600'
-                    } ${!notifPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    }`}
                     aria-label="Toggle lesson request notifications"
                   >
                     <span
                       className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifPrefs.notifyLessonRequests && notifPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                        notifPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
                   </button>
@@ -267,17 +239,16 @@ export default function ProNotificationsPage() {
                   <button
                     type="button"
                     onClick={() => toggle('notifyProMessages')}
-                    disabled={!notifPrefs.pushEnabled}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifPrefs.notifyProMessages && notifPrefs.pushEnabled
+                      notifPrefs.notifyProMessages
                         ? 'bg-blue-600'
                         : 'bg-gray-300 dark:bg-gray-600'
-                    } ${!notifPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    }`}
                     aria-label="Toggle message notifications"
                   >
                     <span
                       className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifPrefs.notifyProMessages && notifPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                        notifPrefs.notifyProMessages ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
                   </button>
@@ -299,17 +270,17 @@ export default function ProNotificationsPage() {
                   <button
                     type="button"
                     onClick={() => toggle('notifyForSurf')}
-                    disabled={!notifPrefs.pushEnabled || !notifPrefs.notifyLessonRequests}
+                    disabled={!notifPrefs.notifyLessonRequests}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifPrefs.notifyForSurf && notifPrefs.pushEnabled && notifPrefs.notifyLessonRequests
+                      notifPrefs.notifyForSurf && notifPrefs.notifyLessonRequests
                         ? 'bg-blue-600'
                         : 'bg-gray-300 dark:bg-gray-600'
-                    } ${!notifPrefs.pushEnabled || !notifPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    } ${!notifPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
                     aria-label="Toggle surf notifications"
                   >
                     <span
                       className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifPrefs.notifyForSurf && notifPrefs.pushEnabled && notifPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
+                        notifPrefs.notifyForSurf && notifPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
                   </button>
@@ -326,37 +297,22 @@ export default function ProNotificationsPage() {
                   <button
                     type="button"
                     onClick={() => toggle('notifyForKitesurf')}
-                    disabled={!notifPrefs.pushEnabled || !notifPrefs.notifyLessonRequests}
+                    disabled={!notifPrefs.notifyLessonRequests}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifPrefs.notifyForKitesurf && notifPrefs.pushEnabled && notifPrefs.notifyLessonRequests
+                      notifPrefs.notifyForKitesurf && notifPrefs.notifyLessonRequests
                         ? 'bg-cyan-600'
                         : 'bg-gray-300 dark:bg-gray-600'
-                    } ${!notifPrefs.pushEnabled || !notifPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    } ${!notifPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
                     aria-label="Toggle kitesurf notifications"
                   >
                     <span
                       className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifPrefs.notifyForKitesurf && notifPrefs.pushEnabled && notifPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
+                        notifPrefs.notifyForKitesurf && notifPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
                   </button>
                 </div>
               </div>
-
-              {/* Info box when alerts are disabled */}
-              {!notifPrefs.pushEnabled && (
-                <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3">
-                  <div className="flex items-start gap-2">
-                    <span className="text-lg">ℹ️</span>
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Alertes dans Blob désactivées</p>
-                      <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
-                        Réactive les alertes dans Blob pour voir les messages et demandes de cours.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               <Button
                 type="button"

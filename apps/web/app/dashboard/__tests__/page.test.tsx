@@ -186,6 +186,21 @@ describe('DashboardPage — auth guard et profile check', () => {
       expect(replace).not.toHaveBeenCalledWith('/login');
     });
 
+    it('RIDER + profil complet → aucun lien vers /promos (placeholder masqué MVP)', async () => {
+      mockedApiClient.me.mockResolvedValueOnce({ role: 'RIDER', id: 'u1', emailVerified: true } as never);
+      mockedApiClient.getProfile.mockResolvedValueOnce(completeProfile as never);
+      mockedApiClient.getDisciplines.mockResolvedValueOnce(completeDisciplines as never);
+
+      const { container } = render(<DashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('dashboard-shell')).toBeInTheDocument();
+      });
+
+      expect(container.querySelector('a[href="/promos"]')).toBeNull();
+      expect(screen.queryByText(/voir les promos/i)).not.toBeInTheDocument();
+    });
+
     it('RIDER + profil complet → displayName affiché dans le titre', async () => {
       mockedApiClient.me.mockResolvedValueOnce({ role: 'RIDER', id: 'u1', emailVerified: true } as never);
       mockedApiClient.getProfile.mockResolvedValueOnce(completeProfile as never);
