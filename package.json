@@ -106,7 +106,7 @@
     "fix:perms:sudo": "sudo chown -R $(whoami) ~/.local/share/pnpm && sudo chown -R $(whoami) ./ && pnpm run fix:perms"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.0",
+    "@playwright/test": "^1.60.0",
     "@redocly/cli": "^2.2.2",
     "@storybook/nextjs": "^8.6.15",
     "concurrently": "^9.2.1",
