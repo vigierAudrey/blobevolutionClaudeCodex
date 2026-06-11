@@ -50,7 +50,7 @@
     "@storybook/addon-interactions": "^8.6.15",
     "@storybook/addon-links": "^8.6.15",
     "@storybook/blocks": "^8.6.15",
-    "@storybook/react": "^8.6.15",
+    "@storybook/react": "^10.4.4",
     "@storybook/react-webpack5": "^8.6.15",
     "@storybook/test-runner": "^0.24.4",
     "@swc/core": "^1.15.40",
