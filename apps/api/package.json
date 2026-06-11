@@ -22,8 +22,8 @@
     "job:purge-notifications": "tsx src/jobs/purgeNotifications.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.616.0",
-    "@aws-sdk/s3-request-presigner": "^3.616.0",
+    "@aws-sdk/client-s3": "^3.1065.0",
+    "@aws-sdk/s3-request-presigner": "^3.1065.0",
     "@blobinfini/database": "workspace:*",
 "@types/compression": "^1.8.1",
     "bcryptjs": "^3.0.3",
@@ -31,7 +31,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "csrf": "^3.1.0",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "express-rate-limit": "^8.5.2",
     "connect-redis": "^9.0.0",
