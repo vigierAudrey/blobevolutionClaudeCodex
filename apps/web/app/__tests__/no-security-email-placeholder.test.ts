@@ -2,14 +2,14 @@
  * Garde-fou P1 (sprint durcissement MVP) : le placeholder
  * METTRE_EMAIL_SECURITE_ICI_AVANT_PROD ne doit plus apparaître dans les
  * sources servies (pages publiques security-policy / hall-of-fame et
- * public/.well-known/security.txt). Tant qu'aucun email officiel n'existe,
- * ces surfaces doivent renvoyer vers le canal security.txt « en préparation »
- * — jamais vers une adresse factice.
+ * public/.well-known/security.txt). Ces surfaces doivent publier uniquement
+ * l'adresse officielle de signalement sécurité — jamais une adresse factice.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 
 const PLACEHOLDER = 'METTRE_EMAIL' + '_SECURITE'; // évite l'auto-match de ce fichier de test
+const SECURITY_EMAIL = 'security@blobsurf.com';
 const ROOT = path.resolve(__dirname, '..', '..');
 const SCAN_DIRS = ['app', 'components', 'lib', 'public'];
 const SCAN_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.txt', '.md', '.mdx', '.json', '.yml', '.html']);
@@ -42,7 +42,7 @@ describe('placeholder email sécurité', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('security.txt garde un champ Contact valide (RFC 9116) sans mailto factice', () => {
+  it('security.txt garde le contact officiel sans mailto factice', () => {
     const content = fs.readFileSync(
       path.join(ROOT, 'public', '.well-known', 'security.txt'),
       'utf8',
@@ -52,7 +52,7 @@ describe('placeholder email sécurité', () => {
       .filter((line) => line.startsWith('Contact:'));
     expect(contactLines.length).toBeGreaterThanOrEqual(1);
     for (const line of contactLines) {
-      expect(line).toMatch(/^Contact: https:\/\//);
+      expect(line).toBe(`Contact: mailto:${SECURITY_EMAIL}`);
       expect(line).not.toContain('example.com');
     }
   });
@@ -69,7 +69,7 @@ describe('placeholder email sécurité', () => {
       'utf8',
     );
 
-    expect(securityTxt).toMatch(/^Contact: https:\/\/blobsurf\.com\//m);
+    expect(securityTxt).toMatch(new RegExp(`^Contact: mailto:${SECURITY_EMAIL}$`, 'm'));
     expect(securityTxt).toMatch(/^Canonical: https:\/\/blobsurf\.com\/\.well-known\/security\.txt$/m);
     expect(securityTxt).not.toContain('blobinfini.fr');
     expect(securityTxt).not.toContain('Blobinfini');
