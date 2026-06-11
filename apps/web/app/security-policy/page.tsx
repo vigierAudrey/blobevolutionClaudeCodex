@@ -3,8 +3,10 @@ import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Politique de Sécurité · Blob',
-  description: 'Politique de divulgation responsable des vulnérabilités et programme de bug bounty de Blob',
+  description: 'Politique de divulgation responsable des vulnérabilités de Blob',
 };
+
+const SECURITY_EMAIL = 'security@blobsurf.com';
 
 export default function SecurityPolicyPage() {
   return (
@@ -16,7 +18,7 @@ export default function SecurityPolicyPage() {
             🔒 Politique de Sécurité
           </h1>
           <p className="text-xl text-gray-600">
-            Programme de divulgation responsable des vulnérabilités
+            Divulgation responsable des vulnérabilités
           </p>
         </div>
 
@@ -34,56 +36,29 @@ export default function SecurityPolicyPage() {
             </p>
           </section>
 
-          {/* Bug Bounty */}
+          {/* Responsible disclosure */}
           <section>
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-              💰 Programme de Bug Bounty
+              Signalement responsable
             </h2>
 
-            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
-              <p className="text-sm text-yellow-800">
-                <strong>Note :</strong> Blob est une startup éducative avec des moyens limités.
-                Nous offrons des récompenses modestes mais valorisons énormément la reconnaissance publique.
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+              <p className="text-sm text-blue-900">
+                Si vous identifiez une vulnérabilité sur Blob, contactez-nous à{' '}
+                <a href={`mailto:${SECURITY_EMAIL}`} className="font-semibold underline">
+                  {SECURITY_EMAIL}
+                </a>{' '}
+                avec les informations utiles pour reproduire et évaluer le problème.
               </p>
             </div>
 
-            <div className="space-y-4">
-              <div className="border-l-4 border-red-500 bg-red-50 p-4">
-                <h3 className="font-semibold text-red-900 mb-2">🔴 High (Criticité élevée)</h3>
-                <p className="text-sm text-red-800 mb-2">
-                  XSS stocké, IDOR sur données sensibles, Mass assignment
-                </p>
-                <p className="font-bold text-red-900">
-                  20€ + Remerciements publics + Hall of Fame
-                </p>
-              </div>
-
-              <div className="border-l-4 border-orange-500 bg-orange-50 p-4">
-                <h3 className="font-semibold text-orange-900 mb-2">🟠 Medium (Criticité moyenne)</h3>
-                <p className="text-sm text-orange-800 mb-2">
-                  XSS réfléchi, CSRF, Information disclosure
-                </p>
-                <p className="font-bold text-orange-900">
-                  10€ + Remerciements publics + Hall of Fame
-                </p>
-              </div>
-
-              <div className="border-l-4 border-blue-500 bg-blue-50 p-4">
-                <h3 className="font-semibold text-blue-900 mb-2">🔵 Low (Recommandations)</h3>
-                <p className="text-sm text-blue-800 mb-2">
-                  Best practices, améliorations de sécurité
-                </p>
-                <p className="font-bold text-blue-900">
-                  Reconnaissance publique + Hall of Fame
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-green-50 border-l-4 border-green-500 p-4">
-              <h3 className="font-semibold text-green-900 mb-2">🎁 Alternatives aux récompenses financières</h3>
-              <ul className="list-disc list-inside text-green-800 space-y-1">
-                <li>Lettre de recommandation pour votre CV/portfolio</li>
-                <li>Session de coaching surf gratuit par la créatrice du site (si disponible)</li>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-semibold text-gray-900 mb-2">À inclure dans votre signalement</h3>
+              <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
+                <li>URL ou surface concernée</li>
+                <li>Étapes de reproduction</li>
+                <li>Impact potentiel</li>
+                <li>Captures ou preuve de concept non destructive, si utile</li>
               </ul>
             </div>
           </section>
@@ -131,7 +106,7 @@ export default function SecurityPolicyPage() {
                 "Créez vos propres comptes de test - Ne testez jamais sur des comptes réels",
                 "Respectez la confidentialité - Ne divulguez pas de données personnelles découvertes",
                 "Divulgation responsable - Accordez-nous 90 jours pour corriger avant publication",
-                "Communication sécurisée - Utilisez le canal officiel publié dans /.well-known/security.txt",
+                `Communication responsable - Utilisez ${SECURITY_EMAIL}`,
                 "Une vulnérabilité à la fois - Signalez chaque faille individuellement",
                 "Fournissez des détails - Steps to reproduce, impact, proof of concept"
               ].map((rule, index) => (
@@ -152,11 +127,11 @@ export default function SecurityPolicyPage() {
             </h2>
             <div className="space-y-4">
               {[
-                { step: 1, title: "Signalement", desc: "Transmettez les détails via le canal officiel publié dans /.well-known/security.txt", time: "" },
-                { step: 2, title: "Accusé de réception", desc: "Nous confirmons la réception et assignons un ID de suivi", time: "< 48h" },
+                { step: 1, title: "Signalement", desc: `Envoyez un email à ${SECURITY_EMAIL} avec les détails`, time: "" },
+                { step: 2, title: "Accusé de réception", desc: "Nous confirmons la réception dès que possible", time: "" },
                 { step: 3, title: "Évaluation", desc: "Nous validons la vulnérabilité et évaluons la criticité", time: "< 7 jours" },
                 { step: 4, title: "Correction", desc: "High: 14j, Medium: 30j, Low: 90j", time: "Selon criticité" },
-                { step: 5, title: "Récompense", desc: "Paiement et ajout au Hall of Fame (si souhaité)", time: "Après correction" }
+                { step: 5, title: "Clôture", desc: "Nous vous tenons informé de l'issue du signalement", time: "Après correction" }
               ].map((item) => (
                 <div key={item.step} className="flex items-start bg-gray-50 rounded-lg p-4">
                   <div className="flex-shrink-0 w-10 h-10 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold text-lg mr-4">
@@ -178,7 +153,7 @@ export default function SecurityPolicyPage() {
               🚫 Vulnérabilités Hors Scope
             </h2>
             <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-gray-700 mb-3">Les vulnérabilités suivantes ne sont pas éligibles aux récompenses :</p>
+              <p className="text-gray-700 mb-3">Les vulnérabilités suivantes sont hors périmètre :</p>
               <ul className="grid md:grid-cols-2 gap-2 text-sm text-gray-600">
                 {[
                   "SPF, DKIM, DMARC (configuration email)",
@@ -207,8 +182,8 @@ export default function SecurityPolicyPage() {
               <h3 className="font-semibold text-yellow-900 mb-2">Code Pénal Article 323-1</h3>
               <p className="text-sm text-yellow-800">
                 L&apos;accès frauduleux à un système informatique est puni de 2 ans d&apos;emprisonnement
-                et de 60 000€ d&apos;amende. Ce programme constitue une <strong>autorisation explicite</strong> pour
-                les tests de sécurité dans le cadre du scope défini ci-dessus.
+                et de 60 000€ d&apos;amende. Cette page décrit un cadre de signalement responsable ;
+                elle ne remplace pas un accord juridique individuel.
               </p>
             </div>
 
@@ -216,8 +191,7 @@ export default function SecurityPolicyPage() {
               <h3 className="font-semibold text-blue-900 mb-2">RGPD & Données Personnelles</h3>
               <p className="text-sm text-blue-800">
                 Ne pas exfiltrer, divulguer ou conserver de données personnelles. En cas de découverte
-                accidentelle, contactez immédiatement l&apos;équipe via le canal officiel publié
-                dans <code>/.well-known/security.txt</code>.
+                accidentelle, contactez immédiatement <code>{SECURITY_EMAIL}</code>.
               </p>
             </div>
           </section>
@@ -228,9 +202,9 @@ export default function SecurityPolicyPage() {
             <div className="space-y-3">
               <p>
                 <strong>Email de sécurité :</strong>{' '}
-                <span className="text-gray-300">
-                  Canal de signalement en préparation — il sera publié ici et dans le fichier security.txt.
-                </span>
+                <a href={`mailto:${SECURITY_EMAIL}`} className="text-blue-300 hover:underline">
+                  {SECURITY_EMAIL}
+                </a>
               </p>
               <p>
                 <strong>Fichier security.txt :</strong>{' '}
@@ -245,8 +219,7 @@ export default function SecurityPolicyPage() {
                 </Link>
               </p>
               <p className="text-sm text-gray-400 mt-4">
-                Temps de réponse initial : {'<'} 48h<br />
-                Temps de correction High/Medium : {'<'} 14-30 jours
+                Nous traitons les signalements de sécurité de manière responsable et priorisée.
               </p>
             </div>
           </section>

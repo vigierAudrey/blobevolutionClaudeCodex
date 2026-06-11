@@ -1,9 +1,7 @@
 # Politique de Divulgation Responsable - Blob
 # Conforme RFC 9116 (https://www.rfc-editor.org/rfc/rfc9116.html)
 
-# Canal email de signalement en préparation — en attendant, la politique de
-# divulgation responsable fait foi (RFC 9116 autorise un Contact en https).
-Contact: https://blobsurf.com/security-policy
+Contact: mailto:security@blobsurf.com
 Expires: 2026-12-31T23:59:59.000Z
 Preferred-Languages: fr, en
 Canonical: https://blobsurf.com/.well-known/security.txt
@@ -14,8 +12,8 @@ Policy: https://blobsurf.com/security-policy
 # Remerciements
 Acknowledgments: https://blobsurf.com/security-hall-of-fame
 
-# Programme de Bug Bounty
-# Nous récompensons la découverte responsable de vulnérabilités
+# Divulgation responsable
+# Les signalements de sécurité sont étudiés via le contact ci-dessus.
 
 ## Scope
 # - Vulnérabilités de sécurité uniquement (pas de bugs fonctionnels)
@@ -39,36 +37,22 @@ Acknowledgments: https://blobsurf.com/security-hall-of-fame
 # - Vulnérabilités nécessitant interaction physique
 # - Social engineering
 
-## Récompenses indicatives
-# Blob est une startup éducative avec des moyens limités.
-# Nous offrons des récompenses modestes mais valorisons la reconnaissance publique :
-#
-# - High (XSS stocké, IDOR sensible) : 20€ + Remerciements publics + Hall of Fame
-# - Medium (XSS réfléchi, CSRF, Info disclosure) : 10€ + Remerciements publics + Hall of Fame
-# - Low (Recommendations, Best practices) : Reconnaissance publique + Hall of Fame
-#
-# Alternatives aux récompenses financières (au choix) :
-# - Lettre de recommandation pour votre CV/portfolio
-# - Session de coaching surf gratuit par la créatrice du site (si disponible)
-
 ## Contact
-# Merci de reporter les vulnérabilités via le canal indiqué dans Contact ci-dessus
-# (canal email dédié en préparation)
+# Merci de reporter les vulnérabilités à : security@blobsurf.com
 # Temps de réponse initial : < 48h
 # Temps de correction P0/P1 : < 7 jours
 
 ## Conformité légale (France)
 # Code Pénal Art. 323-1 : L'accès frauduleux à un système informatique est puni
 # de 2 ans d'emprisonnement et de 60 000€ d'amende.
-# Ce programme de bug bounty constitue une autorisation explicite pour
-# les tests de sécurité dans le cadre du scope défini ci-dessus.
+# Cette politique décrit le canal de signalement responsable pour les surfaces
+# listées dans le scope.
 
 # RGPD : Ne pas exfiltrer ou divulguer de données personnelles.
-# En cas de découverte accidentelle, contacter immédiatement l'équipe via le canal
-# indiqué dans Contact ci-dessus
+# En cas de découverte accidentelle, contacter immédiatement security@blobsurf.com
 
 ## PGP Key (optionnel)
 # Encryption: https://keys.openpgp.org/vks/v1/by-fingerprint/FINGERPRINT_HERE
 
 # Hiring
-# Nous recrutons des experts en sécurité ! Consultez https://blobsurf.com/careers
+# Consultez https://blobsurf.com/careers
