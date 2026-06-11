@@ -3,7 +3,8 @@
  * à l'éditeur interne, lui-même désactivé en production. En production la
  * route doit répondre 404 sans jamais appeler l'upstream Netlify.
  */
-import { GET, POST, isDecapAuthProxyEnabled } from '../route';
+import { GET, POST } from '../route';
+import { isDecapAuthProxyEnabled } from '../enabled';
 
 jest.mock('next/server', () => ({
   NextRequest: class {},

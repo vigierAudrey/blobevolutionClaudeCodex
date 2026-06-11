@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isDecapAuthProxyEnabled } from './enabled';
 
 export const runtime = 'nodejs';
 
 const DECAP_AUTH_URL = 'https://api.netlify.com/api/v1/auth/github';
 
-// L'éditeur Decap interne est désactivé en production (cf.
-// app/admin/blobosphere/page.tsx) : ce proxy OAuth ne doit pas rester
-// exposé sans lui. Host upstream fixe — jamais dérivé de la requête.
-export function isDecapAuthProxyEnabled(): boolean {
-  return process.env.NODE_ENV !== 'production';
-}
+// Host upstream fixe — jamais dérivé de la requête.
+// Proxy coupé en production via isDecapAuthProxyEnabled (./enabled).
 
 async function proxyAuth(req: NextRequest) {
   if (!isDecapAuthProxyEnabled()) {
