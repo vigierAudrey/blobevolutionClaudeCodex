@@ -6,6 +6,8 @@ export const metadata: Metadata = {
   description: 'Nos contributeurs sécurité - Chercheurs qui ont aidé à sécuriser Blob',
 };
 
+const SECURITY_EMAIL = 'security@blobsurf.com';
+
 // Type pour un contributeur
 interface SecurityContributor {
   name: string;
@@ -140,7 +142,7 @@ export default function SecurityHallOfFamePage() {
             🏆 Hall of Fame
           </h1>
           <p className="text-xl text-gray-600 mb-6">
-            Nos héros de la cybersécurité
+            Contributeurs sécurité
           </p>
           <p className="text-gray-700 max-w-2xl mx-auto">
             Ces chercheurs en sécurité ont contribué à rendre Blob plus sûr.
@@ -187,8 +189,8 @@ export default function SecurityHallOfFamePage() {
                 Soyez le premier contributeur !
               </h2>
               <p className="text-gray-700 mb-6 max-w-md mx-auto">
-                Notre programme de bug bounty vient de démarrer. Aidez-nous à sécuriser Blob
-                et devenez le premier membre de notre Hall of Fame !
+                Le programme Hall of Fame n&apos;est pas encore lancé publiquement.
+                Vous pouvez toutefois signaler une vulnérabilité de manière responsable.
               </p>
               <div className="flex flex-col sm:flex-row justify-center gap-4">
                 <Link
@@ -198,10 +200,10 @@ export default function SecurityHallOfFamePage() {
                   Voir la politique de sécurité
                 </Link>
                 <a
-                  href="/.well-known/security.txt"
+                  href={`mailto:${SECURITY_EMAIL}`}
                   className="inline-block bg-gray-200 text-gray-800 px-6 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
                 >
-                  Consulter security.txt
+                  Contacter l&apos;équipe sécurité
                 </a>
               </div>
             </div>
@@ -220,9 +222,9 @@ export default function SecurityHallOfFamePage() {
           </section>
         )}
 
-        {/* Comment devenir contributeur */}
+        {/* Comment signaler une vulnérabilité */}
         <section className="bg-gray-900 text-white rounded-lg p-8 mb-12">
-          <h2 className="text-2xl font-bold mb-4">💡 Comment apparaître ici ?</h2>
+          <h2 className="text-2xl font-bold mb-4">💡 Signaler une vulnérabilité</h2>
           <ol className="space-y-3">
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm font-bold mr-3">1</span>
@@ -230,15 +232,15 @@ export default function SecurityHallOfFamePage() {
             </li>
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm font-bold mr-3">2</span>
-              <span>Signalez-la de manière responsable via le canal officiel publié dans <a href="/.well-known/security.txt" className="text-blue-300 hover:underline">/.well-known/security.txt</a> (canal de signalement en préparation)</span>
+              <span>Signalez-la de manière responsable à <a href={`mailto:${SECURITY_EMAIL}`} className="text-blue-300 hover:underline">{SECURITY_EMAIL}</a></span>
             </li>
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm font-bold mr-3">3</span>
-              <span>Attendez notre correction et validation</span>
+              <span>Incluez les étapes de reproduction et l&apos;impact potentiel</span>
             </li>
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-sm font-bold mr-3">4</span>
-              <span>Recevez votre récompense et acceptez d&apos;apparaître dans le Hall of Fame</span>
+              <span>Avec votre consentement, une reconnaissance publique pourra être envisagée lorsque le Hall of Fame sera ouvert</span>
             </li>
           </ol>
           <div className="mt-6 pt-6 border-t border-gray-700">
