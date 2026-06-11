@@ -11,7 +11,7 @@ export const revalidate = 300;
 export const metadata: Metadata = {
   title: 'Blob · Communauté Surf & Kite du Médoc Atlantique',
   description:
-    'Trouve un partenaire de session, réserve un cours et découvre les bons plans surf et kite sur Hourtin, Carcans et Lacanau.',
+    'Trouve un partenaire de session, demande un cours à un pro et découvre les guides surf et kite sur Hourtin, Carcans et Lacanau.',
 };
 
 export default function Home() {

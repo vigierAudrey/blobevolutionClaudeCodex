@@ -25,7 +25,6 @@ describe('Static Home page', () => {
     // Matching et Cours pointent vers les routes register — pas de page de prévisualisation
     expectLinkWithHref(header, /Matching/i, '/register?intent=matching');
     expectLinkWithHref(header, /Cours/i, '/register?intent=lesson-request');
-    expectLinkWithHref(header, /Bons plans/i, '/promos');
     expectLinkWithHref(header, /Guides/i, '/blobosphere');
     expectLinkWithHref(header, /Se connecter/i, '/login');
     expectLinkWithHref(header, /Rejoindre la communauté/i, '/register');
@@ -70,7 +69,6 @@ describe('Static Home page', () => {
     const expectedHrefs = [
       '/register?intent=matching',
       '/register?intent=lesson-request',
-      '/promos',
       '/blobosphere',
     ];
 
@@ -127,7 +125,6 @@ describe('Static Home page', () => {
     // Routes Plateforme
     expectLinkWithHref(footer, /^Matching$/i, '/register?intent=matching');
     expectLinkWithHref(footer, /^Cours$/i, '/register?intent=lesson-request');
-    expectLinkWithHref(footer, /^Bons plans$/i, '/promos');
     expectLinkWithHref(footer, /^Guides$/i, '/blobosphere');
 
     // Routes Communauté
@@ -147,5 +144,17 @@ describe('Static Home page', () => {
       return href === '/matching' || href === '/lesson-request';
     });
     expect(deadLinks).toHaveLength(0);
+  });
+
+  it('ne contient aucun lien vers /promos (placeholder non MVP) ni wording « réserve »', () => {
+    const { container } = render(<Home />);
+
+    const promoLinks = screen
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.startsWith('/promos'));
+    expect(promoLinks).toHaveLength(0);
+
+    // La réservation est hors scope MVP : le wording produit est « demande de cours »
+    expect(container.textContent).not.toMatch(/réserve un cours|réserve avec/i);
   });
 });

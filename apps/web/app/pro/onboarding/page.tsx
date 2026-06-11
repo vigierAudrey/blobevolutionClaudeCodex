@@ -56,7 +56,6 @@ function ProOnboardingInner() {
         }
 
         if (!active) return;
-        console.log('📋 ProProfile loaded:', body);
         setProfile(body as ProProfile);
       } catch (e) {
         if (!active) return;
@@ -88,21 +87,11 @@ function ProOnboardingInner() {
   const hasBio = !!profile?.bio;
   const hasPhoto = !!profile?.photoUrl;
 
-  // Debug logs
-  console.log('✅ Checklist status:', {
-    hasBusinessName,
-    hasBio,
-    hasPhoto,
-    profile
-  });
-
   // Auto-redirect when everything is complete
   useEffect(() => {
     if (loading || error) return;
     const complete = hasBusinessName && hasBio && hasPhoto;
-    console.log('🔍 Onboarding complete?', complete);
     if (complete) {
-      console.log('🎉 Profile complete! Redirecting to dashboard...');
       setRedirecting(true);
       const id = setTimeout(() => router.replace('/pro/dashboard'), 800);
       return () => clearTimeout(id);
