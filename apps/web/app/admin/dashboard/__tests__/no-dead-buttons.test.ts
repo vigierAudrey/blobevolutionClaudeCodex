@@ -4,6 +4,12 @@
  * Monétisation & publicités, Maintenance système) n'étaient câblés à
  * aucune action ni page. Toute réintroduction doit venir avec une vraie
  * page cible ou un handler.
+ *
+ * PORTÉE : ce test est volontairement ciblé sur la seule page
+ * app/admin/dashboard/page.tsx. Il ne couvre ni les autres pages, ni les
+ * éléments cliquables non-<Button> (role="button", div/span onClick,
+ * boutons masqués CSS). Il ne remplace pas un audit global des éléments
+ * cliquables de l'app.
  */
 import * as fs from 'fs';
 import * as path from 'path';
