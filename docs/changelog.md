@@ -1,4 +1,4 @@
-# 📋 Changelog - Blobinfini
+# 📋 Changelog - Blob
 
 Historique détaillé des changements majeurs du projet.
 
@@ -128,7 +128,7 @@ npx prisma db push
 ```env
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USER=noreply@blobinfini.com
+SMTP_USER=noreply@blobsurf.com
 SMTP_PASSWORD=xxx
 ```
 

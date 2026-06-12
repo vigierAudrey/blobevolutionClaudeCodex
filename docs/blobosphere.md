@@ -5,7 +5,7 @@
 > modèles Prisma, commentaires ou médias avancés restent des pistes historiques
 > de scale, pas l'architecture MVP active.
 
-La Blobosphère est le hub éditorial de Blobinfini, conçu pour renforcer la visibilité SEO et l'engagement communautaire.
+La Blobosphère est le hub éditorial de Blob, conçu pour renforcer la visibilité SEO et l'engagement communautaire.
 
 ## Workflow MVP actif
 
@@ -38,10 +38,10 @@ La Blobosphère est le hub éditorial de Blobinfini, conçu pour renforcer la vi
 
 ### Objectifs stratégiques
 
-1. **Visibilité** : Renforcer la présence SEO de Blobinfini via des contenus riches
+1. **Visibilité** : Renforcer la présence SEO de Blob via des contenus riches
 2. **Engagement** : Créer une communauté autour des sports de glisse
 3. **Acquisition** : Convertir les visiteurs en utilisateurs inscrits
-4. **Expertise** : Positionner Blobinfini comme référence dans les sports de glisse
+4. **Expertise** : Positionner Blob comme référence dans les sports de glisse
 
 ### KPI cibles (6 mois)
 
@@ -52,7 +52,7 @@ La Blobosphère est le hub éditorial de Blobinfini, conçu pour renforcer la vi
 
 ## 🔒 Sécurité & RGPD - PRIORITÉ ABSOLUE
 
-> **Contexte légal** : Blobinfini est une entreprise française, soumise au RGPD (Règlement Général sur la Protection des Données) et à la loi Informatique et Libertés.
+> **Contexte légal** : Blob est une entreprise française, soumise au RGPD (Règlement Général sur la Protection des Données) et à la loi Informatique et Libertés.
 
 ### 🇫🇷 Conformité RGPD Obligatoire
 
@@ -190,14 +190,14 @@ export class BlobosphereService {
 // Legal footer data
 export const legalInfo = {
   company: {
-    name: 'Blobinfini SAS',
+    name: 'Blob — entité juridique à confirmer avant publication',
     siret: 'XXX XXX XXX XXXXX',
     address: '123 rue de la Glisse, 64200 Biarritz',
     rcs: 'Bayonne B XXX XXX XXX',
   },
   dpo: {
     // Délégué à la Protection des Données (obligatoire si > 250 salariés)
-    email: 'dpo@blobinfini.com',
+    email: 'dpo@blobsurf.com',
     role: 'Délégué à la Protection des Données',
   },
   cnil: {
@@ -429,10 +429,12 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.blobinfini.com'],
+      // Pas de CDN dédié à ce jour — ne pas ajouter de domaine cdn.* tant
+      // qu'aucun CDN réel n'est configuré.
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'https://images.blobinfini.com', 'data:'],
-      connectSrc: ["'self'", 'https://api.blobinfini.com'],
+      imgSrc: ["'self'", 'https://storage.blobsurf.com', 'data:'],
+      connectSrc: ["'self'", 'https://api.blobsurf.com'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
@@ -569,6 +571,6 @@ model BlobospherePost {
 
 ### Contact juridique
 
-- **DPO Blobinfini** : dpo@blobinfini.com
+- **DPO Blob** : dpo@blobsurf.com
 - **CNIL** : https://www.cnil.fr/fr/plaintes
 - **Délai réponse RGPD** : 30 jours maximum

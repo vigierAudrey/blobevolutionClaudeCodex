@@ -1,4 +1,4 @@
-# 🏄 Guide IA – Blobinfini (nom interne) / BlobConnect (nom visible)
+# 🏄 Guide IA – Blob (nom visible) / blobsurf.com (domaine public)
 
 Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement du monorepo. À lire avant chaque session de code.
 
@@ -13,16 +13,19 @@ Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement d
 
 ## 🏷️ Naming produit (IMPORTANT)
 
-- **BlobConnect** = nom **visible utilisateurs** (UI, emails, pages publiques, wording marketing).
-- **Blobinfini** = nom **interne/tech** (repo, namespaces, packages) tant qu’aucune décision de renommage globale n’est actée.
+- **Blob** = nom **visible utilisateurs** (UI, emails, pages publiques, wording marketing).
+- **blobsurf.com** = domaine public canonique (`https://blobsurf.com`, API `https://api.blobsurf.com`, storage `https://storage.blobsurf.com`).
+- **Emails canoniques** : `support@blobsurf.com`, `security@blobsurf.com`, `dpo@blobsurf.com`.
+- **Blobinfini** = legacy **technique uniquement** (namespaces `@blobinfini/*`, packages, identifiants internes existants). Les anciens domaines `blobinfini.*` (.com/.fr) sont **terminés** : ne jamais les réintroduire (code, docs, emails, exemples) — garde-fou CI : `scripts/no-legacy-blobinfini-check.sh`.
+- **BlobConnect** = ancien nom produit, historique uniquement — ne plus l'utiliser en wording visible.
 - Ne pas “renommer en masse” (variables, packages, env, Sentry, Firebase, URLs) sans ticket/validation : risque casse SEO, config, observabilité, clés, routes.
-- Dans les textes UI, toujours afficher **BlobConnect** (ex : titres, meta, emails, onboarding).
+- Dans les textes UI, toujours afficher **Blob** (ex : titres, meta, emails, onboarding).
 
 ---
 
 ## 📌 Contexte Projet
 
-**BlobConnect** (user-facing) / **Blobinfini** (interne) = plateforme communautaire de mise en relation pour sports de glisse (surf/kitesurf).
+**Blob** (user-facing, déployé sur blobsurf.com) = plateforme communautaire de mise en relation pour sports de glisse (surf/kitesurf).
 
 ### Fonctionnalités clés
 
@@ -37,7 +40,7 @@ Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement d
 
 ---
 
-## 🫧 Philosophie Blobinfini
+## 🫧 Philosophie Blob
 
 - 🌍 **Sobriété numérique** : code léger, dépendances open-source et hébergement français pour limiter l’empreinte carbone.
 - 🧭 **Utilité avant tout** : chaque ligne doit améliorer l’expérience rider/pro ou simplifier l’opérationnel.
@@ -834,7 +837,7 @@ Les IA peuvent :
 
 ## 🤖 Pour Claude/LLMs (règles d’exécution)
 
-Quand tu génères du code pour BlobConnect / Blobinfini :
+Quand tu génères du code pour Blob :
 
 1. Reste dans ce repo : ne fais référence qu'au code présent ici.
 2. Utilise les MCP : Sentry/GitHub/Playwright/Context7/DevTools quand utile.

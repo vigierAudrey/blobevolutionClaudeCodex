@@ -26,7 +26,7 @@ interface DeletedAccount {
  */
 async function anonymizeUserData(userId: string, email: string, role: string) {
   const timestamp = Date.now();
-  const anonymizedEmail = `deleted_${userId.substring(0, 8)}_${timestamp}@anonymized.blobinfini.com`;
+  const anonymizedEmail = `deleted_${userId.substring(0, 8)}_${timestamp}@anonymized.blobsurf.com`;
 
   console.log(`📝 Anonymisation compte: ${email} (${role})`);
 
@@ -162,10 +162,12 @@ async function processExpiredAccounts() {
         lte: cutoffDate,
         not: null,
       },
-      // S'assurer que le compte n'a pas déjà été anonymisé
+      // S'assurer que le compte n'a pas déjà été anonymisé.
+      // Le préfixe '@anonymized.' couvre aussi les comptes historiques
+      // anonymisés sous l'ancien domaine legacy blobinfini.
       email: {
         not: {
-          contains: '@anonymized.blobinfini.com',
+          contains: '@anonymized.',
         },
       },
     },

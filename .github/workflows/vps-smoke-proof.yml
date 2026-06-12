@@ -6,12 +6,12 @@ on:
 
 jobs:
   smoke-proof:
-    name: Preuve finale prod — api.blobinfini.fr
+    name: Preuve finale prod — api.blobsurf.com
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     env:
-      API_BASE_URL: https://api.blobinfini.fr
+      API_BASE_URL: https://api.blobsurf.com
 
     steps:
       # ──────────────────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ jobs:
       # → si CURL_RESOLVE non-vide, check [5b] est SKIP → EXIT 2 (pas EXIT 0).
       #
       # Solution : ajouter les domaines .local pointant sur le VPS réel.
-      # Ainsi CURL_RESOLVE reste "" et [5b] teste TLS sur api.blobinfini.fr.
+      # Ainsi CURL_RESOLVE reste "" et [5b] teste TLS sur api.blobsurf.com.
       # Les appels .local dans le script (WEB, STORAGE avec -sk) atteignent le VPS.
       # ──────────────────────────────────────────────────────────────────────────
       - name: "2 — Injection /etc/hosts (domaines .local → VPS IP)"
@@ -59,20 +59,20 @@ jobs:
           grep "blobinfini" /etc/hosts
 
       # ──────────────────────────────────────────────────────────────────────────
-      # ÉTAPE 3 — Preuve DNS réel (api.blobinfini.fr)
+      # ÉTAPE 3 — Preuve DNS réel (api.blobsurf.com)
       # ──────────────────────────────────────────────────────────────────────────
-      - name: "3 — Preuve DNS réel : api.blobinfini.fr"
+      - name: "3 — Preuve DNS réel : api.blobsurf.com"
         run: |
           set -euo pipefail
           echo "=== DNS ==="
           # getent d'abord (toujours présent), fallback host/nslookup
           DNS_RESULT=""
-          if getent hosts api.blobinfini.fr 2>/dev/null; then
-            DNS_RESULT="$(getent hosts api.blobinfini.fr)"
+          if getent hosts api.blobsurf.com 2>/dev/null; then
+            DNS_RESULT="$(getent hosts api.blobsurf.com)"
           elif command -v host >/dev/null 2>&1; then
-            DNS_RESULT="$(host api.blobinfini.fr)"
+            DNS_RESULT="$(host api.blobsurf.com)"
           elif command -v nslookup >/dev/null 2>&1; then
-            DNS_RESULT="$(nslookup api.blobinfini.fr)"
+            DNS_RESULT="$(nslookup api.blobsurf.com)"
           else
             echo "ERREUR : aucun outil DNS disponible"
             exit 1
@@ -80,7 +80,7 @@ jobs:
           echo "Résolution DNS : $DNS_RESULT"
           # Vérification que la résolution a retourné quelque chose
           if [ -z "$DNS_RESULT" ]; then
-            echo "ERREUR BLOQUANTE : DNS non résolu pour api.blobinfini.fr"
+            echo "ERREUR BLOQUANTE : DNS non résolu pour api.blobsurf.com"
             exit 1
           fi
           echo "DNS OK"
@@ -88,12 +88,12 @@ jobs:
       # ──────────────────────────────────────────────────────────────────────────
       # ÉTAPE 4 — Preuve TLS réelle (SANS -k)
       # ──────────────────────────────────────────────────────────────────────────
-      - name: "4 — Preuve TLS réelle : https://api.blobinfini.fr/health"
+      - name: "4 — Preuve TLS réelle : https://api.blobsurf.com/health"
         run: |
           set -euo pipefail
           echo "=== TLS strict (sans -k) ==="
           RESULT=$(curl -s -o /dev/null -w "%{http_code} ssl_verify=%{ssl_verify_result}" \
-            https://api.blobinfini.fr/health)
+            https://api.blobsurf.com/health)
           echo "Résultat : $RESULT"
 
           HTTP_CODE=$(echo "$RESULT" | awk '{print $1}')
@@ -120,8 +120,8 @@ jobs:
           set -euo pipefail
           echo "=== Certificat TLS ==="
           echo | openssl s_client \
-            -connect api.blobinfini.fr:443 \
-            -servername api.blobinfini.fr \
+            -connect api.blobsurf.com:443 \
+            -servername api.blobsurf.com \
             2>/dev/null \
           | openssl x509 -noout -issuer -subject -dates
           echo "Certificat lu sans erreur ✓"
@@ -175,7 +175,7 @@ jobs:
         run: |
           echo "============================================"
           echo "Récapitulatif des preuves :"
-          echo "  Étape 3 — DNS api.blobinfini.fr    : voir logs ci-dessus"
+          echo "  Étape 3 — DNS api.blobsurf.com    : voir logs ci-dessus"
           echo "  Étape 4 — TLS strict (sans -k)     : voir logs ci-dessus"
           echo "  Étape 5 — Certificat issuer/dates  : voir logs ci-dessus"
           echo "  Étape 6 — smoke-test exit code     : voir logs ci-dessus"

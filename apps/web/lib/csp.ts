@@ -41,8 +41,8 @@ export function buildCsp(nonce: string, options: CspOptions = {}): string {
   let wsOrigin = apiUrl.replace(/^https?/, (p) => (p === 'https' ? 'wss' : 'ws'));
   try {
     const u = new URL(apiUrl);
-    apiOrigin = u.origin; // e.g. "https://api.blobinfini.com"
-    wsOrigin = `${u.protocol === 'https:' ? 'wss' : 'ws'}://${u.host}`; // e.g. "wss://api.blobinfini.com"
+    apiOrigin = u.origin; // e.g. "https://api.blobsurf.com"
+    wsOrigin = `${u.protocol === 'https:' ? 'wss' : 'ws'}://${u.host}`; // e.g. "wss://api.blobsurf.com"
   } catch {
     // Fallback: keep the raw string (handles localhost:4000 without protocol)
   }

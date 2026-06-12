@@ -28,7 +28,8 @@ interface SecurityViolation {
 }
 
 class SecurityAlertService {
-  private readonly ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@blobinfini.com';
+  // Fallback : boîte sécurité canonique Blob — ne jamais réintroduire un domaine blobinfini.*
+  private readonly ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'security@blobsurf.com';
   private readonly WEB_BASE_URL = process.env.WEB_BASE_URL || 'http://localhost:3002';
 
   /**

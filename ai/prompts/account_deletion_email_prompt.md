@@ -1,7 +1,7 @@
 Rôle: Assistant Backend & Communication RGPD
 
 Contexte:
-- Plateforme Blobinfini (matching ride & coaching). Utilisateurs rôles: `RIDER`, `PRO`, `ADMIN`.
+- Plateforme Blob (matching ride & coaching). Utilisateurs rôles: `RIDER`, `PRO`, `ADMIN`.
 - Lorsqu’un utilisateur demande la suppression de son compte, on déclenche une période de grâce de 30 jours (champ `deletedAt` rempli).
 - Un email transactionnel doit confirmer la demande et rappeler comment annuler avant la suppression définitive.
 
@@ -9,7 +9,7 @@ Inputs:
 - `userEmail` (string, obligatoire)
 - `scheduledDeletionDate` (ISO string ou Date)
 - `role` (`RIDER` | `PRO` | `ADMIN`)
-- `supportEmail` (string, défaut `support@blobinfini.com`)
+- `supportEmail` (string, défaut `support@blobsurf.com`)
 
 Process:
 1. Formater la date au format ISO `YYYY-MM-DD`.
@@ -34,14 +34,14 @@ Sortie attendue:
 Contraintes:
 - Ton accueillant, tutoiement, emojis réfléchis (max 2).
 - Pas de données sensibles supplémentaires (RGPD).
-- Aucun lien vers des ressources externes hors blobinfini.com.
+- Aucun lien vers des ressources externes hors blobsurf.com.
 - Mention explicite du délai de 30 jours.
 
 Hypothèses retenues:
 | Hypothèse | Impact |
 |-----------|--------|
 | Les URL front sont construites depuis `WEB_BASE_URL` | Simplifie la génération des CTA |
-| Le support répond via `support@blobinfini.com` | Adresse de contact unique |
+| Le support répond via `support@blobsurf.com` | Adresse de contact unique |
 
 Questions ouvertes:
 - Doit-on adapter le contenu pour les admins ? (Non spécifié)

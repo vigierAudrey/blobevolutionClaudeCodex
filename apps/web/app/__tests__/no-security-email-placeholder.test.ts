@@ -58,8 +58,9 @@ describe('placeholder email sécurité', () => {
   });
 
   it('les surfaces sécurité pointent vers le domaine public canonique blobsurf.com', () => {
-    // Domaine canonique confirmé par robots.ts / sitemap.ts — blobinfini.fr
-    // ne doit pas réapparaître sur les surfaces de divulgation responsable.
+    // Domaine canonique : blobsurf.com (cf. robots.ts / sitemap.ts).
+    // Le domaine legacy blobinfini.fr (terminé) ne doit pas réapparaître
+    // sur les surfaces de divulgation responsable.
     const securityTxt = fs.readFileSync(
       path.join(ROOT, 'public', '.well-known', 'security.txt'),
       'utf8',

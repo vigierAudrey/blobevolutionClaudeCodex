@@ -45,7 +45,7 @@ const REFRESH_COOKIE_BASE = {
 // est l'accessToken httpOnly validé par l'API à chaque requête.
 // Ce cookie empêche un non-admin de voir les pages admin UI (elles seraient vides).
 // Il est posé httpOnly pour ne pas être lisible/falsifiable via JS ou XSS.
-// En prod, COOKIE_DOMAIN doit être défini (ex: ".blobinfini.app") pour que le cookie
+// En prod, COOKIE_DOMAIN doit être défini (ex: ".blobsurf.com") pour que le cookie
 // posé par l'API soit visible du middleware Next.js sur le domaine frontend.
 // Exported for contract tests only.
 export const ADMIN_SESSION_COOKIE_BASE = {

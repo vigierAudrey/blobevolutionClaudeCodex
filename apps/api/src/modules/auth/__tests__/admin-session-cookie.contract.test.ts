@@ -90,7 +90,7 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
     };
     process.env.NODE_ENV = 'production';
     process.env.DATABASE_URL = 'postgresql://u:p@localhost/db?sslmode=require';
-    process.env.COOKIE_DOMAIN = '.blobinfini.app';
+    process.env.COOKIE_DOMAIN = '.blobsurf.com';
     process.env.TWO_FACTOR_SECRET = 'test-two-factor-secret-for-production-mode-contract-test-xxxxx';
 
     let base: Record<string, unknown> | null = null;
@@ -118,7 +118,7 @@ describe('ADMIN_SESSION_COOKIE_BASE — attributs statiques', () => {
       process.env.COOKIE_DOMAIN = originalEnv.COOKIE_DOMAIN;
     }
 
-    expect(base!['domain']).toBe('.blobinfini.app');
+    expect(base!['domain']).toBe('.blobsurf.com');
   });
 
   it('en NODE_ENV=production sans COOKIE_DOMAIN → domain absent', () => {
@@ -253,11 +253,11 @@ describe('admin_session — Set-Cookie headers (stub route, production)', () => 
       secure: true,
       sameSite: 'lax',
       path: '/',
-      domain: '.blobinfini.app',
+      domain: '.blobsurf.com',
     });
     const res = await request(app).get('/set-admin').expect(200);
     const cookies = parseSetCookies(res.headers as Record<string, unknown>);
-    expect(cookies[0]?.toLowerCase()).toContain('domain=.blobinfini.app');
+    expect(cookies[0]?.toLowerCase()).toContain('domain=.blobsurf.com');
   });
 
   it('prod sans COOKIE_DOMAIN → Domain absent (scopé domaine API)', async () => {

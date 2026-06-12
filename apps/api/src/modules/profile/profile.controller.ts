@@ -694,7 +694,7 @@ profileRouter.get('/export', exportRateLimiter, async (req, res) => { // authz-g
     const exportData = await gdprExportService.exportUserData(userId, ip);
 
     // Set appropriate headers for JSON download
-    const filename = `blobinfini-data-export-${new Date().toISOString().split('T')[0]}.json`;
+    const filename = `blob-data-export-${new Date().toISOString().split('T')[0]}.json`;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');

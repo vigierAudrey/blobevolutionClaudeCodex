@@ -1,5 +1,5 @@
 /**
- * Blobinfini Service Worker
+ * Blob Service Worker
  * Handles push notifications for messages and alerts
  */
 
@@ -29,7 +29,7 @@ self.addEventListener('install', function(event) {
   self.skipWaiting();
 });
 
-// Activate event - purge ALL previous blobinfini-* caches so stale pages are cleared immediately.
+// Activate event - purge ALL previous blobinfini-* (legacy) caches so stale pages are cleared immediately.
 self.addEventListener('activate', function(event) {
   console.log('✅ BlobConnect SW: Activated');
 
@@ -159,7 +159,7 @@ self.addEventListener('notificationclick', function(event) {
           }
         }
 
-        // If no matching tab, check if any Blobinfini tab is open
+        // If no matching tab, check if any Blob tab is open
         for (let i = 0; i < clientList.length; i++) {
           const client = clientList[i];
           if (client.url.includes(self.location.origin) && 'navigate' in client) {

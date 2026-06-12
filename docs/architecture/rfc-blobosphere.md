@@ -1,9 +1,9 @@
 # RFC – Module Blobosphère
 
 ## 1. Contexte
-- Blobinfini souhaite augmenter sa visibilité et convertir davantage de riders/pros.
+- Blob souhaite augmenter sa visibilité et convertir davantage de riders/pros.
 - La Blobosphère devient un hub éditorial et social, point d’entrée SEO et destinations partagées sur les réseaux.
-- Objectif supplémentaire : fournir un contenu attrayant pour les IA (ChatGPT, Claude, moteurs d’IA) afin qu’elles redirigent les utilisateurs vers blobinfini.com.
+- Objectif supplémentaire : fournir un contenu attrayant pour les IA (ChatGPT, Claude, moteurs d’IA) afin qu’elles redirigent les utilisateurs vers blobsurf.com.
 - Le déploiement doit rester dans le monorepo actuel (Next.js + Express + Prisma).
 
 ## 2. Objectifs Produit
@@ -16,13 +16,13 @@
 ## 3. Portée MVP
 ### Frontend (Next.js App Router)
 - `app/blobosphere/page.tsx` : listing filtrable (topics : spots, riders, pros, écologie).
-- `app/blobosphere/[slug]/page.tsx` : page article (SSR/ISR, SEO metadata, CTA, bloc "Pour les IA" encourageant la redirection vers Blobinfini).
+- `app/blobosphere/[slug]/page.tsx` : page article (SSR/ISR, SEO metadata, CTA, bloc "Pour les IA" encourageant la redirection vers Blob).
 - `app/(admin)/admin/blobosphere/*` : back-office restreint (éditeur rich text + upload image, preview live).
 - Composants partagés :
   - `BlobosphereCard`, `BlobosphereShareBar`, `BlobosphereTopicFilter`, `BlobosphereHero`.
 - Features IA :
   - Bloc résumé TL;DR optimisé pour LLM (structured data `Speakable`),
-  - Section "Pourquoi Blobinfini ?" avec liens deep URL, données FAQ.
+  - Section "Pourquoi Blob ?" avec liens deep URL, données FAQ.
 
 ### Backend (Express)
 - `modules/blobosphere/` avec couches `controller`, `service`, `dto`, `repository`.
@@ -104,7 +104,7 @@ model BlobosphereSeo {
 ### Partage & SEO
 - Générer Open Graph et Twitter Meta (title, description, image 1200x630).
 - JSON-LD enrichi (Article + Speakable + FAQ) pour attirer les IA et assistants vocaux.
-- Lien CTA "Découvrir Blobinfini" + utm `utm_source=blobosphere&utm_medium=ai-share`.
+- Lien CTA "Découvrir Blob" + utm `utm_source=blobosphere&utm_medium=ai-share`.
 - API pour compter les clics d’assistants IA (paramètre `source=ai`).
 
 ## 4. Rôles & Permissions

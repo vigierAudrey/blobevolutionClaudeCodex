@@ -91,7 +91,7 @@ docker exec blobevolutionclaudecodex-api-cron-1 /app/scripts/cleanup-cron.sh
 
 ### Données anonymisées (conservées pour traçabilité)
 
-- **Email** : `deleted_<userId>_<timestamp>@anonymized.blobinfini.com`
+- **Email** : `deleted_<userId>_<timestamp>@anonymized.blobsurf.com`
 - **Password** : Remplacé par hash invalide `DELETED`
 - **RiderProfile** :
   - `displayName` → `"Utilisateur supprimé"`
@@ -334,5 +334,5 @@ find apps/api/logs -name "cleanup-*.log" -mtime +30 -delete
 ---
 
 **Dernière mise à jour** : 2 novembre 2025
-**Auteur** : Équipe Blobinfini
+**Auteur** : Équipe Blob
 **Conformité** : RGPD + CNIL

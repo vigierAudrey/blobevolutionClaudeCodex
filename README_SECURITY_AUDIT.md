@@ -267,7 +267,7 @@ npm run test --workspace @blobinfini/api -- pro-rider-isolation.e2e.test.ts
 
 **Audit réalisé par** : Claude Sonnet 4.5 - Expert Cybersécurité Offensive  
 **Date** : 2025-12-08  
-**Email** : security@blobinfini.com  
+**Email** : security@blobsurf.com  
 **Prochaine revue** : Après implémentation des correctifs RIDER (J+2)
 
 ---

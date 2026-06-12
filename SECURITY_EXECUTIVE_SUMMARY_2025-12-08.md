@@ -317,7 +317,7 @@ Cet audit de sécurité a identifié **7 vulnérabilités critiques (P0)** perme
 
 **Auditeur** : Claude Sonnet 4.5 - Expert Cybersécurité Offensive  
 **Date** : 2025-12-08  
-**Contact** : security@blobinfini.com  
+**Contact** : security@blobsurf.com  
 **Prochaine revue** : Après implémentation des correctifs RIDER (J+2)
 
 ---

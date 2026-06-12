@@ -10,6 +10,9 @@
 - **Domaine public** : blobsurf.com
 - **Namespace technique legacy** : Blobinfini / BlobConnect — conserver uniquement dans le code
   existant, ne pas réintroduire dans les textes produit ou UI
+- **Domaines terminés** : les anciens domaines `blobinfini.*` (.com/.fr) n'existent plus — ne
+  jamais les utiliser (code, docs, exemples, emails). Canonique : `blobsurf.com`,
+  `api.blobsurf.com`, `storage.blobsurf.com`, emails `support@` / `security@` / `dpo@blobsurf.com`
 
 ## Stratégie produit — Territoire pilote
 

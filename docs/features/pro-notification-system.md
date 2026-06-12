@@ -237,7 +237,7 @@ FIREBASE_CLIENT_EMAIL=...
 FIREBASE_PRIVATE_KEY=...
 
 # API URL
-NEXT_PUBLIC_API_URL=https://api.blobinfini.com
+NEXT_PUBLIC_API_URL=https://api.blobsurf.com
 ```
 
 ### Migration

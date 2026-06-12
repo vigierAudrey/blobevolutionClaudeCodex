@@ -23,7 +23,7 @@ describe('GDPR Export - Email Pseudonymization', () => {
     });
 
     it('should return consistent hash for same email', () => {
-      const email = 'test@blobinfini.com';
+      const email = 'test@blobsurf.com';
       const hash1 = pseudonymizeEmail(email);
       const hash2 = pseudonymizeEmail(email);
       expect(hash1).toBe(hash2);
@@ -103,7 +103,7 @@ describe('GDPR Export - Email Pseudonymization', () => {
   describe('Real-world examples', () => {
     it('should pseudonymize real email examples', () => {
       const examples = [
-        { email: 'rider@blobinfini.com', expectedPattern: /^[a-f0-9]{8}$/ },
+        { email: 'rider@blobsurf.com', expectedPattern: /^[a-f0-9]{8}$/ },
         { email: 'pro@example.fr', expectedPattern: /^[a-f0-9]{8}$/ },
         { email: 'admin+test@company.org', expectedPattern: /^[a-f0-9]{8}$/ },
       ];

@@ -25,7 +25,7 @@
 ## Surveillance `/security/health`
 
 1. **Configurer l'environnement**
-   - Renseigner `ALLOWED_ORIGINS` avec **tous** les domaines front autorisés (ex. `https://app.blobinfini.com,https://admin.blobinfini.com`).
+   - Renseigner `ALLOWED_ORIGINS` avec **tous** les domaines front autorisés (ex. `https://blobsurf.com`).
    - Ajouter `TRUSTED_PROXY_IPS` avec les IP/CIDR Clever Cloud ou du reverse-proxy (ex. `163.172.0.0/16,51.15.0.0/16`).
    - Vérifier que `NODE_ENV=production`, `JWT_SECRET`≥64 chars et `DATABASE_URL` contient `sslmode=require|verify-full`.
    - Confirmer que le champ `checks.authRequireVerified` vaut `true` (sinon l’API remonte l’issue `AUTH_REQUIRE_VERIFIED`).
@@ -37,7 +37,7 @@
      cd apps/api
      ADMIN_USER_ID="00000000-0000-0000-0000-000000000000"
      ACCESS_TOKEN=$(node -e "const jwt=require('jsonwebtoken');console.log(jwt.sign({sub: process.env.ADMIN_USER_ID, role:'ADMIN'}, process.env.JWT_SECRET, { expiresIn: '5m' }));" ADMIN_USER_ID="$ADMIN_USER_ID" JWT_SECRET="$JWT_SECRET")
-     curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" https://api.blobinfini.com/security/health | jq
+     curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" https://api.blobsurf.com/security/health | jq
      ```
    - Attendu : `status: "SECURE"` et `issues: []`. Tout autre statut doit être corrigé avant déploiement.
    - Réaliser un parcours login rider/pro réel : tant que l'email n'est pas vérifié, `/auth/login` doit répondre 403 et les routes booking/matching/push/refusent l'accès (`Email not verified`). Après validation, le login et les routes métiers doivent réussir.

@@ -159,7 +159,7 @@ must_not_contain "STORAGE_DOMAIN" "web"
 must_not_contain "STORAGE_DOMAIN" "postgres"
 # Rejeter si la valeur contient "://" (protocole fourni par erreur)
 if echo "${STORAGE_DOMAIN:-}" | grep -q "://"; then
-  log_err "STORAGE_DOMAIN ne doit pas contenir le protocole (fournir seulement le domaine, ex: storage.blobinfini.fr)"
+  log_err "STORAGE_DOMAIN ne doit pas contenir le protocole (fournir seulement le domaine, ex: storage.blobsurf.com)"
   ERRORS=$((ERRORS + 1))
 elif [ -n "${STORAGE_DOMAIN:-}" ]; then
   log_ok "STORAGE_DOMAIN=${STORAGE_DOMAIN}"

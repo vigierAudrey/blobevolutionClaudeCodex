@@ -90,6 +90,9 @@ jobs:
       - name: Guard — no direct req.ip / x-forwarded-for access outside canonical helpers
         run: bash apps/api/scripts/no-direct-ip-access.sh
 
+      - name: Guard — no legacy blobinfini domains or emails in active files
+        run: bash scripts/no-legacy-blobinfini-check.sh
+
       - name: Self-test ci-block-db-push (poison pill + variantes pnpm exec/npx/unsafe/continuation)
         # Prouve que le guard bloque les formes d'invocation de db push dans un workflow.
         # Chaque fichier poison est un workflow YAML valide (name/on/jobs/steps) pour tester

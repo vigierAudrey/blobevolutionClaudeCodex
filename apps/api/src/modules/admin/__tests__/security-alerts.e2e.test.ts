@@ -32,7 +32,7 @@ const getAlertMetadata = (value: unknown): AlertMetadata =>
 
 const ensureSecrets = () => {
   process.env.JWT_SECRET ||= 'test-jwt-secret';
-  process.env.ADMIN_EMAIL ||= 'admin-test@blobinfini.com';
+  process.env.ADMIN_EMAIL ||= 'admin-test@blobsurf.com';
 };
 
 const signToken = (userId: string, role: 'RIDER' | 'PRO' | 'ADMIN') => {

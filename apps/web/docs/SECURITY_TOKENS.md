@@ -74,7 +74,7 @@ module.exports = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
               "font-src 'self' data:",
-              "connect-src 'self' wss://api.blobinfini.com", // WebSocket endpoint
+              "connect-src 'self' wss://api.blobsurf.com", // WebSocket endpoint
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'"

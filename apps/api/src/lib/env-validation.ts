@@ -240,19 +240,19 @@ export function validateProductionEnv(): void {
   }
 
   // COOKIE_DOMAIN requis en prod (fail-fast).
-  // Architecture : API (api.blobinfini.app) ≠ frontend Vercel (blobinfini.app).
-  // Sans COOKIE_DOMAIN=.blobinfini.app, le cookie admin_session posé par l'API
-  // est scopé à api.blobinfini.app et invisible du middleware Next.js → panne admin totale.
+  // Architecture : API (api.blobsurf.com) ≠ frontend (blobsurf.com).
+  // Sans COOKIE_DOMAIN=.blobsurf.com, le cookie admin_session posé par l'API
+  // est scopé à api.blobsurf.com et invisible du middleware Next.js → panne admin totale.
   // Exception pré-VPS : tout tourne sur le même host via Docker nginx, même domaine.
   if (!isPreVps) {
     if (!process.env.COOKIE_DOMAIN) {
       errors.push(
-        'COOKIE_DOMAIN is required in production (e.g. ".blobinfini.app"). ' +
+        'COOKIE_DOMAIN is required in production (e.g. ".blobsurf.com"). ' +
         'Without it, admin_session cookie is scoped to the API domain only and invisible to the Next.js middleware, ' +
         'causing a complete admin login outage.'
       );
     } else if (!process.env.COOKIE_DOMAIN.startsWith('.')) {
-      errors.push('COOKIE_DOMAIN must start with "." to cover all subdomains (e.g. ".blobinfini.app")');
+      errors.push('COOKIE_DOMAIN must start with "." to cover all subdomains (e.g. ".blobsurf.com")');
     }
   }
 

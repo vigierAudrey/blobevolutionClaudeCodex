@@ -57,7 +57,7 @@ module.exports = {
           value: [
             "default-src 'self'",
             "script-src 'self' 'unsafe-eval'",
-            "connect-src 'self' wss://api.blobinfini.com",
+            "connect-src 'self' wss://api.blobsurf.com",
             "frame-ancestors 'none'"
           ].join('; ')
         }
