@@ -41,7 +41,7 @@
     "ipaddr.js": "^2.3.0",
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
-    "mime-types": "^2.1.35",
+    "mime-types": "^3.0.2",
     "nodemailer": "^8.0.8",
     "rate-limit-redis": "^4.2.2",
     "rate-limiter-flexible": "^11.2.0",
