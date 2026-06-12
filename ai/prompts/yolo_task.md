@@ -1,7 +1,7 @@
 Titre: <Tâche YOLO brève>
 
 Contexte
-- Repo: Blobinfini (monorepo Next.js/Express/Prisma). Voir claude.md.
+- Repo: Blob (monorepo Next.js/Express/Prisma). Voir claude.md.
 - Parties impactées: <liste rapide des domaines ou modules>
 
 Objectif

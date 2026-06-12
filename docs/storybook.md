@@ -1,4 +1,4 @@
-# 📚 Storybook Blobinfini
+# 📚 Storybook Blob
 
 Ce guide résume la configuration Storybook actuelle, les décisions récentes (React-Leaflet, visual tests) et la gestion des avertissements de taille de bundles.
 

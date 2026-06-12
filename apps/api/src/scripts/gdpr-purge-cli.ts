@@ -15,7 +15,7 @@ async function main() {
   const command = process.argv[2];
   const argument = process.argv[3];
 
-  console.log('🛡️  Blobinfini GDPR Management CLI\n');
+  console.log('🛡️  Blob GDPR Management CLI\n');
 
   try {
     switch (command) {

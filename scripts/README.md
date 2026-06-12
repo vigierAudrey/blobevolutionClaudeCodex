@@ -1,4 +1,4 @@
-# 🚀 Scripts utilitaires Blobinfini
+# 🚀 Scripts utilitaires Blob
 
 ## `ci-local.sh` - Pipeline CI en local
 

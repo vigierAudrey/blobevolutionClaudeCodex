@@ -2,7 +2,7 @@
 
 ## Vue d'ensemble
 
-Blobinfini utilise **Socket.io** pour la messagerie temps réel et les notifications instantanées.
+Blob utilise **Socket.io** pour la messagerie temps réel et les notifications instantanées.
 
 ### Architecture
 

@@ -1,10 +1,10 @@
-# 💰 Modèle Économique - Blobinfini
+# 💰 Modèle Économique - Blob
 
 > **Statut juridique prévu** : Association loi 1901 (France)
 
 ## 📊 Vision & Stratégie
 
-Blobinfini se positionne comme une **plateforme communautaire gratuite** pour connecter les passionnés de sports de glisse, financée par la publicité et le sponsoring.
+Blob se positionne comme une **plateforme communautaire gratuite** pour connecter les passionnés de sports de glisse, financée par la publicité et le sponsoring.
 
 ### Valeurs de l'association
 
@@ -69,7 +69,7 @@ function AdPreferencesSettings() {
       <CardHeader>
         <CardTitle>🍪 Gestion de la publicité</CardTitle>
         <CardDescription>
-          Blobinfini est gratuit grâce à la publicité.
+          Blob est gratuit grâce à la publicité.
           Vous pouvez désactiver les pubs, mais cela limite nos revenus associatifs.
         </CardDescription>
       </CardHeader>
@@ -142,7 +142,7 @@ const goldPackage: SponsorPackage = {
     logoHomepage: true,              // Logo permanent
     featuredArticles: 4,             // 1 article/trimestre
     proProfileHighlight: true,       // Badge "Partenaire officiel"
-    exclusiveOffers: true,           // -10% membres Blobinfini
+    exclusiveOffers: true,           // -10% membres Blob
     newsletter: 2,                   // 2 mentions/mois
     analytics: true,                 // Dashboard dédié
   },
@@ -313,7 +313,7 @@ function PartnerOffersPage() {
 
 ### Proposition de valeur
 
-> **"Blobinfini, la communauté française des sports de glisse"**
+> **"Blob, la communauté française des sports de glisse"**
 >
 > Nous connectons **10 000+ passionnés de surf et kitesurf** chaque mois.
 > Votre marque peut :

@@ -1,6 +1,6 @@
 # 🤖 Configuration MCP (Model Context Protocol)
 
-Ce document détaille la configuration des serveurs MCP pour enrichir les capacités des IA travaillant sur Blobinfini.
+Ce document détaille la configuration des serveurs MCP pour enrichir les capacités des IA travaillant sur Blob.
 
 ## 📚 Table des matières
 

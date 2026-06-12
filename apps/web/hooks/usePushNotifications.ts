@@ -1,5 +1,5 @@
 /**
- * React Hook for Push Notifications in Blobinfini
+ * React Hook for Push Notifications in Blob
  * Provides easy integration of push notifications in React components
  */
 

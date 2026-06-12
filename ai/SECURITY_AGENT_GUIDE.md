@@ -1,8 +1,8 @@
-# Guide Agent Cybersécurité - Blobinfini
+# Guide Agent Cybersécurité - Blob
 
 ## 🎯 Vue d'ensemble
 
-L'agent cybersécurité est un expert offensif configuré pour protéger activement le projet Blobinfini contre toute tentative de hacking, exploitation ou intrusion.
+L'agent cybersécurité est un expert offensif configuré pour protéger activement le projet Blob contre toute tentative de hacking, exploitation ou intrusion.
 
 ## 📍 Localisation
 
@@ -172,4 +172,4 @@ Claude Code peut déléguer automatiquement à l'agent cybersécurité quand vou
 
 ---
 
-**Aucun compromis sur la sécurité. Protégeons Blobinfini et ses utilisateurs.**
+**Aucun compromis sur la sécurité. Protégeons Blob et ses utilisateurs.**

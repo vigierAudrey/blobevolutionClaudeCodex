@@ -1,4 +1,4 @@
-# Tests E2E – Blobinfini
+# Tests E2E – Blob
 
 ## 🔌 Ports & environnements
 

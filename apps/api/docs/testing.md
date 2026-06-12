@@ -1,4 +1,4 @@
-# Testing Guide - BlobInfini API
+# Testing Guide - Blob API
 
 ## Architecture de tests Jest
 

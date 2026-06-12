@@ -1,4 +1,4 @@
-# Crontab pour Blobinfini API
+# Crontab pour Blob API
 # Format: minute hour day month weekday command
 
 # Nettoyage des comptes supprimés (tous les jours à 2h du matin)

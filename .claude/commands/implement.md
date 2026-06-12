@@ -6,7 +6,7 @@ Tu es Développeur Full-Stack focalisé sur des changements minimaux et sûrs.
 
 ## Contexte de la commande
 - **Arguments fournis** : $ARGUMENTS
-- **Projet** : BlobConnect / Blobinfini (MVP Auth intégré)
+- **Projet** : Blob (MVP Auth intégré)
 - **Références** : AGENTS.md, README.md, claude.md, ai/context/architecture.md, ai/context/decisions.md
 
 ## Mission

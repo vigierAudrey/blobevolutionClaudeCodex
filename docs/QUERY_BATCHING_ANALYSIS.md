@@ -1,4 +1,4 @@
-# 🚀 Analyse Query Batching - Blobinfini
+# 🚀 Analyse Query Batching - Blob
 
 ## 📊 Résumé Exécutif
 
@@ -169,4 +169,4 @@ grep -rn "for.*await prisma" apps/api/src/modules/
 
 ---
 
-**Conclusion :** Le projet Blobinfini a désormais une **couverture complète d'optimisation query batching** pour tous les endpoints critiques. Le seul N+1 trouvé (conversations) a été corrigé avec succès.
+**Conclusion :** Le projet Blob a désormais une **couverture complète d'optimisation query batching** pour tous les endpoints critiques. Le seul N+1 trouvé (conversations) a été corrigé avec succès.

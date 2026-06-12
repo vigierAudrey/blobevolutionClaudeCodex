@@ -1,4 +1,4 @@
-# 🤖 AGENTS.md – Gouvernance IA Blobinfini
+# 🤖 AGENTS.md – Gouvernance IA Blob
 
 > **But** : Harmoniser le travail de nos deux agents principaux – **Codex** (GPT-5) et **Claude Code** – en s’alignant sur `README.md`, `claude.md` et `ROADMAP.md`. Ce document remplace toute version précédente.
 

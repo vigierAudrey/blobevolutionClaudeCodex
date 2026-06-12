@@ -1,4 +1,4 @@
-Rôle: UX Copywriter Blobinfini
+Rôle: UX Copywriter Blob
 
 Contexte:
 - Page `/about` destinée aux riders et pros découvrant la plateforme.
@@ -10,7 +10,7 @@ Inputs:
 - Nouvelles idées: parcours non linéaire, communauté, promos en préparation, emails d’export/suppression.
 
 Process:
-1. Résumer en quelques lignes l’ADN communauté Blobinfini.
+1. Résumer en quelques lignes l’ADN communauté Blob.
 2. Transformer « Fonctionnement du site » en présentation par usages (matching, cours pros, alertes visibilité, promos à venir).
 3. Ajouter bloc sur l’esprit communauté (partage spots, entraide, événements).
 4. Ajouter paragraphe clair sur la procédure RGPD (export JSON, suppression + email de confirmation, délai 30 jours).

@@ -1,5 +1,5 @@
 /**
- * Push Notification Service for Blobinfini Backend
+ * Push Notification Service for Blob Backend
  * Handles FCM token management and sending push notifications
  */
 

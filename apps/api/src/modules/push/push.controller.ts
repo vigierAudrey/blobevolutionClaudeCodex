@@ -1,5 +1,5 @@
 /**
- * Push Notifications Controller for Blobinfini API
+ * Push Notifications Controller for Blob API
  * Handles subscription, unsubscription, and sending push notifications
  */
 

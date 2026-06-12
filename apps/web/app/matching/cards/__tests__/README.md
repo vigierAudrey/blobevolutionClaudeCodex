@@ -153,4 +153,4 @@ test('devrait suivre le workflow complet: chargement → swipe → décision →
 - **Temps d'exécution** : < 1 seconde ⚡
 - **Maintenance** : Tests simples et lisibles 🛠
 
-Ces tests garantissent la fiabilité et la qualité du système de matching, élément central de l'expérience utilisateur de Blobinfini.
+Ces tests garantissent la fiabilité et la qualité du système de matching, élément central de l'expérience utilisateur de Blob.

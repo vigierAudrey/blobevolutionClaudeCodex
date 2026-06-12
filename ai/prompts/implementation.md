@@ -1,7 +1,7 @@
 Rôle: (ex. Développeur)
 
 Contexte
-- Projet: Blobinfini (MVP Auth intégré)
+- Projet: Blob (MVP Auth intégré)
 - Références: README.md, claude.md, context/architecture.md, context/decisions.md
 - Extraits de code pertinents: (joindre)
 

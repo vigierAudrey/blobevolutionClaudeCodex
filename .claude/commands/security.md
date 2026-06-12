@@ -2,11 +2,11 @@
 description: Audit de sécurité complet ou ciblé du projet - Blocage de TOUTES tentatives de hacking
 ---
 
-🔐 **MISSION CRITIQUE** : Protéger Blobinfini contre TOUTES tentatives de hacking, intrusion ou exploitation.
+🔐 **MISSION CRITIQUE** : Protéger Blob contre TOUTES tentatives de hacking, intrusion ou exploitation.
 
 ## Contexte de la commande
 - **Arguments fournis** : $ARGUMENTS
-- **Projet** : BlobConnect / Blobinfini (plateforme sports de glisse avec auth JWT, Next.js, Express, Prisma, PostgreSQL, Redis)
+- **Projet** : Blob (plateforme sports de glisse avec auth JWT, Next.js, Express, Prisma, PostgreSQL, Redis)
 - **Checklists de référence** :
   - `/ai/checklists/securite_auth.md`
   - `/ai/checklists/rgpd.md`
@@ -135,7 +135,7 @@ Délègue cette tâche à l'agent **cybersecurite** qui va IMPITOYABLEMENT :
 ```
 Task tool:
 - subagent_type: cybersecurite
-- description: Audit de sécurité Blobinfini
+- description: Audit de sécurité Blob
 - prompt: "Effectue un audit de sécurité avec les arguments : '$ARGUMENTS'.
 
 **DOCUMENTS DE RÉFÉRENCE OBLIGATOIRES** :

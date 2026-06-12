@@ -1,7 +1,7 @@
 Rôle: Tech lead – Géolocalisation Matching
 
 Contexte
-- Projet: Blobinfini – Matching basé sur distance pour pairs (Surf/Kitesurf).
+- Projet: Blob – Matching basé sur distance pour pairs (Surf/Kitesurf).
 - Stack: Next.js (app router), Express API, Prisma/PostgreSQL. PostGIS envisagé.
 - État actuel: Calcul Haversine côté API sur un jeu de données mock; UI collecte lat/lng via Geolocation API.
 

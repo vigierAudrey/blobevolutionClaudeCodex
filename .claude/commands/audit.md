@@ -6,7 +6,7 @@ description: Générer un audit de sécurité complet à jour (format octobre 20
 
 ## Contexte de la commande
 - **Arguments fournis** : $ARGUMENTS
-- **Projet** : BlobConnect / Blobinfini (plateforme sports de glisse)
+- **Projet** : Blob (plateforme sports de glisse)
 - **Audit de référence** : `docs/audits/security-audit-2025-10.md` (octobre 2025, Score: 95/100)
 - **Format de sortie** : Markdown structuré avec sections standardisées
 
@@ -25,7 +25,7 @@ Délègue cette tâche à l'agent **cybersecurite** qui va générer un audit CO
    ### 📋 Template de rapport
 
    ```markdown
-   # Audit Sécurité Blobinfini - [Date]
+   # Audit Sécurité Blob - [Date]
 
    ## 🎯 Résumé Exécutif
    - **Niveau de risque global** : [CRITIQUE/ÉLEVÉ/MOYEN/FAIBLE]
@@ -188,7 +188,7 @@ Délègue cette tâche à l'agent **cybersecurite** qui va générer un audit CO
 
 ### Format console (mode standard)
 ```markdown
-# Audit Sécurité Blobinfini - 2025-11-09
+# Audit Sécurité Blob - 2025-11-09
 
 ## 🎯 Résumé Exécutif
 - **Niveau de risque global** : MOYEN
@@ -255,7 +255,7 @@ Aucune nouvelle vulnérabilité détectée ✅
 ```
 Task tool:
 - subagent_type: cybersecurite
-- description: Audit de sécurité complet Blobinfini
+- description: Audit de sécurité complet Blob
 - prompt: "Génère un audit de sécurité complet au format octobre 2025.
 
 **MODE** : $ARGUMENTS (standard/diff/save/quick)

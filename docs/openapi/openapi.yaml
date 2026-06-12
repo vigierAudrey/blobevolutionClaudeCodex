@@ -1,16 +1,16 @@
 openapi: 3.0.3
 info:
-  title: Blobinfini API
+  title: Blob API
   description: |
-    Documentation officielle de l'API Blobinfini. Cette spécification décrit tous les endpoints exposés
+    Documentation officielle de l'API Blob. Cette spécification décrit tous les endpoints exposés
     par l'API Express (matching, profils, réservation, messagerie, administration, etc.).
     Toute évolution de contrat (DTO, codes d'erreur) doit être reflétée ici.
   version: 0.2.1
   contact:
-    name: Blobinfini Engineering
+    name: Blob Engineering
     email: dev@blobinfini.app
   license:
-    name: Proprietary – Blobinfini SAS
+    name: Proprietary – Blob (entité juridique à confirmer avant publication)
     url: https://blobinfini.app/legal
 servers:
   - url: https://api.blobinfini.app

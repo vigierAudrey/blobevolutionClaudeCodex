@@ -1,6 +1,6 @@
-# 📚 Documentation Blobinfini
+# 📚 Documentation Blob
 
-Index complet de la documentation technique et métier du projet Blobinfini.
+Index complet de la documentation technique et métier du projet Blob.
 
 ## 🎯 Documents Essentiels (Racine du Projet)
 
@@ -260,5 +260,5 @@ Pour ajouter ou modifier un document :
 
 ---
 
-**Maintainers** : Équipe Blobinfini
+**Maintainers** : Équipe Blob
 **Dernière mise à jour** : 16/12/2025

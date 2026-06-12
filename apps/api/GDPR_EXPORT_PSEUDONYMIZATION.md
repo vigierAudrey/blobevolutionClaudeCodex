@@ -288,6 +288,6 @@ curl -X GET http://localhost:4000/api/profile/export-data \
 ---
 
 **Dernière mise à jour** : 3 novembre 2025
-**Auteur** : Équipe Blobinfini
+**Auteur** : Équipe Blob
 **Conformité** : RGPD Article 5.1.c + Article 20
 **Tests** : 11/11 passing ✅

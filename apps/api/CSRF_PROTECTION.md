@@ -2,7 +2,7 @@
 
 ## Vue d'ensemble
 
-La protection CSRF (Cross-Site Request Forgery) a été implémentée pour sécuriser tous les endpoints sensibles de l'API Blobinfini. Cette protection empêche les attaques malveillantes où un site tiers tenterait d'exécuter des actions non autorisées au nom d'un utilisateur authentifié.
+La protection CSRF (Cross-Site Request Forgery) a été implémentée pour sécuriser tous les endpoints sensibles de l'API Blob. Cette protection empêche les attaques malveillantes où un site tiers tenterait d'exécuter des actions non autorisées au nom d'un utilisateur authentifié.
 
 ## 🚀 Fonctionnement
 

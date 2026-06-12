@@ -1,4 +1,4 @@
-# 🔧 Tests à Corriger - Blobinfini API
+# 🔧 Tests à Corriger - Blob API
 
 **Date**: 2025-11-08
 **Statut**: Suite Jest 100% verte (23/23) + plan de durcissement cleanup / Prisma 7

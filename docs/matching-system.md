@@ -1,4 +1,4 @@
-# 🎯 Système de Matching - Blobinfini
+# 🎯 Système de Matching - Blob
 
 > Documentation technique complète du système de matching entre riders (surf/kitesurf)
 
@@ -730,6 +730,6 @@ apps/
 
 ---
 
-**Auteur** : Équipe Blobinfini
+**Auteur** : Équipe Blob
 **Dernière mise à jour** : 16/12/2025
 **Version** : 2.0.0 (avec niveau "peu importe" + géoloc obligatoire)

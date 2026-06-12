@@ -1,4 +1,4 @@
-Architecture – MVP Monorepo Blobinfini
+Architecture – MVP Monorepo Blob
 
 ## Structure projet (RÉELLE)
 

@@ -1,5 +1,5 @@
 /**
- * Firebase Configuration for Blobinfini PWA Push Notifications
+ * Firebase Configuration for Blob PWA Push Notifications
  */
 
 import { initializeApp } from 'firebase/app';

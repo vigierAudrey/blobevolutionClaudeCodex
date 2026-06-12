@@ -1,4 +1,4 @@
-# 🤖 Configuration Claude Code - BlobConnect (Blobinfini interne)
+# 🤖 Configuration Claude Code - Blob
 
 Ce dossier contient la configuration spécifique à **Claude Code CLI** pour automatiser les workflows de développement.
 
@@ -314,10 +314,10 @@ Expert cybersécurité offensif pour auditer, protéger et bloquer toute tentati
 
 ---
 
-## 🌊 Esprit Blobinfini
+## 🌊 Esprit Blob
 
 > "Surfer, c'est être libre **et** lire la houle.
-> Les IA Blobinfini avancent seules,
+> Les IA Blob avancent seules,
 > mais lèvent la main quand elles voient la digue."
 
 **Aucun compromis sur la sécurité. Zéro tolérance pour les vulnérabilités critiques.**

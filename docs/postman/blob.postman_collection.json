@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "Blobinfini API",
+    "name": "Blob API",
     "_postman_id": "8f5f1f4d-2c5b-4c78-8b0f-blobinfini",
-    "description": "Collection Postman officielle pour l'API Blobinfini. Mettre à jour le token d'accès (`accessToken`) après authentification.",
+    "description": "Collection Postman officielle pour l'API Blob. Mettre à jour le token d'accès (`accessToken`) après authentification.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

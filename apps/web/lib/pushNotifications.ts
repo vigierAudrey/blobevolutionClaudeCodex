@@ -1,5 +1,5 @@
 /**
- * Push Notifications Management for Blobinfini
+ * Push Notifications Management for Blob
  * Handles subscription, permission requests, and notification display
  */
 

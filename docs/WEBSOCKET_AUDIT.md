@@ -1,4 +1,4 @@
-# Audit Complet WebSocket/Socket.IO - BlobInfini
+# Audit Complet WebSocket/Socket.IO - Blob
 **Date:** 2026-01-18
 **Scope:** Client (apps/web) + Serveur (apps/api)
 **Objectif:** Cartographier tous les flux temps réel, identifier les risques, proposer un plan de consolidation hardening
@@ -7,7 +7,7 @@
 
 ## Résumé Exécutif
 
-L'infrastructure WebSocket de BlobInfini repose sur **Socket.IO** et présente un niveau de maturité **élevé** en matière de sécurité et robustesse :
+L'infrastructure WebSocket de Blob repose sur **Socket.IO** et présente un niveau de maturité **élevé** en matière de sécurité et robustesse :
 
 ✅ **Points forts:**
 - **Validation Zod complète** côté serveur pour tous les events critiques (`join-conversation`, `send-message`, `typing`)
@@ -471,7 +471,7 @@ chore(ci): add ESLint rule no-unvalidated-socket-emit (warn)
 
 ## Conclusion
 
-L'infrastructure WebSocket de BlobInfini est **mature et bien sécurisée** pour les flux critiques (auth, messagerie). Les risques identifiés sont **mineurs (P1/P2)** et concernent principalement :
+L'infrastructure WebSocket de Blob est **mature et bien sécurisée** pour les flux critiques (auth, messagerie). Les risques identifiés sont **mineurs (P1/P2)** et concernent principalement :
 1. **Validation outbound manquante** (facilement corrigeable en 1 sprint)
 2. **Uniformité des patterns** (cosmétique, faible priorité)
 
