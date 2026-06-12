@@ -227,6 +227,7 @@ Contribution 2026-06-11 :
 
 - [x] Sprint mobile-first : harmonisation du dashboard pro avec les composants Blob, nav dashboard plus tactile sur mobile et tests web associés.
 - [x] Sprint front sensible : harmonisation AuthForm, onboarding pro et haut de profil pro en mobile-first, suppression des logs debug pro et tests web associés.
+- [x] Sprint auth pro mobile-first : harmonisation `login-pro` et `reset-password` avec les composants Blob, CTA tactiles et tests web associés.
 
 Definition of Done P1 :
 

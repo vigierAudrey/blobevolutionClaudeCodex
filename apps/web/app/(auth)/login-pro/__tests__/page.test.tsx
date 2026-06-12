@@ -41,8 +41,14 @@ describe('ProLoginPage', () => {
     render(<ProLoginPage />);
 
     const user = userEvent.setup();
+    expect(screen.getByRole('heading', { name: /connexion pro/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /connexion riders/i })).toHaveAttribute('href', '/login');
+
     await user.type(screen.getByLabelText(/email professionnel/i), 'pro@test.com');
     await user.click(screen.getByRole('button', { name: /envoyer le code de sécurité/i }));
+    expect(await screen.findByRole('heading', { name: /code de sécurité/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retour à l'email/i })).toBeInTheDocument();
+
     await user.type(screen.getByLabelText(/code de sécurité/i), '123456');
     await user.click(screen.getByRole('button', { name: /se connecter/i }));
 
