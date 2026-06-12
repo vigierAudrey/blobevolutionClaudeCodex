@@ -69,7 +69,7 @@
     "@typescript-eslint/type-utils": "^8.60.0",
     "@typescript-eslint/utils": "^8.59.3",
     "autoprefixer": "^10.4.23",
-    "babel-jest": "^29.7.0",
+    "babel-jest": "^30.4.1",
     "eslint": "8.57.1",
     "eslint-config-next": "14.1.4",
     "jest": "^30.2.0",
