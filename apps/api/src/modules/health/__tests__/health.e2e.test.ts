@@ -56,6 +56,22 @@ describe('GET /health/live (liveness)', () => {
     expect(Object.keys(res.body).sort()).toEqual(['service', 'status', 'timestamp', 'uptimeSeconds']);
     assertNoLeak(JSON.stringify(res.body));
   });
+
+  // Régression GAP-1 : /health doit être monté APRÈS cors + CSP (et non avant),
+  // sinon les sondes court-circuitent ces middlewares (cf. cors.test.ts/csrf.test.ts).
+  // Ce test verrouille le contrat sur la sous-route liveness précisément.
+  it('passe par CORS (en-tête allow-origin pour une origine autorisée) tout en restant no-store', async () => {
+    const origin = 'http://localhost:3000'; // origine dev autorisée par défaut en test
+    const res = await request(app).get('/health/live').set('Origin', origin).expect(200);
+    expect(res.headers['access-control-allow-origin']).toBe(origin);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  it('reçoit un en-tête CSP (helmet appliqué avant la sonde)', async () => {
+    const res = await request(app).get('/health/live').expect(200);
+    const csp = res.headers['content-security-policy'] ?? res.headers['content-security-policy-report-only'];
+    expect(csp).toBeDefined();
+  });
 });
 
 describe('GET /health/ready (readiness)', () => {

@@ -291,14 +291,6 @@ export function createApp() {
   app.use(cookieParser());
   app.use(requestIdMiddleware);
 
-  // Health probes — montées AVANT session / rate-limit / CSRF.
-  //  - /health/live : liveness, zéro dépendance infra (le store de session peut
-  //    être Redis ; monter ici garantit que la liveness ne dépend de rien).
-  //  - /health/ready : readiness (DB dure, Redis/storage souples), timeouts courts.
-  //  - /health : compat héritée ({ status: 'ok' }).
-  // Jamais rate-limitées (un LB poll fréquemment), jamais mises en cache.
-  app.use('/health', healthRouter);
-
   // Trust proxy configuration - more secure than 'true'
   // In dev, trust localhost. In prod, trust only known proxy IPs or use number of hops
   if (process.env.NODE_ENV === 'production') {
@@ -341,6 +333,16 @@ export function createApp() {
     next();
   });
   app.use(createHelmetMiddleware());
+
+  // Health probes — montées APRÈS cors + CSP/helmet (les sondes reçoivent donc
+  // les en-têtes CORS/CSP et le preflight OPTIONS est géré comme pour les autres
+  // routes), mais AVANT smartRateLimit (un LB poll fréquemment, jamais rate-limité)
+  // et avant la protection CSRF (GET/OPTIONS non concernés).
+  //  - /health/live : liveness — ne touche aucune dépendance infra (la sonde sans
+  //    cookie ne déclenche aucun accès au store de session).
+  //  - /health/ready : readiness (DB dure, Redis/storage souples), timeouts courts.
+  //  - /health : compat héritée ({ status: 'ok' }).
+  app.use('/health', healthRouter);
 
   // Global rate limiting (before specific routes)
   app.use(smartRateLimit);
