@@ -28,6 +28,7 @@ export type MailType =
   | 'account_deletion'
   | 'account_deletion_cancelled'
   | 'security_alert'
+  | 'system_alert'
   | 'new_lesson_request';
 
 type Mail = {

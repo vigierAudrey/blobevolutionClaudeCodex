@@ -686,6 +686,7 @@ model SystemAlert {
   createdBy User? @relation("UserSystemAlerts", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([status])
+  @@index([status, severity])
   @@index([type])
   @@index([createdAt])
   @@index([dedupeKey])

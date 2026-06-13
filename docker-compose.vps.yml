@@ -132,6 +132,10 @@ services:
       S3_PUBLIC_URL_BASE:   "https://${STORAGE_DOMAIN:-storage.blobinfini.local}/${S3_BUCKET:-blobinfini-vps}"
       SECURITY_MONITOR_TOKEN: "${SECURITY_MONITOR_TOKEN}"
       APP_ENV: "vps"
+    volumes:
+      # État backup admin-safe (last-backup.json) — LECTURE SEULE, dossier dédié.
+      # L'API ne lit JAMAIS les dumps PostgreSQL (eux restent isolés en 700).
+      - /var/lib/blob/status:/var/lib/blob/status:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,7 +147,7 @@ services:
       - vps
     # PAS de port exposé : accès via Caddy uniquement
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health/live', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 10

@@ -29,6 +29,29 @@ function getS3(customEndpoint?: string) {
 
 export const S3_PUBLIC_URL_BASE = process.env.S3_PUBLIC_URL_BASE as string | undefined;
 
+/**
+ * Sonde de santé légère du stockage objet : un seul `HeadBucket`, borné par un
+ * timeout via AbortController. Aucune donnée transférée. Utilisée par
+ * `/health/ready`. Retourne `false` (jamais d'exception) si non configuré,
+ * injoignable, ou délai dépassé.
+ */
+export async function checkBucketReachable(timeoutMs = 2000): Promise<boolean> {
+  const { bucket } = getEnv();
+  if (!bucket) return false;
+  const s3 = getS3();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (typeof timer.unref === 'function') timer.unref();
+  try {
+    await s3.send(new HeadBucketCommand({ Bucket: bucket }), { abortSignal: controller.signal });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function ensureBucket() {
   if (process.env.NODE_ENV === 'test') return; // skip in tests
   const { bucket } = getEnv();

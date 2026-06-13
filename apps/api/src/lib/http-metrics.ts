@@ -67,6 +67,8 @@ function percentileFromHistogram(hist: LatencyHistogram, p: number): number {
 
 const EXCLUDED_PATHS = new Set([
   '/health',
+  '/health/live',
+  '/health/ready',
   '/internal/metrics',
   '/security/health',
   '/security/observability',

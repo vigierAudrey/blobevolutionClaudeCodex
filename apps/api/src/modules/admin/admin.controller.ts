@@ -5,6 +5,7 @@ import type { AuditLog, Role } from '@blobinfini/database';
 import { requireAuth, requireAdmin, requireVerifiedEmail } from '../auth/auth.guard';
 import { gdprPurgeService } from '../../services/gdpr-purge.service';
 import { systemAlertService } from '../../services/system-alert.service';
+import { buildSystemStatus } from './system-status.service';
 import { audit } from '../../middleware/audit';
 import { ROLE_PERMISSIONS, AVAILABLE_PERMISSIONS, type Permission } from './permissions';
 import { requirePermissions, requireAnyPermission } from './admin.guard';
@@ -1577,6 +1578,26 @@ adminRouter.post(
     return res.status(500).json({ error: 'Internal error' });
   }
 });
+
+// GAP-2 — Cockpit "État système" admin (lecture seule).
+// readiness + fraîcheur backup (fichier d'état JSON) + disque (statvfs) +
+// version déployée + compteurs d'alertes. Aucune écriture DB, aucun secret,
+// aucun chemin absolu exposé. no-store.
+adminRouter.get(
+  '/system-status',
+  requirePermissions('system.monitor'), // read-only, safe for monitor role
+  audit('admin:system-status:read', () => 'admin:system-status:read'),
+  async (_req, res) => {
+    try {
+      const status = await buildSystemStatus();
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json(status);
+    } catch (error) {
+      secureLogger.error('Admin system-status error', { error });
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+);
 
 adminRouter.get(
   '/alerts',
