@@ -186,14 +186,14 @@ describe('buildSystemStatus (deps injectées)', () => {
       }),
       backupRaw: async () => ({ status: 'ok', timestamp: '2026-06-13T11:30:00.000Z', sizeBytes: 1024 }),
       disk: async () => ({ health: 'ok', usedPercent: 42, totalBytes: 100, freeBytes: 58, message: 'ok' }),
-      alerts: async () => ({ open: 3, criticalOpen: 1 }),
+      alerts: async () => ({ open: 3, warningOpen: 2, criticalOpen: 1 }),
     });
 
     expect(Object.keys(res).sort()).toEqual(['alerts', 'backup', 'disk', 'generatedAt', 'readiness', 'version']);
     expect(res.generatedAt).toBe('2026-06-13T12:00:00.000Z');
     expect(res.backup.health).toBe('ok');
     expect(res.disk.usedPercent).toBe(42);
-    expect(res.alerts).toEqual({ open: 3, criticalOpen: 1 });
+    expect(res.alerts).toEqual({ open: 3, warningOpen: 2, criticalOpen: 1 });
     expect(res.readiness.checks.database).toBe('ok');
   });
 });

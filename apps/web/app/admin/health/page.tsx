@@ -252,6 +252,7 @@ export default function AdminHealthPage() {
               <CardDescription>
                 {sys.alerts.open} ouverte{sys.alerts.open > 1 ? 's' : ''}
                 {sys.alerts.criticalOpen > 0 ? ` · ${sys.alerts.criticalOpen} critique${sys.alerts.criticalOpen > 1 ? 's' : ''}` : ''}
+                {sys.alerts.warningOpen > 0 ? ` · ${sys.alerts.warningOpen} avertissement${sys.alerts.warningOpen > 1 ? 's' : ''}` : ''}
               </CardDescription>
             </CardHeader>
             <CardContent>

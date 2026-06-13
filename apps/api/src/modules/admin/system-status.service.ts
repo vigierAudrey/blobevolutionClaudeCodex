@@ -25,7 +25,7 @@ import { buildReadiness, type ReadinessResponse } from '../health/health.checks'
 export type HealthLevel = 'ok' | 'warn' | 'critical' | 'unknown';
 
 // ── Configuration (env, defaults sûrs) ──────────────────────────────────────
-const BACKUP_STATE_FILE = process.env.BACKUP_STATE_FILE?.trim() || '/var/backups/blob/last-backup.json';
+const BACKUP_STATE_FILE = process.env.BACKUP_STATE_FILE?.trim() || '/var/lib/blob/status/last-backup.json';
 const BACKUP_STATE_MAX_BYTES = clampInt(process.env.BACKUP_STATE_MAX_BYTES, 4096, 256, 65536);
 const BACKUP_WARN_HOURS = clampInt(process.env.BACKUP_MAX_AGE_WARN_HOURS, 26, 1, 24 * 30);
 const BACKUP_CRITICAL_HOURS = clampInt(process.env.BACKUP_MAX_AGE_CRITICAL_HOURS, 50, 2, 24 * 60);
@@ -284,19 +284,22 @@ export function resolveVersion(): VersionInfo {
 
 export interface AlertSummary {
   open: number;
+  warningOpen: number;
   criticalOpen: number;
 }
 
 async function readAlertSummary(): Promise<AlertSummary> {
   try {
-    const [open, criticalOpen] = await Promise.all([
+    // 3 COUNT indexés (@@index([status, severity])) — pas de scan, pas de N+1.
+    const [open, warningOpen, criticalOpen] = await Promise.all([
       prisma.systemAlert.count({ where: { status: 'OPEN' } }),
+      prisma.systemAlert.count({ where: { status: 'OPEN', severity: 'WARNING' } }),
       prisma.systemAlert.count({ where: { status: 'OPEN', severity: 'CRITICAL' } }),
     ]);
-    return { open, criticalOpen };
+    return { open, warningOpen, criticalOpen };
   } catch (error) {
     secureLogger.error('SYSTEM_STATUS_ALERT_SUMMARY_FAILED', { error });
-    return { open: 0, criticalOpen: 0 };
+    return { open: 0, warningOpen: 0, criticalOpen: 0 };
   }
 }
 

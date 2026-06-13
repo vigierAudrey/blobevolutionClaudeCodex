@@ -152,7 +152,7 @@ export interface SystemStatus {
     message: string;
   };
   version: { commit: string; deployedAt: string | null };
-  alerts: { open: number; criticalOpen: number };
+  alerts: { open: number; warningOpen: number; criticalOpen: number };
 }
 
 export interface SecurityObservability {
