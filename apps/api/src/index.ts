@@ -34,6 +34,7 @@ import { secureLogger } from './utils/secure-logger';
 import { getClientIp } from './lib/client-ip';
 import { hashIpHmacSafe } from './lib/hash-ip';
 import { requestIdMiddleware } from './middleware/request-id';
+import { healthRouter } from './modules/health/health.router';
 import { runJobWithLogContext, withHttpLogContext } from './observability/log-context';
 import { registerLogTransportShutdownHandlers, getLogTransportMetrics } from './observability/log-transport';
 import { getEmailMetricsSnapshot } from './lib/email-metrics';
@@ -290,6 +291,14 @@ export function createApp() {
   app.use(cookieParser());
   app.use(requestIdMiddleware);
 
+  // Health probes — montées AVANT session / rate-limit / CSRF.
+  //  - /health/live : liveness, zéro dépendance infra (le store de session peut
+  //    être Redis ; monter ici garantit que la liveness ne dépend de rien).
+  //  - /health/ready : readiness (DB dure, Redis/storage souples), timeouts courts.
+  //  - /health : compat héritée ({ status: 'ok' }).
+  // Jamais rate-limitées (un LB poll fréquemment), jamais mises en cache.
+  app.use('/health', healthRouter);
+
   // Trust proxy configuration - more secure than 'true'
   // In dev, trust localhost. In prod, trust only known proxy IPs or use number of hops
   if (process.env.NODE_ENV === 'production') {
@@ -418,9 +427,8 @@ export function createApp() {
     });
   }
 
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok' });
-  });
+  // (Health probes /health, /health/live, /health/ready sont montées plus haut,
+  //  avant session/rate-limit/CSRF — voir createApp() début.)
 
   // CSRF token endpoint (GET requests are not protected)
   app.get('/csrf-token', getCSRFToken);
