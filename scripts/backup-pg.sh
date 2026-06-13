@@ -9,10 +9,11 @@
 #   BACKUP_MIN_BYTES      Taille minimale du dump compressé (défaut: 1024)
 #   BACKUP_RETENTION_DAYS Rétention en jours (défaut: 7)
 #   DC_PROJECT            Nom du projet docker compose (défaut: blobconnect-pre-vps)
-#   BACKUP_STATE_FILE     Chemin du fichier d'état JSON (défaut: $BACKUP_DIR/last-backup.json)
-#                         Monté en lecture seule dans le conteneur API pour la page
-#                         admin "État système". Ne contient AUCUN secret ni chemin
-#                         complet : { status, timestamp, sizeBytes, sha256?, durationMs,
+#   BACKUP_STATE_FILE     Chemin du fichier d'état JSON (défaut: /var/lib/blob/status/last-backup.json)
+#                         Dossier DÉDIÉ (jamais le dossier des dumps en 700), monté en
+#                         lecture seule dans le conteneur API pour la page admin "État
+#                         système". Fichier en 644 (métadonnée admin-safe, AUCUN secret) :
+#                         { status, timestamp, sizeBytes, sha256?, durationMs,
 #                         filename(basename), errorCode? }.
 #
 # Sortie : $BACKUP_DIR/blobconnect_prevps_YYYY-MM-DD_HHMMSS_UTC.sql.gz
@@ -66,6 +67,9 @@ _write_state() {
   now="$(ts)"
   dir="$(dirname "$STATE_FILE")"
   mkdir -p "$dir" 2>/dev/null || return 0
+  # Dossier d'état dédié, traversable par l'API (UID 1000) — best-effort.
+  # NB : ne JAMAIS pointer STATE_FILE dans le dossier des dumps (chmod 700).
+  chmod 755 "$dir" 2>/dev/null || true
   if [[ "$status" == "ok" ]]; then
     local dur_ms=0 now_ms
     now_ms="$(date +%s%3N 2>/dev/null || echo 0)"
@@ -79,7 +83,10 @@ _write_state() {
   fi
   tmp="${STATE_FILE}.tmp.$$"
   if printf '%s\n' "$json" > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATE_FILE" 2>/dev/null; then
-    chmod 600 "$STATE_FILE" 2>/dev/null || true
+    # 644 : métadonnée admin-safe SANS secret (≠ dumps en 600), lisible par l'API
+    # montée en lecture seule. Alternative durcie : 640 + groupe dédié partagé avec
+    # le conteneur API (coordination GID requise) — voir docs/ops/admin-system-status.md.
+    chmod 644 "$STATE_FILE" 2>/dev/null || true
   else
     rm -f "$tmp" 2>/dev/null || true
   fi
@@ -108,8 +115,9 @@ if [[ "$BACKUP_DIR_ABS" == "$REPO_ROOT_ABS"* ]]; then
        Utiliser un chemin hors du repo. Ex: BACKUP_DIR=/var/backups/blobconnect"
 fi
 
-# Fichier d'état : défaut dans BACKUP_DIR si non surchargé via BACKUP_STATE_FILE.
-[[ -n "$STATE_FILE" ]] || STATE_FILE="$BACKUP_DIR_ABS/last-backup.json"
+# Fichier d'état : dossier DÉDIÉ (jamais dans BACKUP_DIR en 700, non lisible par l'API).
+# Surchargeable via BACKUP_STATE_FILE. Monté en lecture seule dans le conteneur API.
+[[ -n "$STATE_FILE" ]] || STATE_FILE="/var/lib/blob/status/last-backup.json"
 
 # ─── Détecter le container postgres actif ────────────────────────────────────
 PG_CONTAINER=$(docker ps \

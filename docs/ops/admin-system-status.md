@@ -59,44 +59,33 @@ Le conteneur API tourne en **utilisateur `node` (UID 1000), non-root**
 ([docker/api.production.Dockerfile](../../docker/api.production.Dockerfile)). Le
 backup, lui, tourne **sur l'hôte** via cron (souvent `root` ou un user de déploiement).
 
-Par défaut, `backup-pg.sh` écrit `last-backup.json` en **`chmod 600`** (owner only)
-**à l'intérieur du dossier de dumps en `chmod 700`**. Tel quel, **UID 1000 ne peut
-PAS lire le fichier** → la carte backup afficherait `inconnu`. Le fichier d'état ne
-contient **aucun secret** (contrairement aux dumps `.sql.gz`), donc on peut le rendre
-lisible par l'API sans risque. Trois options, par ordre de préférence :
+**Implémenté (GAP-3)** : `backup-pg.sh` écrit `last-backup.json` dans un **dossier
+dédié** (`/var/lib/blob/status` par défaut, `755`, traversable par UID 1000), avec
+le fichier en **`644`** — métadonnée admin-safe **sans secret**, distincte des dumps
+`.sql.gz` qui restent isolés en `600`/`700`. Le dossier est monté **lecture seule**
+dans le conteneur API (`docker-compose.{vps,blobsurf}.yml`).
 
-1. **Dossier d'état dédié + montage RO** (recommandé) — sortir le fichier d'état du
-   dossier 700 des dumps :
-   ```bash
-   # hôte
-   install -d -m 755 /var/lib/blob/status
-   # cron : BACKUP_STATE_FILE=/var/lib/blob/status/last-backup.json
-   ```
-   ```yaml
-   # docker-compose.vps.yml — service api
-   volumes:
-     - /var/lib/blob/status/last-backup.json:/var/backups/blob/last-backup.json:ro
-   ```
-   Le fichier reste métadonnée non sensible ; le dossier `755` est traversable par
-   UID 1000, les dumps `.sql.gz` restent isolés en `700`.
+```bash
+# hôte VPS — une seule fois
+install -d -m 755 /var/lib/blob/status
+# cron backup : BACKUP_STATE_FILE=/var/lib/blob/status/last-backup.json
+```
+```yaml
+# docker-compose.vps.yml — service api (déjà ajouté)
+volumes:
+  - /var/lib/blob/status:/var/lib/blob/status:ro
+```
 
-2. **`640` + groupe dédié** — si tu veux garder l'état dans le dossier des dumps :
-   créer un groupe `blobstatus`, `chgrp blobstatus last-backup.json && chmod 640`,
-   et faire tourner le conteneur API avec ce **GID** en groupe supplémentaire
-   (`group_add: ["<gid_blobstatus>"]` dans compose). Plus de coordination GID, mais
-   les dumps peuvent rester co-localisés. **Ne pas appliquer sans valider le GID en prod.**
-
-3. **Même UID** — faire écrire le cron par UID 1000. Fragile, déconseillé.
-
-> Le script conserve volontairement `chmod 600` (défaut sûr, cohérent avec les dumps).
-> Le choix d'assouplissement (option 1 ou 2) est une **décision ops** à acter sur VPS ;
-> aucun changement de permissions n'est imposé par le code.
+**Alternative durcie (least-privilege)** — si tu préfères ne pas laisser le fichier
+en `644` : `640` + groupe dédié `blobstatus`, et le conteneur API lancé avec ce **GID**
+en groupe supplémentaire (`group_add: ["<gid>"]`). Coordination GID requise ;
+**ne pas appliquer sans valider le GID en prod**. Le code n'impose pas ce durcissement.
 
 ## Variables d'environnement
 
 | Variable | Défaut | Rôle |
 |----------|--------|------|
-| `BACKUP_STATE_FILE` | `/var/backups/blob/last-backup.json` | Chemin du JSON d'état (côté script ET côté API, identiques via montage RO) |
+| `BACKUP_STATE_FILE` | `/var/lib/blob/status/last-backup.json` | Chemin du JSON d'état (côté script ET côté API, identiques via montage RO) |
 | `BACKUP_STATE_MAX_BYTES` | `4096` | Taille max lue (borné 256–65536) |
 | `BACKUP_MAX_AGE_WARN_HOURS` | `26` | Seuil WARN d'âge backup |
 | `BACKUP_MAX_AGE_CRITICAL_HOURS` | `50` | Seuil CRITICAL d'âge backup |
@@ -127,5 +116,5 @@ NODE_ENV=test pnpm --filter @blobinfini/api exec jest --testPathPatterns "system
 
 - Pas d'historique/tendance : photo instantanée. L'historique d'incidents vit
   dans les alertes (`/admin/alerts`).
-- La création d'alertes automatiques sur backup absent/échoué (SystemAlert +
-  notification) **n'est pas** dans ce périmètre — c'est GAP-3.
+- La surveillance automatique du backup (absent/échoué/obsolète → SystemAlert +
+  email) est gérée par le job cron — voir [system-alerts.md](./system-alerts.md).
