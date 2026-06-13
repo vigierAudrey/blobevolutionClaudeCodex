@@ -9,6 +9,11 @@
 #   BACKUP_MIN_BYTES      Taille minimale du dump compressé (défaut: 1024)
 #   BACKUP_RETENTION_DAYS Rétention en jours (défaut: 7)
 #   DC_PROJECT            Nom du projet docker compose (défaut: blobconnect-pre-vps)
+#   BACKUP_STATE_FILE     Chemin du fichier d'état JSON (défaut: $BACKUP_DIR/last-backup.json)
+#                         Monté en lecture seule dans le conteneur API pour la page
+#                         admin "État système". Ne contient AUCUN secret ni chemin
+#                         complet : { status, timestamp, sizeBytes, sha256?, durationMs,
+#                         filename(basename), errorCode? }.
 #
 # Sortie : $BACKUP_DIR/blobconnect_prevps_YYYY-MM-DD_HHMMSS_UTC.sql.gz
 #
@@ -17,6 +22,15 @@
 # BACKUP_DIR dans le repo git est refusé.
 
 set -euo pipefail
+
+# Horodatage de départ (ms) pour calculer la durée du backup.
+START_MS="$(date +%s%3N 2>/dev/null || echo 0)"
+# Fichier d'état JSON (peut être surchargé ; défaut calculé après BACKUP_DIR_ABS).
+STATE_FILE="${BACKUP_STATE_FILE:-}"
+# Variables remplies au fil de l'exécution, lues par _write_state.
+BACKUP_FILE=""
+BACKUP_SIZE=""
+SHA256=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -42,6 +56,35 @@ ts()  { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 log() { echo "$(ts) [backup] $*"; }
 die() { echo "$(ts) [backup] ERREUR FATALE: $*" >&2; exit 1; }
 
+# Écrit le fichier d'état JSON (admin-safe) de manière atomique.
+# Usage : _write_state ok | _write_state failed [ERROR_CODE]
+# N'expose JAMAIS : mot de passe, chemin complet, host, stack trace.
+_write_state() {
+  local status="$1" err="${2:-BACKUP_FAILED}"
+  [[ -n "$STATE_FILE" ]] || return 0
+  local now dir tmp json sha_field=""
+  now="$(ts)"
+  dir="$(dirname "$STATE_FILE")"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  if [[ "$status" == "ok" ]]; then
+    local dur_ms=0 now_ms
+    now_ms="$(date +%s%3N 2>/dev/null || echo 0)"
+    if [[ "$START_MS" =~ ^[0-9]+$ && "$now_ms" =~ ^[0-9]+$ && "$now_ms" -ge "$START_MS" ]]; then
+      dur_ms=$(( now_ms - START_MS ))
+    fi
+    [[ -n "$SHA256" ]] && sha_field=",\"sha256\":\"${SHA256}\""
+    json="{\"status\":\"ok\",\"timestamp\":\"${now}\",\"sizeBytes\":${BACKUP_SIZE:-0},\"durationMs\":${dur_ms}${sha_field},\"filename\":\"$(basename "${BACKUP_FILE:-unknown}")\"}"
+  else
+    json="{\"status\":\"failed\",\"timestamp\":\"${now}\",\"errorCode\":\"${err}\"}"
+  fi
+  tmp="${STATE_FILE}.tmp.$$"
+  if printf '%s\n' "$json" > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATE_FILE" 2>/dev/null; then
+    chmod 600 "$STATE_FILE" 2>/dev/null || true
+  else
+    rm -f "$tmp" 2>/dev/null || true
+  fi
+}
+
 log "=== Backup PostgreSQL pré-VPS BlobConnect ==="
 
 # ─── Environnement ────────────────────────────────────────────────────────────
@@ -64,6 +107,9 @@ if [[ "$BACKUP_DIR_ABS" == "$REPO_ROOT_ABS"* ]]; then
   die "SÉCURITÉ: BACKUP_DIR ($BACKUP_DIR_ABS) est dans le repo git.
        Utiliser un chemin hors du repo. Ex: BACKUP_DIR=/var/backups/blobconnect"
 fi
+
+# Fichier d'état : défaut dans BACKUP_DIR si non surchargé via BACKUP_STATE_FILE.
+[[ -n "$STATE_FILE" ]] || STATE_FILE="$BACKUP_DIR_ABS/last-backup.json"
 
 # ─── Détecter le container postgres actif ────────────────────────────────────
 PG_CONTAINER=$(docker ps \
@@ -93,7 +139,11 @@ _cleanup() {
   local code=$?
   [[ -f "$BACKUP_TEMP" ]] && rm -f "$BACKUP_TEMP"
   docker exec "$PG_CONTAINER" rm -f "$PGPASS_IN_CONTAINER" 2>/dev/null || true
-  [[ $code -ne 0 ]] && log "Sortie sur erreur (code: $code)"
+  if [[ $code -ne 0 ]]; then
+    log "Sortie sur erreur (code: $code)"
+    # Trace l'échec dans le fichier d'état (consommé par la page admin "État système").
+    _write_state failed "BACKUP_FAILED"
+  fi
 }
 trap _cleanup EXIT
 
@@ -153,6 +203,13 @@ log "Validation: ${BACKUP_SIZE} bytes, gzip OK"
 mv "$BACKUP_TEMP" "$BACKUP_FILE"
 chmod 600 "$BACKUP_FILE"
 
+# Checksum SHA256 (optionnel — si l'outil est disponible).
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA256="$(sha256sum "$BACKUP_FILE" | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  SHA256="$(shasum -a 256 "$BACKUP_FILE" | awk '{print $1}')"
+fi
+
 log "Backup: $(basename "$BACKUP_FILE") ($(stat -c '%a %U:%G' "$BACKUP_FILE"))"
 
 # ─── Rotation 7 jours ─────────────────────────────────────────────────────────
@@ -167,10 +224,14 @@ done < <(find "$BACKUP_DIR_ABS" -maxdepth 1 \
 
 REMAINING=$(find "$BACKUP_DIR_ABS" -maxdepth 1 -name "${BACKUP_PREFIX}_*.sql.gz" | wc -l)
 
+# ─── État JSON (succès) — consommé par la page admin "État système" ──────────
+_write_state ok
+
 log "=== Backup terminé avec succès ==="
 log "  Fichier   : $BACKUP_FILE"
 log "  Taille    : ${BACKUP_SIZE} bytes"
 log "  Conservés : $REMAINING (rotation: $DELETED supprimé(s))"
+log "  État      : $STATE_FILE"
 log "  Valider   : ./scripts/restore-blobsurf.sh $BACKUP_FILE  # (ou restore-pg.sh pour pre-vps)"
 
 trap - EXIT

@@ -117,6 +117,44 @@ export interface SecurityHealth {
   };
 }
 
+// GAP-2 — Cockpit "État système" admin. Statuts uniquement, jamais de chemin/secret.
+export type SystemHealthLevel = 'ok' | 'warn' | 'critical' | 'unknown';
+
+export interface SystemStatus {
+  generatedAt: string;
+  readiness: {
+    status: 'ok' | 'degraded' | 'critical';
+    checks: {
+      database: 'ok' | 'degraded' | 'critical';
+      redis: 'ok' | 'degraded' | 'critical' | 'not_configured';
+      storage: 'ok' | 'degraded' | 'critical' | 'not_configured';
+    };
+    timestamp: string;
+  };
+  backup: {
+    state: 'ok' | 'failed' | 'unknown';
+    health: SystemHealthLevel;
+    lastBackupAt: string | null;
+    ageSeconds: number | null;
+    sizeBytes: number | null;
+    sizeHuman: string | null;
+    hasChecksum: boolean;
+    durationMs: number | null;
+    filename: string | null;
+    errorCode: string | null;
+    message: string;
+  };
+  disk: {
+    health: SystemHealthLevel;
+    usedPercent: number | null;
+    totalBytes: number | null;
+    freeBytes: number | null;
+    message: string;
+  };
+  version: { commit: string; deployedAt: string | null };
+  alerts: { open: number; criticalOpen: number };
+}
+
 export interface SecurityObservability {
   status: 'healthy' | 'degraded' | 'failing';
   timestamp: string;
@@ -1375,6 +1413,7 @@ export const apiClient = {
 
   // Admin
   getSecurityHealth: () => request('/security/health', { method: 'GET' }, true) as Promise<SecurityHealth>,
+  getSystemStatus: () => request('/admin/system-status', { method: 'GET' }, true) as Promise<SystemStatus>,
   getSecurityObservability: () =>
     request('/security/observability', { method: 'GET' }, true) as Promise<SecurityObservability>,
   getGDPRReport: () => request('/admin/gdpr/compliance-report', { method: 'GET' }, true) as Promise<GDPRReport>,

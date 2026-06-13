@@ -89,7 +89,7 @@ NODE_ENV=test pnpm --filter @blobinfini/api exec jest --testPathPatterns "module
 | Symptôme | Cause probable | Action |
 |----------|----------------|--------|
 | `/health/live` ne répond pas | process API mort / port non exposé | `docker compose logs api` ; redémarrer le conteneur |
-| `/health/ready` = `503` (`database: critical`) | Postgres down / réseau / pool saturé | voir [restore](./backups.md) si corruption ; sinon vérifier le conteneur postgres et `pg_isready` |
+| `/health/ready` = `503` (`database: critical`) | Postgres down / réseau / pool saturé | voir [restore-pg.sh](../../scripts/restore-pg.sh) si corruption ; sinon vérifier le conteneur postgres et `pg_isready` |
 | `database: degraded` (timeout) | DB lente / surcharge | vérifier la charge, les requêtes longues, `HEALTH_CHECK_TIMEOUT_MS` |
 | `redis: degraded` | Redis down | l'app continue (fallback mémoire pour rate-limit) ; restaurer Redis sans urgence bloquante |
 | `storage: degraded` | MinIO/S3 down | les uploads médias échouent ; le cœur (auth/matching/messagerie) reste servi |
