@@ -7,7 +7,8 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { apiClient } from '../../../lib/apiClient';
+import { AdminStepUpDialog } from '../../../components/admin/AdminStepUpDialog';
+import { apiClient, isAdminStepUpRequiredError } from '../../../lib/apiClient';
 import { ArrowLeft, Shield, ShieldOff, CheckCircle, XCircle, User, Crown, Briefcase } from 'lucide-react';
 import Link from 'next/link';
 
@@ -51,6 +52,30 @@ type AdminUsersResponse = {
   pagination?: { totalPages: number };
 };
 
+type PendingVerifyAction = {
+  user: User;
+  verified: boolean;
+};
+
+function getVerifyProErrorMessage(error: unknown): string {
+  const apiError = error as { body?: { error?: unknown; message?: unknown }; message?: unknown } | null;
+  const rawMessage = typeof apiError?.body?.message === 'string'
+    ? apiError.body.message
+    : typeof apiError?.message === 'string'
+      ? apiError.message
+      : '';
+
+  if (apiError?.body?.error === 'Missing pro location' || rawMessage.includes('géolocalisation')) {
+    return 'Profil pro incomplet — géolocalisation requise';
+  }
+
+  if (isAdminStepUpRequiredError(error)) {
+    return 'Confirmation admin requise pour valider ce profil pro.';
+  }
+
+  return rawMessage || 'Erreur lors de la validation pro';
+}
+
 export default function AdminUsers() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
@@ -60,6 +85,8 @@ export default function AdminUsers() {
   const [totalPages, setTotalPages] = useState(1);
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [pendingVerifyAction, setPendingVerifyAction] = useState<PendingVerifyAction | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -117,22 +144,37 @@ export default function AdminUsers() {
     }
   };
 
-  const handleVerifyPro = async (user: User) => {
+  const runVerifyPro = async (user: User, verified: boolean, options: { promptStepUp: boolean }) => {
     if (!user.proProfile) return;
 
-    const verified = !user.proProfile.verified;
     const actionKey = `verify-${user.id}`;
 
     setActionLoading(prev => ({ ...prev, [actionKey]: true }));
     try {
       await apiClient.verifyPro(user.id, verified);
+      setPendingVerifyAction(null);
+      setError(null);
       await loadUsers(); // Reload the list
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      setError(message || 'Erreur lors de la vérification');
+      if (options.promptStepUp && isAdminStepUpRequiredError(err)) {
+        setPendingVerifyAction({ user, verified });
+        setStepUpOpen(true);
+      }
+      setError(getVerifyProErrorMessage(err));
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }
+  };
+
+  const handleVerifyPro = async (user: User) => {
+    if (!user.proProfile) return;
+
+    await runVerifyPro(user, !user.proProfile.verified, { promptStepUp: true });
+  };
+
+  const handleStepUpConfirmed = async () => {
+    if (!pendingVerifyAction) return;
+    await runVerifyPro(pendingVerifyAction.user, pendingVerifyAction.verified, { promptStepUp: false });
   };
 
   const getDisplayName = (user: User) => {
@@ -163,8 +205,8 @@ export default function AdminUsers() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <Link href="/admin/dashboard">
             <Button variant="outline" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -172,7 +214,7 @@ export default function AdminUsers() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-3xl font-bold">Gestion des utilisateurs</h1>
+            <h1 className="text-2xl font-bold sm:text-3xl">Gestion des utilisateurs</h1>
             <p className="text-muted-foreground">
               Administration des comptes utilisateurs
             </p>
@@ -186,7 +228,7 @@ export default function AdminUsers() {
           <CardTitle>Filtres</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant={roleFilter === '' ? 'default' : 'outline'}
               size="sm"
@@ -235,23 +277,26 @@ export default function AdminUsers() {
           <CardDescription>
             {users.length} utilisateur{users.length > 1 ? 's' : ''} trouvé{users.length > 1 ? 's' : ''}
           </CardDescription>
+          <p className="text-sm text-muted-foreground">
+            La validation pro est une validation manuelle du profil professionnel, distincte de la vérification email.
+          </p>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {users.map((user) => (
               <div key={user.id} className="border rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-start gap-2">
                       {getRoleIcon(user.role)}
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{getDisplayName(user)}</span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="break-words font-medium">{getDisplayName(user)}</span>
                           {getRoleBadge(user.role)}
                           {user.role === 'PRO' && user.proProfile?.verified && (
                             <Badge variant="default" className="text-xs">
                               <CheckCircle className="h-3 w-3 mr-1" />
-                              Vérifié
+                              Pro validé
                             </Badge>
                           )}
                           {user.deletedAt && (
@@ -265,7 +310,7 @@ export default function AdminUsers() {
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground">{user.email}</p>
+                        <p className="break-all text-sm text-muted-foreground">{user.email}</p>
                         <p className="text-xs text-muted-foreground">
                           Inscrit le {formatDate(user.createdAt)}
                         </p>
@@ -273,7 +318,7 @@ export default function AdminUsers() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center md:justify-end">
                     {/* Actions suspension */}
                     {user.role !== 'ADMIN' && (
                       <Button
@@ -281,6 +326,7 @@ export default function AdminUsers() {
                         size="sm"
                         onClick={() => handleSuspend(user)}
                         disabled={actionLoading[`suspend-${user.id}`]}
+                        className="w-full sm:w-auto"
                       >
                         {actionLoading[`suspend-${user.id}`] ? (
                           '...'
@@ -305,18 +351,19 @@ export default function AdminUsers() {
                         size="sm"
                         onClick={() => handleVerifyPro(user)}
                         disabled={actionLoading[`verify-${user.id}`]}
+                        className="w-full sm:w-auto"
                       >
                         {actionLoading[`verify-${user.id}`] ? (
                           '...'
                         ) : user.proProfile.verified ? (
                           <>
                             <XCircle className="h-4 w-4 mr-1" />
-                            Retirer vérification
+                            Retirer validation pro
                           </>
                         ) : (
                           <>
                             <CheckCircle className="h-4 w-4 mr-1" />
-                            Vérifier
+                            Valider profil pro
                           </>
                         )}
                       </Button>
@@ -363,6 +410,12 @@ export default function AdminUsers() {
           </CardContent>
         </Card>
       )}
+
+      <AdminStepUpDialog
+        open={stepUpOpen}
+        onOpenChange={setStepUpOpen}
+        onConfirmed={handleStepUpConfirmed}
+      />
     </div>
   );
 }

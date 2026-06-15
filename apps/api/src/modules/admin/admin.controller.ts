@@ -550,11 +550,29 @@ adminRouter.patch(
 
     const existingProfile = await prisma.proProfile.findUnique({
       where: { userId },
-      select: { id: true, lat: true, lng: true, verifiedAt: true },
+      select: {
+        id: true,
+        lat: true,
+        lng: true,
+        verifiedAt: true,
+        user: {
+          select: {
+            role: true,
+            deletedAt: true,
+          },
+        },
+      },
     });
 
     if (!existingProfile) {
       return res.status(404).json({ error: 'Pro profile not found' });
+    }
+
+    if (existingProfile.user.role !== 'PRO' || existingProfile.user.deletedAt) {
+      return res.status(400).json({
+        error: 'Invalid pro account',
+        message: 'Le compte associé doit être un professionnel actif.',
+      });
     }
 
     if (verified && (existingProfile.lat == null || existingProfile.lng == null)) {
