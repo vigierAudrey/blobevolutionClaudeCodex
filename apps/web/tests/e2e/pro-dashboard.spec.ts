@@ -19,7 +19,7 @@ test.describe('Pro Dashboard', () => {
 
     // Wait for auth + async data load — heading only appears after me() resolves
     await expect(
-      page.locator('h1, h2').filter({ hasText: /dashboard|tableau.*bord/i }).first(),
+      page.getByRole('heading', { level: 1, name: /espace pro/i }),
     ).toBeVisible({ timeout: 10_000 });
 
     // At least one section keyword must be visible after data loads
@@ -43,14 +43,12 @@ test.describe('Pro Dashboard', () => {
     await page.goto('/pro/dashboard');
     await expect(page).toHaveURL(/\/pro\/dashboard/);
 
-    // Wait for async data load before asserting section presence
-    const bookingsSection = page.locator(
-      'text=/réservations|bookings|demandes|requests/i',
-    );
-    await expect
-      .poll(() => bookingsSection.count(), { timeout: 10_000 })
-      .toBeGreaterThan(0);
-    await expect(bookingsSection.first()).toBeVisible();
+    // Le hub expose une carte "Demandes" (→ /pro/contact-requests) : c'est le
+    // contrat réel. On cible son heading exact (h3 "Demandes") — `name` exact
+    // pour ne pas matcher le h2 "Pilote tes demandes" ni la nav responsive masquée.
+    await expect(
+      page.getByRole('heading', { name: 'Demandes', exact: true }),
+    ).toBeVisible({ timeout: 10_000 });
 
     await context.close();
   });
@@ -67,16 +65,14 @@ test.describe('Pro Dashboard', () => {
 
     // Wait for the dashboard to finish loading (h1 only appears after me() resolves)
     await expect(
-      page.locator('h1, h2').filter({ hasText: /dashboard|tableau.*bord/i }).first(),
+      page.getByRole('heading', { level: 1, name: /espace pro/i }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // The dashboard renders "Messages" and "Profil Pro" links inside card wrappers.
-    // Use href-based locators: more stable than accessible-name on complex card links.
-    const messagesLink = page.locator('a[href="/pro/messages"]');
-    const profileLink = page.locator('a[href="/pro/profile"]');
-
-    // At least one navigation card link must be present
-    await expect(messagesLink.or(profileLink).first()).toBeVisible({ timeout: 10_000 });
+    // Section "Actions rapides" (cartes de navigation du hub). On vise le heading
+    // de section : stable, en contenu, sans ambiguïté avec la nav latérale dupliquée.
+    await expect(
+      page.getByRole('heading', { name: /actions rapides/i }),
+    ).toBeVisible({ timeout: 10_000 });
 
     await context.close();
   });
@@ -94,10 +90,15 @@ test.describe('Pro Dashboard', () => {
     await expect(page).toHaveURL(/\/pro\/dashboard/);
 
     await expect(
-      page.locator('h1, h2').filter({ hasText: /dashboard|tableau.*bord/i }).first(),
+      page.getByRole('heading', { level: 1, name: /espace pro/i }),
     ).toBeVisible({ timeout: 10_000 });
 
-    await expect(page.locator('a[href="/pro/map"]')).toBeVisible({ timeout: 10_000 });
+    // La carte BloboMap est un lien vers /pro/map dont le nom accessible contient
+    // "BloboMap" — sans ambiguïté avec le lien de nav "Carte" (même href). Préserve
+    // le contrat "le lien /pro/map doit être présent" tout en restant robuste.
+    await expect(
+      page.getByRole('link', { name: /blobomap/i }),
+    ).toBeVisible({ timeout: 10_000 });
 
     await context.close();
   });
@@ -133,7 +134,7 @@ test.describe('Pro Dashboard', () => {
 
     // No offers link anymore — verify dashboard still renders without crash
     await expect(
-      page.locator('h1, h2').filter({ hasText: /dashboard|tableau.*bord/i }).first(),
+      page.getByRole('heading', { level: 1, name: /espace pro/i }),
     ).toBeVisible({ timeout: 10_000 });
 
     await context.close();
