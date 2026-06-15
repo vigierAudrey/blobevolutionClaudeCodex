@@ -174,6 +174,19 @@ export interface SecurityObservability {
  */
 export type TwoFactorChallengeResponse = { requires2FA: true; userId: string; message: string };
 export type LoginResponse = { ok: true } | TwoFactorChallengeResponse;
+export type AdminStepUpSendResponse = { message: string };
+export type AdminStepUpVerifyResponse = { message: string; stepUpUntil: number };
+
+export function isAdminStepUpRequiredError(error: unknown): boolean {
+  const apiError = error as { status?: number; body?: { error?: unknown }; message?: unknown } | null;
+  return (
+    apiError?.status === 403 &&
+    (
+      apiError.body?.error === 'Step-up authentication required' ||
+      apiError.message === 'Step-up authentication required'
+    )
+  );
+}
 
 export type AdminAnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
 
@@ -1167,6 +1180,12 @@ export const apiClient = {
 
   verifyPro2FA: (email: string, code: string) =>
     request('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ email, code }) }) as Promise<{ ok: true; message: string }>,
+
+  requestAdminStepUp: () =>
+    request('/auth/step-up', { method: 'POST', body: JSON.stringify({ intent: 'send' }) }, true) as Promise<AdminStepUpSendResponse>,
+
+  verifyAdminStepUp: (code: string) =>
+    request('/auth/step-up', { method: 'POST', body: JSON.stringify({ intent: 'verify', code }) }, true) as Promise<AdminStepUpVerifyResponse>,
 
   getProfile: () => request('/profile/me', { method: 'GET' }, true),
   getProProfile: () => request('/pro/me/preview', { method: 'GET' }, true),

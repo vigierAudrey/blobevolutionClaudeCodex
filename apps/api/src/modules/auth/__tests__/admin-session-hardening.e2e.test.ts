@@ -5,6 +5,7 @@ import { cacheService } from '../../../services/cache.service';
 import { twoFactorService } from '../../../services/two-factor.service';
 import { gdprPurgeService } from '../../../services/gdpr-purge.service';
 import {
+  createTestSession,
   getAccessToken,
   getOrCreateUserByEmail,
   readCookieValue,
@@ -228,6 +229,31 @@ async function createRiderTarget(prefix: string, emailsToCleanup: Set<string>): 
   return user.id;
 }
 
+async function createProTarget(
+  prefix: string,
+  emailsToCleanup: Set<string>,
+  location: { lat: number | null; lng: number | null } = { lat: 43.5, lng: -1.5 },
+): Promise<string> {
+  const email = uniqueEmail(prefix);
+  emailsToCleanup.add(email);
+  const user = await getOrCreateUserByEmail({
+    email,
+    password: TEST_PASSWORD,
+    role: Role.PRO,
+    emailVerified: true,
+  });
+  await prisma.proProfile.create({
+    data: {
+      userId: user.id,
+      businessName: 'Step-up Pro',
+      lat: location.lat,
+      lng: location.lng,
+      verified: false,
+    },
+  });
+  return user.id;
+}
+
 async function grantAdminStepUp(auth: LoggedAdmin): Promise<void> {
   const response = await auth.session
     .post('/auth/step-up')
@@ -243,6 +269,18 @@ function postSensitiveAdminRoute(auth: LoggedAdmin, targetUserId: string, access
     .patch(`/admin/users/${targetUserId}/suspend`)
     .set('Authorization', `Bearer ${accessToken}`)
     .send({ suspended: true });
+}
+
+function patchVerifyProRoute(
+  auth: Pick<LoggedAdmin, 'accessToken' | 'session'>,
+  targetUserId: string,
+  verified = true,
+  accessToken = auth.accessToken,
+) {
+  return auth.session
+    .patch(`/admin/pros/${targetUserId}/verify`)
+    .set('Authorization', `Bearer ${accessToken}`)
+    .send({ verified });
 }
 
 describe('Admin step-up session-bound hostile hardening', () => {
@@ -433,6 +471,91 @@ describe('Admin step-up session-bound hostile hardening', () => {
 
     const denied = await postSensitiveAdminRoute(auth, targetUserId).expect(403);
     expect(denied.body.error).toBe('Step-up authentication required');
+  });
+
+  it('validation pro exige une step-up puis ne modifie pas emailVerified', async () => {
+    const email = uniqueEmail('admin-step-up-pro-verify');
+    emailsToCleanup.add(email);
+
+    const auth = await loginAdmin(appA, email);
+    const targetUserId = await createProTarget('admin-step-up-pro-target', emailsToCleanup);
+
+    const denied = await patchVerifyProRoute(auth, targetUserId).expect(403);
+    expect(denied.body.error).toBe('Step-up authentication required');
+
+    await grantAdminStepUp(auth);
+    const verified = await patchVerifyProRoute(auth, targetUserId).expect(200);
+    expect(verified.body).toMatchObject({ verified: true });
+
+    const user = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { emailVerified: true, proProfile: { select: { verified: true, verifiedAt: true } } },
+    });
+    expect(user?.emailVerified).toBe(true);
+    expect(user?.proProfile?.verified).toBe(true);
+    expect(user?.proProfile?.verifiedAt).toBeTruthy();
+  });
+
+  it('validation pro refuse rider, pro, anonyme et profil incohérent', async () => {
+    const adminEmail = uniqueEmail('admin-step-up-pro-authz');
+    const riderEmail = uniqueEmail('admin-step-up-rider-authz');
+    const proEmail = uniqueEmail('admin-step-up-pro-authz-user');
+    emailsToCleanup.add(adminEmail);
+    emailsToCleanup.add(riderEmail);
+    emailsToCleanup.add(proEmail);
+
+    const adminAuth = await loginAdmin(appA, adminEmail);
+    const targetUserId = await createProTarget('admin-step-up-pro-authz-target', emailsToCleanup);
+    const riderAuth = await getAccessToken({
+      app: appA,
+      email: riderEmail,
+      password: TEST_PASSWORD,
+      role: Role.RIDER,
+      emailVerified: true,
+    });
+    const proAuth = await getAccessToken({
+      app: appA,
+      email: proEmail,
+      password: TEST_PASSWORD,
+      role: Role.PRO,
+      emailVerified: true,
+    });
+
+    await patchVerifyProRoute(riderAuth, targetUserId).expect(403);
+    await patchVerifyProRoute(proAuth, targetUserId).expect(403);
+
+    const anonymous = await createTestSession(appA);
+    await anonymous
+      .patch(`/admin/pros/${targetUserId}/verify`)
+      .send({ verified: true })
+      .expect(401);
+
+    const incoherentUserId = await createRiderTarget('admin-step-up-incoherent-target', emailsToCleanup);
+    await prisma.proProfile.create({
+      data: {
+        userId: incoherentUserId,
+        businessName: 'Incoherent Rider ProProfile',
+        lat: 43.5,
+        lng: -1.5,
+      },
+    });
+
+    await grantAdminStepUp(adminAuth);
+    const rejected = await patchVerifyProRoute(adminAuth, incoherentUserId).expect(400);
+    expect(rejected.body.error).toBe('Invalid pro account');
+  });
+
+  it('validation pro avec step-up refuse un profil sans géolocalisation', async () => {
+    const email = uniqueEmail('admin-step-up-pro-location');
+    emailsToCleanup.add(email);
+
+    const auth = await loginAdmin(appA, email);
+    const targetUserId = await createProTarget('admin-step-up-pro-no-location', emailsToCleanup, { lat: null, lng: null });
+
+    await grantAdminStepUp(auth);
+    const rejected = await patchVerifyProRoute(auth, targetUserId).expect(400);
+    expect(rejected.body.error).toBe('Missing pro location');
+    expect(rejected.body.message).toBe('La géolocalisation est requise pour rendre un profil pro visible.');
   });
 
   it('route admin moins sensible sans preuve -> comportement documenté', async () => {
