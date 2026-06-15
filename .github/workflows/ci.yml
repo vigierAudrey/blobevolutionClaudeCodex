@@ -133,6 +133,12 @@ jobs:
       - name: Enforce DB push guardrails
         run: bash scripts/no-unsafe-db-push-check.sh
 
+      - name: Restore drill guardrails (static — no DB)
+        run: bash scripts/check-restore-scripts.sh
+
+      - name: Restore drill refusal tests (no DB)
+        run: bash scripts/test-restore-drill-guards.sh
+
       - name: Verify /internal/metrics is not a stub
         run: bash scripts/check-metrics-not-stub.sh
 
