@@ -219,6 +219,10 @@ Contribution 2026-06-01 :
 - [x] Blobosphère : passe pré-publication SEO/UX, domaine canonique `blobsurf.com`, CTA article et contenus pilotes surf/kite/communauté sans exposition de spots sensibles.
 - [x] Blobosphère : audit final avant merge, fermeture des routes d'édition locales hors développement et choix Décap CMS/GitHub/CI comme voie officielle de publication.
 
+Contribution 2026-06-15 :
+
+- [x] Onboarding pros/admin : parcours step-up admin réutilisé pour valider un profil pro sans désactiver la sécurité, libellés distincts de la vérification email, garde-fou rôle `PRO` et tests API/Web ciblés.
+
 Contribution 2026-06-07 :
 
 - [x] Média rider privé : route authentifiée owner-only pour servir `users/*`, front converti vers cette route, tests anti-IDOR et conservation de `pros/*` public.
