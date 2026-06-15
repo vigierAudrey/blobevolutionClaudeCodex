@@ -613,10 +613,10 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
     }
   } else if (path.includes('/search') || path.includes('/matching')) {
     limiter = rateLimiters.search;
-  } else if (path.includes('/messages') || path.includes('/conversations')) {
-    limiter = rateLimiters.messaging;
   } else if (path.startsWith('/admin/')) {
     limiter = rateLimiters.admin;
+  } else if (path.includes('/messages') || path.includes('/conversations')) {
+    limiter = rateLimiters.messaging;
   } else if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     limiter = rateLimiters.apiStandard;
   } else {

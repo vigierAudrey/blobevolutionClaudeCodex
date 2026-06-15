@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic';
 
 // Interval de polling des alertes et de la santé système (ms)
 const POLL_INTERVAL_MS = 60_000;
+const ADMIN_INSIGHTS_ERROR_MESSAGE = 'Données temporairement indisponibles';
 
 type AdminUser = {
   email: string;
@@ -84,9 +85,8 @@ export default function AdminDashboard() {
       setBlockedConversations(blockedRes.blocked || []);
       setSecurityEvents(eventsRes.events || []);
       setSecuritySummary(summaryRes ?? null);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Impossible de charger les insights sécurité';
-      setInsightsError(message);
+    } catch {
+      setInsightsError(ADMIN_INSIGHTS_ERROR_MESSAGE);
     } finally {
       setInsightsLoading(false);
     }
