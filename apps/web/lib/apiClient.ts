@@ -188,6 +188,40 @@ export function isAdminStepUpRequiredError(error: unknown): boolean {
   );
 }
 
+function parseRetryAfterSeconds(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.ceil(value);
+  }
+  if (typeof value !== 'string' || value.trim() === '') {
+    return undefined;
+  }
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.ceil(numeric);
+  }
+
+  const asDate = Date.parse(value);
+  if (Number.isFinite(asDate)) {
+    return Math.max(1, Math.ceil((asDate - Date.now()) / 1000));
+  }
+
+  return undefined;
+}
+
+export function getApiRetryAfterSeconds(error: unknown): number | undefined {
+  const apiError = error as {
+    retryAfterSeconds?: unknown;
+    body?: { retryAfterSeconds?: unknown; retryAfter?: unknown };
+  } | null;
+
+  return (
+    parseRetryAfterSeconds(apiError?.retryAfterSeconds) ??
+    parseRetryAfterSeconds(apiError?.body?.retryAfterSeconds) ??
+    parseRetryAfterSeconds(apiError?.body?.retryAfter)
+  );
+}
+
 export type AdminAnalyticsPeriod = '7d' | '30d' | '90d' | '1y';
 
 export type PublicAnalyticsEventPayload =
@@ -1008,10 +1042,13 @@ async function request(
       cachedCsrfToken = null;
     }
     const message = data?.message || data?.error || `HTTP ${res.status}`;
-    type ApiError = Error & { details?: unknown; status?: number; body?: unknown };
+    type ApiError = Error & { details?: unknown; status?: number; body?: unknown; retryAfterSeconds?: number };
     const error: ApiError = new Error(message);
     error.status = res.status;
     error.body = data;
+    error.retryAfterSeconds = parseRetryAfterSeconds(res.headers.get('Retry-After')) ??
+      parseRetryAfterSeconds(data?.retryAfterSeconds) ??
+      parseRetryAfterSeconds(data?.retryAfter);
     // Passer les détails de validation s'ils existent
     if (data?.details) {
       error.details = data.details;

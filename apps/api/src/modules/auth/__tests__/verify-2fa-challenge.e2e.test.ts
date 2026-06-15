@@ -317,6 +317,40 @@ describe('Auth verify-2fa flow', () => {
     expect(res.status).toBe(400);
   });
 
+  it('verify-2fa reste limité par son limiter spécialisé avec Retry-After', async () => {
+    const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+    const invalidCode = String(Date.now()).slice(-6).padStart(6, '0');
+
+    try {
+      for (let i = 0; i < 10; i += 1) {
+        const res = await verify2FA(
+          app,
+          { challengeId: randomUUID(), code: invalidCode },
+          '203.0.113.200',
+        );
+        expect(res.status).toBe(401);
+      }
+
+      const blocked = await verify2FA(
+        app,
+        { challengeId: randomUUID(), code: invalidCode },
+        '203.0.113.200',
+      );
+
+      expect(blocked.status).toBe(429);
+      expect(blocked.body.error).toBe('TOO_MANY_2FA_ATTEMPTS');
+      expect(blocked.headers['retry-after']).toBeDefined();
+      expect(JSON.stringify(blocked.body)).not.toMatch(/token|secret/i);
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      } else {
+        process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+      }
+    }
+  });
+
   // Pas de session admin complète avant 2FA validée
   it('cookies admin_session absents tant que 2FA non validée', async () => {
     const admin = await createAdmin();

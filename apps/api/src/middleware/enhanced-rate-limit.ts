@@ -571,6 +571,14 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
   if (path === '/auth/2fa/send' && method === 'POST') {
     return next();
   }
+  // These routes have route-level controls or must remain available to end a session.
+  // Avoid charging them against the shared pre-auth IP bucket.
+  if (
+    method === 'POST' &&
+    (path === '/auth/step-up' || path === '/auth/verify-2fa' || path === '/auth/logout')
+  ) {
+    return next();
+  }
   if (path === '/conversations' && method === 'GET') {
     return next();
   }

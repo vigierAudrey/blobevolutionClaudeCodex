@@ -94,6 +94,57 @@ describe('Enhanced Rate Limiting', () => {
   });
 
   describe('Smart rate limit routing', () => {
+    it.each([
+      '/auth/step-up',
+      '/auth/verify-2fa',
+      '/auth/logout',
+    ])('should bypass the shared AUTH bucket for %s', (path) => {
+      const { rateLimiters, smartRateLimit } = loadRateLimitModule();
+      const savedAuth = rateLimiters.auth;
+      const authSpy = jest.fn((_req: unknown, _res: unknown, next: () => void) => next());
+      rateLimiters.auth = authSpy as typeof rateLimiters.auth;
+
+      const next = jest.fn();
+      const req = {
+        path,
+        method: 'POST',
+        canonicalIp: '203.0.113.10',
+        socket: { remoteAddress: '203.0.113.10' },
+        get: jest.fn(() => undefined),
+      };
+
+      try {
+        smartRateLimit(req as any, {} as any, next);
+        expect(next).toHaveBeenCalledTimes(1);
+        expect(authSpy).not.toHaveBeenCalled();
+      } finally {
+        rateLimiters.auth = savedAuth;
+      }
+    });
+
+    it('should keep other auth POST endpoints on the shared AUTH bucket', () => {
+      const { rateLimiters, smartRateLimit } = loadRateLimitModule();
+      const savedAuth = rateLimiters.auth;
+      const authSpy = jest.fn((_req: unknown, _res: unknown, next: () => void) => next());
+      rateLimiters.auth = authSpy as typeof rateLimiters.auth;
+
+      const next = jest.fn();
+      const req = {
+        path: '/auth/change-password',
+        method: 'POST',
+        canonicalIp: '203.0.113.11',
+        socket: { remoteAddress: '203.0.113.11' },
+        get: jest.fn(() => undefined),
+      };
+
+      try {
+        smartRateLimit(req as any, {} as any, next);
+        expect(authSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        rateLimiters.auth = savedAuth;
+      }
+    });
+
     it('should identify auth endpoints correctly', async () => {
       // Note: We don't change NODE_ENV as it would start background jobs
       // Rate limiting is enabled by default in our middleware
