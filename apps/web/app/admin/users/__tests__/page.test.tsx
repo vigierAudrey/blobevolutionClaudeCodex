@@ -20,6 +20,17 @@ jest.mock('@/lib/apiClient', () => ({
       (apiError.body?.error === 'Step-up authentication required' || apiError.message === 'Step-up authentication required')
     );
   },
+  getApiRetryAfterSeconds: (error: unknown) => {
+    const apiError = error as {
+      retryAfterSeconds?: unknown;
+      body?: { retryAfterSeconds?: unknown; retryAfter?: unknown };
+    } | null;
+    const raw = apiError?.retryAfterSeconds ?? apiError?.body?.retryAfterSeconds ?? apiError?.body?.retryAfter;
+    const numeric = typeof raw === 'string' ? Number(raw) : raw;
+    return typeof numeric === 'number' && Number.isFinite(numeric) && numeric > 0
+      ? Math.ceil(numeric)
+      : undefined;
+  },
 }));
 
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>;
@@ -90,6 +101,72 @@ describe('AdminUsers', () => {
     });
     expect(mockedApiClient.verifyPro).toHaveBeenNthCalledWith(1, 'pro-1', true);
     expect(mockedApiClient.verifyPro).toHaveBeenNthCalledWith(2, 'pro-1', true);
+  });
+
+  it('ouvre la modale avec un seul envoi automatique en StrictMode', async () => {
+    const user = userEvent.setup();
+    const stepUpError = Object.assign(new Error('Step-up authentication required'), {
+      status: 403,
+      body: { error: 'Step-up authentication required' },
+    });
+
+    mockedApiClient.verifyPro.mockRejectedValueOnce(stepUpError);
+
+    render(
+      <React.StrictMode>
+        <AdminUsers />
+      </React.StrictMode>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: /valider profil pro/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Confirmation admin requise' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockedApiClient.requestAdminStepUp).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('affiche un cooldown humain sur 429 et désactive le renvoi', async () => {
+    const user = userEvent.setup();
+    const stepUpError = Object.assign(new Error('Step-up authentication required'), {
+      status: 403,
+      body: { error: 'Step-up authentication required' },
+    });
+    const rateLimitError = Object.assign(new Error('AUTH_RATE_LIMIT_EXCEEDED'), {
+      status: 429,
+      retryAfterSeconds: 30,
+      body: { error: 'AUTH_RATE_LIMIT_EXCEEDED', retryAfterSeconds: '30' },
+    });
+
+    mockedApiClient.verifyPro.mockRejectedValueOnce(stepUpError);
+    mockedApiClient.requestAdminStepUp.mockRejectedValueOnce(rateLimitError);
+
+    render(<AdminUsers />);
+
+    await user.click(await screen.findByRole('button', { name: /valider profil pro/i }));
+
+    expect(await screen.findByText('Trop de tentatives. Réessaie dans 30 secondes.')).toBeInTheDocument();
+    expect(screen.queryByText('AUTH_RATE_LIMIT_EXCEEDED')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /renvoyer \(30s\)/i })).toBeDisabled();
+  });
+
+  it('ne confirme pas la step-up avec un code incomplet', async () => {
+    const user = userEvent.setup();
+    const stepUpError = Object.assign(new Error('Step-up authentication required'), {
+      status: 403,
+      body: { error: 'Step-up authentication required' },
+    });
+
+    mockedApiClient.verifyPro.mockRejectedValueOnce(stepUpError);
+
+    render(<AdminUsers />);
+
+    await user.click(await screen.findByRole('button', { name: /valider profil pro/i }));
+    await screen.findByRole('heading', { name: 'Confirmation admin requise' });
+    await user.type(screen.getByLabelText('Code 2FA admin'), '123');
+
+    expect(screen.getByRole('button', { name: 'Confirmer' })).toBeDisabled();
+    expect(mockedApiClient.verifyAdminStepUp).not.toHaveBeenCalled();
   });
 
   it('remplace le refus géolocalisation par un message métier court', async () => {
