@@ -9,6 +9,7 @@ Vue consolidée des sauvegardes : scripts, état admin, surveillance, restaurati
 | [`scripts/backup-pg.sh`](../../scripts/backup-pg.sh) | Dump PostgreSQL (pré-VPS), validation, rotation, écrit `last-backup.json` |
 | [`scripts/backup-blobsurf.sh`](../../scripts/backup-blobsurf.sh) | Variante stack blobsurf |
 | [`scripts/restore-pg.sh`](../../scripts/restore-pg.sh) | Restauration **dry-run** (container éphémère) — voir [restore-drill](./restore-drill.md) |
+| [`scripts/restore-postgres-drill.sh`](../../scripts/restore-postgres-drill.sh) | Restore drill vers une base **staging/temp désignée** (`RESTORE_TARGET_DATABASE_URL`), garde-fous anti-prod + `--verify` — voir [restore-drill](./restore-drill.md) |
 | [`scripts/backup-encrypt-upload.sh`](../../scripts/backup-encrypt-upload.sh) | Chiffrement age + upload R2 |
 
 Sécurité (déjà en place) : mot de passe via `.pgpass` éphémère (jamais en CLI/logs),
