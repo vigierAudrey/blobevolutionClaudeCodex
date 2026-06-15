@@ -168,6 +168,19 @@ describe('buildCsp', () => {
     expect(imgSrc).toContain('https://api.blobsurf.com');
   });
 
+  it('includes configured local API origin in img-src for private rider photos', () => {
+    process.env.NEXT_PUBLIC_API_URL = 'http://localhost:4020';
+    const imgSrc = directive(buildCsp('test'), 'img-src');
+    expect(imgSrc).toContain('http://localhost:4020');
+  });
+
+  it('does not encode direct users/* storage paths in img-src', () => {
+    process.env.NEXT_PUBLIC_API_URL = 'http://localhost:4020';
+    const imgSrc = directive(buildCsp('test'), 'img-src');
+    expect(imgSrc).not.toContain('/users/');
+    expect(imgSrc).not.toContain('users/*');
+  });
+
   it('does not use bare wildcard tokens in img-src', () => {
     const imgSrc = directive(buildCsp('test'), 'img-src');
     // Tokens are space-separated — match standalone '*', 'http:', 'https:' (not within a URL)
