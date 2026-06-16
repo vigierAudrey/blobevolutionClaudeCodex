@@ -17,8 +17,8 @@
 #   ./scripts/r2-restore-test.sh [--env-file PATH] [--backup-dir PATH]
 #   BACKUP_AGE_IDENTITY=/tmp/key ./scripts/r2-restore-test.sh  # test complet
 #
-# Cron recommandé (dimanche 5h30 UTC, après weekly-restore-test à 5h00) :
-#   30 5 * * 0 DC_PROJECT=blobconnect-blobsurf \
+# Cron recommandé (dimanche 5h30 UTC) :
+#   30 5 * * 0 DC_PROJECT=blobconnect-vps \
 #              ENV_FILE=/home/audrey/blob-app/.env.vps \
 #              /home/audrey/blob-app/scripts/r2-restore-test.sh \
 #              >> /home/audrey/backups/blobsurf/logs/r2-restore-test.log 2>&1
@@ -39,7 +39,7 @@ ENV_FILE="${ENV_FILE:-/home/audrey/blob-app/.env.vps}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/backups/blobsurf}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-r2-backups}"
 R2_BUCKET="${R2_BUCKET:-blobsurf-vps-backups}"
-DC_PROJECT="${DC_PROJECT:-blobconnect-blobsurf}"
+DC_PROJECT="${DC_PROJECT:-blobconnect-vps}"
 # Clé privée optionnelle — si présente, déchiffrement + dry-run restore complet
 BACKUP_AGE_IDENTITY="${BACKUP_AGE_IDENTITY:-}"
 

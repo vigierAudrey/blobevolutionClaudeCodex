@@ -13,9 +13,9 @@
 # Étapes :
 #   1. Valider le backup avec ce script (dry-run)
 #   2. Arrêter les services :
-#        docker compose -f docker-compose.blobsurf.yml stop api web caddy
+#        docker compose -f docker-compose.vps.yml stop api web caddy
 #   3. Identifier le container postgres :
-#        docker ps --filter "name=blobconnect-blobsurf-postgres"
+#        docker ps --filter "name=blobconnect-vps-postgres"
 #   4. Terminer les connexions actives :
 #        docker exec <container> psql -U <POSTGRES_USER> -d postgres \
 #          -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity \
@@ -28,9 +28,9 @@
 #        gunzip -c <backup.sql.gz> | \
 #          docker exec -i <container> psql -U <POSTGRES_USER> -d <POSTGRES_DB>
 #   7. Redémarrer :
-#        docker compose -f docker-compose.blobsurf.yml up -d api web caddy
+#        docker compose -f docker-compose.vps.yml up -d api web caddy
 #   8. Appliquer les migrations éventuellement manquantes :
-#        docker compose -f docker-compose.blobsurf.yml run --rm api \
+#        docker compose -f docker-compose.vps.yml run --rm api \
 #          sh -c "pnpm --filter @blobinfini/database exec prisma migrate deploy"
 #   9. Valider : ./scripts/smoke-test-vps.sh
 #

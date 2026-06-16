@@ -115,7 +115,7 @@ Audit sans modification :
 
 ```bash
 ENV_FILE=.env.vps \
-COMPOSE_FILE=docker-compose.blobsurf.yml \
+COMPOSE_FILE=docker-compose.vps.yml \
 scripts/minio-public-prefix-policy.sh --dry-run --prefix 'pros/*'
 ```
 
@@ -123,7 +123,7 @@ Application idempotente (prefixe pros/* seulement) :
 
 ```bash
 ENV_FILE=.env.vps \
-COMPOSE_FILE=docker-compose.blobsurf.yml \
+COMPOSE_FILE=docker-compose.vps.yml \
 scripts/minio-public-prefix-policy.sh --prefix 'pros/*'
 ```
 
@@ -131,7 +131,7 @@ Rollback lecture publique :
 
 ```bash
 ENV_FILE=.env.vps \
-COMPOSE_FILE=docker-compose.blobsurf.yml \
+COMPOSE_FILE=docker-compose.vps.yml \
 scripts/minio-public-prefix-policy.sh --clear
 ```
 

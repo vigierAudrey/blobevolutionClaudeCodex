@@ -13,7 +13,7 @@ EOF
 
 POLICY_OUT="$(
   ENV_FILE="$TMP_ENV" \
-  COMPOSE_FILE="$ROOT_DIR/docker-compose.blobsurf.yml" \
+  COMPOSE_FILE="$ROOT_DIR/docker-compose.vps.yml" \
   "$ROOT_DIR/scripts/minio-public-prefix-policy.sh" --dry-run --prefix 'pros/*'
 )"
 
@@ -31,7 +31,7 @@ fi
 
 CLEAR_OUT="$(
   ENV_FILE="$TMP_ENV" \
-  COMPOSE_FILE="$ROOT_DIR/docker-compose.blobsurf.yml" \
+  COMPOSE_FILE="$ROOT_DIR/docker-compose.vps.yml" \
   "$ROOT_DIR/scripts/minio-public-prefix-policy.sh" --dry-run --clear
 )"
 

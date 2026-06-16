@@ -12,7 +12,7 @@
 #   BACKUP_DIR   (défaut: $HOME/backups/blobsurf)
 #
 # Cron recommandé (3h du matin, UTC) :
-#   0 3 * * * DC_PROJECT=blobconnect-blobsurf \
+#   0 3 * * * DC_PROJECT=blobconnect-vps \
 #             ENV_FILE=/home/audrey/blob-app/.env.vps \
 #             BACKUP_DIR=$HOME/backups/blobsurf \
 #             BACKUP_PREFIX=blobsurf_vps \
@@ -32,7 +32,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-DC_PROJECT=blobconnect-blobsurf \
+DC_PROJECT="${DC_PROJECT:-blobconnect-vps}" \
 ENV_FILE="$ENV_FILE" \
 BACKUP_DIR="${BACKUP_DIR:-$HOME/backups/blobsurf}" \
 BACKUP_PREFIX=blobsurf_vps \

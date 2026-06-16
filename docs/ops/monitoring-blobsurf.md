@@ -1,7 +1,10 @@
 # Monitoring BlobSurf — Bêta Privée
 
-Périmètre : VPS Hetzner Ubuntu, stack `docker-compose.blobsurf.yml`.  
+Périmètre : VPS Hetzner Ubuntu, stack active `docker-compose.vps.yml` (`name: blobconnect-vps`).
 Niveau : opérationnel minimal — pas de Loki/Grafana pour la bêta.
+
+Note legacy : `docker-compose.blobsurf.yml` existe encore dans le dépôt pour historique,
+mais ne doit pas être utilisé comme cible des commandes d'exploitation VPS actuelles.
 
 ---
 
@@ -26,25 +29,25 @@ Configuration monitor API (`/health`) :
 
 ```bash
 # Tous les services en temps réel
-docker compose -f docker-compose.blobsurf.yml logs -f
+docker compose -f docker-compose.vps.yml logs -f
 
 # API uniquement (pour les erreurs applicatives)
-docker compose -f docker-compose.blobsurf.yml logs -f api
+docker compose -f docker-compose.vps.yml logs -f api
 
 # 500 dernières lignes de l'API
-docker compose -f docker-compose.blobsurf.yml logs --tail=500 api
+docker compose -f docker-compose.vps.yml logs --tail=500 api
 
 # PostgreSQL
-docker compose -f docker-compose.blobsurf.yml logs --tail=200 postgres
+docker compose -f docker-compose.vps.yml logs --tail=200 postgres
 
 # Redis
-docker compose -f docker-compose.blobsurf.yml logs --tail=200 redis
+docker compose -f docker-compose.vps.yml logs --tail=200 redis
 
 # Filtrer les erreurs dans les logs API
-docker compose -f docker-compose.blobsurf.yml logs api 2>&1 | grep -i '"level":"error"'
+docker compose -f docker-compose.vps.yml logs api 2>&1 | grep -i '"level":"error"'
 
 # Filtrer les accès 5xx
-docker compose -f docker-compose.blobsurf.yml logs api 2>&1 | grep '"event":"HTTP_ACCESS"' | grep '"status":5'
+docker compose -f docker-compose.vps.yml logs api 2>&1 | grep '"event":"HTTP_ACCESS"' | grep '"status":5'
 ```
 
 ---
@@ -58,9 +61,9 @@ docker compose -f docker-compose.blobsurf.yml logs api 2>&1 | grep '"event":"HTT
 df -h /var/lib/docker
 
 # Volumes Docker (données persistantes)
-du -sh /var/lib/docker/volumes/blobconnect-blobsurf_pgdata-blobsurf/
-du -sh /var/lib/docker/volumes/blobconnect-blobsurf_miniodata-blobsurf/
-du -sh /var/lib/docker/volumes/blobconnect-blobsurf_caddy-data/
+du -sh /var/lib/docker/volumes/blobconnect-vps_pgdata-vps/
+du -sh /var/lib/docker/volumes/blobconnect-vps_miniodata-vps/
+du -sh /var/lib/docker/volumes/blobconnect-vps_caddy-data/
 
 # Répertoire des backups
 du -sh ~/backups/blobsurf/
@@ -92,34 +95,34 @@ docker system prune -f --volumes=false
 
 1. **Vérifier les logs immédiats** :
    ```bash
-   docker compose -f docker-compose.blobsurf.yml logs --tail=100 api | grep '"level":"error"'
+   docker compose -f docker-compose.vps.yml logs --tail=100 api | grep '"level":"error"'
    ```
 
 2. **Vérifier que PostgreSQL répond** :
    ```bash
-   docker compose -f docker-compose.blobsurf.yml exec postgres pg_isready -U blobsurf_vps
+   docker compose -f docker-compose.vps.yml exec postgres pg_isready -U "${POSTGRES_USER:-blobinfini_vps}"
    ```
 
 3. **Vérifier que Redis répond** :
    ```bash
-   docker compose -f docker-compose.blobsurf.yml exec redis redis-cli -a "$REDIS_PASSWORD" ping
+   docker compose -f docker-compose.vps.yml exec redis redis-cli -a "$REDIS_PASSWORD" ping
    ```
 
 4. **Vérifier l'état des containers** :
    ```bash
-   docker compose -f docker-compose.blobsurf.yml ps
+   docker compose -f docker-compose.vps.yml ps
    ```
 
 5. **Redémarrer l'API uniquement** (sans toucher DB/Redis) :
    ```bash
-   docker compose -f docker-compose.blobsurf.yml restart api
+   docker compose -f docker-compose.vps.yml restart api
    # Attendre ~30s pour le healthcheck
-   docker compose -f docker-compose.blobsurf.yml ps api
+   docker compose -f docker-compose.vps.yml ps api
    ```
 
 6. Si le problème persiste → regarder si c'est une migration manquante :
    ```bash
-   docker compose -f docker-compose.blobsurf.yml run --rm api \
+   docker compose -f docker-compose.vps.yml run --rm api \
      sh -c "pnpm --filter @blobinfini/database exec prisma migrate status"
    ```
 
@@ -129,19 +132,19 @@ docker system prune -f --volumes=false
 
 1. **Vérifier MinIO** :
    ```bash
-   docker compose -f docker-compose.blobsurf.yml logs --tail=50 minio
+   docker compose -f docker-compose.vps.yml logs --tail=50 minio
    curl -sf https://storage.blobsurf.com/minio/health/live && echo "MinIO OK" || echo "MinIO KO"
    ```
 
 2. **Vérifier l'espace disque** (upload = stockage physique) :
    ```bash
    df -h /var/lib/docker
-   du -sh /var/lib/docker/volumes/blobconnect-blobsurf_miniodata-blobsurf/
+   du -sh /var/lib/docker/volumes/blobconnect-vps_miniodata-vps/
    ```
 
 3. **Vérifier les logs API pour les erreurs S3** :
    ```bash
-   docker compose -f docker-compose.blobsurf.yml logs api 2>&1 | grep -i "s3\|upload\|minio\|presign"
+   docker compose -f docker-compose.vps.yml logs api 2>&1 | grep -i "s3\|upload\|minio\|presign"
    ```
 
 4. **Accéder à la console MinIO** (via tunnel SSH) :
@@ -153,8 +156,8 @@ docker system prune -f --volumes=false
 
 5. **Vérifier que le bucket existe** :
    ```bash
-   docker compose -f docker-compose.blobsurf.yml exec minio \
-     mc ls local/blobsurf-vps/ 2>/dev/null || echo "Bucket absent ou MinIO non configuré"
+   docker compose -f docker-compose.vps.yml exec minio \
+     mc ls "local/${S3_BUCKET:-blobinfini-vps}/" 2>/dev/null || echo "Bucket absent ou MinIO non configuré"
    ```
 
 ---
@@ -178,7 +181,7 @@ ls -lh ~/backups/blobsurf/
 Ajouter via `crontab -e` :
 
 ```cron
-0 3 * * * DC_PROJECT=blobconnect-blobsurf ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=$HOME/backups/blobsurf BACKUP_PREFIX=blobsurf_vps /home/audrey/blob-app/scripts/backup-blobsurf.sh >> $HOME/backups/blobsurf/cron.log 2>&1
+0 3 * * * DC_PROJECT=blobconnect-vps ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=$HOME/backups/blobsurf BACKUP_PREFIX=blobsurf_vps /home/audrey/blob-app/scripts/backup-blobsurf.sh >> $HOME/backups/blobsurf/cron.log 2>&1
 ```
 
 ---
@@ -202,4 +205,4 @@ Champs utiles : `http.requests_total`, `http.errors_5xx_total`, `http.error_5xx_
 | API down > 5 min | Redémarrer API (§4), vérifier logs |
 | DB inaccessible | Vérifier postgres container, espace disque |
 | Disk > 90% | Purge Docker images, contacter Hetzner pour resize |
-| Let's Encrypt cert expiré | Redémarrer Caddy (il renouvelle auto) : `docker compose -f docker-compose.blobsurf.yml restart caddy` |
+| Let's Encrypt cert expiré | Redémarrer Caddy (il renouvelle auto) : `docker compose -f docker-compose.vps.yml restart caddy` |
