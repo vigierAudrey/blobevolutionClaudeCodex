@@ -28,10 +28,14 @@ DC_PROJECT=blobconnect-vps
 # Logs dans : /home/audrey/backups/blobsurf/logs/backup-pg.log
 0 3 * * * DC_PROJECT=blobconnect-vps ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=/home/audrey/backups/blobsurf/pg BACKUP_PREFIX=blobsurf_vps BACKUP_RETENTION_DAYS=7 /home/audrey/blob-app/scripts/backup-blobsurf.sh >> /home/audrey/backups/blobsurf/logs/backup-pg.log 2>&1
 
-# ─── TODO non installé : Backup MinIO ─────────────────────────────────────────
-# Script absent du dépôt : /home/audrey/blob-app/scripts/backup-minio.sh
-# Ne pas activer cette ligne tant qu'une PR dédiée n'a pas ajouté et testé le script.
-# 0 4 * * * DC_PROJECT=blobconnect-vps ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=/home/audrey/backups/blobsurf /home/audrey/blob-app/scripts/backup-minio.sh >> /home/audrey/backups/blobsurf/logs/backup-minio.log 2>&1
+# ─── À ACTIVER APRÈS VALIDATION VPS : Backup MinIO ────────────────────────────
+# Script présent dans le dépôt : scripts/backup-minio.sh (méthode tar.gz du
+# volume Docker MinIO en lecture seule — aucun credential requis).
+# Ligne volontairement COMMENTÉE : à décommenter seulement après un premier run
+# manuel validé sur le VPS (voir docs/ops/backups.md § MinIO). MinIO 4h00 UTC,
+# avant l'upload R2 de 4h30. Sort dans le sous-dossier minio/ (repris par
+# backup-encrypt-upload.sh → R2 minio/).
+# 0 4 * * * DC_PROJECT=blobconnect-vps BACKUP_DIR=/home/audrey/backups/blobsurf/minio /home/audrey/blob-app/scripts/backup-minio.sh >> /home/audrey/backups/blobsurf/logs/backup-minio.log 2>&1
 
 # ─── TODO non installé : Surveillance disque ─────────────────────────────────
 # Script absent du dépôt : /home/audrey/blob-app/scripts/disk-guard.sh
