@@ -417,7 +417,7 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          for script in scripts/backup-pg.sh scripts/backup-encrypt-upload.sh scripts/restore-pg.sh scripts/r2-rotate.sh; do
+          for script in scripts/backup-pg.sh scripts/backup-encrypt-upload.sh scripts/backup-minio.sh scripts/restore-pg.sh scripts/r2-rotate.sh; do
             if [ -f "$script" ]; then
               bash -n "$script" && echo "✅ $script" || { echo "❌ $script: syntax error"; failed=1; }
             else
@@ -440,3 +440,6 @@ jobs:
 
       - name: Validate check-backup-scripts
         run: bash scripts/check-backup-scripts.sh 2>/dev/null || echo "⚠️  check-backup-scripts not available in this env (no R2 creds)"
+
+      - name: Validate MinIO backup script (static, no Docker)
+        run: bash scripts/check-minio-backup.sh
