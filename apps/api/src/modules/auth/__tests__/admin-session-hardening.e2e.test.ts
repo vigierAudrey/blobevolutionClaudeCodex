@@ -473,6 +473,57 @@ describe('Admin step-up session-bound hostile hardening', () => {
     expect(denied.body.error).toBe('Step-up authentication required');
   });
 
+  it('non-admin ne peut pas utiliser le step-up admin', async () => {
+    const email = uniqueEmail('admin-step-up-non-admin');
+    emailsToCleanup.add(email);
+
+    const riderAuth = await getAccessToken({
+      app: appA,
+      email,
+      password: TEST_PASSWORD,
+      role: Role.RIDER,
+    });
+
+    const denied = await riderAuth.session
+      .post('/auth/step-up')
+      .set('Authorization', `Bearer ${riderAuth.accessToken}`)
+      .send({ intent: 'send' })
+      .expect(403);
+
+    expect(denied.body.error).toBe('Forbidden');
+  });
+
+  it('step-up admin reste limité par son limiter dédié avec Retry-After', async () => {
+    const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+
+    const email = uniqueEmail('admin-step-up-dedicated-limit');
+    emailsToCleanup.add(email);
+    const auth = await loginAdmin(appA, email);
+
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        await grantAdminStepUp(auth);
+      }
+
+      const blocked = await auth.session
+        .post('/auth/step-up')
+        .set('Authorization', `Bearer ${auth.accessToken}`)
+        .send({ intent: 'verify', code: TEST_PASSWORD.replace(/\D/g, '').padEnd(6, '0').slice(0, 6) })
+        .expect(429);
+
+      expect(blocked.body.error).toBe('AUTH_RATE_LIMIT_EXCEEDED');
+      expect(blocked.headers['retry-after']).toBeDefined();
+      expect(JSON.stringify(blocked.body)).not.toMatch(/token|secret/i);
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      } else {
+        process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+      }
+    }
+  });
+
   it('validation pro exige une step-up puis ne modifie pas emailVerified', async () => {
     const email = uniqueEmail('admin-step-up-pro-verify');
     emailsToCleanup.add(email);
