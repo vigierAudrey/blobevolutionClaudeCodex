@@ -1,13 +1,13 @@
 # docker/Caddyfile — Reverse proxy BlobSurf production (Caddy + Let's Encrypt)
 #
-# Variables d'environnement injectées par docker-compose.blobsurf.yml :
+# Variables d'environnement injectées par docker-compose.vps.yml :
 #   CADDY_ACME_EMAIL — email ACME pour Let's Encrypt (obligatoire)
 #   APP_DOMAIN       — domaine frontend  (ex: blobsurf.com)
 #   API_DOMAIN       — domaine API       (ex: api.blobsurf.com)
 #   STORAGE_DOMAIN   — domaine MinIO     (ex: storage.blobsurf.com)
 #
 # Let's Encrypt émet et renouvelle automatiquement les certificats TLS.
-# Le volume caddy-data (docker-compose.blobsurf.yml) persiste les certificats.
+# Le volume caddy-data (docker-compose.vps.yml) persiste les certificats.
 #
 # CORS storage :
 #   - Origin stricte : https://{$APP_DOMAIN} uniquement (pas de wildcard)

@@ -18,8 +18,8 @@
 # Usage :
 #   ./scripts/backup-encrypt-upload.sh [--env-file PATH] [--backup-dir PATH]
 #
-# Cron recommandé (4h30 UTC — après PG 3h00 et MinIO 4h00) :
-#   30 4 * * * DC_PROJECT=blobconnect-blobsurf \
+# Cron recommandé (4h30 UTC — après PG 3h00 ; MinIO seulement quand backup-minio.sh existe) :
+#   30 4 * * * DC_PROJECT=blobconnect-vps \
 #              ENV_FILE=/home/audrey/blob-app/.env.vps \
 #              BACKUP_DIR=/home/audrey/backups/blobsurf \
 #              /home/audrey/blob-app/scripts/backup-encrypt-upload.sh \

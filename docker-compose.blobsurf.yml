@@ -1,4 +1,7 @@
-# docker-compose.blobsurf.yml — Stack production BlobSurf (blobsurf.com)
+# docker-compose.blobsurf.yml — LEGACY BlobSurf (blobsurf.com)
+#
+# Historique uniquement : la stack VPS active utilise docker-compose.vps.yml
+# avec le projet Compose `blobconnect-vps`.
 #
 # Différences structurelles par rapport à docker-compose.vps.yml :
 #   - Caddy remplace nginx (TLS Let's Encrypt automatique — pas de mkcert)
@@ -11,7 +14,7 @@
 #   MINIO_SERVER_URL == S3_PRESIGN_ENDPOINT == https://$STORAGE_DOMAIN
 #   Sans cela, MinIO rejette les PUT présignés (403 SignatureDoesNotMatch)
 #
-# Usage :
+# Usage historique uniquement — ne pas utiliser comme cible VPS active :
 #   cp .env.vps.example .env.vps && vim .env.vps   # ajouter CADDY_ACME_EMAIL
 #   docker compose -f docker-compose.blobsurf.yml --env-file .env.vps up -d
 #

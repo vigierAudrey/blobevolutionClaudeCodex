@@ -80,7 +80,7 @@ Cible retenue après audit : `docker-compose.vps.yml`.
 Justification :
 - `docker-compose.vps.yml` est décrit comme l'environnement VPS Runtime BlobConnect.
 - `docker-compose.pre-vps.yml` est un environnement local de qualification, interdit pour la production réelle.
-- `docker-compose.blobsurf.yml` cible la stack BlobSurf/Caddy et ses domaines `*.blobsurf.com`.
+- `docker-compose.blobsurf.yml` est legacy/historique et ne doit pas servir de cible au VPS actif.
 
 Le workflow refuse si `docker-compose.vps.yml` ou `.env.vps` est absent sur le VPS.
 

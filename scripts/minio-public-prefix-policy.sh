@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env.vps}"
-COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.blobsurf.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.vps.yml}"
 MC_IMAGE="${MC_IMAGE:-minio/mc:latest}"
 ALIAS="${MINIO_ALIAS:-minio}"
 PREFIXES="${PUBLIC_READ_PREFIXES:-pros/*}"
@@ -21,7 +21,7 @@ Usage:
 
 Environment:
   ENV_FILE       .env file to read S3 credentials from (default: .env.vps)
-  COMPOSE_FILE   compose file that defines the MinIO network (default: docker-compose.blobsurf.yml)
+  COMPOSE_FILE   compose file that defines the MinIO network (default: docker-compose.vps.yml)
   MC_IMAGE       MinIO Client image
 
 Examples:

@@ -600,7 +600,7 @@ fi
 # ─── [19] Upload réel via presigned URL ────────────────────────────────────────
 echo "--- [19] Upload réel via presigned URL ---"
 if [ -n "$PRESIGN_URL" ]; then
-  # Upload via presigned PUT URL — ce test doit passer par nginx, pas par mc (sinon aucune valeur probante)
+  # Upload via presigned PUT URL — ce test doit passer par Caddy, pas par mc (sinon aucune valeur probante)
   UPLOAD_STATUS=$(curl -sk \
     $CURL_RESOLVE \
     -X PUT "$PRESIGN_URL" \
@@ -615,7 +615,7 @@ if [ -n "$PRESIGN_URL" ]; then
     echo "       Si 000 : vérifier résolution DNS / certs TLS du storage domain"
   fi
 else
-  # Pas de fallback mc : le test mc bypasse nginx et CORS, ce qui masque les vrais problèmes
+  # Pas de fallback mc : le test mc bypasse Caddy et CORS, ce qui masque les vrais problèmes
   printf "  \033[31mFAIL\033[0m [19] SKIP — presigned URL absente, test sans valeur probante\n"
   FAIL=$((FAIL + 1))
 fi
