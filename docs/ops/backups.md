@@ -78,6 +78,7 @@ DC_PROJECT=blobconnect-vps BACKUP_DIR=$HOME/backups/blobsurf/minio \
 | `MINIO_BACKUP_PREFIX` | `blobsurf_minio` | Préfixe nom de fichier/glob de rotation |
 | `MINIO_CONTAINER` | _(auto)_ | Nom exact du conteneur si l'auto-détection échoue |
 | `MINIO_BACKUP_RETENTION_DAYS` | `7` | Rotation (ne supprime que `<prefix>_*.tar.gz`) |
+| `MINIO_BACKUP_GZIP_LEVEL` | `6` | Niveau gzip (médias déjà compressés → `-9` peu utile, plus coûteux CPU) |
 | `BACKUP_HELPER_IMAGE` | `busybox:stable` | Image fournissant `tar` |
 
 > **Cron** : la ligne MinIO de [`cron-blobsurf.cron`](./cron-blobsurf.cron) est

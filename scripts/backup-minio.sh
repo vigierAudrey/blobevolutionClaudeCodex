@@ -28,6 +28,7 @@
 #   MINIO_CONTAINER              Nom exact du conteneur MinIO (sinon auto-détecté)
 #   MINIO_BACKUP_RETENTION_DAYS  Rotation en jours           (défaut: 7)
 #   MINIO_BACKUP_MIN_BYTES       Taille min de l'archive     (défaut: 512)
+#   MINIO_BACKUP_GZIP_LEVEL      Niveau gzip 1-9             (défaut: 6)
 #   BACKUP_HELPER_IMAGE          Image tar éphémère          (défaut: busybox:stable)
 #   LOCK_FILE                    Verrou flock                (défaut: /tmp/blob-backup-minio.lock)
 #   ENV_FILE                     Accepté pour parité cron — NON lu (aucun secret requis).
@@ -50,6 +51,10 @@ MINIO_BACKUP_PREFIX="${MINIO_BACKUP_PREFIX:-blobsurf_minio}"
 MINIO_CONTAINER="${MINIO_CONTAINER:-}"
 MINIO_BACKUP_RETENTION_DAYS="${MINIO_BACKUP_RETENTION_DAYS:-7}"
 MINIO_BACKUP_MIN_BYTES="${MINIO_BACKUP_MIN_BYTES:-512}"
+# Niveau 6 (défaut gzip) : les objets MinIO sont surtout des médias DÉJÀ compressés
+# (JPEG/PNG/WebP) — gzip -9 coûte ~2-3x plus de CPU pour <1-2% de gain. Surchargeable
+# si un cas particulier le justifie (ex: contenus très compressibles).
+MINIO_BACKUP_GZIP_LEVEL="${MINIO_BACKUP_GZIP_LEVEL:-6}"
 BACKUP_HELPER_IMAGE="${BACKUP_HELPER_IMAGE:-busybox:stable}"
 LOCK_FILE="${LOCK_FILE:-/tmp/blob-backup-minio.lock}"
 COMPOSE_FILE="${COMPOSE_FILE:-$REPO_ROOT/docker-compose.vps.yml}"
@@ -163,7 +168,8 @@ trap _cleanup EXIT
 # ─── Archive : tar du volume en lecture seule via conteneur éphémère ──────────
 # `--volumes-from <minio>:ro` : monte le volume /data en LECTURE SEULE → aucun
 # risque de modification des données MinIO. tar écrit sur stdout (pas de -t),
-# compression gzip côté hôte → fichier possédé par l'utilisateur cron.
+# compression gzip (niveau $MINIO_BACKUP_GZIP_LEVEL) côté hôte → fichier possédé
+# par l'utilisateur cron.
 # pipefail garantit qu'un échec docker/tar fait échouer le script.
 log "Archivage de /data (lecture seule)..."
 docker run --rm \
@@ -171,7 +177,7 @@ docker run --rm \
   --network none \
   "$BACKUP_HELPER_IMAGE" \
   tar cf - -C /data . \
-  | gzip -9 > "$BACKUP_TEMP" \
+  | gzip -"$MINIO_BACKUP_GZIP_LEVEL" > "$BACKUP_TEMP" \
   || die "Échec de l'archivage tar (image '$BACKUP_HELPER_IMAGE' indisponible ?
        Essayer: docker pull $BACKUP_HELPER_IMAGE — ou définir BACKUP_HELPER_IMAGE)."
 
