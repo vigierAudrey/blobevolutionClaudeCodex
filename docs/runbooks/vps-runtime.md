@@ -175,10 +175,30 @@ sur le VPS.
 
 ## Diagnostics runtime
 
+### Wrapper compose VPS — commande de reference
+
+> **Sur le VPS, ne jamais utiliser `docker compose ps` seul.**
+> `docker-compose.yml` est le fichier de developpement local. Sur le VPS il
+> n'est pas synchronise avec la stack active et provoque des warnings
+> `REDIS_PASSWORD` trompeurs.
+>
+> **Ne jamais faire `docker compose down` en production sans plan de
+> maintenance prevu.**
+
+Utiliser le wrapper dedie ou la commande explicite :
+
+```bash
+# Wrapper (chemin depuis la racine du depot)
+./scripts/vps-compose.sh ps
+
+# Commande explicite equivalente
+docker compose -f docker-compose.vps.yml --env-file .env.vps ps
+```
+
 ### Etat des services
 
 ```bash
-docker compose -f docker-compose.vps.yml --env-file .env.vps ps
+./scripts/vps-compose.sh ps
 ```
 
 ### Logs principaux
