@@ -12,7 +12,7 @@
  */
 
 import { createClient } from 'redis';
-import { resolveRedisUrl, redactRedisUrl } from './redisConfig';
+import { redactRedisUrl, resolveRedisUrl } from './redisConfig';
 import { secureLogger } from '../utils/secure-logger';
 
 type RedisClientType = ReturnType<typeof createClient>;
@@ -23,6 +23,57 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 const REDIS_DEV_HINT_THROTTLE_MS = 30_000;
 
 type RedisDevHintState = { nextLogAtMs: number };
+
+function getRedisConnectionLogContext(redisUrl: string): Record<string, unknown> {
+  const context: Record<string, unknown> = {
+    connecting: true,
+    redisConfigured: true,
+  };
+
+  try {
+    const parsed = new URL(redisUrl);
+    context.tlsEnabled = parsed.protocol === 'rediss:';
+
+    const dbIndex = parsed.pathname.replace(/^\//, '');
+    if (/^\d+$/.test(dbIndex)) {
+      context.dbIndex = dbIndex;
+    }
+  } catch {
+    context.tlsEnabled = false;
+  }
+
+  return context;
+}
+
+function redactRedisError(error: unknown, redisUrl?: string): string {
+  let safeMessage = redactRedisUrl(error instanceof Error ? error.message : String(error));
+  const credentials = new Set<string>();
+  const configuredPassword = process.env.REDIS_PASSWORD?.trim();
+  if (configuredPassword) credentials.add(configuredPassword);
+
+  const configuredUrl = redisUrl ?? process.env.REDIS_URL?.trim();
+  if (configuredUrl) {
+    try {
+      const parsed = new URL(configuredUrl);
+      for (const credential of [parsed.username, parsed.password]) {
+        if (!credential) continue;
+        credentials.add(credential);
+        try {
+          credentials.add(decodeURIComponent(credential));
+        } catch {
+          // Keep the encoded credential when it is not valid percent-encoding.
+        }
+      }
+    } catch {
+      // redactRedisUrl() remains the safe fallback for malformed URL-like strings.
+    }
+  }
+
+  for (const credential of credentials) {
+    if (credential) safeMessage = safeMessage.split(credential).join('[REDACTED]');
+  }
+  return safeMessage;
+}
 
 function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
   if (!isDevelopment) return false;
@@ -48,7 +99,7 @@ function shouldSuppressRedisErrorLogInDev(errorMessage: string): boolean {
 
 async function initializeRedis(): Promise<RedisClientType | null> {
   const redisUrl = resolveRedisUrl();
-  secureLogger.info('RATE_LIMIT_REDIS_CONNECTING', { redisUrl: redactRedisUrl(redisUrl) });
+  secureLogger.info('RATE_LIMIT_REDIS_CONNECTING', getRedisConnectionLogContext(redisUrl));
 
   try {
     const client = createClient({
@@ -63,8 +114,9 @@ async function initializeRedis(): Promise<RedisClientType | null> {
     });
 
     client.on('error', (error) => {
-      if (shouldSuppressRedisErrorLogInDev(error.message)) return;
-      secureLogger.error('RATE_LIMIT_REDIS_ERROR', { error: error.message });
+      const safeError = redactRedisError(error, redisUrl);
+      if (shouldSuppressRedisErrorLogInDev(safeError)) return;
+      secureLogger.error('RATE_LIMIT_REDIS_ERROR', { error: safeError });
     });
 
     await client.connect();
@@ -72,7 +124,8 @@ async function initializeRedis(): Promise<RedisClientType | null> {
     secureLogger.info('RATE_LIMIT_REDIS_CONNECTED');
     return client;
   } catch (error) {
-    if (shouldSuppressRedisErrorLogInDev(error instanceof Error ? error.message : String(error))) {
+    const safeError = redactRedisError(error, redisUrl);
+    if (shouldSuppressRedisErrorLogInDev(safeError)) {
       // dev: throttled log, memory store fallback is acceptable and documented.
       return null;
     }
@@ -83,13 +136,13 @@ async function initializeRedis(): Promise<RedisClientType | null> {
       // - Multiple instances have isolated stores (rate-limit bypass via load distribution).
       // Fail-fast so the issue is surfaced immediately rather than degrading silently.
       secureLogger.error('RATE_LIMIT_REDIS_FATAL', {
-        error: error instanceof Error ? error.message : String(error),
+        error: safeError,
       });
       process.exit(1);
     }
 
     // Non-production, non-development (e.g. staging without Redis): log and use memory store.
-    secureLogger.error('RATE_LIMIT_REDIS_FALLBACK_MEMORY', { error });
+    secureLogger.error('RATE_LIMIT_REDIS_FALLBACK_MEMORY', { error: safeError });
     return null;
   }
 }
@@ -133,7 +186,7 @@ if (process.env.NODE_ENV !== 'test') {
       // In production: initializeRedis() already called process.exit(1).
       // This catch handles non-production/non-development environments.
       secureLogger.error('RATE_LIMIT_REDIS_INIT_FAILED', {
-        error: err instanceof Error ? err.message : String(err),
+        error: redactRedisError(err),
       });
     });
 
