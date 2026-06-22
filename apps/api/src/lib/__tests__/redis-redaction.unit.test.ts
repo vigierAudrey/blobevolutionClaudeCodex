@@ -86,27 +86,76 @@ describe('Redis credential redaction', () => {
   });
 
   describe('RATE_LIMIT_REDIS_CONNECTING log — end-to-end (a)', () => {
-    it('the event never contains redis credentials — spy proof', () => {
-      // Mock secureLogger to capture what would be logged
+    it('does not log the Redis URL, password, or host from the real client bootstrap', async () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      const previousRedisUrl = process.env.REDIS_URL;
       const captured: Array<{ event: string; context?: Record<string, unknown> }> = [];
-      jest.mock('../../utils/secure-logger', () => ({
-        secureLogger: {
-          info: (event: string, context?: Record<string, unknown>) => captured.push({ event, context }),
-          warn: jest.fn(),
-          error: jest.fn(),
-          security: jest.fn(),
-        },
-      }));
+      let redisErrorListener: ((error: Error) => void) | undefined;
+      const redisClient = {
+        on: jest.fn((event: string, listener: (error: Error) => void) => {
+          if (event === 'error') redisErrorListener = listener;
+        }),
+        connect: jest.fn().mockResolvedValue(undefined),
+        ping: jest.fn().mockResolvedValue('PONG'),
+        quit: jest.fn().mockResolvedValue(undefined),
+      };
 
-      // Simulate what redis-client.ts does at connection time
-      const rawUrl = 'redis://default:super-secret@redis:6379/0';
-      const logged = redactRedisUrl(rawUrl);
+      try {
+        jest.resetModules();
+        process.env.NODE_ENV = 'production';
+        process.env.REDIS_URL = 'redis://:SUPER_SECRET@example:6379/0';
 
-      // Verify the value that would be passed to secureLogger
-      expect(logged).not.toContain('super-secret');
-      expect(logged).toContain('redis:6379');
+        jest.doMock('redis', () => ({
+          createClient: jest.fn(() => redisClient),
+        }));
+        jest.doMock('../../utils/secure-logger', () => ({
+          secureLogger: {
+            info: (event: string, context?: Record<string, unknown>) => captured.push({ event, context }),
+            warn: jest.fn(),
+            error: (event: string, context?: Record<string, unknown>) => captured.push({ event, context }),
+            security: jest.fn(),
+          },
+        }));
 
-      jest.restoreAllMocks();
+        const { redisClientInitPromise } = require('../redis-client');
+        await redisClientInitPromise;
+        redisErrorListener?.(
+          new Error('authentication failed: SUPER_SECRET redis://:SUPER_SECRET@example:6379/0'),
+        );
+
+        const connectingLog = captured.find(({ event }) => event === 'RATE_LIMIT_REDIS_CONNECTING');
+        expect(connectingLog).toBeDefined();
+        expect(connectingLog?.context).toEqual({
+          connecting: true,
+          redisConfigured: true,
+          tlsEnabled: false,
+          dbIndex: '0',
+        });
+
+        const serializedLog = JSON.stringify(connectingLog);
+        expect(serializedLog).not.toContain('SUPER_SECRET');
+        expect(serializedLog).not.toContain('redis://');
+        expect(serializedLog).not.toContain('example');
+        expect(serializedLog).not.toContain('redisUrl');
+
+        const serializedLogs = JSON.stringify(captured);
+        expect(serializedLogs).not.toContain('SUPER_SECRET');
+        expect(serializedLogs).not.toContain('redis://:');
+      } finally {
+        if (previousNodeEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = previousNodeEnv;
+        }
+        if (previousRedisUrl === undefined) {
+          delete process.env.REDIS_URL;
+        } else {
+          process.env.REDIS_URL = previousRedisUrl;
+        }
+        jest.dontMock('redis');
+        jest.dontMock('../../utils/secure-logger');
+        jest.resetModules();
+      }
     });
   });
 });

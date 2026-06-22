@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AuthForm } from '../AuthForm';
@@ -200,6 +200,48 @@ describe('AuthForm', () => {
   });
 
   describe('états de soumission', () => {
+    it("déclenche un seul appel register même si le formulaire est soumis deux fois très vite", async () => {
+      mockedApiClient.register.mockReturnValue(new Promise(() => undefined));
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/email/i), 'fast-submit@test.com');
+      await user.type(screen.getByLabelText(/^mot de passe$/i), 'Passw0rd!');
+      await user.click(screen.getByLabelText(/18 ans ou plus/i));
+      await user.click(screen.getByLabelText(/j'ai lu et j'accepte les règles de sécurité des sessions/i));
+
+      const submitButton = screen.getByRole('button', { name: /créer le compte/i });
+      const form = submitButton.closest('form');
+      expect(form).not.toBeNull();
+
+      fireEvent.submit(form as HTMLFormElement);
+      fireEvent.submit(form as HTMLFormElement);
+
+      expect(mockedApiClient.register).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: /en cours/i })).toBeDisabled();
+    });
+
+    it("libère le verrou register après une erreur", async () => {
+      mockedApiClient.register
+        .mockRejectedValueOnce(new Error('network error'))
+        .mockResolvedValueOnce({ userId: 'user-2' });
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/email/i), 'retry-submit@test.com');
+      await user.type(screen.getByLabelText(/^mot de passe$/i), 'Passw0rd!');
+      await user.click(screen.getByLabelText(/18 ans ou plus/i));
+      await user.click(screen.getByLabelText(/j'ai lu et j'accepte les règles de sécurité des sessions/i));
+
+      await user.click(screen.getByRole('button', { name: /créer le compte/i }));
+      expect(await screen.findByText(/une erreur est survenue/i)).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /créer le compte/i }));
+
+      expect(mockedApiClient.register).toHaveBeenCalledTimes(2);
+      expect(await screen.findByText(/vérifie ta boîte mail/i)).toBeInTheDocument();
+    });
+
     it('désactive le CTA de connexion pendant la requête', async () => {
       mockedApiClient.login.mockReturnValue(new Promise(() => undefined));
       render(<AuthForm mode="login" />);

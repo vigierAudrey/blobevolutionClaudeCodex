@@ -1,5 +1,6 @@
 import { createApp } from '../../../index';
 import { clientPrisma as prisma, Role } from '@blobinfini/database';
+import { secureLogger } from '../../../utils/secure-logger';
 import {
   createTestSession,
   TestSession,
@@ -109,6 +110,25 @@ describe('Auth E2E', () => {
 
     expect(res.body.error).toBe('FRANCE_ONLY_RESTRICTED');
     expect(res.body.message).toContain('France');
+  });
+
+  it('rejects public ADMIN registration', async () => {
+    const email = 'admin-public@test.com';
+    const res = await session
+      .post('/auth/register')
+      .send({
+        email,
+        password: DEFAULT_PASSWORD,
+        role: 'ADMIN',
+        consentAccepted: true,
+      })
+      .expect(400);
+
+    expect(res.body.error).toBe('Invalid input');
+    expect(res.body.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: ['role'] })]),
+    );
+    await expect(prisma.user.findUnique({ where: { email } })).resolves.toBeNull();
   });
 
   it('logs in and sets auth cookies', async () => {
@@ -295,6 +315,86 @@ describe('Auth E2E', () => {
         delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
       } else {
         process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+      }
+    }
+  });
+
+  it('rate limits register per IP without sharing the bucket with another IP or forgot-password', async () => {
+    const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+    const previousTrustProxyMode = process.env.TRUST_PROXY_MODE;
+    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+    process.env.TRUST_PROXY_MODE = 'loopback';
+
+    const rateLimitedApp = createApp();
+    const sessionA = await createTestSession(rateLimitedApp);
+    const sessionB = await createTestSession(rateLimitedApp);
+    const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const ipA = '198.51.100.41';
+    const ipB = '198.51.100.42';
+    let warnSpy: jest.SpiedFunction<typeof secureLogger.warn> | undefined;
+
+    const registerPayload = (label: string) => ({
+      email: `register-rl-${label}-${unique}@example.com`,
+      password: DEFAULT_PASSWORD,
+      role: 'RIDER' as const,
+      consentAccepted: true,
+    });
+
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        await sessionA
+          .post('/auth/register')
+          .set('X-Forwarded-For', ipA)
+          .send(registerPayload(`ip-a-${i}`))
+          .expect(201);
+      }
+
+      warnSpy = jest.spyOn(secureLogger, 'warn').mockImplementation(() => undefined);
+
+      const blockedEmail = `register-rl-blocked-${unique}@example.com`;
+      const blocked = await sessionA
+        .post('/auth/register')
+        .set('X-Forwarded-For', ipA)
+        .send({
+          email: blockedEmail,
+          password: DEFAULT_PASSWORD,
+          role: 'RIDER',
+          consentAccepted: true,
+        })
+        .expect(429);
+
+      expect(blocked.body.error).toBe('REGISTRATION_RATE_LIMIT_EXCEEDED');
+
+      const rateLimitLog = warnSpy.mock.calls.find(
+        ([event, context]) => event === 'RATE_LIMIT_EXCEEDED' && context?.profile === 'REGISTRATION',
+      );
+      expect(rateLimitLog).toBeDefined();
+      const serializedContext = JSON.stringify(rateLimitLog?.[1] ?? {});
+      expect(serializedContext).not.toContain(ipA);
+      expect(serializedContext).not.toContain(blockedEmail);
+
+      await sessionB
+        .post('/auth/register')
+        .set('X-Forwarded-For', ipB)
+        .send(registerPayload('ip-b-ok'))
+        .expect(201);
+
+      await sessionA
+        .post('/auth/forgot-password')
+        .set('X-Forwarded-For', ipA)
+        .send({ email: `forgot-after-register-rl-${unique}@example.com` })
+        .expect(200);
+    } finally {
+      warnSpy?.mockRestore();
+      if (previousFlag === undefined) {
+        delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      } else {
+        process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+      }
+      if (previousTrustProxyMode === undefined) {
+        delete process.env.TRUST_PROXY_MODE;
+      } else {
+        process.env.TRUST_PROXY_MODE = previousTrustProxyMode;
       }
     }
   });
