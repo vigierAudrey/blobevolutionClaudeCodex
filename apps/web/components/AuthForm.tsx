@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '../lib/apiClient';
@@ -114,6 +114,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [twoFACode, setTwoFACode] = useState('');
   const [registered, setRegistered] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -167,6 +168,8 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setError(null);
     setInfo(null);
     setFieldErrors({});
@@ -267,6 +270,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         setError(getSafeAuthErrorMessage(message));
       }
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
