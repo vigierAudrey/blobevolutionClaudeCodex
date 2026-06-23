@@ -203,14 +203,14 @@ Un admin légitime n'a **aucune raison** d'accéder aux endpoints PRO ou RIDER v
 
 ```bash
 # Email de l'administrateur (reçoit les alertes)
-ADMIN_EMAIL=admin@blobconnect.com
+ADMIN_EMAIL=security@blobsurf.com
 
 # Configuration SMTP pour l'envoi des emails
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USER=noreply@blobconnect.com
+SMTP_USER=noreply@blobsurf.com
 SMTP_PASS=your-password
-SMTP_FROM=security@blobconnect.com
+SMTP_FROM=noreply@blobsurf.com
 SMTP_SECURE=true  # true pour port 465, false pour 587
 
 # URL base du frontend (pour les liens dans les emails)
@@ -404,7 +404,7 @@ Les tentatives de violation sont immédiatement visibles dans les logs :
 # Logs de sécurité
 🚨 SECURITY VIOLATION: PRO user abc-123 attempted ACCESS_RIDER_ENDPOINT on GET /profile/me
 ✅ Security alert created in database for user abc-123
-📧 Security notification email sent to admin (admin@blobconnect.com)
+📧 Security notification email sent to admin (security@blobsurf.com)
 🚨 Security: PRO user abc-123 attempted to access RIDER profile endpoint
 ```
 
@@ -514,7 +514,7 @@ Depuis la mise en place (2025-12-08) :
 - `CORRECTIFS_SECURITE_RIDER_APPLIQUES.md`
 
 **Contact** :
-- Email : security@blobconnect.com
+- Email : security@blobsurf.com
 - Slack : #security-alerts
 
 ---
