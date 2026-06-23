@@ -4,7 +4,7 @@ dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env
 
 import { randomUUID } from 'crypto';
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
-import { createClient } from 'redis';
+import { createClient, type RedisClientType } from 'redis';
 import { resolveRedisUrl } from '../lib/redisConfig';
 import { runJobWithLogContext } from '../observability/log-context';
 import { secureLogger } from '../utils/secure-logger';
@@ -178,7 +178,7 @@ export async function purgeDueConversationMembers(
 
 // ─── Redis distributed lock ────────────────────────────────────────────────────
 
-type PurgeJobLock = { client: ReturnType<typeof createClient>; token: string };
+type PurgeJobLock = { client: RedisClientType; token: string };
 
 async function acquirePurgeJobLock(): Promise<PurgeJobLock | null> {
   const redisClient = createClient({
