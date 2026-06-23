@@ -11,11 +11,13 @@
  *               NOT acceptable (no cross-restart/multi-instance counter integrity)
  */
 
-import { createClient } from 'redis';
+import { createClient, type RedisClientType } from 'redis';
 import { redactRedisUrl, resolveRedisUrl } from './redisConfig';
 import { secureLogger } from '../utils/secure-logger';
 
-type RedisClientType = ReturnType<typeof createClient>;
+// node-redis v6: the public `RedisClientType` default generics (`<{}, {}, {}, 3, {}>`)
+// match what `createClient({...})` actually returns. `ReturnType<typeof createClient>`
+// resolves generics to their *constraints* instead, which no longer aligns in v6.
 
 let redisClient: RedisClientType | null = null;
 
