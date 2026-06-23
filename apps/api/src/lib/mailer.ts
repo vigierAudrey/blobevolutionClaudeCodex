@@ -14,6 +14,18 @@ dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE || '../../.env
 const requireModule = createRequire(__filename);
 
 const BREVO_SMTP_HOST = 'smtp-relay.brevo.com';
+
+// Public-facing BlobSurf contact addresses (mailboxes, not the technical From).
+// The From stays driven by SMTP_FROM; these only feed Reply-To and email content.
+const SUPPORT_EMAIL = 'support@blobsurf.com';
+const SECURITY_EMAIL = 'security@blobsurf.com';
+
+// Security/system alerts are operational; replies belong to the security inbox.
+// All user-facing mail replies route to support.
+function resolveReplyTo(type: MailType): string {
+  return type === 'security_alert' || type === 'system_alert' ? SECURITY_EMAIL : SUPPORT_EMAIL;
+}
+
 const SMTP_CONNECTION_TIMEOUT_MS = 3000;
 const SMTP_GREETING_TIMEOUT_MS = 3000;
 const SMTP_SOCKET_TIMEOUT_MS = 5000;
@@ -230,7 +242,7 @@ export async function sendMail(mail: Mail) {
     return { skipped: true } as const;
   }
   try {
-    await t.transport.sendMail({ from: t.from, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
+    await t.transport.sendMail({ from: t.from, replyTo: resolveReplyTo(mail.type), to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
     const latencyMs = Date.now() - startedAt;
     recordEmailSendSuccess(mail.type, latencyMs);
     secureLogger.info('EMAIL_SEND_SUCCESS', {
@@ -296,10 +308,10 @@ export async function sendPasswordResetEmail(to: string, token: string) {
 export async function sendPasswordChangedEmail(to: string) {
   const text = `Votre mot de passe Blob a été modifié.
 
-Si vous n'êtes pas à l'origine de cette action, contactez immédiatement le support à support@blobinfini.com.
+Si vous n'êtes pas à l'origine de cette action, contactez immédiatement le support à ${SUPPORT_EMAIL}.
 
 L'équipe Blob`;
-  const html = `<p>Votre mot de passe Blob a été modifié.</p><p>Si vous n'êtes pas à l'origine de cette action, contactez immédiatement le support : <a href="mailto:support@blobinfini.com">support@blobinfini.com</a>.</p><p style="color:#6b7280;">L'équipe Blob</p>`;
+  const html = `<p>Votre mot de passe Blob a été modifié.</p><p>Si vous n'êtes pas à l'origine de cette action, contactez immédiatement le support : <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>.</p><p style="color:#6b7280;">L'équipe Blob</p>`;
   return sendMail({ to, subject: 'Votre mot de passe Blob a été modifié', text, html, type: 'password_changed' });
 }
 
@@ -346,7 +358,7 @@ function resolveProfileUrl(role: string | null | undefined) {
   return buildWebUrl('/profile');
 }
 
-export function buildAccountDeletionEmail(to: string, deletionDate: Date, role: string | null | undefined, supportEmail = 'support@blobinfini.com'): Mail {
+export function buildAccountDeletionEmail(to: string, deletionDate: Date, role: string | null | undefined, supportEmail = SUPPORT_EMAIL): Mail {
   const formattedDate = formatDeletionDate(deletionDate);
   const profileUrl = resolveProfileUrl(role);
   const subject = '🗑️ Suppression de compte programmée';
@@ -391,12 +403,12 @@ L'équipe Blob`;
   return { to, subject, text, html, type: 'account_deletion' };
 }
 
-export async function sendAccountDeletionEmail(to: string, deletionDate: Date, role: string | null | undefined, supportEmail = 'support@blobinfini.com') {
+export async function sendAccountDeletionEmail(to: string, deletionDate: Date, role: string | null | undefined, supportEmail = SUPPORT_EMAIL) {
   const mail = buildAccountDeletionEmail(to, deletionDate, role, supportEmail);
   return sendMail(mail);
 }
 
-export function buildAccountDeletionCancellationEmail(to: string, role: string | null | undefined, supportEmail = 'support@blobinfini.com'): Mail {
+export function buildAccountDeletionCancellationEmail(to: string, role: string | null | undefined, supportEmail = SUPPORT_EMAIL): Mail {
   const profileUrl = resolveProfileUrl(role);
   const subject = '✅ Suppression de compte annulée';
   const text = `Bonne nouvelle !
@@ -427,7 +439,7 @@ L'équipe Blob`;
   return { to, subject, text, html, type: 'account_deletion_cancelled' };
 }
 
-export async function sendAccountDeletionCancelledEmail(to: string, role: string | null | undefined, supportEmail = 'support@blobinfini.com') {
+export async function sendAccountDeletionCancelledEmail(to: string, role: string | null | undefined, supportEmail = SUPPORT_EMAIL) {
   const mail = buildAccountDeletionCancellationEmail(to, role, supportEmail);
   return sendMail(mail);
 }

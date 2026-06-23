@@ -79,6 +79,29 @@ describe('mailer runtime hardening', () => {
     }));
   });
 
+  it('sets Reply-To to support and keeps From driven by SMTP_FROM for user mail', async () => {
+    await mailer.sendVerificationEmail('user@example.com', 'token-1234567890');
+
+    expect(mockSendMail).toHaveBeenCalledWith(expect.objectContaining({
+      from: 'no-reply@example.com',
+      replyTo: 'support@blobsurf.com',
+    }));
+  });
+
+  it('routes Reply-To to the security inbox for security/system alerts', async () => {
+    await mailer.sendMail({
+      to: 'admin@example.com',
+      subject: 'Alerte',
+      text: 'incident',
+      type: 'security_alert',
+    });
+
+    expect(mockSendMail).toHaveBeenCalledWith(expect.objectContaining({
+      from: 'no-reply@example.com',
+      replyTo: 'security@blobsurf.com',
+    }));
+  });
+
   it('throws MailDeliveryError on SMTP failure and never logs secrets', async () => {
     mockSendMail.mockRejectedValue(Object.assign(new Error('Invalid login brevo-pass smtp-relay.brevo.com'), {
       responseCode: 535,

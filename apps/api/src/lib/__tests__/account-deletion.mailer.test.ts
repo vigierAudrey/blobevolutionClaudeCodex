@@ -22,6 +22,9 @@ describe('Account deletion mailer helpers', () => {
     });
     expect(mail.text).toContain('2025-01-20');
     expect(mail.html).toContain('http://localhost:3002/profile');
+    expect(mail.html).toContain('support@blobsurf.com');
+    expect(mail.text).not.toContain('blobinfini.com');
+    expect(mail.html).not.toContain('blobinfini.com');
   });
 
   it('builds cancellation email for pros with dashboard CTA', () => {
