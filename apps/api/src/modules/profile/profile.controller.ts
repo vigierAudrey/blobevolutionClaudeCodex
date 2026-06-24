@@ -880,6 +880,7 @@ profileRouter.get('/deletion-status', requireRiderRole, async (req, res) => {
 
 // Notification Preferences - Validation schema
 const notificationPreferencesSchema = z.object({
+  inAppEnabled: z.boolean().optional(),
   pushEnabled: z.boolean().optional(),
   emailEnabled: z.boolean().optional(),
   notifyMessages: z.boolean().optional(),
@@ -922,6 +923,7 @@ profileRouter.get('/notifications', async (req, res) => {
 
     // Filter preferences based on role
     const basePreferences = {
+      inAppEnabled: preferences.inAppEnabled,
       pushEnabled: preferences.pushEnabled,
       emailEnabled: preferences.emailEnabled,
       emailDigestFrequency: preferences.emailDigestFrequency,
@@ -978,7 +980,8 @@ profileRouter.put('/notifications', validate(notificationPreferencesSchema), asy
 
     // Filter body based on role to prevent unauthorized preference updates
     const allowedFields: any = {
-      // Common fields for all roles
+      // Common channel-master fields for all roles
+      inAppEnabled: body.inAppEnabled,
       pushEnabled: body.pushEnabled,
       emailEnabled: body.emailEnabled,
       emailDigestFrequency: body.emailDigestFrequency,
@@ -1008,6 +1011,7 @@ profileRouter.put('/notifications', validate(notificationPreferencesSchema), asy
 
     // Return only role-appropriate preferences
     const basePreferences = {
+      inAppEnabled: preferences.inAppEnabled,
       pushEnabled: preferences.pushEnabled,
       emailEnabled: preferences.emailEnabled,
       emailDigestFrequency: preferences.emailDigestFrequency,

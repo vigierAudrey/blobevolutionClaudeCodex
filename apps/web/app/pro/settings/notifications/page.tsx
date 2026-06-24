@@ -15,8 +15,10 @@ import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../.
 // D1-FIX: type restreint aux seules clés booléennes affichées dans l'UI.
 // emailDigestFrequency (string) et emailEnabled sont intentionnellement exclus
 // — ils n'ont pas de contrôle dans cette page et ne doivent pas être toggleables.
-// MVP: pushEnabled est exclu — les push navigateur ne sont pas câblées
-// (aucun token enregistré) ; la page ne pilote que les alertes email/in-app.
+// Cette page ne pilote QUE les préférences par événement (notify*). Ces toggles
+// gatent désormais réellement les canaux in-app ET push (cf.
+// notification-preferences.service.ts côté API). Les interrupteurs de canal
+// (inAppEnabled / pushEnabled) sont gérés sur la page profil pro.
 type BooleanNotifKey =
   | 'notifyLessonRequests'
   | 'notifyProMessages'
@@ -33,9 +35,9 @@ const DEFAULT_PREFS: NotifPrefs = {
 };
 
 // D2-FIX: valide et extrait uniquement les clés booléennes connues depuis la
-// réponse API. Exclut les champs fantômes (notifyBookingAccepted/Rejected,
-// emailEnabled, emailDigestFrequency, pushEnabled) qui ne sont pas gérés
-// par cette page.
+// réponse API. Exclut les champs non gérés par cette page : les masters de canal
+// (inAppEnabled / pushEnabled, gérés sur le profil pro), notifyBookingAccepted/
+// Rejected (événements non encore émis), emailEnabled, emailDigestFrequency.
 function parseApiPrefs(raw: unknown): Partial<NotifPrefs> {
   if (!raw || typeof raw !== 'object') return {};
   const src = raw as Record<string, unknown>;

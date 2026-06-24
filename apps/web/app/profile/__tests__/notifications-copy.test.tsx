@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import ProfilePage from '../page';
 import { apiClient } from '@/lib/apiClient';
 import { apiRequest } from '@/lib/csrf';
@@ -71,6 +71,7 @@ describe('ProfilePage — préférences d\'alertes rider', () => {
         return Promise.resolve(makeResponse({
           role: 'RIDER',
           preferences: {
+            inAppEnabled: true,
             pushEnabled: true,
             notifyMessages: true,
             notifyMatches: true,
@@ -85,7 +86,7 @@ describe('ProfilePage — préférences d\'alertes rider', () => {
     });
   });
 
-  it('affiche les alertes rider sans libellé push ni prompt navigateur', async () => {
+  it('sépare les canaux (in-app / push) des événements, sans forcer de prompt navigateur au chargement', async () => {
     const requestPermission = jest.fn();
     Object.defineProperty(window, 'Notification', {
       configurable: true,
@@ -98,12 +99,46 @@ describe('ProfilePage — préférences d\'alertes rider', () => {
       expect(screen.getByText(/préférences d'alertes/i)).toBeInTheDocument();
     });
 
-    expect(screen.getAllByText(/alertes dans blob/i).length).toBeGreaterThan(0);
+    // Canaux de diffusion explicites : in-app (cloche) vs push (appareil).
+    expect(screen.getByText(/dans blob \(cloche\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/push \(téléphone \/ navigateur\)/i)).toBeInTheDocument();
+
+    // Événements (s'appliquent aux canaux activés).
     expect(screen.getAllByText(/messages/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/nouveaux matchs/i)).toBeInTheDocument();
     expect(screen.getByText(/invitations groupe/i)).toBeInTheDocument();
-    expect(screen.queryByText(/notifications push/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/reçois des alertes instantanées/i)).not.toBeInTheDocument();
+
+    // La copie ne doit plus prétendre que tout se passe uniquement "dans Blob".
+    expect(screen.queryByText(/réactive les alertes dans blob pour voir/i)).not.toBeInTheDocument();
+
+    // Activer le canal push est une préférence : aucun prompt navigateur forcé au chargement.
     expect(requestPermission).not.toHaveBeenCalled();
+  });
+
+  it('les masters de canal ne sont pas décoratifs : leur état part dans le PUT', async () => {
+    render(<ProfilePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/préférences d'alertes/i)).toBeInTheDocument();
+    });
+
+    // Coupe les deux canaux puis sauvegarde.
+    fireEvent.click(screen.getByRole('button', { name: /dans blob \(cloche\)/i }));
+    fireEvent.click(screen.getByRole('button', { name: /push \(téléphone \/ navigateur\)/i }));
+
+    // L'avertissement "aucun canal activé" doit apparaître.
+    expect(screen.getByText(/aucun canal activé/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /sauvegarder mes préférences/i }));
+
+    await waitFor(() => {
+      const putCall = mockApiRequest.mock.calls.find(
+        ([url, opts]) => url === '/profile/notifications' && opts?.method === 'PUT',
+      );
+      expect(putCall).toBeDefined();
+      const payload = JSON.parse(putCall![1].body as string);
+      expect(payload.inAppEnabled).toBe(false);
+      expect(payload.pushEnabled).toBe(false);
+    });
   });
 });

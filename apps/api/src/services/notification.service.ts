@@ -1,5 +1,6 @@
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
+import { shouldNotifyUser } from './notification-preferences.service';
 
 // Keep in sync with NotificationType enum in packages/database/prisma/schema.prisma
 export const NotificationType = {
@@ -107,9 +108,19 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
   });
 }
 
-// Non-blocking wrapper: logs errors without throwing
+// Non-blocking wrapper: gates on the recipient's IN_APP preferences, then logs
+// errors without throwing. Used by real-time emitters (chat messages, group
+// invitations) where the recipient may have opted out of the in-app channel
+// or of this event type.
 export function createNotificationSilent(input: CreateNotificationInput): void {
-  void createNotification(input).catch((err: unknown) => {
+  void (async () => {
+    const allowed = await shouldNotifyUser(input.userId, input.type, 'IN_APP');
+    if (!allowed) {
+      secureLogger.info('NOTIFICATION_SKIPPED_BY_PREFERENCE', { type: input.type, channel: 'IN_APP' });
+      return;
+    }
+    await createNotification(input);
+  })().catch((err: unknown) => {
     secureLogger.warn('NOTIFICATION_CREATE_FAILED', {
       type: input.type,
       ...safeErrorMeta(err),
