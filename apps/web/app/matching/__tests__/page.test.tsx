@@ -9,7 +9,8 @@
  *   5. getTokens() is never called (hint not consulted)
  */
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 
@@ -76,17 +77,25 @@ describe('MatchingPage — auth guard', () => {
     });
 
     expect(replace).not.toHaveBeenCalledWith('/login');
+    expect(screen.getByRole('heading', { name: 'Matching riders' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Surf Sessions douces/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'Intermédiaire' })).toHaveAttribute('aria-pressed', 'true');
+    });
   });
 
   it('redirects to /login when session returns 401', async () => {
     const err = Object.assign(new Error('Unauthorized'), { status: 401 });
     mockedApiClient.me.mockRejectedValueOnce(err);
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     render(<MatchingPage />);
 
     await waitFor(() => {
       expect(replace).toHaveBeenCalledWith('/login');
     });
+    expect(consoleError.mock.calls.flat().join(' ')).not.toContain('Unauthorized');
+    consoleError.mockRestore();
   });
 
   it('redirects to /login when session is SESSION_EXPIRED', async () => {
@@ -134,5 +143,21 @@ describe('MatchingPage — auth guard', () => {
     });
 
     expect(mockedApiClient.getTokens).not.toHaveBeenCalled();
+  });
+
+  it('preserves the selected criteria when continuing to the date step', async () => {
+    const user = userEvent.setup();
+    mockedApiClient.me.mockResolvedValueOnce({ role: 'RIDER' } as never);
+    mockedApiClient.getTokens.mockReturnValue({ accessToken: 'session-hint', refreshToken: null });
+
+    render(<MatchingPage />);
+
+    const continueButton = await screen.findByRole('button', { name: 'Continuer vers la date' });
+    await waitFor(() => expect(continueButton).toBeEnabled());
+    await user.click(continueButton);
+
+    expect(push).toHaveBeenCalledWith('/matching/date?sport=surf&level=intermediate');
+    expect(window.localStorage.getItem('matching.sport')).toBe('surf');
+    expect(window.localStorage.getItem('matching.level')).toBe('intermediate');
   });
 });

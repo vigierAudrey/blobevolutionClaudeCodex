@@ -3,19 +3,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { BackBar } from '../../../components/BackBar';
-import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
-import { Button } from '../../../components/ui/button';
-import { Badge } from '../../../components/ui/badge';
 import { ProfileCardSkeleton } from '../../../components/ui/skeleton';
 import { optimizedApiClient, measureApiPerformance } from '../../../lib/optimizedApiClient';
 import { useToast } from '../../../components/ui/toast';
 import Link from 'next/link';
-import { Sparkles, MessageSquare } from 'lucide-react';
+import { CalendarDays, Flag, MapPin, MessageSquare } from 'lucide-react';
 import { formatDateForDisplay } from './utils';
 import type { MatchingCandidate, MatchingSearchParams, MatchingSearchResponse, Sport, Level } from '@/types';
 import { clearMatchingStorage } from '../storage';
 import { FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
 import { ProfilePhoto } from '../../../components/media/ProfilePhoto';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobEmptyState, BlobPageHeader } from '@/components/blob';
 
 
 const levelLabels: Record<Level, string> = {
@@ -29,6 +27,14 @@ const sportLabels: Record<Sport, string> = {
   surf: 'Surf',
   kitesurf: 'Kitesurf'
 };
+
+const MATCHING_LOAD_ERROR = 'Impossible de charger les profils pour le moment.';
+const MATCHING_DECISION_ERROR = 'Impossible d’enregistrer cette décision pour le moment.';
+const MATCHING_REPORT_ERROR = 'Impossible d’envoyer le signalement pour le moment.';
+
+const isFranceOnlyError = (error: unknown) =>
+  error instanceof Error &&
+  error.message.toLocaleLowerCase('fr').includes('limité à la france métropolitaine et à la corse');
 
 type ConversationsResponse = {
   items?: Array<{ unread?: number | string }>;
@@ -72,8 +78,7 @@ export function CardsClient() {
         }
 
         perf.end();
-      } catch (error) {
-        console.error('User initialization failed:', error);
+      } catch {
         router.replace('/login');
       }
     })();
@@ -183,8 +188,7 @@ export function CardsClient() {
         setCandidates((prev) => prev.concat(deduped));
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      setError(message || 'Erreur chargement');
+      setError(isFranceOnlyError(err) ? FRANCE_ONLY_INFO_MESSAGE : MATCHING_LOAD_ERROR);
     } finally {
       setLoading(false);
     }
@@ -238,9 +242,8 @@ export function CardsClient() {
         }
       }
       mutateDecisionQueue((prev) => prev.filter((entry) => !queue.includes(entry)));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      toast(message || 'Erreur lors de la décision', 'error');
+    } catch {
+      toast(MATCHING_DECISION_ERROR, 'error');
     }
   }, [activeSport, mutateDecisionQueue, toast]);
 
@@ -369,9 +372,8 @@ export function CardsClient() {
     try {
       await optimizedApiClient.reportProfile({ targetProfileId: current.id, reason });
       toast('Signalement envoyé. Merci pour votre aide.', 'success');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : null;
-      toast(message || 'Erreur lors du signalement', 'error');
+    } catch {
+      toast(MATCHING_REPORT_ERROR, 'error');
     }
   };
 
@@ -379,90 +381,76 @@ export function CardsClient() {
   const isPrefetching = loading && candidates.length > 0;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-10 px-4 sm:px-6 lg:px-0">
-      <BackBar fallbackHref="/matching/date" />
+    <div className="mx-auto max-w-5xl space-y-6 pb-10">
+      <BackBar fallbackHref="/matching/date" tone="blobDark" />
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 p-4 border-2 border-purple-200/50 dark:border-purple-800/50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Parcourir les profils</h1>
-              <p className="text-sm text-muted-foreground">
-                {sport ? sportLabels[sport] : '—'} · {level ? levelLabels[level] : '—'} · {useGeoloc ? `${distanceKm ?? 20} km` : 'Sans géoloc'} · {date === 'anytime' ? 'Peu importe' : date || '—'}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetCriteria}
-              className="border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-200"
-            >
-              Repartir à zéro
-            </Button>
-            <Button asChild size="sm" variant="secondary" className="bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 hover:bg-white/90 dark:hover:bg-slate-700">
-              <Link href="/messages" className="inline-flex items-center gap-2">
-                <MessageSquare className="w-4 h-4" />
-                {unreadTotal > 0 ? `${unreadTotal}` : ''}
-              </Link>
-            </Button>
-          </div>
+        <BlobBadge variant="yellow" size="md">Étape 3/3</BlobBadge>
+        <BlobPageHeader
+          title="Parcourir les profils"
+          subtitle={`${sport ? sportLabels[sport] : '—'} · ${level ? levelLabels[level] : '—'} · ${useGeoloc ? `${distanceKm ?? 20} km` : 'Sans géoloc'} · ${date === 'anytime' ? 'Peu importe' : date || '—'}`}
+        />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <BlobButton
+            variant="outlineDark"
+            size="sm"
+            onClick={handleResetCriteria}
+            className="w-full sm:w-auto"
+          >
+            Repartir à zéro
+          </BlobButton>
+          <BlobButton asChild size="sm" variant="dark" className="w-full sm:w-auto">
+            <Link href="/messages" className="inline-flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" aria-hidden="true" />
+              Messages{unreadTotal > 0 ? ` (${unreadTotal})` : ''}
+            </Link>
+          </BlobButton>
         </div>
         {useGeoloc && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+          <BlobAlert variant="warning" title="Zone de lancement">
             {FRANCE_ONLY_INFO_MESSAGE}
-          </div>
+          </BlobAlert>
         )}
+      </div>
 
-        <Card className="border-2 shadow-xl rounded-[2rem]">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-xl">Profils proposés</CardTitle>
-                <Badge variant="secondary" className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                  Swipe ← ou →
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="relative space-y-4">
+        <BlobCard mode="white" className="motion-safe:hover:translate-y-0">
+            <div className="space-y-5">
+              <header className="flex flex-col gap-3 border-b-2 border-blob-sand-deep pb-5 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-xl font-black uppercase tracking-widest">Profils proposés</h2>
+                <BlobBadge variant="sand">Swipe ← ou →</BlobBadge>
+              </header>
+            <div className="relative space-y-4">
               {error && (
-                <p className="text-sm text-red-600" role="alert">
+                <BlobAlert variant="error" title="Recherche indisponible">
                   {error}
-                </p>
+                </BlobAlert>
               )}
               {isInitialLoading && (
-                <div className="space-y-4">
+                <div className="space-y-4" aria-live="polite" aria-busy="true">
                   <ProfileCardSkeleton />
-                  <div className="text-center text-sm text-muted-foreground">
-                    🔍 Recherche de profils compatibles...
-                  </div>
+                  <p className="text-center text-sm font-black uppercase tracking-widest text-blob-black/64 dark:text-white/64">
+                    Recherche de profils compatibles…
+                  </p>
                 </div>
               )}
               {!loading && !current && (
-                <div className="text-center space-y-5 py-8">
-                  <div className="space-y-3 rounded-3xl border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 px-6 py-8">
-                    <div className="text-4xl">🏄‍♀️</div>
-                    <h3 className="font-semibold text-xl text-foreground">Plus de profils disponibles</h3>
-                    <p className="text-sm text-muted-foreground dark:text-slate-400 max-w-sm mx-auto">
-                      Pas de match immédiat, mais la communauté grandit chaque jour. Relance une recherche avec un rayon plus large ou repasse un peu plus tard.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <Button onClick={() => router.push('/dashboard')} className="w-full">
-                      Retour au dashboard
-                    </Button>
-                    <Button variant="outline" onClick={() => router.push('/matching')} className="w-full">
-                      Nouvelle recherche
-                    </Button>
-                  </div>
-                </div>
+                <BlobEmptyState
+                  title="Plus de profils disponibles"
+                  description="Pas de match immédiat. Relance une recherche avec un rayon plus large ou repasse un peu plus tard."
+                  action={(
+                    <div className="flex w-full flex-col gap-3 sm:flex-row">
+                      <BlobButton onClick={() => router.push('/dashboard')} size="sm" className="w-full">
+                        Retour au dashboard
+                      </BlobButton>
+                      <BlobButton variant="outlineDark" onClick={() => router.push('/matching')} size="sm" className="w-full">
+                        Nouvelle recherche
+                      </BlobButton>
+                    </div>
+                  )}
+                />
               )}
               {current && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <motion.div
                     drag="x"
                     dragConstraints={{ left: 0, right: 0 }}
@@ -479,7 +467,7 @@ export function CardsClient() {
                       willChange: 'transform', // GPU acceleration hint
                     }}
                     className={
-                      'rounded-[1.75rem] border-2 p-5 sm:p-6 lg:p-7 bg-gradient-to-br from-white via-white to-purple-50/50 dark:from-slate-800 dark:via-slate-800 dark:to-slate-800 cursor-grab active:cursor-grabbing select-none relative overflow-hidden shadow-xl ' +
+                      'relative cursor-grab select-none overflow-hidden rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-4 active:cursor-grabbing dark:border-white/15 dark:bg-white/5 sm:p-6 ' +
                       (animDir === 'left' ? '-translate-x-24 opacity-0' : animDir === 'right' ? 'translate-x-24 opacity-0' : '')
                     }
                     whileTap={{ scale: 0.98 }}
@@ -492,195 +480,188 @@ export function CardsClient() {
                   >
                     {/* Swipe indicators */}
                     <motion.div
-                      className="absolute inset-0 bg-green-500/20 flex items-center justify-center pointer-events-none"
+                      className="pointer-events-none absolute inset-0 flex items-center justify-center bg-green-500/20"
                       style={{ opacity: opacityAccept }}
                     >
-                      <div className="text-3xl text-green-600 font-bold">✓</div>
+                      <div className="text-3xl font-black text-green-800 dark:text-green-200">✓</div>
                     </motion.div>
                     <motion.div
-                      className="absolute inset-0 bg-red-500/20 flex items-center justify-center pointer-events-none"
+                      className="pointer-events-none absolute inset-0 flex items-center justify-center bg-red-500/20"
                       style={{ opacity: opacityRefuse }}
                     >
-                      <div className="text-3xl text-red-600 font-bold">✗</div>
+                      <div className="text-3xl font-black text-red-800 dark:text-red-200">✗</div>
                     </motion.div>
 
-                    {/* Photo de profil - Affichage vertical centré */}
-                    <div className="flex flex-col items-center gap-4 mb-4 relative z-10">
+                    <div className="relative z-10 mb-4 flex flex-col items-center gap-4">
                       {current.photoUrl ? (
                         <ProfilePhoto
                           src={current.photoUrl}
                           alt={current.displayName ?? 'Photo de profil'}
                           width={320}
                           height={320}
-                          className="w-64 h-64 sm:w-72 sm:h-72 lg:w-80 lg:h-80 rounded-[2rem] object-cover border-4 border-border shadow-2xl"
-                          fallbackClassName="w-64 h-64 sm:w-72 sm:h-72 lg:w-80 lg:h-80 rounded-[2rem] bg-muted flex items-center justify-center border-4 border-border shadow-2xl px-4 text-center text-sm text-muted-foreground"
+                          className="h-56 w-56 rounded-sm border-4 border-white object-cover shadow-lg sm:h-72 sm:w-72 lg:h-80 lg:w-80"
+                          fallbackClassName="flex h-56 w-56 items-center justify-center rounded-sm border-4 border-white bg-white px-4 text-center text-sm text-blob-black/60 shadow-lg sm:h-72 sm:w-72 lg:h-80 lg:w-80"
                           priority
                         />
                       ) : (
-                        <div className="w-64 h-64 sm:w-72 sm:h-72 lg:w-80 lg:h-80 rounded-[2rem] bg-muted flex items-center justify-center border-4 border-border shadow-2xl text-6xl">
-                          <span>👤</span>
+                        <div className="flex h-56 w-56 items-center justify-center rounded-sm border-4 border-white bg-white text-6xl text-blob-black shadow-lg sm:h-72 sm:w-72 lg:h-80 lg:w-80" aria-label="Photo de profil indisponible">
+                          <span aria-hidden="true">👤</span>
                         </div>
                       )}
 
-                      <div className="w-full text-center space-y-2">
-                        <div className="text-2xl font-bold text-foreground flex items-center justify-center gap-2 flex-wrap">
+                      <div className="w-full space-y-2 text-center">
+                        <div className="flex flex-wrap items-center justify-center gap-2 text-2xl font-black uppercase tracking-widest">
                           {current.displayName}
                           {current.wantsLesson && (
-                            <span title="Souhaite un cours" className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-3 py-1 text-xs font-medium">
+                            <BlobBadge variant="success">
                               🎓 Cours
-                            </span>
+                            </BlobBadge>
                           )}
                         </div>
-                        <div className="text-base text-muted-foreground dark:text-slate-300 font-medium">
+                        <div className="text-sm font-medium text-blob-black/70 dark:text-white/70 sm:text-base">
                           {current.gender === 'FEMALE' ? 'Femme' : current.gender === 'MALE' ? 'Homme' : 'Autre'} • {current.sport ? sportLabels[current.sport as Sport] : current.sport} • {current.level ? levelLabels[current.level as Level] : current.level}
                         </div>
                       </div>
                     </div>
 
-                    {/* Bio */}
                     {current.bio && (
-                      <div className="text-base text-muted-foreground dark:text-slate-300 italic bg-white/80 dark:bg-slate-700/50 border border-muted/40 dark:border-slate-600 p-4 rounded-2xl mb-4 relative z-10 text-center">
+                      <div className="relative z-10 mb-4 rounded-sm border-2 border-blob-sand-deep bg-white p-4 text-center text-base italic text-blob-black/72 dark:border-white/15 dark:bg-white/5 dark:text-white/72">
                         &laquo;&nbsp;{current.bio}&nbsp;&raquo;
                       </div>
                     )}
 
-                    {/* Infos complémentaires */}
-                    <div className="flex items-center justify-center gap-6 mb-2 relative z-10">
-                      <div className="text-base text-muted-foreground dark:text-slate-300 flex items-center gap-2">
-                        <span className="text-xl">📍</span>
+                    <div className="relative z-10 mb-2 flex flex-col items-center justify-center gap-3 text-sm sm:flex-row sm:gap-6 sm:text-base">
+                      <div className="flex items-center gap-2 text-blob-black/72 dark:text-white/72">
+                        <MapPin className="h-5 w-5" aria-hidden="true" />
                         <span className="font-medium">{current.distanceKm != null ? `${current.distanceKm} km` : 'Distance inconnue'}</span>
                       </div>
-                      <div className="text-base text-muted-foreground dark:text-slate-300 flex items-center gap-2">
-                        <span className="text-xl">📅</span>
+                      <div className="flex items-center gap-2 text-blob-black/72 dark:text-white/72">
+                        <CalendarDays className="h-5 w-5" aria-hidden="true" />
                         <span className="font-medium">{formatDateForDisplay(date)}</span>
                       </div>
                     </div>
                   </motion.div>
-                <div className="text-xs text-center text-muted-foreground mb-2">
-                  👈 Glisse vers la gauche pour refuser • Glisse vers la droite pour accepter 👉
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={report} disabled={animating} aria-disabled={animating}>Signaler</Button>
-                  <div className="ml-auto flex items-center gap-2">
-                    <Button variant="secondary" onClick={() => act('REFUSE')} disabled={animating} aria-disabled={animating}>Refuser</Button>
-                    <Button onClick={() => act('ACCEPT')} disabled={animating} aria-disabled={animating}>Accepter</Button>
+                <p className="mb-2 text-center text-xs text-blob-black/60 dark:text-white/60">
+                  Glisse vers la gauche pour refuser, vers la droite pour accepter.
+                </p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <BlobButton variant="outlineDark" size="md" onClick={report} disabled={animating} aria-disabled={animating}>
+                    <Flag className="h-4 w-4" aria-hidden="true" />
+                    Signaler
+                  </BlobButton>
+                  <BlobButton variant="dark" size="md" onClick={() => act('REFUSE')} disabled={animating} aria-disabled={animating}>Refuser</BlobButton>
+                  <BlobButton size="md" onClick={() => act('ACCEPT')} disabled={animating} aria-disabled={animating}>Accepter</BlobButton>
                   </div>
-                </div>
                 {lastAction && (
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <div>
+                  <div className="flex flex-col gap-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-3 text-xs text-blob-black/70 dark:border-white/10 dark:bg-white/5 dark:text-white/70 sm:flex-row sm:items-center sm:justify-between">
+                    <p>
                       Action: {lastAction.decision === 'ACCEPT' ? 'Accepté' : 'Refusé'} — annuler dans 5 s
-                    </div>
-                    <Button variant="outline" size="sm" onClick={undo}>Annuler</Button>
+                    </p>
+                    <BlobButton variant="outlineDark" size="sm" onClick={undo}>Annuler</BlobButton>
                   </div>
                 )}
               </div>
             )}
             {isPrefetching && (
-              <div className="absolute right-3 bottom-3 flex items-center gap-2 text-xs text-muted-foreground dark:text-slate-300 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm px-2 py-1 rounded-full border dark:border-slate-700 shadow-sm">
-                <div className="w-3 h-3 rounded-full bg-primary/20 animate-pulse" />
-                ⚡ Préchargement...
+              <div className="absolute bottom-3 right-3 flex items-center gap-2 rounded-sm border-2 border-blob-sand-deep bg-white/95 px-2 py-1 text-xs text-blob-black/70 shadow-sm backdrop-blur-sm dark:border-white/15 dark:bg-blob-black/95 dark:text-white/70" aria-live="polite">
+                <div className="h-3 w-3 animate-pulse rounded-sm bg-blob-yellow" />
+                Préchargement…
               </div>
             )}
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+        </BlobCard>
         {newMatch && (
-          <div className="fixed inset-0 z-50 bg-black/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center px-4 animate-in fade-in duration-300" onClick={() => setNewMatch(null)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-blob-black/75 px-4 backdrop-blur-sm" onClick={() => setNewMatch(null)}>
             <motion.div
               initial={{ scale: 0.8, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               transition={{ type: "spring", duration: 0.5, bounce: 0.4 }}
               className="w-full max-w-md"
               onClick={(e)=>e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="match-dialog-title"
             >
-              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-cyan-500 via-blue-500 to-sky-600 p-1 shadow-2xl">
-                {/* Effet de brillance animé */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" style={{ backgroundSize: '200% 100%' }} />
-
-                {/* Contenu de la modale */}
-                <div className="relative rounded-[1.4rem] bg-white dark:bg-slate-900 p-6 sm:p-8">
+              <div className="overflow-hidden rounded-sm border-4 border-blob-yellow bg-blob-yellow p-1 shadow-2xl">
+                <div className="rounded-sm bg-white p-6 text-blob-black sm:p-8">
                   <div className="space-y-6 text-center">
-                    {/* Titre avec animation */}
                     <motion.div
                       initial={{ scale: 0.5, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ delay: 0.1, type: "spring", bounce: 0.6 }}
                     >
-                      <div className="text-5xl mb-3 animate-bounce">🎉</div>
-                      <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-cyan-600 via-blue-600 to-sky-600 bg-clip-text text-transparent mb-2">
+                      <div className="mb-3 text-5xl" aria-hidden="true">🎉</div>
+                      <h2 id="match-dialog-title" className="mb-2 text-3xl font-black uppercase tracking-widest sm:text-4xl">
                         C&rsquo;est un match !
                       </h2>
                     </motion.div>
 
-                    {/* Photo de profil avec effet glow */}
                     <motion.div
                       initial={{ scale: 0, rotate: -180 }}
                       animate={{ scale: 1, rotate: 0 }}
                       transition={{ delay: 0.2, type: "spring", bounce: 0.5 }}
                       className="flex justify-center"
                     >
-                      <div className="relative">
-                        {/* Halo animé - couleurs océan */}
-                        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 via-blue-500 to-sky-500 rounded-full blur-2xl opacity-40 animate-pulse" style={{ transform: 'scale(1.3)' }} />
-
+                      <div>
                         {newMatch.photoUrl ? (
                           <ProfilePhoto
                             src={newMatch.photoUrl}
                             alt={newMatch.otherDisplayName}
                             width={160}
                             height={160}
-                            className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-2xl"
-                            fallbackClassName="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center border-4 border-white dark:border-slate-800 shadow-2xl px-4 text-center text-xs text-white"
+                            className="h-36 w-36 rounded-sm border-4 border-blob-black object-cover shadow-lg sm:h-44 sm:w-44"
+                            fallbackClassName="flex h-36 w-36 items-center justify-center rounded-sm border-4 border-blob-black bg-blob-sand px-4 text-center text-xs text-blob-black/60 shadow-lg sm:h-44 sm:w-44"
                           />
                         ) : (
-                          <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-7xl border-4 border-white dark:border-slate-800 shadow-2xl">
-                            👤
+                          <div className="flex h-36 w-36 items-center justify-center rounded-sm border-4 border-blob-black bg-blob-sand text-7xl shadow-lg sm:h-44 sm:w-44" aria-label="Photo de profil indisponible">
+                            <span aria-hidden="true">👤</span>
                           </div>
                         )}
                       </div>
                     </motion.div>
 
-                    {/* Message avec animation décalée */}
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.3 }}
                       className="space-y-3"
                     >
-                      <p className="text-lg sm:text-xl text-foreground font-medium flex items-center justify-center gap-2">
-                        {newMatch.sport === 'surf' ? <span className="text-2xl">🏄</span> : <span className="text-2xl">🪁</span>}
+                      <p className="flex items-center justify-center gap-2 text-lg font-medium sm:text-xl">
+                        {newMatch.sport === 'surf' ? <span className="text-2xl" aria-hidden="true">🏄</span> : <span className="text-2xl" aria-hidden="true">🪁</span>}
                         <span>Tu vas {newMatch.sport === 'surf' ? 'surfer' : 'kiter'} avec</span>
                       </p>
-                      <p className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
+                      <p className="text-2xl font-black uppercase tracking-widest sm:text-3xl">
                         {newMatch.otherDisplayName}
                       </p>
-                      <div className="text-sm text-muted-foreground dark:text-slate-400 bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 border-2 border-cyan-200 dark:border-cyan-800 p-4 rounded-2xl">
-                        💬 <span className="font-medium">Envoie un premier message pour briser la glace !</span>
+                      <div className="rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-4 text-sm text-blob-black/72">
+                        <MessageSquare className="mr-2 inline h-4 w-4" aria-hidden="true" />
+                        <span className="font-medium">Envoie un premier message pour briser la glace !</span>
                       </div>
                     </motion.div>
 
-                    {/* Boutons responsive */}
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.4 }}
-                      className="pt-2 flex flex-col sm:flex-row gap-3"
+                      className="flex flex-col gap-3 pt-2 sm:flex-row"
                     >
-                      <Button
-                        size="lg"
-                        className="flex-1 bg-gradient-to-r from-cyan-600 via-blue-600 to-sky-600 hover:from-cyan-700 hover:via-blue-700 hover:to-sky-700 text-white font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+                      <BlobButton
+                        size="md"
+                        className="w-full flex-1"
                         onClick={() => { const cid = newMatch.conversationId; setNewMatch(null); router.push(`/messages/${cid}`); }}
                       >
-                        💬 Envoyer un message
-                      </Button>
-                      <Button
-                        size="lg"
-                        variant="outline"
-                        className="sm:flex-none border-2 border-cyan-300 dark:border-cyan-700 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 font-medium"
+                        <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                        Envoyer un message
+                      </BlobButton>
+                      <BlobButton
+                        size="md"
+                        variant="outlineDark"
+                        className="w-full sm:w-auto"
                         onClick={() => setNewMatch(null)}
                       >
                         Plus tard
-                      </Button>
+                      </BlobButton>
                     </motion.div>
                   </div>
                 </div>
@@ -689,7 +670,6 @@ export function CardsClient() {
           </div>
         )}
       </div>
-    </div>
   );
 }
 
