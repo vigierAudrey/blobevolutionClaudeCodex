@@ -91,10 +91,33 @@ jobs:
           printf -v DEPLOY_PATH_Q '%q' "$VPS_DEPLOY_PATH"
           printf -v API_BASE_URL_Q '%q' "$API_BASE_URL"
 
+          heartbeat_pid=""
+          cleanup_heartbeat() {
+            local status=$?
+            trap - EXIT
+            if [ -n "$heartbeat_pid" ]; then
+              kill "$heartbeat_pid" 2>/dev/null || true
+              wait "$heartbeat_pid" 2>/dev/null || true
+            fi
+            return "$status"
+          }
+          trap cleanup_heartbeat EXIT
+
+          (
+            while sleep 30; do
+              echo "Deploy SSH session still active..."
+            done
+          ) &
+          heartbeat_pid=$!
+
           ssh \
             -i "$HOME/.ssh/deploy_key" \
             -p "$VPS_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
             -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=6 \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$VPS_USER@$VPS_HOST" \
@@ -200,3 +223,5 @@ jobs:
           trap - EXIT
           echo "Deploy completed successfully."
           REMOTE
+
+          cleanup_heartbeat
