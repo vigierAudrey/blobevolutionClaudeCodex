@@ -107,6 +107,7 @@ export default function ProProfilePage() {
 
   // Notification preferences state
   const [notificationPrefs, setNotificationPrefs] = useState({
+    inAppEnabled: true,
     pushEnabled: true,
     emailEnabled: false,
     notifyLessonRequests: true,
@@ -945,16 +946,47 @@ export default function ProProfilePage() {
                         )}
                       </div>
 
-                      {/* ── In-app master toggle ──────────────────────────── */}
+                      {/* ── Channel masters : in-app + push ───────────────── */}
                       <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
                         <div className="flex items-center gap-3">
                           <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
                             <Bell className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="text-sm font-semibold" id="inapp-toggle-label">Alertes dans Blob</h4>
+                            <h4 className="text-sm font-semibold" id="inapp-toggle-label">Dans Blob (cloche)</h4>
                             <p className="text-xs text-muted-foreground" id="inapp-toggle-desc">
-                              Ces alertes apparaissent dans ton espace Blob lorsque tu es connecté.
+                              Le badge et l&apos;historique de notifications, visibles quand tu ouvres Blob.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleNotificationPref('inAppEnabled')}
+                          aria-pressed={notificationPrefs.inAppEnabled}
+                          aria-labelledby="inapp-toggle-label"
+                          aria-describedby="inapp-toggle-desc"
+                          className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 ${
+                            notificationPrefs.inAppEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                          aria-label={notificationPrefs.inAppEnabled ? 'Désactiver les notifications dans Blob' : 'Activer les notifications dans Blob'}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              notificationPrefs.inAppEnabled ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
+                            <Bell className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold" id="push-toggle-label">Push (téléphone / navigateur)</h4>
+                            <p className="text-xs text-muted-foreground" id="push-toggle-desc">
+                              Reçois ces alertes sur ton appareil, même quand Blob est fermé. Nécessite l&apos;autorisation de ton navigateur.
                             </p>
                           </div>
                         </div>
@@ -962,12 +994,12 @@ export default function ProProfilePage() {
                           type="button"
                           onClick={() => toggleNotificationPref('pushEnabled')}
                           aria-pressed={notificationPrefs.pushEnabled}
-                          aria-labelledby="inapp-toggle-label"
-                          aria-describedby="inapp-toggle-desc"
+                          aria-labelledby="push-toggle-label"
+                          aria-describedby="push-toggle-desc"
                           className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 ${
                             notificationPrefs.pushEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
                           }`}
-                          aria-label={notificationPrefs.pushEnabled ? 'Désactiver les alertes dans Blob' : 'Activer les alertes dans Blob'}
+                          aria-label={notificationPrefs.pushEnabled ? 'Désactiver les notifications push' : 'Activer les notifications push'}
                         >
                           <span
                             className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
@@ -977,9 +1009,10 @@ export default function ProProfilePage() {
                         </button>
                       </div>
 
-                      {/* ── PRO-specific in-app preferences ─────────────── */}
+                      {/* ── PRO-specific event toggles (apply to enabled channels) ─ */}
                       <div className="space-y-2">
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activité professionnelle</h4>
+                        <p className="text-xs text-muted-foreground">Ces événements te sont notifiés sur les canaux activés ci-dessus.</p>
 
                         {/* Lesson Requests */}
                         <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-amber-300 dark:hover:border-amber-700 transition-colors">
@@ -995,19 +1028,18 @@ export default function ProProfilePage() {
                           <button
                             type="button"
                             onClick={() => toggleNotificationPref('notifyLessonRequests')}
-                            disabled={!notificationPrefs.pushEnabled}
-                            aria-pressed={notificationPrefs.notifyLessonRequests && notificationPrefs.pushEnabled}
+                            aria-pressed={notificationPrefs.notifyLessonRequests}
                             aria-labelledby="notifyLesson-label"
                             aria-describedby="notifyLesson-desc"
                             className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 ${
-                              notificationPrefs.notifyLessonRequests && notificationPrefs.pushEnabled
+                              notificationPrefs.notifyLessonRequests
                                 ? 'bg-amber-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            }`}
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyLessonRequests && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                                notificationPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
                               }`}
                             />
                           </button>
@@ -1027,19 +1059,18 @@ export default function ProProfilePage() {
                           <button
                             type="button"
                             onClick={() => toggleNotificationPref('notifyProMessages')}
-                            disabled={!notificationPrefs.pushEnabled}
-                            aria-pressed={notificationPrefs.notifyProMessages && notificationPrefs.pushEnabled}
+                            aria-pressed={notificationPrefs.notifyProMessages}
                             aria-labelledby="notifyMessages-label"
                             aria-describedby="notifyMessages-desc"
                             className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                              notificationPrefs.notifyProMessages && notificationPrefs.pushEnabled
+                              notificationPrefs.notifyProMessages
                                 ? 'bg-blue-600'
                                 : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            }`}
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyProMessages && notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
+                                notificationPrefs.notifyProMessages ? 'translate-x-6' : 'translate-x-1'
                               }`}
                             />
                           </button>

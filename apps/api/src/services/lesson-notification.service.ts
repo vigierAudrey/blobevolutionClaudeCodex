@@ -145,6 +145,7 @@ async function findEligiblePros(input: LessonNotificationInput): Promise<Eligibl
       AND pp."lat" IS NOT NULL
       AND pp."lng" IS NOT NULL
       AND (np."notifyLessonRequests" IS NULL OR np."notifyLessonRequests" = true)
+      AND (np."inAppEnabled" IS NULL OR np."inAppEnabled" = true)
       AND ST_DWithin(
         ST_SetSRID(ST_MakePoint(pp."lng", pp."lat"), 4326)::geography,
         ST_SetSRID(ST_MakePoint(${lessonLng}, ${lessonLat}), 4326)::geography,

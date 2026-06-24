@@ -239,9 +239,11 @@ model NotificationPreferences {
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Master toggles
-  pushEnabled  Boolean @default(true)
-  emailEnabled Boolean @default(false)
+  // Master channel switches — one per delivery channel.
+  // shouldNotifyUser() gates every send on (channel master AND per-event toggle).
+  inAppEnabled Boolean @default(true)  // In-app bell / notification history
+  pushEnabled  Boolean @default(true)  // Push (FCM) — device/browser, app closed
+  emailEnabled Boolean @default(false) // Reserved: rider email channel (no rider email wired yet). Pro lesson emails use ProProfile.emailNotif.
 
   // Preferences for Riders
   notifyMessages    Boolean @default(true) // New message notifications

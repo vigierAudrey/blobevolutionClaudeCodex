@@ -6,6 +6,8 @@
 import admin from 'firebase-admin';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
+import type { NotificationType } from './notification.service';
+import { shouldNotifyUser } from './notification-preferences.service';
 
 // Firebase Admin configuration
 const firebaseConfig = {
@@ -30,6 +32,9 @@ export interface PushNotificationData {
   title: string;
   body: string;
   type: 'new_message' | 'reminder' | 'general';
+  // Semantic event type used to gate against per-event push preferences.
+  // When omitted, only the pushEnabled master switch is enforced.
+  preferenceType?: NotificationType;
   url?: string;
   icon?: string;
   userId?: string;
@@ -143,14 +148,24 @@ export class PushNotificationService {
     }
 
     try {
-      // Enforce NotificationPreferences — respect opt-out before any FCM call
-      const prefs = await prisma.notificationPreferences.findUnique({
-        where: { userId },
-        select: { pushEnabled: true },
-      });
-      if (prefs && !prefs.pushEnabled) {
-        secureLogger.info('PUSH_SKIPPED_BY_PREFERENCE', { preference: 'disabled' });
-        return false;
+      // Enforce NotificationPreferences before any FCM call: pushEnabled master
+      // switch AND (when known) the per-event toggle for this notification type.
+      if (notification.preferenceType) {
+        const allowed = await shouldNotifyUser(userId, notification.preferenceType, 'PUSH');
+        if (!allowed) {
+          secureLogger.info('PUSH_SKIPPED_BY_PREFERENCE', { preferenceType: notification.preferenceType });
+          return false;
+        }
+      } else {
+        // No semantic type provided — enforce the master switch only.
+        const prefs = await prisma.notificationPreferences.findUnique({
+          where: { userId },
+          select: { pushEnabled: true },
+        });
+        if (prefs && !prefs.pushEnabled) {
+          secureLogger.info('PUSH_SKIPPED_BY_PREFERENCE', { preference: 'disabled' });
+          return false;
+        }
       }
 
       // Get user's FCM tokens from database
@@ -224,6 +239,7 @@ export class PushNotificationService {
         ? messageData.message.substring(0, 50) + '...'
         : messageData.message,
       type: 'new_message',
+      preferenceType: 'NEW_MESSAGE',
       url: `/messages/${messageData.conversationId}`,
       userId,
       data: {
@@ -293,6 +309,7 @@ export class PushNotificationService {
       title: '🎉 Nouveau match !',
       body: `Tu as matché avec ${matchData.matchedUserName} ! Envoie un message pour démarrer la conversation.`,
       type: 'new_message', // Réutilise le type message pour l'instant
+      preferenceType: 'NEW_MATCH',
       url: `/messages/${matchData.conversationId}`,
       userId,
       data: {
@@ -321,6 +338,7 @@ export class PushNotificationService {
       title: '👥 Invitation à un groupe',
       body: `${invitationData.inviterName} t'invite à rejoindre une conversation de groupe (${invitationData.memberCount} membres)`,
       type: 'new_message', // Réutilise le type message pour l'instant
+      preferenceType: 'GROUP_INVITATION',
       url: `/messages/invitations`,
       userId,
       data: {

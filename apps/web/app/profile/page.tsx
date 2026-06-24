@@ -141,6 +141,7 @@ export default function ProfilePage() {
 
   // Notification preferences state
   const [notificationPrefs, setNotificationPrefs] = useState({
+    inAppEnabled: true,
     pushEnabled: true,
     emailEnabled: false,
     notifyMessages: true,
@@ -797,39 +798,48 @@ export default function ProfilePage() {
                     <BlobAlert variant="info">Chargement des préférences...</BlobAlert>
                   ) : (
                     <div className="space-y-4">
-                      <NotificationToggle
-                        label="Alertes dans Blob"
-                        description="Choisis les alertes que tu veux recevoir dans Blob."
-                        checked={notificationPrefs.pushEnabled}
-                        onClick={() => toggleNotificationPref('pushEnabled')}
-                      />
                       <div className="space-y-2">
-                        <h4 className="text-xs font-black uppercase tracking-widest text-blob-black/56">Messagerie & Matching</h4>
+                        <h4 className="text-xs font-black uppercase tracking-widest text-blob-black/56">Canaux de diffusion</h4>
+                        <NotificationToggle
+                          label="Dans Blob (cloche)"
+                          description="Le badge et l’historique de notifications, visibles quand tu ouvres Blob."
+                          checked={notificationPrefs.inAppEnabled}
+                          onClick={() => toggleNotificationPref('inAppEnabled')}
+                        />
+                        <NotificationToggle
+                          label="Push (téléphone / navigateur)"
+                          description="Reçois ces alertes sur ton appareil, même quand Blob est fermé. Nécessite l’autorisation de ton navigateur."
+                          checked={notificationPrefs.pushEnabled}
+                          onClick={() => toggleNotificationPref('pushEnabled')}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-black uppercase tracking-widest text-blob-black/56">Quelles alertes ?</h4>
+                        <p className="text-xs text-blob-black/56">
+                          Ces événements te sont notifiés sur les canaux activés ci-dessus.
+                        </p>
                         <NotificationToggle
                           label="Messages"
                           description="Quand tu reçois un nouveau message."
-                          checked={notificationPrefs.notifyMessages && notificationPrefs.pushEnabled}
-                          disabled={!notificationPrefs.pushEnabled}
+                          checked={notificationPrefs.notifyMessages}
                           onClick={() => toggleNotificationPref('notifyMessages')}
                         />
                         <NotificationToggle
                           label="Nouveaux matchs"
                           description="Quand tu matches avec un autre rider."
-                          checked={notificationPrefs.notifyMatches && notificationPrefs.pushEnabled}
-                          disabled={!notificationPrefs.pushEnabled}
+                          checked={notificationPrefs.notifyMatches}
                           onClick={() => toggleNotificationPref('notifyMatches')}
                         />
                         <NotificationToggle
                           label="Invitations groupe"
                           description="Quand on t’invite dans une conversation."
-                          checked={notificationPrefs.notifyInvitations && notificationPrefs.pushEnabled}
-                          disabled={!notificationPrefs.pushEnabled}
+                          checked={notificationPrefs.notifyInvitations}
                           onClick={() => toggleNotificationPref('notifyInvitations')}
                         />
                       </div>
-                      {!notificationPrefs.pushEnabled && (
+                      {!notificationPrefs.inAppEnabled && !notificationPrefs.pushEnabled && (
                         <BlobAlert variant="warning">
-                          Réactive les alertes dans Blob pour voir les messages, matchs et invitations.
+                          Aucun canal activé : tu ne recevras aucune alerte pour tes messages, matchs et invitations. Ces réglages ne concernent pas les emails de sécurité (connexion, mot de passe), toujours envoyés.
                         </BlobAlert>
                       )}
                       <BlobButton
