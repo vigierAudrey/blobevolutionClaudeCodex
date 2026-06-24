@@ -223,6 +223,10 @@ Contribution 2026-06-15 :
 
 - [x] Onboarding pros/admin : parcours step-up admin réutilisé pour valider un profil pro sans désactiver la sécurité, libellés distincts de la vérification email, garde-fou rôle `PRO` et tests API/Web ciblés.
 
+Contribution 2026-06-24 :
+
+- [x] Emails d'inscription : état UI aligné sur `emailSent`, fallback défensif sans faux succès et sender transactionnel harmonisé sur `noreply@blobsurf.com`.
+
 Contribution 2026-06-07 :
 
 - [x] Média rider privé : route authentifiée owner-only pour servir `users/*`, front converti vers cette route, tests anti-IDOR et conservation de `pros/*` public.

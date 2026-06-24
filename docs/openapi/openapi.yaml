@@ -4038,7 +4038,7 @@ components:
                 type: string
     RegisterRequest:
       type: object
-      required: [email, password, consentAccepted]
+      required: [email, password, ageConfirmed, consentAccepted]
       properties:
         email:
           type: string
@@ -4056,21 +4056,25 @@ components:
           minLength: 2
           maxLength: 2
           description: Requis pour les comptes PRO. Doit être fixé à `FR` pendant le lancement initial.
+        ageConfirmed:
+          type: boolean
+          enum: [true]
         consentAccepted:
           type: boolean
           enum: [true]
     RegisterResponse:
       type: object
+      required: [message, userId, emailSent]
       properties:
+        message:
+          type: string
+          description: Message public indiquant si l'envoi initial doit être retenté
         userId:
           type: string
           format: uuid
-        email:
-          type: string
-          format: email
-        requiresEmailVerification:
+        emailSent:
           type: boolean
-          default: true
+          description: Vrai uniquement si le transport SMTP a accepté l'email de vérification initial
     LoginRequest:
       type: object
       required: [email, password]

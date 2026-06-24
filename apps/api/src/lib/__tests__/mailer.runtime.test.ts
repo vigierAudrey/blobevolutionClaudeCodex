@@ -41,7 +41,7 @@ describe('mailer runtime hardening', () => {
       SMTP_USER: 'brevo-user',
       SMTP_PASS: 'brevo-pass',
       SMTP_SECURE: 'false',
-      SMTP_FROM: 'no-reply@example.com',
+      SMTP_FROM: 'noreply@blobsurf.com',
       EMAIL_HASH_SECRET: 'e'.repeat(32),
     };
     mockSendMail.mockResolvedValue({ messageId: 'msg-1' });
@@ -83,7 +83,7 @@ describe('mailer runtime hardening', () => {
     await mailer.sendVerificationEmail('user@example.com', 'token-1234567890');
 
     expect(mockSendMail).toHaveBeenCalledWith(expect.objectContaining({
-      from: 'no-reply@example.com',
+      from: 'noreply@blobsurf.com',
       replyTo: 'support@blobsurf.com',
     }));
   });
@@ -97,7 +97,7 @@ describe('mailer runtime hardening', () => {
     });
 
     expect(mockSendMail).toHaveBeenCalledWith(expect.objectContaining({
-      from: 'no-reply@example.com',
+      from: 'noreply@blobsurf.com',
       replyTo: 'security@blobsurf.com',
     }));
   });
