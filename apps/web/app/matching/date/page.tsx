@@ -5,15 +5,13 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { BackBar } from '../../../components/BackBar';
-import { Button } from '../../../components/ui/button';
-import { Badge } from '../../../components/ui/badge';
 import { apiClient } from '../../../lib/apiClient';
 import type { DashboardUser } from '@/types/user';
 import type { Level, Sport } from '@/types/matching';
 import { CalendarDays, MapPin, AlertTriangle, GraduationCap } from 'lucide-react';
 import { FRANCE_ONLY_INFO_MESSAGE } from '../../../lib/franceLaunch';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobPageHeader } from '@/components/blob';
 
 // Fonction pour détecter le navigateur de l'utilisateur
 const detectBrowser = (): 'chrome' | 'firefox' | 'safari' | 'edge' | 'other' => {
@@ -196,8 +194,7 @@ function DateInner() {
         url.searchParams.set('lat', String(la)); url.searchParams.set('lng', String(lo));
         window.history.replaceState(null, '', url.toString());
       },
-      (error) => {
-        console.error('Erreur géolocalisation:', error);
+      () => {
         setGeolocError(true);
       },
       { enableHighAccuracy: true, timeout: 8000 }
@@ -205,77 +202,75 @@ function DateInner() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-10">
-      <BackBar fallbackHref="/matching" />
+    <div className="mx-auto max-w-4xl space-y-6 pb-10">
+      <BackBar fallbackHref="/matching" tone="blobDark" />
 
-      {/* Header compact avec progression */}
-      <div className="flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 p-4 border-2 border-purple-200/50 dark:border-purple-800/50">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md">
-            <CalendarDays className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Date & Options</h1>
-            <p className="text-sm text-muted-foreground">Étape 2 sur 3 : Choisis ta date</p>
-        </div>
+      <div className="space-y-4">
+        <BlobBadge variant="yellow" size="md">Étape 2/3</BlobBadge>
+        <BlobPageHeader
+          title="Date et options"
+          subtitle="Choisis la date de ta session puis active la position nécessaire à la recherche."
+        />
       </div>
 
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+      <BlobAlert variant="warning" title="Zone de lancement">
         {FRANCE_ONLY_INFO_MESSAGE}
-      </div>
-        <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400">
-          Étape 2/3
-        </Badge>
-      </div>
+      </BlobAlert>
 
-      <Card className="border-2">
-        <CardHeader>
-          <CardTitle className="text-xl">Choix de la date</CardTitle>
-          <CardDescription>Sélectionne aujourd&apos;hui, demain ou choisis mode flexible</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <BlobCard mode="white" className="motion-safe:hover:translate-y-0">
+        <div className="space-y-5">
+          <header className="border-b-2 border-blob-sand-deep pb-5 dark:border-white/10">
+            <div className="flex items-center gap-3">
+              <CalendarDays className="h-6 w-6" aria-hidden="true" />
+              <h2 className="text-xl font-black uppercase tracking-widest">Choix de la date</h2>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-blob-black/70 dark:text-white/70">
+              Sélectionne aujourd&apos;hui, demain ou choisis le mode flexible.
+            </p>
+          </header>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {[
               { key: formatDateISO(today), label: `Aujourd'hui (${formatDateDisplay(today)})` },
               { key: formatDateISO(tomorrow), label: `Demain (${formatDateDisplay(tomorrow)})` },
               { key: 'anytime', label: '🗓️ Peu importe' },
             ].map((d) => (
               <button
+                type="button"
                 key={d.key}
                 onClick={() => setDatePersist(d.key)}
                 aria-pressed={dateISO === d.key}
-                className={`rounded-2xl border-2 px-4 py-5 text-left text-sm font-medium transition-all shadow-sm hover:shadow-md ${
+                className={`min-h-16 rounded-sm border-2 px-4 py-4 text-left text-sm font-black uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow focus-visible:ring-offset-2 ${
                   dateISO === d.key
-                    ? 'border-fuchsia-500 bg-fuchsia-50/80 ring-2 ring-fuchsia-200'
-                    : 'border-border hover:border-fuchsia-200'
+                    ? 'border-blob-black bg-blob-yellow text-blob-black dark:border-blob-yellow'
+                    : 'border-blob-sand-deep bg-blob-sand text-blob-black hover:border-blob-black dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:border-white/60'
                 }`}
               >
                 {d.label}
               </button>
             ))}
           </div>
-          <div className="rounded-2xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">
+          <div className="rounded-sm border-2 border-blob-sand-deep bg-blob-sand px-4 py-3 text-sm text-blob-black/70 dark:border-white/10 dark:bg-white/5 dark:text-white/70" aria-live="polite">
             {dateISO
               ? dateISO === 'anytime'
                 ? 'Mode flexible : nous te proposons les meilleurs matchs sans contrainte de date.'
                 : `Date sélectionnée : ${dateISO}`
               : 'Sélectionne un créneau pour débloquer la suite.'}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </BlobCard>
 
-      <Card className="border-2">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <GraduationCap className="w-5 h-5 text-amber-600" />
-            Cours avec un pro (optionnel)
-          </CardTitle>
-          <CardDescription>
-            Signale aux autres riders et aux pros que tu cherches un cours
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <label className="flex items-center gap-3 text-sm font-medium">
+      <BlobCard mode="sand" className="motion-safe:hover:translate-y-0">
+        <div className="space-y-4">
+          <header>
+            <div className="flex items-center gap-3">
+              <GraduationCap className="h-6 w-6" aria-hidden="true" />
+              <h2 className="text-xl font-black uppercase tracking-widest">Cours avec un pro</h2>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-blob-black/70 dark:text-white/70">
+              Optionnel : signale aux autres riders et aux pros que tu cherches un cours.
+            </p>
+          </header>
+          <label className="flex min-h-12 items-start gap-3 rounded-sm border-2 border-blob-sand-deep bg-white p-3 text-sm font-medium dark:border-white/15 dark:bg-white/5">
             <input
               id="wantsLesson"
               type="checkbox"
@@ -294,76 +289,82 @@ function DateInner() {
                 }
                 window.history.replaceState(null, '', url.toString());
               }}
-              className="h-5 w-5"
+              className="mt-0.5 h-5 w-5 shrink-0 accent-blob-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
             />
             <span>Je veux un cours avec un professionnel sur cette session</span>
           </label>
 
           {wantsLesson && (
-            <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-800 space-y-2">
+            <BlobAlert variant="info" title="Demande de cours">
+              <div className="space-y-2">
               <p>
                 Activer ce badge informe uniquement les autres riders en matching que tu cherches un cours. Coordinate-toi avec ton binôme pour éviter
                 les doublons.
               </p>
               <p>
                 Pour publier une demande visible sur la BloboMap, remplis{' '}
-                <Link href="/lesson-request" className="font-semibold underline">
+                <Link href="/lesson-request" className="font-black underline underline-offset-2">
                   le formulaire dédié
                 </Link>
                 . Un seul formulaire par groupe suffit.
               </p>
-              <p className="italic text-blue-700/90">Aucun cours n’est réservé automatiquement pour le moment.</p>
-            </div>
+              <p className="italic">Aucun cours n’est réservé automatiquement pour le moment.</p>
+              </div>
+            </BlobAlert>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </BlobCard>
 
-      <Card className="border-2">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <MapPin className="w-5 h-5 text-sky-600" />
-            Géolocalisation
-          </CardTitle>
-          <CardDescription>Active ta position pour trouver des riders proches de toi (nécessaire pour le matching)</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-2xl bg-blue-50/80 border border-blue-200 p-3 text-sm text-blue-800">
+      <BlobCard mode="white" className="motion-safe:hover:translate-y-0">
+        <div className="space-y-5">
+          <header className="border-b-2 border-blob-sand-deep pb-5 dark:border-white/10">
+            <div className="flex items-center gap-3">
+              <MapPin className="h-6 w-6" aria-hidden="true" />
+              <h2 className="text-xl font-black uppercase tracking-widest">Géolocalisation</h2>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-blob-black/70 dark:text-white/70">
+              Active ta position pour trouver des riders proches de toi.
+            </p>
+          </header>
+          <BlobAlert variant="info" title="Position requise">
             La géolocalisation est nécessaire pour utiliser le matching et trouver des riders près de chez toi.
-          </div>
+          </BlobAlert>
 
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="outline" onClick={getLocation} className="inline-flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+              <BlobButton variant="outlineDark" size="sm" onClick={getLocation} className="w-full sm:w-auto">
+                <MapPin className="h-4 w-4" aria-hidden="true" />
                 Activer ma position
-              </Button>
-              <span className="text-xs text-muted-foreground">
+              </BlobButton>
+              <span className="break-all text-xs text-blob-black/64 dark:text-white/64" aria-live="polite">
                 {lat != null && lng != null ? `Position : ${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Position non activée'}
               </span>
             </div>
             {geolocError && (
-              <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 space-y-2 text-sm text-red-800">
-                <p className="font-semibold flex items-center gap-2 text-red-900">
-                  <AlertTriangle className="w-4 h-4" />
-                  Autorise la localisation sur {getBrowserInstructions(browserType).title}
+              <BlobAlert variant="error" title={`Autorise la localisation sur ${getBrowserInstructions(browserType).title}`}>
+                <div className="space-y-3">
+                <p className="flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                  Vérifie les autorisations de ton navigateur.
                 </p>
-                <ol className="list-decimal pl-4 space-y-1">
+                <ol className="list-decimal space-y-1 pl-4">
                   {getBrowserInstructions(browserType).steps.map((step, idx) => (
                     <li key={idx}>{step}</li>
                   ))}
                 </ol>
-                <p className="text-xs text-red-700">La géolocalisation est nécessaire pour le matching.</p>
-                <Button onClick={getLocation} variant="outline" size="sm">
+                <p className="text-xs">La géolocalisation est nécessaire pour le matching.</p>
+                <BlobButton onClick={getLocation} variant="outlineDark" size="sm">
                   Réessayer
-                </Button>
-              </div>
+                </BlobButton>
+                </div>
+              </BlobAlert>
             )}
           </div>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm">
               <label htmlFor="distance">Distance maximale</label>
-              <span className="font-semibold text-foreground">{distanceKm ?? 20} km</span>
+              <span className="font-black">{distanceKm ?? 20} km</span>
             </div>
             <input
               id="distance"
@@ -380,11 +381,11 @@ function DateInner() {
                 url.searchParams.set('distanceKm', String(v));
                 window.history.replaceState(null, '', url.toString());
               }}
-              className="w-full accent-sky-600"
+              className="w-full accent-blob-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow"
             />
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+              <BlobButton
+                variant="outlineDark"
                 size="sm"
                 onClick={() => {
                   const v = 20;
@@ -395,22 +396,23 @@ function DateInner() {
                   window.history.replaceState(null, '', url.toString());
                 }}
               >
-                Reset 20 km
-              </Button>
-              <p className="text-xs text-muted-foreground">
+                Réinitialiser à 20 km
+              </BlobButton>
+              <p className="text-xs text-blob-black/64 dark:text-white/64">
                 Plus le rayon est large, plus tu as de chance de matcher rapidement.
               </p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </BlobCard>
 
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => router.push('/matching')}>
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <BlobButton variant="outlineDark" size="md" className="w-full sm:w-auto" onClick={() => router.push('/matching')}>
           Retour à la sélection
-        </Button>
-        <Button
-          className="flex-1 sm:flex-none"
+        </BlobButton>
+        <BlobButton
+          size="md"
+          className="w-full sm:w-auto"
           disabled={!dateISO || lat == null || lng == null}
           onClick={() => {
             const u = new URL(window.location.origin + '/matching/cards');
@@ -425,7 +427,7 @@ function DateInner() {
           }}
         >
           Voir les profils
-        </Button>
+        </BlobButton>
       </div>
     </div>
   );
@@ -433,7 +435,7 @@ function DateInner() {
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="max-w-2xl mx-auto">Chargement…</div>}>
+    <Suspense fallback={<BlobCard mode="white" aria-live="polite">Chargement…</BlobCard>}>
       <DateInner />
     </Suspense>
   );

@@ -8,6 +8,7 @@ import { FRANCE_ONLY_INFO_MESSAGE } from '../../../../lib/franceLaunch';
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 
 jest.setTimeout(10000);
+const mockToast = jest.fn();
 
 // ✅ Polyfills (TextEncoder, TextDecoder, crypto) are already set up in jest.setup.js
 // Removed duplicate setup to prevent Jest worker conflicts
@@ -37,7 +38,7 @@ jest.mock('../../../../lib/optimizedApiClient', () => {
 jest.mock('../../../../components/ui/toast', () => {
   const mockReact = require('react');
   return {
-    useToast: jest.fn(() => jest.fn()),
+    useToast: jest.fn(() => mockToast),
     ToastProvider: ({ children }: { children?: React.ReactNode }) =>
       mockReact.createElement('div', { 'data-testid': 'toast-provider' }, children),
   };
@@ -243,6 +244,7 @@ describe('Matching Cards Component', () => {
   describe('Authentication and Authorization', () => {
     it('should redirect to login if session bootstrap fails', async () => {
       mockApiClient.me.mockRejectedValue(new Error('Session expirée'));
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
@@ -251,6 +253,8 @@ describe('Matching Cards Component', () => {
       await waitFor(() => {
         expect(mockReplace).toHaveBeenCalledWith('/login');
       });
+      expect(consoleError.mock.calls.flat().join(' ')).not.toContain('Session expirée');
+      consoleError.mockRestore();
     });
 
     it('should redirect PROs to dashboard', async () => {
@@ -319,7 +323,6 @@ describe('Matching Cards Component', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Plus de profils disponibles')).toBeInTheDocument();
-        expect(screen.getByText('🏄‍♀️')).toBeInTheDocument();
       });
     });
   });
@@ -339,7 +342,7 @@ describe('Matching Cards Component', () => {
       });
 
       // Initially should show loading message
-      expect(screen.getByText('🔍 Recherche de profils compatibles...')).toBeInTheDocument();
+      expect(screen.getByText('Recherche de profils compatibles…')).toBeInTheDocument();
 
       // Advance timers to resolve the promise
       await advanceTime(200);
@@ -488,6 +491,24 @@ describe('Matching Cards Component', () => {
   });
 
   describe('Match Handling', () => {
+    it('shows a neutral toast when a queued decision fails', async () => {
+      mockApiClient.matchDecisions.mockRejectedValue(new Error('payload décision sensible'));
+      const user = userEvent.setup();
+
+      renderWithProviders(React.createElement(Page));
+      await waitForInitialProfile();
+      await user.click(screen.getByText('Accepter'));
+      await advanceTime(2500);
+
+      await waitFor(() => {
+        expect(mockToast).toHaveBeenCalledWith(
+          'Impossible d’enregistrer cette décision pour le moment.',
+          'error',
+        );
+      });
+      expect(screen.queryByText(/payload décision sensible/i)).not.toBeInTheDocument();
+    });
+
     it('should display match popup when match is created', async () => {
       mockApiClient.matchDecisions.mockResolvedValue({
         count: 1,
@@ -674,7 +695,7 @@ describe('Matching Cards Component', () => {
     });
 
     it('should display error message when loading fails', async () => {
-      mockApiClient.searchMatching.mockRejectedValue(new Error('Erreur réseau'));
+      mockApiClient.searchMatching.mockRejectedValue(new Error('Erreur réseau avec token sensible'));
 
       await act(async () => {
         renderWithProviders(React.createElement(Page));
@@ -682,8 +703,24 @@ describe('Matching Cards Component', () => {
 
       await waitFor(() => expect(mockApiClient.searchMatching).toHaveBeenCalled(), { timeout: 3000 });
       await waitFor(() => {
-        expect(screen.getByText('Erreur réseau')).toBeInTheDocument();
+        expect(screen.getByRole('alert')).toHaveTextContent('Impossible de charger les profils pour le moment.');
       });
+      expect(screen.queryByText(/token sensible/i)).not.toBeInTheDocument();
+    });
+
+    it('does not misclassify an unrelated internal France error as the launch restriction', async () => {
+      mockApiClient.searchMatching.mockRejectedValue(
+        new Error('Incident interne France métropolitaine avec payload sensible'),
+      );
+
+      await act(async () => {
+        renderWithProviders(React.createElement(Page));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent('Impossible de charger les profils pour le moment.');
+      });
+      expect(screen.queryByText(/payload sensible/i)).not.toBeInTheDocument();
     });
   });
 
@@ -709,6 +746,24 @@ describe('Matching Cards Component', () => {
         targetProfileId: 'profile-1',
         reason: 'Comportement inapproprié',
       });
+    });
+
+    it('shows a neutral toast when reporting fails', async () => {
+      const user = userEvent.setup();
+      window.prompt = jest.fn().mockReturnValue('Motif');
+      mockApiClient.reportProfile.mockRejectedValue(new Error('stacktrace signalement sensible'));
+
+      renderWithProviders(React.createElement(Page));
+      await waitForInitialProfile();
+      await user.click(screen.getByText('Signaler'));
+
+      await waitFor(() => {
+        expect(mockToast).toHaveBeenCalledWith(
+          'Impossible d’envoyer le signalement pour le moment.',
+          'error',
+        );
+      });
+      expect(screen.queryByText(/stacktrace signalement sensible/i)).not.toBeInTheDocument();
     });
   });
 });

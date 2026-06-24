@@ -69,7 +69,6 @@ async function cachedRequest<T>(
   if (cached) {
     // Record cache hit performance
     measurePerformance(cacheKey, true, endpoint).end();
-    console.log(`🚀 Cache hit: ${cacheKey}`);
     return cached;
   }
 
@@ -81,7 +80,6 @@ async function cachedRequest<T>(
 
   // Cache the result
   clientCache.set(cacheKey, result, ttl);
-  console.log(`💾 Cached: ${cacheKey}`);
 
   perf.end();
   return result;
@@ -113,9 +111,6 @@ export const optimizedApiClient = {
 
   // Optimized user initialization - parallel requests
   async initializeUser() {
-    console.log('🚀 Initializing user data in parallel...');
-    const start = performance.now();
-
     try {
       const [user, profile, disciplines] = await Promise.all([
         this.me(),
@@ -123,12 +118,8 @@ export const optimizedApiClient = {
         this.getDisciplines().catch(() => []), // Non-critical, allow to fail
       ]);
 
-      const duration = performance.now() - start;
-      console.log(`✅ User initialized in ${duration.toFixed(1)}ms`);
-
       return { user, profile, disciplines };
     } catch (error) {
-      console.error('❌ User initialization failed:', error);
       throw error;
     }
   },
@@ -157,8 +148,6 @@ export const optimizedApiClient = {
 
   // Prefetching for predicted user actions
   async prefetchMatchingData(params: Parameters<typeof apiClient.searchMatching>[0]) {
-    console.log('🔮 Prefetching matching data...');
-
     // Prefetch next page
     const nextPageParams: Parameters<typeof apiClient.searchMatching>[0] = {
       ...params,
@@ -173,17 +162,14 @@ export const optimizedApiClient = {
   // Cache invalidation methods
   invalidateUserData() {
     clientCache.invalidatePattern('^(user|profile):');
-    console.log('🗑️ Invalidated user data cache');
   },
 
   invalidateSearchData() {
     clientCache.invalidatePattern('^search:');
-    console.log('🗑️ Invalidated search data cache');
   },
 
   invalidateProData() {
     clientCache.invalidatePattern('^pro:');
-    console.log('🗑️ Invalidated pro data cache');
   },
 
   // Pass-through methods for non-cached operations
@@ -253,12 +239,11 @@ export const optimizedApiClient = {
 };
 
 // Export helper for measuring performance
-export const measureApiPerformance = (name: string) => {
+export const measureApiPerformance = (_name: string) => {
   const start = performance.now();
   return {
     end: () => {
       const duration = performance.now() - start;
-      console.log(`⏱️ ${name}: ${duration.toFixed(1)}ms`);
       return duration;
     },
   };
