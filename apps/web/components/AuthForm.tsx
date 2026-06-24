@@ -114,6 +114,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [twoFACode, setTwoFACode] = useState('');
   const [registered, setRegistered] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  const [registrationEmailSent, setRegistrationEmailSent] = useState(false);
   const submittingRef = useRef(false);
 
   useEffect(() => {
@@ -185,7 +186,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           setFieldErrors({ consent: 'Merci de confirmer que vous avez lu et accepté les règles de sécurité des sessions.' });
           return;
         }
-        await apiClient.register({
+        const registration = await apiClient.register({
           email,
           password,
           role,
@@ -203,6 +204,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           }
         }
         setRegisteredEmail(email);
+        setRegistrationEmailSent(registration.emailSent === true);
         setRegistered(true);
         return;
       }
@@ -283,7 +285,7 @@ export function AuthForm({ mode }: AuthFormProps) {
     try {
       await apiClient.resendVerification(email);
       setResendStatus('sent');
-      setInfo('Email de vérification renvoyé. Vérifie ta boîte mail.');
+      setInfo('Demande de renvoi prise en compte. Vérifie ta boîte mail.');
     } catch (resendError) {
       setResendStatus('error');
       const resendMessage = getTechnicalErrorMessage(resendError, '');
@@ -429,26 +431,39 @@ export function AuthForm({ mode }: AuthFormProps) {
               <Mail size={20} />
             </div>
             <div className="min-w-0">
-              <CardTitle className="text-xl font-black uppercase tracking-widest">Vérifie ta boîte mail !</CardTitle>
-              <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">Ton compte Blob est presque prêt</CardDescription>
+              <CardTitle className="text-xl font-black uppercase tracking-widest">
+                {registrationEmailSent ? 'Vérifie ta boîte mail !' : 'Compte créé'}
+              </CardTitle>
+              <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">
+                {registrationEmailSent ? 'Ton compte Blob est presque prêt' : 'La vérification email reste nécessaire'}
+              </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent className="pt-6 space-y-4">
-          <p className="text-sm text-foreground">
-            On vient d&apos;envoyer un lien de confirmation à{' '}
-            <strong className="font-semibold">{registeredEmail}</strong>.
-            Clique dessus pour activer ton compte Blob.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Pas de mail en vue ? Pense à vérifier tes spams, ça arrive !
-          </p>
+          {registrationEmailSent ? (
+            <>
+              <p className="text-sm text-foreground">
+                On vient d&apos;envoyer un lien de confirmation à{' '}
+                <strong className="font-semibold">{registeredEmail}</strong>.
+                Clique dessus pour activer ton compte Blob.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Pas de mail en vue ? Pense à vérifier tes spams, ça arrive !
+              </p>
+            </>
+          ) : (
+            <div className={authNoticeClass} role="status">
+              Ton compte a été créé, mais l&apos;email de vérification n&apos;a pas pu être envoyé pour le moment.
+              Réessaie avec le bouton de renvoi ou contacte le support si le problème persiste.
+            </div>
+          )}
 
           {resendStatus === 'sent' && (
             <div className={authSuccessClass} role="alert">
               <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
               <p className="text-sm">
-                Email renvoyé. Vérifie ta boîte mail.
+                Demande de renvoi prise en compte. Vérifie ta boîte mail.
               </p>
             </div>
           )}
@@ -486,6 +501,7 @@ export function AuthForm({ mode }: AuthFormProps) {
               onClick={() => {
                 setRegistered(false);
                 setRegisteredEmail('');
+                setRegistrationEmailSent(false);
                 setResendStatus('idle');
               }}
             >

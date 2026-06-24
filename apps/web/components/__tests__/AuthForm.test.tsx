@@ -44,7 +44,11 @@ describe('AuthForm', () => {
       prefetch: jest.fn(),
     });
     mockUseSearchParams.mockReturnValue(new URLSearchParams());
-    mockedApiClient.register.mockResolvedValue({ userId: 'user-1' });
+    mockedApiClient.register.mockResolvedValue({
+      message: 'Account created. Please check your inbox for the verification email.',
+      userId: 'user-1',
+      emailSent: true,
+    });
   });
 
   it('affiche le message France-only quand le rôle PRO est sélectionné', async () => {
@@ -97,6 +101,40 @@ describe('AuthForm', () => {
       expect(screen.getByRole('button', { name: /renvoyer l'email/i })).toBeInTheDocument();
     });
 
+    it("confirme l'envoi uniquement quand register retourne emailSent:true", async () => {
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+      await fillAndSubmit(user);
+
+      expect(screen.getByText(/on vient d'envoyer un lien de confirmation/i)).toBeInTheDocument();
+    });
+
+    it("affiche un état honnête et sans détail interne quand register retourne emailSent:false", async () => {
+      mockedApiClient.register.mockResolvedValue({
+        message: "Account created. If you don't receive the email, use the resend button.",
+        userId: 'user-1',
+        emailSent: false,
+      });
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+      await fillAndSubmit(user);
+
+      expect(screen.queryByText(/on vient d'envoyer/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/ton compte a été créé, mais l'email de vérification n'a pas pu être envoyé/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /renvoyer l'email/i })).toBeInTheDocument();
+      expect(screen.queryByText(/smtp|brevo|provider|stack/i)).not.toBeInTheDocument();
+    });
+
+    it("ne suppose pas l'envoi réussi quand emailSent est absent", async () => {
+      mockedApiClient.register.mockResolvedValue({ message: 'Account created.', userId: 'user-1' });
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+      await fillAndSubmit(user);
+
+      expect(screen.queryByText(/on vient d'envoyer/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/l'email de vérification n'a pas pu être envoyé/i)).toBeInTheDocument();
+    });
+
     it('ne redirige pas automatiquement après inscription', async () => {
       const mockPush = jest.fn();
       mockUseRouter.mockReturnValue({ push: mockPush, replace: jest.fn(), back: jest.fn(), forward: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() });
@@ -134,7 +172,7 @@ describe('AuthForm', () => {
       expect(screen.getByRole('button', { name: /envoi/i })).toBeDisabled();
 
       resolveResend();
-      await screen.findByText(/email renvoyé/i);
+      await screen.findByText(/demande de renvoi prise en compte/i);
     });
 
     it('affiche un message neutre si resend échoue', async () => {
@@ -224,7 +262,7 @@ describe('AuthForm', () => {
     it("libère le verrou register après une erreur", async () => {
       mockedApiClient.register
         .mockRejectedValueOnce(new Error('network error'))
-        .mockResolvedValueOnce({ userId: 'user-2' });
+        .mockResolvedValueOnce({ message: 'Account created.', userId: 'user-2', emailSent: true });
       render(<AuthForm mode="register" />);
       const user = userEvent.setup();
 

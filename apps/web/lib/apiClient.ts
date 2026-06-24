@@ -174,6 +174,11 @@ export interface SecurityObservability {
  */
 export type TwoFactorChallengeResponse = { requires2FA: true; userId: string; message: string };
 export type LoginResponse = { ok: true } | TwoFactorChallengeResponse;
+export interface RegisterResponse {
+  message: string;
+  userId: string;
+  emailSent?: boolean;
+}
 export type AdminStepUpSendResponse = { message: string };
 export type AdminStepUpVerifyResponse = { message: string; stepUpUntil: number };
 
@@ -1195,7 +1200,7 @@ export const apiClient = {
     consentAccepted: true;
     countryCode?: string;
   }) =>
-    request('/auth/register', { method: 'POST', body: JSON.stringify(body) }) as Promise<Record<string, unknown>>,
+    request('/auth/register', { method: 'POST', body: JSON.stringify(body) }) as Promise<RegisterResponse>,
 
   requestPasswordReset: (email: string) =>
     request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
