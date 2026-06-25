@@ -335,8 +335,8 @@ importers:
         specifier: ^8.0.2
         version: 8.0.2(@babel/core@7.29.7)
       '@babel/preset-react':
-        specifier: ^7.29.7
-        version: 7.29.7(@babel/core@7.29.7)
+        specifier: ^8.0.1
+        version: 8.0.1(@babel/core@7.29.7)
       '@babel/preset-typescript':
         specifier: ^7.23.0
         version: 7.28.5(@babel/core@7.29.7)
@@ -1003,6 +1003,12 @@ packages:
     peerDependencies:
       '@babel/core': ^7.0.0-0
 
+  '@babel/plugin-syntax-jsx@8.0.1':
+    resolution: {integrity: sha512-n0jtCOxEovhU7METqSQjcZO9pX53nu9uNIjMS+hEt+Nt9jA7oOZoBIgbCxhhASmF6T6rPDGge5UAvh6Z4eFz/g==}
+    engines: {node: ^22.18.0 || >=24.11.0}
+    peerDependencies:
+      '@babel/core': ^8.0.0
+
   '@babel/plugin-syntax-logical-assignment-operators@7.10.4':
     resolution: {integrity: sha512-d8waShlpFDinQ5MtvGU9xDAOzKH47+FFoney2baFIoMr952hKOLp1HR7VszoZvOsV/4+RRszNY7D17ba0te0ig==}
     peerDependencies:
@@ -1561,11 +1567,23 @@ packages:
     peerDependencies:
       '@babel/core': ^7.0.0-0
 
+  '@babel/plugin-transform-react-display-name@8.0.1':
+    resolution: {integrity: sha512-soLishXlkyu6jcICPyO3HEP7A3GCzKEnn7XfvYrImuWEOwFAz93qShmWSYPf5ww0ZkO4By0zsN2bVIDF54fSdA==}
+    engines: {node: ^22.18.0 || >=24.11.0}
+    peerDependencies:
+      '@babel/core': ^8.0.0
+
   '@babel/plugin-transform-react-jsx-development@7.29.7':
     resolution: {integrity: sha512-Xfy3UVMF04+ypnFbkhvfqtmvwfe92qwQdbGZVonhE+6v35GzlofmOnA1szaZqzb9xYWr0nl1e5EMmzi0DNON1g==}
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
+
+  '@babel/plugin-transform-react-jsx-development@8.0.1':
+    resolution: {integrity: sha512-Hb+HUZpV9KFHjm+F+P3aLDMi8QXU9l3ROCQv20z18Me2sGyW5nNNR5YTevNlgHvCpFek3BnAwhDGq/BRndXViw==}
+    engines: {node: ^22.18.0 || >=24.11.0}
+    peerDependencies:
+      '@babel/core': ^8.0.0
 
   '@babel/plugin-transform-react-jsx@7.29.7':
     resolution: {integrity: sha512-WsZulLVBUHXVj2cUcPVx6UE21TpalB6bHbSFErKT0Ib++ax24jjXe73FqlWvdylFOjiuPHYi6VCcgRad1ItN+A==}
@@ -1573,11 +1591,23 @@ packages:
     peerDependencies:
       '@babel/core': ^7.0.0-0
 
+  '@babel/plugin-transform-react-jsx@8.0.1':
+    resolution: {integrity: sha512-NgkoF7Uq+30TmOPDdNUimT0Nta02uVjqJRFNlVWKrbOCu/CkzfHa4aMnIs0lMpkMmZmWA1e42Va+F04i/pY1zw==}
+    engines: {node: ^22.18.0 || >=24.11.0}
+    peerDependencies:
+      '@babel/core': ^8.0.0
+
   '@babel/plugin-transform-react-pure-annotations@7.29.7':
     resolution: {integrity: sha512-H5E+HBgDpr6Q5t+Aj11tL7XkIui1jhbIoArVQnqjgXo5/3YxkN7ZEBcWF4RQlB0T4rrxJQbXS6kiFV6B7XTqUA==}
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
+
+  '@babel/plugin-transform-react-pure-annotations@8.0.1':
+    resolution: {integrity: sha512-7/8UwU8hoPBurXa9tUiTTC8aACTRy5tCqLUtqikHp2eGiWoEB57AduOdbQ71OOMTEvawKrGhv3WfzkDpI+/oSg==}
+    engines: {node: ^22.18.0 || >=24.11.0}
+    peerDependencies:
+      '@babel/core': ^8.0.0
 
   '@babel/plugin-transform-regenerator@7.29.7':
     resolution: {integrity: sha512-rNNFV0DBAJp988xW2DOntfDoYn1eR8GGF5AT5vYc+rjyfaQkM242c9tZUHHPe7KYaiJizXPWhQTzzdbXySyhBw==}
@@ -1762,6 +1792,12 @@ packages:
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
+
+  '@babel/preset-react@8.0.1':
+    resolution: {integrity: sha512-jrFuPp/pTddFZbtmWhdLNAYc6UMcpboeUPnw0BBrm4nOmcAko/1TRcFi1PzWCeOFRU+VaSiKmat87W1HvR7mIg==}
+    engines: {node: ^22.18.0 || >=24.11.0}
+    peerDependencies:
+      '@babel/core': ^8.0.0
 
   '@babel/preset-typescript@7.28.5':
     resolution: {integrity: sha512-+bQy5WOI2V6LJZpPVxY+yp66XdZ2yifu0Mc1aP5CQKgjn4QM5IN2i5fAZ4xKop47pr8rpVhiAeu+nDQa12C8+g==}
@@ -11337,6 +11373,11 @@ snapshots:
       '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
+  '@babel/plugin-syntax-jsx@8.0.1(@babel/core@7.29.7)':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/helper-plugin-utils': 8.0.1(@babel/core@7.29.7)
+
   '@babel/plugin-syntax-logical-assignment-operators@7.10.4(@babel/core@7.29.7)':
     dependencies:
       '@babel/core': 7.29.7
@@ -11916,12 +11957,22 @@ snapshots:
       '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
+  '@babel/plugin-transform-react-display-name@8.0.1(@babel/core@7.29.7)':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/helper-plugin-utils': 8.0.1(@babel/core@7.29.7)
+
   '@babel/plugin-transform-react-jsx-development@7.29.7(@babel/core@7.29.7)':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-react-jsx': 7.29.7(@babel/core@7.29.7)
     transitivePeerDependencies:
       - supports-color
+
+  '@babel/plugin-transform-react-jsx-development@8.0.1(@babel/core@7.29.7)':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/plugin-transform-react-jsx': 8.0.1(@babel/core@7.29.7)
 
   '@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7)':
     dependencies:
@@ -11934,11 +11985,26 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@babel/plugin-transform-react-jsx@8.0.1(@babel/core@7.29.7)':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/helper-annotate-as-pure': 8.0.0
+      '@babel/helper-module-imports': 8.0.0
+      '@babel/helper-plugin-utils': 8.0.1(@babel/core@7.29.7)
+      '@babel/plugin-syntax-jsx': 8.0.1(@babel/core@7.29.7)
+      '@babel/types': 8.0.0
+
   '@babel/plugin-transform-react-pure-annotations@7.29.7(@babel/core@7.29.7)':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/helper-annotate-as-pure': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
+
+  '@babel/plugin-transform-react-pure-annotations@8.0.1(@babel/core@7.29.7)':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/helper-annotate-as-pure': 8.0.0
+      '@babel/helper-plugin-utils': 8.0.1(@babel/core@7.29.7)
 
   '@babel/plugin-transform-regenerator@7.29.7(@babel/core@7.29.7)':
     dependencies:
@@ -12268,6 +12334,16 @@ snapshots:
       '@babel/plugin-transform-react-pure-annotations': 7.29.7(@babel/core@7.29.7)
     transitivePeerDependencies:
       - supports-color
+
+  '@babel/preset-react@8.0.1(@babel/core@7.29.7)':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/helper-plugin-utils': 8.0.1(@babel/core@7.29.7)
+      '@babel/helper-validator-option': 8.0.0
+      '@babel/plugin-transform-react-display-name': 8.0.1(@babel/core@7.29.7)
+      '@babel/plugin-transform-react-jsx': 8.0.1(@babel/core@7.29.7)
+      '@babel/plugin-transform-react-jsx-development': 8.0.1(@babel/core@7.29.7)
+      '@babel/plugin-transform-react-pure-annotations': 8.0.1(@babel/core@7.29.7)
 
   '@babel/preset-typescript@7.28.5(@babel/core@7.29.7)':
     dependencies:
