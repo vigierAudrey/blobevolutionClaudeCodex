@@ -909,7 +909,7 @@ jobs:
           NEXT_PUBLIC_ADSENSE_CLIENT_ID: ${{ env.NEXT_PUBLIC_ADSENSE_CLIENT_ID }}
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           # Invalidate when pnpm-lock.yaml changes (Playwright version bump).
