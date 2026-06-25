@@ -168,7 +168,7 @@ services:
         # est vide, le front reste fail-closed et n'appelle pas getToken.
         # Renseigner avec le projet Firebase de TEST pour le staging push contrôlé.
         # NE PAS mettre ici les secrets serveur (FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY) :
-        # ils vivent côté API via .env.vps uniquement.
+        # ils vivent côté API via .env.pre-vps uniquement (env_file du service api).
         NEXT_PUBLIC_FIREBASE_API_KEY: "${NEXT_PUBLIC_FIREBASE_API_KEY}"
         NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}"
         NEXT_PUBLIC_FIREBASE_PROJECT_ID: "${NEXT_PUBLIC_FIREBASE_PROJECT_ID}"
