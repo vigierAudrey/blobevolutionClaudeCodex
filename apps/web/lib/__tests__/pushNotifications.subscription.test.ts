@@ -72,17 +72,19 @@ describe('push subscription wiring (firebase.ts)', () => {
     expect(body).not.toHaveProperty('userId');
   });
 
-  it('unregisterFCMToken POSTs to /push/unregister with no userId', async () => {
+  it('unregisterFCMToken POSTs to /push/unregister scoped to the given token, no userId', async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
     const { unregisterFCMToken } = require('../firebase');
 
-    const ok = await unregisterFCMToken();
+    const ok = await unregisterFCMToken(FCM_TOKEN);
 
     expect(ok).toBe(true);
     const [url, opts] = mockApiRequest.mock.calls[0];
     expect(url).toBe('/push/unregister');
     expect(opts.method).toBe('POST');
     const body = JSON.parse(opts.body);
+    // Scoped to THIS device's token so the backend does not wipe every device.
+    expect(body.token).toBe(FCM_TOKEN);
     expect(body).not.toHaveProperty('userId');
   });
 
@@ -185,13 +187,33 @@ describe('PushNotificationManager / pushManager', () => {
     expect(mockApiRequest).not.toHaveBeenCalledWith('/push/subscribe', expect.anything());
   });
 
-  it('unsubscribe calls /push/unregister', async () => {
+  it('unsubscribe removes only this browser token (scoped to the session token)', async () => {
+    mockGetToken.mockResolvedValue(FCM_TOKEN);
     mockApiRequest.mockResolvedValue({ ok: true });
     const { pushManager } = require('../pushNotifications');
+
+    // Must have subscribed in this session to hold the device token.
+    await pushManager.subscribe();
+    mockApiRequest.mockClear();
 
     const ok = await pushManager.unsubscribe();
 
     expect(ok).toBe(true);
-    expect(mockApiRequest).toHaveBeenCalledWith('/push/unregister', expect.objectContaining({ method: 'POST' }));
+    const unregisterCall = mockApiRequest.mock.calls.find(([u]: [string]) => u === '/push/unregister');
+    expect(unregisterCall).toBeDefined();
+    const body = JSON.parse(unregisterCall![1].body);
+    expect(body.token).toBe(FCM_TOKEN);
+    expect(body).not.toHaveProperty('userId');
+  });
+
+  it('unsubscribe without a session token does NOT wipe the account (no API call)', async () => {
+    mockApiRequest.mockResolvedValue({ ok: true });
+    const { pushManager } = require('../pushNotifications');
+
+    // No prior subscribe → no device token held.
+    const ok = await pushManager.unsubscribe();
+
+    expect(ok).toBe(false);
+    expect(mockApiRequest).not.toHaveBeenCalledWith('/push/unregister', expect.anything());
   });
 });

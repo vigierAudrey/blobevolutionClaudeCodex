@@ -168,16 +168,20 @@ export async function saveFCMToken(token: string): Promise<boolean> {
 }
 
 /**
- * Remove this browser's push token on the backend and tear down the local
- * browser subscription. Identity is resolved server-side from the auth cookie;
+ * Remove a push token on the backend and tear down the local browser
+ * subscription. Identity is resolved server-side from the auth cookie;
  * no userId is sent.
+ *
+ * IMPORTANT: when `token` is provided the backend removes only that token (this
+ * device). Calling without a token makes the backend drop EVERY device's token
+ * for the account — callers that mean "this browser only" MUST pass the token.
  */
-export async function unregisterFCMToken(): Promise<boolean> {
+export async function unregisterFCMToken(token?: string): Promise<boolean> {
   let apiOk = false;
   try {
     const response = await apiRequest('/push/unregister', {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify(token ? { token } : {}),
     });
     apiOk = response.ok;
   } catch {

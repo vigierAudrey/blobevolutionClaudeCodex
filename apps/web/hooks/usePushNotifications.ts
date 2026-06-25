@@ -7,6 +7,13 @@
  *  - no token / userId / subscription flag in localStorage.
  *  - identity is resolved server-side from the auth cookie (no userId sent).
  *  - logs are neutral (no token, no payload, no raw provider error).
+ *
+ * Honesty about state:
+ *  - `accountHasPush` comes from GET /push/status, which is ACCOUNT-level
+ *    (`hasActiveTokens`). It can be true because of another device/browser, so
+ *    it must never be presented as "this browser is subscribed".
+ *  - `thisBrowserActive` is the only reliable local proof that *this* browser is
+ *    subscribed: it is set solely by a successful subscribe() in this session.
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -14,9 +21,12 @@ import { pushManager } from '../lib/pushNotifications';
 
 export interface UsePushNotificationsReturn {
   // State
-  isSubscribed: boolean;
   isSupported: boolean;
   permission: NotificationPermission;
+  /** Account-level push status (any device). `null` when unknown / feature off. */
+  accountHasPush: boolean | null;
+  /** Reliable local proof that THIS browser is subscribed (this session). */
+  thisBrowserActive: boolean;
   isLoading: boolean;
 
   // Actions
@@ -29,19 +39,19 @@ export interface UsePushNotificationsReturn {
 }
 
 export function usePushNotifications(): UsePushNotificationsReturn {
-  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [accountHasPush, setAccountHasPush] = useState<boolean | null>(null);
+  const [thisBrowserActive, setThisBrowserActive] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>('default');
   const [isLoading, setIsLoading] = useState(false);
 
   /**
-   * Read the current server status for this account (no prompt, no storage).
+   * Read the account-level server status (no prompt, no storage). Does NOT touch
+   * thisBrowserActive: account status cannot confirm a specific browser.
    */
   const refreshStatus = useCallback(async (): Promise<void> => {
     const hasTokens = await pushManager.checkServerStatus();
-    if (hasTokens !== null) {
-      setIsSubscribed(hasTokens);
-    }
+    setAccountHasPush(hasTokens);
   }, []);
 
   // On mount: detect support and current permission. NEVER prompt here.
@@ -53,10 +63,11 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
     setIsSupported(supported);
     setPermission(pushManager.getPermissionStatus());
+    setThisBrowserActive(pushManager.hasLocalToken());
 
-    // Reflect server state only when the browser already granted permission;
-    // this avoids any implicit prompt and any wasteful call otherwise.
-    if (supported && pushManager.getPermissionStatus() === 'granted') {
+    // Reflect account-level status (single call, no prompt). Skipped when the
+    // browser cannot do push at all.
+    if (supported) {
       void refreshStatus();
     }
   }, [refreshStatus]);
@@ -78,7 +89,8 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       setPermission(pushManager.getPermissionStatus());
 
       if (success) {
-        setIsSubscribed(true);
+        setThisBrowserActive(true);
+        await refreshStatus();
       }
       return success;
     } catch {
@@ -87,18 +99,20 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [isSupported]);
+  }, [isSupported, refreshStatus]);
 
   /**
-   * Unsubscribe this browser: removes the token server-side and tears down the
-   * browser subscription.
+   * Unsubscribe THIS browser: removes only this device's token server-side and
+   * tears down the browser subscription.
    */
   const unsubscribe = useCallback(async (): Promise<boolean> => {
     setIsLoading(true);
     try {
       const success = await pushManager.unsubscribe();
       if (success) {
-        setIsSubscribed(false);
+        setThisBrowserActive(false);
+        // Account may still have other devices: re-sync the account-level flag.
+        await refreshStatus();
       }
       return success;
     } catch {
@@ -106,14 +120,15 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [refreshStatus]);
 
-  const canSubscribe = isSupported && permission !== 'denied' && !isSubscribed;
+  const canSubscribe = isSupported && permission !== 'denied' && !thisBrowserActive;
 
   return {
-    isSubscribed,
     isSupported,
     permission,
+    accountHasPush,
+    thisBrowserActive,
     isLoading,
     subscribe,
     unsubscribe,

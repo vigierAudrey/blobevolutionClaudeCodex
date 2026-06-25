@@ -16,6 +16,7 @@ jest.mock('../../lib/pushNotifications', () => ({
     unsubscribe: jest.fn(),
     checkServerStatus: jest.fn(),
     getPermissionStatus: jest.fn(),
+    hasLocalToken: jest.fn(),
   },
 }));
 
@@ -27,6 +28,7 @@ const mockPushManager = pushManager as unknown as {
   unsubscribe: jest.Mock;
   checkServerStatus: jest.Mock;
   getPermissionStatus: jest.Mock;
+  hasLocalToken: jest.Mock;
 };
 
 const mockRequestPermission = jest.fn();
@@ -53,6 +55,7 @@ describe('usePushNotifications', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPushManager.checkServerStatus.mockResolvedValue(null);
+    mockPushManager.hasLocalToken.mockReturnValue(false);
   });
 
   it('does not prompt for permission on mount', async () => {
@@ -86,19 +89,21 @@ describe('usePushNotifications', () => {
     expect(result.current.canSubscribe).toBe(false);
   });
 
-  it('reads server status on mount only when permission already granted', async () => {
+  it('reflects ACCOUNT status on mount without claiming this browser is active', async () => {
     setupEnv({ supported: true, permission: 'granted' });
     mockPushManager.checkServerStatus.mockResolvedValue(true);
 
     const { result } = renderHook(() => usePushNotifications());
 
     await waitFor(() => {
-      expect(result.current.isSubscribed).toBe(true);
+      expect(result.current.accountHasPush).toBe(true);
     });
+    // Account-level true must NOT be presented as this-browser subscribed.
+    expect(result.current.thisBrowserActive).toBe(false);
     expect(mockRequestPermission).not.toHaveBeenCalled();
   });
 
-  it('subscribe delegates to the manager and reflects success', async () => {
+  it('subscribe delegates to the manager and marks THIS browser active', async () => {
     setupEnv({ supported: true, permission: 'default' });
     mockPushManager.subscribe.mockResolvedValue(true);
     mockPushManager.getPermissionStatus.mockReturnValue('granted');
@@ -112,16 +117,21 @@ describe('usePushNotifications', () => {
 
     expect(ok).toBe(true);
     expect(mockPushManager.subscribe).toHaveBeenCalledTimes(1);
-    expect(result.current.isSubscribed).toBe(true);
+    expect(result.current.thisBrowserActive).toBe(true);
   });
 
-  it('unsubscribe delegates to the manager and clears subscribed state', async () => {
+  it('unsubscribe delegates to the manager and clears this-browser state', async () => {
     setupEnv({ supported: true, permission: 'granted' });
-    mockPushManager.checkServerStatus.mockResolvedValue(true);
+    mockPushManager.subscribe.mockResolvedValue(true);
     mockPushManager.unsubscribe.mockResolvedValue(true);
 
     const { result } = renderHook(() => usePushNotifications());
-    await waitFor(() => expect(result.current.isSubscribed).toBe(true));
+
+    // Become active via a real subscribe (local proof), then unsubscribe.
+    await act(async () => {
+      await result.current.subscribe();
+    });
+    expect(result.current.thisBrowserActive).toBe(true);
 
     let ok = false;
     await act(async () => {
@@ -130,6 +140,6 @@ describe('usePushNotifications', () => {
 
     expect(ok).toBe(true);
     expect(mockPushManager.unsubscribe).toHaveBeenCalledTimes(1);
-    expect(result.current.isSubscribed).toBe(false);
+    expect(result.current.thisBrowserActive).toBe(false);
   });
 });

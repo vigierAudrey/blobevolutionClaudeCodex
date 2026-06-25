@@ -93,15 +93,31 @@ export class PushNotificationManager {
   }
 
   /**
-   * Unsubscribe this browser: remove the token server-side and tear down the
-   * browser subscription. No localStorage is touched.
+   * Unsubscribe THIS browser: remove only this device's token server-side and
+   * tear down the browser subscription. No localStorage is touched.
+   *
+   * We only act when we hold this browser's token (set by a subscribe() done in
+   * this session). Without it we cannot scope the removal to this device, so we
+   * refuse rather than wipe push from every device of the account.
    */
   async unsubscribe(): Promise<boolean> {
-    const success = await unregisterFCMToken();
+    if (!this.currentToken) {
+      return false;
+    }
+    const success = await unregisterFCMToken(this.currentToken);
     if (success) {
       this.currentToken = null;
     }
     return success;
+  }
+
+  /**
+   * Whether this browser holds a token registered during this session — the only
+   * reliable local proof that *this* device is subscribed (server status is
+   * account-level and cannot confirm a specific browser).
+   */
+  hasLocalToken(): boolean {
+    return this.currentToken !== null;
   }
 
   /**

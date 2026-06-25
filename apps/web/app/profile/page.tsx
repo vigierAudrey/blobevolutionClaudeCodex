@@ -1084,7 +1084,7 @@ export default function ProfilePage() {
  */
 function BrowserPushControl() {
   const toast = useToast();
-  const { isSupported, permission, isSubscribed, isLoading, subscribe, unsubscribe } =
+  const { isSupported, permission, accountHasPush, thisBrowserActive, isLoading, subscribe, unsubscribe } =
     usePushNotifications();
 
   if (!isSupported) {
@@ -1124,34 +1124,43 @@ function BrowserPushControl() {
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-sm border-2 border-dashed border-blob-sand-deep bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p className="text-sm font-black uppercase tracking-[0.12em] text-blob-black">Ce navigateur</p>
-        <p className="mt-1 text-xs text-blob-black/56">
-          {isSubscribed
-            ? 'Ce navigateur est abonné aux notifications push.'
-            : "Active l'abonnement de ce navigateur pour recevoir les notifications push ici."}
+    <div className="flex flex-col gap-2 rounded-sm border-2 border-dashed border-blob-sand-deep bg-white p-3">
+      {accountHasPush !== null && (
+        <p className="text-xs text-blob-black/56">
+          Notifications push sur le compte :{' '}
+          <span className="font-black">{accountHasPush ? 'activées' : 'désactivées'}</span>
+          {accountHasPush ? ' (au moins un appareil).' : '.'}
         </p>
+      )}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.12em] text-blob-black">Ce navigateur</p>
+          <p className="mt-1 text-xs text-blob-black/56">
+            {thisBrowserActive
+              ? 'Ce navigateur est configuré pour recevoir les notifications push.'
+              : "Active ce navigateur pour recevoir les notifications push ici."}
+          </p>
+        </div>
+        <BlobButton
+          type="button"
+          variant="outlineDark"
+          size="sm"
+          onClick={thisBrowserActive ? handleDisable : handleEnable}
+          disabled={isLoading}
+          className="w-full sm:w-auto"
+        >
+          {isLoading ? (
+            <span className="inline-flex items-center gap-2">
+              <Spinner />
+              …
+            </span>
+          ) : thisBrowserActive ? (
+            'Désactiver ce navigateur'
+          ) : (
+            'Activer ce navigateur'
+          )}
+        </BlobButton>
       </div>
-      <BlobButton
-        type="button"
-        variant="outlineDark"
-        size="sm"
-        onClick={isSubscribed ? handleDisable : handleEnable}
-        disabled={isLoading}
-        className="w-full sm:w-auto"
-      >
-        {isLoading ? (
-          <span className="inline-flex items-center gap-2">
-            <Spinner />
-            …
-          </span>
-        ) : isSubscribed ? (
-          'Désactiver ce navigateur'
-        ) : (
-          'Activer ce navigateur'
-        )}
-      </BlobButton>
     </div>
   );
 }
