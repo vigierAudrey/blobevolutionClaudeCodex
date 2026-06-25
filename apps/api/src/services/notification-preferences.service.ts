@@ -61,14 +61,8 @@ const PREF_SELECT = {
 /**
  * Returns true if a notification of `type` may be delivered to `userId` on `channel`.
  *
- * Failure policy is per-channel (a preference lookup that throws must not become a
- * vector for unwanted outbound delivery):
- *   - IN_APP  => fail-OPEN. An in-app bell entry is low-risk and only visible
- *                inside the app; losing one on an infra hiccup is worse than
- *                showing one the user muted.
- *   - PUSH    => fail-CLOSED. Push leaves the app (device/browser) and is the
- *                channel a user is most likely to have deliberately muted; on
- *                error we suppress rather than risk an unwanted device alert.
+ * Failure policy is fail-CLOSED for every user-controlled channel. A preference
+ * lookup failure must never become a way to deliver despite an opt-out.
  * Security/transactional emails never reach this resolver. Non-transactional
  * email (pro lesson-request) is gated by ProProfile.emailNotif at fan-out and is
  * naturally fail-closed (a failed query sends nothing).
@@ -104,9 +98,8 @@ export async function shouldNotifyUser(
     secureLogger.warn('NOTIFICATION_PREF_LOOKUP_FAILED', {
       type,
       channel,
-      error: error instanceof Error ? error.message : String(error),
+      ...(error instanceof Error ? { errorName: error.name } : {}),
     });
-    // Per-channel failure policy: IN_APP fails open, PUSH fails closed.
-    return channel === 'IN_APP';
+    return false;
   }
 }

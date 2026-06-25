@@ -111,13 +111,13 @@ describe('shouldNotifyUser', () => {
   });
 
   // --- Per-channel failure policy ------------------------------------------
-  it('on lookup failure, IN_APP fails open and PUSH fails closed', async () => {
+  it('on lookup failure, every channel fails closed', async () => {
     const spy = jest
       .spyOn(prisma.user, 'findUnique')
       .mockRejectedValueOnce(new Error('db down'))
       .mockRejectedValueOnce(new Error('db down'));
     try {
-      expect(await shouldNotifyUser('whatever', 'NEW_MESSAGE', 'IN_APP')).toBe(true);
+      expect(await shouldNotifyUser('whatever', 'NEW_MESSAGE', 'IN_APP')).toBe(false);
       expect(await shouldNotifyUser('whatever', 'NEW_MESSAGE', 'PUSH')).toBe(false);
     } finally {
       spy.mockRestore();

@@ -634,6 +634,62 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /profile/notifications:
+    get:
+      tags: [Profiles, Notifications]
+      summary: Retourne les préférences de notification du compte connecté
+      description: Une lecture sans ligne persistée retourne les valeurs par défaut sans écrire en base.
+      operationId: profileGetNotificationPreferences
+      responses:
+        '200':
+          description: Préférences filtrées selon le rôle du compte
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Profiles, Notifications]
+      summary: Met à jour les préférences de notification du compte connecté
+      description: Le serveur ignore les champs d'un autre rôle et rejette tout champ inconnu, notamment `userId`.
+      operationId: profileUpdateNotificationPreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferencesUpdateRequest'
+      responses:
+        '200':
+          description: Préférences mises à jour
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferencesUpdateResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /profile/photo/upload-url:
     post:
       tags: [Profiles]
@@ -1767,6 +1823,8 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /push/register:
     post:
       tags: [Push]
@@ -1789,6 +1847,8 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /push/unsubscribe:
     post:
       tags: [Push]
@@ -1800,9 +1860,12 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               properties:
                 token:
                   type: string
+                  minLength: 1
+                  maxLength: 4096
       responses:
         '200':
           description: Désinscription effectuée
@@ -1812,6 +1875,8 @@ paths:
                 $ref: '#/components/schemas/GenericSuccess'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /push/unregister:
     post:
       tags: [Push]
@@ -1823,9 +1888,12 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               properties:
                 token:
                   type: string
+                  minLength: 1
+                  maxLength: 4096
       responses:
         '200':
           description: Désinscription effectuée
@@ -1835,6 +1903,8 @@ paths:
                 $ref: '#/components/schemas/GenericSuccess'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /push/test:
     post:
       tags: [Push]
@@ -1857,6 +1927,8 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /push/send:
     post:
       tags: [Push]
@@ -1881,6 +1953,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /push/status:
     get:
       tags: [Push]
@@ -4383,6 +4457,43 @@ components:
           type: integer
           minimum: 1
           nullable: true
+    NotificationPreferencesUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        inAppEnabled: { type: boolean }
+        pushEnabled: { type: boolean }
+        emailEnabled: { type: boolean }
+        notifyMessages: { type: boolean, description: Champ RIDER }
+        notifyMatches: { type: boolean, description: Champ RIDER }
+        notifyInvitations: { type: boolean, description: Champ RIDER }
+        notifyLessonRequests: { type: boolean, description: Champ PRO }
+        notifyProMessages: { type: boolean, description: Champ PRO }
+        notifyForSurf: { type: boolean, description: Champ PRO }
+        notifyForKitesurf: { type: boolean, description: Champ PRO }
+        emailDigestFrequency:
+          type: string
+          enum: [NEVER, DAILY, WEEKLY]
+    NotificationPreferencesResponse:
+      type: object
+      additionalProperties: false
+      required: [role, preferences]
+      properties:
+        role:
+          type: string
+          enum: [RIDER, PRO, ADMIN]
+        preferences:
+          $ref: '#/components/schemas/NotificationPreferencesUpdateRequest'
+    NotificationPreferencesUpdateResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, preferences]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        preferences:
+          $ref: '#/components/schemas/NotificationPreferencesUpdateRequest'
     Discipline:
       type: object
       required: [sport, level]
@@ -4880,42 +4991,69 @@ components:
           additionalProperties: true
     PushSubscribeRequest:
       type: object
+      additionalProperties: false
       required: [token]
       properties:
         token:
           type: string
-        userId:
-          type: string
+          minLength: 1
+          maxLength: 4096
         userAgent:
           type: string
+          maxLength: 512
         timestamp:
           type: integer
+          minimum: 0
     PushTestRequest:
       type: object
+      additionalProperties: false
       required: [title, body]
       properties:
         title:
           type: string
+          minLength: 1
+          maxLength: 120
         body:
           type: string
+          minLength: 1
+          maxLength: 500
         type:
           type: string
-          enum: [booking_accepted, booking_rejected, new_message, reminder, general]
+          enum: [new_message, reminder, general]
         url:
           type: string
-          format: uri
+          format: uri-reference
+          maxLength: 2048
     PushSendRequest:
-      allOf:
-        - $ref: '#/components/schemas/PushTestRequest'
-        - type: object
-          required: [userId]
-          properties:
-            userId:
-              type: string
-              format: uuid
-            data:
-              type: object
-              additionalProperties: true
+      type: object
+      additionalProperties: false
+      required: [userId, title, body, type]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        body:
+          type: string
+          minLength: 1
+          maxLength: 500
+        type:
+          type: string
+          enum: [new_message, reminder, general]
+        url:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+        data:
+          type: object
+          additionalProperties:
+            oneOf:
+              - { type: string, maxLength: 500, nullable: true }
+              - { type: number }
+              - { type: boolean }
     PushStatus:
       type: object
       properties:

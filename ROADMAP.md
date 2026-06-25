@@ -226,6 +226,7 @@ Contribution 2026-06-15 :
 Contribution 2026-06-24 :
 
 - [x] Emails d'inscription : état UI aligné sur `emailSent`, fallback défensif sans faux succès et sender transactionnel harmonisé sur `noreply@blobsurf.com`.
+- [x] Notifications/mails : préférences strictes et sans écriture sur GET, fan-out Brevo atomique/fail-closed avec revalidation des opt-in, push borné et logs fournisseur neutralisés.
 
 Contribution 2026-06-07 :
 

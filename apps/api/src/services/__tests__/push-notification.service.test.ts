@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll, jest } from '@jest/globals';
-import { PushNotificationService, type PushNotificationData } from '../push-notification.service';
+import {
+  MAX_PUSH_TOKENS_PER_USER,
+  PushNotificationService,
+  type PushNotificationData,
+} from '../push-notification.service';
 import { secureLogger } from '../../utils/secure-logger';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import bcrypt from 'bcryptjs';
@@ -163,7 +167,7 @@ describe('PushNotificationService', () => {
       await expect(service.saveToken('user-1', 'token-xyz')).resolves.toBe(false);
       expect(secureLogger.error).toHaveBeenCalledWith(
         'PUSH_TOKEN_SAVE_FAILED',
-        expect.objectContaining({ error: 'storage unavailable' })
+        { errorName: 'Error' },
       );
       infoSpy.mockImplementation(() => {});
     });
@@ -200,7 +204,7 @@ describe('PushNotificationService', () => {
       await expect(service.removeToken('user-1')).resolves.toBe(false);
       expect(secureLogger.error).toHaveBeenCalledWith(
         'PUSH_TOKEN_REMOVE_FAILED',
-        expect.objectContaining({ error: 'db unavailable' })
+        { errorName: 'Error' },
       );
       infoSpy.mockImplementation(() => {});
     });
@@ -227,10 +231,7 @@ describe('PushNotificationService', () => {
       messagingMock.send.mockResolvedValue('message-id-1');
       await expect(service.sendToToken('token-xyz', sampleNotification)).resolves.toBe(true);
       expect(messagingMock.send).toHaveBeenCalledWith(expect.objectContaining({ token: 'token-xyz' }));
-      expect(secureLogger.info).toHaveBeenCalledWith(
-        'PUSH_TOKEN_SENT',
-        expect.objectContaining({ responseId: 'message-id-1' })
-      );
+      expect(secureLogger.info).toHaveBeenCalledWith('PUSH_TOKEN_SENT');
     });
 
     it('marks invalid tokens as failures', async () => {
@@ -254,8 +255,22 @@ describe('PushNotificationService', () => {
       await expect(service.sendToToken('token', sampleNotification)).resolves.toBe(false);
       expect(secureLogger.error).toHaveBeenCalledWith(
         'PUSH_TOKEN_SEND_FAILED',
-        expect.objectContaining({ error: 'timeout' })
+        { errorName: 'Error' },
       );
+    });
+
+    it('borne à cinq le nombre de tokens conservés par utilisateur', async () => {
+      await ensureTestUser('user-token-cap');
+      await prisma.pushToken.deleteMany({ where: { userId: 'user-token-cap' } });
+      const service = createService(false);
+
+      for (let index = 0; index < MAX_PUSH_TOKENS_PER_USER + 2; index += 1) {
+        await expect(service.saveToken('user-token-cap', `token-cap-${index}`)).resolves.toBe(true);
+      }
+
+      await expect(
+        prisma.pushToken.count({ where: { userId: 'user-token-cap' } }),
+      ).resolves.toBe(MAX_PUSH_TOKENS_PER_USER);
     });
 
     it('broadcasts to each user token via sendToUser', async () => {
