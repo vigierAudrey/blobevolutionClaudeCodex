@@ -117,7 +117,7 @@ describe('ProProfilePage — non-regression RGPD', () => {
     });
   });
 
-  it('affiche des préférences d\'alertes pro sans promesse de push navigateur', async () => {
+  it('affiche des préférences d\'alertes pro avec un contrôle push navigateur honnête (aucun prompt au chargement)', async () => {
     const requestPermission = jest.fn();
     Object.defineProperty(window, 'Notification', {
       configurable: true,
@@ -135,7 +135,10 @@ describe('ProProfilePage — non-regression RGPD', () => {
     expect(screen.getAllByText(/demandes de cours/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/demandes surf/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/demandes kitesurf/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/notifications push/i)).not.toBeInTheDocument();
+    // Le push navigateur est désormais câblé, mais honnêtement : aucune promesse
+    // d'abonnement automatique de "ce navigateur", et surtout aucun prompt de
+    // permission déclenché au simple chargement de la page.
+    expect(screen.queryByText(/ce navigateur est (abonné|configuré)/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/reçois des alertes instantanées/i)).not.toBeInTheDocument();
     expect(requestPermission).not.toHaveBeenCalled();
   });

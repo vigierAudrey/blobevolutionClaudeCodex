@@ -4,6 +4,7 @@
 
 import { initializeApp } from 'firebase/app';
 import { getMessaging, getToken, onMessage, type Messaging, type MessagePayload } from 'firebase/messaging';
+import { apiRequest } from './csrf';
 
 // Firebase config - These should be environment variables in production
 const firebaseConfig = {
@@ -22,89 +23,90 @@ const VAPID_KEY = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || "demo-vapid-key"
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firebase Cloud Messaging and get a reference to the service
+// Firebase Cloud Messaging is resolved lazily: we never call getMessaging at
+// module load. This avoids eager support-check side effects in unsupported
+// environments (SSR, tests, locked-down browsers) and keeps push fully off
+// until a user action actually needs it. If unavailable, push simply stays off —
+// no raw provider error is surfaced or logged.
 let messaging: Messaging | null = null;
+let messagingResolved = false;
 
-// Initialize messaging only in browser environment
-if (typeof window !== 'undefined') {
+function getMessagingInstance(): Messaging | null {
+  if (messagingResolved) return messaging;
+  messagingResolved = true;
+
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
   try {
     messaging = getMessaging(app);
-    console.log('🔥 Firebase Messaging initialized');
-  } catch (error) {
-    console.error('❌ Firebase Messaging initialization failed:', error);
+  } catch {
+    messaging = null;
   }
+  return messaging;
 }
 
 /**
- * Request notification permission and get FCM token
+ * Request notification permission and get FCM token.
+ * Must only be called after an explicit, user-initiated action.
+ * Returns null on any failure (unsupported, denied, provider error) without
+ * leaking the token or the underlying provider error.
  */
 export async function requestNotificationPermission(): Promise<string | null> {
-  if (!messaging) {
-    console.error('❌ Firebase Messaging not available');
+  const messagingInstance = getMessagingInstance();
+  if (!messagingInstance) {
     return null;
   }
 
   try {
     // Check if notifications are supported
     if (!('Notification' in window)) {
-      console.error('❌ This browser does not support desktop notification');
       return null;
     }
 
     // Check current permission
     let permission = Notification.permission;
 
-    // Request permission if needed
+    // Request permission if needed (only reached on a user-initiated call)
     if (permission === 'default') {
       permission = await Notification.requestPermission();
     }
 
     if (permission !== 'granted') {
-      console.log('🚫 Notification permission denied');
       return null;
     }
 
     // Register service worker if not already registered
     if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/'
-      });
-      console.log('✅ Service Worker registered:', registration);
+      await navigator.serviceWorker.register('/sw.js', { scope: '/' });
 
       // Wait for service worker to be ready
       await navigator.serviceWorker.ready;
     }
 
     // Get FCM token
-    const token = await getToken(messaging, {
+    const token = await getToken(messagingInstance, {
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: await navigator.serviceWorker.getRegistration()
     });
 
-    if (token) {
-      console.log('🎯 FCM Token generated:', token.substring(0, 20) + '...');
-      return token;
-    } else {
-      console.log('❌ No registration token available');
-      return null;
-    }
-
-  } catch (error) {
-    console.error('❌ Error getting notification permission:', error);
+    // Never log the token (not even a prefix).
+    return token || null;
+  } catch {
     return null;
   }
 }
 
 /**
- * Subscribe to FCM token refresh
+ * Subscribe to foreground messages.
+ * The payload is never logged (it may carry sensitive content).
  */
 export function onTokenRefresh(callback: (token: string) => void) {
-  if (!messaging) return () => {};
+  const messagingInstance = getMessagingInstance();
+  if (!messagingInstance) return () => {};
 
-  // Listen for token refresh
-  return onMessage(messaging, (payload: MessagePayload) => {
-    console.log('🔄 Token refreshed or message received:', payload);
-
+  return onMessage(messagingInstance, (payload: MessagePayload) => {
     // Handle foreground messages
     if (payload.notification) {
       // Show notification when app is in foreground
@@ -142,33 +144,78 @@ function showForegroundNotification(notification: ForegroundNotification) {
 }
 
 /**
- * Send FCM token to backend
+ * Register this browser's FCM token with the backend.
+ *
+ * Security: the user identity is resolved server-side from the auth cookie.
+ * The front NEVER sends a userId — it only sends the device token. Auth is
+ * carried by the httpOnly session cookie via apiRequest (no localStorage Bearer).
  */
-export async function saveFCMToken(_token: string, _userId?: string): Promise<boolean> {
-  // NOTE: backend token registration (POST /push/register) is not wired here.
-  // The Next.js proxy route does not exist and the subscribe UI is currently disabled.
-  // Wire this via apiClient (cookie auth, not localStorage Bearer) when re-enabling push.
-  return false;
+export async function saveFCMToken(token: string): Promise<boolean> {
+  try {
+    const response = await apiRequest('/push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({
+        token,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+        timestamp: Date.now(),
+      }),
+    });
+    return response.ok;
+  } catch {
+    // Neutral failure: no token, no payload, no stack surfaced.
+    return false;
+  }
 }
 
 /**
- * Unsubscribe from push notifications
+ * Remove a push token on the backend and tear down the local browser
+ * subscription. Identity is resolved server-side from the auth cookie;
+ * no userId is sent.
+ *
+ * IMPORTANT: when `token` is provided the backend removes only that token (this
+ * device). Calling without a token makes the backend drop EVERY device's token
+ * for the account — callers that mean "this browser only" MUST pass the token.
  */
-export async function unsubscribeFromPush(): Promise<boolean> {
+export async function unregisterFCMToken(token?: string): Promise<boolean> {
+  let apiOk = false;
+  try {
+    const response = await apiRequest('/push/unregister', {
+      method: 'POST',
+      body: JSON.stringify(token ? { token } : {}),
+    });
+    apiOk = response.ok;
+  } catch {
+    apiOk = false;
+  }
+
+  // Best-effort teardown of the browser-level subscription.
   try {
     const registration = await navigator.serviceWorker.getRegistration();
-    if (registration) {
-      const subscription = await registration.pushManager.getSubscription();
-      if (subscription) {
-        await subscription.unsubscribe();
-        console.log('✅ Unsubscribed from push notifications');
-        return true;
-      }
+    const subscription = await registration?.pushManager.getSubscription();
+    if (subscription) {
+      await subscription.unsubscribe();
     }
-    return false;
-  } catch (error) {
-    console.error('❌ Error unsubscribing from push:', error);
-    return false;
+  } catch {
+    // Ignore: the server-side removal is the source of truth.
+  }
+
+  return apiOk;
+}
+
+/**
+ * Query the server for this account's push status.
+ * Returns whether the account has active tokens, or null when unavailable
+ * (feature disabled, network error). Never throws, never logs sensitive data.
+ */
+export async function fetchPushStatus(): Promise<{ hasActiveTokens: boolean } | null> {
+  try {
+    const response = await apiRequest('/push/status', { method: 'GET' });
+    if (!response.ok) return null;
+    const data = await response.json().catch(() => null);
+    if (!data || typeof data.hasActiveTokens !== 'boolean') return null;
+    return { hasActiveTokens: data.hasActiveTokens };
+  } catch {
+    return null;
   }
 }
 

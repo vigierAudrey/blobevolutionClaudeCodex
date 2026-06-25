@@ -22,6 +22,7 @@ import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../../componen
 import { ChangePasswordCard } from '../../../components/profile/ChangePasswordCard';
 import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../../../lib/franceLaunch';
 import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobMark } from '@/components/blob';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 // Configuration de sécurité pour l'upload de fichiers
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
@@ -1009,6 +1010,8 @@ export default function ProProfilePage() {
                         </button>
                       </div>
 
+                      <BrowserPushControl />
+
                       {/* ── PRO-specific event toggles (apply to enabled channels) ─ */}
                       <div className="space-y-2">
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activité professionnelle</h4>
@@ -1335,6 +1338,97 @@ export default function ProProfilePage() {
           </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Per-browser push subscription control.
+ *
+ * Distinct from the global "Push" preference toggle above: that preference says
+ * whether the pro *wants* push at all, while this control registers/removes the
+ * FCM token for *this specific browser*. Permission is requested only on click —
+ * never on load. All failures are surfaced as neutral messages.
+ */
+function BrowserPushControl() {
+  const toast = useToast();
+  const { isSupported, permission, accountHasPush, thisBrowserActive, isLoading, subscribe, unsubscribe } =
+    usePushNotifications();
+
+  if (!isSupported) {
+    return (
+      <BlobAlert variant="info">
+        Ce navigateur ne gère pas les notifications push. Tu peux quand même garder tes alertes « Dans Blob ».
+      </BlobAlert>
+    );
+  }
+
+  if (permission === 'denied') {
+    return (
+      <BlobAlert variant="warning">
+        Notifications bloquées dans ce navigateur. Pour activer ce poste, autorise les notifications dans les réglages de ton navigateur, puis reviens ici.
+      </BlobAlert>
+    );
+  }
+
+  const handleEnable = async () => {
+    const ok = await subscribe();
+    toast(
+      ok
+        ? 'Ce navigateur recevra désormais les notifications push.'
+        : "Impossible d'activer ce navigateur pour le moment.",
+      ok ? 'success' : 'error',
+    );
+  };
+
+  const handleDisable = async () => {
+    const ok = await unsubscribe();
+    toast(
+      ok
+        ? 'Ce navigateur ne recevra plus de notifications push.'
+        : "Impossible de désactiver ce navigateur pour le moment.",
+      ok ? 'success' : 'error',
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border-2 border-dashed border-purple-200/70 dark:border-purple-800/50 p-4">
+      {accountHasPush !== null && (
+        <p className="text-xs text-muted-foreground">
+          Notifications push sur le compte :{' '}
+          <span className="font-semibold">{accountHasPush ? 'activées' : 'désactivées'}</span>
+          {accountHasPush ? ' (au moins un appareil).' : '.'}
+        </p>
+      )}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold">Ce navigateur</h4>
+          <p className="text-xs text-muted-foreground">
+            {thisBrowserActive
+              ? 'Ce navigateur est configuré pour recevoir les notifications push.'
+              : "Active ce navigateur pour recevoir les notifications push ici."}
+          </p>
+        </div>
+        <BlobButton
+          type="button"
+          variant="outlineDark"
+          size="sm"
+          onClick={thisBrowserActive ? handleDisable : handleEnable}
+          disabled={isLoading}
+          className="w-full sm:w-auto"
+        >
+          {isLoading ? (
+            <span className="inline-flex items-center gap-2">
+              <Spinner />
+              …
+            </span>
+          ) : thisBrowserActive ? (
+            'Désactiver ce navigateur'
+          ) : (
+            'Activer ce navigateur'
+          )}
+        </BlobButton>
+      </div>
     </div>
   );
 }
