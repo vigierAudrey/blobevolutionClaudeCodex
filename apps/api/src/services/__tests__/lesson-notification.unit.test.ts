@@ -9,7 +9,7 @@
  *   - Cooldown Redis : pas de double fanout dans la fenêtre
  *   - Pas de coordonnées exactes dans Notification.data
  *   - Cap MAX_PROS_TO_NOTIFY respecté (via LIMIT dans la requête)
- *   - Fail-open si Redis indisponible : fanout quand même
+ *   - Fail-closed si Redis indisponible : aucun fanout sortant
  *   - Pas de N+1 : une seule query SQL
  *   - riderId jamais dans le body → toujours server-side
  */
@@ -48,13 +48,11 @@ jest.mock('@blobinfini/database', () => ({
 
 // ─── Mock cacheService ────────────────────────────────────────────────────────
 
-const mockRedisGet = jest.fn();
 const mockRedisSet = jest.fn();
 
 jest.mock('../cache.service', () => ({
   cacheService: {
     getClient: jest.fn(() => ({
-      get: (...args: unknown[]) => mockRedisGet(...args),
       set: (...args: unknown[]) => mockRedisSet(...args),
     })),
   },
@@ -110,8 +108,9 @@ function proRow(
   userId: string,
   distanceKm = 3,
   emailNotif = false,
-): { userId: string; distanceKm: number; emailNotif: boolean } {
-  return { userId, distanceKm, emailNotif };
+  inAppEnabled = true,
+): { userId: string; distanceKm: number; emailNotif: boolean; inAppEnabled: boolean } {
+  return { userId, distanceKm, emailNotif, inAppEnabled };
 }
 
 const BASE_INPUT = {
@@ -127,8 +126,6 @@ const BASE_INPUT = {
 describe('notifyNearbyProsForLesson', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Pas de cooldown actif par défaut
-    mockRedisGet.mockResolvedValue(null);
     mockRedisSet.mockResolvedValue('OK');
     // createNotification retourne une notification fictive
     mockCreateNotif.mockResolvedValue({ id: 'notif-1', createdAt: new Date() });
@@ -229,16 +226,16 @@ describe('notifyNearbyProsForLesson', () => {
   });
 
   it('cooldown actif → pas de fanout, zéro notification', async () => {
-    mockRedisGet.mockResolvedValue('1'); // cooldown actif
+    mockRedisSet.mockResolvedValue(null); // SET NX refusé : cooldown actif
+    mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
-    expect(mockQueryRaw).not.toHaveBeenCalled();
+    expect(mockQueryRaw).toHaveBeenCalledTimes(1);
     expect(mockCreateNotif).not.toHaveBeenCalled();
   });
 
-  it('marque le cooldown après un fanout réussi', async () => {
-    mockRedisGet.mockResolvedValue(null);
+  it('réserve atomiquement le cooldown avant un fanout', async () => {
     mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
 
     await notifyNearbyProsForLesson(BASE_INPUT);
@@ -246,21 +243,32 @@ describe('notifyNearbyProsForLesson', () => {
     expect(mockRedisSet).toHaveBeenCalledWith(
       `lesson_fanout:${BASE_INPUT.riderId}`,
       '1',
-      { EX: FANOUT_COOLDOWN_TTL_SECONDS },
+      { EX: FANOUT_COOLDOWN_TTL_SECONDS, NX: true },
     );
   });
 
-  it('fail-open si Redis indisponible : fanout quand même', async () => {
+  it('fail-closed si Redis indisponible : aucun fanout', async () => {
     // Simuler Redis indisponible
     const { cacheService } = jest.requireMock('../cache.service') as {
       cacheService: { getClient: jest.Mock };
     };
-    cacheService.getClient.mockReturnValueOnce(null); // pas de client Redis
-    cacheService.getClient.mockReturnValueOnce(null); // pour markFanoutSent aussi
+    cacheService.getClient.mockReturnValueOnce(null);
 
     mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
 
     await notifyNearbyProsForLesson(BASE_INPUT);
+
+    expect(mockCreateNotif).not.toHaveBeenCalled();
+  });
+
+  it('deux appels concurrents ne déclenchent qu’un seul fanout', async () => {
+    mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
+    mockRedisSet.mockResolvedValueOnce('OK').mockResolvedValueOnce(null);
+
+    await Promise.all([
+      notifyNearbyProsForLesson(BASE_INPUT),
+      notifyNearbyProsForLesson(BASE_INPUT),
+    ]);
 
     expect(mockCreateNotif).toHaveBeenCalledTimes(1);
   });
@@ -348,7 +356,6 @@ describe('notifyNearbyProsForLesson', () => {
 describe('notifyNearbyProsForLessonSilent', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockRedisGet.mockResolvedValue(null);
     mockRedisSet.mockResolvedValue('OK');
     mockCreateNotif.mockResolvedValue({ id: 'notif-1', createdAt: new Date() });
     mockRecordFanout.mockResolvedValue(undefined);
@@ -434,7 +441,9 @@ describe('sendEmailsToOptedInPros', () => {
     );
 
     expect(mockUserFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: { in: ['pro-2'] } } }),
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ['pro-2'] } }),
+      }),
     );
     expect(mockSendNewLessonRequestEmail).toHaveBeenCalledTimes(1);
     expect(mockSendNewLessonRequestEmail).toHaveBeenCalledWith({ proEmail: 'pro2@example.com', sport: 'kitesurf' });
@@ -497,7 +506,6 @@ describe('sendEmailsToOptedInPros', () => {
 describe('notifyNearbyProsForLesson — comportement email', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockRedisGet.mockResolvedValue(null);
     mockRedisSet.mockResolvedValue('OK');
     mockCreateNotif.mockResolvedValue({ id: 'notif-1', createdAt: new Date() });
     mockRecordFanout.mockResolvedValue(undefined);
@@ -519,6 +527,17 @@ describe('notifyNearbyProsForLesson — comportement email', () => {
       proEmail: 'pro1@example.com',
       sport: 'surf',
     });
+  });
+
+  it('email et in-app restent indépendants quand le canal in-app est désactivé', async () => {
+    mockQueryRaw.mockResolvedValue([proRow('pro-1', 3, true, false)]);
+    mockUserFindMany.mockResolvedValue([{ id: 'pro-1', email: 'pro1@example.com' }]);
+
+    await notifyNearbyProsForLesson(BASE_INPUT);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(mockCreateNotif).not.toHaveBeenCalled();
+    expect(mockSendNewLessonRequestEmail).toHaveBeenCalledTimes(1);
   });
 
   it('ne déclenche aucun email si tous les pros ont emailNotif=false', async () => {

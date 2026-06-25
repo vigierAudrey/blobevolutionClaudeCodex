@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { clientPrisma as prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
@@ -891,35 +891,70 @@ const notificationPreferencesSchema = z.object({
   notifyForSurf: z.boolean().optional(),
   notifyForKitesurf: z.boolean().optional(),
   emailDigestFrequency: z.enum(['NEVER', 'DAILY', 'WEEKLY']).optional(),
-});
+}).strict();
+
+const notificationPreferencesSelect = {
+  inAppEnabled: true,
+  pushEnabled: true,
+  emailEnabled: true,
+  notifyMessages: true,
+  notifyMatches: true,
+  notifyInvitations: true,
+  notifyLessonRequests: true,
+  notifyProMessages: true,
+  notifyForSurf: true,
+  notifyForKitesurf: true,
+  emailDigestFrequency: true,
+} as const;
+
+const defaultNotificationPreferences = {
+  inAppEnabled: true,
+  pushEnabled: true,
+  emailEnabled: false,
+  notifyMessages: true,
+  notifyMatches: true,
+  notifyInvitations: true,
+  notifyLessonRequests: true,
+  notifyProMessages: true,
+  notifyForSurf: true,
+  notifyForKitesurf: true,
+  emailDigestFrequency: 'NEVER',
+} as const;
+
+type AuthenticatedProfileRequest = Request & { user?: { id?: string } };
+
+function safeNotificationPreferenceErrorMeta(error: unknown): { errorName?: string; errorCode?: string } {
+  const record = error && typeof error === 'object'
+    ? error as { name?: unknown; code?: unknown }
+    : null;
+  return {
+    ...(typeof record?.name === 'string' ? { errorName: record.name } : {}),
+    ...(typeof record?.code === 'string' ? { errorCode: record.code } : {}),
+  };
+}
 
 // Get notification preferences (works for both RIDER and PRO)
 profileRouter.get('/notifications', async (req, res) => {
   try {
-    const userId = (req as any).user?.id as string | undefined;
+    const userId = (req as AuthenticatedProfileRequest).user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     // Get user role
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true },
+      select: {
+        role: true,
+        notificationPreferences: { select: notificationPreferencesSelect },
+      },
     });
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Get or create notification preferences
-    let preferences = await prisma.notificationPreferences.findUnique({
-      where: { userId },
-    });
-
-    if (!preferences) {
-      // Create default preferences
-      preferences = await prisma.notificationPreferences.create({
-        data: { userId },
-      });
-    }
+    // Une lecture reste sans effet de bord. L'absence de ligne signifie les
+    // valeurs par défaut du schéma ; le premier PUT matérialisera la ligne.
+    const preferences = user.notificationPreferences ?? defaultNotificationPreferences;
 
     // Filter preferences based on role
     const basePreferences = {
@@ -944,6 +979,7 @@ profileRouter.get('/notifications', async (req, res) => {
       notifyForKitesurf: preferences.notifyForKitesurf,
     } : {};
 
+    res.setHeader('Cache-Control', 'private, no-store');
     return res.json({
       role: user.role,
       preferences: {
@@ -952,10 +988,11 @@ profileRouter.get('/notifications', async (req, res) => {
         ...proPreferences,
       },
     });
-  } catch (err: any) {
-    secureLogger.error('PROFILE_GET_NOTIFICATION_PREFERENCES_ERROR', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+  } catch (err: unknown) {
+    secureLogger.error(
+      'PROFILE_GET_NOTIFICATION_PREFERENCES_ERROR',
+      safeNotificationPreferenceErrorMeta(err),
+    );
     return res.status(500).json({ error: 'Erreur lors de la récupération des préférences' });
   }
 });
@@ -963,7 +1000,7 @@ profileRouter.get('/notifications', async (req, res) => {
 // Update notification preferences (works for both RIDER and PRO)
 profileRouter.put('/notifications', validate(notificationPreferencesSchema), async (req, res) => { // authz-guard-ok: role-agnostic preferences; RIDER+PRO valid, role-based field filtering enforced inside handler
   try {
-    const userId = (req as any).user?.id as string | undefined;
+    const userId = (req as AuthenticatedProfileRequest).user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     // Get user role to filter allowed preferences
@@ -976,16 +1013,16 @@ profileRouter.put('/notifications', validate(notificationPreferencesSchema), asy
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const body = req.body;
+    const body = req.body as z.infer<typeof notificationPreferencesSchema>;
 
     // Filter body based on role to prevent unauthorized preference updates
-    const allowedFields: any = {
-      // Common channel-master fields for all roles
-      inAppEnabled: body.inAppEnabled,
-      pushEnabled: body.pushEnabled,
-      emailEnabled: body.emailEnabled,
-      emailDigestFrequency: body.emailDigestFrequency,
-    };
+    const allowedFields: z.infer<typeof notificationPreferencesSchema> = {};
+    if (body.inAppEnabled !== undefined) allowedFields.inAppEnabled = body.inAppEnabled;
+    if (body.pushEnabled !== undefined) allowedFields.pushEnabled = body.pushEnabled;
+    if (body.emailEnabled !== undefined) allowedFields.emailEnabled = body.emailEnabled;
+    if (body.emailDigestFrequency !== undefined) {
+      allowedFields.emailDigestFrequency = body.emailDigestFrequency;
+    }
 
     // RIDER-only fields
     if (user.role === 'RIDER') {
@@ -1007,6 +1044,7 @@ profileRouter.put('/notifications', validate(notificationPreferencesSchema), asy
       where: { userId },
       create: { userId, ...allowedFields },
       update: { ...allowedFields },
+      select: notificationPreferencesSelect,
     });
 
     // Return only role-appropriate preferences
@@ -1030,6 +1068,7 @@ profileRouter.put('/notifications', validate(notificationPreferencesSchema), asy
       notifyForKitesurf: preferences.notifyForKitesurf,
     } : {};
 
+    res.setHeader('Cache-Control', 'private, no-store');
     return res.json({
       ok: true,
       preferences: {
@@ -1038,13 +1077,11 @@ profileRouter.put('/notifications', validate(notificationPreferencesSchema), asy
         ...proPreferences,
       },
     });
-  } catch (err: any) {
-    secureLogger.error('PROFILE_UPDATE_NOTIFICATION_PREFERENCES_ERROR', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    if (err?.name === 'ZodError') {
-      return res.status(400).json({ error: 'Invalid input', details: err.errors });
-    }
+  } catch (err: unknown) {
+    secureLogger.error(
+      'PROFILE_UPDATE_NOTIFICATION_PREFERENCES_ERROR',
+      safeNotificationPreferenceErrorMeta(err),
+    );
     return res.status(500).json({ error: 'Erreur lors de la mise à jour des préférences' });
   }
 });

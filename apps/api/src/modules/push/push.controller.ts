@@ -9,6 +9,7 @@ import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { pushNotificationService } from '../../services/push-notification.service';
 import { secureLogger } from '../../utils/secure-logger';
 import { clientPrisma as prisma } from '@blobinfini/database';
+import { createLazyCustomRateLimiter } from '../../middleware/enhanced-rate-limit';
 
 const router = Router();
 
@@ -32,6 +33,36 @@ async function ensurePushUserEligible(userId: string): Promise<boolean> {
 }
 
 router.use(requireAuth, requireVerifiedEmail, requirePushFeatureEnabled);
+
+type AuthenticatedRequest = Request & { user?: { id?: string; role?: string } };
+
+const pushTokenLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 10 * 60_000,
+    limit: 12,
+    keyGenerator: (req: Request) => `push_token:${(req as AuthenticatedRequest).user?.id ?? 'anon'}`,
+  },
+  'push_token',
+);
+
+const pushSendLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60_000,
+    limit: 5,
+    keyGenerator: (req: Request) => `push_send:${(req as AuthenticatedRequest).user?.id ?? 'anon'}`,
+  },
+  'push_send',
+);
+
+function safeErrorMeta(error: unknown): { errorName?: string; errorCode?: string } {
+  const record = error && typeof error === 'object'
+    ? error as { name?: unknown; code?: unknown }
+    : null;
+  return {
+    ...(typeof record?.name === 'string' ? { errorName: record.name } : {}),
+    ...(typeof record?.code === 'string' ? { errorCode: record.code } : {}),
+  };
+}
 
 // Validation schemas
 const subscribeSchema = z.object({
@@ -72,7 +103,7 @@ const handleSubscribe = async (req: Request, res: Response) => {
     }
 
     const { token, userAgent } = validation.data;
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthenticatedRequest).user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'User ID not found in token' });
@@ -92,18 +123,13 @@ const handleSubscribe = async (req: Request, res: Response) => {
         message: 'Successfully subscribed to push notifications'
       });
 
-      // Send welcome notification
-      setTimeout(async () => {
-        await pushNotificationService.sendTestNotification(userId);
-      }, 2000);
-
     } else {
       res.status(500).json({
         error: 'Failed to save push notification token'
       });
     }
   } catch (error) {
-    secureLogger.error('PUSH_ROUTE_SUBSCRIBE_FAILED', { error: (error as Error)?.message });
+    secureLogger.error('PUSH_ROUTE_SUBSCRIBE_FAILED', safeErrorMeta(error));
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -112,8 +138,8 @@ const handleSubscribe = async (req: Request, res: Response) => {
  * POST /api/push/subscribe
  * Subscribe to push notifications
  */
-router.post('/subscribe', handleSubscribe);
-router.post('/register', handleSubscribe);
+router.post('/subscribe', pushTokenLimiter, handleSubscribe);
+router.post('/register', pushTokenLimiter, handleSubscribe);
 
 const handleUnsubscribe = async (req: Request, res: Response) => {
   try {
@@ -125,7 +151,7 @@ const handleUnsubscribe = async (req: Request, res: Response) => {
       });
     }
 
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthenticatedRequest).user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'User ID not found in token' });
@@ -150,21 +176,21 @@ const handleUnsubscribe = async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    secureLogger.error('PUSH_ROUTE_UNSUBSCRIBE_FAILED', { error: (error as Error)?.message });
+    secureLogger.error('PUSH_ROUTE_UNSUBSCRIBE_FAILED', safeErrorMeta(error));
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-router.post('/unsubscribe', handleUnsubscribe);
-router.post('/unregister', handleUnsubscribe);
+router.post('/unsubscribe', pushTokenLimiter, handleUnsubscribe);
+router.post('/unregister', pushTokenLimiter, handleUnsubscribe);
 
 /**
  * POST /api/push/test
  * Send a test notification to the current user
  */
-router.post('/test', async (req: Request, res: Response) => {
+router.post('/test', pushSendLimiter, async (req: Request, res: Response) => {
   try {
-    if ((req as any).user?.role !== 'ADMIN') {
+    if ((req as AuthenticatedRequest).user?.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -177,7 +203,7 @@ router.post('/test', async (req: Request, res: Response) => {
       });
     }
 
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthenticatedRequest).user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'User ID not found in token' });
@@ -205,7 +231,7 @@ router.post('/test', async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    secureLogger.error('PUSH_ROUTE_TEST_FAILED', { error: (error as Error)?.message });
+    secureLogger.error('PUSH_ROUTE_TEST_FAILED', safeErrorMeta(error));
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -214,10 +240,10 @@ router.post('/test', async (req: Request, res: Response) => {
  * POST /api/push/send
  * Send notification to a specific user (admin only)
  */
-router.post('/send', async (req: Request, res: Response) => {
+router.post('/send', pushSendLimiter, async (req: Request, res: Response) => {
   try {
     // Check if user is admin
-    if ((req as any).user?.role !== 'ADMIN') {
+    if ((req as AuthenticatedRequest).user?.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -258,7 +284,7 @@ router.post('/send', async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    secureLogger.error('PUSH_ROUTE_SEND_FAILED', { error: (error as Error)?.message });
+    secureLogger.error('PUSH_ROUTE_SEND_FAILED', safeErrorMeta(error));
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -269,7 +295,7 @@ router.post('/send', async (req: Request, res: Response) => {
  */
 router.get('/status', async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthenticatedRequest).user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'User ID not found in token' });
@@ -281,13 +307,14 @@ router.get('/status', async (req: Request, res: Response) => {
 
     const hasActiveTokens = await pushNotificationService.hasActiveTokens(userId);
 
+    res.setHeader('Cache-Control', 'private, no-store');
     res.status(200).json({
       hasActiveTokens,
       isConfigured: process.env.FIREBASE_PROJECT_ID ? true : false,
       timestamp: Date.now()
     });
   } catch (error) {
-    secureLogger.error('PUSH_ROUTE_STATUS_FAILED', { error: (error as Error)?.message });
+    secureLogger.error('PUSH_ROUTE_STATUS_FAILED', safeErrorMeta(error));
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -307,7 +334,7 @@ export async function notifyNewMessage(
   try {
     await pushNotificationService.sendNewMessage(userId, messageData);
   } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_NEW_MESSAGE_FAILED', { error: (error as Error)?.message });
+    secureLogger.error('PUSH_NOTIFY_NEW_MESSAGE_FAILED', safeErrorMeta(error));
   }
 }
 
@@ -327,7 +354,7 @@ export async function notifyCourseReminder(
   try {
     await pushNotificationService.sendCourseReminder(userId, reminderData);
   } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_COURSE_REMINDER_FAILED', { error: (error as Error)?.message });
+    secureLogger.error('PUSH_NOTIFY_COURSE_REMINDER_FAILED', safeErrorMeta(error));
   }
 }
 
@@ -346,7 +373,7 @@ export async function notifyNewMatchPush(
   try {
     await pushNotificationService.sendNewMatch(userId, matchData);
   } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_NEW_MATCH_FAILED', { error: (error as Error)?.message });
+    secureLogger.error('PUSH_NOTIFY_NEW_MATCH_FAILED', safeErrorMeta(error));
   }
 }
 
@@ -366,7 +393,7 @@ export async function notifyGroupInvitation(
   try {
     await pushNotificationService.sendGroupInvitation(userId, invitationData);
   } catch (error) {
-    secureLogger.error('PUSH_NOTIFY_GROUP_INVITATION_FAILED', { error: (error as Error)?.message });
+    secureLogger.error('PUSH_NOTIFY_GROUP_INVITATION_FAILED', safeErrorMeta(error));
   }
 }
 

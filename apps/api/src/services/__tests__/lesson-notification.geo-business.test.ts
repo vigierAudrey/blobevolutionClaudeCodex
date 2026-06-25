@@ -47,13 +47,11 @@ jest.mock('@blobinfini/database', () => ({
   },
 }));
 
-const mockRedisGet = jest.fn();
 const mockRedisSet = jest.fn();
 
 jest.mock('../cache.service', () => ({
   cacheService: {
     getClient: jest.fn(() => ({
-      get: (...args: unknown[]) => mockRedisGet(...args),
       set: (...args: unknown[]) => mockRedisSet(...args),
     })),
   },
@@ -121,13 +119,15 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 function eligiblePros(
   lessonLat: number,
   lessonLng: number,
-): Array<{ userId: string; distanceKm: number }> {
+): Array<{ userId: string; distanceKm: number; emailNotif: boolean; inAppEnabled: boolean }> {
   return ALL_PROS.filter((pro) => {
     const d = haversineKm(pro.lat, pro.lng, lessonLat, lessonLng);
     return d <= pro.radiusKm;
   }).map((pro) => ({
     userId: pro.id,
     distanceKm: Math.round(haversineKm(pro.lat, pro.lng, lessonLat, lessonLng)),
+    emailNotif: false,
+    inAppEnabled: true,
   }));
 }
 
@@ -142,7 +142,6 @@ function notifiedIds(): string[] {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockRedisGet.mockResolvedValue(null); // pas de cooldown
   mockRedisSet.mockResolvedValue('OK');
   mockCreateNotif.mockResolvedValue({ id: 'notif-1', createdAt: new Date() });
 });

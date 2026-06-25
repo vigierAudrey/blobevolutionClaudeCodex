@@ -127,8 +127,20 @@ describe('profileRouter — AuthZ (PRO cannot access RIDER_ONLY routes)', () => 
 
   // ── Routes AUTHENTICATED_ANY : accessibles aux deux rôles ─────────────────
 
-  it('GET /profile/notifications — RIDER → 200', async () => {
-    await riderSession.get('/profile/notifications').expect(200);
+  it('GET /profile/notifications — RIDER → 200 sans écriture implicite', async () => {
+    await prisma.notificationPreferences.deleteMany({ where: { userId: riderUserId } });
+
+    const res = await riderSession.get('/profile/notifications').expect(200);
+
+    expect(res.body.preferences).toEqual(expect.objectContaining({
+      inAppEnabled: true,
+      pushEnabled: true,
+    }));
+    expect(res.headers['cache-control']).toContain('private');
+    expect(res.headers['cache-control']).toContain('no-store');
+    await expect(
+      prisma.notificationPreferences.count({ where: { userId: riderUserId } }),
+    ).resolves.toBe(0);
   });
 
   it('GET /profile/notifications — PRO → 200', async () => {
@@ -149,7 +161,7 @@ describe('profileRouter — AuthZ (PRO cannot access RIDER_ONLY routes)', () => 
       .expect(200);
   });
 
-  it('PUT /profile/notifications ignore userId client et reste scopé à la session', async () => {
+  it('PUT /profile/notifications rejette userId client et ne modifie aucun compte', async () => {
     await prisma.notificationPreferences.create({
       data: {
         userId: riderUserId,
@@ -166,17 +178,16 @@ describe('profileRouter — AuthZ (PRO cannot access RIDER_ONLY routes)', () => 
         notifyProMessages: false,
         notifyMessages: false,
       })
-      .expect(200);
+      .expect(400);
 
-    const proPrefs = await prisma.notificationPreferences.findUniqueOrThrow({
+    const proPrefs = await prisma.notificationPreferences.findUnique({
       where: { userId: proUserId },
     });
     const riderPrefs = await prisma.notificationPreferences.findUnique({
       where: { userId: riderUserId },
     });
 
-    expect(proPrefs.pushEnabled).toBe(false);
-    expect(proPrefs.notifyProMessages).toBe(false);
+    expect(proPrefs).toBeNull();
     expect(riderPrefs?.pushEnabled).toBe(true);
     expect(riderPrefs?.notifyMessages).toBe(true);
   });

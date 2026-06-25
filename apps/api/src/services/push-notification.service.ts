@@ -4,7 +4,7 @@
  */
 
 import admin from 'firebase-admin';
-import { clientPrisma as prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
 import type { NotificationType } from './notification.service';
 import { shouldNotifyUser } from './notification-preferences.service';
@@ -18,6 +18,18 @@ const firebaseConfig = {
 
 function isPushFeatureEnabled(): boolean {
   return process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
+}
+
+export const MAX_PUSH_TOKENS_PER_USER = 5;
+
+function safeErrorMeta(error: unknown): { errorName?: string; errorCode?: string } {
+  const record = error && typeof error === 'object'
+    ? error as { name?: unknown; code?: unknown }
+    : null;
+  return {
+    ...(typeof record?.name === 'string' ? { errorName: record.name } : {}),
+    ...(typeof record?.code === 'string' ? { errorCode: record.code } : {}),
+  };
 }
 
 // Initialize Firebase Admin (only once)
@@ -38,7 +50,7 @@ export interface PushNotificationData {
   url?: string;
   icon?: string;
   userId?: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   sound?: string;
   badge?: number;
 }
@@ -73,8 +85,8 @@ export class PushNotificationService {
         secureLogger.warn('PUSH_SERVICE_DISABLED', { reason: 'missing_credentials' });
       }
       await this.cleanupInvalidTokens();
-    } catch (error: any) {
-      secureLogger.error('PUSH_SERVICE_INIT_FAILED', { error: error?.message });
+    } catch (error: unknown) {
+      secureLogger.error('PUSH_SERVICE_INIT_FAILED', safeErrorMeta(error));
     }
   }
 
@@ -90,21 +102,29 @@ export class PushNotificationService {
     try {
       secureLogger.info('PUSH_TOKEN_SAVE', { authenticated: true });
 
-      await prisma.pushToken.upsert({
-        where: { token },
-        create: {
-          token,
-          userId,
-        },
-        update: {
-          userId,
-          updatedAt: new Date(),
-        },
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.pushToken.upsert({
+          where: { token },
+          create: { token, userId },
+          update: { userId, updatedAt: new Date() },
+        });
+        const retained: Array<{ id: number }> = await tx.pushToken.findMany({
+          where: { userId },
+          orderBy: { updatedAt: 'desc' },
+          take: MAX_PUSH_TOKENS_PER_USER,
+          select: { id: true },
+        });
+        await tx.pushToken.deleteMany({
+          where: {
+            userId,
+            id: { notIn: retained.map((row: { id: number }) => row.id) },
+          },
+        });
       });
 
       return true;
-    } catch (error: any) {
-      secureLogger.error('PUSH_TOKEN_SAVE_FAILED', { error: error?.message });
+    } catch (error: unknown) {
+      secureLogger.error('PUSH_TOKEN_SAVE_FAILED', safeErrorMeta(error));
       return false;
     }
   }
@@ -127,8 +147,8 @@ export class PushNotificationService {
       }
 
       return true;
-    } catch (error: any) {
-      secureLogger.error('PUSH_TOKEN_REMOVE_FAILED', { error: error?.message });
+    } catch (error: unknown) {
+      secureLogger.error('PUSH_TOKEN_REMOVE_FAILED', safeErrorMeta(error));
       return false;
     }
   }
@@ -185,8 +205,8 @@ export class PushNotificationService {
       secureLogger.info('PUSH_NOTIFICATION_SENT', { successCount, total: tokens.length });
 
       return successCount > 0;
-    } catch (error: any) {
-      secureLogger.error('PUSH_USER_SEND_FAILED', { error: error?.message });
+    } catch (error: unknown) {
+      secureLogger.error('PUSH_USER_SEND_FAILED', safeErrorMeta(error));
       return false;
     }
   }
@@ -208,16 +228,17 @@ export class PushNotificationService {
     try {
       const message = this.buildFCMMessage(token, notification);
 
-      const response = await admin.messaging().send(message);
-      secureLogger.info('PUSH_TOKEN_SENT', { responseId: response });
+      await admin.messaging().send(message);
+      secureLogger.info('PUSH_TOKEN_SENT');
 
       return true;
-    } catch (error: any) {
-      if (error.code === 'messaging/registration-token-not-registered') {
-        secureLogger.warn('PUSH_TOKEN_INVALID', { errorCode: error.code });
+    } catch (error: unknown) {
+      const meta = safeErrorMeta(error);
+      if (meta.errorCode === 'messaging/registration-token-not-registered') {
+        secureLogger.warn('PUSH_TOKEN_INVALID', { errorCode: meta.errorCode });
         await this.cleanupInvalidTokens(token);
       } else {
-        secureLogger.error('PUSH_TOKEN_SEND_FAILED', { error: error?.message });
+        secureLogger.error('PUSH_TOKEN_SEND_FAILED', meta);
       }
       return false;
     }
@@ -430,7 +451,7 @@ export class PushNotificationService {
   /**
    * Get action buttons for notification type
    */
-  private getActionsForType(type: string, data?: Record<string, any>): Array<{ action: string; title: string }> {
+  private getActionsForType(type: string, _data?: Record<string, unknown>): Array<{ action: string; title: string }> {
     switch (type) {
       case 'new_message':
         return [
@@ -448,6 +469,8 @@ export class PushNotificationService {
   private async getUserTokens(userId: string): Promise<string[]> {
     const tokens: Array<{ token: string }> = await prisma.pushToken.findMany({
       where: { userId },
+      orderBy: { updatedAt: 'desc' },
+      take: MAX_PUSH_TOKENS_PER_USER,
       select: { token: true },
     });
     if (tokens.length === 0) {
@@ -462,8 +485,8 @@ export class PushNotificationService {
     try {
       const count = await prisma.pushToken.count({ where: { userId } });
       return count > 0;
-    } catch (error: any) {
-      secureLogger.error('PUSH_TOKEN_STATUS_FAILED', { error: error?.message });
+    } catch (error: unknown) {
+      secureLogger.error('PUSH_TOKEN_STATUS_FAILED', safeErrorMeta(error));
       return false;
     }
   }
@@ -484,8 +507,8 @@ export class PushNotificationService {
           },
         },
       });
-    } catch (error: any) {
-      secureLogger.warn('PUSH_TOKEN_CLEANUP_FAILED', { error: error?.message });
+    } catch (error: unknown) {
+      secureLogger.warn('PUSH_TOKEN_CLEANUP_FAILED', safeErrorMeta(error));
     }
   }
 

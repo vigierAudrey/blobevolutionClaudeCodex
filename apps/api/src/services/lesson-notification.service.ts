@@ -48,6 +48,17 @@ interface EligibleProRow {
   userId: string;
   distanceKm: number;
   emailNotif: boolean;
+  inAppEnabled: boolean;
+}
+
+function safeErrorMeta(error: unknown): { errorName?: string; errorCode?: string } {
+  const record = error && typeof error === 'object'
+    ? error as { name?: unknown; code?: unknown }
+    : null;
+  return {
+    ...(typeof record?.name === 'string' ? { errorName: record.name } : {}),
+    ...(typeof record?.code === 'string' ? { errorCode: record.code } : {}),
+  };
 }
 
 function toDistanceBucket(km: number): string {
@@ -63,27 +74,25 @@ function fanoutKey(riderId: string): string {
 }
 
 /**
- * Vérifie si le cooldown anti-spam est actif pour ce rider.
- * Fail-open : si Redis indisponible, on laisse passer (résilience > anti-spam parfait).
+ * Réserve atomiquement le créneau de fan-out pour ce rider.
+ * Fail-closed : sans Redis, aucun email/push sortant ne doit pouvoir contourner
+ * l'anti-spam ou générer un coût fournisseur non borné.
  */
-async function isFanoutCoolingDown(riderId: string): Promise<boolean> {
+async function acquireFanoutSlot(riderId: string): Promise<boolean> {
   const redis = cacheService.getClient();
-  if (!redis) return false;
-  try {
-    const val = await redis.get(fanoutKey(riderId));
-    return val !== null;
-  } catch {
+  if (!redis) {
+    secureLogger.warn('LESSON_NOTIF_FANOUT_LOCK_UNAVAILABLE', { reason: 'redis_unavailable' });
     return false;
   }
-}
-
-async function markFanoutSent(riderId: string): Promise<void> {
-  const redis = cacheService.getClient();
-  if (!redis) return;
   try {
-    await redis.set(fanoutKey(riderId), '1', { EX: FANOUT_COOLDOWN_TTL_SECONDS });
-  } catch {
-    // non-bloquant
+    const result = await redis.set(fanoutKey(riderId), '1', {
+      EX: FANOUT_COOLDOWN_TTL_SECONDS,
+      NX: true,
+    });
+    return result === 'OK';
+  } catch (error: unknown) {
+    secureLogger.warn('LESSON_NOTIF_FANOUT_LOCK_FAILED', safeErrorMeta(error));
+    return false;
   }
 }
 
@@ -138,14 +147,19 @@ async function findEligiblePros(input: LessonNotificationInput): Promise<Eligibl
           ST_SetSRID(ST_MakePoint(${lessonLng}, ${lessonLat}), 4326)::geography
         ) / 1000.0
       )::float AS "distanceKm",
-      pp."emailNotif"
+      pp."emailNotif",
+      COALESCE(np."inAppEnabled", true) AS "inAppEnabled"
     FROM "ProProfile" pp
     LEFT JOIN "NotificationPreferences" np ON np."userId" = pp."userId"
     WHERE pp."verified" = true
       AND pp."lat" IS NOT NULL
       AND pp."lng" IS NOT NULL
       AND (np."notifyLessonRequests" IS NULL OR np."notifyLessonRequests" = true)
-      AND (np."inAppEnabled" IS NULL OR np."inAppEnabled" = true)
+      AND (
+        pp."emailNotif" = true
+        OR np."inAppEnabled" IS NULL
+        OR np."inAppEnabled" = true
+      )
       AND ST_DWithin(
         ST_SetSRID(ST_MakePoint(pp."lng", pp."lat"), 4326)::geography,
         ST_SetSRID(ST_MakePoint(${lessonLng}, ${lessonLat}), 4326)::geography,
@@ -186,13 +200,24 @@ export async function sendEmailsToOptedInPros(
   let users: { id: string; email: string }[];
   try {
     users = await prisma.user.findMany({
-      where: { id: { in: proIds } },
+      where: {
+        id: { in: proIds },
+        proProfile: { emailNotif: true },
+        OR: [
+          { notificationPreferences: null },
+          {
+            notificationPreferences: {
+              notifyLessonRequests: true,
+              ...(sport === 'surf' ? { notifyForSurf: true } : {}),
+              ...(sport === 'kitesurf' ? { notifyForKitesurf: true } : {}),
+            },
+          },
+        ],
+      },
       select: { id: true, email: true },
     });
   } catch (err: unknown) {
-    secureLogger.error('LESSON_EMAIL_FETCH_PROS_FAILED', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    secureLogger.error('LESSON_EMAIL_FETCH_PROS_FAILED', safeErrorMeta(err));
     return;
   }
 
@@ -211,7 +236,7 @@ export async function sendEmailsToOptedInPros(
           // Log neutre : email hashé, pas de PII en clair.
           secureLogger.warn('LESSON_EMAIL_SEND_FAILED', {
             proEmailHash: hashEmail(proEmail),
-            error: err instanceof Error ? err.message : String(err),
+            ...safeErrorMeta(err),
           });
         }
       }),
@@ -232,13 +257,6 @@ export async function sendEmailsToOptedInPros(
 export async function notifyNearbyProsForLesson(input: LessonNotificationInput): Promise<void> {
   const { riderId, lessonSport } = input;
 
-  // Cooldown anti-spam : un rider ne peut déclencher la fanout qu'une fois par heure.
-  const coolingDown = await isFanoutCoolingDown(riderId);
-  if (coolingDown) {
-    secureLogger.debug('LESSON_NOTIF_FANOUT_SKIPPED_COOLDOWN', { riderId });
-    return;
-  }
-
   // lessonRequestId : sha256(riderId + UTC-date)[:16] — stable sur la journée.
   // COUNT(DISTINCT lessonRequestId) = riders uniques, pas fanouts bruts.
   const riderRef = hashRiderRef(riderId);
@@ -248,9 +266,7 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
   try {
     pros = await findEligiblePros(input);
   } catch (err: unknown) {
-    secureLogger.error('LESSON_NOTIF_FIND_PROS_FAILED', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    secureLogger.error('LESSON_NOTIF_FIND_PROS_FAILED', safeErrorMeta(err));
     return;
   }
 
@@ -269,10 +285,14 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
     return;
   }
 
-  secureLogger.info('LESSON_NOTIF_FANOUT_START', { proCount: pros.length });
+  // Réservation atomique après la recherche : un seul appel concurrent peut
+  // déclencher les écritures et les emails, sans pénaliser un résultat vide.
+  if (!(await acquireFanoutSlot(riderId))) {
+    secureLogger.debug('LESSON_NOTIF_FANOUT_SKIPPED_COOLDOWN');
+    return;
+  }
 
-  // Marquer le cooldown avant l'envoi pour éviter un double-fanout concurrent.
-  await markFanoutSent(riderId);
+  secureLogger.info('LESSON_NOTIF_FANOUT_START', { proCount: pros.length });
 
   const sportLabel = lessonSport ?? 'cours';
   const title = 'Nouvelle demande de cours près de vous';
@@ -280,7 +300,8 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
 
   // Envoi par lots de NOTIFICATION_CHUNK_SIZE : évite de saturer le pool Prisma.
   // fire-and-forget côté HTTP rider → la latence additionnelle est invisible.
-  const results = await sendNotificationsChunked(pros, (pro) => ({
+  const inAppPros = pros.filter((pro) => pro.inAppEnabled);
+  const results = await sendNotificationsChunked(inAppPros, (pro) => ({
     userId: pro.userId,
     type: NotificationType.LESSON_REQUEST_NEARBY,
     title,
@@ -313,9 +334,7 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
   // Envoi emails aux pros ayant emailNotif=true — fire-and-forget.
   // Une erreur Brevo ne bloque pas et ne casse pas la demande rider.
   void sendEmailsToOptedInPros(pros, lessonSport).catch((err: unknown) => {
-    secureLogger.warn('LESSON_EMAIL_FANOUT_FAILED', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    secureLogger.warn('LESSON_EMAIL_FANOUT_FAILED', safeErrorMeta(err));
   });
 
   await recordFanout({
@@ -336,8 +355,6 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
  */
 export function notifyNearbyProsForLessonSilent(input: LessonNotificationInput): void {
   void notifyNearbyProsForLesson(input).catch((err: unknown) => {
-    secureLogger.warn('LESSON_NOTIF_FANOUT_FAILED', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    secureLogger.warn('LESSON_NOTIF_FANOUT_FAILED', safeErrorMeta(err));
   });
 }
