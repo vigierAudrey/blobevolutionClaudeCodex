@@ -31,6 +31,31 @@ const FCM_TOKEN = 'fcm-secret-token-abcdef0123456789';
 
 const mockRequestPermission = jest.fn().mockResolvedValue('granted');
 
+// Non-demo public Firebase config so the fail-closed guard lets the FCM path run.
+const FIREBASE_ENV_KEYS = [
+  'NEXT_PUBLIC_FIREBASE_API_KEY',
+  'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
+  'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
+  'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET',
+  'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
+  'NEXT_PUBLIC_FIREBASE_APP_ID',
+  'NEXT_PUBLIC_FIREBASE_VAPID_KEY',
+] as const;
+
+function setRealFirebaseEnv() {
+  process.env.NEXT_PUBLIC_FIREBASE_API_KEY = 'test-api-key';
+  process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN = 'test-project.firebaseapp.com';
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = 'test-project';
+  process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET = 'test-project.appspot.com';
+  process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID = '999000111';
+  process.env.NEXT_PUBLIC_FIREBASE_APP_ID = '1:999000111:web:testapp';
+  process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY = 'test-vapid-public-key';
+}
+
+function clearFirebaseEnv() {
+  for (const key of FIREBASE_ENV_KEYS) delete process.env[key];
+}
+
 function setupBrowserEnv(permission: NotificationPermission = 'granted') {
   Object.defineProperty(global, 'Notification', {
     configurable: true,
@@ -54,6 +79,11 @@ describe('push subscription wiring (firebase.ts)', () => {
     jest.resetModules();
     mockRequestPermission.mockResolvedValue('granted');
     setupBrowserEnv('granted');
+    setRealFirebaseEnv();
+  });
+
+  afterEach(() => {
+    clearFirebaseEnv();
   });
 
   it('saveFCMToken POSTs to /push/subscribe with the token but no userId', async () => {
@@ -119,15 +149,31 @@ describe('PushNotificationManager / pushManager', () => {
     jest.resetModules();
     mockRequestPermission.mockResolvedValue('granted');
     setupBrowserEnv('granted');
+    setRealFirebaseEnv();
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
+    clearFirebaseEnv();
     logSpy.mockRestore();
     errorSpy.mockRestore();
     warnSpy.mockRestore();
+  });
+
+  it('is fail-closed with demo/placeholder config: no getToken, no subscribe call', async () => {
+    // Drop the VAPID key so it falls back to the demo sentinel — config is unusable.
+    delete process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
+    mockGetToken.mockResolvedValue(FCM_TOKEN);
+    mockApiRequest.mockResolvedValue({ ok: true });
+
+    const { pushManager } = require('../pushNotifications');
+    const ok = await pushManager.subscribe();
+
+    expect(ok).toBe(false);
+    expect(mockGetToken).not.toHaveBeenCalled();
+    expect(mockApiRequest).not.toHaveBeenCalledWith('/push/subscribe', expect.anything());
   });
 
   it('does not prompt for permission on module load', () => {
