@@ -20,6 +20,20 @@ function isPushFeatureEnabled(): boolean {
   return process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
 }
 
+/**
+ * Fail-closed credential guard. The Firebase Admin SDK is initialized only when real
+ * credentials are present: both service-account fields must be set AND the projectId
+ * must not be the demo placeholder. This prevents accidentally initializing Admin (and
+ * sending) against the demo project when the feature flag is flipped on with an
+ * incomplete config. No secret value is ever logged.
+ */
+function hasUsableFirebaseCredentials(): boolean {
+  const { projectId, clientEmail, privateKey } = firebaseConfig;
+  if (!clientEmail || !privateKey) return false;
+  if (!projectId || projectId === 'blobinfini-demo') return false;
+  return true;
+}
+
 export const MAX_PUSH_TOKENS_PER_USER = 5;
 const SENSITIVE_PUSH_DATA_KEYS = new Set(['userId', 'email', 'role', 'token', 'responseId', 'providerResponseId']);
 
@@ -40,8 +54,8 @@ function sanitizePushData(data?: Record<string, unknown>): Record<string, unknow
   );
 }
 
-// Initialize Firebase Admin (only once)
-if (isPushFeatureEnabled() && !admin.apps.length && firebaseConfig.privateKey && firebaseConfig.clientEmail) {
+// Initialize Firebase Admin (only once) — fail-closed on demo/missing credentials.
+if (isPushFeatureEnabled() && !admin.apps.length && hasUsableFirebaseCredentials()) {
   admin.initializeApp({
     credential: admin.credential.cert(firebaseConfig),
     projectId: firebaseConfig.projectId,
@@ -85,11 +99,11 @@ export class PushNotificationService {
         return;
       }
 
-      if (firebaseConfig.privateKey && firebaseConfig.clientEmail) {
+      if (hasUsableFirebaseCredentials()) {
         this.isInitialized = true;
         secureLogger.info('PUSH_SERVICE_INITIALIZED', { projectId: firebaseConfig.projectId });
       } else {
-        secureLogger.warn('PUSH_SERVICE_DISABLED', { reason: 'missing_credentials' });
+        secureLogger.warn('PUSH_SERVICE_DISABLED', { reason: 'missing_or_demo_credentials' });
       }
       await this.cleanupInvalidTokens();
     } catch (error: unknown) {

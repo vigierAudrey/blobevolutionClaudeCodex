@@ -20,6 +20,37 @@ const firebaseConfig = {
 // VAPID key for push notifications (public key)
 const VAPID_KEY = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || "demo-vapid-key";
 
+// Known placeholder/demo sentinels. If any required field is empty or still equals
+// one of these, the Firebase project is not really configured and we must NOT attempt
+// FCM (fail-closed). These mirror the `|| "demo-*"` fallbacks above.
+const DEMO_FIREBASE_VALUES = new Set<string>([
+  '',
+  'demo-api-key',
+  'demo-vapid-key',
+  'blobinfini-demo',
+  'blobinfini-demo.firebaseapp.com',
+  'blobinfini-demo.appspot.com',
+  '123456789',
+  '1:123456789:web:abcdef123456',
+  'G-ABCDEF123',
+]);
+
+/**
+ * Fail-closed guard: true only when the public Firebase config looks real (no empty
+ * value, no demo placeholder) on the fields required for web push. Never logs the
+ * actual values — only this boolean is used.
+ */
+function isFirebaseConfigUsable(): boolean {
+  const required = [
+    firebaseConfig.apiKey,
+    firebaseConfig.projectId,
+    firebaseConfig.messagingSenderId,
+    firebaseConfig.appId,
+    VAPID_KEY,
+  ];
+  return required.every((value) => typeof value === 'string' && !DEMO_FIREBASE_VALUES.has(value));
+}
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
@@ -54,6 +85,12 @@ function getMessagingInstance(): Messaging | null {
  * leaking the token or the underlying provider error.
  */
 export async function requestNotificationPermission(): Promise<string | null> {
+  // Fail-closed: never call getToken with demo/empty config. Returns a neutral null
+  // so the UI degrades gracefully instead of hitting FCM with placeholder values.
+  if (!isFirebaseConfigUsable()) {
+    return null;
+  }
+
   const messagingInstance = getMessagingInstance();
   if (!messagingInstance) {
     return null;

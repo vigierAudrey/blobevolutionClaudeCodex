@@ -127,7 +127,22 @@ describe('PushNotificationService', () => {
       createService(false);
 
       expect(adminMock.initializeApp).not.toHaveBeenCalled();
-      expect(secureLogger.warn).toHaveBeenCalledWith('PUSH_SERVICE_DISABLED', { reason: 'missing_credentials' });
+      expect(secureLogger.warn).toHaveBeenCalledWith('PUSH_SERVICE_DISABLED', { reason: 'missing_or_demo_credentials' });
+    });
+
+    it('is fail-closed: skips Firebase init when projectId is the demo placeholder', () => {
+      // Real credentials present but the project is still the demo fallback → unusable.
+      process.env.FIREBASE_CLIENT_EMAIL = 'test@test-project.iam.gserviceaccount.com';
+      process.env.FIREBASE_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\\ntest-key\\n-----END PRIVATE KEY-----\\n';
+      process.env.FIREBASE_PROJECT_ID = 'blobinfini-demo';
+      setPushFeatureFlag(true);
+      adminMock.apps.length = 0;
+
+      const service = new PushNotificationService();
+
+      expect(service['isInitialized']).toBe(false);
+      expect(adminMock.initializeApp).not.toHaveBeenCalled();
+      expect(secureLogger.warn).toHaveBeenCalledWith('PUSH_SERVICE_DISABLED', { reason: 'missing_or_demo_credentials' });
     });
 
     it('skips Firebase init when the push feature flag is off', () => {
