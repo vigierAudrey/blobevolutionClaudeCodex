@@ -32,7 +32,7 @@ jobs:
       db:      ${{ steps.filter.outputs.db }}
       openapi: ${{ steps.filter.outputs.openapi }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -64,7 +64,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: No skipped tests in critical API suites (block)
         run: bash scripts/no-skip-critical-check.sh
@@ -282,7 +282,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Enforce network guardrails
         run: bash scripts/no-raw-fetch-check.sh
@@ -326,7 +326,7 @@ jobs:
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -364,7 +364,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -395,7 +395,7 @@ jobs:
     if: needs.changes.outputs.web == 'true' || github.event_name != 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -453,7 +453,7 @@ jobs:
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -562,7 +562,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -683,7 +683,7 @@ jobs:
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -752,7 +752,7 @@ jobs:
     if: needs.changes.outputs.web == 'true' || github.event_name != 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -782,7 +782,7 @@ jobs:
     if: needs.changes.outputs.openapi == 'true' || github.event_name != 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -853,7 +853,7 @@ jobs:
       NEXT_PUBLIC_ADSENSE_CLIENT_ID: 'ca-pub-0000000000000000'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -937,7 +937,7 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # Non-bloquant: vérifie que les alias import respectent la casse (App Router casse sensible sur Linux)
       - name: Verify imports alias (case-sensitive)
         run: |

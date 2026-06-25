@@ -32,7 +32,7 @@ jobs:
       # ÉTAPE 1 — Checkout
       # ──────────────────────────────────────────────────────────────────────────
       - name: "1 — Checkout"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # ──────────────────────────────────────────────────────────────────────────
       # ÉTAPE 2 — Injection /etc/hosts (empêche l'auto-set de CURL_RESOLVE)

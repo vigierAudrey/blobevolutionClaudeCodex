@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: No skipped tests in matching suites (block)
         # Fails if any matching test file contains .skip(, xtest(, xit(, or .todo( stubs.
@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -90,7 +90,7 @@ jobs:
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Pull Postgres image (with retry)
         # The `services:` block has no retry — transient Docker Hub timeouts cause job failure.
