@@ -32,6 +32,7 @@ FAILS=0
 ok()   { printf '  OK   | %s\n' "$1"; }
 fail() { printf '  FAIL | %s\n' "$1"; FAILS=$((FAILS + 1)); }
 skip() { printf '  SKIP | %s\n' "$1"; }
+SENSITIVE_LOG_PATTERN='BEGIN PRIVATE KEY|FIREBASE_PRIVATE_KEY|FIREBASE_CLIENT_EMAIL|NEXT_PUBLIC_FIREBASE_[A-Z0-9_]*|TEST_ACCESS_COOKIE|registration token|vapid|fcm[-_ ]?token'
 
 # ─── Wrappers I/O (mockables, ne fuient jamais de valeur) ─────────────────────
 sw_code() {
@@ -69,7 +70,7 @@ run_env_validator() {
 }
 
 echo "=== Contrôle pré-VPS push OFF (lecture seule) ==="
-echo "APP_URL=$APP_URL  API_URL=$API_URL  COMPOSE_FILE=$COMPOSE_FILE  ENV_FILE=$ENV_FILE"
+echo "APP_URL configured  API_URL configured  COMPOSE_FILE=$COMPOSE_FILE  ENV_FILE=$ENV_FILE"
 echo ""
 
 # 1. .env.pre-vps existe
@@ -134,8 +135,8 @@ fi
 LOGS="$(compose_logs)"
 if [ -z "$LOGS" ]; then
   skip "logs api indisponibles (docker absent ou pas de logs)"
-elif printf '%s\n' "$LOGS" | grep -iqE 'BEGIN PRIVATE KEY|FIREBASE_PRIVATE_KEY|registration token|vapid|fcm[-_ ]?token'; then
-  fail "fuite potentielle de secret/token dans les logs api"
+elif printf '%s\n' "$LOGS" | grep -qiE "$SENSITIVE_LOG_PATTERN"; then
+  fail "sensitive pattern detected in api logs"
 else
   ok "logs api : aucun secret/token visible"
 fi
