@@ -319,42 +319,73 @@ describe('Auth E2E', () => {
     }
   });
 
-  it('rate limits register per IP without sharing the bucket with another IP or forgot-password', async () => {
+  it('does not rate limit the first valid register attempt when rate limits are enabled', async () => {
     const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
     const previousTrustProxyMode = process.env.TRUST_PROXY_MODE;
     process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
     process.env.TRUST_PROXY_MODE = 'loopback';
 
     const rateLimitedApp = createApp();
-    const sessionA = await createTestSession(rateLimitedApp);
-    const sessionB = await createTestSession(rateLimitedApp);
+    const rateSession = await createTestSession(rateLimitedApp);
     const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const ipA = '198.51.100.41';
-    const ipB = '198.51.100.42';
-    let warnSpy: jest.SpiedFunction<typeof secureLogger.warn> | undefined;
-
-    const registerPayload = (label: string) => ({
-      email: `register-rl-${label}-${unique}@example.com`,
-      password: DEFAULT_PASSWORD,
-      role: 'RIDER' as const,
-      consentAccepted: true,
-    });
 
     try {
-      for (let i = 0; i < 3; i += 1) {
-        await sessionA
+      await rateSession
+        .post('/auth/register')
+        .set('X-Forwarded-For', '198.51.100.41')
+        .send({
+          email: `register-first-${unique}@example.com`,
+          password: DEFAULT_PASSWORD,
+          role: 'RIDER',
+          consentAccepted: true,
+        })
+        .expect(201);
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      } else {
+        process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+      }
+      if (previousTrustProxyMode === undefined) {
+        delete process.env.TRUST_PROXY_MODE;
+      } else {
+        process.env.TRUST_PROXY_MODE = previousTrustProxyMode;
+      }
+    }
+  });
+
+  it('rate limits abusive register attempts per IP without sharing the bucket with forgot-password', async () => {
+    const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+    const previousTrustProxyMode = process.env.TRUST_PROXY_MODE;
+    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+    process.env.TRUST_PROXY_MODE = 'loopback';
+
+    const rateLimitedApp = createApp();
+    const rateSession = await createTestSession(rateLimitedApp);
+    const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const ip = '198.51.100.42';
+    let warnSpy: jest.SpiedFunction<typeof secureLogger.warn> | undefined;
+
+    try {
+      for (let i = 0; i < 15; i += 1) {
+        await rateSession
           .post('/auth/register')
-          .set('X-Forwarded-For', ipA)
-          .send(registerPayload(`ip-a-${i}`))
+          .set('X-Forwarded-For', ip)
+          .send({
+            email: `register-ip-rl-${i}-${unique}@example.com`,
+            password: DEFAULT_PASSWORD,
+            role: 'RIDER',
+            consentAccepted: true,
+          })
           .expect(201);
       }
 
       warnSpy = jest.spyOn(secureLogger, 'warn').mockImplementation(() => undefined);
 
-      const blockedEmail = `register-rl-blocked-${unique}@example.com`;
-      const blocked = await sessionA
+      const blockedEmail = `register-ip-rl-blocked-${unique}@example.com`;
+      const blocked = await rateSession
         .post('/auth/register')
-        .set('X-Forwarded-For', ipA)
+        .set('X-Forwarded-For', ip)
         .send({
           email: blockedEmail,
           password: DEFAULT_PASSWORD,
@@ -364,28 +395,134 @@ describe('Auth E2E', () => {
         .expect(429);
 
       expect(blocked.body.error).toBe('REGISTRATION_RATE_LIMIT_EXCEEDED');
+      expect(blocked.body.message).toBe('Trop de tentatives. Réessaie dans quelques minutes.');
 
       const rateLimitLog = warnSpy.mock.calls.find(
-        ([event, context]) => event === 'RATE_LIMIT_EXCEEDED' && context?.profile === 'REGISTRATION',
+        ([event, context]) => event === 'RATE_LIMIT_EXCEEDED' && context?.profile === 'AUTH_REGISTER_IP',
       );
       expect(rateLimitLog).toBeDefined();
       const serializedContext = JSON.stringify(rateLimitLog?.[1] ?? {});
-      expect(serializedContext).not.toContain(ipA);
+      expect(serializedContext).not.toContain(ip);
       expect(serializedContext).not.toContain(blockedEmail);
 
-      await sessionB
-        .post('/auth/register')
-        .set('X-Forwarded-For', ipB)
-        .send(registerPayload('ip-b-ok'))
-        .expect(201);
-
-      await sessionA
+      await rateSession
         .post('/auth/forgot-password')
-        .set('X-Forwarded-For', ipA)
+        .set('X-Forwarded-For', ip)
         .send({ email: `forgot-after-register-rl-${unique}@example.com` })
         .expect(200);
     } finally {
       warnSpy?.mockRestore();
+      if (previousFlag === undefined) {
+        delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      } else {
+        process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+      }
+      if (previousTrustProxyMode === undefined) {
+        delete process.env.TRUST_PROXY_MODE;
+      } else {
+        process.env.TRUST_PROXY_MODE = previousTrustProxyMode;
+      }
+    }
+  });
+
+  it('rate limits repeated register attempts for the same email bucket across IPs', async () => {
+    const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+    const previousTrustProxyMode = process.env.TRUST_PROXY_MODE;
+    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+    process.env.TRUST_PROXY_MODE = 'loopback';
+
+    const rateLimitedApp = createApp();
+    const rateSession = await createTestSession(rateLimitedApp);
+    const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const email = `register-email-rl-${unique}@example.com`;
+    let warnSpy: jest.SpiedFunction<typeof secureLogger.warn> | undefined;
+
+    try {
+      await rateSession
+        .post('/auth/register')
+        .set('X-Forwarded-For', '198.51.100.51')
+        .send({ email, password: DEFAULT_PASSWORD, role: 'RIDER', consentAccepted: true })
+        .expect(201);
+
+      await rateSession
+        .post('/auth/register')
+        .set('X-Forwarded-For', '198.51.100.52')
+        .send({ email, password: DEFAULT_PASSWORD, role: 'RIDER', consentAccepted: true })
+        .expect(409);
+
+      await rateSession
+        .post('/auth/register')
+        .set('X-Forwarded-For', '198.51.100.53')
+        .send({ email, password: DEFAULT_PASSWORD, role: 'RIDER', consentAccepted: true })
+        .expect(409);
+
+      warnSpy = jest.spyOn(secureLogger, 'warn').mockImplementation(() => undefined);
+
+      const blocked = await rateSession
+        .post('/auth/register')
+        .set('X-Forwarded-For', '198.51.100.54')
+        .send({ email, password: DEFAULT_PASSWORD, role: 'RIDER', consentAccepted: true })
+        .expect(429);
+
+      expect(blocked.body.error).toBe('REGISTRATION_RATE_LIMIT_EXCEEDED');
+
+      const rateLimitLog = warnSpy.mock.calls.find(
+        ([event, context]) => event === 'RATE_LIMIT_EXCEEDED' && context?.profile === 'AUTH_REGISTER_EMAIL',
+      );
+      expect(rateLimitLog).toBeDefined();
+      const serializedContext = JSON.stringify(rateLimitLog?.[1] ?? {});
+      expect(serializedContext).not.toContain(email);
+      expect(serializedContext).not.toContain('198.51.100.54');
+    } finally {
+      warnSpy?.mockRestore();
+      if (previousFlag === undefined) {
+        delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+      } else {
+        process.env.ENABLE_RATE_LIMIT_IN_TESTS = previousFlag;
+      }
+      if (previousTrustProxyMode === undefined) {
+        delete process.env.TRUST_PROXY_MODE;
+      } else {
+        process.env.TRUST_PROXY_MODE = previousTrustProxyMode;
+      }
+    }
+  });
+
+  it('does not let a saturated conversations pending bucket block auth register', async () => {
+    const previousFlag = process.env.ENABLE_RATE_LIMIT_IN_TESTS;
+    const previousTrustProxyMode = process.env.TRUST_PROXY_MODE;
+    process.env.ENABLE_RATE_LIMIT_IN_TESTS = 'true';
+    process.env.TRUST_PROXY_MODE = 'loopback';
+
+    const rateLimitedApp = createApp();
+    const rateSession = await createTestSession(rateLimitedApp);
+    const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const ip = '198.51.100.61';
+
+    try {
+      for (let i = 0; i < 10; i += 1) {
+        await rateSession
+          .get('/conversations/pending')
+          .set('X-Forwarded-For', ip)
+          .expect(401);
+      }
+
+      await rateSession
+        .get('/conversations/pending')
+        .set('X-Forwarded-For', ip)
+        .expect(429);
+
+      await rateSession
+        .post('/auth/register')
+        .set('X-Forwarded-For', ip)
+        .send({
+          email: `register-after-conversation-rl-${unique}@example.com`,
+          password: DEFAULT_PASSWORD,
+          role: 'RIDER',
+          consentAccepted: true,
+        })
+        .expect(201);
+    } finally {
       if (previousFlag === undefined) {
         delete process.env.ENABLE_RATE_LIMIT_IN_TESTS;
       } else {

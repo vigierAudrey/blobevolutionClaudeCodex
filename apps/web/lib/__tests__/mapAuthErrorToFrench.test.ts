@@ -22,7 +22,7 @@ describe('mapAuthErrorToFrench', () => {
   describe('Rate limit — registration', () => {
     it('maps "Too many registration attempts. Please try again later."', () => {
       expect(mapAuthErrorToFrench('Too many registration attempts. Please try again later.')).toBe(
-        "Trop de tentatives d'inscription. Réessaie plus tard.",
+        'Trop de tentatives. Réessaie dans quelques minutes.',
       );
     });
   });
