@@ -152,6 +152,68 @@ require_var "NEXT_PUBLIC_API_URL"
 require_var "WEB_BASE_URL"
 require_var "PRIMARY_ADMIN_EMAILS"
 
+# ─── Firebase push (validé uniquement si la feature est activée) ──────────────
+# Garde-fou ops : si PUSH_NOTIFICATIONS_ENABLED=true, la config Firebase doit être
+# réelle (projet de TEST), cohérente front/API, et SANS placeholder demo. Sinon le
+# staging part en vrille (token pour un projet A, envoi Admin via un projet B, ou
+# fail-closed silencieux). Aucune valeur n'est jamais affichée : seules les variables
+# en faute sont nommées.
+echo "--- Firebase push (PUSH_NOTIFICATIONS_ENABLED) ---"
+if [ "${PUSH_NOTIFICATIONS_ENABLED:-false}" = "true" ]; then
+  echo "INFO      : PUSH_NOTIFICATIONS_ENABLED=true → validation stricte de la config Firebase"
+
+  # Rejette tout placeholder demo (substring 'demo' ou sentinelle '123456789'),
+  # aligné avec DEMO_FIREBASE_VALUES côté front (apps/web/lib/firebase.ts).
+  # N'affiche jamais la valeur, seulement le nom de variable.
+  reject_fb_demo() {
+    local var="$1"
+    local value="${!var:-}"
+    if [ -n "$value" ]; then
+      case "$value" in
+        *demo*|*123456789*)
+          echo "VALEUR DEMO INTERDITE: $var (placeholder demo non autorisé avec push ON)"
+          ERRORS=$((ERRORS + 1)) ;;
+      esac
+    fi
+  }
+
+  # Secrets serveur (API Admin) — require_var/échecs ne montrent jamais la valeur
+  require_var "FIREBASE_PROJECT_ID"
+  reject_fb_demo "FIREBASE_PROJECT_ID"
+  require_var "FIREBASE_CLIENT_EMAIL"
+  require_var "FIREBASE_PRIVATE_KEY" 40
+  if [ -n "${FIREBASE_PRIVATE_KEY:-}" ]; then
+    case "${FIREBASE_PRIVATE_KEY}" in
+      *"BEGIN PRIVATE KEY"*) : ;;
+      *)
+        echo "INVALIDE  : FIREBASE_PRIVATE_KEY ne ressemble pas à une clé privée PEM"
+        ERRORS=$((ERRORS + 1)) ;;
+    esac
+  fi
+
+  # Config publique front (NEXT_PUBLIC_*) — publiques mais doivent être réelles
+  require_var "NEXT_PUBLIC_FIREBASE_API_KEY"
+  reject_fb_demo "NEXT_PUBLIC_FIREBASE_API_KEY"
+  require_var "NEXT_PUBLIC_FIREBASE_PROJECT_ID"
+  reject_fb_demo "NEXT_PUBLIC_FIREBASE_PROJECT_ID"
+  require_var "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"
+  reject_fb_demo "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"
+  require_var "NEXT_PUBLIC_FIREBASE_APP_ID"
+  reject_fb_demo "NEXT_PUBLIC_FIREBASE_APP_ID"
+  require_var "NEXT_PUBLIC_FIREBASE_VAPID_KEY"
+  reject_fb_demo "NEXT_PUBLIC_FIREBASE_VAPID_KEY"
+
+  # Cohérence projet front/API : sinon token généré pour le projet front, mais
+  # envoi Admin via un autre projet → staging incompréhensible.
+  if [ -n "${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}" ] && [ -n "${FIREBASE_PROJECT_ID:-}" ] \
+     && [ "${NEXT_PUBLIC_FIREBASE_PROJECT_ID}" != "${FIREBASE_PROJECT_ID}" ]; then
+    echo "INCOHERENT: NEXT_PUBLIC_FIREBASE_PROJECT_ID != FIREBASE_PROJECT_ID (front et API doivent viser le même projet Firebase)"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "WARN      : PUSH_NOTIFICATIONS_ENABLED!=true → validation Firebase ignorée (push OFF, OK)"
+fi
+
 # ─── Certs TLS ────────────────────────────────────────────────────────────────
 echo "--- TLS / mkcert ---"
 CERT_DIR="${MKCERT_CERTS_DIR:-./docker/certs/pre-vps}"
