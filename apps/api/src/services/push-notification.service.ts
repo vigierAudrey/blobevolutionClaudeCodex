@@ -21,6 +21,7 @@ function isPushFeatureEnabled(): boolean {
 }
 
 export const MAX_PUSH_TOKENS_PER_USER = 5;
+const SENSITIVE_PUSH_DATA_KEYS = new Set(['userId', 'email', 'role', 'token', 'responseId', 'providerResponseId']);
 
 function safeErrorMeta(error: unknown): { errorName?: string; errorCode?: string } {
   const record = error && typeof error === 'object'
@@ -30,6 +31,13 @@ function safeErrorMeta(error: unknown): { errorName?: string; errorCode?: string
     ...(typeof record?.name === 'string' ? { errorName: record.name } : {}),
     ...(typeof record?.code === 'string' ? { errorCode: record.code } : {}),
   };
+}
+
+function sanitizePushData(data?: Record<string, unknown>): Record<string, unknown> {
+  if (!data) return {};
+  return Object.fromEntries(
+    Object.entries(data).filter(([key]) => !SENSITIVE_PUSH_DATA_KEYS.has(key)),
+  );
 }
 
 // Initialize Firebase Admin (only once)
@@ -49,7 +57,6 @@ export interface PushNotificationData {
   preferenceType?: NotificationType;
   url?: string;
   icon?: string;
-  userId?: string;
   data?: Record<string, unknown>;
   sound?: string;
   badge?: number;
@@ -262,7 +269,6 @@ export class PushNotificationService {
       type: 'new_message',
       preferenceType: 'NEW_MESSAGE',
       url: `/messages/${messageData.conversationId}`,
-      userId,
       data: {
         conversationId: messageData.conversationId,
         senderId: messageData.senderName,
@@ -289,7 +295,6 @@ export class PushNotificationService {
       body: `Rendez-vous avec ${reminderData.proName} à ${reminderData.spotName}`,
       type: 'reminder',
       url: `/courses/today`,
-      userId,
       data: {
         reminderData,
         hoursUntil: reminderData.hoursUntil
@@ -310,7 +315,6 @@ export class PushNotificationService {
       body: 'Si tu vois ça, les notifications fonctionnent parfaitement ! 🎉',
       type: 'general',
       url: '/dashboard',
-      userId
     };
 
     return this.sendToUser(userId, notification);
@@ -332,7 +336,6 @@ export class PushNotificationService {
       type: 'new_message', // Réutilise le type message pour l'instant
       preferenceType: 'NEW_MATCH',
       url: `/messages/${matchData.conversationId}`,
-      userId,
       data: {
         conversationId: matchData.conversationId,
         matchedUserName: matchData.matchedUserName,
@@ -361,7 +364,6 @@ export class PushNotificationService {
       type: 'new_message', // Réutilise le type message pour l'instant
       preferenceType: 'GROUP_INVITATION',
       url: `/messages/invitations`,
-      userId,
       data: {
         invitationId: invitationData.invitationId,
         conversationId: invitationData.conversationId,
@@ -378,6 +380,7 @@ export class PushNotificationService {
    * Build FCM message object
    */
   private buildFCMMessage(token: string, notification: PushNotificationData): admin.messaging.Message {
+    const safeData = sanitizePushData(notification.data);
     const message: admin.messaging.Message = {
       token,
       notification: {
@@ -388,8 +391,7 @@ export class PushNotificationService {
       data: {
         type: notification.type,
         url: notification.url || '/dashboard',
-        userId: notification.userId || '',
-        ...(notification.data || {})
+        ...safeData
       },
       webpush: {
         headers: {
@@ -408,8 +410,7 @@ export class PushNotificationService {
           data: {
             type: notification.type,
             url: notification.url || '/dashboard',
-            userId: notification.userId || '',
-            ...(notification.data || {})
+            ...safeData
           }
         },
         fcmOptions: {
