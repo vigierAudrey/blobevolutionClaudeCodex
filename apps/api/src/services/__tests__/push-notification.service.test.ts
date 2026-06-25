@@ -327,9 +327,16 @@ describe('PushNotificationService', () => {
         title: 'Hello',
         body: 'World',
         type: 'new_message',
-        userId: 'user-1',
         url: '/test',
-        data: { extra: 'value' }
+        data: {
+          extra: 'value',
+          userId: 'user-1',
+          email: 'user@test.local',
+          role: 'ADMIN',
+          token: 'secret-token',
+          responseId: 'provider-response-id',
+          providerResponseId: 'provider-response-id-2',
+        }
       });
 
       expect(message).toMatchObject({
@@ -337,6 +344,18 @@ describe('PushNotificationService', () => {
         data: expect.objectContaining({ type: 'new_message', extra: 'value' }),
         webpush: expect.any(Object)
       });
+      expect(message.data).not.toHaveProperty('userId');
+      expect(message.data).not.toHaveProperty('email');
+      expect(message.data).not.toHaveProperty('role');
+      expect(message.data).not.toHaveProperty('token');
+      expect(message.data).not.toHaveProperty('responseId');
+      expect(message.data).not.toHaveProperty('providerResponseId');
+      expect(message.webpush?.notification?.data).not.toHaveProperty('userId');
+      expect(message.webpush?.notification?.data).not.toHaveProperty('email');
+      expect(message.webpush?.notification?.data).not.toHaveProperty('role');
+      expect(message.webpush?.notification?.data).not.toHaveProperty('token');
+      expect(message.webpush?.notification?.data).not.toHaveProperty('responseId');
+      expect(message.webpush?.notification?.data).not.toHaveProperty('providerResponseId');
     });
 
     it('detects platforms from user agents', () => {

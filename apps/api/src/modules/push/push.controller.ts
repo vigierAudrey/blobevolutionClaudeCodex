@@ -217,7 +217,6 @@ router.post('/test', pushSendLimiter, async (req: Request, res: Response) => {
 
     const success = await pushNotificationService.sendToUser(userId, {
       ...validation.data,
-      userId
     });
 
     if (success) {
@@ -270,7 +269,6 @@ router.post('/send', pushSendLimiter, async (req: Request, res: Response) => {
       type,
       url,
       data,
-      userId
     });
 
     if (success) {
