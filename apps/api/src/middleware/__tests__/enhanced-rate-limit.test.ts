@@ -122,6 +122,34 @@ describe('Enhanced Rate Limiting', () => {
       }
     });
 
+    it('should bypass the global REGISTRATION bucket for /auth/register', () => {
+      const { rateLimiters, smartRateLimit } = loadRateLimitModule();
+      const savedRegistration = rateLimiters.registration;
+      const registrationSpy = jest.fn((_req: unknown, _res: unknown, next: () => void) => next());
+      rateLimiters.registration = registrationSpy as typeof rateLimiters.registration;
+
+      const next = jest.fn();
+      const req = {
+        path: '/auth/register',
+        method: 'POST',
+        canonicalIp: '203.0.113.12',
+        socket: { remoteAddress: '203.0.113.12' },
+        get: jest.fn(() => undefined),
+      };
+
+      try {
+        smartRateLimit(
+          req as Parameters<typeof smartRateLimit>[0],
+          {} as Parameters<typeof smartRateLimit>[1],
+          next,
+        );
+        expect(next).toHaveBeenCalledTimes(1);
+        expect(registrationSpy).not.toHaveBeenCalled();
+      } finally {
+        rateLimiters.registration = savedRegistration;
+      }
+    });
+
     it('should keep other auth POST endpoints on the shared AUTH bucket', () => {
       const { rateLimiters, smartRateLimit } = loadRateLimitModule();
       const savedAuth = rateLimiters.auth;

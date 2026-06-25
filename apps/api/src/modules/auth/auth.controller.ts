@@ -142,9 +142,83 @@ const adminStepUpSchema = z.discriminatedUnion('intent', [
   }),
 ]);
 
+function extractRegisterEmail(req: Request) {
+  return typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+}
+
 function extractLoginEmail(req: Request) {
   return typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
 }
+
+const registerEmailLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 3,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const email = extractRegisterEmail(req);
+      if (email) {
+        return `auth_register:email:${hashEmailHmac(email)}`;
+      }
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `auth_register:noemail:${ipKeyGenerator(ip)}`;
+    },
+    handler: (req: Request, res: Response) => {
+      const retryAfter = res.get('Retry-After');
+      secureLogger.warn('RATE_LIMIT_EXCEEDED', {
+        profile: 'AUTH_REGISTER_EMAIL',
+        route: '/auth/register',
+        status: 429,
+        reason: 'REGISTER_EMAIL_RATE_LIMIT',
+        rateLimitBucket: 'auth_register_email',
+        requestId: (req as Request & { requestId?: string }).requestId,
+        emailHash: extractRegisterEmail(req) ? hashEmailHmac(extractRegisterEmail(req)) : undefined,
+        retryAfter,
+      });
+      res.status(429).json({
+        error: 'REGISTRATION_RATE_LIMIT_EXCEEDED',
+        message: 'Trop de tentatives. Réessaie dans quelques minutes.',
+        retryAfter: '15 minutes',
+        retryAfterSeconds: retryAfter,
+      });
+    },
+  },
+  'auth_register_email',
+);
+
+const registerIpLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60 * 60 * 1000,
+    max: 15,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const ip = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `auth_register:ip:${ipKeyGenerator(ip)}`;
+    },
+    handler: (req: Request, res: Response) => {
+      const retryAfter = res.get('Retry-After');
+      secureLogger.warn('RATE_LIMIT_EXCEEDED', {
+        profile: 'AUTH_REGISTER_IP',
+        route: '/auth/register',
+        status: 429,
+        reason: 'REGISTER_IP_RATE_LIMIT',
+        rateLimitBucket: 'auth_register_ip',
+        requestId: (req as Request & { requestId?: string }).requestId,
+        ipHash: hashIpHmac(getClientIp(req)) ?? undefined,
+        retryAfter,
+      });
+      res.status(429).json({
+        error: 'REGISTRATION_RATE_LIMIT_EXCEEDED',
+        message: 'Trop de tentatives. Réessaie dans quelques minutes.',
+        retryAfter: '1 hour',
+        retryAfterSeconds: retryAfter,
+      });
+    },
+  },
+  'auth_register_ip',
+);
 
 const loginIpLimiter = createLazyCustomRateLimiter(
   {
@@ -344,7 +418,7 @@ const verify2FAProSchema = z.object({
   consentAccepted: z.boolean().optional().default(false),
 }).strict();
 
-authRouter.post('/register', validate(registerSchema), async (req, res) => {
+authRouter.post('/register', validate(registerSchema), registerEmailLimiter, registerIpLimiter, async (req, res) => {
   try {
     const data = req.body as z.infer<typeof registerSchema>;
     // Use secure IP extraction (prevents spoofing)

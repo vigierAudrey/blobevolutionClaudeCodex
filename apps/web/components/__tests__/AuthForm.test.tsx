@@ -18,6 +18,9 @@ jest.mock('../../lib/apiClient', () => ({
     saveTokens: jest.fn(),
     resendVerification: jest.fn(),
     verify2FA: jest.fn(),
+    listConversations: jest.fn(),
+    getPendingConversationInvitations: jest.fn(),
+    getPendingContactRequests: jest.fn(),
   },
 }));
 
@@ -238,15 +241,19 @@ describe('AuthForm', () => {
   });
 
   describe('états de soumission', () => {
+    const fillRegisterForm = async (user: ReturnType<typeof userEvent.setup>, email = 'rate-limit@test.com') => {
+      await user.type(screen.getByLabelText(/email/i), email);
+      await user.type(screen.getByLabelText(/^mot de passe$/i), 'Passw0rd!');
+      await user.click(screen.getByLabelText(/18 ans ou plus/i));
+      await user.click(screen.getByLabelText(/j'ai lu et j'accepte les règles de sécurité des sessions/i));
+    };
+
     it("déclenche un seul appel register même si le formulaire est soumis deux fois très vite", async () => {
       mockedApiClient.register.mockReturnValue(new Promise(() => undefined));
       render(<AuthForm mode="register" />);
       const user = userEvent.setup();
 
-      await user.type(screen.getByLabelText(/email/i), 'fast-submit@test.com');
-      await user.type(screen.getByLabelText(/^mot de passe$/i), 'Passw0rd!');
-      await user.click(screen.getByLabelText(/18 ans ou plus/i));
-      await user.click(screen.getByLabelText(/j'ai lu et j'accepte les règles de sécurité des sessions/i));
+      await fillRegisterForm(user, 'fast-submit@test.com');
 
       const submitButton = screen.getByRole('button', { name: /créer le compte/i });
       const form = submitButton.closest('form');
@@ -266,10 +273,7 @@ describe('AuthForm', () => {
       render(<AuthForm mode="register" />);
       const user = userEvent.setup();
 
-      await user.type(screen.getByLabelText(/email/i), 'retry-submit@test.com');
-      await user.type(screen.getByLabelText(/^mot de passe$/i), 'Passw0rd!');
-      await user.click(screen.getByLabelText(/18 ans ou plus/i));
-      await user.click(screen.getByLabelText(/j'ai lu et j'accepte les règles de sécurité des sessions/i));
+      await fillRegisterForm(user, 'retry-submit@test.com');
 
       await user.click(screen.getByRole('button', { name: /créer le compte/i }));
       expect(await screen.findByText(/une erreur est survenue/i)).toBeInTheDocument();
@@ -291,6 +295,46 @@ describe('AuthForm', () => {
 
       expect(screen.getByRole('button', { name: /en cours/i })).toBeDisabled();
       expect(mockedApiClient.login).toHaveBeenCalledTimes(1);
+    });
+
+    it('affiche le message register 429 uniquement quand register renvoie un 429', async () => {
+      const rateLimitError = Object.assign(new Error('REGISTRATION_RATE_LIMIT_EXCEEDED'), {
+        status: 429,
+        body: {
+          error: 'REGISTRATION_RATE_LIMIT_EXCEEDED',
+          message: 'Trop de tentatives. Réessaie dans quelques minutes.',
+        },
+      });
+      mockedApiClient.register.mockRejectedValue(rateLimitError);
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+
+      expect(screen.queryByText('Trop de tentatives. Réessaie dans quelques minutes.')).not.toBeInTheDocument();
+
+      await fillRegisterForm(user, 'register-429@test.com');
+      await user.click(screen.getByRole('button', { name: /créer le compte/i }));
+
+      expect(await screen.findByText('Trop de tentatives. Réessaie dans quelques minutes.')).toBeInTheDocument();
+      expect(mockedApiClient.register).toHaveBeenCalledTimes(1);
+    });
+
+    it('ne déclenche aucun appel privé conversations/contact depuis le register avant authentification', async () => {
+      render(<AuthForm mode="register" />);
+      const user = userEvent.setup();
+
+      expect(mockedApiClient.me).not.toHaveBeenCalled();
+      expect(mockedApiClient.listConversations).not.toHaveBeenCalled();
+      expect(mockedApiClient.getPendingConversationInvitations).not.toHaveBeenCalled();
+      expect(mockedApiClient.getPendingContactRequests).not.toHaveBeenCalled();
+
+      await fillRegisterForm(user, 'no-private-calls@test.com');
+      await user.click(screen.getByRole('button', { name: /créer le compte/i }));
+      await screen.findByText(/vérifie ta boîte mail/i);
+
+      expect(mockedApiClient.me).not.toHaveBeenCalled();
+      expect(mockedApiClient.listConversations).not.toHaveBeenCalled();
+      expect(mockedApiClient.getPendingConversationInvitations).not.toHaveBeenCalled();
+      expect(mockedApiClient.getPendingContactRequests).not.toHaveBeenCalled();
     });
   });
 });

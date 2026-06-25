@@ -13,7 +13,7 @@ export function mapAuthErrorToFrench(message: string): string {
 
   // Rate limit — registration
   if (n.includes('too many registration') || n.includes('registration_rate_limit')) {
-    return "Trop de tentatives d'inscription. Réessaie plus tard.";
+    return 'Trop de tentatives. Réessaie dans quelques minutes.';
   }
 
   // Rate limit — authentication / generic auth

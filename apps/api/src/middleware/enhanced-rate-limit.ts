@@ -567,6 +567,9 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
   if (path === '/auth/login' && method === 'POST') {
     return next();
   }
+  if (path === '/auth/register' && method === 'POST') {
+    return next();
+  }
   // /auth/2fa/send has dedicated IP + email keyed limiters in auth.controller.
   if (path === '/auth/2fa/send' && method === 'POST') {
     return next();
