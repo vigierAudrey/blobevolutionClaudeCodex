@@ -19,6 +19,7 @@ import { COOKIE_CONSENT_REOPEN_EVENT, useCookieConsent } from '../../components/
 import { ChangePasswordCard } from '../../components/profile/ChangePasswordCard';
 import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobInput, BlobPageHeader } from '@/components/blob';
 import { ProfilePhoto } from '@/components/media/ProfilePhoto';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 type SexOption = 'Femme' | 'Homme' | 'Autre' | 'Ne pas préciser';
 type LevelOption = '' | Level;
@@ -812,6 +813,7 @@ export default function ProfilePage() {
                           checked={notificationPrefs.pushEnabled}
                           onClick={() => toggleNotificationPref('pushEnabled')}
                         />
+                        <BrowserPushControl />
                       </div>
                       <div className="space-y-2">
                         <h4 className="text-xs font-black uppercase tracking-widest text-blob-black/56">Quelles alertes ?</h4>
@@ -1069,6 +1071,88 @@ export default function ProfilePage() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * Per-browser push subscription control.
+ *
+ * Distinct from the global "Push" preference toggle above: that preference says
+ * whether the user *wants* push at all, while this control registers/removes the
+ * FCM token for *this specific browser*. Permission is requested only on click —
+ * never on load. All failures are surfaced as neutral messages.
+ */
+function BrowserPushControl() {
+  const toast = useToast();
+  const { isSupported, permission, isSubscribed, isLoading, subscribe, unsubscribe } =
+    usePushNotifications();
+
+  if (!isSupported) {
+    return (
+      <BlobAlert variant="info">
+        Ce navigateur ne gère pas les notifications push. Tu peux quand même garder tes alertes « Dans Blob ».
+      </BlobAlert>
+    );
+  }
+
+  if (permission === 'denied') {
+    return (
+      <BlobAlert variant="warning">
+        Notifications bloquées dans ce navigateur. Pour activer ce poste, autorise les notifications dans les réglages de ton navigateur, puis reviens ici.
+      </BlobAlert>
+    );
+  }
+
+  const handleEnable = async () => {
+    const ok = await subscribe();
+    toast(
+      ok
+        ? 'Ce navigateur recevra désormais les notifications push.'
+        : "Impossible d'activer ce navigateur pour le moment.",
+      ok ? 'success' : 'error',
+    );
+  };
+
+  const handleDisable = async () => {
+    const ok = await unsubscribe();
+    toast(
+      ok
+        ? 'Ce navigateur ne recevra plus de notifications push.'
+        : "Impossible de désactiver ce navigateur pour le moment.",
+      ok ? 'success' : 'error',
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-sm border-2 border-dashed border-blob-sand-deep bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="text-sm font-black uppercase tracking-[0.12em] text-blob-black">Ce navigateur</p>
+        <p className="mt-1 text-xs text-blob-black/56">
+          {isSubscribed
+            ? 'Ce navigateur est abonné aux notifications push.'
+            : "Active l'abonnement de ce navigateur pour recevoir les notifications push ici."}
+        </p>
+      </div>
+      <BlobButton
+        type="button"
+        variant="outlineDark"
+        size="sm"
+        onClick={isSubscribed ? handleDisable : handleEnable}
+        disabled={isLoading}
+        className="w-full sm:w-auto"
+      >
+        {isLoading ? (
+          <span className="inline-flex items-center gap-2">
+            <Spinner />
+            …
+          </span>
+        ) : isSubscribed ? (
+          'Désactiver ce navigateur'
+        ) : (
+          'Activer ce navigateur'
+        )}
+      </BlobButton>
+    </div>
   );
 }
 

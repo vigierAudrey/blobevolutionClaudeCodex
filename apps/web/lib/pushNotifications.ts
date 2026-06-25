@@ -1,6 +1,14 @@
 /**
  * Push Notifications Management for Blobinfini
- * Handles subscription, permission requests, and notification display
+ *
+ * Wires the browser-level FCM subscription to the backend. Key invariants:
+ *  - the front never sends a userId; identity is resolved server-side from the
+ *    auth cookie (anti-IDOR).
+ *  - no token / userId / subscription flag is ever stored in localStorage.
+ *  - no permission prompt is triggered on load; permission is only requested
+ *    from a user-initiated subscribe() call.
+ *  - logs are neutral: no token, no token prefix, no foreground payload, no raw
+ *    provider error.
  */
 
 import {
@@ -8,19 +16,10 @@ import {
   saveFCMToken,
   isPushSupported,
   getNotificationPermission,
-  unsubscribeFromPush,
-  onTokenRefresh
+  unregisterFCMToken,
+  fetchPushStatus,
+  onTokenRefresh,
 } from './firebase';
-
-export interface PushSubscriptionData {
-  token: string;
-  userId?: string;
-  deviceInfo?: {
-    userAgent: string;
-    platform: string;
-    timestamp: number;
-  };
-}
 
 export interface NotificationData {
   title: string;
@@ -32,7 +31,7 @@ export interface NotificationData {
 }
 
 /**
- * Initialize push notifications for the app
+ * Manages the push notification subscription for the current browser.
  */
 export class PushNotificationManager {
   private isInitialized = false;
@@ -44,275 +43,82 @@ export class PushNotificationManager {
   }
 
   /**
-   * Initialize the push notification system
+   * Initialize the push notification system.
+   * Sets up the foreground/token-refresh listener only. It NEVER requests
+   * notification permission and NEVER auto-subscribes.
    */
-  private async init() {
+  private init() {
     if (this.isInitialized) return;
 
     try {
-      // Check if push is supported
       if (!isPushSupported()) {
-        console.log('📱 Push notifications not supported on this device');
         return;
       }
 
-      // Listen for token refresh
+      // Listen for token refresh. When the token rotates while already
+      // subscribed, re-register it server-side (no userId, cookie auth).
       this.unsubscribeTokenRefresh = onTokenRefresh((token) => {
-        console.log('🔄 FCM Token refreshed');
         this.currentToken = token;
-        this.saveBGToken(token);
+        void saveFCMToken(token);
       });
 
       this.isInitialized = true;
-      console.log('✅ Push Notification Manager initialized');
-
-    } catch (error) {
-      console.error('❌ Failed to initialize push notifications:', error);
+    } catch {
+      // Neutral: push stays off, nothing is surfaced.
     }
   }
 
   /**
-   * Request permission and subscribe to push notifications
+   * Request permission (user-initiated) and subscribe this browser.
+   * No userId is passed; identity comes from the auth cookie server-side.
    */
-  async subscribe(userId?: string): Promise<boolean> {
-    try {
-      if (!isPushSupported()) {
-        throw new Error('Push notifications not supported');
-      }
-
-      // Request permission and get token
-      const token = await requestNotificationPermission();
-
-      if (!token) {
-        console.log('❌ Failed to get FCM token');
-        return false;
-      }
-
-      this.currentToken = token;
-
-      // Save token to backend
-      const saved = await saveFCMToken(token, userId);
-
-      if (saved) {
-        // Store subscription locally
-        localStorage.setItem('pushSubscribed', 'true');
-        localStorage.setItem('fcmToken', token);
-        if (userId) {
-          localStorage.setItem('pushUserId', userId);
-        }
-
-        console.log('✅ Successfully subscribed to push notifications');
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      console.error('❌ Error subscribing to push notifications:', error);
+  async subscribe(): Promise<boolean> {
+    if (!isPushSupported()) {
       return false;
     }
+
+    // Request permission and get token (only reached on a user action).
+    const token = await requestNotificationPermission();
+    if (!token) {
+      return false;
+    }
+
+    this.currentToken = token;
+
+    const saved = await saveFCMToken(token);
+    if (!saved) {
+      this.currentToken = null;
+    }
+    return saved;
   }
 
   /**
-   * Unsubscribe from push notifications
+   * Unsubscribe this browser: remove the token server-side and tear down the
+   * browser subscription. No localStorage is touched.
    */
   async unsubscribe(): Promise<boolean> {
-    try {
-      const success = await unsubscribeFromPush();
-
-      if (success) {
-        // Clear local storage
-        localStorage.removeItem('pushSubscribed');
-        localStorage.removeItem('fcmToken');
-        localStorage.removeItem('pushUserId');
-
-        this.currentToken = null;
-
-        // NOTE: backend token removal (POST /push/unregister) is not called here
-        // because the consumer of this method is currently disabled in the UI.
-        // Wire this via apiClient (cookie auth) when re-enabling the unsubscribe flow.
-
-        console.log('✅ Successfully unsubscribed from push notifications');
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      console.error('❌ Error unsubscribing from push notifications:', error);
-      return false;
+    const success = await unregisterFCMToken();
+    if (success) {
+      this.currentToken = null;
     }
+    return success;
   }
 
   /**
-   * Check if user is currently subscribed
+   * Ask the server whether this account currently has active push tokens.
+   * Returns null when the status is unknown (feature off / network error).
+   * Does not prompt and does not store anything.
    */
-  isSubscribed(): boolean {
-    return localStorage.getItem('pushSubscribed') === 'true' && !!this.currentToken;
+  async checkServerStatus(): Promise<boolean | null> {
+    const status = await fetchPushStatus();
+    return status ? status.hasActiveTokens : null;
   }
 
   /**
-   * Get current notification permission status
+   * Get current notification permission status (no prompt).
    */
   getPermissionStatus(): NotificationPermission {
     return getNotificationPermission();
-  }
-
-  /**
-   * Show notification permission prompt with custom UI
-   */
-  async promptForPermission(customMessage?: string): Promise<boolean> {
-    const permission = this.getPermissionStatus();
-
-    if (permission === 'granted') {
-      return true;
-    }
-
-    if (permission === 'denied') {
-      // Show instructions to enable in browser settings
-      this.showPermissionDeniedDialog();
-      return false;
-    }
-
-    // Show custom prompt before browser prompt
-    const userWantsNotifications = await this.showCustomPermissionDialog(customMessage);
-
-    if (!userWantsNotifications) {
-      return false;
-    }
-
-    // Request permission through Firebase
-    const token = await requestNotificationPermission();
-    return !!token;
-  }
-
-  /**
-   * Save token in background (without UI)
-   */
-  private async saveBGToken(token: string) {
-    const userId = localStorage.getItem('pushUserId');
-    await saveFCMToken(token, userId || undefined);
-  }
-
-  /**
-   * Show custom permission dialog
-   */
-  private async showCustomPermissionDialog(message?: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const dialog = document.createElement('div');
-      dialog.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-      dialog.innerHTML = `
-        <div class="bg-white rounded-lg max-w-md w-full p-6 space-y-4">
-          <div class="text-center">
-            <div class="text-4xl mb-4">🔔</div>
-            <h3 class="text-lg font-semibold text-gray-900">
-              Activer les notifications ?
-            </h3>
-            <p class="text-sm text-gray-600 mt-2">
-              ${message || 'Reçois des notifications pour tes cours, messages et rappels importants.'}
-            </p>
-          </div>
-          <div class="space-y-2">
-            <div class="flex items-center text-sm text-gray-600">
-              <span class="mr-2">🤝</span>
-              <span>Mises en relation</span>
-            </div>
-            <div class="flex items-center text-sm text-gray-600">
-              <span class="mr-2">💬</span>
-              <span>Nouveaux messages</span>
-            </div>
-            <div class="flex items-center text-sm text-gray-600">
-              <span class="mr-2">⏰</span>
-              <span>Rappels importants</span>
-            </div>
-          </div>
-          <div class="flex space-x-3">
-            <button id="deny-notifications" class="flex-1 px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
-              Pas maintenant
-            </button>
-            <button id="allow-notifications" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-              Activer
-            </button>
-          </div>
-        </div>
-      `;
-
-      document.body.appendChild(dialog);
-
-      const denyBtn = dialog.querySelector('#deny-notifications');
-      const allowBtn = dialog.querySelector('#allow-notifications');
-
-      const cleanup = () => {
-        document.body.removeChild(dialog);
-      };
-
-      denyBtn?.addEventListener('click', () => {
-        cleanup();
-        resolve(false);
-      });
-
-      allowBtn?.addEventListener('click', () => {
-        cleanup();
-        resolve(true);
-      });
-
-      // Close on backdrop click
-      dialog.addEventListener('click', (e) => {
-        if (e.target === dialog) {
-          cleanup();
-          resolve(false);
-        }
-      });
-    });
-  }
-
-  /**
-   * Show dialog when permission is denied
-   */
-  private showPermissionDeniedDialog() {
-    const dialog = document.createElement('div');
-    dialog.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-    dialog.innerHTML = `
-      <div class="bg-white rounded-lg max-w-md w-full p-6 space-y-4">
-        <div class="text-center">
-          <div class="text-4xl mb-4">🚫</div>
-          <h3 class="text-lg font-semibold text-gray-900">
-            Notifications bloquées
-          </h3>
-          <p class="text-sm text-gray-600 mt-2">
-            Pour recevoir les notifications Blob, active-les dans les paramètres de ton navigateur.
-          </p>
-        </div>
-        <div class="text-xs text-gray-500 space-y-1">
-          <p><strong>Chrome/Edge:</strong> Clique sur l'icône 🔒 à gauche de l'adresse</p>
-          <p><strong>Safari:</strong> Safari > Préférences > Sites web > Notifications</p>
-          <p><strong>Firefox:</strong> Paramètres > Vie privée > Notifications</p>
-        </div>
-        <button id="close-dialog" class="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-          J'ai compris
-        </button>
-      </div>
-    `;
-
-    document.body.appendChild(dialog);
-
-    const closeBtn = dialog.querySelector('#close-dialog');
-    const cleanup = () => {
-      document.body.removeChild(dialog);
-    };
-
-    closeBtn?.addEventListener('click', cleanup);
-    dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) cleanup();
-    });
-  }
-
-  /**
-   * Test notification (for development)
-   */
-  async testNotification(): Promise<boolean> {
-    // NOTE: backend test notification (POST /push/test) is not wired here.
-    // The Next.js proxy route does not exist and the push UI is currently disabled.
-    // Wire this via apiClient (cookie auth, not localStorage Bearer) when re-enabling push.
-    return false;
   }
 
   /**
