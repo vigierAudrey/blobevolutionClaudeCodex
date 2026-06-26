@@ -19,18 +19,19 @@
     "clean": "rimraf dist",
     "generate": "prisma generate",
     "db:push": "node scripts/safe-db-push.mjs",
+    "assert-test-url": "node scripts/assert-test-database-url.mjs",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
-    "migrate:test:clean": "prisma migrate reset --force --skip-seed",
-    "migrate:test:derived": "prisma migrate reset --force --skip-seed",
+    "migrate:test:clean": "node scripts/assert-test-database-url.mjs && prisma migrate reset --force --skip-seed",
+    "migrate:test:derived": "node scripts/assert-test-database-url.mjs && prisma migrate reset --force --skip-seed",
     "studio": "prisma studio",
     "seed": "prisma db seed",
     "seed:active-tests": "tsx prisma/seed-active-tests.ts",
     "seed:pre-vps": "tsx prisma/seed.pre-vps.ts",
     "reseed": "tsx prisma/reseed.ts",
     "reseed:active-tests": "tsx prisma/seed-active-tests.ts --reseed",
-    "reset": "prisma migrate reset --force",
-    "reset:seedless": "prisma migrate reset --force --skip-seed"
+    "reset": "node scripts/assert-test-database-url.mjs && prisma migrate reset --force",
+    "reset:seedless": "node scripts/assert-test-database-url.mjs && prisma migrate reset --force --skip-seed"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
