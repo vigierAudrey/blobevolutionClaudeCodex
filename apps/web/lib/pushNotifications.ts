@@ -77,6 +77,14 @@ export class PushNotificationManager {
       return false;
     }
 
+    // Backend availability is a hard gate. When /push/status is unavailable
+    // (feature off, server misconfigured, network error), do not request
+    // browser permission and do not ask FCM for a token.
+    const serverStatus = await this.checkServerStatus();
+    if (serverStatus === null) {
+      return false;
+    }
+
     // Request permission and get token (only reached on a user action).
     const token = await requestNotificationPermission();
     if (!token) {

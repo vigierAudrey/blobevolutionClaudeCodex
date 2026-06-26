@@ -105,6 +105,7 @@ describe('usePushNotifications', () => {
 
   it('subscribe delegates to the manager and marks THIS browser active', async () => {
     setupEnv({ supported: true, permission: 'default' });
+    mockPushManager.checkServerStatus.mockResolvedValue(false);
     mockPushManager.subscribe.mockResolvedValue(true);
     mockPushManager.getPermissionStatus.mockReturnValue('granted');
 
@@ -122,6 +123,7 @@ describe('usePushNotifications', () => {
 
   it('unsubscribe delegates to the manager and clears this-browser state', async () => {
     setupEnv({ supported: true, permission: 'granted' });
+    mockPushManager.checkServerStatus.mockResolvedValue(false);
     mockPushManager.subscribe.mockResolvedValue(true);
     mockPushManager.unsubscribe.mockResolvedValue(true);
 
@@ -141,5 +143,27 @@ describe('usePushNotifications', () => {
     expect(ok).toBe(true);
     expect(mockPushManager.unsubscribe).toHaveBeenCalledTimes(1);
     expect(result.current.thisBrowserActive).toBe(false);
+  });
+
+  it('does not subscribe when backend push status is unavailable', async () => {
+    setupEnv({ supported: true, permission: 'default' });
+    mockPushManager.checkServerStatus.mockResolvedValue(null);
+    mockPushManager.subscribe.mockResolvedValue(true);
+
+    const { result } = renderHook(() => usePushNotifications());
+
+    await waitFor(() => {
+      expect(result.current.backendAvailable).toBe(false);
+    });
+
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.subscribe();
+    });
+
+    expect(ok).toBe(false);
+    expect(result.current.canSubscribe).toBe(false);
+    expect(mockPushManager.subscribe).not.toHaveBeenCalled();
+    expect(mockRequestPermission).not.toHaveBeenCalled();
   });
 });

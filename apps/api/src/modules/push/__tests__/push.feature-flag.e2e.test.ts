@@ -7,6 +7,11 @@ import { resetDb } from '../../../test-utils/resetDb';
 describe('pushRouter — feature flag OFF by default', () => {
   const app = createApp();
   const originalFlag = process.env.PUSH_NOTIFICATIONS_ENABLED;
+  const originalFirebaseEnv = {
+    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
+    FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
+    FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
+  };
 
   beforeEach(async () => {
     await resetDb();
@@ -18,6 +23,13 @@ describe('pushRouter — feature flag OFF by default', () => {
       delete process.env.PUSH_NOTIFICATIONS_ENABLED;
     } else {
       process.env.PUSH_NOTIFICATIONS_ENABLED = originalFlag;
+    }
+    for (const [key, value] of Object.entries(originalFirebaseEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
     await prisma.$disconnect();
   });
@@ -67,6 +79,25 @@ describe('pushRouter — feature flag OFF by default', () => {
       .send({ userId: auth.userId, title: 'T', body: 'B', type: 'general' })
       .expect(404);
     await auth.session.get('/push/status').expect(404);
+
+    await expect(prisma.pushToken.count({ where: { userId: auth.userId } })).resolves.toBe(0);
+  });
+
+  it('routes /push/* — flag ON mais Firebase Admin absent → 503 et aucun token stocké', async () => {
+    process.env.PUSH_NOTIFICATIONS_ENABLED = 'true';
+    delete process.env.FIREBASE_PROJECT_ID;
+    delete process.env.FIREBASE_CLIENT_EMAIL;
+    delete process.env.FIREBASE_PRIVATE_KEY;
+
+    const auth = await getAccessToken({
+      app,
+      email: 'push-misconfigured@test.local',
+      role: Role.RIDER,
+    });
+
+    await auth.session.get('/push/status').expect(503);
+    await auth.session.post('/push/subscribe').send({ token: 'fcm-token' }).expect(503);
+    await auth.session.post('/push/unsubscribe').send({ token: 'fcm-token' }).expect(503);
 
     await expect(prisma.pushToken.count({ where: { userId: auth.userId } })).resolves.toBe(0);
   });

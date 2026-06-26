@@ -9,12 +9,13 @@ import { secureLogger } from '../utils/secure-logger';
 import type { NotificationType } from './notification.service';
 import { shouldNotifyUser } from './notification-preferences.service';
 
-// Firebase Admin configuration
-const firebaseConfig = {
-  projectId: process.env.FIREBASE_PROJECT_ID || 'blobinfini-demo',
-  clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-  privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-};
+function getFirebaseConfig() {
+  return {
+    projectId: process.env.FIREBASE_PROJECT_ID || 'blobinfini-demo',
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  };
+}
 
 function isPushFeatureEnabled(): boolean {
   return process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
@@ -28,7 +29,7 @@ function isPushFeatureEnabled(): boolean {
  * incomplete config. No secret value is ever logged.
  */
 function hasUsableFirebaseCredentials(): boolean {
-  const { projectId, clientEmail, privateKey } = firebaseConfig;
+  const { projectId, clientEmail, privateKey } = getFirebaseConfig();
   if (!clientEmail || !privateKey) return false;
   if (!projectId || projectId === 'blobinfini-demo') return false;
   return true;
@@ -56,6 +57,7 @@ function sanitizePushData(data?: Record<string, unknown>): Record<string, unknow
 
 // Initialize Firebase Admin (only once) — fail-closed on demo/missing credentials.
 if (isPushFeatureEnabled() && !admin.apps.length && hasUsableFirebaseCredentials()) {
+  const firebaseConfig = getFirebaseConfig();
   admin.initializeApp({
     credential: admin.credential.cert(firebaseConfig),
     projectId: firebaseConfig.projectId,
@@ -100,6 +102,7 @@ export class PushNotificationService {
       }
 
       if (hasUsableFirebaseCredentials()) {
+        const firebaseConfig = getFirebaseConfig();
         this.isInitialized = true;
         secureLogger.info('PUSH_SERVICE_INITIALIZED', { projectId: firebaseConfig.projectId });
       } else {
@@ -112,11 +115,25 @@ export class PushNotificationService {
   }
 
   /**
+   * Whether the server is currently able to accept browser push subscriptions.
+   * This is intentionally stricter than the feature flag: storing tokens while
+   * Firebase Admin is missing would create a fake "enabled" state for users.
+   */
+  isConfigured(): boolean {
+    return isPushFeatureEnabled() && hasUsableFirebaseCredentials();
+  }
+
+  /**
    * Save FCM token for a user
    */
   async saveToken(userId: string, token: string, userAgent?: string): Promise<boolean> {
     if (!isPushFeatureEnabled()) {
       secureLogger.warn('PUSH_TOKEN_SAVE_SKIPPED', { reason: 'feature_flag_off' });
+      return false;
+    }
+
+    if (!hasUsableFirebaseCredentials()) {
+      secureLogger.warn('PUSH_TOKEN_SAVE_SKIPPED', { reason: 'missing_or_demo_credentials' });
       return false;
     }
 

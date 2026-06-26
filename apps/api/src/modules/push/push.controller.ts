@@ -24,6 +24,14 @@ function requirePushFeatureEnabled(_req: Request, res: Response, next: () => voi
   return next();
 }
 
+function isPushBackendConfigured(): boolean {
+  return pushNotificationService.isConfigured();
+}
+
+function pushUnavailable(res: Response) {
+  return res.status(503).json({ error: 'Push notifications unavailable' });
+}
+
 async function ensurePushUserEligible(userId: string): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -113,6 +121,10 @@ const handleSubscribe = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Account unavailable' });
     }
 
+    if (!isPushBackendConfigured()) {
+      return pushUnavailable(res);
+    }
+
     secureLogger.info('PUSH_ROUTE_SUBSCRIBE', { authenticated: true });
 
     const success = await pushNotificationService.saveToken(userId, token, userAgent);
@@ -159,6 +171,10 @@ const handleUnsubscribe = async (req: Request, res: Response) => {
 
     if (!(await ensurePushUserEligible(userId))) {
       return res.status(403).json({ error: 'Account unavailable' });
+    }
+
+    if (!isPushBackendConfigured()) {
+      return pushUnavailable(res);
     }
 
     secureLogger.info('PUSH_ROUTE_UNSUBSCRIBE', { authenticated: true });
@@ -213,6 +229,10 @@ router.post('/test', pushSendLimiter, async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Account unavailable' });
     }
 
+    if (!isPushBackendConfigured()) {
+      return pushUnavailable(res);
+    }
+
     secureLogger.info('PUSH_ROUTE_TEST_NOTIFICATION', { authenticated: true });
 
     const success = await pushNotificationService.sendToUser(userId, {
@@ -261,6 +281,10 @@ router.post('/send', pushSendLimiter, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'User not available' });
     }
 
+    if (!isPushBackendConfigured()) {
+      return pushUnavailable(res);
+    }
+
     secureLogger.info('PUSH_ROUTE_SEND', { targetValidated: true });
 
     const success = await pushNotificationService.sendToUser(userId, {
@@ -301,6 +325,10 @@ router.get('/status', async (req: Request, res: Response) => {
 
     if (!(await ensurePushUserEligible(userId))) {
       return res.status(403).json({ error: 'Account unavailable' });
+    }
+
+    if (!isPushBackendConfigured()) {
+      return pushUnavailable(res);
     }
 
     const hasActiveTokens = await pushNotificationService.hasActiveTokens(userId);

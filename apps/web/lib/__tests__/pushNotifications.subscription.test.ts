@@ -2,7 +2,7 @@
  * Tests for the per-browser push subscription wiring.
  *
  * Invariants asserted:
- *  - subscribe hits /push/subscribe, unsubscribe hits /push/unregister.
+ *  - subscribe hits /push/subscribe, unsubscribe hits /push/unsubscribe.
  *  - the front never sends a userId (identity is server-side, anti-IDOR).
  *  - no token / userId is ever written to localStorage.
  *  - no permission prompt is triggered on module load.
@@ -73,6 +73,21 @@ function setupBrowserEnv(permission: NotificationPermission = 'granted') {
   });
 }
 
+function mockPushApiAvailable() {
+  mockApiRequest.mockImplementation((url: string) => {
+    if (url === '/push/status') {
+      return Promise.resolve({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ hasActiveTokens: false }),
+      });
+    }
+    return Promise.resolve({
+      ok: true,
+      json: jest.fn().mockResolvedValue({}),
+    });
+  });
+}
+
 describe('push subscription wiring (firebase.ts)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -80,6 +95,7 @@ describe('push subscription wiring (firebase.ts)', () => {
     mockRequestPermission.mockResolvedValue('granted');
     setupBrowserEnv('granted');
     setRealFirebaseEnv();
+    mockPushApiAvailable();
   });
 
   afterEach(() => {
@@ -102,7 +118,7 @@ describe('push subscription wiring (firebase.ts)', () => {
     expect(body).not.toHaveProperty('userId');
   });
 
-  it('unregisterFCMToken POSTs to /push/unregister scoped to the given token, no userId', async () => {
+  it('unregisterFCMToken POSTs to /push/unsubscribe scoped to the given token, no userId', async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
     const { unregisterFCMToken } = require('../firebase');
 
@@ -110,7 +126,7 @@ describe('push subscription wiring (firebase.ts)', () => {
 
     expect(ok).toBe(true);
     const [url, opts] = mockApiRequest.mock.calls[0];
-    expect(url).toBe('/push/unregister');
+    expect(url).toBe('/push/unsubscribe');
     expect(opts.method).toBe('POST');
     const body = JSON.parse(opts.body);
     // Scoped to THIS device's token so the backend does not wipe every device.
@@ -150,6 +166,7 @@ describe('PushNotificationManager / pushManager', () => {
     mockRequestPermission.mockResolvedValue('granted');
     setupBrowserEnv('granted');
     setRealFirebaseEnv();
+    mockPushApiAvailable();
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -166,7 +183,6 @@ describe('PushNotificationManager / pushManager', () => {
     // Drop the VAPID key so it falls back to the demo sentinel — config is unusable.
     delete process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
     mockGetToken.mockResolvedValue(FCM_TOKEN);
-    mockApiRequest.mockResolvedValue({ ok: true });
 
     const { pushManager } = require('../pushNotifications');
     const ok = await pushManager.subscribe();
@@ -183,7 +199,6 @@ describe('PushNotificationManager / pushManager', () => {
 
   it('subscribe registers the token and writes nothing to localStorage', async () => {
     mockGetToken.mockResolvedValue(FCM_TOKEN);
-    mockApiRequest.mockResolvedValue({ ok: true });
     const setItem = jest.spyOn(Storage.prototype, 'setItem');
 
     const { pushManager } = require('../pushNotifications');
@@ -208,7 +223,6 @@ describe('PushNotificationManager / pushManager', () => {
 
   it('never logs the FCM token through the subscribe path', async () => {
     mockGetToken.mockResolvedValue(FCM_TOKEN);
-    mockApiRequest.mockResolvedValue({ ok: true });
 
     const { pushManager } = require('../pushNotifications');
     await pushManager.subscribe();
@@ -235,7 +249,6 @@ describe('PushNotificationManager / pushManager', () => {
 
   it('unsubscribe removes only this browser token (scoped to the session token)', async () => {
     mockGetToken.mockResolvedValue(FCM_TOKEN);
-    mockApiRequest.mockResolvedValue({ ok: true });
     const { pushManager } = require('../pushNotifications');
 
     // Must have subscribed in this session to hold the device token.
@@ -245,7 +258,7 @@ describe('PushNotificationManager / pushManager', () => {
     const ok = await pushManager.unsubscribe();
 
     expect(ok).toBe(true);
-    const unregisterCall = mockApiRequest.mock.calls.find(([u]: [string]) => u === '/push/unregister');
+    const unregisterCall = mockApiRequest.mock.calls.find(([u]: [string]) => u === '/push/unsubscribe');
     expect(unregisterCall).toBeDefined();
     const body = JSON.parse(unregisterCall![1].body);
     expect(body.token).toBe(FCM_TOKEN);
@@ -253,13 +266,30 @@ describe('PushNotificationManager / pushManager', () => {
   });
 
   it('unsubscribe without a session token does NOT wipe the account (no API call)', async () => {
-    mockApiRequest.mockResolvedValue({ ok: true });
     const { pushManager } = require('../pushNotifications');
 
     // No prior subscribe → no device token held.
     const ok = await pushManager.unsubscribe();
 
     expect(ok).toBe(false);
-    expect(mockApiRequest).not.toHaveBeenCalledWith('/push/unregister', expect.anything());
+    expect(mockApiRequest).not.toHaveBeenCalledWith('/push/unsubscribe', expect.anything());
+  });
+
+  it('does not request permission, FCM token, or subscribe when /push/status is unavailable', async () => {
+    mockApiRequest.mockImplementation((url: string) => {
+      if (url === '/push/status') {
+        return Promise.resolve({ ok: false, status: 404, json: jest.fn() });
+      }
+      return Promise.resolve({ ok: true, json: jest.fn().mockResolvedValue({}) });
+    });
+    mockGetToken.mockResolvedValue(FCM_TOKEN);
+
+    const { pushManager } = require('../pushNotifications');
+    const ok = await pushManager.subscribe();
+
+    expect(ok).toBe(false);
+    expect(mockRequestPermission).not.toHaveBeenCalled();
+    expect(mockGetToken).not.toHaveBeenCalled();
+    expect(mockApiRequest).not.toHaveBeenCalledWith('/push/subscribe', expect.anything());
   });
 });

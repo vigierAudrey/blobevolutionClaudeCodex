@@ -12,6 +12,50 @@ const urlsToCache = [
   '/offline.html',
   '/icons/icon-192x192.png'
 ];
+const MAX_NOTIFICATION_TEXT_LENGTH = 180;
+
+function safeText(value, fallback) {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  return trimmed.slice(0, MAX_NOTIFICATION_TEXT_LENGTH);
+}
+
+function safeClientPath(value, fallback) {
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  try {
+    const url = new URL(value, self.location.origin);
+    if (url.origin !== self.location.origin) return fallback;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function normalizeNotificationData(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const data = source.data && typeof source.data === 'object' ? source.data : {};
+  const type = ['new_message', 'reminder', 'general'].includes(source.type) ? source.type : 'general';
+  const url = safeClientPath(source.url || data.url || data.defaultUrl, '/dashboard');
+
+  return {
+    title: safeText(source.title, 'Blob'),
+    body: safeText(source.body, 'Nouvelle notification'),
+    icon: safeClientPath(source.icon, '/icons/icon-192x192.png'),
+    badge: safeClientPath(source.badge, '/icons/icon-72x72.png'),
+    tag: safeText(source.tag, 'blobinfini-notification'),
+    type,
+    data: {
+      conversationId: safeText(data.conversationId, ''),
+      messageUrl: safeClientPath(data.messageUrl, url),
+      viewUrl: safeClientPath(data.viewUrl, url),
+      defaultUrl: url,
+      url
+    },
+    requireInteraction: Boolean(source.requireInteraction),
+    silent: Boolean(source.silent)
+  };
+}
 
 // Install event - cache essential resources
 self.addEventListener('install', function(event) {
@@ -71,14 +115,16 @@ self.addEventListener('push', function(event) {
   if (event.data) {
     try {
       const data = event.data.json();
-      notificationData = {
+      notificationData = normalizeNotificationData({
         ...notificationData,
         ...data
-      };
-    } catch (e) {
-      console.error('📬 SW: Invalid push data format:', e);
-      notificationData.body = event.data.text() || notificationData.body;
+      });
+    } catch (_error) {
+      console.warn('📬 SW: Invalid push data format');
+      notificationData = normalizeNotificationData(notificationData);
     }
+  } else {
+    notificationData = normalizeNotificationData(notificationData);
   }
 
   // Add appropriate actions based on notification type
@@ -108,8 +154,8 @@ self.addEventListener('push', function(event) {
   // Show the notification
   event.waitUntil(
     self.registration.showNotification(notificationData.title, notificationData)
-      .catch(error => {
-        console.error('❌ SW: Failed to show notification:', error);
+      .catch(_error => {
+        console.error('❌ SW: Failed to show notification');
       })
   );
 });
@@ -129,20 +175,20 @@ self.addEventListener('notificationclick', function(event) {
   // Handle different actions
   switch (event.action) {
     case 'view':
-      urlToOpen = data.url || data.viewUrl || '/dashboard';
+      urlToOpen = safeClientPath(data.url || data.viewUrl, '/dashboard');
       break;
     case 'message':
-      urlToOpen = data.messageUrl || `/messages/${data.conversationId || ''}`;
+      urlToOpen = safeClientPath(data.messageUrl || `/messages/${data.conversationId || ''}`, '/dashboard');
       break;
     case 'reply':
-      urlToOpen = data.messageUrl || `/messages/${data.conversationId || ''}`;
+      urlToOpen = safeClientPath(data.messageUrl || `/messages/${data.conversationId || ''}`, '/dashboard');
       break;
     case 'search':
       urlToOpen = '/matching';
       break;
     default:
       // No action = click on notification body
-      urlToOpen = data.url || data.defaultUrl || '/dashboard';
+      urlToOpen = safeClientPath(data.url || data.defaultUrl, '/dashboard');
   }
 
   // Open the appropriate page
@@ -172,8 +218,8 @@ self.addEventListener('notificationclick', function(event) {
         console.log('🆕 SW: Opening new tab');
         return clients.openWindow(urlToOpen);
       })
-      .catch(error => {
-        console.error('❌ SW: Failed to handle notification click:', error);
+      .catch(_error => {
+        console.error('❌ SW: Failed to handle notification click');
       })
   );
 });

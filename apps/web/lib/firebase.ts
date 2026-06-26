@@ -216,7 +216,7 @@ export async function saveFCMToken(token: string): Promise<boolean> {
 export async function unregisterFCMToken(token?: string): Promise<boolean> {
   let apiOk = false;
   try {
-    const response = await apiRequest('/push/unregister', {
+    const response = await apiRequest('/push/unsubscribe', {
       method: 'POST',
       body: JSON.stringify(token ? { token } : {}),
     });

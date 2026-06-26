@@ -156,10 +156,20 @@ describe('PushNotificationService', () => {
   describe('token lifecycle', () => {
     it('saves tokens without failing', async () => {
       await ensureTestUser('user-1');
-      const service = createService(false);
+      const service = createService(true);
 
       await expect(service.saveToken('user-1', 'token-xyz')).resolves.toBe(true);
       expect(secureLogger.info).toHaveBeenCalledWith('PUSH_TOKEN_SAVE', { authenticated: true });
+    });
+
+    it('does not save tokens when Firebase Admin credentials are missing', async () => {
+      await ensureTestUser('user-missing-firebase');
+      await prisma.pushToken.deleteMany({ where: { userId: 'user-missing-firebase' } });
+      const service = createService(false, true);
+
+      await expect(service.saveToken('user-missing-firebase', 'token-missing-firebase')).resolves.toBe(false);
+      await expect(prisma.pushToken.count({ where: { userId: 'user-missing-firebase' } })).resolves.toBe(0);
+      expect(secureLogger.warn).toHaveBeenCalledWith('PUSH_TOKEN_SAVE_SKIPPED', { reason: 'missing_or_demo_credentials' });
     });
 
     it('does not save tokens when the push feature flag is off', async () => {
@@ -174,7 +184,7 @@ describe('PushNotificationService', () => {
 
     it('returns false when an error occurs while saving', async () => {
       await ensureTestUser('user-1');
-      const service = createService(false);
+      const service = createService(true);
       infoSpy.mockImplementationOnce(() => {
         throw new Error('storage unavailable');
       });
@@ -277,7 +287,7 @@ describe('PushNotificationService', () => {
     it('borne à cinq le nombre de tokens conservés par utilisateur', async () => {
       await ensureTestUser('user-token-cap');
       await prisma.pushToken.deleteMany({ where: { userId: 'user-token-cap' } });
-      const service = createService(false);
+      const service = createService(true);
 
       for (let index = 0; index < MAX_PUSH_TOKENS_PER_USER + 2; index += 1) {
         await expect(service.saveToken('user-token-cap', `token-cap-${index}`)).resolves.toBe(true);
