@@ -11,6 +11,11 @@ on:
         description: 'Raison du déclenchement manuel (ex: fix SSH, redeploy après hotfix)'
         required: false
         default: 'manual redeploy'
+      run_seed:
+        description: 'Réexécuter le seed des comptes canaris de smoke sur le VPS (purge + recrée des données de test). Laisser false pour un deploy normal.'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -24,6 +29,12 @@ jobs:
     name: Deploy main to VPS
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    # Garde-fou principal: le job reste en attente jusqu'à l'approbation d'un
+    # reviewer requis sur l'environment protégé `vps-production`. Cette
+    # protection (required reviewers) DOIT être configurée dans
+    # Settings -> Environments -> vps-production, sinon l'approbation n'est pas
+    # exigée. Voir docs/ops/deploy-vps.md.
+    environment: vps-production
     if: >
       (github.event_name == 'workflow_dispatch') ||
       (github.event.workflow_run.conclusion == 'success' &&
@@ -35,6 +46,10 @@ jobs:
       VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
       VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
       API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      # Seed canari désactivé par défaut: un deploy normal ne purge/recrée plus
+      # de données de test en production. Réactivable uniquement à la demande via
+      # workflow_dispatch (input run_seed=true).
+      RUN_VPS_SEED: ${{ github.event_name == 'workflow_dispatch' && inputs.run_seed || false }}
     steps:
       - name: Validate required deployment secrets
         shell: bash
@@ -90,6 +105,7 @@ jobs:
 
           printf -v DEPLOY_PATH_Q '%q' "$VPS_DEPLOY_PATH"
           printf -v API_BASE_URL_Q '%q' "$API_BASE_URL"
+          printf -v RUN_VPS_SEED_Q '%q' "${RUN_VPS_SEED:-false}"
 
           heartbeat_pid=""
           cleanup_heartbeat() {
@@ -121,7 +137,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$VPS_USER@$VPS_HOST" \
-            "VPS_DEPLOY_PATH=$DEPLOY_PATH_Q API_BASE_URL=$API_BASE_URL_Q bash -s" <<'REMOTE'
+            "VPS_DEPLOY_PATH=$DEPLOY_PATH_Q API_BASE_URL=$API_BASE_URL_Q RUN_VPS_SEED=$RUN_VPS_SEED_Q bash -s" <<'REMOTE'
           set -euo pipefail
 
           COMPOSE_FILE="docker-compose.vps.yml"
@@ -193,8 +209,18 @@ jobs:
           docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm -T --interactive=false api \
             sh -c "pnpm --filter @blobinfini/database exec prisma migrate deploy"
 
-          docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm -T --interactive=false api \
-            sh -c "ENV_FILE=/dev/null APP_ENV=pre-vps pnpm --filter @blobinfini/database exec tsx prisma/seed.pre-vps.ts"
+          # Seed canari: désactivé par défaut pour ne JAMAIS purger/recréer des
+          # données de test en production lors d'un deploy normal. Les comptes
+          # canaris persistent entre deploys, donc le smoke réutilise ceux déjà
+          # présents. Réexécution explicite uniquement via workflow_dispatch
+          # (run_seed=true -> RUN_VPS_SEED=true).
+          if [ "${RUN_VPS_SEED:-false}" = "true" ]; then
+            echo "RUN_VPS_SEED=true: (re)seed des comptes canaris de smoke (purge + recreate)."
+            docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm -T --interactive=false api \
+              sh -c "ENV_FILE=/dev/null APP_ENV=pre-vps pnpm --filter @blobinfini/database exec tsx prisma/seed.pre-vps.ts"
+          else
+            echo "Seed canari ignoré (RUN_VPS_SEED!=true): données de production non touchées."
+          fi
 
           docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 
