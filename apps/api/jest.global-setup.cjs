@@ -2,7 +2,7 @@
  * Jest Global Setup - Préparation DB une seule fois par run
  *
  * RESPONSABILITÉS:
- * 1. Vérifier contexte test (sécurité)
+ * 1. Vérifier contexte test (sécurité) + valider que DATABASE_URL est une DB test
  * 2. Générer Prisma Client (1 fois)
  * 3. Préparer schéma DB (migrate deploy only, unless JEST_DB_PREPARED=true)
  * 4. Vérifier connexion Postgres
@@ -10,17 +10,35 @@
  *
  * SÉCURITÉ:
  * - Gardes identiques à jest.setup.db.ts
+ * - DATABASE_URL guard: refuse de préparer/seed une DB prod/staging/cloud, même
+ *   si NODE_ENV=test (cf. packages/database/scripts/assert-test-database-url.mjs).
  * - Jest never uses db push / ALLOW_ACCEPT_DATA_LOSS
  * - CI jobs can pre-run migrations and set JEST_DB_PREPARED=true
  */
 
 const { execSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 module.exports = async function globalSetup() {
   console.log('\n🔧 [Global Setup] Starting Jest DB preparation...\n');
 
   const repoRoot = path.resolve(__dirname, '..', '..');
+
+  // ============================================================================
+  // Resolve the test env (DATABASE_URL) the same way jest.setup.env.ts does, so
+  // the DATABASE_URL guard below sees the value that Prisma will actually use.
+  // dotenv does NOT override already-set vars → CI's real env var wins.
+  // ============================================================================
+  const dotenv = require('dotenv');
+  const envCandidates = process.env.NODE_ENV === 'test' ? ['.env.test', '.env'] : ['.env'];
+  for (const filename of envCandidates) {
+    const candidatePath = path.join(repoRoot, filename);
+    if (fs.existsSync(candidatePath)) {
+      dotenv.config({ path: candidatePath });
+      break;
+    }
+  }
 
   // ============================================================================
   // SECURITY GUARD: Verify test environment before schema setup
@@ -47,6 +65,21 @@ module.exports = async function globalSetup() {
       '   Set NODE_ENV=test or APP_ENV=test to proceed.'
     );
   }
+
+  // ============================================================================
+  // SECURITY GUARD: Verify DATABASE_URL points at a TEST database before any
+  // Prisma command runs (generate / migrate deploy / seed). NODE_ENV=test alone
+  // is NOT enough — an inherited/misconfigured DATABASE_URL could target prod.
+  // The full URL is never logged; only a masked host + db name on failure.
+  // ============================================================================
+  const { assertTestDatabaseUrl } = await import(
+    path.join(repoRoot, 'packages', 'database', 'scripts', 'assert-test-database-url.mjs')
+  );
+  const verified = assertTestDatabaseUrl(process.env);
+  console.log(
+    `🔒 [Global Setup] DATABASE_URL verified as test target ` +
+    `(host=${verified.database.maskedHost}, db=${verified.database.dbName}).`
+  );
 
   try {
     // ============================================================================
