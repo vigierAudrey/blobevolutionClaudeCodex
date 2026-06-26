@@ -197,6 +197,10 @@ Contribution 2026-06-07 :
 - [x] MinIO fixtures média local/test : images WebP synthétiques sans données personnelles, script d'upload/vérification sans modification de policy, cible `pros/*` public et `users/*` privé.
 - Risque : vérifier les environnements historiques qui auraient ouvert `users/*` en lecture anonyme et reposer une policy `pros/*` seulement après validation humaine.
 
+Risque 2026-06-25 :
+
+- Un conteneur Docker orphelin `blobconnect-vps-nginx-1` peut encore occuper les ports 80/443 dans un workspace local historique, alors que la cible VPS versionnée est Caddy. Avant toute validation pré-VPS sur `*.blobinfini.local`, vérifier que le proxy actif correspond bien au compose ciblé.
+
 ## 6. Chantiers P1
 
 Les P1 soutiennent l'acquisition, la qualité du MVP et l'exploitation produit.
