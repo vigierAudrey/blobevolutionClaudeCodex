@@ -1,5 +1,33 @@
 # Déploiement automatique VPS
 
+## Garde-fous (approbation + seed)
+
+> Deux garde-fous protègent la production. Ils sont **obligatoires** : sans la
+> configuration d'environment ci-dessous, le déploiement reste automatique.
+
+1. **Approbation humaine via environment protégé.** Le job `deploy` est rattaché
+   à l'environment GitHub `vps-production` (`environment: vps-production` dans
+   `.github/workflows/deploy-vps.yml`). Le déclenchement (CI verte sur `main`
+   **ou** `workflow_dispatch`) met le job **en attente** jusqu'à l'approbation
+   d'un reviewer requis. `prisma migrate deploy` et la recréation des conteneurs
+   ne s'exécutent donc qu'**après** approbation.
+
+   ⚠️ **À configurer une fois dans GitHub** : `Settings -> Environments ->
+   vps-production -> Required reviewers` (ajouter au moins un reviewer). Tant que
+   cette protection n'est pas créée, GitHub crée l'environment sans règle et le
+   déploiement repart sans approbation. Optionnel : restreindre l'environment à
+   la branche `main` (`Deployment branches`).
+
+2. **Seed canari désactivé par défaut.** Un deploy normal n'exécute plus
+   `prisma/seed.pre-vps.ts` : il ne **purge/recrée plus** de données de test en
+   production. Les comptes canaris persistent entre deploys, donc le smoke test
+   réutilise ceux déjà présents. Pour les (re)créer volontairement (premier
+   déploiement, après reset DB), lancer le workflow en `workflow_dispatch` avec
+   l'input **`run_seed=true`** (propagé au VPS via `RUN_VPS_SEED=true`).
+
+`workflow_dispatch` reste disponible pour un redéploiement manuel (input
+`reason`), lui aussi soumis à l'approbation `vps-production`.
+
 ## Flux
 
 Le flux de production est :
@@ -8,13 +36,14 @@ Le flux de production est :
 push main
 -> workflow GitHub Actions "CI"
 -> workflow "Deploy VPS" uniquement si CI success sur main
+-> attente approbation environment `vps-production`  (garde-fou)
 -> SSH vers le VPS
 -> git reset --hard origin/main dans VPS_DEPLOY_PATH
 -> docker compose build api web
 -> prisma migrate deploy
--> seed des comptes canaris de smoke
+-> seed canari UNIQUEMENT si RUN_VPS_SEED=true (sinon ignoré)
 -> docker compose up -d
--> docker compose up -d --force-recreate caddy
+-> restart caddy (validate + restart)
 -> scripts/smoke-test-vps.sh
 ```
 
