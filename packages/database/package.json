@@ -34,7 +34,7 @@
     "reset:seedless": "node scripts/assert-test-database-url.mjs && prisma migrate reset --force --skip-seed"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.0",
+    "@prisma/client": "^7.8.0",
     "bcryptjs": "^3.0.3",
     "patch-package": "^8.0.1"
   },
