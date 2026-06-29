@@ -34,26 +34,32 @@ function safeClientPath(value, fallback) {
 
 function normalizeNotificationData(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
+  const notification = source.notification && typeof source.notification === 'object' ? source.notification : {};
+  const webpush = source.webpush && typeof source.webpush === 'object' ? source.webpush : {};
+  const webpushNotification = webpush.notification && typeof webpush.notification === 'object' ? webpush.notification : {};
   const data = source.data && typeof source.data === 'object' ? source.data : {};
-  const type = ['new_message', 'reminder', 'general'].includes(source.type) ? source.type : 'general';
-  const url = safeClientPath(source.url || data.url || data.defaultUrl, '/dashboard');
+  const webpushData = webpushNotification.data && typeof webpushNotification.data === 'object' ? webpushNotification.data : {};
+  const fcmOptions = webpush.fcmOptions && typeof webpush.fcmOptions === 'object' ? webpush.fcmOptions : {};
+  const rawType = source.type || data.type || webpushData.type;
+  const type = ['new_message', 'reminder', 'general'].includes(rawType) ? rawType : 'general';
+  const url = safeClientPath(source.url || data.url || webpushData.url || data.defaultUrl || webpushData.defaultUrl || fcmOptions.link, '/dashboard');
 
   return {
-    title: safeText(source.title, 'Blob'),
-    body: safeText(source.body, 'Nouvelle notification'),
-    icon: safeClientPath(source.icon, '/icons/icon-192x192.png'),
-    badge: safeClientPath(source.badge, '/icons/icon-72x72.png'),
-    tag: safeText(source.tag, 'blobinfini-notification'),
+    title: safeText(source.title || notification.title || webpushNotification.title, 'Blob'),
+    body: safeText(source.body || notification.body || webpushNotification.body, 'Nouvelle notification'),
+    icon: safeClientPath(source.icon || notification.icon || notification.image || notification.imageUrl || webpushNotification.icon, '/icons/icon-192x192.png'),
+    badge: safeClientPath(source.badge || webpushNotification.badge, '/icons/icon-72x72.png'),
+    tag: safeText(source.tag || webpushNotification.tag, 'blobinfini-notification'),
     type,
     data: {
-      conversationId: safeText(data.conversationId, ''),
-      messageUrl: safeClientPath(data.messageUrl, url),
-      viewUrl: safeClientPath(data.viewUrl, url),
+      conversationId: safeText(data.conversationId || webpushData.conversationId, ''),
+      messageUrl: safeClientPath(data.messageUrl || webpushData.messageUrl, url),
+      viewUrl: safeClientPath(data.viewUrl || webpushData.viewUrl, url),
       defaultUrl: url,
       url
     },
-    requireInteraction: Boolean(source.requireInteraction),
-    silent: Boolean(source.silent)
+    requireInteraction: Boolean(source.requireInteraction || webpushNotification.requireInteraction),
+    silent: Boolean(source.silent || webpushNotification.silent)
   };
 }
 
@@ -115,10 +121,7 @@ self.addEventListener('push', function(event) {
   if (event.data) {
     try {
       const data = event.data.json();
-      notificationData = normalizeNotificationData({
-        ...notificationData,
-        ...data
-      });
+      notificationData = normalizeNotificationData(data);
     } catch (_error) {
       console.warn('📬 SW: Invalid push data format');
       notificationData = normalizeNotificationData(notificationData);

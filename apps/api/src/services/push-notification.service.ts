@@ -55,6 +55,46 @@ function sanitizePushData(data?: Record<string, unknown>): Record<string, unknow
   );
 }
 
+function getPublicWebOrigin(): string | null {
+  const appDomain = typeof process.env.APP_DOMAIN === 'string' && process.env.APP_DOMAIN.trim()
+    ? process.env.APP_DOMAIN.trim()
+    : null;
+  const candidates = [
+    process.env.WEB_BASE_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    appDomain ? (appDomain.includes('://') ? appDomain : `https://${appDomain}`) : undefined,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+    try {
+      const url = new URL(candidate.trim());
+      if (url.protocol === 'https:') {
+        return url.origin;
+      }
+    } catch {
+      // Try the next configured origin.
+    }
+  }
+
+  return null;
+}
+
+function buildWebpushFcmLink(pathOrUrl?: string): string | undefined {
+  const origin = getPublicWebOrigin();
+  if (!origin) return undefined;
+
+  try {
+    const url = new URL(pathOrUrl || '/dashboard', origin);
+    if (url.protocol !== 'https:' || url.origin !== origin) {
+      return `${origin}/dashboard`;
+    }
+    return url.href;
+  } catch {
+    return `${origin}/dashboard`;
+  }
+}
+
 // Initialize Firebase Admin (only once) — fail-closed on demo/missing credentials.
 if (isPushFeatureEnabled() && !admin.apps.length && hasUsableFirebaseCredentials()) {
   const firebaseConfig = getFirebaseConfig();
@@ -412,6 +452,7 @@ export class PushNotificationService {
    */
   private buildFCMMessage(token: string, notification: PushNotificationData): admin.messaging.Message {
     const safeData = sanitizePushData(notification.data);
+    const webpushFcmLink = buildWebpushFcmLink(notification.url);
     const message: admin.messaging.Message = {
       token,
       notification: {
@@ -444,9 +485,7 @@ export class PushNotificationService {
             ...safeData
           }
         },
-        fcmOptions: {
-          link: notification.url || '/dashboard'
-        }
+        ...(webpushFcmLink ? { fcmOptions: { link: webpushFcmLink } } : {})
       }
     };
 
