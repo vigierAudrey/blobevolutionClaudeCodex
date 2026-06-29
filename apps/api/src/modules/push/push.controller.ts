@@ -317,23 +317,24 @@ router.post('/send', pushSendLimiter, async (req: Request, res: Response) => {
  */
 router.get('/status', async (req: Request, res: Response) => {
   try {
+    res.setHeader('Cache-Control', 'private, no-store');
+
     const userId = (req as AuthenticatedRequest).user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'User ID not found in token' });
     }
 
-    if (!(await ensurePushUserEligible(userId))) {
-      return res.status(403).json({ error: 'Account unavailable' });
-    }
-
     if (!isPushBackendConfigured()) {
       return pushUnavailable(res);
     }
 
+    if (!(await ensurePushUserEligible(userId))) {
+      return res.status(403).json({ error: 'Account unavailable' });
+    }
+
     const hasActiveTokens = await pushNotificationService.hasActiveTokens(userId);
 
-    res.setHeader('Cache-Control', 'private, no-store');
     res.status(200).json({
       hasActiveTokens,
       isConfigured: process.env.FIREBASE_PROJECT_ID ? true : false,

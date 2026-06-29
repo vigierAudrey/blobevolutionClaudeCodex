@@ -102,6 +102,29 @@ describe('pushRouter — feature flag OFF by default', () => {
     await expect(prisma.pushToken.count({ where: { userId: auth.userId } })).resolves.toBe(0);
   });
 
+  it('/push/status — backend absent répond 503 neutre avant l’éligibilité push', async () => {
+    process.env.PUSH_NOTIFICATIONS_ENABLED = 'true';
+    delete process.env.FIREBASE_PROJECT_ID;
+    delete process.env.FIREBASE_CLIENT_EMAIL;
+    delete process.env.FIREBASE_PRIVATE_KEY;
+
+    const auth = await getAccessToken({
+      app,
+      email: 'push-status-misconfigured@test.local',
+      role: Role.RIDER,
+    });
+
+    await prisma.user.update({
+      where: { id: auth.userId },
+      data: { deletedAt: new Date() },
+    });
+
+    const response = await auth.session.get('/push/status').expect(503);
+
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(response.body).toEqual({ error: 'Push notifications unavailable' });
+  });
+
   it('POST /push/test — flag ON reste réservé aux admins', async () => {
     process.env.PUSH_NOTIFICATIONS_ENABLED = 'true';
     const auth = await getAccessToken({
