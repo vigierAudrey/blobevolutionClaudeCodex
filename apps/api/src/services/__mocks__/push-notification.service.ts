@@ -9,6 +9,28 @@ import type { PushNotificationData } from '../push-notification.service';
 export class PushNotificationService {
   private isInitialized = true; // Toujours initialisé en test
 
+  isConfigured(): boolean {
+    return (
+      process.env.PUSH_NOTIFICATIONS_ENABLED === 'true' &&
+      Boolean(process.env.FIREBASE_PROJECT_ID) &&
+      Boolean(process.env.FIREBASE_CLIENT_EMAIL) &&
+      Boolean(process.env.FIREBASE_PRIVATE_KEY) &&
+      process.env.FIREBASE_PROJECT_ID !== 'blobinfini-demo'
+    );
+  }
+
+  async saveToken(userId: string, token: string, userAgent?: string): Promise<boolean> {
+    return true;
+  }
+
+  async removeToken(userId: string, token?: string): Promise<boolean> {
+    return true;
+  }
+
+  async hasActiveTokens(userId: string): Promise<boolean> {
+    return false;
+  }
+
   async sendToUser(userId: string, notification: PushNotificationData): Promise<boolean> {
     // Mock: retourne toujours true (notification envoyée avec succès)
     return true;

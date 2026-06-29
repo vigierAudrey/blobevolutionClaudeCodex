@@ -1352,7 +1352,17 @@ export default function ProProfilePage() {
  */
 function BrowserPushControl() {
   const toast = useToast();
-  const { isSupported, permission, accountHasPush, thisBrowserActive, isLoading, subscribe, unsubscribe } =
+  const {
+    isSupported,
+    permission,
+    accountHasPush,
+    thisBrowserActive,
+    backendAvailable,
+    isStatusLoading,
+    isLoading,
+    subscribe,
+    unsubscribe,
+  } =
     usePushNotifications();
 
   if (!isSupported) {
@@ -1367,6 +1377,22 @@ function BrowserPushControl() {
     return (
       <BlobAlert variant="warning">
         Notifications bloquées dans ce navigateur. Pour activer ce poste, autorise les notifications dans les réglages de ton navigateur, puis reviens ici.
+      </BlobAlert>
+    );
+  }
+
+  if (isStatusLoading && backendAvailable === null) {
+    return (
+      <BlobAlert variant="info">
+        Vérification de la disponibilité des notifications push...
+      </BlobAlert>
+    );
+  }
+
+  if (backendAvailable !== true) {
+    return (
+      <BlobAlert variant="info">
+        Notifications push indisponibles pour le moment. Tu peux quand même garder tes alertes « Dans Blob ».
       </BlobAlert>
     );
   }
