@@ -188,12 +188,21 @@ export function CookieConsent({ onConsentChange }: CookieConsentProps) {
                 <div>
                   <strong>Conservation :</strong> Données agrégées, non identifiantes, conformes RGPD
                 </div>
+                <div>
+                  <a href="/docs/rgpd" className="underline hover:no-underline">
+                    Politique de confidentialité &amp; RGPD
+                  </a>
+                </div>
               </div>
             )}
           </div>
 
           <p className="text-xs text-muted-foreground">
             Vous pouvez modifier vos préférences à tout moment.
+            <a href="/docs/rgpd" className="underline hover:no-underline ml-1">
+              Politique de confidentialité
+            </a>
+            .
             <button
               onClick={() => handleSelection('none')}
               className="underline hover:no-underline ml-1"

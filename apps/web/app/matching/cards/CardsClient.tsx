@@ -226,16 +226,20 @@ export function CardsClient() {
           // Récupérer la photo du profil accepté depuis la map
           const acceptedIds = queue.filter(q => q.decision === 'ACCEPT').map(q => q.targetProfileId);
           let photoUrl: string | null | undefined = null;
+          let acceptedDisplayName: string | null = null;
           for (const id of acceptedIds) {
             const profile = acceptedProfilesRef.current.get(id);
             if (profile) {
               photoUrl = profile.photoUrl;
+              acceptedDisplayName = profile.displayName;
               break;
             }
           }
           setNewMatch({
             conversationId: convo.conversationId,
-            otherDisplayName: convo.otherDisplayName ?? 'Rider',
+            // L'API ne renvoie que conversationId : le nom vient du profil
+            // accepté (déjà mémorisé pour la photo).
+            otherDisplayName: convo.otherDisplayName ?? acceptedDisplayName ?? 'Rider',
             sport: activeSport,
             photoUrl
           });
@@ -519,7 +523,8 @@ export function CardsClient() {
                           )}
                         </div>
                         <div className="text-sm font-medium text-blob-black/70 dark:text-white/70 sm:text-base">
-                          {current.gender === 'FEMALE' ? 'Femme' : current.gender === 'MALE' ? 'Homme' : 'Autre'} • {current.sport ? sportLabels[current.sport as Sport] : current.sport} • {current.level ? levelLabels[current.level as Level] : current.level}
+                          {/* UNSPECIFIED (« Ne pas préciser ») : le segment sexe est masqué */}
+                          {current.gender === 'FEMALE' ? 'Femme • ' : current.gender === 'MALE' ? 'Homme • ' : current.gender === 'OTHER' ? 'Autre • ' : ''}{current.sport ? sportLabels[current.sport as Sport] : current.sport} • {current.level ? levelLabels[current.level as Level] : current.level}
                         </div>
                       </div>
                     </div>
