@@ -166,7 +166,7 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
             Sélection {activeTopic === 'all' ? 'Blobosphère' : topicMap.get(activeTopic)?.label}
           </h2>
           <p className="text-base text-muted-foreground">
-            Les guides publiés sont tirés directement des fichiers MDX (`apps/web/content/blobosphere`). Les brouillons restent cachés tant qu&apos;ils ne sont pas publiés.
+            Des guides courts et concrets, écrits avec la communauté : sécurité, matériel, spots et progression autour du Médoc Atlantique.
           </p>
         </div>
         {filteredArticles.length === 0 ? (

@@ -95,6 +95,26 @@ export function HomeFooter() {
           <p className="text-white/20 text-[11px]">
             © 2024–2026 Blob — Bêta locale Médoc Atlantique
           </p>
+          <nav aria-label="Liens légaux" className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <Link
+              href="/terms"
+              className="text-white/40 text-[11px] hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blob-yellow rounded-sm"
+            >
+              CGU
+            </Link>
+            <Link
+              href="/docs/rgpd"
+              className="text-white/40 text-[11px] hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blob-yellow rounded-sm"
+            >
+              Confidentialité &amp; RGPD
+            </Link>
+            <Link
+              href="/about"
+              className="text-white/40 text-[11px] hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blob-yellow rounded-sm"
+            >
+              À propos
+            </Link>
+          </nav>
           <p className="text-white/15 text-[10px] uppercase tracking-widest">
             Inscription gratuite, sans engagement
           </p>
