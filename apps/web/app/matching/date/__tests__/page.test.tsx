@@ -13,6 +13,7 @@ jest.mock('next/navigation', () => ({
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
     me: jest.fn(),
+    updateProfile: jest.fn(),
   },
 }));
 
@@ -42,6 +43,7 @@ describe('Matching date step', () => {
       new URLSearchParams({ sport: 'surf', level: 'intermediate' }) as ReturnType<typeof useSearchParams>,
     );
     mockedApiClient.me.mockResolvedValue({ role: 'RIDER' } as never);
+    mockedApiClient.updateProfile.mockResolvedValue({} as never);
     Object.defineProperty(window.navigator, 'geolocation', {
       configurable: true,
       value: { getCurrentPosition },
@@ -73,6 +75,22 @@ describe('Matching date step', () => {
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'));
     expect(screen.queryByText(/session interne sensible/i)).not.toBeInTheDocument();
+  });
+
+  it('persists the position to the profile on geolocation success (discoverability)', async () => {
+    const user = userEvent.setup();
+    getCurrentPosition.mockImplementationOnce(
+      (success: PositionCallback) =>
+        success({ coords: { latitude: 44.98, longitude: -1.195 } } as GeolocationPosition),
+    );
+
+    render(<DatePage />);
+    await user.click(await screen.findByRole('button', { name: 'Activer ma position' }));
+
+    await waitFor(() =>
+      expect(mockedApiClient.updateProfile).toHaveBeenCalledWith({ lat: 44.98, lng: -1.195 }),
+    );
+    expect(screen.getByText(/Position : 44\.9800, -1\.1950/)).toBeInTheDocument();
   });
 
   it('shows a neutral geolocation state without logging the browser error', async () => {

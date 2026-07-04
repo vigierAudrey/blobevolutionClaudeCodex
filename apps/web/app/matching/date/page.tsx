@@ -190,6 +190,12 @@ function DateInner() {
         setLat(la); setLng(lo);
         setGeolocError(false);
         try { localStorage.setItem(LAT_KEY, String(la)); localStorage.setItem(LNG_KEY, String(lo)); } catch {}
+        // Persiste la position sur le profil : /matching/search ne propose que
+        // les profils avec lat/lng en base — sans cette écriture, le rider
+        // reste invisible pour les autres (aucun match possible entre
+        // nouveaux comptes). L'API ne réexpose jamais lat/lng aux autres
+        // riders (distance arrondie uniquement).
+        apiClient.updateProfile({ lat: la, lng: lo }).catch(() => {});
         const url = new URL(window.location.href);
         url.searchParams.set('lat', String(la)); url.searchParams.set('lng', String(lo));
         window.history.replaceState(null, '', url.toString());
