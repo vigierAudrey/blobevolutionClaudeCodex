@@ -1,15 +1,19 @@
 /**
  * Tests unitaires — canViewUserPhoto (media.service.ts)
  *
+ * Politique : la photo rider est visible par tout RIDER authentifié
+ * (cartes matching, modale de match, conversations) — c'est le contrat
+ * produit ("Visible dans le matching", photo obligatoire à l'onboarding).
+ *
  * Couvre :
- *  - IDs différents → false sans appel DB (pas de side-channel sur l'existence)
  *  - RIDER self → true
- *  - PRO self → false
- *  - ADMIN self → false
+ *  - RIDER demandant la photo d'un autre user → true
+ *  - PRO self / PRO vers autre → false
+ *  - ADMIN self / ADMIN vers autre → false
  *  - utilisateur introuvable en DB → false
  *  - erreur DB → propagée (le controller retourne 500)
  */
-import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 jest.mock('@blobinfini/database', () => ({
   clientPrisma: {
@@ -42,15 +46,19 @@ describe('canViewUserPhoto', () => {
     mockFindUnique.mockReset();
   });
 
-  it('renvoie false si requesterId ≠ targetUserId, sans appel DB', async () => {
-    const result = await canViewUserPhoto(USER_A, USER_B);
-    expect(result).toBe(false);
-    expect(mockFindUnique).not.toHaveBeenCalled();
-  });
-
   it('renvoie true pour un RIDER demandant sa propre photo', async () => {
     mockFindUnique.mockResolvedValue({ role: 'RIDER' } as never);
     expect(await canViewUserPhoto(USER_A, USER_A)).toBe(true);
+  });
+
+  it('renvoie true pour un RIDER demandant la photo d’un autre utilisateur', async () => {
+    mockFindUnique.mockResolvedValue({ role: 'RIDER' } as never);
+    expect(await canViewUserPhoto(USER_A, USER_B)).toBe(true);
+    // L'autorisation est décidée sur le rôle du demandeur, jamais sur la cible
+    expect(mockFindUnique).toHaveBeenCalledWith({
+      where: { id: USER_A },
+      select: { role: true },
+    });
   });
 
   it('renvoie false pour un PRO demandant sa propre photo', async () => {
@@ -58,9 +66,19 @@ describe('canViewUserPhoto', () => {
     expect(await canViewUserPhoto(USER_A, USER_A)).toBe(false);
   });
 
+  it('renvoie false pour un PRO demandant la photo d’un autre utilisateur', async () => {
+    mockFindUnique.mockResolvedValue({ role: 'PRO' } as never);
+    expect(await canViewUserPhoto(USER_A, USER_B)).toBe(false);
+  });
+
   it('renvoie false pour un ADMIN demandant sa propre photo', async () => {
     mockFindUnique.mockResolvedValue({ role: 'ADMIN' } as never);
     expect(await canViewUserPhoto(USER_A, USER_A)).toBe(false);
+  });
+
+  it('renvoie false pour un ADMIN demandant la photo d’un autre utilisateur', async () => {
+    mockFindUnique.mockResolvedValue({ role: 'ADMIN' } as never);
+    expect(await canViewUserPhoto(USER_A, USER_B)).toBe(false);
   });
 
   it('renvoie false si utilisateur introuvable en DB', async () => {
