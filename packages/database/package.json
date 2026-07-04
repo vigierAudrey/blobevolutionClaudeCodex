@@ -42,7 +42,7 @@
     "@prisma/config": "^6.19.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24.10.1",
-    "node-gyp": "^12.3.0",
+    "node-gyp": "^13.0.1",
     "node-gyp-build": "^4.8.4",
     "prisma": "^6.19.0",
     "rimraf": "^6.1.3",
