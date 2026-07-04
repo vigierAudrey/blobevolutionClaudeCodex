@@ -30,3 +30,6 @@ backups/
 
 # WSL metadata (Windows Zone.Identifier streams)
 *:Zone.Identifier
+
+# Local dev process pid files (jamais commiter)
+*.pid

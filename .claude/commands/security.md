@@ -2,22 +2,17 @@
 description: Audit de sécurité complet ou ciblé du projet - Blocage de TOUTES tentatives de hacking
 ---
 
-🔐 **MISSION CRITIQUE** : Protéger Blobinfini contre TOUTES tentatives de hacking, intrusion ou exploitation.
+🔐 **MISSION CRITIQUE** : Protéger Blob (Blobinfini interne) contre TOUTES tentatives de hacking, intrusion ou exploitation.
 
 ## Contexte de la commande
 - **Arguments fournis** : $ARGUMENTS
-- **Projet** : BlobConnect / Blobinfini (plateforme sports de glisse avec auth JWT, Next.js, Express, Prisma, PostgreSQL, Redis)
+- **Projet** : Blob / Blobinfini (plateforme sports de glisse avec auth JWT, Next.js, Express, Prisma, PostgreSQL, Redis)
 - **Checklists de référence** :
   - `/ai/checklists/securite_auth.md`
   - `/ai/checklists/rgpd.md`
-- **Roadmaps existantes** :
-  - `ROADMAP.md` (lignes 50-219) - Section "🔒 Sécurité & Conformité"
-    - ✅ Phase 1 TERMINÉE (10 nov. 2025) : CORS, secrets, logs, validation
-    - 🔄 Phase 2 EN COURS : Helmet strict, trust proxy, DB SSL
-    - ⏳ Phase 3 À FAIRE : `/security/health`, audit logs
-  - `docs/audits/security-audit-2025-10.md` - Audit complet (Score: 95/100)
+- **Audit de référence** : le **plus récent** fichier `docs/audits/security-audit-*.md` (trier par date dans le nom de fichier — ne jamais supposer un score ou une date figée, toujours vérifier par lecture directe).
+- **État des chantiers sécurité** : `ROADMAP.md` sections "Chantiers Terminés", "Chantiers P0", "Chantiers P1", "Chantiers P2" — lire les titres de section actuels avec `grep -n "^##" ROADMAP.md`, ne jamais citer un numéro de ligne figé (le document est réécrit régulièrement).
 - **Niveau d'exigence** : ZÉRO TOLÉRANCE pour les vulnérabilités P0/P1
-- **Score actuel** : 7.0/10 → Objectif 9.5/10 avant production (Phase 1 ✅, ~5h restantes)
 
 ## Ton rôle
 
@@ -29,44 +24,35 @@ Délègue cette tâche à l'agent **cybersecurite** qui va IMPITOYABLEMENT :
    - Si "api" → Audit endpoints API (injection, validation, rate limiting)
    - Si "frontend" → Audit Next.js (XSS, CSRF, CSP, secrets exposure)
    - Si "infra" → Audit infrastructure (DB, Redis, env vars, logs)
-   - Si "roadmap" → Consulter `ROADMAP.md:50-219` + créer roadmap à jour
+   - Si "roadmap" → Lire `ROADMAP.md` (sections P0/P1/P2 actuelles) + proposer une mise à jour
    - Si "harden" → Implémenter défenses proactives (honeypots, IDS, WAF)
    - Si "incident" → Roadmap de réponse à incident (7 jours)
-   - Si "pre-prod" → Checklist `ROADMAP.md:178-216` + vérifications
-   - Si "status" → Comparer état actuel vs audit octobre 2025 (`docs/audits/security-audit-2025-10.md`)
+   - Si "pre-prod" → Checklist de préproduction (voir section "Environnements" de `ROADMAP.md`) + vérifications
+   - Si "status" → Comparer l'état actuel au dernier audit archivé dans `docs/audits/`
    - Si chemin de fichier → Audit ciblé de ce fichier
 
 2. **Scanner AGRESSIVEMENT** :
    - `npm audit` → BLOQUER si critical/high non résolues
-   - **Vulnérabilités connues** → Vérifier statut des P1/P2 de `docs/audits/security-audit-2025-10.md` :
-     - [P1-1] ✅ Sentry sendDefaultPii (corrigé)
-     - [P1-2] ✅ CSP unsafe-inline (corrigé)
-     - [P1-3] ⚠️ Validation mot de passe (à vérifier)
-     - [P2-1 à P2-9] → Vérifier si implémentés
-   - **Phase 1 (ROADMAP.md)** → Vérifier CORS, secrets, logs, validation :
-     - CORS whitelist dynamique
-     - Secrets ≥ 64 chars
-     - Logs sanitizés (secure-logger)
-     - Validation Zod complète
+   - **Vulnérabilités connues** → Ouvrir le dernier audit dans `docs/audits/`, lister ses vulnérabilités P1/P2, puis vérifier CHAQUE statut par lecture du fichier/ligne actuel (jamais par supposition — le code a bougé depuis l'audit)
    - Secrets hardcodés → Grep récursif patterns sensibles
    - Injections SQL/NoSQL → Vérifier TOUTES requêtes Prisma
    - XSS → Vérifier sanitization inputs utilisateur
    - CSRF → Vérifier tokens/SameSite cookies
    - Headers sécurité → CSP, HSTS, X-Frame-Options, Permissions-Policy
-   - Rate limiting → Vérifier présence + profils (AUTH 5/15min, REGISTRATION 3/h, EMAIL_VERIFICATION 3/h)
+   - Rate limiting → Vérifier présence + profils actuels (grep les limiters dans `apps/api/src`)
    - Logs → Vérifier pas de PII, anonymisation, rétention ≤ 30j
    - OWASP Top 10 → Checklist complète systématique
 
 3. **Produire un rapport ACTIONNABLE** avec :
    - 🚨 Niveau de risque global (CRITIQUE/ÉLEVÉ/MOYEN/FAIBLE)
-   - 📈 **Évolution vs audit octobre 2025** : Score actuel vs 95/100
-   - 📍 Vulnérabilités P0/P1/P2 avec **localisations EXACTES** (fichier:ligne)
-   - ✅ **Statut des vulnérabilités connues** (P1-1, P1-2, P1-3, P2-1 à P2-9)
+   - 📈 **Évolution vs le dernier audit archivé** (citer son nom de fichier et sa date)
+   - 📍 Vulnérabilités P0/P1/P2 avec **localisations EXACTES** (fichier:ligne, vérifiées à l'instant T)
+   - ✅ **Statut des vulnérabilités du dernier audit** (résolues / persistantes / non vérifiables)
    - 💻 **Code de correction** prêt à copier-coller pour CHAQUE problème
    - 🧪 **Tests de sécurité** pour valider les correctifs
-   - 📊 Roadmap si > 3 vulnérabilités (référencer `ROADMAP.md` Phases 1-3)
-   - 🛡️ Score de conformité OWASP (X/10) → Objectif 9.5/10
-   - 📋 Checklist pré-production si demandée (`ROADMAP.md:178-216`)
+   - 📊 Roadmap si > 3 vulnérabilités (référencer les sections P0/P1/P2 actuelles de `ROADMAP.md`)
+   - 🛡️ Score de conformité OWASP (X/10)
+   - 📋 Checklist pré-production si demandée
 
 4. **ACTIONS IMMÉDIATES** :
    - ⚠️ P0 → BLOCKER : corriger AVANT tout merge/deploy
@@ -87,6 +73,7 @@ Délègue cette tâche à l'agent **cybersecurite** qui va IMPITOYABLEMENT :
 - **🛡️ Defense in Depth** : Multiples couches de sécurité systématiques
 - **⚖️ Assume Breach** : Partir du principe qu'une attaque aura lieu
 - **🔒 Fail Secure** : En cas d'erreur, REFUSER l'accès (pas l'inverse)
+- **🚫 Preuves ou silence** : jamais de score/date/statut affirmé sans citer le fichier lu ou la commande exécutée (voir `ai/policies/governance.md`)
 
 ## 🇫🇷 Conformité légale française
 
@@ -97,20 +84,12 @@ Délègue cette tâche à l'agent **cybersecurite** qui va IMPITOYABLEMENT :
 
 ## 📚 Références aux documents existants
 
-### Audit précédent (Octobre 2025)
-**Fichier** : `docs/audits/security-audit-2025-10.md` (762 lignes)
-- **Score final** : 95/100 après corrections P1
-- **Vulnérabilités** : 0 P0, 3 P1, 9 P2
-- **Points forts** : RGPD 90/100, Rate limiting, CSRF, Validation Zod
-- **Roadmap en 6 phases** : Corrections (3j) → CSP (4j) → Logging (7j) → Optimisations (7j) → Dissuasion (8j) → Certification
+### Audit précédent
+- Toujours identifier le **fichier le plus récent** dans `docs/audits/security-audit-*.md` (ne jamais présumer d'un fichier ou d'un score fixe).
+- Lire son contenu réel avant de comparer quoi que ce soit à l'état actuel.
 
 ### Roadmap sécurité actuelle
-**Fichier** : `ROADMAP.md` (lignes 50-219)
-- **Score actuel** : 7.0/10 → Objectif 9.5/10
-- **Phase 1 (2h)** : CORS, secrets, logs, validation Zod
-- **Phase 2 (3h)** : Helmet, trust proxy, DB SSL, scripts secrets
-- **Phase 3 (2h)** : `/security/health`, audit logs
-- **Checklist pré-prod** : Lignes 178-216 (config + tests + monitoring)
+- **Fichier** : `ROADMAP.md` — sections "Chantiers P0", "Chantiers P1", "Chantiers P2" (titres à retrouver via `grep -n "^##" ROADMAP.md`, les numéros de ligne changent à chaque réécriture du document).
 
 ### Checklists de référence
 - `/ai/checklists/securite_auth.md` - Tokens, routes sensibles, RGPD, protections
@@ -119,12 +98,12 @@ Délègue cette tâche à l'agent **cybersecurite** qui va IMPITOYABLEMENT :
 ## Exemples d'utilisation
 
 ```bash
-/security                    # Audit complet + comparaison vs octobre 2025
-/security auth               # Audit module auth + vérif P1-3 (validation password)
-/security roadmap            # Roadmap à jour basée sur ROADMAP.md
-/security harden             # Implémenter honeypots + security.txt (audit oct. lignes 595-693)
-/security pre-prod           # Checklist ROADMAP.md:178-216 + tests automatisés
-/security status             # Comparer état actuel vs audit octobre (P1/P2 résolus ?)
+/security                    # Audit complet + comparaison vs dernier audit archivé
+/security auth               # Audit module auth
+/security roadmap            # Roadmap à jour basée sur ROADMAP.md (sections P0/P1/P2 actuelles)
+/security harden             # Implémenter honeypots + security.txt
+/security pre-prod           # Checklist de préproduction + tests automatisés
+/security status             # Comparer état actuel vs dernier audit archivé
 /security apps/api/src/middleware/auth.ts  # Audit fichier spécifique
 ```
 
@@ -135,53 +114,37 @@ Délègue cette tâche à l'agent **cybersecurite** qui va IMPITOYABLEMENT :
 ```
 Task tool:
 - subagent_type: cybersecurite
-- description: Audit de sécurité Blobinfini
+- description: Audit de sécurité Blob
 - prompt: "Effectue un audit de sécurité avec les arguments : '$ARGUMENTS'.
 
-**DOCUMENTS DE RÉFÉRENCE OBLIGATOIRES** :
-1. `docs/audits/security-audit-2025-10.md` - Audit octobre 2025 (Score: 95/100)
-   - Vulnérabilités P1 : [P1-1] ✅ Sentry, [P1-2] ✅ CSP, [P1-3] ⚠️ Password validation
-   - Vulnérabilités P2 : [P2-1] à [P2-9] - Vérifier statut
-   - Roadmap en 6 phases (lignes 568-603)
-   - Mesures proactives : honeypots (607-636), IP blacklisting (640-661), security.txt (664-692)
-
-2. `ROADMAP.md` (lignes 50-219) - Sécurité Production-Ready
-   - Phase 1 (2h) : CORS, secrets, logs, validation (lignes 63-137)
-   - Phase 2 (3h) : Helmet, trust proxy, DB SSL (lignes 138-156)
-   - Phase 3 (2h) : Monitoring, audit logs (lignes 158-176)
-   - Checklist pré-prod (lignes 178-216)
-
+**DOCUMENTS DE RÉFÉRENCE OBLIGATOIRES** (à lire, jamais à supposer) :
+1. Le fichier le plus récent parmi `docs/audits/security-audit-*.md` — l'identifier d'abord (ex. `ls -t docs/audits/security-audit-*.md | head -1`), puis le lire en entier.
+2. `ROADMAP.md` — sections "Chantiers P0"/"Chantiers P1"/"Chantiers P2" actuelles (retrouver les titres avec `grep -n '^##' ROADMAP.md`).
 3. Checklists : `/ai/checklists/securite_auth.md`, `/ai/checklists/rgpd.md`
 
 **SI AUCUN ARGUMENT** (audit complet) :
-1. Lire et analyser `docs/audits/security-audit-2025-10.md`
-2. Vérifier STATUT de TOUTES les vulnérabilités P1/P2 :
-   - [P1-3] Validation password : `apps/api/src/modules/auth/auth.controller.ts:14`
-   - [P2-1] à [P2-9] : Vérifier si implémentés
-3. Comparer score actuel vs 95/100 (octobre 2025)
-4. Scanner : npm audit, OWASP Top 10, secrets, CORS, CSP, rate limiting
-5. Rapport avec :
-   - Évolution depuis octobre 2025
-   - Nouvelles vulnérabilités détectées
-   - Statut des correctifs précédents
-   - Score actuel /10 + roadmap pour atteindre 9.5/10
+1. Identifier et lire le dernier audit archivé dans `docs/audits/`.
+2. Vérifier le STATUT ACTUEL de chacune de ses vulnérabilités par lecture directe du fichier/ligne concerné (le code a évolué depuis — ne pas recopier l'ancien statut sans vérification).
+3. Comparer le score actuel à celui du dernier audit, en citant les deux sources.
+4. Scanner : npm audit, OWASP Top 10, secrets, CORS, CSP, rate limiting.
+5. Rapport avec : évolution depuis le dernier audit, nouvelles vulnérabilités détectées, statut des correctifs précédents, score actuel /10 + roadmap.
 
 **SI ARGUMENT SPÉCIFIQUE** :
-- 'auth' → Module auth + vérifier [P1-3] password validation
-- 'api' → Endpoints API + rate limiting (profils AUTH/REGISTRATION/EMAIL_VERIFICATION)
-- 'frontend' → Next.js + vérifier [P1-2] CSP sans unsafe-inline
-- 'roadmap' → Générer roadmap basée sur `ROADMAP.md` Phases 1-3
-- 'harden' → Implémenter honeypots + security.txt (audit oct. lignes 595-693)
-- 'pre-prod' → Checklist `ROADMAP.md:178-216` + tests automatisés
-- 'status' → Comparer état actuel vs audit octobre (tableau P1/P2 résolus)
+- 'auth' → Module auth (JWT, sessions, 2FA, validation password)
+- 'api' → Endpoints API + rate limiting (profils actuels, à identifier dans le code)
+- 'frontend' → Next.js + CSP/XSS/CSRF
+- 'roadmap' → Générer une roadmap basée sur les sections P0/P1/P2 actuelles de `ROADMAP.md`
+- 'harden' → Implémenter honeypots + security.txt
+- 'pre-prod' → Checklist de préproduction + tests automatisés
+- 'status' → Comparer état actuel vs dernier audit archivé
 - chemin fichier → Audit ciblé
 
 **SORTIE OBLIGATOIRE** :
-- 📈 Évolution vs octobre 2025 (score + vulnérabilités résolues)
+- 📈 Évolution vs dernier audit archivé (citer fichier + date)
 - 🚨 Nouvelles vulnérabilités P0/P1/P2 avec code de correction
-- ✅ Statut des 12 vulnérabilités connues (P1-1 à P2-9)
-- 🛡️ Score /10 + roadmap pour atteindre 9.5/10
+- ✅ Statut des vulnérabilités du dernier audit (vérifié fichier par fichier)
+- 🛡️ Score /10 + roadmap
 - 📋 Checklist pré-prod si demandée
 
-**EXIGENCE** : ZÉRO vulnérabilité P0/P1 avant production."
+**EXIGENCE** : ZÉRO vulnérabilité P0/P1 avant production. Toute affirmation d'état doit citer sa preuve (fichier lu ou commande exécutée)."
 ```

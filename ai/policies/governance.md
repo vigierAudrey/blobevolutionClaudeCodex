@@ -15,3 +15,8 @@
 ## Non-duplication
 - Les regles critiques vivent dans `ai/policies/*` uniquement.
 - Toute regle contradictoire ailleurs est a corriger en priorite dans `ai/`.
+
+## Perimetre produit MVP (non negociable)
+- Blob MVP = mise en relation locale uniquement. L'organisation du cours se fait hors plateforme.
+- Hors scope sans validation produit documentee: reservation orchestree, calendrier transactionnel partage, paiement integre/Stripe, commission/escrow, workflow booking complet (request->confirm->cancel->complete), synchronisation calendrier externe.
+- Toute demande dans ce sens: signaler explicitement le hors-scope, proposer l'alternative (messagerie/mise en relation directe), demander confirmation avant d'implementer. Detail procedure: `claude.md` section anti-reintroduction scope produit.

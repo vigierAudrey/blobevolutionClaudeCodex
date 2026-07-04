@@ -32,39 +32,39 @@ Si des commandes shell sont bloquées, ajuster l’allowlist dans `.claude/setti
 Audit de sécurité complet ou ciblé avec **ZÉRO TOLÉRANCE** pour les vulnérabilités P0/P1.
 
 **📚 Documents de référence** :
-- `ROADMAP.md` (lignes 50-219) - Score actuel: 7.0/10 → Objectif: 9.5/10
-- `docs/audits/security-audit-2025-10.md` - Audit octobre 2025 (Score: 95/100)
+- `ROADMAP.md` — sections "Chantiers P0"/"Chantiers P1" actuelles (titres via `grep -n "^##" ROADMAP.md`, jamais un numéro de ligne figé)
+- Le dernier audit archivé dans `docs/audits/security-audit-*.md` (identifier le plus récent via `ls -t docs/audits/security-audit-*.md | head -1`)
 
 **Modes disponibles** :
-- `/security` → Audit COMPLET (OWASP Top 10 + CWE Top 25) + comparaison vs octobre 2025
-- `/security auth` → Audit authentification + vérif [P1-3] validation password
+- `/security` → Audit COMPLET (OWASP Top 10 + CWE Top 25) + comparaison vs le dernier audit archivé
+- `/security auth` → Audit authentification (JWT, sessions, 2FA, validation password)
 - `/security api` → Audit endpoints API (injections, validation, rate limiting)
-- `/security frontend` → Audit Next.js + vérif [P1-2] CSP sans unsafe-inline
+- `/security frontend` → Audit Next.js (XSS, CSRF, CSP)
 - `/security infra` → Audit infrastructure (DB, Redis, env vars, logs)
-- `/security roadmap` → Roadmap à jour basée sur `ROADMAP.md` Phases 1-3
-- `/security harden` → Implémenter honeypots + security.txt (audit oct. lignes 595-693)
-- `/security pre-prod` → Checklist `ROADMAP.md:178-216` + tests automatisés
-- `/security status` → Comparer état actuel vs audit octobre (P1/P2 résolus ?)
+- `/security roadmap` → Roadmap à jour basée sur les sections P0/P1/P2 actuelles de `ROADMAP.md`
+- `/security harden` → Implémenter honeypots + security.txt
+- `/security pre-prod` → Checklist de préproduction + tests automatisés
+- `/security status` → Comparer état actuel vs dernier audit archivé (P1/P2 résolus ?)
 
 **Garanties** :
-- ✅ Détection OWASP Top 10 + vérification 12 vulnérabilités connues (P1-1 à P2-9)
+- ✅ Détection OWASP Top 10 + vérification des vulnérabilités connues du dernier audit archivé
 - ✅ Code de correction pour CHAQUE vulnérabilité
 - ✅ Tests de sécurité automatisés
-- ✅ Score de conformité /10 + évolution vs octobre 2025
+- ✅ Score de conformité /10 + évolution vs dernier audit archivé
 - ✅ Roadmap référençant `ROADMAP.md` si > 3 vulnérabilités
 
 #### `/audit [mode]`
-Générer un audit de sécurité complet au **format octobre 2025** (762 lignes structurées).
+Générer un audit de sécurité complet, structuré et comparé au dernier audit archivé.
 
 **Modes disponibles** :
-- `/audit` → Rapport complet (format identique à `docs/audits/security-audit-2025-10.md`)
-- `/audit diff` → Delta uniquement vs octobre 2025 (résolutions + persistants + nouveaux)
+- `/audit` → Rapport complet (format identique au dernier audit archivé dans `docs/audits/`)
+- `/audit diff` → Delta uniquement vs dernier audit archivé (résolutions + persistants + nouveaux)
 - `/audit save` → Sauvegarder dans `docs/audits/security-audit-YYYY-MM-DD.md`
 - `/audit quick` → P0/P1 uniquement pour validation rapide (sans P2)
 
 **Sortie garantie** :
-- 📈 **Évolution vs octobre 2025** : Score actuel vs 95/100
-- ✅ **Statut des 12 vulnérabilités connues** : [P1-1] à [P2-9]
+- 📈 **Évolution vs dernier audit archivé** : score actuel vs score archivé (fichier cité)
+- ✅ **Statut des vulnérabilités connues** du dernier audit, revérifié fichier par fichier
 - 🆕 **Nouvelles vulnérabilités détectées**
 - 💻 **Code de correction** pour CHAQUE problème
 - 📊 **Roadmap de sécurisation en 6 phases** (Corrections → CSP → Logging → Optimisations → Dissuasion → Certification)
@@ -72,8 +72,8 @@ Générer un audit de sécurité complet au **format octobre 2025** (762 lignes 
 **Exemples** :
 ```bash
 /audit              # Rapport complet avec toutes les sections
-/audit diff         # "✅ 4 résolues / ⚠️ 8 persistantes / 🆕 0 nouvelles"
-/audit save         # Génère + sauvegarde docs/audits/security-audit-2025-11-09.md
+/audit diff         # "✅ X résolues / ⚠️ Y persistantes / 🆕 Z nouvelles"
+/audit save         # Génère + sauvegarde docs/audits/security-audit-<date-du-jour>.md
 /audit quick        # Résumé exécutif + P0 + P1 uniquement
 ```
 
@@ -184,11 +184,11 @@ Expert cybersécurité offensif pour auditer, protéger et bloquer toute tentati
 
 **Capacités** :
 - Audit OWASP Top 10 + CWE Top 25
-- Vérification automatique des 12 vulnérabilités connues (P1-1 à P2-9)
+- Vérification des vulnérabilités connues du dernier audit archivé
 - Détection secrets hardcodés, injections, XSS, CSRF
 - Roadmaps de sécurisation pré-configurées :
-  - 🚀 Production-Ready (9h) - `ROADMAP.md:50-219`
-  - 🔥 Post-Audit Octobre (30j) - `docs/audits/security-audit-2025-10.md:568-603`
+  - 🚀 Production-Ready - sections P0/P1 de `ROADMAP.md`
+  - 🔥 Post-Audit (30j) - roadmap du dernier audit archivé dans `docs/audits/`
   - 🛡️ Incident Response (7j) - Template générique
 - Implémentation honeypots, IDS, WAF, security.txt
 - Conformité RGPD + CNIL française
@@ -198,8 +198,8 @@ Expert cybersécurité offensif pour auditer, protéger et bloquer toute tentati
 - Peut être invoqué directement via Task tool
 
 **Documents de référence automatiques** :
-- `ROADMAP.md` (lignes 50-219) - Score 7.0/10 → 9.5/10
-- `docs/audits/security-audit-2025-10.md` - Audit octobre (Score: 95/100)
+- `ROADMAP.md` - sections "Chantiers P0"/"Chantiers P1" actuelles
+- Le dernier audit archivé dans `docs/audits/security-audit-*.md`
 - `/ai/checklists/securite_auth.md` + `rgpd.md`
 
 ---
@@ -227,14 +227,14 @@ Expert cybersécurité offensif pour auditer, protéger et bloquer toute tentati
 
 ### 1. Audit de sécurité complet
 ```bash
-/security              # Audit complet + comparaison vs octobre 2025
-/audit                 # Rapport structuré format octobre 2025
+/security              # Audit complet + comparaison vs dernier audit archivé
+/audit                 # Rapport structuré, comparé au dernier audit archivé
 /audit diff            # Delta uniquement (rapide)
 ```
 
 ### 2. Vérifier l'évolution de la sécurité
 ```bash
-/security status       # Tableau P1/P2 résolus vs octobre 2025
+/security status       # Tableau P1/P2 résolus vs dernier audit archivé
 /audit quick           # P0/P1 uniquement pour validation rapide
 ```
 
@@ -245,7 +245,7 @@ Expert cybersécurité offensif pour auditer, protéger et bloquer toute tentati
 
 ### 4. Avant déploiement production
 ```bash
-/security pre-prod     # Checklist ROADMAP.md:178-216
+/security pre-prod     # Checklist de préproduction (section "Environnements" de ROADMAP.md)
 /audit save            # Archiver audit dans docs/audits/
 ```
 
@@ -269,7 +269,7 @@ Expert cybersécurité offensif pour auditer, protéger et bloquer toute tentati
 ## 🔒 Règles de sécurité
 
 ### Avant CHAQUE merge/deploy
-1. ✅ `/security pre-prod` → Aucun P0/P1 (checklist `ROADMAP.md:178-216`)
+1. ✅ `/security pre-prod` → Aucun P0/P1 (checklist de préproduction, section "Environnements" de `ROADMAP.md`)
 2. ✅ `/audit quick` → Vérification rapide P0/P1
 3. ✅ `/rgpd` → Score ≥ 80/100
 4. ✅ `npm audit` → 0 critical/high
@@ -291,9 +291,8 @@ Expert cybersécurité offensif pour auditer, protéger et bloquer toute tentati
 ## 📚 Ressources
 
 ### Sécurité
-- **Audits archivés** : `docs/audits/security-audit-*.md`
-  - Octobre 2025 : Score 95/100 (762 lignes, référence complète)
-- **Roadmap active** : `ROADMAP.md` (lignes 50-219) - Score 7.0/10 → 9.5/10
+- **Audits archivés** : `docs/audits/security-audit-*.md` (identifier le plus récent via `ls -t`)
+- **Roadmap active** : `ROADMAP.md` - sections "Chantiers P0"/"Chantiers P1"/"Chantiers P2" (titres actuels via `grep -n "^##" ROADMAP.md`)
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 - [CWE Top 25](https://cwe.mitre.org/top25/)
 - [Code Pénal Art. 323-1](https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000030939438)

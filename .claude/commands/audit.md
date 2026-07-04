@@ -1,13 +1,13 @@
 ---
-description: Générer un audit de sécurité complet à jour (format octobre 2025)
+description: Générer un audit de sécurité complet à jour
 ---
 
-📊 **AUDIT DE SÉCURITÉ COMPLET** : Générer un rapport structuré comme `docs/audits/security-audit-2025-10.md`
+📊 **AUDIT DE SÉCURITÉ COMPLET** : Générer un rapport structuré, comparé au dernier audit archivé dans `docs/audits/`.
 
 ## Contexte de la commande
 - **Arguments fournis** : $ARGUMENTS
-- **Projet** : BlobConnect / Blobinfini (plateforme sports de glisse)
-- **Audit de référence** : `docs/audits/security-audit-2025-10.md` (octobre 2025, Score: 95/100)
+- **Projet** : Blob / Blobinfini (plateforme sports de glisse)
+- **Audit de référence** : le fichier **le plus récent** parmi `docs/audits/security-audit-*.md` (l'identifier via `ls -t docs/audits/security-audit-*.md | head -1`, ne jamais présumer d'un nom/date/score fixe)
 - **Format de sortie** : Markdown structuré avec sections standardisées
 
 ## Ton rôle
@@ -15,24 +15,24 @@ description: Générer un audit de sécurité complet à jour (format octobre 20
 Délègue cette tâche à l'agent **cybersecurite** qui va générer un audit COMPLET :
 
 1. **Analyser les arguments** :
-   - Si aucun argument → **Audit complet** (format octobre 2025)
-   - Si "diff" → **Comparaison** audit actuel vs octobre 2025 (delta uniquement)
+   - Si aucun argument → **Audit complet**
+   - Si "diff" → **Comparaison** audit actuel vs dernier audit archivé (delta uniquement)
    - Si "save" → Sauvegarder le rapport dans `docs/audits/security-audit-YYYY-MM-DD.md`
    - Si "quick" → Audit rapide (P0/P1 uniquement, sans P2)
 
-2. **Structure du rapport** (format standard octobre 2025) :
+2. **Structure du rapport** :
 
    ### 📋 Template de rapport
 
    ```markdown
-   # Audit Sécurité Blobinfini - [Date]
+   # Audit Sécurité Blob - [Date]
 
    ## 🎯 Résumé Exécutif
    - **Niveau de risque global** : [CRITIQUE/ÉLEVÉ/MOYEN/FAIBLE]
    - **Vulnérabilités détectées** : X P0, Y P1, Z P2
    - **Conformité RGPD** : X/100
    - **Dépendances** : X vulnérabilités critiques (npm audit)
-   - **Évolution vs octobre 2025** : Score actuel vs 95/100
+   - **Évolution vs dernier audit archivé** : score actuel vs score de l'audit précédent (citer le fichier)
 
    ## 🔴 Module 0 – Quick Wins (48h)
    - État des correctifs rapides
@@ -117,24 +117,10 @@ Délègue cette tâche à l'agent **cybersecurite** qui va générer un audit CO
 
 3. **Vérifications obligatoires** :
 
-   ### A. Vulnérabilités connues (octobre 2025)
-   Vérifier le statut de TOUTES les vulnérabilités de `docs/audits/security-audit-2025-10.md` :
-
-   **P1 (Important)** :
-   - [P1-1] Sentry sendDefaultPii → `apps/api/src/instrument.ts` (✅ corrigé)
-   - [P1-2] CSP unsafe-inline → `apps/api/src/index.ts` (✅ corrigé)
-   - [P1-3] Validation password → `apps/api/src/modules/auth/auth.controller.ts:14` (⚠️ à vérifier)
-
-   **P2 (Améliorations)** :
-   - [P2-1] SESSION_SECRET fallback → `apps/api/src/index.ts:154`
-   - [P2-2] console.log avec PII → 26 fichiers
-   - [P2-3] Referrer Policy → `apps/api/src/index.ts:60`
-   - [P2-4] Redis timeout → `apps/api/src/middleware/enhanced-rate-limit.ts:23`
-   - [P2-5] Rate limiting email → `apps/api/src/modules/auth/auth.controller.ts:163` (✅ corrigé)
-   - [P2-6] /security/health → `apps/api/src/index.ts:249`
-   - [P2-7] Timing attack tokens → `apps/api/src/modules/auth/auth.service.ts:129`
-   - [P2-8] GDPR export emails → `apps/api/src/services/gdpr-export.service.ts` (✅ corrigé)
-   - [P2-9] Query params logs → `apps/api/src/index.ts:305`
+   ### A. Vulnérabilités du dernier audit archivé
+   - Identifier le fichier le plus récent (`ls -t docs/audits/security-audit-*.md | head -1`) et le lire en entier.
+   - Lister TOUTES ses vulnérabilités P1/P2 telles qu'il les décrit.
+   - Vérifier le statut ACTUEL de chacune par lecture directe du fichier/zone de code concerné — ne jamais recopier l'ancien statut sans vérification, le code a évolué depuis.
 
    ### B. Scan automatique
    - `npm audit` (critical/high)
@@ -145,8 +131,8 @@ Délègue cette tâche à l'agent **cybersecurite** qui va générer un audit CO
    - Rate limiting profiles
    - Validation Zod coverage
 
-   ### C. Comparaison vs octobre 2025
-   - Score actuel vs 95/100
+   ### C. Comparaison vs dernier audit archivé
+   - Score actuel vs score de l'audit précédent (citer les deux fichiers/dates)
    - Nombre de vulnérabilités P0/P1/P2 (évolution)
    - Conformité RGPD (évolution)
    - Nouvelles vulnérabilités introduites
@@ -164,9 +150,9 @@ Délègue cette tâche à l'agent **cybersecurite** qui va générer un audit CO
    ```bash
    /audit diff
    ```
-   → Affiche UNIQUEMENT les changements vs octobre 2025 :
-   - ✅ Vulnérabilités résolues (P1-1, P1-2, P2-5, P2-8)
-   - ⚠️ Vulnérabilités persistantes (P1-3, P2-1 à P2-9)
+   → Affiche UNIQUEMENT les changements vs le dernier audit archivé :
+   - ✅ Vulnérabilités résolues
+   - ⚠️ Vulnérabilités persistantes
    - 🆕 Nouvelles vulnérabilités détectées
    - 📊 Évolution du score
 
@@ -186,65 +172,38 @@ Délègue cette tâche à l'agent **cybersecurite** qui va générer un audit CO
 
 ## 📊 Sortie attendue
 
-### Format console (mode standard)
+Le format ci-dessous illustre la structure attendue — les scores et vulnérabilités sont des exemples, jamais des valeurs à réutiliser telles quelles :
+
 ```markdown
-# Audit Sécurité Blobinfini - 2025-11-09
+# Audit Sécurité Blob - [date du jour]
 
 ## 🎯 Résumé Exécutif
-- **Niveau de risque global** : MOYEN
-- **Vulnérabilités** : 0 P0, 1 P1, 7 P2
-- **Conformité RGPD** : 92/100 (+2 vs oct. 2025)
-- **npm audit** : 0 critical/high ✅
-- **Évolution** : Score actuel 8.5/10 (vs 95/100 oct. 2025)
+- **Niveau de risque global** : [à déterminer par le scan]
+- **Vulnérabilités** : [X] P0, [Y] P1, [Z] P2
+- **Conformité RGPD** : [X]/100
+- **npm audit** : [résultat réel de la commande]
+- **Évolution** : score actuel vs score du dernier audit archivé (citer le fichier)
 
-## 📈 Évolution vs Octobre 2025
+## 📈 Évolution vs dernier audit archivé
 
-### ✅ Vulnérabilités résolues (4)
-- [P1-1] ✅ Sentry sendDefaultPii - `apps/api/src/instrument.ts` (corrigé)
-- [P1-2] ✅ CSP unsafe-inline - `apps/api/src/index.ts` (corrigé)
-- [P2-5] ✅ Rate limiting email - `auth.controller.ts:163` (corrigé)
-- [P2-8] ✅ GDPR export emails - `gdpr-export.service.ts` (corrigé)
+### ✅ Vulnérabilités résolues
+[Lister celles du dernier audit dont le statut actuel est corrigé, avec preuve fichier:ligne]
 
-### ⚠️ Vulnérabilités persistantes (8)
-- [P1-3] ⚠️ Validation password - TOUJOURS PRÉSENT
-- [P2-1 à P2-4, P2-6, P2-7, P2-9] - À traiter
+### ⚠️ Vulnérabilités persistantes
+[Lister celles encore présentes, avec preuve fichier:ligne]
 
-### 🆕 Nouvelles vulnérabilités (0)
-Aucune nouvelle vulnérabilité détectée ✅
+### 🆕 Nouvelles vulnérabilités
+[Lister les vulnérabilités non présentes dans le dernier audit]
 
 [... suite du rapport complet ...]
-```
-
-### Format diff (mode diff)
-```markdown
-# Audit Diff - 2025-11-09 vs 2025-10-26
-
-## Résumé
-- **Améliorations** : +4 vulnérabilités résolues
-- **Dégradations** : 0 nouvelles vulnérabilités
-- **Score** : 8.5/10 (vs 7.0/10, +1.5) 📈
-
-## ✅ Résolutions
-[P1-1] Sentry sendDefaultPii → Corrigé dans `instrument.ts`
-[P1-2] CSP unsafe-inline → Corrigé avec nonces dynamiques
-...
-
-## ⚠️ Toujours présents
-[P1-3] Validation password → BLOCKER avant production
-...
-
-## 📊 Recommandations
-1. Corriger [P1-3] IMMÉDIATEMENT (blocker prod)
-2. Traiter P2-1 à P2-4 (semaine 1)
-3. Objectif : 9.5/10 avant production
 ```
 
 ## Exemples d'utilisation
 
 ```bash
-/audit              # Audit complet (format octobre 2025)
-/audit diff         # Comparaison vs octobre 2025 (delta uniquement)
-/audit save         # Sauvegarder dans docs/audits/security-audit-2025-11-09.md
+/audit              # Audit complet
+/audit diff         # Comparaison vs dernier audit archivé (delta uniquement)
+/audit save         # Sauvegarder dans docs/audits/security-audit-YYYY-MM-DD.md
 /audit quick        # P0/P1 uniquement pour validation rapide
 ```
 
@@ -255,35 +214,24 @@ Aucune nouvelle vulnérabilité détectée ✅
 ```
 Task tool:
 - subagent_type: cybersecurite
-- description: Audit de sécurité complet Blobinfini
-- prompt: "Génère un audit de sécurité complet au format octobre 2025.
+- description: Audit de sécurité complet Blob
+- prompt: "Génère un audit de sécurité complet.
 
 **MODE** : $ARGUMENTS (standard/diff/save/quick)
 
-**DOCUMENTS DE RÉFÉRENCE OBLIGATOIRES** :
-1. `docs/audits/security-audit-2025-10.md` - Template + vulnérabilités connues
-2. `ROADMAP.md` (lignes 50-219) - État actuel sécurité
+**DOCUMENTS DE RÉFÉRENCE OBLIGATOIRES** (à lire, jamais à supposer) :
+1. Le fichier le plus récent parmi `docs/audits/security-audit-*.md` (l'identifier d'abord avec `ls -t`, puis le lire en entier) — template + vulnérabilités connues.
+2. `ROADMAP.md` — sections "Chantiers P0"/"Chantiers P1"/"Chantiers P2" actuelles (titres à retrouver via `grep -n '^##' ROADMAP.md`, ne jamais citer de numéro de ligne figé).
 3. Checklists : `/ai/checklists/securite_auth.md`, `/ai/checklists/rgpd.md`
 
 **ÉTAPES OBLIGATOIRES** :
 
-1. **Lire l'audit de référence** (`docs/audits/security-audit-2025-10.md`)
-   - Comprendre la structure (sections, format)
-   - Lister TOUTES les vulnérabilités (P1-1 à P2-9)
+1. **Identifier et lire l'audit de référence** (le plus récent dans `docs/audits/`)
+   - Comprendre sa structure (sections, format)
+   - Lister TOUTES ses vulnérabilités P1/P2
 
-2. **Vérifier le statut de CHAQUE vulnérabilité connue** :
-   - [P1-1] Sentry → Lire `apps/api/src/instrument.ts` ligne ~15-65
-   - [P1-2] CSP → Lire `apps/api/src/index.ts` ligne ~60-80
-   - [P1-3] Password → Lire `apps/api/src/modules/auth/auth.controller.ts` ligne ~14
-   - [P2-1] SESSION_SECRET → Lire `apps/api/src/index.ts` ligne ~154
-   - [P2-2] console.log → Grep 'console\\.log' dans apps/api/src/
-   - [P2-3] referrerPolicy → Lire `apps/api/src/index.ts` ligne ~60
-   - [P2-4] Redis timeout → Lire `apps/api/src/middleware/enhanced-rate-limit.ts` ligne ~23
-   - [P2-5] Rate limiting email → Lire `apps/api/src/modules/auth/auth.controller.ts` ligne ~163
-   - [P2-6] /security/health → Lire `apps/api/src/index.ts` ligne ~249
-   - [P2-7] Timing attack → Lire `apps/api/src/modules/auth/auth.service.ts` ligne ~129
-   - [P2-8] GDPR export → Lire `apps/api/src/services/gdpr-export.service.ts`
-   - [P2-9] Query params → Lire `apps/api/src/index.ts` ligne ~305
+2. **Vérifier le statut ACTUEL de CHAQUE vulnérabilité connue** :
+   - Pour chacune, relire le fichier/zone de code qu'elle cite et confirmer si elle est corrigée, persistante, ou si la zone a été refactorée entre-temps (le cas échéant, le signaler comme INCONNU plutôt que de deviner)
 
 3. **Scanner pour nouvelles vulnérabilités** :
    - `npm audit` (bash)
@@ -295,13 +243,11 @@ Task tool:
 
    **Si MODE = standard** :
    - Rapport complet avec TOUTES les sections
-   - Format identique à octobre 2025
    - Inclure : résumé, P0/P1/P2, points positifs, conformité, roadmap, métriques
 
    **Si MODE = diff** :
-   - UNIQUEMENT les différences vs octobre 2025
+   - UNIQUEMENT les différences vs le dernier audit archivé
    - Format concis : Résolutions / Persistants / Nouveaux / Score
-   - Pas de sections complètes, juste le delta
 
    **Si MODE = save** :
    - Générer le rapport complet (mode standard)
@@ -311,20 +257,19 @@ Task tool:
    **Si MODE = quick** :
    - P0/P1 UNIQUEMENT (pas de P2)
    - Format résumé pour validation rapide
-   - Sections : Résumé exécutif + P0 + P1 + Actions prioritaires
 
 **SORTIE OBLIGATOIRE** :
 
 Pour TOUS les modes :
 - 📊 Score actuel /10
-- 📈 Évolution vs octobre 2025
+- 📈 Évolution vs dernier audit archivé (fichier + date cités)
 - 🚨 Nombre de P0/P1/P2 (actuels)
-- ✅ Nombre de vulnérabilités résolues depuis octobre
+- ✅ Nombre de vulnérabilités résolues depuis le dernier audit
 - ⚠️ Vulnérabilités persistantes (liste)
 - 🆕 Nouvelles vulnérabilités (liste)
 
 Mode standard/save :
-- Rapport complet format octobre 2025 (toutes sections)
+- Rapport complet (toutes sections)
 - Code de correction pour CHAQUE vulnérabilité
 - Roadmap de sécurisation en 6 phases
 
@@ -337,8 +282,8 @@ Mode quick :
 - Actions immédiates (Jour 1)
 
 **EXIGENCE CRITIQUE** :
-- TOUTES les 12 vulnérabilités connues (P1-1 à P2-9) doivent être vérifiées
-- Localisation EXACTE de chaque vulnérabilité (fichier:ligne)
+- Chaque vulnérabilité du dernier audit doit être re-vérifiée par lecture directe, jamais recopiée telle quelle
+- Localisation EXACTE de chaque vulnérabilité (fichier:ligne), vérifiée à l'instant T
 - Code de correction pour CHAQUE problème
-- Score /10 calculé objectivement"
+- Score /10 calculé objectivement, avec sa justification"
 ```

@@ -1,4 +1,4 @@
-# 🏄 Guide IA – Blobinfini (nom interne) / BlobConnect (nom visible)
+# 🏄 Guide IA – Blob (nom visible) / Blobinfini, BlobConnect (legacy technique)
 
 Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement du monorepo. À lire avant chaque session de code.
 
@@ -11,18 +11,19 @@ Ce fichier guide nos IA (Codex, ChatGPT-5, Claude Code) dans le développement d
 
 ---
 
-## 🏷️ Naming produit (IMPORTANT)
+## 🏷️ Naming produit (IMPORTANT — source de vérité : `ROADMAP.md`)
 
-- **BlobConnect** = nom **visible utilisateurs** (UI, emails, pages publiques, wording marketing).
-- **Blobinfini** = nom **interne/tech** (repo, namespaces, packages) tant qu’aucune décision de renommage globale n’est actée.
+- **Blob** = nom **visible utilisateurs** (UI, emails, pages publiques, wording marketing). `blobsurf.com` est le domaine public actuel.
+- **BlobConnect** = ancien nom produit, désormais **legacy/historique uniquement** — ne plus utiliser en wording visible.
+- **Blobinfini** = nom **interne/tech legacy** (repo, namespaces, packages, buckets) tant qu’aucune décision de renommage globale n’est actée.
 - Ne pas “renommer en masse” (variables, packages, env, Sentry, Firebase, URLs) sans ticket/validation : risque casse SEO, config, observabilité, clés, routes.
-- Dans les textes UI, toujours afficher **BlobConnect** (ex : titres, meta, emails, onboarding).
+- Dans les textes UI, toujours afficher **Blob** (ex : titres, meta, emails, onboarding).
 
 ---
 
 ## 📌 Contexte Projet
 
-**BlobConnect** (user-facing) / **Blobinfini** (interne) = plateforme communautaire de mise en relation pour sports de glisse (surf/kitesurf).
+**Blob** (user-facing) / **Blobinfini, BlobConnect** (legacy interne) = plateforme communautaire de mise en relation pour sports de glisse (surf/kitesurf).
 
 ### Fonctionnalités clés
 
@@ -94,7 +95,7 @@ Toute proposition réintroduisant les éléments suivants est **hors scope MVP**
 - Commission, escrow ou facturation automatique
 - Synchronisation calendrier externe (Google Calendar, Apple Calendar)
 
-**BlobConnect MVP = mise en relation locale. L’organisation du cours se fait hors plateforme.**
+**Blob MVP = mise en relation locale. L’organisation du cours se fait hors plateforme.**
 
 Procédure obligatoire si une telle demande est reçue :
 1. Signaler explicitement que c’est hors scope MVP.
@@ -340,7 +341,7 @@ npm run db:studio
 
 ---
 
-## 🎨 Règles UI BlobConnect (user-facing)
+## 🎨 Règles UI Blob (user-facing)
 
 - **Design system** : Tailwind + Shadcn, composants dans `apps/web/components/ui/*`. Pas de `<div>` ou `<button>` custom pour recréer ces patterns.
   - ⚠️ **Pas de package `packages/ui` pour le MVP** : tous les composants restent dans `apps/web/components/ui/*` tant qu'il n'y a pas de deuxième frontend (admin séparé, mobile app).
@@ -564,7 +565,7 @@ modules/auth/
 
 ### Mission
 
-- Renforcer la visibilité de BlobConnect (SEO + réseaux sociaux) via un hub éditorial riche.
+- Renforcer la visibilité de Blob (SEO + réseaux sociaux) via un hub éditorial riche.
 - Relier les univers Riders et Pros à un espace de contenus utiles/inspirants.
 - Permettre aux admins de publier, programmer et modérer les contenus.
 
@@ -834,7 +835,7 @@ Les IA peuvent :
 
 ## 🤖 Pour Claude/LLMs (règles d’exécution)
 
-Quand tu génères du code pour BlobConnect / Blobinfini :
+Quand tu génères du code pour Blob (Blobinfini / BlobConnect en interne/legacy) :
 
 1. Reste dans ce repo : ne fais référence qu'au code présent ici.
 2. Utilise les MCP : Sentry/GitHub/Playwright/Context7/DevTools quand utile.

@@ -71,7 +71,7 @@ Si une consigne est ambiguë, escalader vers l’humain; ne faites jamais d’hy
 ## ✅ Tests & Qualité
 - **Frontend web** : Jest + React Testing Library (`apps/web/jest.config.js`). Mettre les tests dans `__tests__` avec suffixe `.test.tsx`.
 - **API / Services** : Jest côté `@blobinfini/api`. Utiliser `__tests__` dans `apps/api` et isoler les dépendances (Redis, Prisma) via mocks.
-- **E2E** : Playwright (`npm run test:e2e`) si modif touchant les flux critiques (paiement, matching complet).
+- **E2E** : Playwright (`npm run test:e2e`) si modif touchant les flux critiques (auth, matching complet, mise en relation/messagerie).
 - **Vérification responsive** : pour chaque page modifiée, contrôler manuellement ou via tests/inspection les largeurs 360px, 390px/430px, 768px et 1280px. Vérifier au minimum header/navigation, CTA, formulaires, cards, dashboards, messages d’erreur, modales éventuelles et footer.
 - **Blocage mobile** : si une page n’est pas acceptable sur mobile, ne pas la considérer terminée.
 - **Flaky** : ne pas masquer un test rouge sans accord explicit. Marquer TODO ou ouvrir un ticket dans `ROADMAP.md`.
@@ -79,7 +79,7 @@ Si une consigne est ambiguë, escalader vers l’humain; ne faites jamais d’hy
 ## 🔒 Sécurité & RGPD (rappel rapide)
 - Validation **Zod** pour toute entrée API.
 - Jamais de données perso en clair dans les logs/tests.
-- Respecter la “commission protégée” : filtrage des contacts directs (SMS, mails) dans la messagerie.
+- Pas de paiement intégré, pas de commission : voir la règle anti-réintroduction scope produit dans `claude.md`/`CLAUDE.md`.
 - Vérifier `claude.md` pour les décisions RGPD/anti-contournement.
 
 ## 📊 Alignement stratégie / roadmap
