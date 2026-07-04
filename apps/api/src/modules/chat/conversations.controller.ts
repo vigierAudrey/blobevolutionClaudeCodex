@@ -422,6 +422,32 @@ const conversationInvitationRespondLimiter = createLazyCustomRateLimiter(
   'conversation_invitation_respond',
 );
 
+// Lectures annexes d'une conversation (membres, invitations en attente,
+// recherche d'utilisateurs). Sans limiter dédié, ces GET tombaient dans le
+// bucket IP global MESSAGING (10 req/min) : ouvrir 2-3 conversations dans la
+// minute suffisait à déclencher un 429 et à afficher « Membres (0) » en
+// navigation normale. Budget par utilisateur, borné, headers standards.
+const conversationReadLimiter = createLazyCustomRateLimiter(
+  {
+    windowMs: 60_000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => {
+      const userId = (req as Request & { user?: { id?: string } }).user?.id;
+      if (userId) return `conversation_read:user:${userId}`;
+      const canonicalIp = (req as Request & { canonicalIp?: string }).canonicalIp ?? getClientIp(req) ?? req.socket?.remoteAddress ?? '';
+      return `conversation_read:ip:${ipKeyGenerator(canonicalIp)}`;
+    },
+    handler: buildEnvelopeAwareRateLimitHandler(
+      'Trop de requêtes de lecture en peu de temps. Réessaie dans quelques instants.',
+      'CONVERSATION_READ_RATE_LIMITED',
+      'CONVERSATION_READ_RATE_LIMIT',
+    ),
+  },
+  'conversation_read',
+);
+
 // List conversations with last message + unread count (excludes trashed by default)
 // Polling rate limit applied first — avoids requireVerifiedEmail DB lookup on 429.
 conversationsRouter.get('/', pollingRateLimit, conversationsListLimiter, async (req, res) => {
@@ -1238,7 +1264,7 @@ conversationsRouter.post('/open', openConversationLimiter, async (req, res) => {
 });
 
 // Get conversation members with their details
-conversationsRouter.get('/:id/members', async (req, res) => {
+conversationsRouter.get('/:id/members', conversationReadLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -1310,7 +1336,7 @@ conversationsRouter.get('/:id/members', async (req, res) => {
 });
 
 // Search users by display name or business name
-conversationsRouter.get('/users/search', async (req, res) => {
+conversationsRouter.get('/users/search', conversationReadLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -1533,7 +1559,7 @@ conversationsRouter.post('/:id/members', conversationInvitationSendLimiter, asyn
 });
 
 // Get pending invitations for the current user
-conversationsRouter.get('/invitations/pending', async (req, res) => {
+conversationsRouter.get('/invitations/pending', conversationReadLimiter, async (req, res) => {
   try {
     const userId = (req as any).user?.id as string | undefined;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
