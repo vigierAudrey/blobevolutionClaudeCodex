@@ -591,6 +591,17 @@ export function smartRateLimit(req: Request, res: Response, next: NextFunction) 
   if (isConversationMessagesRoute && ['GET', 'POST'].includes(method)) {
     return next();
   }
+  // Lectures annexes de conversation : limiter dédié par utilisateur
+  // (conversationReadLimiter) — le bucket IP MESSAGING (10/min) déclenchait
+  // des 429 en navigation normale (« Membres (0) » à l'ouverture d'une conv).
+  const isConversationReadRoute =
+    method === 'GET' &&
+    (/^\/conversations\/[^/]+\/members$/.test(path) ||
+      path === '/conversations/invitations/pending' ||
+      path === '/conversations/users/search');
+  if (isConversationReadRoute) {
+    return next();
+  }
 
   // Determine appropriate rate limiter based on path and method
   let limiter;
