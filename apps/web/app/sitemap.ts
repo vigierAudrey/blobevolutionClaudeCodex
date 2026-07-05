@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { loadBlobosphereSitemapEntries } from '@/lib/blobosphere/loadBlobosphereSitemapEntries';
+import { loadPublicProSlugs } from '@/lib/pros/loadPublicProProfile';
 
 function normalizeSiteUrl(value: string): string {
   const parsed = new URL(value.trim());
@@ -23,6 +24,10 @@ function getBlobosphereArticleUrl(siteUrl: string, slug: string): string {
   return `${siteUrl}/blobosphere/${encodeURIComponent(slug)}`;
 }
 
+function getProProfileUrl(siteUrl: string, slug: string): string {
+  return `${siteUrl}/pros/${encodeURIComponent(slug)}`;
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = getSiteUrl();
   const articles = (await loadBlobosphereSitemapEntries()).sort((a, b) => {
@@ -31,6 +36,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     return a.slug.localeCompare(b.slug);
   });
   const blobosphereLastModified = articles[0]?.lastModified;
+  // Fail-open : une API indisponible renvoie [] (cf. loadPublicProSlugs), le
+  // sitemap sort quand même avec la blobosphère seule.
+  const proSlugs = await loadPublicProSlugs();
 
   return [
     {
@@ -40,6 +48,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...articles.map((article) => ({
       url: getBlobosphereArticleUrl(siteUrl, article.slug),
       lastModified: article.lastModified,
+    })),
+    ...proSlugs.map((entry) => ({
+      url: getProProfileUrl(siteUrl, entry.slug),
+      lastModified: entry.updatedAt,
     })),
   ];
 }

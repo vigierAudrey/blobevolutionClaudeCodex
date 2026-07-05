@@ -11,8 +11,14 @@ jest.mock('@/lib/blobosphere/fs', () => ({
   listMdxFiles: jest.fn(),
 }));
 
+jest.mock('@/lib/pros/loadPublicProProfile', () => ({
+  loadPublicProSlugs: jest.fn(),
+}));
+
 const mockReadFile = fs.readFile as jest.MockedFunction<typeof fs.readFile>;
 const mockListMdxFiles = listMdxFiles as jest.MockedFunction<typeof listMdxFiles>;
+const mockLoadPublicProSlugs = jest.requireMock('@/lib/pros/loadPublicProProfile')
+  .loadPublicProSlugs as jest.Mock;
 
 let sitemap: () => Promise<Array<{ url: string; lastModified?: string | Date }>>;
 
@@ -28,6 +34,7 @@ describe('app sitemap', () => {
     jest.clearAllMocks();
     process.env.SITE_URL = 'https://blobsurf.com';
     delete process.env.NEXT_PUBLIC_SITE_URL;
+    mockLoadPublicProSlugs.mockResolvedValue([]);
     mockListMdxFiles.mockResolvedValue([
       '/repo/apps/web/content/blobosphere/surf/article-z.mdx',
       '/repo/apps/web/content/blobosphere/surf/article-a.mdx',
@@ -165,5 +172,26 @@ Publie`;
     expect(urls).not.toContain('https://blobsurf.com/blobosphere/article-review');
     expect(urls).not.toContain('https://blobsurf.com/blobosphere/article-archived');
     expect(urls).not.toContain('https://blobsurf.com/blobosphere/article-futur');
+  });
+
+  it('includes published pro profile slugs', async () => {
+    mockLoadPublicProSlugs.mockResolvedValue([
+      { slug: 'blob-surf-school', updatedAt: '2026-02-01T00:00:00.000Z' },
+    ]);
+
+    const result = await sitemap();
+    const entry = result.find((e) => e.url === 'https://blobsurf.com/pros/blob-surf-school');
+
+    expect(entry).toBeDefined();
+    expect(entry?.lastModified).toBe('2026-02-01T00:00:00.000Z');
+  });
+
+  it('fails open (omits pro URLs) when loadPublicProSlugs returns []', async () => {
+    mockLoadPublicProSlugs.mockResolvedValue([]);
+
+    const result = await sitemap();
+    const urls = result.map((e) => e.url);
+
+    expect(urls.some((url) => url.includes('/pros/'))).toBe(false);
   });
 });
