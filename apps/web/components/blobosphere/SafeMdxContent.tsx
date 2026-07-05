@@ -70,7 +70,7 @@ function renderInline(text: string): React.ReactNode[] {
           <a
             key={`inline-${key++}`}
             href={href}
-            className="font-medium text-sky-700 underline underline-offset-2 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
+            className="font-bold text-blob-black underline decoration-blob-yellow decoration-2 underline-offset-4 hover:text-blob-yellow-dark dark:text-white dark:hover:text-blob-yellow"
             target={external ? '_blank' : undefined}
             rel={external ? 'noreferrer' : undefined}
           >
@@ -86,7 +86,7 @@ function renderInline(text: string): React.ReactNode[] {
       nodes.push(<em key={`inline-${key++}`}>{token.match[1]}</em>);
     } else {
       nodes.push(
-        <code key={`inline-${key++}`} className="rounded bg-slate-100 px-1 py-0.5 text-[0.9em] dark:bg-slate-800">
+        <code key={`inline-${key++}`} className="rounded-sm border border-blob-sand-deep bg-blob-sand px-1 py-0.5 text-[0.9em] dark:border-white/10 dark:bg-white/10">
           {token.match[1]}
         </code>,
       );
@@ -189,20 +189,20 @@ export function SafeMdxContent({ content, articleSlug }: SafeMdxContentProps) {
   const blocks = parseBlocks(content);
 
   return (
-    <div className="space-y-5 text-base leading-7 text-slate-800 dark:text-slate-200" data-article={articleSlug}>
+    <div className="space-y-5 text-base leading-7 text-blob-black/82 dark:text-white/82" data-article={articleSlug}>
       {blocks.map((block, index) => {
         if (block.type === 'heading') {
           const className = block.depth === 1 ? 'text-3xl' : block.depth === 2 ? 'text-2xl' : 'text-xl';
           const HeadingTag = `h${block.depth}` as 'h1' | 'h2' | 'h3';
           return (
-            <HeadingTag key={index} className={`${className} pt-3 font-semibold tracking-tight text-slate-950 dark:text-white`}>
+            <HeadingTag key={index} className={`${className} pt-3 font-black uppercase leading-tight text-blob-black dark:text-white`}>
               {renderInline(block.text)}
             </HeadingTag>
           );
         }
         if (block.type === 'blockquote') {
           return (
-            <blockquote key={index} className="border-l-4 border-sky-300 pl-4 text-slate-700 dark:border-sky-700 dark:text-slate-300">
+            <blockquote key={index} className="border-l-4 border-blob-yellow bg-blob-sand px-4 py-3 text-blob-black/78 dark:bg-white/8 dark:text-white/78">
               {renderInline(block.text)}
             </blockquote>
           );
@@ -219,7 +219,7 @@ export function SafeMdxContent({ content, articleSlug }: SafeMdxContentProps) {
         }
         if (block.type === 'code') {
           return (
-            <pre key={index} className="overflow-x-auto rounded-md border bg-slate-950 p-4 text-sm text-slate-100">
+            <pre key={index} className="overflow-x-auto rounded-sm border-2 border-blob-black bg-blob-black p-4 text-sm text-white">
               <code data-language={block.language ?? undefined}>{block.text}</code>
             </pre>
           );

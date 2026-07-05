@@ -5,10 +5,10 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { optimizedApiClient } from '../../../lib/optimizedApiClient';
-import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
-import { Button } from '../../../components/ui/button';
 import Link from 'next/link';
-import { Archive, ArchiveRestore, ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronLeft, ChevronRight, Inbox, MessageSquare } from 'lucide-react';
+import { BackBar } from '../../../components/BackBar';
+import { BlobBadge, BlobButton, BlobCard, BlobEmptyState, BlobMark } from '@/components/blob';
 
 type ContactRequestItem = {
   id:             string;
@@ -28,13 +28,21 @@ const STATUS_LABEL: Record<ContactRequestItem['status'], string> = {
   REJECTED: 'Refusée',
 };
 
-const STATUS_COLOR: Record<ContactRequestItem['status'], string> = {
-  PENDING:  'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
-  ACCEPTED: 'bg-green-100  text-green-800  dark:bg-green-900/30  dark:text-green-300',
-  REJECTED: 'bg-red-100    text-red-800    dark:bg-red-900/30    dark:text-red-300',
+const STATUS_VARIANT: Record<ContactRequestItem['status'], 'yellow' | 'success' | 'error'> = {
+  PENDING:  'yellow',
+  ACCEPTED: 'success',
+  REJECTED: 'error',
 };
 
 const PAGE_SIZE = 20;
+
+const tabButtonClass = (active: boolean) =>
+  [
+    'min-h-11 rounded-sm border-2 px-4 py-2 text-xs font-black uppercase tracking-widest transition-colors',
+    active
+      ? 'border-blob-black bg-blob-yellow text-blob-black'
+      : 'border-blob-black/20 bg-white text-blob-black/70 hover:border-blob-yellow hover:text-blob-black dark:border-white/20 dark:bg-white/5 dark:text-white/70 dark:hover:text-white',
+  ].join(' ');
 
 export default function ProContactRequestsPage() {
   const router = useRouter();
@@ -97,134 +105,129 @@ export default function ProContactRequestsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <Link href="/pro/dashboard" className="text-muted-foreground hover:text-foreground">
-            <ChevronLeft className="w-5 h-5" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold">Demandes de contact</h1>
-            <p className="text-sm text-muted-foreground">
+    <div className="mx-auto max-w-3xl space-y-6 px-4 pb-8">
+      <BackBar fallbackHref="/pro/dashboard" tone="blobDark" />
+
+      <BlobCard mode="yellowSignal">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+            <BlobMark size={26} decorative />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="break-words text-xl font-black uppercase tracking-widest text-blob-black">Demandes de contact</h1>
+              <BlobBadge variant="dark">Pro</BlobBadge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-blob-black/72">
               {total} demande{total !== 1 ? 's' : ''} {filter === 'active' ? 'actives' : filter === 'archived' ? 'archivées' : 'au total'}
             </p>
           </div>
         </div>
+      </BlobCard>
 
-        {/* Tabs */}
-        <div className="flex gap-1 border-b">
-          {tabs.map(tab => (
-            <button
-              key={tab.value}
-              onClick={() => handleFilterChange(tab.value)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                filter === tab.value
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab.label}
-            </button>
+      <div className="flex flex-wrap gap-2 border-b-2 border-blob-sand-deep pb-3 dark:border-white/10">
+        {tabs.map(tab => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => handleFilterChange(tab.value)}
+            className={tabButtonClass(filter === tab.value)}
+          >
+            {tab.label}
+            {typeof tab.count === 'number' ? ` (${tab.count})` : ''}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="space-y-3" aria-label="Chargement des demandes">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-24 animate-pulse rounded-sm border-2 border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5" />
           ))}
         </div>
-
-        {/* Liste */}
-        {loading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />
-            ))}
-          </div>
-        ) : items.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center gap-3 py-12 text-muted-foreground">
-              <Inbox className="w-10 h-10 opacity-40" />
-              <p className="text-sm">Aucune demande {filter === 'archived' ? 'archivée' : 'active'}</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {items.map(item => (
-              <Card key={item.id} className="transition-opacity">
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1">
-                      <CardTitle className="text-base">{item.riderName}</CardTitle>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{new Date(item.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                      </div>
-                    </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[item.status]}`}>
-                      {STATUS_LABEL[item.status]}
-                    </span>
+      ) : items.length === 0 ? (
+        <BlobEmptyState
+          title={`Aucune demande ${filter === 'archived' ? 'archivée' : 'active'}`}
+          description="Les nouvelles demandes visibles depuis la BloboMap apparaîtront ici."
+          action={<Inbox className="h-5 w-5 text-blob-black/50 dark:text-white/60" />}
+        />
+      ) : (
+        <div className="space-y-3">
+          {items.map(item => (
+            <BlobCard key={item.id} mode="white" className="motion-safe:hover:translate-y-0">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="break-words text-base font-black uppercase tracking-wide text-blob-black dark:text-white">{item.riderName}</h2>
+                    <BlobBadge variant={STATUS_VARIANT[item.status]}>{STATUS_LABEL[item.status]}</BlobBadge>
                   </div>
-                </CardHeader>
-                {item.message && (
-                  <CardContent className="pt-0 pb-2">
-                    <p className="text-sm text-muted-foreground line-clamp-2">{item.message}</p>
-                  </CardContent>
-                )}
-                <CardContent className="pt-0 flex justify-end gap-2">
-                  <Link href={`/pro/messages?conversationId=${item.conversationId}`}>
-                    <Button variant="ghost" size="sm" className="text-xs">Voir la conversation</Button>
-                  </Link>
+                  <p className="text-xs font-bold uppercase tracking-widest text-blob-black/50 dark:text-white/50">
+                    {new Date(item.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                  {item.message && (
+                    <p className="line-clamp-2 text-sm leading-6 text-blob-black/68 dark:text-white/64">{item.message}</p>
+                  )}
+                </div>
+                <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
+                  <BlobButton asChild variant="outlineDark" size="sm">
+                    <Link href={`/pro/messages?conversationId=${item.conversationId}`}>
+                      <MessageSquare className="h-4 w-4" />
+                      Conversation
+                    </Link>
+                  </BlobButton>
                   {item.archivedByPro ? (
-                    <Button
-                      variant="ghost"
+                    <BlobButton
+                      variant="outlineDark"
                       size="sm"
-                      className="text-xs gap-1"
                       disabled={archiving[item.id]}
                       onClick={() => handleUnarchive(item.id)}
                     >
-                      <ArchiveRestore className="w-3 h-3" />
+                      <ArchiveRestore className="h-4 w-4" />
                       Désarchiver
-                    </Button>
+                    </BlobButton>
                   ) : (
-                    <Button
-                      variant="ghost"
+                    <BlobButton
+                      variant="outlineDark"
                       size="sm"
-                      className="text-xs gap-1 text-muted-foreground"
                       disabled={archiving[item.id]}
                       onClick={() => handleArchive(item.id)}
                     >
-                      <Archive className="w-3 h-3" />
+                      <Archive className="h-4 w-4" />
                       Archiver
-                    </Button>
+                    </BlobButton>
                   )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+                </div>
+              </div>
+            </BlobCard>
+          ))}
+        </div>
+      )}
 
-        {/* Pagination */}
-        {pageCount > 1 && (
-          <div className="flex items-center justify-between pt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1 || loading}
-              onClick={() => setPage(p => p - 1)}
-            >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Précédent
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Page {page} / {pageCount}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= pageCount || loading}
-              onClick={() => setPage(p => p + 1)}
-            >
-              Suivant
-              <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-          </div>
-        )}
-      </div>
+      {pageCount > 1 && (
+        <div className="flex flex-col items-stretch gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+          <BlobButton
+            variant="outlineDark"
+            size="sm"
+            disabled={page <= 1 || loading}
+            onClick={() => setPage(p => p - 1)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Précédent
+          </BlobButton>
+          <span className="text-center text-sm font-bold text-blob-black/64 dark:text-white/60">
+            Page {page} / {pageCount}
+          </span>
+          <BlobButton
+            variant="outlineDark"
+            size="sm"
+            disabled={page >= pageCount || loading}
+            onClick={() => setPage(p => p + 1)}
+          >
+            Suivant
+            <ChevronRight className="h-4 w-4" />
+          </BlobButton>
+        </div>
+      )}
     </div>
   );
 }

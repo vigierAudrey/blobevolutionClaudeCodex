@@ -3,6 +3,17 @@ import { notFound } from 'next/navigation';
 import BlobosphereArticlePage, { generateMetadata } from '../page';
 import { loadPublishedBlobosphereArticleBySlug } from '@/lib/blobosphere/loadBlobosphereArticle';
 
+type MockImageProps = React.ImgHTMLAttributes<HTMLImageElement> & {
+  fill?: boolean;
+  priority?: boolean;
+  sizes?: string;
+};
+
+jest.mock('next/image', () => ({
+  __esModule: true,
+  default: ({ alt = '', fill: _fill, priority: _priority, sizes: _sizes, ...props }: MockImageProps) => <img alt={alt} {...props} />,
+}));
+
 jest.mock('next/navigation', () => ({
   notFound: jest.fn(() => {
     throw new Error('NEXT_NOT_FOUND');

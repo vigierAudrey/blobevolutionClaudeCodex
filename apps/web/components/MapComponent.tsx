@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
+import { LeafletProvider, createLeafletContext, type LeafletContextInterface } from '@react-leaflet/core';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -46,6 +47,49 @@ type MapComponentProps = {
   radiusKm?: number;
 };
 
+type SafeMapContainerProps = {
+  center: [number, number];
+  zoom: number;
+  style: CSSProperties;
+  children: ReactNode;
+} & L.MapOptions;
+
+function SafeMapContainer({
+  center,
+  zoom,
+  style,
+  children,
+  ...options
+}: SafeMapContainerProps) {
+  const mapRef = useRef<L.Map | null>(null);
+  const [context, setContext] = useState<LeafletContextInterface | null>(null);
+
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    if (node === null || mapRef.current) return;
+
+    const map = L.map(node, options);
+    mapRef.current = map;
+    map.setView(center, zoom);
+    setContext(createLeafletContext(map));
+    // Map options are intentionally captured only for the initial Leaflet instance.
+    // Subsequent center/zoom/bounds changes are handled by MapViewUpdater.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  return (
+    <div ref={containerRef} style={style}>
+      {context ? <LeafletProvider value={context}>{children}</LeafletProvider> : null}
+    </div>
+  );
+}
+
 export default function MapComponent({
   center,
   items,
@@ -57,8 +101,13 @@ export default function MapComponent({
   radiusKm,
 }: MapComponentProps) {
   const [legendOpen, setLegendOpen] = useState(false);
+  const [mapReadyToMount, setMapReadyToMount] = useState(false);
   const legendRef = useRef<HTMLDivElement | null>(null);
   const legendButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    setMapReadyToMount(true);
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !document.querySelector('style[data-leaflet-mobile]')) {
@@ -129,6 +178,11 @@ export default function MapComponent({
     if (radiusKm <= 70) return 9;
     return 8;
   }, [radiusKm]);
+
+  const mapInstanceKey = useMemo(
+    () => `${center[0].toFixed(5)}:${center[1].toFixed(5)}:${radiusKm ?? 'auto'}`,
+    [center, radiusKm],
+  );
 
   const markerIcons = useMemo(() => {
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
@@ -267,7 +321,9 @@ export default function MapComponent({
         </div>
       )}
 
-      <MapContainer
+      {mapReadyToMount ? (
+      <SafeMapContainer
+        key={mapInstanceKey}
         center={center}
         zoom={zoom}
         style={mapStyle}
@@ -390,7 +446,15 @@ export default function MapComponent({
             </Marker>
           );
         })}
-      </MapContainer>
+      </SafeMapContainer>
+      ) : (
+        <div
+          className="flex items-center justify-center rounded-sm border-2 border-blob-sand-deep bg-blob-sand text-sm font-bold text-blob-black/64 dark:border-white/10 dark:bg-white/5 dark:text-white/60"
+          style={mapStyle}
+        >
+          Chargement de la carte...
+        </div>
+      )}
     </div>
   );
 }

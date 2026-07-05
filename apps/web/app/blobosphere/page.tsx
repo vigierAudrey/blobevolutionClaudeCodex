@@ -1,12 +1,13 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import Image from 'next/image';
 import { BlobosphereArticleLink, BlobosphereSignupLink } from '@/components/blobosphere/BlobosphereAnalyticsLink';
+import { BlobBadge } from '@/components/blob/BlobBadge';
+import { BlobButton } from '@/components/blob/BlobButton';
+import { HomeFooter } from '@/components/home/HomeFooter';
+import { HomeHeader } from '@/components/home/HomeHeader';
 import { loadBlobospherePreviews, type BlobosphereArticlePreview } from '@/lib/blobosphere/loadBlobospherePreviews';
 import { cn } from '@/lib/utils';
-import { AlertCircle, BookOpen, Heart, Leaf, Sparkles, Users } from 'lucide-react';
+import { AlertCircle, ArrowRight, BookOpen, Heart, Leaf, Sparkles, Users } from 'lucide-react';
 import type { Metadata } from 'next';
-import { CommunitySpotlight } from '@/components/community/CommunitySpotlight';
 import { CommunityHighlight } from '@/components/community/CommunityHighlight';
 import Link from 'next/link';
 import { blobosphereTopics, type BlobosphereTopicSlug } from './static';
@@ -23,11 +24,10 @@ const topicIconsLucide: Record<BlobosphereTopicSlug | 'all', typeof Sparkles> = 
 };
 
 const topicFilters = [
-  { slug: 'all' as TopicFilterValue, label: 'Tous les sujets', icon: '✨', description: 'Vue globale des publications.' },
+  { slug: 'all' as TopicFilterValue, label: 'Tous les sujets', description: 'Vue globale des publications.' },
   ...blobosphereTopics.map((topic) => ({
     slug: topic.slug as TopicFilterValue,
     label: topic.label,
-    icon: topic.icon,
     description: topic.description,
   })),
 ] as const;
@@ -92,127 +92,134 @@ export default async function BlobospherePage({ searchParams }: BlobospherePageP
   };
 
   return (
-    <div className="pb-12 xl:grid xl:grid-cols-[220px,1fr,220px] xl:gap-6">
-      {/* Left community spotlight (desktop only) */}
-      <aside aria-label="Contenu communautaire" className="sticky top-20 hidden xl:block">
-        <CommunitySpotlight variant="partners" />
-      </aside>
-
-      <div className="space-y-14">
+    <div>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonLd(collectionJsonLd) }}
         suppressHydrationWarning
       />
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-blue-600 to-cyan-500 px-6 py-12 text-white shadow-xl sm:px-10 lg:py-16">
-        {/* Blur effects animés */}
-        <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-8 -left-8 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+      <HomeHeader />
 
-        <div className="relative z-10 space-y-8">
-          <div className="flex flex-wrap gap-3">
-            <Badge variant="secondary" className="bg-white/20 text-white hover:bg-white/30 border-0">Blobosphère</Badge>
-            <Badge variant="outline" className="border-white/40 bg-transparent text-white hover:bg-white/10">Surf · Kite</Badge>
-            <Badge variant="outline" className="border-white/40 bg-transparent text-white hover:bg-white/10">Équipement · Environnement · Santé</Badge>
-            <Badge variant="outline" className="border-white/40 bg-transparent text-white hover:bg-white/10">Sécurité</Badge>
-          </div>
+      <section className="-mx-4 bg-blob-black text-white sm:-mx-6 lg:-mx-8">
+        <div className="relative min-h-[560px] overflow-hidden sm:min-h-[620px] lg:min-h-[680px]">
+          <Image
+            src="/videos/hero-poster.webp"
+            alt=""
+            fill
+            priority
+            className="object-cover object-center"
+            sizes="100vw"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-blob-black/82 via-blob-black/36 to-blob-black/92" aria-hidden />
 
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-white/20 p-2.5 backdrop-blur-sm">
-              <Sparkles className="h-7 w-7" />
-            </div>
-            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-              Le guide pour t&apos;équiper, rider responsable et rester en forme
-            </h1>
-          </div>
+          <div className="relative z-10 flex min-h-[560px] flex-col justify-end px-4 pb-10 pt-28 sm:min-h-[620px] sm:px-8 sm:pb-14 lg:min-h-[680px] lg:px-14 xl:px-20">
+            <div className="max-w-4xl space-y-6">
+              <div className="flex flex-wrap gap-2">
+                <BlobBadge variant="yellow" brandMark>Blobosphère</BlobBadge>
+                <BlobBadge variant="outline">Surf & kite</BlobBadge>
+                <BlobBadge variant="outline">Sécurité</BlobBadge>
+                <BlobBadge variant="outline">Médoc Atlantique</BlobBadge>
+              </div>
 
-          <p className="text-lg text-white/90">
-            Des guides courts pour débuter autour du Médoc Atlantique, bien choisir ton matériel,
-            comprendre la sécurité et trouver des partenaires sans exposer les spots sensibles.
-          </p>
-
-          <div className="flex flex-wrap gap-4">
-            <Button asChild size="lg" className="bg-white text-sky-700 hover:bg-white/90 shadow-lg hover:shadow-xl transition-all border-0">
-              <BlobosphereSignupLink href="/register?intent=blobosphere">Créer un compte</BlobosphereSignupLink>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="border-2 border-white/40 bg-transparent text-white hover:bg-white/10">
-              <Link href="/login">Déjà membre ? Se connecter</Link>
-            </Button>
-            <Button asChild variant="ghost" size="lg" className="bg-transparent text-white hover:bg-white/10">
-              <Link href="/">← Retour à l&apos;accueil</Link>
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <section aria-labelledby="topics-title" className="space-y-8">
-        <div className="space-y-3">
-          <p className="text-sm font-semibold text-sky-700 dark:text-sky-400">Rubriques</p>
-          <h2 id="topics-title" className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-slate-100">
-            Choisis un thème
-          </h2>
-          <p className="text-base text-muted-foreground">
-            Commence par Équipement, Environnement ou Santé. Les interviews arrivent très vite.
-          </p>
-        </div>
-        <TopicCardList activeTopic={activeTopic} />
-        <TopicFilter activeTopic={activeTopic} />
-      </section>
-
-      <section aria-labelledby="articles-title" className="space-y-8">
-        <div className="space-y-3">
-          <p className="text-sm font-semibold text-sky-700 dark:text-sky-400">Articles</p>
-          <h2 id="articles-title" className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-slate-100">
-            Sélection {activeTopic === 'all' ? 'Blobosphère' : topicMap.get(activeTopic)?.label}
-          </h2>
-          <p className="text-base text-muted-foreground">
-            Les guides publiés sont tirés directement des fichiers MDX (`apps/web/content/blobosphere`). Les brouillons restent cachés tant qu&apos;ils ne sont pas publiés.
-          </p>
-        </div>
-        {filteredArticles.length === 0 ? (
-          <Card className="border-2 border-dashed border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20">
-            <CardContent className="py-10">
-              <div className="flex items-start justify-center gap-3">
-                <AlertCircle className="h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
-                <p className="text-base text-amber-700 dark:text-amber-300">
-                  Aucun article publié pour cette rubrique pour l&apos;instant. Sélectionne &quot;Tous les sujets&quot; ou publie un nouveau guide via l&apos;admin.
+              <div className="space-y-4">
+                <p className="font-display text-5xl leading-none text-blob-yellow sm:text-6xl">
+                  Guides Blob
+                </p>
+                <h1 className="max-w-3xl text-4xl font-black uppercase leading-[0.95] text-white sm:text-6xl lg:text-7xl">
+                  Blobosphère
+                </h1>
+                <p className="max-w-2xl text-base leading-7 text-white/78 sm:text-lg">
+                  Des guides courts pour choisir ton matériel, progresser avec prudence et rejoindre des riders sans exposer les spots sensibles.
                 </p>
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {filteredArticles.map((article) => {
-              const topic = topicMap.get(article.topic as BlobosphereTopicSlug);
-              return (
-                <ArticleCard
-                  key={article.slug}
-                  article={article}
-                  topicLabel={topic?.label ?? article.topic}
-                />
-              );
-            })}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <BlobButton asChild size="lg" variant="primaryYellow" className="w-full sm:w-auto">
+                  <BlobosphereSignupLink href="/register?intent=blobosphere">Créer un compte</BlobosphereSignupLink>
+                </BlobButton>
+                <BlobButton asChild size="lg" variant="outlineLight" className="w-full sm:w-auto">
+                  <Link href="/login">Se connecter</Link>
+                </BlobButton>
+                <BlobButton asChild size="lg" variant="outlineLight" className="w-full sm:w-auto">
+                  <Link href="/">Accueil</Link>
+                </BlobButton>
+              </div>
+            </div>
           </div>
-        )}
+        </div>
       </section>
 
-      {/* Mobile community highlight (hidden on large screens) */}
-      <div className="lg:hidden">
-        <CommunityHighlight context="blobosphere" className="my-4" />
-      </div>
-      </div>
+      <section aria-labelledby="topics-title" className="-mx-4 bg-blob-sand px-4 py-10 text-blob-black sm:-mx-6 sm:px-6 sm:py-14 lg:-mx-8 lg:px-10 xl:px-14">
+        <div className="mx-auto max-w-7xl space-y-8">
+          <div className="max-w-3xl space-y-3">
+            <div className="h-1 w-14 bg-blob-yellow" />
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blob-black/58">Rubriques</p>
+            <h2 id="topics-title" className="text-3xl font-black uppercase leading-tight text-blob-black sm:text-4xl">
+              Choisis un thème
+            </h2>
+            <p className="text-sm leading-6 text-blob-black/70 sm:text-base">
+              Matériel, environnement, santé, communauté : chaque rubrique reste claire, utile et pensée pour la session suivante.
+            </p>
+          </div>
+          <TopicCardList activeTopic={activeTopic} />
+          <TopicFilter activeTopic={activeTopic} />
+        </div>
+      </section>
 
-      {/* Right community spotlight (very large screens only) */}
-      <aside aria-label="Contenu communautaire" className="sticky top-20 hidden 2xl:block">
-        <CommunitySpotlight variant="community" />
-      </aside>
+      <section aria-labelledby="articles-title" className="-mx-4 bg-white px-4 py-10 text-blob-black sm:-mx-6 sm:px-6 sm:py-14 lg:-mx-8 lg:px-10 xl:px-14 dark:bg-[hsl(220_14%_12%)] dark:text-white">
+        <div className="mx-auto max-w-7xl space-y-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-3xl space-y-3">
+              <div className="h-1 w-14 bg-blob-yellow" />
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blob-black/58 dark:text-white/55">Articles</p>
+              <h2 id="articles-title" className="text-3xl font-black uppercase leading-tight text-blob-black sm:text-4xl dark:text-white">
+                {activeTopic === 'all' ? 'Sélection Blobosphère' : topicMap.get(activeTopic)?.label}
+              </h2>
+              <p className="text-sm leading-6 text-blob-black/70 sm:text-base dark:text-white/68">
+                Des lectures rapides pour préparer une sortie, choisir un cap et garder la communauté au centre.
+              </p>
+            </div>
+            <BlobButton asChild variant="outlineDark" size="sm">
+              <Link href="/register?intent=matching">Trouver un binôme</Link>
+            </BlobButton>
+          </div>
+
+          {filteredArticles.length === 0 ? (
+            <div className="rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 p-5 text-blob-black">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                <p className="text-sm font-medium leading-6">
+                  Aucun article publié pour cette rubrique pour l&apos;instant. Reviens aux autres sujets ou explore le matching Blob.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filteredArticles.map((article) => {
+                const topic = topicMap.get(article.topic as BlobosphereTopicSlug);
+                return (
+                  <ArticleCard
+                    key={article.slug}
+                    article={article}
+                    topicLabel={topic?.label ?? article.topic}
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          <CommunityHighlight context="blobosphere" />
+        </div>
+      </section>
+
+      <HomeFooter />
     </div>
   );
 }
 
 function TopicFilter({ activeTopic }: { activeTopic: TopicFilterValue }) {
   return (
-    <div className="flex flex-wrap gap-3">
+    <div className="flex flex-wrap gap-2">
       {topicFilters.map((topic) => {
         const href = topic.slug === 'all' ? '/blobosphere' : `/blobosphere?topic=${topic.slug}`;
         const isActive = topic.slug === activeTopic;
@@ -222,10 +229,10 @@ function TopicFilter({ activeTopic }: { activeTopic: TopicFilterValue }) {
             key={topic.slug}
             href={href}
             className={cn(
-              'inline-flex items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition-all duration-200 hover:shadow-md',
+              'inline-flex min-h-11 items-center gap-2 rounded-sm border-2 px-4 py-2 text-xs font-black uppercase tracking-widest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow',
               isActive
-                ? 'border-sky-600 bg-sky-600 text-white shadow-md'
-                : 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-sky-500 dark:hover:bg-sky-950',
+                ? 'border-blob-black bg-blob-yellow text-blob-black'
+                : 'border-blob-black/30 bg-white text-blob-black hover:border-blob-black dark:border-white/25 dark:bg-white/8 dark:text-white dark:hover:border-white',
             )}
             aria-current={isActive ? 'true' : undefined}
           >
@@ -240,7 +247,7 @@ function TopicFilter({ activeTopic }: { activeTopic: TopicFilterValue }) {
 
 function TopicCardList({ activeTopic }: { activeTopic: TopicFilterValue }) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
       {blobosphereTopics.map((topic) => {
         const href = `/blobosphere?topic=${topic.slug}`;
         const isActive = topic.slug === activeTopic;
@@ -250,26 +257,26 @@ function TopicCardList({ activeTopic }: { activeTopic: TopicFilterValue }) {
             key={topic.slug}
             href={href}
             className={cn(
-              'group rounded-2xl border-2 p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg',
+              'group min-h-36 rounded-sm border-2 p-5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow motion-safe:hover:-translate-y-1',
               isActive
-                ? 'border-sky-500 bg-sky-50 dark:border-sky-400 dark:bg-sky-900/20'
-                : 'border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-sky-500 dark:hover:bg-sky-950/30',
+                ? 'border-blob-black bg-blob-yellow text-blob-black'
+                : 'border-blob-sand-deep bg-white text-blob-black hover:border-blob-yellow dark:border-white/10 dark:bg-white/8 dark:text-white dark:hover:border-blob-yellow',
             )}
             aria-current={isActive ? 'true' : undefined}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <div className="rounded-lg bg-sky-100 p-1.5 dark:bg-sky-900/30">
-                    <IconComponent className="h-4 w-4 text-sky-700 dark:text-sky-300" />
+                  <div className={cn('rounded-sm border-2 p-1.5', isActive ? 'border-blob-black bg-blob-black text-white' : 'border-blob-black bg-blob-yellow text-blob-black')}>
+                    <IconComponent className="h-4 w-4" />
                   </div>
-                  <p className="text-sm font-semibold text-sky-700 dark:text-sky-300">
+                  <p className="text-sm font-black uppercase tracking-wide">
                     {topic.label}
                   </p>
                 </div>
-                <p className="text-sm text-muted-foreground">{topic.description}</p>
+                <p className={cn('text-sm leading-6', isActive ? 'text-blob-black/78' : 'text-blob-black/68 dark:text-white/65')}>{topic.description}</p>
               </div>
-              <span aria-hidden className="text-sky-700 transition-transform group-hover:translate-x-1 dark:text-sky-300">→</span>
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden />
             </div>
           </Link>
         );
@@ -289,48 +296,48 @@ function ArticleCard({
   const IconComponent = topicIconsLucide[article.topic as BlobosphereTopicSlug] || BookOpen;
 
   return (
-    <article
-      id={article.slug}
-      className="group flex h-full flex-col rounded-2xl border-2 border-transparent bg-white p-6 shadow-sm transition-all duration-200 hover:border-sky-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-sky-500"
-    >
-      <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
-        <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
-          <div className="rounded bg-sky-100 p-1 dark:bg-sky-900/50">
-            <IconComponent className="h-3 w-3 text-sky-700 dark:text-sky-300" />
+    <article id={article.slug} className="h-full">
+      <div className="group flex h-full flex-col rounded-sm border-2 border-blob-sand-deep bg-blob-sand text-blob-black transition-all duration-200 hover:border-blob-yellow hover:bg-white dark:border-white/10 dark:bg-white/8 dark:text-white dark:hover:border-blob-yellow">
+        <div className="flex items-center justify-between gap-3 border-b-2 border-blob-sand-deep px-5 py-4 dark:border-white/10">
+          <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest">
+            <span className="flex h-8 w-8 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+              <IconComponent className="h-4 w-4" />
+            </span>
+            {topicLabel}
           </div>
-          <span className="font-semibold">{topicLabel}</span>
+          <span className="shrink-0 text-xs font-bold text-blob-black/56 dark:text-white/55">{article.readingTime}</span>
         </div>
-        <span className="ml-auto text-muted-foreground">{article.readingTime}</span>
-      </div>
 
-      <div className="mt-5 flex-1 space-y-3">
-        <h3 className="text-xl font-semibold text-gray-900 transition-colors group-hover:text-sky-700 dark:text-slate-100 dark:group-hover:text-sky-400">
-          {article.title}
-        </h3>
-        <p className="text-sm text-muted-foreground">{article.excerpt}</p>
-      </div>
+        <div className="flex flex-1 flex-col p-5">
+          <div className="flex-1 space-y-3">
+            <h3 className="text-xl font-black uppercase leading-tight text-blob-black transition-colors group-hover:text-blob-yellow-dark dark:text-white dark:group-hover:text-blob-yellow">
+              {article.title}
+            </h3>
+            <p className="text-sm leading-6 text-blob-black/70 dark:text-white/65">{article.excerpt}</p>
+          </div>
 
-      {article.tags.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {article.tags.map((tag) => (
-            <Badge key={tag} variant="outline" className="text-xs">
-              {tag}
-            </Badge>
-          ))}
+          {article.tags.length > 0 && (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {article.tags.map((tag) => (
+                <BlobBadge key={tag} variant="outline" size="sm">
+                  {tag}
+                </BlobBadge>
+              ))}
+            </div>
+          )}
+
+          <BlobButton
+            asChild
+            size="sm"
+            variant="dark"
+            className="mt-6 w-full"
+          >
+            <BlobosphereArticleLink href={href} contentId={article.slug} className="inline-flex items-center justify-center gap-2">
+              Lire l&apos;article
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </BlobosphereArticleLink>
+          </BlobButton>
         </div>
-      )}
-
-      <div className="mt-6">
-        <Button
-          asChild
-          size="sm"
-          className="w-full bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-md transition-all hover:from-sky-700 hover:to-blue-700 hover:shadow-lg"
-        >
-          <BlobosphereArticleLink href={href} contentId={article.slug} className="inline-flex items-center justify-center gap-2">
-            Lire l&apos;article
-            <span aria-hidden="true">→</span>
-          </BlobosphereArticleLink>
-        </Button>
       </div>
     </article>
   );

@@ -1,9 +1,12 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { BlobBadge } from '@/components/blob/BlobBadge';
+import { BlobButton } from '@/components/blob/BlobButton';
 import { SafeMdxContent } from '@/components/blobosphere/SafeMdxContent';
+import { HomeFooter } from '@/components/home/HomeFooter';
+import { HomeHeader } from '@/components/home/HomeHeader';
 import { loadPublishedBlobosphereArticleBySlug } from '@/lib/blobosphere/loadBlobosphereArticle';
 import { loadBlobosphereSitemapEntries } from '@/lib/blobosphere/loadBlobosphereSitemapEntries';
 import { blobosphereTopics } from '../static';
@@ -42,6 +45,10 @@ function formatDate(value: string): string {
     return value;
   }
   return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }).format(date);
+}
+
+function getArticleHeroImage(coverImage: string | null): string {
+  return coverImage?.startsWith('/') ? coverImage : '/videos/hero-poster.webp';
 }
 
 export async function generateStaticParams() {
@@ -112,72 +119,101 @@ export default async function BlobosphereArticlePage({ params }: BlobosphereArti
   };
 
   return (
-    <article className="mx-auto max-w-3xl space-y-8">
+    <div>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
+      <HomeHeader />
 
-      <nav aria-label="Fil d’Ariane" className="text-sm text-muted-foreground">
-        <ol className="flex flex-wrap items-center gap-2">
-          <li>
-            <Link href="/" className="hover:text-sky-700 dark:hover:text-sky-300">
-              Blob
-            </Link>
-          </li>
-          <li aria-hidden="true">/</li>
-          <li>
-            <Link href="/blobosphere" className="font-medium text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100">
-              Blobosphère
-            </Link>
-          </li>
-          <li aria-hidden="true">/</li>
-          <li className="text-foreground">{topic?.label ?? article.category}</li>
-        </ol>
-      </nav>
+      <article>
+        <section className="-mx-4 bg-blob-black text-white sm:-mx-6 lg:-mx-8">
+          <div className="relative min-h-[520px] overflow-hidden sm:min-h-[600px] lg:min-h-[660px]">
+            <Image
+              src={getArticleHeroImage(article.coverImage)}
+              alt=""
+              fill
+              priority
+              className="object-cover object-center"
+              sizes="100vw"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-blob-black/84 via-blob-black/42 to-blob-black/94" aria-hidden />
 
-      <header className="space-y-5 border-b pb-8">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <Badge variant="secondary">{topic?.label ?? article.category}</Badge>
-          <time dateTime={article.publishedAt}>{formatDate(article.publishedAt)}</time>
-          <span aria-hidden="true">·</span>
-          <span>{article.readingTime}</span>
-        </div>
+            <div className="relative z-10 flex min-h-[520px] flex-col justify-end px-4 pb-10 pt-28 sm:min-h-[600px] sm:px-8 sm:pb-14 lg:min-h-[660px] lg:px-14 xl:px-20">
+              <div className="max-w-4xl space-y-6">
+                <nav aria-label="Fil d’Ariane" className="text-xs font-bold uppercase tracking-widest text-white/72">
+                  <ol className="flex flex-wrap items-center gap-2">
+                    <li>
+                      <Link href="/" className="hover:text-blob-yellow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow">
+                        Blob
+                      </Link>
+                    </li>
+                    <li aria-hidden="true">/</li>
+                    <li>
+                      <Link href="/blobosphere" className="hover:text-blob-yellow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow">
+                        Blobosphère
+                      </Link>
+                    </li>
+                    <li aria-hidden="true">/</li>
+                    <li className="text-white">{topic?.label ?? article.category}</li>
+                  </ol>
+                </nav>
 
-        <div className="space-y-4">
-          <h1 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-5xl">
-            {article.title}
-          </h1>
-          <p className="text-lg leading-8 text-muted-foreground">{article.excerpt}</p>
-        </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <BlobBadge variant="yellow" brandMark>{topic?.label ?? article.category}</BlobBadge>
+                  <BlobBadge variant="outline">
+                    <time dateTime={article.publishedAt}>{formatDate(article.publishedAt)}</time>
+                  </BlobBadge>
+                  <BlobBadge variant="outline">{article.readingTime}</BlobBadge>
+                </div>
 
-        {article.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {article.tags.map((tag) => (
-              <Badge key={tag} variant="outline">
-                {tag}
-              </Badge>
-            ))}
+                <div className="space-y-4">
+                  <p className="font-display text-5xl leading-none text-blob-yellow sm:text-6xl">
+                    Blobosphère
+                  </p>
+                  <h1 className="max-w-4xl text-4xl font-black uppercase leading-[0.95] text-white sm:text-5xl lg:text-6xl">
+                    {article.title}
+                  </h1>
+                  <p className="max-w-2xl text-base leading-7 text-white/78 sm:text-lg">{article.excerpt}</p>
+                </div>
+
+                {article.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {article.tags.map((tag) => (
+                      <BlobBadge key={tag} variant="outline">
+                        {tag}
+                      </BlobBadge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        )}
-      </header>
+        </section>
 
-      <SafeMdxContent content={article.body} articleSlug={article.slug} />
+        <section className="-mx-4 bg-white px-4 py-10 text-blob-black sm:-mx-6 sm:px-6 sm:py-14 lg:-mx-8 lg:px-10 xl:px-14 dark:bg-[hsl(220_14%_12%)] dark:text-white">
+          <div className="mx-auto max-w-3xl space-y-9">
+            <SafeMdxContent content={article.body} articleSlug={article.slug} />
 
-      <section className="rounded-lg border bg-sky-50 px-5 py-5 text-sky-950 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-50">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <h2 className="text-lg font-semibold">Envie de rejoindre la communauté Blob ?</h2>
-            <p className="text-sm text-sky-900/80 dark:text-sky-100/80">
-              Crée un profil pour échanger avec des riders et trouver des partenaires sans publier de spot sensible.
-            </p>
+            <section className="rounded-sm border-2 border-blob-black bg-blob-yellow p-5 text-blob-black">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-black uppercase tracking-wide">Rejoins la communauté Blob</h2>
+                  <p className="text-sm leading-6 text-blob-black/72">
+                    Crée un profil pour échanger avec des riders et trouver des partenaires sans publier de spot sensible.
+                  </p>
+                </div>
+                <BlobButton asChild variant="yellowSignalDark" size="md" className="w-full sm:w-auto">
+                  <Link href={`/register?intent=blobosphere&article=${encodeURIComponent(article.slug)}`}>Créer un compte</Link>
+                </BlobButton>
+              </div>
+            </section>
+
+            <BlobButton asChild variant="outlineDark" size="sm">
+              <Link href="/blobosphere">Retour à la Blobosphère</Link>
+            </BlobButton>
           </div>
-          <Button asChild className="bg-sky-700 text-white hover:bg-sky-800">
-            <Link href={`/register?intent=blobosphere&article=${encodeURIComponent(article.slug)}`}>Créer un compte</Link>
-          </Button>
-        </div>
-      </section>
+        </section>
+      </article>
 
-      <Link href="/blobosphere" className="inline-flex text-sm font-medium text-sky-700 underline underline-offset-2 dark:text-sky-300">
-        Retour à la Blobosphère
-      </Link>
-    </article>
+      <HomeFooter />
+    </div>
   );
 }
