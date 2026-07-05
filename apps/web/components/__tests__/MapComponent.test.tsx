@@ -52,6 +52,10 @@ jest.mock('leaflet', () => {
   }
 
   const divIcon = jest.fn((options: Record<string, unknown>) => ({ options }));
+  const map = jest.fn(() => ({
+    setView: jest.fn(),
+    remove: jest.fn(),
+  }));
 
   return {
     __esModule: true,
@@ -61,9 +65,20 @@ jest.mock('leaflet', () => {
       },
       divIcon,
       latLngBounds,
+      map,
     },
     divIcon,
     latLngBounds,
+    map,
+  };
+});
+
+jest.mock('@react-leaflet/core', () => {
+  const React = require('react');
+  return {
+    __esModule: true,
+    LeafletProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
+    createLeafletContext: (map: unknown) => ({ map }),
   };
 });
 

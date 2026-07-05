@@ -11,7 +11,7 @@ import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { MapPin, Cookie, Trash2, Target, Shield, Ban, FileText, Bell, Eye, RefreshCw } from 'lucide-react';
+import { Bell, Ban, CalendarClock, Cookie, Eye, FileText, Info, Lightbulb, Mail, MapPin, MessageSquare, RefreshCw, Shield, Target, Trash2, Waves, Wind } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { apiClient } from '../../../lib/apiClient';
@@ -28,6 +28,22 @@ import { usePushNotifications } from '@/hooks/usePushNotifications';
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+
+const toggleTrackClass = (checked: boolean, disabled = false, size: 'sm' | 'md' = 'md') =>
+  [
+    'relative inline-flex shrink-0 items-center rounded-sm border-2 transition-colors',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow focus-visible:ring-offset-2',
+    size === 'sm' ? 'h-6 w-11' : 'h-7 w-12',
+    checked ? 'border-blob-black bg-blob-yellow' : 'border-blob-black/30 bg-white dark:border-white/25 dark:bg-white/10',
+    disabled ? 'cursor-not-allowed opacity-50' : '',
+  ].join(' ');
+
+const toggleThumbClass = (checked: boolean, size: 'sm' | 'md' = 'md') =>
+  [
+    'inline-block transform rounded-sm border-2 border-blob-black bg-blob-black transition-transform',
+    size === 'sm' ? 'h-4 w-4' : 'h-5 w-5',
+    checked ? (size === 'sm' ? 'translate-x-6' : 'translate-x-5') : 'translate-x-1',
+  ].join(' ');
 
 type DeletionStatus = {
   isScheduled: boolean;
@@ -130,32 +146,32 @@ export default function ProProfilePage() {
       cardClasses: string;
       iconClasses: string;
     };
-    const baseBadge = 'border-none text-xs font-semibold';
+    const baseBadge = 'text-xs font-black uppercase tracking-widest';
 
     const summaries: Record<string, Summary> = {
       personalized: {
         label: 'Expérience optimisée',
         description: 'Navigation adaptée à vos habitudes sur Blob, avec statistiques d\'usage enrichies.',
         Icon: Target,
-        badge: { text: 'Recommandé', className: `${baseBadge} bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400` },
-        cardClasses: 'border-blue-200 bg-blue-50/70 dark:border-blue-800/50 dark:bg-blue-950/20',
-        iconClasses: 'text-blue-600 dark:text-blue-400',
+        badge: { text: 'Recommandé', className: `${baseBadge} border-blob-yellow bg-blob-yellow text-blob-black` },
+        cardClasses: 'border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5',
+        iconClasses: 'text-blob-black dark:text-white',
       },
       essential: {
         label: 'Fonctionnel & mesure anonyme',
         description: 'Session, sécurité et statistiques d\'usage sans identification personnelle.',
         Icon: Shield,
-        badge: { text: 'Actif', className: `${baseBadge} bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400` },
-        cardClasses: 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-800/50 dark:bg-emerald-950/20',
-        iconClasses: 'text-emerald-600 dark:text-emerald-400',
+        badge: { text: 'Actif', className: `${baseBadge} border-blob-black bg-blob-black text-white` },
+        cardClasses: 'border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5',
+        iconClasses: 'text-blob-black dark:text-white',
       },
       none: {
         label: 'Essentiel uniquement',
         description: 'Cookies strictement nécessaires, sans aucune statistique d\'usage.',
         Icon: Ban,
-        badge: { text: 'Minimal', className: `${baseBadge} bg-slate-200 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300` },
-        cardClasses: 'border-slate-200 bg-slate-50 dark:border-slate-800/50 dark:bg-slate-900/20',
-        iconClasses: 'text-slate-500 dark:text-slate-400',
+        badge: { text: 'Minimal', className: `${baseBadge} border-blob-sand-deep bg-white text-blob-black dark:border-white/20 dark:bg-white/10 dark:text-white` },
+        cardClasses: 'border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5',
+        iconClasses: 'text-blob-black/70 dark:text-white/70',
       },
     };
 
@@ -633,7 +649,7 @@ export default function ProProfilePage() {
       <BlobCard mode="yellowSignal">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-black text-blob-yellow">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
               <BlobMark size={26} decorative />
             </span>
             <div className="min-w-0">
@@ -754,20 +770,22 @@ export default function ProProfilePage() {
                     <h3 className="text-sm font-semibold">Géolocalisation</h3>
                   </div>
                   {userLocation ? (
-                    <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 dark:border-emerald-800/50 dark:bg-emerald-950/20 p-4 space-y-3">
+                    <div className="space-y-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-4 dark:border-white/10 dark:bg-white/5">
                       <div className="flex items-start gap-2">
-                        <span className="text-emerald-600 text-lg">📍</span>
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                          <MapPin className="h-4 w-4" />
+                        </span>
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
+                          <p className="text-sm font-black uppercase tracking-wide text-blob-black dark:text-white">
                             Position active
                           </p>
-                          <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
+                          <p className="mt-1 text-xs text-blob-black/64 dark:text-white/60">
                             Lat: {userLocation.lat.toFixed(2)}, Lng: {userLocation.lng.toFixed(2)}
                           </p>
-                          <p className="text-xs text-muted-foreground mt-2 italic">
+                          <p className="mt-2 text-xs italic text-blob-black/64 dark:text-white/60">
                             Précision approximative (~1 km) pour préserver votre confidentialité
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-blob-black/64 dark:text-white/60">
                             Utilisée pour apparaître dans les recherches à proximité sur la BloboMap
                           </p>
                         </div>
@@ -786,9 +804,9 @@ export default function ProProfilePage() {
                             const v = Number(e.target.value);
                             if (Number.isFinite(v)) setRadiusKm(Math.max(1, Math.min(200, v)));
                           }}
-                          className="w-20 text-center"
+                          className="w-20 rounded-sm border-2 border-blob-black/30 text-center focus-visible:ring-blob-yellow"
                         />
-                        <span className="text-sm text-muted-foreground">
+                        <span className="text-sm text-blob-black/64 dark:text-white/60">
                           {savingRadius ? 'km (sauvegarde…)' : 'km'}
                         </span>
                       </div>
@@ -799,7 +817,7 @@ export default function ProProfilePage() {
                           type="button"
                           onClick={handleUpdateLocation}
                           disabled={updatingLocation || deletingLocation}
-                          className="w-full sm:w-auto"
+                          className="w-full rounded-sm border-2 border-blob-black text-blob-black hover:bg-blob-sand sm:w-auto dark:border-white/70 dark:text-white dark:hover:bg-white/10"
                         >
                           <RefreshCw className="h-3 w-3 mr-2" />
                           {updatingLocation ? 'Mise à jour…' : 'Actualiser ma position'}
@@ -810,7 +828,7 @@ export default function ProProfilePage() {
                           type="button"
                           onClick={handleDeleteLocation}
                           disabled={deletingLocation || updatingLocation}
-                          className="w-full sm:w-auto"
+                          className="w-full rounded-sm border-2 border-blob-black text-blob-black hover:bg-blob-sand sm:w-auto dark:border-white/70 dark:text-white dark:hover:bg-white/10"
                         >
                           <Trash2 className="h-3 w-3 mr-2" />
                           {deletingLocation ? 'Suppression...' : 'Supprimer ma position'}
@@ -818,14 +836,14 @@ export default function ProProfilePage() {
                       </div>
                       {geolocPermissionDenied && (
                         <p className="text-xs text-destructive">
-                          ⚠️ Permission refusée — autorise la géolocalisation dans les paramètres de ton navigateur, puis réessaie.
+                          Permission refusée — autorise la géolocalisation dans les paramètres de ton navigateur, puis réessaie.
                         </p>
                       )}
                     </div>
                   ) : (
-                    <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/20 p-4 space-y-3">
-                      <p className="text-sm text-muted-foreground flex items-start gap-2">
-                        <span>ℹ️</span>
+                    <div className="space-y-3 rounded-sm border-2 border-dashed border-blob-sand-deep bg-blob-sand p-4 dark:border-white/10 dark:bg-white/5">
+                      <p className="flex items-start gap-2 text-sm text-blob-black/64 dark:text-white/60">
+                        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blob-black dark:text-white" />
                         <span>Aucune géolocalisation enregistrée. Active-la pour apparaître dans les recherches à proximité.</span>
                       </p>
                       <Button
@@ -834,14 +852,14 @@ export default function ProProfilePage() {
                         type="button"
                         onClick={handleUpdateLocation}
                         disabled={updatingLocation}
-                        className="w-full sm:w-auto"
+                        className="w-full rounded-sm border-2 border-blob-black text-blob-black hover:bg-blob-sand sm:w-auto dark:border-white/70 dark:text-white dark:hover:bg-white/10"
                       >
                         <MapPin className="h-3 w-3 mr-2" />
                         {updatingLocation ? 'Localisation en cours…' : 'Activer ma géolocalisation'}
                       </Button>
                       {geolocPermissionDenied && (
                         <p className="text-xs text-destructive">
-                          ⚠️ Permission refusée — autorise la géolocalisation dans les paramètres de ton navigateur, puis réessaie.
+                          Permission refusée — autorise la géolocalisation dans les paramètres de ton navigateur, puis réessaie.
                         </p>
                       )}
                     </div>
@@ -858,16 +876,16 @@ export default function ProProfilePage() {
                   </div>
                   {consentStateReady ? (
                     <div className="space-y-3">
-                      <div className={`flex items-start gap-3 rounded-xl border-2 p-4 ${consentSummary.cardClasses}`}>
+                      <div className={`flex items-start gap-3 rounded-sm border-2 p-4 ${consentSummary.cardClasses}`}>
                         <consentSummary.Icon className={`h-5 w-5 ${consentSummary.iconClasses} flex-shrink-0 mt-0.5`} />
                         <div className="flex-1 space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold text-foreground">{consentSummary.label}</p>
+                            <p className="text-sm font-black uppercase tracking-wide text-blob-black dark:text-white">{consentSummary.label}</p>
                             {consentSummary.badge && (
                               <Badge className={consentSummary.badge.className}>{consentSummary.badge.text}</Badge>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground">{consentSummary.description}</p>
+                          <p className="text-xs text-blob-black/64 dark:text-white/60">{consentSummary.description}</p>
                         </div>
                       </div>
                       <Button
@@ -875,13 +893,13 @@ export default function ProProfilePage() {
                         size="sm"
                         type="button"
                         onClick={handleReopenCookieConsent}
-                        className="w-full sm:w-auto"
+                        className="w-full rounded-sm border-2 border-blob-black text-blob-black hover:bg-blob-sand sm:w-auto dark:border-white/70 dark:text-white dark:hover:bg-white/10"
                       >
                         Gérer mes préférences
                       </Button>
                     </div>
                   ) : (
-                    <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
+                    <div className="rounded-sm border-2 border-dashed border-blob-sand-deep p-4 text-sm text-blob-black/64 dark:border-white/10 dark:text-white/60">
                       Chargement des préférences…
                     </div>
                   )}
@@ -896,25 +914,23 @@ export default function ProProfilePage() {
                     <h3 className="text-sm font-semibold">Préférences d&apos;alertes</h3>
                   </div>
                   {loadingNotifPrefs ? (
-                    <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
+                    <div className="rounded-sm border-2 border-dashed border-blob-sand-deep p-4 text-sm text-blob-black/64 dark:border-white/10 dark:text-white/60">
                       Chargement des préférences…
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {/* ── Email alerts ─────────────────────────────────── */}
-                      <div className="rounded-xl border-2 border-emerald-200/70 dark:border-emerald-800/50 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 p-4 space-y-3">
+                      {/* Email alerts */}
+                      <div className="space-y-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-4 dark:border-white/10 dark:bg-white/5">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white flex-shrink-0">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                            <div>
-                              <label htmlFor="emailNotifToggle" className="text-sm font-semibold cursor-pointer">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                              <Mail className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <label htmlFor="emailNotifToggle" className="cursor-pointer text-sm font-black uppercase tracking-wide">
                                 Alertes par email
                               </label>
-                              <p className="text-xs text-muted-foreground" id="emailNotif-desc">
+                              <p className="text-xs text-blob-black/64 dark:text-white/60" id="emailNotif-desc">
                                 Reçois un email quand un rider t&apos;envoie une demande, même si tu n&apos;es pas connecté.
                               </p>
                             </div>
@@ -925,37 +941,31 @@ export default function ProProfilePage() {
                             onClick={() => setEmailNotif((v) => !v)}
                             aria-pressed={emailNotif}
                             aria-describedby="emailNotif-desc emailNotif-help"
-                            className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
-                              emailNotif ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-600'
-                            }`}
+                            className={toggleTrackClass(emailNotif)}
                             aria-label={emailNotif ? 'Désactiver les alertes email' : 'Activer les alertes email'}
                           >
-                            <span
-                              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                                emailNotif ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
+                            <span className={toggleThumbClass(emailNotif)} />
                           </button>
                         </div>
-                        <p id="emailNotif-help" className="text-xs text-emerald-800 dark:text-emerald-200 leading-relaxed">
+                        <p id="emailNotif-help" className="text-xs leading-relaxed text-blob-black/70 dark:text-white/68">
                           Blob n&apos;envoie jamais ton adresse email au rider. Ces emails servent uniquement à te prévenir qu&apos;une demande t&apos;attend dans ton espace pro. Ils ne remplacent pas les alertes dans Blob.
                         </p>
                         {emailNotif && (
-                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                            ✓ Activé — tu recevras un email pour chaque nouvelle demande pertinente.
+                          <p className="text-xs font-black uppercase tracking-wide text-blob-black dark:text-white">
+                            Activé — tu recevras un email pour chaque nouvelle demande pertinente.
                           </p>
                         )}
                       </div>
 
-                      {/* ── Channel masters : in-app + push ───────────────── */}
-                      <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
-                            <Bell className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-semibold" id="inapp-toggle-label">Dans Blob (cloche)</h4>
-                            <p className="text-xs text-muted-foreground" id="inapp-toggle-desc">
+                      {/* Channel masters: in-app + push */}
+                      <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-4 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                            <Bell className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-black uppercase tracking-wide" id="inapp-toggle-label">Dans Blob (cloche)</h4>
+                            <p className="text-xs text-blob-black/64 dark:text-white/60" id="inapp-toggle-desc">
                               Le badge et l&apos;historique de notifications, visibles quand tu ouvres Blob.
                             </p>
                           </div>
@@ -966,27 +976,21 @@ export default function ProProfilePage() {
                           aria-pressed={notificationPrefs.inAppEnabled}
                           aria-labelledby="inapp-toggle-label"
                           aria-describedby="inapp-toggle-desc"
-                          className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 ${
-                            notificationPrefs.inAppEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
-                          }`}
+                          className={toggleTrackClass(notificationPrefs.inAppEnabled)}
                           aria-label={notificationPrefs.inAppEnabled ? 'Désactiver les notifications dans Blob' : 'Activer les notifications dans Blob'}
                         >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                              notificationPrefs.inAppEnabled ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
+                          <span className={toggleThumbClass(notificationPrefs.inAppEnabled)} />
                         </button>
                       </div>
 
-                      <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200/50 dark:border-purple-800/50">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
-                            <Bell className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-semibold" id="push-toggle-label">Push (téléphone / navigateur)</h4>
-                            <p className="text-xs text-muted-foreground" id="push-toggle-desc">
+                      <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-4 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                            <Bell className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-black uppercase tracking-wide" id="push-toggle-label">Push (téléphone / navigateur)</h4>
+                            <p className="text-xs text-blob-black/64 dark:text-white/60" id="push-toggle-desc">
                               Reçois ces alertes sur ton appareil, même quand Blob est fermé. Nécessite l&apos;autorisation de ton navigateur.
                             </p>
                           </div>
@@ -997,16 +1001,10 @@ export default function ProProfilePage() {
                           aria-pressed={notificationPrefs.pushEnabled}
                           aria-labelledby="push-toggle-label"
                           aria-describedby="push-toggle-desc"
-                          className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 ${
-                            notificationPrefs.pushEnabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
-                          }`}
+                          className={toggleTrackClass(notificationPrefs.pushEnabled)}
                           aria-label={notificationPrefs.pushEnabled ? 'Désactiver les notifications push' : 'Activer les notifications push'}
                         >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                              notificationPrefs.pushEnabled ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
+                          <span className={toggleThumbClass(notificationPrefs.pushEnabled)} />
                         </button>
                       </div>
 
@@ -1014,16 +1012,18 @@ export default function ProProfilePage() {
 
                       {/* ── PRO-specific event toggles (apply to enabled channels) ─ */}
                       <div className="space-y-2">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activité professionnelle</h4>
-                        <p className="text-xs text-muted-foreground">Ces événements te sont notifiés sur les canaux activés ci-dessus.</p>
+                        <h4 className="text-xs font-black uppercase tracking-widest text-blob-black/60 dark:text-white/55">Activité professionnelle</h4>
+                        <p className="text-xs text-blob-black/64 dark:text-white/60">Ces événements te sont notifiés sur les canaux activés ci-dessus.</p>
 
                         {/* Lesson Requests */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-amber-300 dark:hover:border-amber-700 transition-colors">
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <span className="text-xl flex-shrink-0">🗺️</span>
-                            <div>
-                              <p className="text-sm font-medium" id="notifyLesson-label">Demandes de cours (BloboMap)</p>
-                              <p className="text-xs text-muted-foreground" id="notifyLesson-desc">
+                        <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-white p-3 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                              <MapPin className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-black uppercase tracking-wide" id="notifyLesson-label">Demandes de cours (BloboMap)</p>
+                              <p className="text-xs text-blob-black/64 dark:text-white/60" id="notifyLesson-desc">
                                 Sois alerté lorsqu&apos;un rider t&apos;envoie une demande liée à un cours ou un accompagnement.
                               </p>
                             </div>
@@ -1034,27 +1034,21 @@ export default function ProProfilePage() {
                             aria-pressed={notificationPrefs.notifyLessonRequests}
                             aria-labelledby="notifyLesson-label"
                             aria-describedby="notifyLesson-desc"
-                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 ${
-                              notificationPrefs.notifyLessonRequests
-                                ? 'bg-amber-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            }`}
+                            className={toggleTrackClass(notificationPrefs.notifyLessonRequests, false, 'sm')}
                           >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
+                            <span className={toggleThumbClass(notificationPrefs.notifyLessonRequests, 'sm')} />
                           </button>
                         </div>
 
                         {/* PRO Messages */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <span className="text-xl flex-shrink-0">💬</span>
-                            <div>
-                              <p className="text-sm font-medium" id="notifyMessages-label">Messages</p>
-                              <p className="text-xs text-muted-foreground" id="notifyMessages-desc">
+                        <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-white p-3 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                              <MessageSquare className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-black uppercase tracking-wide" id="notifyMessages-label">Messages</p>
+                              <p className="text-xs text-blob-black/64 dark:text-white/60" id="notifyMessages-desc">
                                 Sois alerté lorsqu&apos;un rider t&apos;écrit dans la messagerie Blob.
                               </p>
                             </div>
@@ -1065,32 +1059,26 @@ export default function ProProfilePage() {
                             aria-pressed={notificationPrefs.notifyProMessages}
                             aria-labelledby="notifyMessages-label"
                             aria-describedby="notifyMessages-desc"
-                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                              notificationPrefs.notifyProMessages
-                                ? 'bg-blue-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            }`}
+                            className={toggleTrackClass(notificationPrefs.notifyProMessages, false, 'sm')}
                           >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyProMessages ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
+                            <span className={toggleThumbClass(notificationPrefs.notifyProMessages, 'sm')} />
                           </button>
                         </div>
                       </div>
 
                       {/* ── Sport filters ─────────────────────────────────── */}
                       <div className="space-y-2">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Filtres par sport</h4>
+                        <h4 className="text-xs font-black uppercase tracking-widest text-blob-black/60 dark:text-white/55">Filtres par sport</h4>
 
                         {/* Surf */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <span className="text-xl flex-shrink-0">🏄</span>
-                            <div>
-                              <p className="text-sm font-medium" id="notifySurf-label">Demandes Surf</p>
-                              <p className="text-xs text-muted-foreground" id="notifySurf-desc">
+                        <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-white p-3 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                              <Waves className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-black uppercase tracking-wide" id="notifySurf-label">Demandes Surf</p>
+                              <p className="text-xs text-blob-black/64 dark:text-white/60" id="notifySurf-desc">
                                 Sois alerté pour les demandes liées au surf.
                               </p>
                             </div>
@@ -1102,27 +1090,25 @@ export default function ProProfilePage() {
                             aria-pressed={notificationPrefs.notifyForSurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests}
                             aria-labelledby="notifySurf-label"
                             aria-describedby="notifySurf-desc"
-                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                              notificationPrefs.notifyForSurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests
-                                ? 'bg-blue-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={toggleTrackClass(
+                              notificationPrefs.notifyForSurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests,
+                              !notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests,
+                              'sm',
+                            )}
                           >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyForSurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
+                            <span className={toggleThumbClass(notificationPrefs.notifyForSurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests, 'sm')} />
                           </button>
                         </div>
 
                         {/* Kitesurf */}
-                        <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-cyan-300 dark:hover:border-cyan-700 transition-colors">
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <span className="text-xl flex-shrink-0">🪁</span>
-                            <div>
-                              <p className="text-sm font-medium" id="notifyKitesurf-label">Demandes Kitesurf</p>
-                              <p className="text-xs text-muted-foreground" id="notifyKitesurf-desc">
+                        <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-white p-3 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                              <Wind className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-black uppercase tracking-wide" id="notifyKitesurf-label">Demandes Kitesurf</p>
+                              <p className="text-xs text-blob-black/64 dark:text-white/60" id="notifyKitesurf-desc">
                                 Sois alerté pour les demandes liées au kitesurf.
                               </p>
                             </div>
@@ -1134,29 +1120,25 @@ export default function ProProfilePage() {
                             aria-pressed={notificationPrefs.notifyForKitesurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests}
                             aria-labelledby="notifyKitesurf-label"
                             aria-describedby="notifyKitesurf-desc"
-                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 ${
-                              notificationPrefs.notifyForKitesurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests
-                                ? 'bg-cyan-600'
-                                : 'bg-gray-300 dark:bg-gray-600'
-                            } ${!notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={toggleTrackClass(
+                              notificationPrefs.notifyForKitesurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests,
+                              !notificationPrefs.pushEnabled || !notificationPrefs.notifyLessonRequests,
+                              'sm',
+                            )}
                           >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notificationPrefs.notifyForKitesurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
+                            <span className={toggleThumbClass(notificationPrefs.notifyForKitesurf && notificationPrefs.pushEnabled && notificationPrefs.notifyLessonRequests, 'sm')} />
                           </button>
                         </div>
                       </div>
 
                       {/* Info box when in-app alerts are disabled */}
                       {!notificationPrefs.pushEnabled && (
-                        <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-3" role="status">
+                        <div className="rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 p-3 text-blob-black dark:bg-blob-yellow/10 dark:text-white" role="status">
                           <div className="flex items-start gap-2">
-                            <span className="text-lg" aria-hidden="true">ℹ️</span>
+                            <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                             <div className="flex-1">
-                              <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Alertes dans Blob désactivées</p>
-                              <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
+                              <p className="text-xs font-black uppercase tracking-wide">Alertes dans Blob désactivées</p>
+                              <p className="mt-0.5 text-xs text-blob-black/72 dark:text-white/72">
                                 Réactive les alertes dans Blob pour voir les messages et demandes de cours. Les alertes email fonctionnent indépendamment.
                               </p>
                             </div>
@@ -1165,9 +1147,9 @@ export default function ProProfilePage() {
                       )}
 
                       {/* Save button */}
-                      <Button
+                      <BlobButton
                         type="button"
-                        variant="outline"
+                        variant="outlineDark"
                         size="sm"
                         onClick={saveNotificationPreferences}
                         disabled={savingNotifPrefs}
@@ -1179,9 +1161,9 @@ export default function ProProfilePage() {
                             Sauvegarde...
                           </span>
                         ) : (
-                          '💾 Sauvegarder mes préférences'
+                          'Sauvegarder mes préférences'
                         )}
-                      </Button>
+                      </BlobButton>
                     </div>
                   )}
                 </div>
@@ -1198,14 +1180,14 @@ export default function ProProfilePage() {
                     Conformément au RGPD, vous disposez d&apos;un droit d&apos;accès, de rectification, de suppression et de portabilité de vos données.
                   </p>
                   <div className="flex flex-wrap gap-3">
-                    <Link href="/about">
-                      <Button variant="outline" size="sm">
+                    <BlobButton asChild variant="outlineDark" size="sm">
+                      <Link href="/about">
                         <FileText className="h-3.5 w-3.5 mr-2" />
                         Politique RGPD
-                      </Button>
-                    </Link>
-                    <Button
-                      variant="outline"
+                      </Link>
+                    </BlobButton>
+                    <BlobButton
+                      variant="outlineDark"
                       size="sm"
                       type="button"
                       onClick={async () => {
@@ -1245,30 +1227,29 @@ export default function ProProfilePage() {
                         }
                       }}
                     >
-                      📥 Exporter mes données
-                    </Button>
+                      <FileText className="h-3.5 w-3.5 mr-2" />
+                      Exporter mes données
+                    </BlobButton>
                     {deletionStatus?.isScheduled ? (
-                      <Button
-                        variant="outline"
+                      <BlobButton
+                        variant="outlineDark"
                         size="sm"
                         type="button"
                         onClick={handleCancelDeletion}
                         disabled={loadingDeletion}
-                        className="border-orange-300 text-orange-700 hover:bg-orange-50"
                       >
-                        ⚠️ Annuler suppression ({deletionStatus.daysRemaining}j)
-                      </Button>
+                        Annuler suppression ({deletionStatus.daysRemaining}j)
+                      </BlobButton>
                     ) : (
-                      <Button
-                        variant="outline"
+                      <BlobButton
+                        variant="outlineDark"
                         size="sm"
                         type="button"
                         onClick={() => setShowDeletionModal(true)}
-                        className="border-red-300 text-red-700 hover:bg-red-50"
                       >
                         <Trash2 className="h-3.5 w-3.5 mr-2" />
                         Supprimer mon compte
-                      </Button>
+                      </BlobButton>
                     )}
                   </div>
                 </div>
@@ -1285,19 +1266,22 @@ export default function ProProfilePage() {
           onClick={() => setShowDeletionModal(false)}
         >
           <Card
-            className="max-w-lg w-full border-2 rounded-[1.75rem] shadow-2xl"
+            className="max-w-lg w-full overflow-hidden rounded-sm border-2 border-blob-black bg-white text-blob-black shadow-2xl dark:border-white/20 dark:bg-[hsl(220_14%_14%)] dark:text-white"
             onClick={(e) => e.stopPropagation()}
           >
-            <CardHeader className="bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-950/30">
-              <CardTitle className="text-xl text-red-600 dark:text-red-400">⚠️ Suppression de compte</CardTitle>
-              <CardDescription className="text-red-700 dark:text-red-300">
+            <CardHeader className="border-b-2 border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5">
+              <CardTitle className="text-xl font-black uppercase tracking-widest text-blob-black dark:text-white">Suppression de compte</CardTitle>
+              <CardDescription className="text-blob-black/70 dark:text-white/68">
                 Cette action entraînera la suppression définitive de votre compte dans 30 jours
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
-              <div className="rounded-2xl border-2 border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-4 space-y-2">
-                <h3 className="font-semibold text-sm text-amber-900 dark:text-amber-100">📅 Comment fonctionne la suppression ?</h3>
-                <ol className="text-sm space-y-1 list-decimal list-inside text-amber-800 dark:text-amber-200">
+              <div className="space-y-2 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-4 dark:border-white/10 dark:bg-white/5">
+                <div className="flex items-center gap-2">
+                  <CalendarClock className="h-4 w-4 text-blob-black dark:text-white" />
+                  <h3 className="text-sm font-black uppercase tracking-wide text-blob-black dark:text-white">Comment fonctionne la suppression ?</h3>
+                </div>
+                <ol className="list-inside list-decimal space-y-1 text-sm text-blob-black/72 dark:text-white/70">
                   <li>Votre compte sera <strong>immédiatement désactivé</strong></li>
                   <li>Vos données seront <strong>conservées pendant 30 jours</strong></li>
                   <li>Vous pourrez <strong>annuler</strong> la suppression durant cette période</li>
@@ -1305,9 +1289,12 @@ export default function ProProfilePage() {
                 </ol>
               </div>
 
-              <div className="rounded-2xl border-2 border-blue-200 dark:border-blue-800/50 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 p-4 space-y-2">
-                <h3 className="font-semibold text-sm text-blue-900 dark:text-blue-100">💡 Avant de supprimer</h3>
-                <ul className="text-sm space-y-1 list-disc list-inside text-blue-800 dark:text-blue-200">
+              <div className="space-y-2 rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 p-4 text-blob-black dark:bg-blob-yellow/10 dark:text-white">
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4" />
+                  <h3 className="text-sm font-black uppercase tracking-wide">Avant de supprimer</h3>
+                </div>
+                <ul className="list-inside list-disc space-y-1 text-sm text-blob-black/72 dark:text-white/72">
                   <li>Vous pouvez <strong>exporter vos données</strong> (droit RGPD)</li>
                   <li>Pensez à <strong>clôturer vos offres</strong> en cours</li>
                   <li>Vos messages seront supprimés définitivement</li>
@@ -1315,24 +1302,24 @@ export default function ProProfilePage() {
               </div>
 
               <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
-                <Button
+                <BlobButton
                   type="button"
-                  variant="outline"
+                  variant="outlineDark"
                   className="flex-1"
                   onClick={() => setShowDeletionModal(false)}
                   disabled={loadingDeletion}
                 >
                   Annuler
-                </Button>
-                <Button
+                </BlobButton>
+                <BlobButton
                   type="button"
-                  variant="destructive"
-                  className="flex-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700"
+                  variant="dark"
+                  className="flex-1"
                   onClick={handleRequestDeletion}
                   disabled={loadingDeletion}
                 >
                   {loadingDeletion ? 'Traitement...' : 'Confirmer la suppression'}
-                </Button>
+                </BlobButton>
               </div>
             </CardContent>
           </Card>
@@ -1418,9 +1405,9 @@ function BrowserPushControl() {
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border-2 border-dashed border-purple-200/70 dark:border-purple-800/50 p-4">
+    <div className="flex flex-col gap-2 rounded-sm border-2 border-dashed border-blob-sand-deep bg-blob-sand p-4 dark:border-white/10 dark:bg-white/5">
       {accountHasPush !== null && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-blob-black/64 dark:text-white/60">
           Notifications push sur le compte :{' '}
           <span className="font-semibold">{accountHasPush ? 'activées' : 'désactivées'}</span>
           {accountHasPush ? ' (au moins un appareil).' : '.'}
@@ -1428,8 +1415,8 @@ function BrowserPushControl() {
       )}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h4 className="text-sm font-semibold">Ce navigateur</h4>
-          <p className="text-xs text-muted-foreground">
+          <h4 className="text-sm font-black uppercase tracking-wide text-blob-black dark:text-white">Ce navigateur</h4>
+          <p className="text-xs text-blob-black/64 dark:text-white/60">
             {thisBrowserActive
               ? 'Ce navigateur est configuré pour recevoir les notifications push.'
               : "Active ce navigateur pour recevoir les notifications push ici."}

@@ -4,13 +4,12 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BackBar } from '../../../../components/BackBar';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../../components/ui/card';
-import { Button } from '../../../../components/ui/button';
-import { Bell } from 'lucide-react';
+import { MapPin, MessageSquare, Waves, Wind } from 'lucide-react';
 import { apiRequest } from '../../../../lib/csrf';
 import { useToast } from '../../../../components/ui/toast';
 import { Spinner } from '../../../../components/ui/spinner';
 import { requireClientRole, RoleMismatchError, SessionRequiredError } from '../../../../lib/clientSession';
+import { BlobAlert, BlobBadge, BlobButton, BlobCard, BlobMark } from '@/components/blob';
 
 // D1-FIX: type restreint aux seules clés booléennes affichées dans l'UI.
 // emailDigestFrequency (string) et emailEnabled sont intentionnellement exclus
@@ -33,6 +32,20 @@ const DEFAULT_PREFS: NotifPrefs = {
   notifyForSurf: true,
   notifyForKitesurf: true,
 };
+
+const toggleTrackClass = (checked: boolean, disabled = false) =>
+  [
+    'relative inline-flex h-7 w-12 shrink-0 items-center rounded-sm border-2 transition-colors',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow focus-visible:ring-offset-2',
+    checked ? 'border-blob-black bg-blob-yellow' : 'border-blob-black/30 bg-white dark:border-white/25 dark:bg-white/10',
+    disabled ? 'cursor-not-allowed opacity-50' : '',
+  ].join(' ');
+
+const toggleThumbClass = (checked: boolean) =>
+  [
+    'inline-block h-5 w-5 transform rounded-sm border-2 border-blob-black bg-blob-black transition-transform',
+    checked ? 'translate-x-5' : 'translate-x-1',
+  ].join(' ');
 
 // D2-FIX: valide et extrait uniquement les clés booléennes connues depuis la
 // réponse API. Exclut les champs non gérés par cette page : les masters de canal
@@ -154,9 +167,7 @@ export default function ProNotificationsPage() {
     return (
       <div className="max-w-2xl mx-auto pb-8">
         <BackBar fallbackHref="/pro/dashboard" />
-        <div className="text-center py-8">
-          <p className="text-muted-foreground">Chargement…</p>
-        </div>
+        <BlobAlert title="Chargement">Chargement…</BlobAlert>
       </div>
     );
   }
@@ -165,160 +176,138 @@ export default function ProNotificationsPage() {
     <div className="max-w-2xl mx-auto space-y-6 pb-8">
       <BackBar fallbackHref="/pro/dashboard" />
 
-      <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/20 dark:to-blue-900/20 p-4 border-2 border-purple-200/50 dark:border-purple-800/50">
-        <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 text-white shadow-md">
-          <Bell className="w-5 h-5" />
+      <BlobCard mode="yellowSignal">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+            <BlobMark size={26} decorative />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="break-words text-xl font-black uppercase tracking-widest text-blob-black">Préférences d&apos;alertes</h1>
+              <BlobBadge variant="dark">Pro</BlobBadge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-blob-black/72">Choisis les alertes que tu veux recevoir dans Blob et par email.</p>
+          </div>
         </div>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-foreground">Préférences d&apos;alertes</h1>
-          <p className="text-sm text-muted-foreground">Choisis les alertes que tu veux recevoir dans Blob et par email</p>
-        </div>
-      </div>
+      </BlobCard>
 
-      <Card className="border-2 rounded-[1.75rem]">
-        <CardHeader className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30">
-          <CardTitle className="text-base text-foreground">Alertes email et dans Blob</CardTitle>
-          <CardDescription>Les alertes sont activées par défaut — désactive celles dont tu n&apos;as pas besoin. Les alertes email sont envoyées à l&apos;adresse de ton compte si tu as activé les notifications email dans ton profil pro.</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-6">
+      <BlobCard mode="white" className="motion-safe:hover:translate-y-0">
+        <div className="border-b-2 border-blob-sand-deep bg-blob-sand px-5 py-4 dark:border-white/10 dark:bg-white/5">
+          <h2 className="text-base font-black uppercase tracking-widest text-blob-black dark:text-white">Alertes email et dans Blob</h2>
+          <p className="mt-1 text-sm leading-6 text-blob-black/64 dark:text-white/60">
+            Les alertes sont activées par défaut. Désactive celles dont tu n&apos;as pas besoin.
+          </p>
+        </div>
+        <div className="p-5">
           {loadingPrefs ? (
-            <div className="rounded-xl border-2 border-dashed p-4 text-sm text-muted-foreground">
+            <div className="rounded-sm border-2 border-dashed border-blob-sand-deep p-4 text-sm text-blob-black/64 dark:border-white/10 dark:text-white/60">
               Chargement des préférences…
             </div>
           ) : loadError ? (
             // D3-FIX: erreur explicite — l'user sait que les prefs ne sont pas chargées
-            <div
-              className="rounded-xl border-2 border-red-200 dark:border-red-800/50 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 p-4"
-              role="alert"
-            >
-              <p className="text-sm text-red-700 dark:text-red-300 font-medium">
-                ❌ Impossible de charger tes préférences : {loadError}
-              </p>
-              <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+            <BlobAlert variant="error" title="Impossible de charger tes préférences">
+              <p>{loadError}</p>
+              <p className="mt-1 text-xs">
                 Tes préférences actuelles n&apos;ont pas été modifiées.
               </p>
-            </div>
+            </BlobAlert>
           ) : (
             <div className="space-y-4">
               {/* PRO-specific preferences */}
               <div className="space-y-2">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activité professionnelle</h4>
+                <h3 className="text-xs font-black uppercase tracking-widest text-blob-black/60 dark:text-white/55">Activité professionnelle</h3>
 
-                <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-amber-300 dark:hover:border-amber-700 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🗺️</span>
-                    <div>
-                      <p className="text-sm font-medium">Demandes de cours (BloboMap)</p>
-                      <p className="text-xs text-muted-foreground">Riders cherchant un cours — alerte dans Blob et par email</p>
+                <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-3 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                      <MapPin className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-black uppercase tracking-wide">Demandes de cours (BloboMap)</p>
+                      <p className="text-xs text-blob-black/64 dark:text-white/60">Riders cherchant un cours — alerte dans Blob et par email</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => toggle('notifyLessonRequests')}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifPrefs.notifyLessonRequests
-                        ? 'bg-amber-600'
-                        : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
+                    className={toggleTrackClass(notifPrefs.notifyLessonRequests)}
                     aria-label="Toggle lesson request notifications"
                   >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
+                    <span className={toggleThumbClass(notifPrefs.notifyLessonRequests)} />
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">💬</span>
-                    <div>
-                      <p className="text-sm font-medium">Messages</p>
-                      <p className="text-xs text-muted-foreground">Messages des riders</p>
+                <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-3 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                      <MessageSquare className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-black uppercase tracking-wide">Messages</p>
+                      <p className="text-xs text-blob-black/64 dark:text-white/60">Messages des riders</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => toggle('notifyProMessages')}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifPrefs.notifyProMessages
-                        ? 'bg-blue-600'
-                        : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
+                    className={toggleTrackClass(notifPrefs.notifyProMessages)}
                     aria-label="Toggle message notifications"
                   >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifPrefs.notifyProMessages ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
+                    <span className={toggleThumbClass(notifPrefs.notifyProMessages)} />
                   </button>
                 </div>
               </div>
 
               {/* Sport filters */}
               <div className="space-y-2">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Filtres par sport</h4>
+                <h3 className="text-xs font-black uppercase tracking-widest text-blob-black/60 dark:text-white/55">Filtres par sport</h3>
 
-                <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🏄</span>
-                    <div>
-                      <p className="text-sm font-medium">Demandes Surf</p>
-                      <p className="text-xs text-muted-foreground">Cours de surf uniquement</p>
+                <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-3 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                      <Waves className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-black uppercase tracking-wide">Demandes Surf</p>
+                      <p className="text-xs text-blob-black/64 dark:text-white/60">Cours de surf uniquement</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => toggle('notifyForSurf')}
                     disabled={!notifPrefs.notifyLessonRequests}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifPrefs.notifyForSurf && notifPrefs.notifyLessonRequests
-                        ? 'bg-blue-600'
-                        : 'bg-gray-300 dark:bg-gray-600'
-                    } ${!notifPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={toggleTrackClass(notifPrefs.notifyForSurf && notifPrefs.notifyLessonRequests, !notifPrefs.notifyLessonRequests)}
                     aria-label="Toggle surf notifications"
                   >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifPrefs.notifyForSurf && notifPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
+                    <span className={toggleThumbClass(notifPrefs.notifyForSurf && notifPrefs.notifyLessonRequests)} />
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-lg border-2 hover:border-cyan-300 dark:hover:border-cyan-700 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🪁</span>
-                    <div>
-                      <p className="text-sm font-medium">Demandes Kitesurf</p>
-                      <p className="text-xs text-muted-foreground">Cours de kitesurf uniquement</p>
+                <div className="flex items-center justify-between gap-3 rounded-sm border-2 border-blob-sand-deep bg-blob-sand p-3 transition-colors hover:border-blob-yellow dark:border-white/10 dark:bg-white/5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-blob-black bg-blob-yellow text-blob-black">
+                      <Wind className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-black uppercase tracking-wide">Demandes Kitesurf</p>
+                      <p className="text-xs text-blob-black/64 dark:text-white/60">Cours de kitesurf uniquement</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => toggle('notifyForKitesurf')}
                     disabled={!notifPrefs.notifyLessonRequests}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notifPrefs.notifyForKitesurf && notifPrefs.notifyLessonRequests
-                        ? 'bg-cyan-600'
-                        : 'bg-gray-300 dark:bg-gray-600'
-                    } ${!notifPrefs.notifyLessonRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={toggleTrackClass(notifPrefs.notifyForKitesurf && notifPrefs.notifyLessonRequests, !notifPrefs.notifyLessonRequests)}
                     aria-label="Toggle kitesurf notifications"
                   >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notifPrefs.notifyForKitesurf && notifPrefs.notifyLessonRequests ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
+                    <span className={toggleThumbClass(notifPrefs.notifyForKitesurf && notifPrefs.notifyLessonRequests)} />
                   </button>
                 </div>
               </div>
 
-              <Button
+              <BlobButton
                 type="button"
-                variant="outline"
+                variant="outlineDark"
                 size="sm"
                 onClick={save}
                 disabled={saving}
@@ -330,13 +319,13 @@ export default function ProNotificationsPage() {
                     Sauvegarde...
                   </span>
                 ) : (
-                  '💾 Sauvegarder mes préférences'
+                  'Sauvegarder mes préférences'
                 )}
-              </Button>
+              </BlobButton>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </BlobCard>
     </div>
   );
 }

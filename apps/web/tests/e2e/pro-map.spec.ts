@@ -1,4 +1,4 @@
-import { test, expect, request as playwrightRequest, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { loginWithCookieSession } from './helpers/auth';
 
 const WEB_BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? process.env.E2E_BASE_URL ?? 'http://localhost:3020';
@@ -146,26 +146,6 @@ async function openProMapWithValidSession(page: Page) {
   expect(proMeBody.lng, '/pro/me must return the seeded PRO longitude').toEqual(expect.any(Number));
 }
 
-async function resolveMatchingOptionValue(selectLocator: Locator, pattern: RegExp) {
-  const options = await selectLocator.locator('option').evaluateAll(
-    (elements: Element[]) =>
-      elements.map((element) => {
-        const option = element as HTMLOptionElement;
-        return {
-          value: option.value,
-          label: option.textContent ?? '',
-        };
-      }),
-  );
-
-  const match = options.find((option) => pattern.test(option.label));
-  if (!match) {
-    throw new Error(`No select option matches ${pattern}`);
-  }
-
-  return match.value;
-}
-
 function mapMarkerIcons(page: Page) {
   // .map-marker-item is present on rider/availability markers only — the center
   // (pro location) marker uses .map-marker-icon without .map-marker-item.
@@ -176,7 +156,7 @@ function mapMarkerIcons(page: Page) {
 
 async function visibleLessonCount(page: Page) {
   const text = await page.locator('main').textContent();
-  const match = text?.match(/(\d+)\s+demande\(s\)\s+trouvée\(s\)/i);
+  const match = text?.match(/(\d+)\s+demande(?:s|\(s\))?\s+trouvée(?:s|\(s\))?/i);
   return match ? Number(match[1]) : -1;
 }
 
@@ -354,7 +334,7 @@ test.describe('Pro Map (Blobomap)', () => {
     await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 20_000 });
 
     // Fixture ensures at least 1 rider is visible → hard assertion preserved from #147.
-    await expect(page.locator('text=/demande\\(s\\) trouvée\\(s\\)/i')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=/demande(?:s|\\(s\\))? trouvée(?:s|\\(s\\))?/i')).toBeVisible({ timeout: 10000 });
 
     await context.close();
   });
