@@ -2,6 +2,18 @@ import { render, screen } from '@testing-library/react';
 import BlobospherePage from '../page';
 import { loadBlobospherePreviews } from '@/lib/blobosphere/loadBlobospherePreviews';
 
+type MockImageProps = React.ImgHTMLAttributes<HTMLImageElement> & {
+  fill?: boolean;
+  priority?: boolean;
+  sizes?: string;
+};
+
+jest.mock('next/image', () => ({
+  __esModule: true,
+  // eslint-disable-next-line @next/next/no-img-element -- test-only mock for next/image.
+  default: ({ alt = '', fill: _fill, priority: _priority, sizes: _sizes, ...props }: MockImageProps) => <img alt={alt} {...props} />,
+}));
+
 jest.mock('@/lib/blobosphere/loadBlobospherePreviews', () => ({
   loadBlobospherePreviews: jest.fn(),
 }));
@@ -52,4 +64,3 @@ describe('/blobosphere', () => {
     expect(screen.getByText(/Aucun article publié pour cette rubrique/i)).toBeInTheDocument();
   });
 });
-

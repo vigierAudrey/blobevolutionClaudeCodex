@@ -16,10 +16,10 @@ const config: Config = {
    */
   safelist: [
     { pattern: /^(bg|text|border|fill|ring)-blob-/ },
-    { pattern: /^hover:(bg|text|border|fill)-blob-/ },
-    { pattern: /^focus-visible:(ring)-blob-/ },
+    { pattern: /^(bg|text|border|fill)-blob-/, variants: ['hover'] },
+    { pattern: /^ring-blob-/, variants: ['focus-visible'] },
     { pattern: /^(from|via|to)-blob-/ },
-    { pattern: /^group-hover:(border)-blob-/ },
+    { pattern: /^border-blob-/, variants: ['group-hover'] },
   ],
   theme: {
     container: {
