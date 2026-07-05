@@ -150,6 +150,9 @@ describe('proRouter — AuthZ (RIDER cannot access PRO_ONLY routes)', () => {
       'lng',
       'radiusKm',
       'notificationPreferences',
+      'slug',
+      'publicEnabled',
+      'publicCity',
     ];
     for (const key of expectedKeys) {
       expect(res.body).toHaveProperty(key);

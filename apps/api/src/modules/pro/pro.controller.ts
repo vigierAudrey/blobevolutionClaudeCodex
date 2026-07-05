@@ -20,6 +20,7 @@ import { getProDashboardStats } from '../../services/pro-dashboard.service';
 import { getClientIp } from '../../lib/client-ip';
 import { hashIpHmacSafe } from '../../lib/hash-ip';
 import { assertFranceLaunchProProfile, isFranceLaunchGuardError } from '../../lib/france-launch-guard';
+import { generateUniqueProSlug, validatePublicCity, PUBLIC_CITY_MAX_LENGTH } from '../../lib/pro-slug';
 
 export const proRouter = Router();
 proRouter.use(requireAuth, requireVerifiedEmail);
@@ -227,6 +228,9 @@ const ownerProProfileSelect = {
   lng: true,
   radiusKm: true,
   notificationPreferences: true,
+  slug: true,
+  publicEnabled: true,
+  publicCity: true,
 } as const;
 
 proRouter.get('/me', requireProRole, async (req, res) => {
@@ -405,6 +409,78 @@ proRouter.patch('/me', requireProRole, profileUpdateLimiter, async (req, res) =>
         message: err.message,
         ...(err.details ? { details: err.details } : {}),
       });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ── Visibilité publique (/pros/[slug]) ──────────────────────────────────────
+// Opt-in RGPD explicite : aucune activation par défaut, aucune activation
+// sans consentement du pro. Le slug est généré une seule fois à la première
+// activation puis reste stable (lien partagé, SEO) même si le nom change.
+const visibilitySchema = z.object({
+  publicEnabled: z.boolean(),
+  publicCity: z.string().trim().min(1).max(PUBLIC_CITY_MAX_LENGTH).optional(),
+  consent: z.boolean().optional(),
+});
+
+proRouter.patch('/me/visibility', requireProRole, profileUpdateLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id as string | undefined;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const body = visibilitySchema.parse(req.body || {});
+
+    const existing = await prisma.proProfile.findUnique({
+      where: { userId },
+      select: { id: true, businessName: true, bio: true, slug: true, publicCity: true },
+    });
+
+    if (!body.publicEnabled) {
+      const pp = await prisma.proProfile.update({
+        where: { userId },
+        data: { publicEnabled: false },
+        select: { publicEnabled: true, publicCity: true, slug: true },
+      });
+      return res.json(pp);
+    }
+
+    // Activation : consentement explicite + profil publiable requis à chaque fois.
+    if (body.consent !== true) {
+      return res.status(400).json({ error: 'CONSENT_REQUIRED' });
+    }
+    if (!existing?.businessName || !existing?.bio) {
+      return res.status(400).json({ error: 'PROFILE_INCOMPLETE' });
+    }
+
+    const rawCity = body.publicCity ?? existing.publicCity;
+    const publicCity = rawCity ? validatePublicCity(rawCity) : null;
+    if (!publicCity) {
+      return res.status(400).json({ error: 'INVALID_CITY' });
+    }
+
+    const slug =
+      existing.slug ??
+      (await generateUniqueProSlug(existing.businessName, async (candidate) => {
+        const taken = await prisma.proProfile.findUnique({
+          where: { slug: candidate },
+          select: { id: true },
+        });
+        return taken !== null && taken.id !== existing.id;
+      }));
+
+    const pp = await prisma.proProfile.update({
+      where: { userId },
+      data: { publicEnabled: true, publicCity, slug },
+      select: { publicEnabled: true, publicCity: true, slug: true },
+    });
+    return res.json(pp);
+  } catch (err: any) {
+    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });
+    if (err?.message === 'SLUG_INVALID_BUSINESS_NAME') {
+      return res.status(400).json({ error: 'PROFILE_INCOMPLETE' });
+    }
+    if (err?.message === 'SLUG_GENERATION_EXHAUSTED') {
+      return res.status(500).json({ error: 'Internal error' });
     }
     return res.status(500).json({ error: 'Internal error' });
   }
