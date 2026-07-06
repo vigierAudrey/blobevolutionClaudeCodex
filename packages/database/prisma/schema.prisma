@@ -188,6 +188,11 @@ model ProProfile {
   radiusKm     Int        @default(25)
   verified     Boolean    @default(false)
   verifiedAt   DateTime?
+  // Page publique /pros/[slug] — opt-in RGPD explicite du pro, jamais activé par défaut.
+  // publicCity est déclarée par le pro : seule localisation exposée publiquement (jamais lat/lng).
+  slug          String?   @unique
+  publicEnabled Boolean   @default(false)
+  publicCity    String?
   notificationPreferences Json?  // { notifyForSurf: true, notifyForKitesurf: true, pushEnabled: true, emailEnabled: false }
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -195,6 +200,7 @@ model ProProfile {
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([publicEnabled])
 }
 
 enum NotificationType {
@@ -883,6 +889,7 @@ enum AnalyticsEventType {
   BLOBOSPHERE_VIEW
   BLOBOSPHERE_OUTBOUND
   BLOBOSPHERE_SIGNUP
+  PUBLIC_PRO_PROFILE_VIEW
 }
 
 model UserConsent {

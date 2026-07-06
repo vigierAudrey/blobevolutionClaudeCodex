@@ -237,7 +237,8 @@ export type PublicAnalyticsEventPayload =
   | { eventType: 'BLOBOSPHERE_VIEW'; consentHash: string; contentId: string }
   | { eventType: 'BLOBOSPHERE_OUTBOUND'; consentHash: string; contentId: string; domain: string; campaignId?: string }
   | { eventType: 'BLOBOSPHERE_SIGNUP'; consentHash: string; contentId?: string }
-  | { eventType: 'PRO_DASHBOARD_OPEN'; consentHash: string };
+  | { eventType: 'PRO_DASHBOARD_OPEN'; consentHash: string }
+  | { eventType: 'PUBLIC_PRO_PROFILE_VIEW'; consentHash: string; contentId: string };
 
 export type RetentionBucket = {
   eligible: number;

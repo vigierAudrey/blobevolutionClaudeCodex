@@ -83,11 +83,22 @@ const proDashboardSchema = z
   })
   .strict();
 
+// contentId ici est le slug de la page publique /pros/[slug] consultée —
+// même schéma de validation que les contenus blobosphère (slug-like).
+const publicProProfileViewSchema = z
+  .object({
+    eventType: z.literal('PUBLIC_PRO_PROFILE_VIEW'),
+    consentHash: consentHashSchema,
+    contentId: contentIdSchema,
+  })
+  .strict();
+
 const analyticsEventSchema = z.discriminatedUnion('eventType', [
   blobosphereViewSchema,
   blobosphereOutboundSchema,
   blobosphereSignupSchema,
   proDashboardSchema,
+  publicProProfileViewSchema,
 ]);
 
 analyticsRouter.post('/events', analyticsRateLimit, async (req: Request, res: Response) => {

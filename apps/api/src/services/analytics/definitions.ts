@@ -42,6 +42,7 @@ export const PUBLIC_EVENT_TYPES = [
   'BLOBOSPHERE_OUTBOUND',
   'BLOBOSPHERE_SIGNUP',
   'PRO_DASHBOARD_OPEN',
+  'PUBLIC_PRO_PROFILE_VIEW',
 ] as const satisfies AnalyticsEventType[];
 
 export const ANALYTICS_ALLOWED_CONSENT_LEVELS: ConsentLevel[] = ['personalized', 'npa'];

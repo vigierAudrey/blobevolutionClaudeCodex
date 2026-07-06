@@ -11,7 +11,7 @@ import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
-import { Bell, Ban, CalendarClock, Cookie, Eye, FileText, Info, Lightbulb, Mail, MapPin, MessageSquare, RefreshCw, Shield, Target, Trash2, Waves, Wind } from 'lucide-react';
+import { Bell, Ban, CalendarClock, Check, Copy, Cookie, Eye, FileText, Globe, Info, Lightbulb, Mail, MapPin, MessageSquare, RefreshCw, Shield, Target, Trash2, Waves, Wind } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { apiClient } from '../../../lib/apiClient';
@@ -106,6 +106,14 @@ export default function ProProfilePage() {
   const [file, setFile] = useState<File | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Page publique /pros/[slug] — opt-in RGPD explicite, jamais activé par défaut.
+  const [publicEnabled, setPublicEnabled] = useState(false);
+  const [publicCity, setPublicCity] = useState('');
+  const [publicSlug, setPublicSlug] = useState<string | null>(null);
+  const [publicConsentChecked, setPublicConsentChecked] = useState(false);
+  const [savingVisibility, setSavingVisibility] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Geolocation state
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -251,6 +259,9 @@ export default function ProProfilePage() {
         setBio(data.bio || '');
         setEmailNotif(!!data.emailNotif);
         setPhotoUrl(data.photoUrl || null);
+        setPublicEnabled(!!data.publicEnabled);
+        setPublicCity(data.publicCity || '');
+        setPublicSlug(data.slug || null);
 
         // Load geolocation if available
         if (data.lat != null && data.lng != null) {
@@ -578,6 +589,85 @@ export default function ProProfilePage() {
     }
   };
 
+  const publicProfileUrl =
+    publicEnabled && publicSlug && typeof window !== 'undefined'
+      ? `${window.location.origin}/pros/${publicSlug}`
+      : null;
+
+  const handleCopyPublicLink = async () => {
+    if (!publicProfileUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicProfileUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      toast('Impossible de copier le lien automatiquement.', 'error');
+    }
+  };
+
+  const handleActivatePublicProfile = async () => {
+    if (!publicCity.trim()) {
+      toast('Indique ta ville pour activer ta page publique.', 'error');
+      return;
+    }
+    if (!publicConsentChecked) {
+      toast('Coche la case de consentement pour activer ta page publique.', 'error');
+      return;
+    }
+
+    setSavingVisibility(true);
+    try {
+      const t = ensureAuthenticated();
+      const response = await apiRequest('/pro/me/visibility', {
+        method: 'PATCH',
+        body: JSON.stringify({ publicEnabled: true, publicCity: publicCity.trim(), consent: true }),
+        headers: { Authorization: `Bearer ${t.accessToken}` },
+      });
+      const body = await response.json().catch(() => ({})) as {
+        error?: string; publicEnabled?: boolean; publicCity?: string; slug?: string;
+      };
+      if (!response.ok) {
+        const messages: Record<string, string> = {
+          CONSENT_REQUIRED: 'Consentement requis pour activer ta page publique.',
+          PROFILE_INCOMPLETE: 'Complète et enregistre ton nom commercial et ta présentation avant d\'activer ta page publique.',
+          INVALID_CITY: 'Ville invalide. Utilise uniquement des lettres, espaces et tirets.',
+        };
+        throw new Error(messages[body.error || ''] || 'Erreur lors de l\'activation');
+      }
+      setPublicEnabled(!!body.publicEnabled);
+      setPublicCity(body.publicCity || '');
+      setPublicSlug(body.slug || null);
+      setPublicConsentChecked(false);
+      toast('Ta page publique est activée.', 'success');
+    } catch (error) {
+      toast(sanitizeErrorMessage(error), 'error');
+    } finally {
+      setSavingVisibility(false);
+    }
+  };
+
+  const handleDeactivatePublicProfile = async () => {
+    setSavingVisibility(true);
+    try {
+      const t = ensureAuthenticated();
+      const response = await apiRequest('/pro/me/visibility', {
+        method: 'PATCH',
+        body: JSON.stringify({ publicEnabled: false }),
+        headers: { Authorization: `Bearer ${t.accessToken}` },
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body?.error || 'Erreur lors de la désactivation');
+      }
+      setPublicEnabled(false);
+      toast('Ta page publique est désactivée.', 'success');
+    } catch (error) {
+      toast(sanitizeErrorMessage(error), 'error');
+    } finally {
+      setSavingVisibility(false);
+    }
+  };
+
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
@@ -750,6 +840,96 @@ export default function ProProfilePage() {
                   )}
                 </BlobButton>
               </form>
+            </CardContent>
+          </Card>
+
+          {/* Page publique /pros/[slug] */}
+          <Card className="overflow-hidden rounded-sm border-2 border-blob-sand-deep bg-white text-blob-black dark:border-white/10 dark:bg-[hsl(220_14%_14%)] dark:text-white">
+            <CardHeader className="border-b-2 border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5">
+              <CardTitle className="flex items-center gap-2 text-xl font-black uppercase tracking-widest text-blob-black dark:text-white">
+                <Globe className="h-5 w-5" />
+                Page publique
+              </CardTitle>
+              <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">
+                Une fiche visible sur Internet, sans connexion — à partager sur tes réseaux, référencée sur Google. 100% optionnel et gratuit.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-6">
+              {publicEnabled ? (
+                <div className="space-y-4">
+                  <div className="flex items-start gap-2 rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 p-3 text-sm text-blob-black dark:bg-blob-yellow/10 dark:text-white">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>Ta page publique est active. N&apos;importe qui peut la consulter et la partager.</span>
+                  </div>
+                  {publicProfileUrl && (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <Input
+                        readOnly
+                        value={publicProfileUrl}
+                        onFocus={(e) => e.currentTarget.select()}
+                        aria-label="Lien de ta page publique"
+                        className="min-h-11 rounded-sm border-2 border-blob-black/30 font-mono text-xs sm:text-sm"
+                      />
+                      <BlobButton
+                        type="button"
+                        variant="outlineDark"
+                        size="sm"
+                        onClick={handleCopyPublicLink}
+                        className="w-full shrink-0 sm:w-auto"
+                      >
+                        <Copy className="h-3.5 w-3.5 mr-2" />
+                        {linkCopied ? 'Copié !' : 'Copier le lien'}
+                      </BlobButton>
+                    </div>
+                  )}
+                  <BlobButton
+                    type="button"
+                    variant="outlineDark"
+                    size="sm"
+                    onClick={handleDeactivatePublicProfile}
+                    disabled={savingVisibility}
+                  >
+                    {savingVisibility ? 'Désactivation…' : 'Désactiver ma page publique'}
+                  </BlobButton>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="publicCity">Ville affichée publiquement</Label>
+                    <Input
+                      id="publicCity"
+                      value={publicCity}
+                      onChange={(e) => setPublicCity(e.target.value)}
+                      placeholder="Ex: Lacanau"
+                      maxLength={48}
+                      className="min-h-11 rounded-sm border-2 border-blob-black/30 focus-visible:ring-blob-yellow"
+                    />
+                    <p className="text-xs text-blob-black/64 dark:text-white/60">
+                      Seule cette ville sera visible — jamais ta position exacte.
+                    </p>
+                  </div>
+                  <label className="flex items-start gap-2 text-sm text-blob-black/80 dark:text-white/75">
+                    <input
+                      type="checkbox"
+                      checked={publicConsentChecked}
+                      onChange={(e) => setPublicConsentChecked(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded-sm border-2 border-blob-black"
+                    />
+                    <span>
+                      J&apos;accepte que mon nom commercial, ma photo, ma présentation, ma ville et mes tarifs soient
+                      publiés sur une page accessible sans connexion et indexable par les moteurs de recherche.
+                    </span>
+                  </label>
+                  <BlobButton
+                    type="button"
+                    onClick={handleActivatePublicProfile}
+                    disabled={savingVisibility}
+                    className="w-full sm:w-auto"
+                  >
+                    {savingVisibility ? 'Activation…' : 'Activer ma page publique'}
+                  </BlobButton>
+                </div>
+              )}
             </CardContent>
           </Card>
 

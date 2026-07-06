@@ -94,6 +94,41 @@ describe('Analytics events endpoint', () => {
     expect(res.body).toMatchObject({ ok: true });
   });
 
+  it('accepts PUBLIC_PRO_PROFILE_VIEW with a slug-like contentId and consent', async () => {
+    await prisma.userConsent.upsert({
+      where: { userHash: CONSENT_HASH },
+      create: {
+        userHash: CONSENT_HASH,
+        consentLevel: 'personalized',
+        ad_storage: 'granted',
+        ad_user_data: 'granted',
+        ad_personalization: 'granted',
+        cmpVersion: 'test',
+      },
+      update: {},
+    });
+
+    const res = await request(app)
+      .post('/analytics/events')
+      .send({
+        eventType: 'PUBLIC_PRO_PROFILE_VIEW',
+        consentHash: CONSENT_HASH,
+        contentId: 'blob-surf-school',
+      })
+      .expect(202);
+
+    expect(res.body).toMatchObject({ ok: true });
+  });
+
+  it('rejects PUBLIC_PRO_PROFILE_VIEW without a contentId', async () => {
+    const res = await request(app)
+      .post('/analytics/events')
+      .send({ eventType: 'PUBLIC_PRO_PROFILE_VIEW', consentHash: CONSENT_HASH })
+      .expect(400);
+
+    expect(res.body).toMatchObject({ error: 'Invalid analytics payload' });
+  });
+
   it('enforces rate limits', async () => {
     // afterEach resetDb() truncates UserConsent — recreate for this test
     await prisma.userConsent.upsert({

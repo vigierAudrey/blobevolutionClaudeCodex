@@ -229,6 +229,7 @@ import { matchingRouter } from './modules/matching/matching.controller';
 import { reportsRouter } from './modules/reports/reports.controller';
 import { conversationsRouter } from './modules/chat/conversations.controller';
 import { proRouter } from './modules/pro/pro.controller';
+import { proPublicRouter } from './modules/pro/pro.public';
 import { mediaRouter } from './modules/media/media.controller';
 import { adminRouter } from './modules/admin/admin.controller';
 import { securityRouter } from './modules/security/security.controller';
@@ -511,6 +512,7 @@ export function createApp() {
   app.use('/consent', consentRouter);
   app.use('/analytics', analyticsRouter);
   app.use('/blobosphere', blobospherePublicRouter);
+  app.use('/public/pros', proPublicRouter);
   app.use('/admin', adminRouter);
   app.use('/admin/blobosphere', blobosphereAdminRouter);
   app.use('/security', securityRouter);
