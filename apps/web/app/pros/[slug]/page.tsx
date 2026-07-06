@@ -7,6 +7,7 @@ import { BlobButton } from '@/components/blob/BlobButton';
 import { BlobCard } from '@/components/blob/BlobCard';
 import { HomeFooter } from '@/components/home/HomeFooter';
 import { HomeHeader } from '@/components/home/HomeHeader';
+import { ProPublicProfileViewTracker } from '@/components/pros/ProPublicProfileViewTracker';
 import {
   loadPublicProProfile,
   SPORT_LABELS,
@@ -98,6 +99,7 @@ export default async function ProPublicProfilePage({ params }: ProPublicProfileP
 
   return (
     <div className="flex min-h-screen flex-col">
+      <ProPublicProfileViewTracker slug={profile.slug} />
       <HomeHeader />
 
       <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 px-4 py-8">

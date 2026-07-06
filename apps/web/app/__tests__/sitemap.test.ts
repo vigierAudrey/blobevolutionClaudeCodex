@@ -158,6 +158,7 @@ Publie`;
 
     expect(urls).toEqual([
       'https://blobsurf.com/blobosphere',
+      'https://blobsurf.com/pros',
       'https://blobsurf.com/blobosphere/article-a',
       'https://blobsurf.com/blobosphere/article-z',
       'https://blobsurf.com/blobosphere/article-publie',

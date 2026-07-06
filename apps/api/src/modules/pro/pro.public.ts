@@ -54,6 +54,34 @@ const publishableWhere = (slug?: string) => ({
 });
 
 const SLUGS_PAGE_SIZE = 200;
+const PROS_LIST_PAGE_SIZE = 24;
+
+// GET /public/pros — annuaire public paginé (page /pros). Tri par slug —
+// le regroupement visuel par ville se fait côté page (simplification tant
+// que le volume de profils publics reste faible).
+proPublicRouter.get('/', publicSlugsLimiter, async (req, res) => {
+  const rawCursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+  if (rawCursor !== undefined && !SLUG_PATTERN.test(rawCursor)) {
+    return res.status(400).json({ error: 'Invalid cursor' });
+  }
+
+  const rows = await prisma.proProfile.findMany({
+    where: publishableWhere(),
+    select: { slug: true, businessName: true, photoUrl: true, publicCity: true, verified: true },
+    orderBy: { slug: 'asc' },
+    take: PROS_LIST_PAGE_SIZE + 1,
+    ...(rawCursor ? { cursor: { slug: rawCursor }, skip: 1 } : {}),
+  });
+
+  const hasMore = rows.length > PROS_LIST_PAGE_SIZE;
+  const items = hasMore ? rows.slice(0, PROS_LIST_PAGE_SIZE) : rows;
+
+  res.set('Cache-Control', 'public, max-age=0, s-maxage=120');
+  return res.json({
+    items,
+    nextCursor: hasMore ? items[items.length - 1]?.slug ?? null : null,
+  });
+});
 
 // GET /public/pros/slugs — alimente le sitemap. Pagination par curseur (slug).
 proPublicRouter.get('/slugs', publicSlugsLimiter, async (req, res) => {

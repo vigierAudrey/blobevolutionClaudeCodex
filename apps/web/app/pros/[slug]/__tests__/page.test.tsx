@@ -17,6 +17,9 @@ jest.mock('@/lib/pros/loadPublicProProfile', () => {
 
 jest.mock('@/components/home/HomeHeader', () => ({ HomeHeader: () => <header data-testid="home-header" /> }));
 jest.mock('@/components/home/HomeFooter', () => ({ HomeFooter: () => <footer data-testid="home-footer" /> }));
+jest.mock('@/components/pros/ProPublicProfileViewTracker', () => ({
+  ProPublicProfileViewTracker: () => null,
+}));
 
 const mockLoadProfile = loadPublicProProfile as jest.Mock;
 const mockNotFound = jest.mocked(notFound);

@@ -53,6 +53,32 @@ export async function loadPublicProProfile(slug: string): Promise<PublicProProfi
   }
 }
 
+export type PublicProListItem = {
+  slug: string;
+  businessName: string;
+  photoUrl: string | null;
+  publicCity: string | null;
+  verified: boolean;
+};
+
+export type PublicProListPage = { items: PublicProListItem[]; nextCursor: string | null };
+
+/** Une page de l'annuaire public /pros. Fail-open : page vide si l'API échoue. */
+export async function loadPublicProList(cursor?: string): Promise<PublicProListPage> {
+  try {
+    const url = new URL(`${getApiUrl()}/public/pros`);
+    if (cursor) url.searchParams.set('cursor', cursor);
+
+    const res = await fetch(url, { next: { revalidate: 120 } });
+    if (!res.ok) return { items: [], nextCursor: null };
+    const data = await res.json();
+    if (!Array.isArray(data?.items)) return { items: [], nextCursor: null };
+    return { items: data.items, nextCursor: typeof data.nextCursor === 'string' ? data.nextCursor : null };
+  } catch {
+    return { items: [], nextCursor: null };
+  }
+}
+
 export type PublicProSlugEntry = { slug: string; updatedAt: string };
 
 /** Liste paginée des slugs publiés — alimente le sitemap. Fail-open : [] si l'API est indisponible. */

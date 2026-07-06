@@ -45,6 +45,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${siteUrl}/blobosphere`,
       lastModified: blobosphereLastModified,
     },
+    {
+      url: `${siteUrl}/pros`,
+      lastModified: proSlugs[0]?.updatedAt,
+    },
     ...articles.map((article) => ({
       url: getBlobosphereArticleUrl(siteUrl, article.slug),
       lastModified: article.lastModified,

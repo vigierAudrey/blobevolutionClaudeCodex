@@ -201,4 +201,34 @@ describe('public pro profile endpoints', () => {
   it('rejects a malformed cursor', async () => {
     await request(app).get('/public/pros/slugs?cursor=__nope__').expect(400);
   });
+
+  // ── GET /public/pros (annuaire) ────────────────────────────────────────────
+
+  it('lists published profiles with card fields, minimal, no banned field', async () => {
+    const published = await createPublishedPro(app, 'directory');
+
+    const hidden = await createPublishedPro(app, 'directory-hidden');
+    await prisma.proProfile.update({
+      where: { id: hidden.profile.id },
+      data: { publicEnabled: false },
+    });
+
+    const res = await request(app).get('/public/pros').expect(200);
+
+    expect(res.body.nextCursor).toBeNull();
+    expect(res.body.items).toEqual([
+      {
+        slug: published.profile.slug,
+        businessName: 'Blob Surf directory',
+        photoUrl: 'https://cdn.example.com/photo.jpg',
+        publicCity: 'Biarritz',
+        verified: false,
+      },
+    ]);
+    expectNoBannedKeys(res.body);
+  });
+
+  it('rejects a malformed cursor on the directory endpoint', async () => {
+    await request(app).get('/public/pros?cursor=__nope__').expect(400);
+  });
 });

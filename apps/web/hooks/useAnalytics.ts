@@ -6,7 +6,8 @@ export type AnalyticsEventInput =
   | { eventType: 'BLOBOSPHERE_VIEW'; contentId: string }
   | { eventType: 'BLOBOSPHERE_OUTBOUND'; contentId: string; domain: string; campaignId?: string }
   | { eventType: 'BLOBOSPHERE_SIGNUP'; contentId?: string }
-  | { eventType: 'PRO_DASHBOARD_OPEN' };
+  | { eventType: 'PRO_DASHBOARD_OPEN' }
+  | { eventType: 'PUBLIC_PRO_PROFILE_VIEW'; contentId: string };
 
 const isAnalyticsAllowed = (mode: string) => mode === 'personalized' || mode === 'npa';
 

@@ -1,4 +1,4 @@
-import { loadPublicProProfile, loadPublicProSlugs } from '../loadPublicProProfile';
+import { loadPublicProProfile, loadPublicProSlugs, loadPublicProList } from '../loadPublicProProfile';
 
 const originalFetch = global.fetch;
 const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -80,5 +80,36 @@ describe('loadPublicProSlugs', () => {
   it('fails open when the API returns a non-2xx status', async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false, json: async () => ({}) });
     expect(await loadPublicProSlugs()).toEqual([]);
+  });
+});
+
+describe('loadPublicProList', () => {
+  it('returns items and nextCursor on success', async () => {
+    const body = {
+      items: [{ slug: 'a', businessName: 'A', photoUrl: null, publicCity: 'Lacanau', verified: true }],
+      nextCursor: 'a',
+    };
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => body });
+
+    expect(await loadPublicProList()).toEqual(body);
+  });
+
+  it('forwards the cursor as a query param', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [], nextCursor: null }) });
+    await loadPublicProList('some-cursor');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.objectContaining({ href: expect.stringContaining('cursor=some-cursor') }),
+      expect.any(Object),
+    );
+  });
+
+  it('fails open (empty page) on a network error', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('down'));
+    expect(await loadPublicProList()).toEqual({ items: [], nextCursor: null });
+  });
+
+  it('fails open when the payload is malformed', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ foo: 'bar' }) });
+    expect(await loadPublicProList()).toEqual({ items: [], nextCursor: null });
   });
 });
