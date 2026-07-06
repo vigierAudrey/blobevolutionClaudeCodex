@@ -226,6 +226,9 @@ describe('near-lessons — lesson coords dissociation (mode strict)', () => {
     expect(Math.abs(item.lessonLatApprox - LACANAU.lat)).toBeLessThanOrEqual(0.001);
     expect(Math.abs(item.lessonLngApprox - LACANAU.lng)).toBeLessThanOrEqual(0.001);
 
+    // Identifiant requis par le bouton "Contacter" de la BloboMap.
+    expect(item.userId).toBe(riderUserId);
+
     // Coordonnées brutes du profil NON exposées
     expect(item.lat).toBeUndefined();
     expect(item.lng).toBeUndefined();

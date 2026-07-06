@@ -515,6 +515,7 @@ export default function ProMapPage() {
                       router.push(`/messages/${conversationId}`);
                     } catch (error) {
                       console.error('Erreur lors de l’ouverture de la conversation :', error);
+                      toast('Impossible d’ouvrir la conversation. Réessaie dans un instant.', 'error');
                     }
                   }}
                 />
