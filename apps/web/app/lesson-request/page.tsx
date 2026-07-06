@@ -54,6 +54,7 @@ export default function LessonRequestPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
 
   // Snapshot of the saved request (for the recap card)
   const [savedRequest, setSavedRequest] = useState<{
@@ -63,6 +64,10 @@ export default function LessonRequestPage() {
     place: string;
     studentCount: number;
   } | null>(null);
+
+  useEffect(() => {
+    setShareUrl(`${window.location.origin}/lesson-request`);
+  }, []);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -367,7 +372,7 @@ export default function LessonRequestPage() {
           ℹ️ Si tu as matché avec d&apos;autres riders, publie <strong>une seule demande commune</strong> pour éviter les doublons.
         </p>
         <p className="text-xs opacity-80">
-          Partage le lien <span className="font-semibold break-all">http://localhost:3002/lesson-request</span> au sein de ton groupe.
+          Partage le lien <span className="font-semibold break-all">{shareUrl || '/lesson-request'}</span> au sein de ton groupe.
         </p>
       </div>
 

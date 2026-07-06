@@ -193,6 +193,7 @@ const dashboardStatsLimiter = createLazyCustomRateLimiter({
 
 type LessonCandidateRow = {
   id: string;
+  userId: string;
   displayName: string | null;
   bio: string | null;
   lessonSport: string | null;
@@ -698,6 +699,7 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
       )
       SELECT
         rp."id",
+        rp."userId",
         rp."displayName",
         rp."bio",
         rp."lessonSport",
@@ -729,6 +731,7 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
 
     const items = candidates.map((c: LessonCandidateRow) => ({
       id: c.id,
+      userId: c.userId,
       displayName: c.displayName,
       bio: c.bio,
       lessonSport: c.lessonSport,
