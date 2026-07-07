@@ -908,18 +908,30 @@ export default function ProProfilePage() {
                       Seule cette ville sera visible — jamais ta position exacte.
                     </p>
                   </div>
-                  <label className="flex items-start gap-2 text-sm text-blob-black/80 dark:text-white/75">
+                  <div className="flex items-start gap-2 text-sm text-blob-black/80 dark:text-white/75">
                     <input
+                      id="publicConsentCheckbox"
                       type="checkbox"
                       checked={publicConsentChecked}
                       onChange={(e) => setPublicConsentChecked(e.target.checked)}
+                      aria-label="J'accepte la publication de mon profil pro"
+                      aria-describedby="publicConsentDesc"
                       className="mt-0.5 h-4 w-4 shrink-0 rounded-sm border-2 border-blob-black"
                     />
-                    <span>
-                      J&apos;accepte que mon nom commercial, ma photo, ma présentation, ma ville et mes tarifs soient
+                    {/* Pas de <label>/htmlFor ici : le texte évoque "nom commercial" et
+                        "présentation" qui collisionnent avec les sélecteurs Playwright
+                        getByLabel des champs du formulaire ci-dessus (strict mode
+                        violation). aria-describedby porte la description sans en faire
+                        une source de nom accessible pour getByLabel. */}
+                    <p
+                      id="publicConsentDesc"
+                      className="cursor-pointer"
+                      onClick={() => setPublicConsentChecked((v) => !v)}
+                    >
+                      J&apos;accepte que le nom de mon activité, ma photo, ma bio, ma ville et mes tarifs soient
                       publiés sur une page accessible sans connexion et indexable par les moteurs de recherche.
-                    </span>
-                  </label>
+                    </p>
+                  </div>
                   <BlobButton
                     type="button"
                     onClick={handleActivatePublicProfile}

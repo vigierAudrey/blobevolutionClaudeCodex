@@ -110,6 +110,18 @@ describe('Page publique — profil non activé', () => {
     expect(screen.queryByLabelText(/lien de ta page publique/i)).not.toBeInTheDocument();
   });
 
+  it('la checkbox de consentement n\'entre pas en conflit avec le champ "Nom commercial" (regression e2e Playwright)', async () => {
+    // Le texte du consentement mentionne "nom commercial" — sans aria-label dédié sur
+    // la checkbox, getByLabelText(/nom.*commercial/i) matcherait deux éléments et
+    // cassait apps/web/tests/e2e/pro-profile.spec.ts (strict mode violation).
+    render(<ProProfilePage />);
+    await screen.findByRole('button', { name: /activer ma page publique/i });
+    expect(
+      screen.getAllByLabelText(/nom.*commercial|nom.*entreprise|business.*name/i),
+    ).toHaveLength(1);
+    expect(screen.getAllByLabelText(/présentation|bio|description/i)).toHaveLength(1);
+  });
+
   it('active avec ville + consentement → PATCH /pro/me/visibility', async () => {
     const user = userEvent.setup();
     mockApiRequest.mockImplementation((url: string, opts?: { method?: string; body?: string }) => {
