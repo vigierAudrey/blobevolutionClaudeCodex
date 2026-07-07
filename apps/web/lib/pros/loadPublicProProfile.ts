@@ -36,11 +36,20 @@ function getApiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 }
 
-/** Renvoie le profil publiable, ou null si absent/opt-out/supprimé/erreur réseau. */
+/**
+ * Renvoie le profil publiable, ou null si absent/opt-out/supprimé/erreur réseau.
+ *
+ * cache: 'no-store' délibéré — publicEnabled est un contrôle d'accès RGPD
+ * (opt-in/opt-out du pro). Un cache ici retarderait la prise d'effet d'une
+ * désactivation au-delà de ce que "Désactiver ma page publique" promet à
+ * l'utilisateur. Le Data Cache de Next.js persiste sur disque (.next/cache)
+ * au-delà même d'un redémarrage du serveur — testé manuellement, un simple
+ * revalidate ne suffisait pas à garantir l'immédiateté.
+ */
 export async function loadPublicProProfile(slug: string): Promise<PublicProProfile | null> {
   try {
     const res = await fetch(`${getApiUrl()}/public/pros/${encodeURIComponent(slug)}`, {
-      next: { revalidate: 60 },
+      cache: 'no-store',
     });
     if (!res.ok) return null;
     const data = await res.json();
