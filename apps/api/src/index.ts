@@ -358,6 +358,9 @@ export function createApp() {
   const convPurgeHours = Number(process.env.CONV_PURGE_INTERVAL_HOURS || '0');
   // 90j aligné sur gdpr-purge.service.ts purgeRelationalData() — RGPD Phase 1
   const convTrashDays = Number(process.env.CONV_TRASH_RETENTION_DAYS || '90');
+  // Expiration des demandes de cours (BloboMap) — toutes les 6h par défaut :
+  // la fenêtre d'expiration est à minuit UTC, 4 passages/jour bornent le retard.
+  const lessonExpiryHours = Number(process.env.LESSON_EXPIRY_INTERVAL_HOURS || '6');
   async function purgeOnce() {
     await runJobWithLogContext('consent-purge', async () => {
       try {
@@ -390,6 +393,18 @@ export function createApp() {
     });
   }
 
+  // Expiration des demandes de cours périmées (date passée / sans date > TTL)
+  async function runLessonExpiry() {
+    await runJobWithLogContext('lesson-expiry', async () => {
+      try {
+        const { expireLessonRequests } = await import('./jobs/expireLessonRequests.js');
+        await expireLessonRequests();
+      } catch (e) {
+        secureLogger.error('LESSON_EXPIRY_FAILED', { error: e });
+      }
+    });
+  }
+
   // Only start background jobs in production/development, not in tests
   if (process.env.NODE_ENV !== 'test') {
     if (gdprPurgeHours > 0) {
@@ -411,6 +426,12 @@ export function createApp() {
     if (convPurgeHours > 0) {
       setInterval(purgeTrashedConversations, convPurgeHours * 60 * 60 * 1000);
       purgeTrashedConversations();
+    }
+
+    // Expiration des demandes de cours périmées
+    if (lessonExpiryHours > 0) {
+      setInterval(runLessonExpiry, lessonExpiryHours * 60 * 60 * 1000);
+      runLessonExpiry();
     }
   }
 

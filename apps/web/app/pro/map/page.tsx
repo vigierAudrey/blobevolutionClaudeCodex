@@ -112,10 +112,26 @@ const sportButtonClass = (active: boolean) =>
       : 'border-blob-black/20 bg-white text-blob-black hover:border-blob-yellow dark:border-white/20 dark:bg-white/5 dark:text-white',
   ].join(' ');
 
+// Le filtre sport est persisté localement : un pro kite ne doit pas repartir
+// sur « surf » à chaque visite (le rayon, lui, est persisté côté profil pro).
+const SPORT_FILTER_STORAGE_KEY = 'blobomap:sportFilter';
+
+const readStoredSport = (): SportFilter => {
+  if (typeof window === 'undefined') return 'surf';
+  try {
+    const stored = window.localStorage.getItem(SPORT_FILTER_STORAGE_KEY);
+    return stored === 'kitesurf' ? 'kitesurf' : 'surf';
+  } catch {
+    return 'surf';
+  }
+};
+
 export default function ProMapPage() {
   const router = useRouter();
   const toast = useToast();
   const [radiusKm, setRadiusKm] = useState<number | null>(null);
+  // Init à 'surf' côté serveur puis restauration localStorage au montage
+  // (initialiser dans useState lirait localStorage pendant l'hydratation → mismatch SSR).
   const [sport, setSport] = useState<SportFilter>('surf');
   const [items, setItems] = useState<LessonRequest[]>([]);
   const [center, setCenter] = useState<[number, number] | null>(null);
@@ -132,6 +148,9 @@ export default function ProMapPage() {
   useEffect(() => {
     // Détecter le navigateur au montage du composant
     setBrowserType(detectBrowser());
+
+    // Restaurer le dernier filtre sport utilisé
+    setSport(readStoredSport());
 
     // Load pro location via /pro/me (cookie auth)
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/pro/me`, { credentials: 'include' })
@@ -161,6 +180,15 @@ export default function ProMapPage() {
         lastSavedRadiusRef.current = 25;
       });
   }, [router]);
+
+  const selectSport = (next: SportFilter) => {
+    setSport(next);
+    try {
+      window.localStorage.setItem(SPORT_FILTER_STORAGE_KEY, next);
+    } catch {
+      // localStorage indisponible (mode privé strict) : filtre non persisté, sans impact.
+    }
+  };
 
   const enableGeolocation = () => {
     if (!navigator.geolocation) {
@@ -414,7 +442,7 @@ export default function ProMapPage() {
                 <button
                   type="button"
                   className={sportButtonClass(sport === 'surf')}
-                  onClick={() => setSport('surf')}
+                  onClick={() => selectSport('surf')}
                 >
                   <Waves className="h-4 w-4" />
                   Surf
@@ -422,7 +450,7 @@ export default function ProMapPage() {
                 <button
                   type="button"
                   className={sportButtonClass(sport === 'kitesurf')}
-                  onClick={() => setSport('kitesurf')}
+                  onClick={() => selectSport('kitesurf')}
                 >
                   <Wind className="h-4 w-4" />
                   Kitesurf

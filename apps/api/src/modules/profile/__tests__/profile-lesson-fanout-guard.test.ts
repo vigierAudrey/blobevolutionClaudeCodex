@@ -6,7 +6,8 @@
  *   - Fanout déclenché si déplacement > 100 m (triggerReason = LOCATION_CHANGED)
  *   - Fanout déclenché si changement de sport (triggerReason = SPORT_CHANGED)
  *   - Fanout déclenché si wantsLesson false → true (triggerReason = ACTIVATED)
- *   - Fanout NON déclenché si lessonSport absent/null (log LESSON_FANOUT_SKIPPED_NO_SPORT)
+ *   - wantsLesson=true sans lessonSport → 400 LESSON_SPORT_REQUIRED (mode strict,
+ *     aligné sur LESSON_COORDS_REQUIRED) — donc jamais de fanout sans sport
  *   - Fanout NON déclenché si seuls les champs non-lesson changent (bio, etc.)
  *
  * Stratégie : mock notifyNearbyProsForLessonSilent à module-level via jest.mock.
@@ -94,7 +95,7 @@ describe('Fanout — activation initiale (false → true)', () => {
     );
   });
 
-  it('ne déclenche PAS le fanout si wantsLesson=true sans sport', async () => {
+  it('rejette wantsLesson=true sans sport (400 LESSON_SPORT_REQUIRED, pas de fanout)', async () => {
     const res = await riderSession.put('/profile/me').send({
       wantsLesson: true,
       lessonLat: BASE_LAT,
@@ -102,7 +103,8 @@ describe('Fanout — activation initiale (false → true)', () => {
       lessonSport: null,
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('LESSON_SPORT_REQUIRED');
     expect(mockFanoutSilent).not.toHaveBeenCalled();
   });
 });
@@ -209,7 +211,7 @@ describe('Fanout — changement de sport', () => {
     );
   });
 
-  it('ne déclenche PAS le fanout si lessonSport est null même avec coords nouvelles', async () => {
+  it('rejette lessonSport null même avec coords nouvelles (400, pas de fanout)', async () => {
     await prisma.riderProfile.upsert({
       where: { userId: riderId },
       create: { userId: riderId, wantsLesson: true, lessonLat: BASE_LAT, lessonLng: BASE_LNG, lessonSport: 'surf' },
@@ -220,11 +222,17 @@ describe('Fanout — changement de sport', () => {
       wantsLesson: true,
       lessonLat: FAR_LAT,
       lessonLng: FAR_LNG,
-      lessonSport: null, // sport absent → fanout bloqué quelle que soit la distance
+      lessonSport: null, // sport absent → 400, la demande existante reste intacte
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('LESSON_SPORT_REQUIRED');
     expect(mockFanoutSilent).not.toHaveBeenCalled();
+
+    // Le profil n'a pas été modifié par la requête rejetée.
+    const rp = await prisma.riderProfile.findUnique({ where: { userId: riderId } });
+    expect(rp?.lessonSport).toBe('surf');
+    expect(rp?.wantsLesson).toBe(true);
   });
 });
 

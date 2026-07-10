@@ -78,9 +78,12 @@ export default function LessonRequestPage() {
 
         const sport = (profile.lessonSport as Sport) || null;
         const level = (profile.lessonLevel as Level) || null;
-        const date = profile.lessonDate
+        // Une date passée (demande expirée ou en attente d'expiration) est vidée :
+        // le serveur la refuserait (400) et l'input a min=aujourd'hui.
+        const storedDate = profile.lessonDate
           ? new Date(profile.lessonDate).toISOString().slice(0, 10)
           : '';
+        const date = storedDate && storedDate < new Date().toISOString().slice(0, 10) ? '' : storedDate;
         const place = profile.lessonPlace || '';
         const studentCount =
           typeof profile.lessonStudentCount === 'number' && profile.lessonStudentCount > 0
@@ -143,7 +146,9 @@ export default function LessonRequestPage() {
       if (wantsLesson) {
         payload.lessonSport = lessonSport ?? null;
         payload.lessonLevel = lessonLevel ?? null;
-        payload.lessonDate = lessonDate || undefined;
+        // null explicite : clé absente = « ne pas toucher » côté API, or vider le
+        // champ date en édition doit bien effacer la date en DB.
+        payload.lessonDate = lessonDate || null;
         payload.lessonPlace = lessonPlace || undefined;
         payload.lessonStudentCount = Math.max(1, Math.min(6, lessonStudentCount || 1));
         payload.lessonLat = lessonLat ?? null;

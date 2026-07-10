@@ -68,24 +68,30 @@ function toDistanceBucket(km: number): string {
   return '>30km';
 }
 
-/** Clé Redis anti-spam fanout par rider. */
-function fanoutKey(riderId: string): string {
-  return `lesson_fanout:${riderId}`;
+/**
+ * Clé Redis anti-spam fanout par rider ET par sport.
+ * Scopée au sport : un changement surf ↔ kitesurf dans l'heure doit notifier
+ * les pros de l'autre sport (audience disjointe) — seul le re-fanout vers la
+ * même audience est du spam. Sans cette scope, un SPORT_CHANGED sous cooldown
+ * était perdu définitivement (jamais différé).
+ */
+function fanoutKey(riderId: string, sport: LessonSport | null): string {
+  return `lesson_fanout:${riderId}:${sport ?? 'any'}`;
 }
 
 /**
- * Réserve atomiquement le créneau de fan-out pour ce rider.
+ * Réserve atomiquement le créneau de fan-out pour ce rider et ce sport.
  * Fail-closed : sans Redis, aucun email/push sortant ne doit pouvoir contourner
  * l'anti-spam ou générer un coût fournisseur non borné.
  */
-async function acquireFanoutSlot(riderId: string): Promise<boolean> {
+async function acquireFanoutSlot(riderId: string, sport: LessonSport | null): Promise<boolean> {
   const redis = cacheService.getClient();
   if (!redis) {
     secureLogger.warn('LESSON_NOTIF_FANOUT_LOCK_UNAVAILABLE', { reason: 'redis_unavailable' });
     return false;
   }
   try {
-    const result = await redis.set(fanoutKey(riderId), '1', {
+    const result = await redis.set(fanoutKey(riderId, sport), '1', {
       EX: FANOUT_COOLDOWN_TTL_SECONDS,
       NX: true,
     });
@@ -287,7 +293,7 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
 
   // Réservation atomique après la recherche : un seul appel concurrent peut
   // déclencher les écritures et les emails, sans pénaliser un résultat vide.
-  if (!(await acquireFanoutSlot(riderId))) {
+  if (!(await acquireFanoutSlot(riderId, lessonSport))) {
     secureLogger.debug('LESSON_NOTIF_FANOUT_SKIPPED_COOLDOWN');
     return;
   }

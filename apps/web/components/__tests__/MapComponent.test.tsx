@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
-import MapComponent from '../MapComponent';
+import MapComponent, { lessonDateRelativeLabel } from '../MapComponent';
 
 type LatLngLiteral = { lat: number; lng: number };
 type LatLngTuple = [number, number];
@@ -205,5 +205,35 @@ describe('MapComponent', () => {
 
     const { mapInstance } = getReactLeafletMocks();
     expect(mapInstance.flyToBounds).toHaveBeenCalled();
+  });
+});
+
+describe('lessonDateRelativeLabel', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const atNoon = (offsetDays: number) => {
+    const d = new Date(Date.now() + offsetDays * DAY_MS);
+    d.setHours(12, 0, 0, 0);
+    return d;
+  };
+
+  it("libelle « aujourd'hui » (urgent) pour la date du jour", () => {
+    expect(lessonDateRelativeLabel(atNoon(0))).toEqual({ label: "aujourd'hui", urgent: true });
+  });
+
+  it('libelle « demain » (urgent) pour J+1', () => {
+    expect(lessonDateRelativeLabel(atNoon(1))).toEqual({ label: 'demain', urgent: true });
+  });
+
+  it('libelle « dans 3 j » urgent à J+3, non urgent à J+5', () => {
+    expect(lessonDateRelativeLabel(atNoon(3))).toEqual({ label: 'dans 3 j', urgent: true });
+    expect(lessonDateRelativeLabel(atNoon(5))).toEqual({ label: 'dans 5 j', urgent: false });
+  });
+
+  it('libelle « date passée » pour une date antérieure (filet de sécurité)', () => {
+    expect(lessonDateRelativeLabel(atNoon(-2))).toEqual({ label: 'date passée', urgent: false });
+  });
+
+  it('retourne null pour une date invalide', () => {
+    expect(lessonDateRelativeLabel('not-a-date')).toBeNull();
   });
 });

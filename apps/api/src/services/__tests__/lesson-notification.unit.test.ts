@@ -235,16 +235,38 @@ describe('notifyNearbyProsForLesson', () => {
     expect(mockCreateNotif).not.toHaveBeenCalled();
   });
 
-  it('réserve atomiquement le cooldown avant un fanout', async () => {
+  it('réserve atomiquement le cooldown avant un fanout (clé scoped rider+sport)', async () => {
     mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
 
     await notifyNearbyProsForLesson(BASE_INPUT);
 
     expect(mockRedisSet).toHaveBeenCalledWith(
-      `lesson_fanout:${BASE_INPUT.riderId}`,
+      `lesson_fanout:${BASE_INPUT.riderId}:${BASE_INPUT.lessonSport}`,
       '1',
       { EX: FANOUT_COOLDOWN_TTL_SECONDS, NX: true },
     );
+  });
+
+  it('un changement de sport utilise une clé cooldown distincte (audience disjointe)', async () => {
+    mockQueryRaw.mockResolvedValue([proRow('pro-1')]);
+
+    await notifyNearbyProsForLesson(BASE_INPUT); // surf
+    await notifyNearbyProsForLesson({ ...BASE_INPUT, lessonSport: 'kitesurf' });
+
+    expect(mockRedisSet).toHaveBeenNthCalledWith(
+      1,
+      `lesson_fanout:${BASE_INPUT.riderId}:surf`,
+      '1',
+      { EX: FANOUT_COOLDOWN_TTL_SECONDS, NX: true },
+    );
+    expect(mockRedisSet).toHaveBeenNthCalledWith(
+      2,
+      `lesson_fanout:${BASE_INPUT.riderId}:kitesurf`,
+      '1',
+      { EX: FANOUT_COOLDOWN_TTL_SECONDS, NX: true },
+    );
+    // Les deux fanouts passent : le cooldown surf ne bloque pas le kitesurf.
+    expect(mockCreateNotif).toHaveBeenCalledTimes(2);
   });
 
   it('fail-closed si Redis indisponible : aucun fanout', async () => {

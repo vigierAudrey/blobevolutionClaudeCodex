@@ -47,6 +47,20 @@ type MapComponentProps = {
   radiusKm?: number;
 };
 
+// Libellé relatif de la date souhaitée d'un cours, pour prioriser d'un coup d'œil.
+// Les demandes à date passée sont normalement exclues côté API (filtre + job
+// d'expiration) — le libellé « date passée » ne sert que de filet de sécurité.
+export function lessonDateRelativeLabel(raw: Date | string): { label: string; urgent: boolean } | null {
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(date) - startOfDay(new Date())) / (24 * 60 * 60 * 1000));
+  if (diffDays < 0) return { label: 'date passée', urgent: false };
+  if (diffDays === 0) return { label: "aujourd'hui", urgent: true };
+  if (diffDays === 1) return { label: 'demain', urgent: true };
+  return { label: `dans ${diffDays} j`, urgent: diffDays <= 3 };
+}
+
 type SafeMapContainerProps = {
   center: [number, number];
   zoom: number;
@@ -414,8 +428,21 @@ export default function MapComponent({
                         </div>
                       )}
                       {item.lessonDate && (
-                        <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-medium">Date:</span> {new Date(item.lessonDate).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' })}
+                          {(() => {
+                            const rel = lessonDateRelativeLabel(item.lessonDate);
+                            if (!rel) return null;
+                            return (
+                              <span
+                                className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                  rel.urgent ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {rel.label}
+                              </span>
+                            );
+                          })()}
                         </div>
                       )}
                       {item.lessonPlace && (

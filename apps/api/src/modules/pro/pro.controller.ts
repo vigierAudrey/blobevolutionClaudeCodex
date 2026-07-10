@@ -758,6 +758,10 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
     // Requête BloboMap : utilise lessonLat/lessonLng (lieu demandé) — PAS lat/lng (profil).
     // Riders sans lessonLat/lessonLng exclus : mode strict intentionnel.
     // lessonLatApprox/lessonLngApprox arrondis à 3 décimales (~110 m) : privacy by default.
+    // Demandes dont lessonDate est passée exclues : la désactivation effective
+    // (wantsLesson=false) est faite par le job expireLessonRequests ; ce filtre
+    // garantit qu'une demande périmée disparaît de la map dès minuit, même si
+    // le job n'a pas encore tourné.
     const candidates = await prisma.$queryRaw<LessonCandidateRow[]>(Prisma.sql`
       WITH active_matches AS (
         SELECT "userOneId" AS "userId"
@@ -796,6 +800,7 @@ proRouter.get('/near/lessons', requireProRole, nearLessonsBurstLimiter, nearLess
         AND rp."lessonLat" IS NOT NULL
         AND rp."lessonLng" IS NOT NULL
         AND (rp."lessonSport" = ${sport} OR rp."lessonSport" IS NULL)
+        AND (rp."lessonDate" IS NULL OR rp."lessonDate" >= CURRENT_DATE)
         AND ST_DWithin(
           ST_SetSRID(ST_MakePoint(${plng}, ${plat}), 4326)::geography,
           ST_SetSRID(ST_MakePoint(rp."lessonLng", rp."lessonLat"), 4326)::geography,
