@@ -1,6 +1,6 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
-import { clientPrisma as prisma } from '@blobinfini/database';
+import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { requireAuth, requireVerifiedEmail } from '../auth/auth.guard';
 import { requireRiderRole } from './profile.guard';
 import { validate } from '../../middleware/validate';
@@ -468,15 +468,18 @@ profileRouter.put('/disciplines', requireRiderRole, async (req, res) => {
     let rp = await prisma.riderProfile.findUnique({ where: { userId } });
     if (!rp) rp = await prisma.riderProfile.create({ data: { userId } });
 
-    // Replace strategy: clear then insert unique sports/levels
-    await prisma.riderDiscipline.deleteMany({ where: { profileId: rp.id } });
-    if (body.length > 0) {
-      await prisma.riderDiscipline.createMany({
-        data: Array.from(new Map(body.map((b) => [`${b.sport}:${b.level}`, { profileId: rp.id, sport: b.sport, level: b.level }])).values()),
-        skipDuplicates: true,
-      });
-    }
-    const after = await prisma.riderDiscipline.findMany({ where: { profileId: rp.id }, select: { sport: true, level: true } });
+    // Replace strategy: clear then insert — one level per sport (last wins),
+    // atomically so a concurrent PUT cannot interleave between delete and insert.
+    const deduped = Array.from(
+      new Map(body.map((b) => [b.sport, { profileId: rp.id, sport: b.sport, level: b.level }])).values(),
+    );
+    const after = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.riderDiscipline.deleteMany({ where: { profileId: rp.id } });
+      if (deduped.length > 0) {
+        await tx.riderDiscipline.createMany({ data: deduped, skipDuplicates: true });
+      }
+      return tx.riderDiscipline.findMany({ where: { profileId: rp.id }, select: { sport: true, level: true } });
+    });
     return res.json(after);
   } catch (err: any) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid input', details: err.errors });

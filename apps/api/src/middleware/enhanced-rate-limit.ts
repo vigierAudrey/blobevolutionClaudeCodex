@@ -149,6 +149,20 @@ export const RATE_LIMIT_PROFILES = {
     }
   },
 
+  // Batched match decisions (DB writes + reciprocal match fan-out).
+  // Front flushes swipes in batches of 5 → 60 req/5min ≈ 300 swipes/5min legit budget.
+  MATCHING_DECISIONS: {
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'MATCHING_DECISIONS_RATE_LIMIT_EXCEEDED',
+      message: 'Too many match decisions. Please slow down.',
+      retryAfter: '5 minutes'
+    }
+  },
+
   // File upload endpoints - strict limits
   UPLOAD: {
     windowMs: 10 * 60 * 1000, // 10 minutes
@@ -350,7 +364,7 @@ function getStoreMode(): RateLimitStoreMode {
   return getRedisClient() ? 'redis' : 'memory';
 }
 
-type GeoRateLimitProfile = 'GEO_HEAVY_BURST' | 'GEO_HEAVY_MINUTE';
+type GeoRateLimitProfile = 'GEO_HEAVY_BURST' | 'GEO_HEAVY_MINUTE' | 'MATCHING_DECISIONS';
 
 /**
  * Create endpoint-specific geospatial limiters keyed by endpoint + user + IP.

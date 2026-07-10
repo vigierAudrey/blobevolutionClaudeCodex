@@ -128,6 +128,45 @@ describe('POST /matching/decisions security & safety', () => {
     expect(memberCount).toBe(2);
   });
 
+  it('abuse/harassment: re-ACCEPT after unmatch does NOT reactivate the match nor resurrect the conversation', async () => {
+    // 1) Mutual ACCEPT → match ACTIVE
+    await riderBSession
+      .post('/matching/decisions')
+      .send({ items: [{ targetProfileId: riderAProfileId, decision: 'ACCEPT' }] })
+      .expect(200);
+    await riderASession
+      .post('/matching/decisions')
+      .send({ items: [{ targetProfileId: riderBProfileId, decision: 'ACCEPT' }] })
+      .expect(200);
+
+    const [one, two] = riderAUserId < riderBUserId
+      ? [riderAUserId, riderBUserId]
+      : [riderBUserId, riderAUserId];
+
+    // 2) Rider A unmatches (same effect as POST /conversations/:id/unmatch)
+    await prisma.match.update({
+      where: { userOneId_userTwoId: { userOneId: one, userTwoId: two } },
+      data: { status: 'UNMATCHED' },
+    });
+
+    // 3) Rider B (the unmatched party) replays an ACCEPT via direct API call
+    const res = await riderBSession
+      .post('/matching/decisions')
+      .send({ items: [{ targetProfileId: riderAProfileId, decision: 'ACCEPT' }] })
+      .expect(200);
+
+    // The pair is skipped: no conversation returned, no match "created"
+    expect(res.body.createdMatchesCount).toBe(0);
+    expect(res.body.createdConversations).toEqual([]);
+
+    // 4) The match must still be UNMATCHED — unmatch is final
+    const match = await prisma.match.findUnique({
+      where: { userOneId_userTwoId: { userOneId: one, userTwoId: two } },
+      select: { status: true },
+    });
+    expect(match?.status).toBe('UNMATCHED');
+  });
+
   it('abuse/IDOR: forbids non-RIDER role on decisions endpoint', async () => {
     await proSession
       .post('/matching/decisions')
