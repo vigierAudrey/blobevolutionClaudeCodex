@@ -19,7 +19,8 @@
     "gdpr:archive": "tsx src/scripts/gdpr-purge-cli.ts archive",
     "cleanup:phantom-riders": "tsx scripts/cleanup-phantom-rider-profiles.ts",
     "cleanup:phantom-riders:force": "tsx scripts/cleanup-phantom-rider-profiles.ts --force",
-    "job:purge-notifications": "tsx src/jobs/purgeNotifications.ts"
+    "job:purge-notifications": "tsx src/jobs/purgeNotifications.ts",
+    "job:expire-lesson-requests": "tsx src/jobs/expireLessonRequests.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1065.0",

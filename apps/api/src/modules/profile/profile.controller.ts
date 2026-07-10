@@ -131,7 +131,28 @@ const upsertSchema = z.object({
   wantsLesson: z.boolean().optional(),
   lessonSport: z.enum(['surf','kitesurf']).nullable().optional().or(z.literal('').transform(() => null)),
   lessonLevel: z.enum(['beginner','intermediate','advanced']).nullable().optional().or(z.literal('').transform(() => null)),
-  lessonDate: z.string().nullish().transform(val => (val && val !== '') ? new Date(val) : null),
+  // lessonDate :
+  //   - clé absente → undefined : un PUT partiel ne doit jamais effacer la date
+  //     d'une demande active (l'ancien transform renvoyait null même sur clé
+  //     absente, ce qui écrasait la date en DB à chaque update de profil)
+  //   - null / '' → null : clear explicite
+  //   - chaîne → doit être une date valide et pas dans le passé (UTC), sinon 400
+  lessonDate: z
+    .string()
+    .nullish()
+    .transform((val) => {
+      if (val === undefined) return undefined;
+      if (val === null || val === '') return null;
+      return new Date(val);
+    })
+    .refine((v) => v == null || !Number.isNaN(v.getTime()), {
+      message: 'lessonDate invalide (format attendu : YYYY-MM-DD).',
+    })
+    .refine((v) => {
+      if (v == null || Number.isNaN(v.getTime())) return true; // déjà rejeté au refine précédent
+      const startOfTodayUtc = new Date(new Date().toISOString().slice(0, 10));
+      return v.getTime() >= startOfTodayUtc.getTime();
+    }, { message: 'lessonDate ne peut pas être dans le passé.' }),
   lessonPlace: z.string().max(200).nullable().optional().or(z.literal('').transform(() => null)),
   lessonStudentCount: z.number().int().min(1).max(6).nullable().optional(),
   // Coordonnées du lieu demandé — source de vérité pour le pin BloboMap.
@@ -322,6 +343,17 @@ profileRouter.put('/me', validate(upsertSchema), async (req, res) => { // authz-
         return res.status(400).json({
           error: 'LESSON_COORDS_REQUIRED',
           message: 'lessonLat et lessonLng sont requis pour activer une demande de cours.',
+        });
+      }
+
+      // Mode strict : wantsLesson=true sans sport → 400.
+      // Sans sport, la demande n'émettrait aucun fanout (le filtre par préférence
+      // des pros exige un sport) tout en apparaissant dans les deux filtres de la
+      // BloboMap — incohérence supprimée en exigeant le sport dès l'activation.
+      if (body.wantsLesson === true && !body.lessonSport) {
+        return res.status(400).json({
+          error: 'LESSON_SPORT_REQUIRED',
+          message: 'lessonSport est requis pour activer une demande de cours.',
         });
       }
 
