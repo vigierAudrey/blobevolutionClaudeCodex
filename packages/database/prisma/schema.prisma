@@ -298,6 +298,9 @@ model RiderDiscipline {
   updatedAt DateTime     @updatedAt
   profile   RiderProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
+  // Un seul niveau par sport et par profil (l'UI n'expose qu'un niveau par sport ;
+  // des doublons produiraient des cartes dupliquées en recherche « anytime »).
+  @@unique([profileId, sport])
   @@index([profileId])
   @@index([sport, level])
 }

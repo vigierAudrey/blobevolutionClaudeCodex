@@ -29,6 +29,9 @@ const MATCHING_CURSOR_VERSION = 1;
 
 const matchingSearchBurstLimiter = createGeoEndpointLimiter('matching_search', 'GEO_HEAVY_BURST');
 const matchingSearchMinuteLimiter = createGeoEndpointLimiter('matching_search', 'GEO_HEAVY_MINUTE');
+// Per-user+IP limiter — the decisions quota (MATCHING_DECISIONS_QUOTA_*) is
+// env-gated and fail-open, so this limiter is the always-on abuse guard.
+const matchingDecisionsLimiter = createGeoEndpointLimiter('matching_decisions', 'MATCHING_DECISIONS');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Enums & schemas
@@ -58,7 +61,8 @@ const searchSchema = z.object({
     .optional(),
   // Cursor-based pagination (opaque keyset token)
   cursor: z.string().optional(),
-  limit: z.number().int().min(1).max(100).optional().default(50),
+  // No Zod default: `limit ?? pageSize ?? 50` must let legacy pageSize apply.
+  limit: z.number().int().min(1).max(100).optional(),
   // Legacy pagination support (deprecated)
   page: z.number().int().min(1).optional(),
   pageSize: z.number().int().min(1).max(50).optional(),
@@ -267,14 +271,27 @@ async function processMutualPair(userId: string, targetUserId: string): Promise<
   const [one, two] = userId < targetUserId ? [userId, targetUserId] : [targetUserId, userId];
   const directKey = buildRiderDirectKey(userId, targetUserId);
 
-  const runMiniTx = async (): Promise<string> => {
-    let convId = '';
+  // null → pair intentionally skipped (existing match is UNMATCHED and must stay so)
+  const runMiniTx = async (): Promise<string | null> => {
+    let convId: string | null = null;
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const match = await tx.match.upsert({
+      const existingMatch = await tx.match.findUnique({
         where: { userOneId_userTwoId: { userOneId: one, userTwoId: two } as any },
-        update: { status: 'ACTIVE' },
-        create: { userOneId: one, userTwoId: two, status: 'ACTIVE' },
+        select: { id: true, status: true },
       });
+
+      // Un unmatch est définitif : une nouvelle décision ACCEPT (même mutuelle)
+      // ne doit jamais réactiver le match ni ressusciter la conversation.
+      if (existingMatch?.status === 'UNMATCHED') {
+        return;
+      }
+
+      const match =
+        existingMatch ??
+        (await tx.match.create({
+          data: { userOneId: one, userTwoId: two, status: 'ACTIVE' },
+          select: { id: true, status: true },
+        }));
 
       let conv = await tx.conversation.findFirst({
         where: {
@@ -321,6 +338,7 @@ async function processMutualPair(userId: string, targetUserId: string): Promise<
 
   try {
     const conversationId = await runMiniTx();
+    if (conversationId === null) return { type: 'skip' };
     return { type: 'success', conversationId };
   } catch (err) {
     const code = getPrismaErrorCode(err);
@@ -329,6 +347,7 @@ async function processMutualPair(userId: string, targetUserId: string): Promise<
     if (code === 'P1017' || code === 'P1001') {
       try {
         const conversationId = await runMiniTx();
+        if (conversationId === null) return { type: 'skip' };
         return { type: 'success', conversationId };
       } catch {
         return { type: 'pending' };
@@ -340,9 +359,9 @@ async function processMutualPair(userId: string, targetUserId: string): Promise<
       try {
         const match = await prisma.match.findUnique({
           where: { userOneId_userTwoId: { userOneId: one, userTwoId: two } as any },
-          select: { id: true },
+          select: { id: true, status: true },
         });
-        if (!match) return { type: 'skip' };
+        if (!match || match.status === 'UNMATCHED') return { type: 'skip' };
         const conv = await prisma.conversation.findFirst({
           where: {
             OR: [{ matchId: match.id }, { directKey }],
@@ -391,7 +410,7 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
         : res.status(401).json({ error: 'Unauthorized' });
     }
     const role = (req as any).user?.role as string | undefined;
-    if (role && role !== 'RIDER') {
+    if (role !== 'RIDER') {
       return envelope
         ? sendError(res, 403, ERROR_CODES.FORBIDDEN, 'Forbidden')
         : res.status(403).json({ error: 'Forbidden' });
@@ -402,14 +421,30 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
       searchSchema.parse(req.body);
     assertFranceLaunchLocation(location);
 
+    const effectiveLimit = limit ?? pageSize ?? 50;
+    if ((page ?? 1) > 1 && !cursor) {
+      throw Object.assign(new Error('Page-based pagination beyond page=1 is no longer supported. Use nextCursor.'), { status: 400 });
+    }
+    // Validate the cursor before any write — an invalid cursor must not mutate state.
+    const decodedCursor = decodeCursor(cursor, sortBy);
+
     // Ensure we have a profile to read preferences from
-    let profile = await prisma.riderProfile.findUnique({ where: { userId } });
+    let profile = await prisma.riderProfile.findUnique({
+      where: { userId },
+      select: { maxDistanceKm: true, emailNotif: true },
+    });
     if (!profile) {
-      profile = await prisma.riderProfile.create({ data: { userId } });
+      profile = await prisma.riderProfile.create({
+        data: { userId },
+        select: { maxDistanceKm: true, emailNotif: true },
+      });
     }
 
     // Pull last search to provide sensible defaults (distance, not location)
-    const last = await prisma.lastSearch.findUnique({ where: { userId } });
+    const last = await prisma.lastSearch.findUnique({
+      where: { userId },
+      select: { distanceKm: true },
+    });
 
     // Privacy invariant: location is ONLY used when explicitly provided in the request body.
     // Stored lat/lng (lastSearch or profile) are NOT used as fallback — this ensures
@@ -426,34 +461,32 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
       location: effectiveLocation,
     } as const;
 
-    // Persist last search (for defaults next time)
-    const dateValue = date === 'anytime' ? null : new Date(date + 'T00:00:00Z');
-    await prisma.lastSearch.upsert({
-      where: { userId },
-      create: {
-        userId,
-        sport,
-        level,
-        distanceKm: criteria.maxDistanceKm,
-        lat: effectiveLocation?.lat ?? null,
-        lng: effectiveLocation?.lng ?? null,
-        date: dateValue,
-      },
-      update: {
-        sport,
-        level,
-        distanceKm: criteria.maxDistanceKm,
-        lat: effectiveLocation?.lat ?? null,
-        lng: effectiveLocation?.lng ?? null,
-        date: dateValue,
-      },
-    });
-
-    const effectiveLimit = limit || pageSize || 50;
-    if ((page ?? 1) > 1 && !cursor) {
-      throw Object.assign(new Error('Page-based pagination beyond page=1 is no longer supported. Use nextCursor.'), { status: 400 });
+    // Persist last search (for defaults next time) — only on the first page:
+    // paginated follow-ups (cursor) carry the same criteria and would just
+    // rewrite identical data on every "load more".
+    if (!decodedCursor) {
+      const dateValue = date === 'anytime' ? null : new Date(date + 'T00:00:00Z');
+      await prisma.lastSearch.upsert({
+        where: { userId },
+        create: {
+          userId,
+          sport,
+          level,
+          distanceKm: criteria.maxDistanceKm,
+          lat: effectiveLocation?.lat ?? null,
+          lng: effectiveLocation?.lng ?? null,
+          date: dateValue,
+        },
+        update: {
+          sport,
+          level,
+          distanceKm: criteria.maxDistanceKm,
+          lat: effectiveLocation?.lat ?? null,
+          lng: effectiveLocation?.lng ?? null,
+          date: dateValue,
+        },
+      });
     }
-    const decodedCursor = decodeCursor(cursor, sortBy);
 
     // If no location provided, return empty results
     if (!criteria.location) {
@@ -469,8 +502,10 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
       return envelope ? sendOk(res, 200, parsedPayload) : res.json(payload);
     }
 
-    // Query PostGIS
-    matchingMetrics.incSearchCacheMiss();
+    // NOTE: le cache Redis matching n'est PAS branché ici (volontairement) :
+    // la requête contient un filtre par utilisateur (NOT EXISTS MatchDecision),
+    // donc une clé de cache sans userId fuiterait des résultats non filtrés.
+    // Ne pas appeler incSearchCacheMiss() tant qu'aucun cache n'existe.
 
     // PostGIS geospatial query
     let results: MatchingResponseItem[] = [];
@@ -514,11 +549,15 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
 
       const levelCond = level === 'anytime' ? Prisma.empty : Prisma.sql` AND rd."level" = ${level}`;
 
+      // Une recherche datée matche les riders disponibles ce jour-là ET ceux dont
+      // la dernière recherche était « anytime » (date NULL) ou qui n'ont jamais
+      // cherché (pas de ligne LastSearch) — sinon le LEFT JOIN devient un INNER
+      // join et exclut silencieusement tous les riders « anytime ».
       const dateCond =
         date === 'anytime'
           ? Prisma.empty
           : Prisma.sql`
-            AND ls."date" = ${new Date(date + 'T00:00:00Z')}
+            AND (ls."date" IS NULL OR ls."date" = ${new Date(date + 'T00:00:00Z')})
           `;
       const queryLimit = effectiveLimit + 1;
       const keysetCond =
@@ -588,7 +627,8 @@ matchingRouter.post('/search', matchingSearchBurstLimiter, matchingSearchMinuteL
           level: r.level,
           wantsLesson: !!r.wantsLesson,
           lessonSport: r.lessonSport,
-          distanceKm: r.dist_m == null ? null : Math.round(r.dist_m / 1000),
+          // Sub-km distances round to 1 km, never a misleading "0 km".
+          distanceKm: r.dist_m == null ? null : Math.max(1, Math.round(r.dist_m / 1000)),
         }));
 
       hasMore = rows.length > effectiveLimit;
@@ -685,7 +725,7 @@ matchingRouter.post('/decision', (req, res) => {
 //   - With X-API-ENVELOPE: 1: sendOk wraps payload in { ok: true, data: { ... } }
 // ─────────────────────────────────────────────────────────────────────────────
 
-matchingRouter.post('/decisions', async (req, res) => {
+matchingRouter.post('/decisions', matchingDecisionsLimiter, async (req, res) => {
   const envelope = wantsEnvelope(req);
   const requestId = randomUUID(); // ephemeral, for structured logs only — never in response
   const _decisionsStart = Date.now();
@@ -782,28 +822,26 @@ matchingRouter.post('/decisions', async (req, res) => {
     matchingMetrics.incDecisionsAccept(safeItems.filter((it) => it.decision === 'ACCEPT').length);
     matchingMetrics.incDecisionsRefuse(safeItems.filter((it) => it.decision === 'REFUSE').length);
 
-    // Main TX: quota check + batch upsert decisions
+    // Main TX: quota check + batch upsert decisions.
+    // Single INSERT … ON CONFLICT instead of N sequential upserts: one round-trip
+    // for up to 50 items, keeps the interactive TX well under Prisma's timeout.
     _quotaItemCount = safeItems.length;
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await checkDecisionsQuota(tx, userId, safeItems.length);
       // Redis was incremented (or DB path used) — flag for conditional refund in catch.
       _quotaWasCharged = true;
-      for (const item of safeItems) {
-        await tx.matchDecision.upsert({
-          where: {
-            actorUserId_targetProfileId: {
-              actorUserId: userId,
-              targetProfileId: item.targetProfileId,
-            } as any,
-          },
-          update: { decision: item.decision },
-          create: {
-            actorUserId: userId,
-            targetProfileId: item.targetProfileId,
-            decision: item.decision,
-          },
-        });
-      }
+      const values = Prisma.join(
+        safeItems.map(
+          (item) =>
+            Prisma.sql`(${randomUUID()}, ${userId}, ${item.targetProfileId}, ${item.decision}::"DecisionKind", NOW(), NOW())`,
+        ),
+      );
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO "MatchDecision" ("id", "actorUserId", "targetProfileId", "decision", "createdAt", "updatedAt")
+        VALUES ${values}
+        ON CONFLICT ("actorUserId", "targetProfileId")
+        DO UPDATE SET "decision" = EXCLUDED."decision", "updatedAt" = NOW()
+      `);
     });
 
     // Optional delay for deterministic race-condition tests
@@ -836,12 +874,11 @@ matchingRouter.post('/decisions', async (req, res) => {
         effectiveLimit = POST_COMMIT_MIN_LIMIT_PROD;
       }
 
-      // Batch-fetch target profiles
-      const acceptedTargetIds = acceptedItems.map((it) => it.targetProfileId);
-      const targetProfiles = await prisma.riderProfile.findMany({
-        where: { id: { in: acceptedTargetIds } },
-        select: { id: true, userId: true },
-      });
+      // Target profiles already fetched for the existence check — reuse, no re-query.
+      const acceptedTargetIdSet = new Set(acceptedItems.map((it) => it.targetProfileId));
+      const targetProfiles = existingProfiles.filter((p: { id: string }) =>
+        acceptedTargetIdSet.has(p.id),
+      );
 
       type ProfileEntry = { id: string; userId: string };
       const profileMap = new Map<string, ProfileEntry>(
