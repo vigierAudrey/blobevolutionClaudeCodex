@@ -5,13 +5,16 @@ import { AuthForm } from '@/components/AuthForm';
 import { BackBar } from '@/components/BackBar';
 import { KeyRound, Shield } from 'lucide-react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { BlobAuthLayout } from '@/components/blob/BlobAuthLayout';
 
 export default function LoginPage() {
+  const t = useTranslations('auth.login');
+
   return (
     <BlobAuthLayout
-      title="Connexion"
-      subtitle="Retrouve tes messages, tes demandes et ta communauté surf & kite."
+      title={t('title')}
+      subtitle={t('subtitle')}
     >
       <BackBar fallbackHref="/" tone="blobDark" />
 
@@ -26,8 +29,8 @@ export default function LoginPage() {
             <KeyRound size={20} aria-hidden="true" />
           </span>
           <span className="flex-1">
-            <span className="block font-black uppercase tracking-[0.12em]">Mot de passe oublié ?</span>
-            <span className="block text-xs text-blob-black/65">Réinitialise ton mot de passe</span>
+            <span className="block font-black uppercase tracking-[0.12em]">{t('forgotTitle')}</span>
+            <span className="block text-xs text-blob-black/65">{t('forgotDesc')}</span>
           </span>
         </Link>
 
@@ -39,8 +42,8 @@ export default function LoginPage() {
             <Shield size={20} aria-hidden="true" />
           </span>
           <span className="flex-1">
-            <span className="block font-black uppercase tracking-[0.12em]">Connexion Pro (2FA)</span>
-            <span className="block text-xs text-white/65">Sécurité renforcée pour les professionnels</span>
+            <span className="block font-black uppercase tracking-[0.12em]">{t('proTitle')}</span>
+            <span className="block text-xs text-white/65">{t('proDesc')}</span>
           </span>
         </Link>
       </div>

@@ -2,15 +2,18 @@
 
 export const dynamic = 'force-dynamic';
 import { Suspense } from 'react';
+import { useTranslations } from 'next-intl';
 import { AuthForm } from '@/components/AuthForm';
 import { BackBar } from '@/components/BackBar';
 import { BlobAuthLayout } from '@/components/blob/BlobAuthLayout';
 
 export default function RegisterPage() {
+  const t = useTranslations('auth.register');
+
   return (
     <BlobAuthLayout
-      title="Inscription"
-      subtitle="Crée ton accès Blob pour rejoindre la bêta locale."
+      title={t('title')}
+      subtitle={t('subtitle')}
     >
       <BackBar fallbackHref="/" tone="blobDark" />
 

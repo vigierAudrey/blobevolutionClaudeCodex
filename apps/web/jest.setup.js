@@ -20,6 +20,32 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// next-intl : fallback français quand un composant traduit est rendu sans
+// NextIntlClientProvider. Les tests qui montent un provider explicite
+// (ex. rendu de la home en anglais) gardent le comportement réel.
+jest.mock('next-intl', () => {
+  const actual = jest.requireActual('next-intl');
+  const frMessages = jest.requireActual('./messages/fr.json');
+
+  return {
+    ...actual,
+    useTranslations: (namespace) => {
+      try {
+        return actual.useTranslations(namespace);
+      } catch {
+        return actual.createTranslator({ locale: 'fr', messages: frMessages, namespace });
+      }
+    },
+    useLocale: () => {
+      try {
+        return actual.useLocale();
+      } catch {
+        return 'fr';
+      }
+    },
+  };
+});
+
 // Mock Next.js router
 const createRouter = () => ({
   push: jest.fn(),
