@@ -419,6 +419,40 @@ export class PushNotificationService {
   }
 
   /**
+   * Send lesson-request push to a nearby pro.
+   *
+   * Gating : preferenceType LESSON_REQUEST_NEARBY → sendToUser applique
+   * shouldNotifyUser (pushEnabled master + notifyLessonRequests) fail-closed.
+   * Le filtre sport (notifyForSurf/notifyForKitesurf) est appliqué en amont
+   * par la requête SQL du fanout (findEligiblePros).
+   *
+   * Privacy : ni coordonnées ni identifiant rider dans le payload — le pro
+   * découvre la demande sur la BloboMap, comme pour la notification in-app.
+   */
+  async sendLessonRequestNearby(proUserId: string, lessonData: {
+    sport: 'surf' | 'kitesurf' | null;
+    distanceBucket?: string;
+  }): Promise<boolean> {
+    if (!isPushFeatureEnabled()) return false;
+
+    const sportLabel = lessonData.sport ?? 'cours';
+    const notification: PushNotificationData = {
+      title: '🔔 Nouvelle demande de cours près de vous',
+      body: `Un rider cherche un prof de ${sportLabel} dans votre secteur. Ouvre la BloboMap pour le contacter.`,
+      type: 'general',
+      preferenceType: 'LESSON_REQUEST_NEARBY',
+      url: '/pro/map',
+      data: {
+        sport: lessonData.sport ?? '',
+        ...(lessonData.distanceBucket ? { distanceBucket: lessonData.distanceBucket } : {}),
+        mapUrl: '/pro/map',
+      },
+    };
+
+    return this.sendToUser(proUserId, notification);
+  }
+
+  /**
    * Send group invitation notification
    */
   async sendGroupInvitation(userId: string, invitationData: {

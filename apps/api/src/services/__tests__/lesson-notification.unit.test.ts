@@ -19,9 +19,11 @@ import {
   notifyNearbyProsForLesson,
   notifyNearbyProsForLessonSilent,
   sendEmailsToOptedInPros,
+  sendPushToOptedInPros,
   MAX_PROS_TO_NOTIFY,
   FANOUT_COOLDOWN_TTL_SECONDS,
   EMAIL_CONCURRENCY,
+  PUSH_CONCURRENCY,
 } from '../lesson-notification.service';
 import * as notifService from '../notification.service';
 
@@ -102,6 +104,16 @@ jest.mock('../../modules/auth/login-attempt.util', () => ({
   hashEmail: (email: string) => `hash-${email}`,
 }));
 
+// ─── Mock push service ────────────────────────────────────────────────────────
+
+const mockSendLessonPush = jest.fn();
+
+jest.mock('../push-notification.service', () => ({
+  pushNotificationService: {
+    sendLessonRequestNearby: (...args: unknown[]) => mockSendLessonPush(...args),
+  },
+}));
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function proRow(
@@ -109,8 +121,9 @@ function proRow(
   distanceKm = 3,
   emailNotif = false,
   inAppEnabled = true,
-): { userId: string; distanceKm: number; emailNotif: boolean; inAppEnabled: boolean } {
-  return { userId, distanceKm, emailNotif, inAppEnabled };
+  pushEnabled = true,
+): { userId: string; distanceKm: number; emailNotif: boolean; inAppEnabled: boolean; pushEnabled: boolean } {
+  return { userId, distanceKm, emailNotif, inAppEnabled, pushEnabled };
 }
 
 const BASE_INPUT = {
@@ -522,6 +535,123 @@ describe('sendEmailsToOptedInPros', () => {
     await sendEmailsToOptedInPros([proRow('pro-1', 3, true)], null);
 
     expect(mockSendNewLessonRequestEmail).toHaveBeenCalledWith({ proEmail: 'pro1@example.com', sport: null });
+  });
+});
+
+describe('PUSH_CONCURRENCY', () => {
+  it('vaut 5', () => {
+    expect(PUSH_CONCURRENCY).toBe(5);
+  });
+});
+
+describe('sendPushToOptedInPros', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSendLessonPush.mockResolvedValue(true);
+  });
+
+  it('envoie un push pour chaque pro avec pushEnabled=true (sport + distanceBucket)', async () => {
+    await sendPushToOptedInPros(
+      [proRow('pro-1', 3), proRow('pro-2', 20)],
+      'surf',
+    );
+
+    expect(mockSendLessonPush).toHaveBeenCalledTimes(2);
+    expect(mockSendLessonPush).toHaveBeenCalledWith('pro-1', { sport: 'surf', distanceBucket: '<5km' });
+    expect(mockSendLessonPush).toHaveBeenCalledWith('pro-2', { sport: 'surf', distanceBucket: '15-30km' });
+  });
+
+  it('ignore les pros avec pushEnabled=false', async () => {
+    await sendPushToOptedInPros(
+      [proRow('pro-1', 3, false, true, false), proRow('pro-2', 8)],
+      'kitesurf',
+    );
+
+    expect(mockSendLessonPush).toHaveBeenCalledTimes(1);
+    expect(mockSendLessonPush).toHaveBeenCalledWith('pro-2', expect.objectContaining({ sport: 'kitesurf' }));
+  });
+
+  it('ne fait aucun appel si aucun pro pushEnabled', async () => {
+    await sendPushToOptedInPros(
+      [proRow('pro-1', 3, false, true, false)],
+      'surf',
+    );
+
+    expect(mockSendLessonPush).not.toHaveBeenCalled();
+  });
+
+  it('une erreur FCM sur un pro ne bloque pas les autres', async () => {
+    mockSendLessonPush
+      .mockRejectedValueOnce(new Error('FCM down'))
+      .mockResolvedValueOnce(true);
+
+    await expect(
+      sendPushToOptedInPros([proRow('pro-1'), proRow('pro-2')], 'surf'),
+    ).resolves.not.toThrow();
+
+    expect(mockSendLessonPush).toHaveBeenCalledTimes(2);
+  });
+
+  it('aucune coordonnée ni riderId dans le payload push', async () => {
+    await sendPushToOptedInPros([proRow('pro-1', 3)], 'surf');
+
+    const payload = JSON.stringify(mockSendLessonPush.mock.calls[0]);
+    expect(payload).not.toMatch(/43\.\d+/);
+    expect(payload).not.toMatch(/-1\.\d+/);
+    expect(payload).not.toContain('rider-uuid-123');
+    expect(payload).not.toMatch(/lat|lng/i);
+  });
+});
+
+describe('notifyNearbyProsForLesson — comportement push', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRedisSet.mockResolvedValue('OK');
+    mockCreateNotif.mockResolvedValue({ id: 'notif-1', createdAt: new Date() });
+    mockRecordFanout.mockResolvedValue(undefined);
+    mockSendLessonPush.mockResolvedValue(true);
+    mockUserFindMany.mockResolvedValue([]);
+  });
+
+  it('déclenche le push pour les pros pushEnabled même si in-app et email sont off', async () => {
+    mockQueryRaw.mockResolvedValue([proRow('pro-1', 3, false, false, true)]);
+
+    await notifyNearbyProsForLesson(BASE_INPUT);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(mockCreateNotif).not.toHaveBeenCalled();
+    expect(mockSendLessonPush).toHaveBeenCalledTimes(1);
+    expect(mockSendLessonPush).toHaveBeenCalledWith('pro-1', expect.objectContaining({ sport: 'surf' }));
+  });
+
+  it('aucun push si tous les pros ont pushEnabled=false', async () => {
+    mockQueryRaw.mockResolvedValue([proRow('pro-1', 3, true, true, false)]);
+
+    await notifyNearbyProsForLesson(BASE_INPUT);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(mockSendLessonPush).not.toHaveBeenCalled();
+    expect(mockCreateNotif).toHaveBeenCalledTimes(1);
+  });
+
+  it('un échec push ne bloque pas les notifications in-app', async () => {
+    mockQueryRaw.mockResolvedValue([proRow('pro-1', 3)]);
+    mockSendLessonPush.mockRejectedValue(new Error('FCM down'));
+
+    await expect(notifyNearbyProsForLesson(BASE_INPUT)).resolves.not.toThrow();
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(mockCreateNotif).toHaveBeenCalledTimes(1);
+  });
+
+  it('cooldown actif → aucun push', async () => {
+    mockRedisSet.mockResolvedValue(null);
+    mockQueryRaw.mockResolvedValue([proRow('pro-1', 3)]);
+
+    await notifyNearbyProsForLesson(BASE_INPUT);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(mockSendLessonPush).not.toHaveBeenCalled();
   });
 });
 
