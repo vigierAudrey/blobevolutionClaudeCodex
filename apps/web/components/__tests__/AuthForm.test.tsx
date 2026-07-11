@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { NextIntlClientProvider } from 'next-intl';
+import enMessages from '@/messages/en.json';
 import { AuthForm } from '../AuthForm';
 import { apiClient } from '../../lib/apiClient';
 import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../../lib/franceLaunch';
@@ -335,6 +337,41 @@ describe('AuthForm', () => {
       expect(mockedApiClient.listConversations).not.toHaveBeenCalled();
       expect(mockedApiClient.getPendingConversationInvitations).not.toHaveBeenCalled();
       expect(mockedApiClient.getPendingContactRequests).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('i18n', () => {
+    it('bascule intégralement en anglais avec un provider locale "en"', () => {
+      render(
+        <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Europe/Paris">
+          <AuthForm mode="register" />
+        </NextIntlClientProvider>,
+      );
+
+      expect(screen.getByRole('heading', { name: /sign up/i })).toBeInTheDocument();
+      expect(screen.getByLabelText('Password')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /create the account/i })).toBeInTheDocument();
+      expect(screen.getByText(/session safety & responsibility/i)).toBeInTheDocument();
+      expect(screen.getByText(/your password must include:/i)).toBeInTheDocument();
+
+      // Aucun résidu français sur le formulaire anglophone
+      expect(screen.queryByText(/Créer le compte|Mot de passe|Sécurité des sessions/)).not.toBeInTheDocument();
+    });
+
+    it('affiche les erreurs serveur classifiées dans la langue active', async () => {
+      mockedApiClient.login.mockRejectedValue(new Error('Invalid credentials'));
+      render(
+        <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Europe/Paris">
+          <AuthForm mode="login" />
+        </NextIntlClientProvider>,
+      );
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText('Email'), 'rider@test.com');
+      await user.type(screen.getByLabelText('Password'), 'Password!234');
+      await user.click(screen.getByRole('button', { name: /log in/i }));
+
+      expect(await screen.findByText('Incorrect email or password.')).toBeInTheDocument();
     });
   });
 });

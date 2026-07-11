@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { apiClient } from '../lib/apiClient';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -13,15 +14,15 @@ import { getPasswordRequirementStatuses } from '../../api/src/utils/password-val
 import { PasswordRequirementsList } from './PasswordRequirementsList';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { BLOBOSPHERE_SIGNUP_ARTICLE_KEY, BLOBOSPHERE_SIGNUP_INTENT_KEY } from '@/components/blobosphere/BlobosphereAnalyticsLink';
-import { FRANCE_ONLY_COUNTRY_CODE, PRO_BETA_INFO_MESSAGE } from '../lib/franceLaunch';
-import { mapAuthErrorToFrench } from '../lib/mapAuthErrorToFrench';
+import { FRANCE_ONLY_COUNTRY_CODE } from '../lib/franceLaunch';
+import { mapAuthErrorToKey } from '../lib/mapAuthErrorToKey';
 import { BlobButton } from './blob/BlobButton';
 import { BlobMark } from './blob/BlobMark';
 
 const PUBLIC_ROLES = [
-  { value: 'RIDER', label: 'Rider' },
-  { value: 'PRO', label: 'Pro' },
-] as const satisfies ReadonlyArray<{ value: Extract<UserRole, 'RIDER' | 'PRO'>; label: string }>;
+  { value: 'RIDER', labelKey: 'form.roleRider' },
+  { value: 'PRO', labelKey: 'form.rolePro' },
+] as const satisfies ReadonlyArray<{ value: Extract<UserRole, 'RIDER' | 'PRO'>; labelKey: string }>;
 
 type PublicRole = (typeof PUBLIC_ROLES)[number]['value'];
 
@@ -66,11 +67,6 @@ const getTechnicalErrorMessage = (error: unknown, fallback = 'Une erreur est sur
   return fallback;
 };
 
-const getSafeAuthErrorMessage = (message: string) => {
-  const mapped = mapAuthErrorToFrench(message);
-  return mapped === message ? 'Une erreur est survenue. Vérifie tes informations et réessaie.' : mapped;
-};
-
 const authCardClass =
   'overflow-hidden rounded-sm border-2 border-blob-sand-deep bg-white text-blob-black shadow-[0_10px_30px_rgba(22,24,28,0.10)] dark:border-white/10 dark:bg-[hsl(220_14%_14%)] dark:text-white';
 const authHeaderClass = 'border-b-2 border-blob-sand-deep bg-blob-sand dark:border-white/10 dark:bg-white/5';
@@ -84,6 +80,7 @@ const authSuccessClass =
   'flex items-start gap-2 rounded-sm border-2 border-green-800 bg-green-50 p-3 text-green-950 dark:border-green-500 dark:bg-green-950/40 dark:text-green-100';
 
 export function AuthForm({ mode }: AuthFormProps) {
+  const t = useTranslations('auth');
   const router = useRouter();
   const searchParams = useSearchParams();
   const intentParam = mode === 'register' ? searchParams.get('intent') : null;
@@ -125,6 +122,10 @@ export function AuthForm({ mode }: AuthFormProps) {
     }
   }, []);
 
+  // Toute erreur serveur passe par la classification par clé — jamais de
+  // message brut du serveur dans l'UI, quelle que soit la langue affichée.
+  const translateServerError = (message: string) => t(`errors.${mapAuthErrorToKey(message)}`);
+
   const handleZodErrors = (details: ZodIssue[]) => {
     const errors: FieldErrors = {};
 
@@ -134,36 +135,32 @@ export function AuthForm({ mode }: AuthFormProps) {
       const message = detail.message;
 
       if (pathSegment === 'email') {
-        if (code === 'invalid_string' && typeof message === 'string' && message.includes('email')) {
-          errors.email = 'Adresse email invalide.';
-        } else {
-          errors.email = 'Adresse email invalide.';
-        }
+        errors.email = t('errors.emailInvalid');
       } else if (pathSegment === 'password') {
         const minimum =
           'minimum' in detail && typeof (detail as { minimum?: unknown }).minimum === 'number'
             ? (detail as { minimum: number }).minimum
             : null;
         if (code === 'too_small' && minimum === 8) {
-          errors.password = 'Le mot de passe doit contenir au moins 8 caractères.';
+          errors.password = t('errors.passwordMin');
         } else if (typeof message === 'string' && message.trim()) {
           errors.password = message;
         } else {
-          errors.password = 'Mot de passe invalide.';
+          errors.password = t('errors.passwordInvalid');
         }
       } else if (pathSegment === 'role') {
-        errors.role = 'Rôle invalide.';
+        errors.role = t('errors.roleInvalid');
       } else if (pathSegment === 'consentAccepted') {
-        errors.consent = 'Vous devez accepter les règles de sécurité des sessions pour continuer.';
+        errors.consent = t('errors.consentRequired');
       } else if (pathSegment === 'ageConfirmed') {
-        errors.ageConfirmation = 'Vous devez avoir 18 ans ou plus pour vous inscrire.';
+        errors.ageConfirmation = t('errors.ageRequired');
       }
     });
 
     setFieldErrors(errors);
 
     if (Object.keys(errors).length === 0) {
-      setError('Une erreur est survenue, veuillez vérifier vos informations.');
+      setError(t('errors.genericCheckInfo'));
     }
   };
 
@@ -179,11 +176,11 @@ export function AuthForm({ mode }: AuthFormProps) {
     try {
       if (mode === 'register') {
         if (!ageConfirmed) {
-          setFieldErrors({ ageConfirmation: 'Vous devez avoir 18 ans ou plus pour vous inscrire.' });
+          setFieldErrors({ ageConfirmation: t('errors.ageRequired') });
           return;
         }
         if (!consentAccepted) {
-          setFieldErrors({ consent: 'Merci de confirmer que vous avez lu et accepté les règles de sécurité des sessions.' });
+          setFieldErrors({ consent: t('errors.consentConfirm') });
           return;
         }
         const registration = await apiClient.register({
@@ -219,7 +216,7 @@ export function AuthForm({ mode }: AuthFormProps) {
       if ('requires2FA' in response && response.requires2FA && 'challengeId' in response) {
         setRequires2FA(true);
         setTwoFAChallengeId(response.challengeId as string);
-        setInfo('Un code de vérification a été envoyé à votre adresse email');
+        setInfo(t('twoFA.codeSent'));
         setLoading(false);
         return;
       }
@@ -259,17 +256,17 @@ export function AuthForm({ mode }: AuthFormProps) {
 
       if (mode === 'login' && normalized.includes('consent')) {
         setLoginConsentNeeded(true);
-        setError("Pour continuer, merci d'accepter les règles de sécurité des sessions.");
+        setError(t('errors.loginConsentNeeded'));
         setEmailNotVerified(false);
       } else if (mode === 'login' && normalized.includes('email not verified')) {
         setEmailNotVerified(true);
         setError(null);
       } else if (mode === 'register' && normalized.includes('email already registered')) {
         setFieldErrors({
-          email: "Cette adresse email est déjà utilisée. Essayez de vous connecter ou utilisez une autre adresse.",
+          email: t('errors.emailAlreadyUsed'),
         });
       } else {
-        setError(getSafeAuthErrorMessage(message));
+        setError(translateServerError(message));
       }
     } finally {
       submittingRef.current = false;
@@ -285,11 +282,11 @@ export function AuthForm({ mode }: AuthFormProps) {
     try {
       await apiClient.resendVerification(email);
       setResendStatus('sent');
-      setInfo('Demande de renvoi prise en compte. Vérifie ta boîte mail.');
+      setInfo(t('registered.resendTaken'));
     } catch (resendError) {
       setResendStatus('error');
       const resendMessage = getTechnicalErrorMessage(resendError, '');
-      setError(resendMessage ? getSafeAuthErrorMessage(resendMessage) : "Impossible de renvoyer l'email pour le moment.");
+      setError(resendMessage ? translateServerError(resendMessage) : t('errors.resendUnavailable'));
     }
   };
 
@@ -329,9 +326,9 @@ export function AuthForm({ mode }: AuthFormProps) {
       const verifyMessage = getTechnicalErrorMessage(verifyError, '');
       const normalized = verifyMessage.toLowerCase();
       if (normalized.includes('code incorrect') || normalized.includes('code expiré') || normalized.includes('invalid')) {
-        setError('Code invalide ou expiré.');
+        setError(t('twoFA.invalidCode'));
       } else {
-        setError('Impossible de vérifier le code pour le moment.');
+        setError(t('twoFA.verifyUnavailable'));
       }
       setTwoFACode('');
     } finally {
@@ -349,9 +346,9 @@ export function AuthForm({ mode }: AuthFormProps) {
               <Mail size={20} />
             </div>
             <div className="min-w-0">
-              <CardTitle className="text-xl font-black uppercase tracking-widest">Vérification en deux étapes</CardTitle>
+              <CardTitle className="text-xl font-black uppercase tracking-widest">{t('twoFA.title')}</CardTitle>
               <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">
-                Un code de vérification a été envoyé à votre adresse email
+                {t('twoFA.codeSent')}
               </CardDescription>
             </div>
           </div>
@@ -359,7 +356,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         <CardContent className="pt-6">
           <form onSubmit={submit2FA} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="2fa-code">Code de vérification (6 chiffres)</Label>
+              <Label htmlFor="2fa-code">{t('twoFA.codeLabel')}</Label>
               <Input
                 id="2fa-code"
                 type="text"
@@ -399,7 +396,7 @@ export function AuthForm({ mode }: AuthFormProps) {
               disabled={loading || twoFACode.length !== 6}
               size="lg"
             >
-              {loading ? 'Vérification...' : 'Vérifier le code'}
+              {loading ? t('twoFA.verifying') : t('twoFA.verify')}
             </BlobButton>
 
             <BlobButton
@@ -414,7 +411,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                 setInfo(null);
               }}
             >
-              Annuler
+              {t('twoFA.cancel')}
             </BlobButton>
           </form>
         </CardContent>
@@ -432,10 +429,10 @@ export function AuthForm({ mode }: AuthFormProps) {
             </div>
             <div className="min-w-0">
               <CardTitle className="text-xl font-black uppercase tracking-widest">
-                {registrationEmailSent ? 'Vérifie ta boîte mail !' : 'Compte créé'}
+                {registrationEmailSent ? t('registered.titleSent') : t('registered.titleCreated')}
               </CardTitle>
               <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">
-                {registrationEmailSent ? 'Ton compte Blob est presque prêt' : 'La vérification email reste nécessaire'}
+                {registrationEmailSent ? t('registered.descSent') : t('registered.descCreated')}
               </CardDescription>
             </div>
           </div>
@@ -444,18 +441,18 @@ export function AuthForm({ mode }: AuthFormProps) {
           {registrationEmailSent ? (
             <>
               <p className="text-sm text-foreground">
-                On vient d&apos;envoyer un lien de confirmation à{' '}
-                <strong className="font-semibold">{registeredEmail}</strong>.
-                Clique dessus pour activer ton compte Blob.
+                {t.rich('registered.bodySent', {
+                  email: registeredEmail,
+                  strong: (chunks) => <strong className="font-semibold">{chunks}</strong>,
+                })}
               </p>
               <p className="text-sm text-muted-foreground">
-                Pas de mail en vue ? Pense à vérifier tes spams, ça arrive !
+                {t('registered.bodySpam')}
               </p>
             </>
           ) : (
             <div className={authNoticeClass} role="status">
-              Ton compte a été créé, mais l&apos;email de vérification n&apos;a pas pu être envoyé pour le moment.
-              Réessaie avec le bouton de renvoi ou contacte le support si le problème persiste.
+              {t('registered.bodyNotSent')}
             </div>
           )}
 
@@ -463,7 +460,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             <div className={authSuccessClass} role="alert">
               <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
               <p className="text-sm">
-                Demande de renvoi prise en compte. Vérifie ta boîte mail.
+                {t('registered.resendTaken')}
               </p>
             </div>
           )}
@@ -471,7 +468,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             <div className={authErrorClass} role="alert">
               <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
               <p className="text-sm">
-                Impossible de renvoyer l&apos;email pour le moment. Réessaie dans quelques instants.
+                {t('registered.resendFailed')}
               </p>
             </div>
           )}
@@ -483,7 +480,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             disabled={resendStatus === 'loading'}
             onClick={resend}
           >
-            {resendStatus === 'loading' ? 'Envoi…' : "Renvoyer l'email de vérification"}
+            {resendStatus === 'loading' ? t('form.sending') : t('form.resendVerification')}
           </BlobButton>
 
           <BlobButton
@@ -491,7 +488,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             className="w-full"
             onClick={() => router.push('/login')}
           >
-            Aller à la connexion
+            {t('registered.goToLogin')}
           </BlobButton>
 
           <div className="text-center">
@@ -505,7 +502,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                 setResendStatus('idle');
               }}
             >
-              Changer d&apos;adresse email
+              {t('registered.changeEmail')}
             </button>
           </div>
         </CardContent>
@@ -521,9 +518,9 @@ export function AuthForm({ mode }: AuthFormProps) {
             {mode === 'login' ? <LogIn size={20} /> : <UserPlus size={20} />}
           </div>
           <div className="min-w-0">
-            <CardTitle className="text-xl font-black uppercase tracking-widest">{mode === 'login' ? 'Connexion' : 'Inscription'}</CardTitle>
+            <CardTitle className="text-xl font-black uppercase tracking-widest">{mode === 'login' ? t('form.loginTitle') : t('form.registerTitle')}</CardTitle>
             <CardDescription className="mt-1 text-blob-black/64 dark:text-white/60">
-              {mode === 'login' ? 'Accède à ton compte Blob' : 'Rejoins la communauté Blob'}
+              {mode === 'login' ? t('form.loginDesc') : t('form.registerDesc')}
             </CardDescription>
           </div>
         </div>
@@ -531,7 +528,7 @@ export function AuthForm({ mode }: AuthFormProps) {
       <CardContent className="pt-6">
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{t('form.emailLabel')}</Label>
             <Input
               id="email"
               type="email"
@@ -548,7 +545,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Mot de passe</Label>
+            <Label htmlFor="password">{t('form.passwordLabel')}</Label>
             <div className="relative">
               <Input
                 id="password"
@@ -563,7 +560,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                 type="button"
                 onClick={() => setShowPassword((prev) => !prev)}
                 className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                aria-label={showPassword ? t('form.hidePassword') : t('form.showPassword')}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
               </button>
@@ -580,19 +577,20 @@ export function AuthForm({ mode }: AuthFormProps) {
               {!selectorVisible ? (
                 <div className={authNoticeClass}>
                   <span className="text-sm text-foreground">
-                    Tu t&apos;inscris comme : <strong>{role === 'PRO' ? 'Pro' : 'Rider'}</strong>
+                    {t('form.registeringAs')}{' '}
+                    <strong>{role === 'PRO' ? t('form.rolePro') : t('form.roleRider')}</strong>
                   </span>
                   <button
                     type="button"
                     className="ml-3 min-h-10 text-xs font-black uppercase tracking-widest text-blob-black underline hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow dark:text-white"
                     onClick={() => setSelectorVisible(true)}
                   >
-                    Changer de rôle
+                    {t('form.changeRole')}
                   </button>
                 </div>
               ) : (
                 <>
-                  <Label htmlFor="role">Rôle</Label>
+                  <Label htmlFor="role">{t('form.roleLabel')}</Label>
                   <select
                     id="role"
                     className={`min-h-11 w-full rounded-sm border-2 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow ${
@@ -605,7 +603,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                   >
                     {PUBLIC_ROLES.map((option) => (
                       <option key={option.value} value={option.value}>
-                        {option.label}
+                        {t(option.labelKey)}
                       </option>
                     ))}
                   </select>
@@ -621,7 +619,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                   className="rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 px-3 py-2 text-sm text-blob-black dark:bg-blob-yellow/10 dark:text-white"
                   role="status"
                 >
-                  {PRO_BETA_INFO_MESSAGE}
+                  {t('form.proBetaInfo')}
                 </div>
               )}
             </div>
@@ -638,10 +636,13 @@ export function AuthForm({ mode }: AuthFormProps) {
                   required
                 />
                 <span className="font-medium">
-                  Je certifie avoir 18 ans ou plus et accepte les{' '}
-                  <a className="underline text-primary" href="/terms" target="_blank" rel="noopener noreferrer">
-                    Conditions Générales d&apos;Utilisation
-                  </a>
+                  {t.rich('form.ageConfirm', {
+                    terms: (chunks) => (
+                      <a className="underline text-primary" href="/terms" target="_blank" rel="noopener noreferrer">
+                        {chunks}
+                      </a>
+                    ),
+                  })}
                 </span>
               </label>
               {fieldErrors.ageConfirmation && (
@@ -654,25 +655,24 @@ export function AuthForm({ mode }: AuthFormProps) {
           {mode === 'register' && (
             <div className={authNoticeClass}>
               <div className="text-sm text-foreground">
-                <p className="font-medium">Sécurité des sessions & responsabilité</p>
+                <p className="font-medium">{t('form.securityTitle')}</p>
                 <p className="mt-1">
-                  Blob facilite la mise en relation entre personnes pour partager de bons moments.
-                  Tu restes toutefois seul responsable de tes choix, de ta sécurité et de tes biens.
-                  Blob ne fournit ni assurance, ni encadrement, ni garantie sur les activités organisées entre utilisateurs.
+                  {t('form.securityIntro')}
                 </p>
                 <ul className="list-disc pl-5 mt-2 space-y-1">
-                  <li>Donne rendez-vous dans un lieu public et préviens un proche.</li>
-                  <li>Reste vigilant face aux comportements inappropriés ou malveillants.</li>
-                  <li>Évalue toi-même les conditions (météo, niveau, matériel) avant de pratiquer.</li>
-                  <li>Interromps toute activité si tu ne te sens pas en sécurité.</li>
+                  <li>{t('form.securityTip1')}</li>
+                  <li>{t('form.securityTip2')}</li>
+                  <li>{t('form.securityTip3')}</li>
+                  <li>{t('form.securityTip4')}</li>
                 </ul>
                 <p className="mt-2 text-muted-foreground">
-                  En t&apos;inscrivant, tu confirmes avoir lu et accepté ces règles de sécurité.
-                  Pour les détails, consulte la page «
-                  <a className="underline text-primary" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
-                    Sécurité des sessions
-                  </a>
-                  ».
+                  {t.rich('form.securityOutro', {
+                    link: (chunks) => (
+                      <a className="underline text-primary" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
+                        {chunks}
+                      </a>
+                    ),
+                  })}
                 </p>
               </div>
               <label className="flex items-start gap-2 text-sm mt-2">
@@ -684,7 +684,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                   onChange={(event) => setConsentAccepted(event.target.checked)}
                   required
                 />
-                <span>J&apos;ai lu et j&apos;accepte les règles de sécurité des sessions.</span>
+                <span>{t('form.consentLabel')}</span>
               </label>
               {fieldErrors.consent && (
                 <p className="text-sm text-red-600 mt-2" role="alert">
@@ -696,14 +696,15 @@ export function AuthForm({ mode }: AuthFormProps) {
           {mode === 'login' && loginConsentNeeded && (
             <div className={authNoticeClass}>
               <div className="text-sm text-foreground">
-                <p className="font-medium">Sécurité des sessions & responsabilité</p>
+                <p className="font-medium">{t('form.securityTitle')}</p>
                 <p className="mt-1">
-                  Pour poursuivre la connexion, confirme avoir lu et accepté les règles de sécurité.
-                  Consulte la page «
-                  <a className="underline text-primary" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
-                    Sécurité des sessions
-                  </a>
-                  ».
+                  {t.rich('form.loginConsentPrompt', {
+                    link: (chunks) => (
+                      <a className="underline text-primary" href="/securite-sessions" target="_blank" rel="noopener noreferrer">
+                        {chunks}
+                      </a>
+                    ),
+                  })}
                 </p>
               </div>
               <label className="flex items-start gap-2 text-sm mt-2">
@@ -715,22 +716,22 @@ export function AuthForm({ mode }: AuthFormProps) {
                   onChange={(event) => setLoginConsentAccepted(event.target.checked)}
                   required
                 />
-                <span>J&apos;ai lu et j&apos;accepte les règles de sécurité des sessions.</span>
+                <span>{t('form.consentLabel')}</span>
               </label>
             </div>
           )}
           {mode === 'login' && emailNotVerified && (
             <div className="space-y-2 rounded-sm border-2 border-blob-yellow-dark bg-blob-yellow/20 p-3 text-blob-black">
               <div className="text-sm text-foreground">
-                <p className="font-medium">Email non vérifié</p>
-                <p className="mt-1">Avant de te connecter, confirme ton adresse email.</p>
+                <p className="font-medium">{t('form.emailNotVerifiedTitle')}</p>
+                <p className="mt-1">{t('form.emailNotVerifiedBody')}</p>
               </div>
               <div className="flex gap-2">
                 <BlobButton type="button" size="sm" variant="yellowSignalDark" disabled={resendStatus === 'loading' || !email} onClick={resend}>
-                  {resendStatus === 'loading' ? 'Envoi…' : "Renvoyer l'email de vérification"}
+                  {resendStatus === 'loading' ? t('form.sending') : t('form.resendVerification')}
                 </BlobButton>
               </div>
-              <p className="text-xs text-muted-foreground">Astuce : vérifie aussi le dossier spam.</p>
+              <p className="text-xs text-muted-foreground">{t('form.spamTip')}</p>
             </div>
           )}
           {error && (
@@ -754,17 +755,17 @@ export function AuthForm({ mode }: AuthFormProps) {
             size="lg"
           >
             <BlobMark size={18} decorative />
-            {loading ? 'En cours…' : mode === 'login' ? 'Se connecter' : 'Créer le compte'}
+            {loading ? t('form.submitting') : mode === 'login' ? t('form.submitLogin') : t('form.submitRegister')}
           </BlobButton>
         </form>
         <div className="mt-4 text-sm text-center text-muted-foreground">
           {mode === 'login' ? (
             <span>
-              Pas encore de compte ? <Link href="/register" className="text-primary underline">Inscription</Link>
+              {t('form.noAccount')} <Link href="/register" className="text-primary underline">{t('form.noAccountLink')}</Link>
             </span>
           ) : (
             <span>
-              Déjà un compte ? <Link href="/login" className="text-primary underline">Connexion</Link>
+              {t('form.haveAccount')} <Link href="/login" className="text-primary underline">{t('form.haveAccountLink')}</Link>
             </span>
           )}
         </div>

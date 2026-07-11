@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { BlobLogo } from './BlobLogo';
 
@@ -20,6 +21,7 @@ export function BlobAuthLayout({
   subtitle,
   children,
 }: BlobAuthLayoutProps) {
+  const t = useTranslations('auth.layout');
   const isDark = mode === 'dark';
 
   return (
@@ -47,7 +49,7 @@ export function BlobAuthLayout({
         {children}
 
         <footer className={cn('text-center text-[11px] uppercase tracking-[0.16em]', isDark ? 'text-white/50' : 'text-blob-black/55')}>
-          Blob · Communauté surf &amp; kite
+          {t('footer')}
         </footer>
       </div>
     </main>

@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from './ui/button';
 import { BlobButton } from './blob/BlobButton';
@@ -10,7 +11,9 @@ type BackBarProps = {
   tone?: 'default' | 'blobDark' | 'blobLight';
 };
 
-export function BackBar({ fallbackHref = '/dashboard', label = 'Retour', tone = 'default' }: BackBarProps) {
+export function BackBar({ fallbackHref = '/dashboard', label, tone = 'default' }: BackBarProps) {
+  const t = useTranslations('common');
+  const backLabel = label ?? t('back');
   const router = useRouter();
 
   const onBack = () => {
@@ -30,7 +33,7 @@ export function BackBar({ fallbackHref = '/dashboard', label = 'Retour', tone = 
     <div className="mb-4">
       {tone === 'default' ? (
         <Button variant="ghost" size="sm" onClick={onBack} className="inline-flex items-center gap-2">
-          <ArrowLeft size={16} /> {label}
+          <ArrowLeft size={16} /> {backLabel}
         </Button>
       ) : (
         <BlobButton
@@ -41,7 +44,7 @@ export function BackBar({ fallbackHref = '/dashboard', label = 'Retour', tone = 
           className="inline-flex"
         >
           <ArrowLeft size={16} aria-hidden="true" />
-          {label}
+          {backLabel}
         </BlobButton>
       )}
     </div>
