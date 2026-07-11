@@ -4,16 +4,15 @@ import { useRef } from 'react';
 import { motion, useInView, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { GraduationCap, BookOpen, ArrowRight, type LucideIcon } from 'lucide-react';
 
 type EditorialCard = {
   n: string;
-  title: string;
-  description: string;
-  cta: string;
+  /* Clé sous home.cards.* portant title/description/cta/imageAlt */
+  key: 'matching' | 'lessons' | 'guides';
   href: string;
   imageSrc: string;
-  imageAlt: string;
   blobLogo?: true;
   Icon?: LucideIcon;
 };
@@ -21,32 +20,23 @@ type EditorialCard = {
 const cards: EditorialCard[] = [
   {
     n: '01',
-    title: 'Trouve ton binôme',
-    description: 'Matching rapide entre riders selon ton niveau et tes envies.',
-    cta: 'Lancer le matching',
+    key: 'matching',
     href: '/register?intent=matching',
     imageSrc: '/images/home/matching-square.webp',
-    imageAlt: "Deux riders face à l'océan au coucher de soleil",
     blobLogo: true,
   },
   {
     n: '02',
-    title: 'Progresse avec des pros locaux',
-    description: 'Demande un cours particulier ou collectif, choisis ton spot et ton pro.',
-    cta: 'Voir les pros',
+    key: 'lessons',
     href: '/register?intent=lesson-request',
     imageSrc: '/images/home/lessons-square.webp',
-    imageAlt: 'Groupe de riders avec un moniteur de kite sur la plage du Médoc',
     Icon: GraduationCap,
   },
   {
     n: '03',
-    title: 'Conseils & guides',
-    description: 'Sécurité, météo, matos, spots — tous nos conseils pour progresser.',
-    cta: 'Lire les guides',
+    key: 'guides',
     href: '/blobosphere',
     imageSrc: '/images/home/actus-medoc-local-square-700.webp',
-    imageAlt: 'Kitesurf en action dans le Médoc Atlantique',
     Icon: BookOpen,
   },
 ];
@@ -65,6 +55,7 @@ const ease = [0.22, 1, 0.36, 1] as const;
  * Le Link reçoit h-full pour remplir le wrapper dans ce contexte.
  */
 export function HomeEditorialCards() {
+  const t = useTranslations('home.cards');
   const containerRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion() === true;
   const isInView = useInView(containerRef, { once: true, margin: '-60px 0px' });
@@ -109,13 +100,13 @@ export function HomeEditorialCards() {
             <Link
               href={card.href}
               className="group relative h-full grid overflow-hidden bg-blob-sand dark:bg-[hsl(220_14%_14%)] text-blob-black dark:text-white shadow-[0_1px_0_rgba(0,0,0,0.08)] dark:shadow-none ring-1 ring-blob-black/10 dark:ring-white/8 transition-colors duration-300 hover:bg-white dark:hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blob-yellow lg:grid-cols-[1fr_42%]"
-              aria-label={`${card.title} — ${card.cta}`}
+              aria-label={`${t(`${card.key}.title`)} — ${t(`${card.key}.cta`)}`}
             >
               {/* Image */}
               <div className="relative h-40 w-full overflow-hidden lg:order-2 lg:h-full">
                 <Image
                   src={card.imageSrc}
-                  alt={card.imageAlt}
+                  alt={t(`${card.key}.imageAlt`)}
                   fill
                   className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
                   sizes="(min-width: 1024px) 180px, (min-width: 640px) 50vw, 100vw"
@@ -164,17 +155,17 @@ export function HomeEditorialCards() {
 
                 {/* Titre */}
                 <p className="text-blob-black dark:text-white font-black uppercase tracking-wide text-sm sm:text-base lg:text-[15px] xl:text-base leading-tight">
-                  {card.title}
+                  {t(`${card.key}.title`)}
                 </p>
 
                 {/* Description */}
                 <p className="text-blob-black/70 dark:text-white/65 text-[11px] leading-relaxed">
-                  {card.description}
+                  {t(`${card.key}.description`)}
                 </p>
 
                 {/* CTA textuel */}
                 <span className="mt-auto inline-flex w-fit items-center gap-2 bg-blob-black px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white transition-colors duration-200 group-hover:text-blob-yellow">
-                  {card.cta}
+                  {t(`${card.key}.cta`)}
                   <ArrowRight
                     size={11}
                     className="group-hover:translate-x-0.5 transition-transform duration-200"

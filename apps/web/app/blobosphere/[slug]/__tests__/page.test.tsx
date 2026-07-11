@@ -1,7 +1,18 @@
 import { render, screen } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
 import { notFound } from 'next/navigation';
 import BlobosphereArticlePage, { generateMetadata } from '../page';
+import fr from '@/messages/fr.json';
 import { loadPublishedBlobosphereArticleBySlug } from '@/lib/blobosphere/loadBlobosphereArticle';
+
+// La page réutilise HomeHeader/HomeFooter, câblés sur next-intl.
+function renderWithIntl(ui: React.ReactElement) {
+  return render(
+    <NextIntlClientProvider locale="fr" messages={fr} timeZone="Europe/Paris">
+      {ui}
+    </NextIntlClientProvider>,
+  );
+}
 
 type MockImageProps = React.ImgHTMLAttributes<HTMLImageElement> & {
   fill?: boolean;
@@ -49,7 +60,7 @@ describe('/blobosphere/[slug]', () => {
   });
 
   it('renders a published article', async () => {
-    render(await BlobosphereArticlePage({ params: Promise.resolve({ slug: 'article-publie' }) }));
+    renderWithIntl(await BlobosphereArticlePage({ params: Promise.resolve({ slug: 'article-publie' }) }));
 
     expect(screen.getByRole('heading', { name: 'Article publié' })).toBeInTheDocument();
     expect(screen.getByText('Un guide publié pour la communauté.')).toBeInTheDocument();

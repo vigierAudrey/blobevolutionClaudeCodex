@@ -3,14 +3,16 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { setCookie } from 'cookies-next';
 import { useState, useEffect } from 'react';
+import { LOCALE_COOKIE, type Locale } from '@/i18n/config';
+import { hardReload } from '@/lib/hardReload';
 
-const LANGUAGES = [
+const LANGUAGES: ReadonlyArray<{ code: Locale; flag: string; label: string }> = [
   { code: 'fr', flag: '🇫🇷', label: 'Français' },
   { code: 'en', flag: '🇬🇧', label: 'English' },
   { code: 'es', flag: '🇪🇸', label: 'Español' },
   { code: 'de', flag: '🇩🇪', label: 'Deutsch' },
   { code: 'nl', flag: '🇳🇱', label: 'Nederlands' },
-] as const;
+];
 
 export function LanguageSelector() {
   const locale = useLocale();
@@ -42,15 +44,15 @@ export function LanguageSelector() {
     setIsOpen(false);
 
     // Save preference (expires in 1 year)
-    setCookie('NEXT_LOCALE', newLocale, {
+    setCookie(LOCALE_COOKIE, newLocale, {
       maxAge: 365 * 24 * 60 * 60,
       path: '/',
       sameSite: 'lax',
     });
 
     // Refresh the page to apply new language
-    // Using window.location to force a full page reload with new locale
-    window.location.reload();
+    // Full reload : re-rend les Server Components et met à jour <html lang>
+    hardReload();
   };
 
   return (

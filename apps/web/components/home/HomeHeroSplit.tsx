@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { useTranslations } from 'next-intl';
 import { HomeEditorialCards } from '@/components/home/HomeEditorialCards';
 import { HomeYellowBar } from '@/components/home/HomeYellowBar';
 import { HeroAnimated } from '@/components/home/HeroAnimated';
@@ -19,9 +20,11 @@ import { HeroAnimated } from '@/components/home/HeroAnimated';
  * Brise out du container via -mx pour couvrir toute la largeur viewport.
  */
 export function HomeHeroSplit() {
+  const t = useTranslations('home.hero');
+
   return (
     <section
-      aria-label="Blob — La communauté surf & kite du Médoc Atlantique"
+      aria-label={t('ariaSection')}
       className="-mx-4 bg-blob-sand dark:bg-blob-black sm:-mx-6 lg:-mx-8"
     >
       <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_390px] xl:grid-cols-[minmax(0,1fr)_430px]">

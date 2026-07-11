@@ -1,5 +1,20 @@
 import { render, screen, within } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
 import Home from '../page';
+import fr from '@/messages/fr.json';
+import en from '@/messages/en.json';
+
+// La home est câblée sur next-intl : le rendu de test fournit le contexte
+// que le root layout injecte en production (NextIntlClientProvider).
+const MESSAGES = { fr, en } as const;
+
+function renderHome(locale: keyof typeof MESSAGES = 'fr') {
+  return render(
+    <NextIntlClientProvider locale={locale} messages={MESSAGES[locale]} timeZone="Europe/Paris">
+      <Home />
+    </NextIntlClientProvider>,
+  );
+}
 
 function getLinksByHref(container: HTMLElement, href: string) {
   return within(container)
@@ -13,7 +28,7 @@ function expectLinkWithHref(container: HTMLElement, name: RegExp, href: string) 
 
 describe('Static Home page', () => {
   it('affiche le logo Blob et la navigation premium', () => {
-    render(<Home />);
+    renderHome();
 
     const header = screen.getByRole('banner', { name: /en-tête du site/i });
 
@@ -31,7 +46,7 @@ describe('Static Home page', () => {
   });
 
   it('a un H1 sémantique et mentionne surf & kite dans le Médoc', () => {
-    render(<Home />);
+    renderHome();
 
     const h1 = screen.getByRole('heading', { level: 1 });
     expect(h1).toBeInTheDocument();
@@ -42,7 +57,7 @@ describe('Static Home page', () => {
   });
 
   it('affiche le hero split et ses CTA principaux', () => {
-    render(<Home />);
+    renderHome();
 
     const hero = screen.getByRole('region', {
       name: /Blob.*communauté surf.*kite.*Médoc Atlantique/i,
@@ -57,7 +72,7 @@ describe('Static Home page', () => {
   });
 
   it('relie les cartes éditoriales et la barre jaune aux parcours clés', () => {
-    render(<Home />);
+    renderHome();
 
     const hero = screen.getByRole('region', {
       name: /Blob.*communauté surf.*kite.*Médoc Atlantique/i,
@@ -79,7 +94,7 @@ describe('Static Home page', () => {
   });
 
   it('affiche la transition communautaire entre le hero et Pourquoi Blob', () => {
-    render(<Home />);
+    renderHome();
 
     const transition = screen.getByRole('region', {
       name: /On commence là où la communauté ride déjà/i,
@@ -96,7 +111,7 @@ describe('Static Home page', () => {
   });
 
   it('affiche la section "Pourquoi Blob ?" avec le messaging bêta', () => {
-    render(<Home />);
+    renderHome();
 
     expect(screen.getByRole('heading', { name: /Pourquoi Blob/i })).toBeInTheDocument();
 
@@ -114,7 +129,7 @@ describe('Static Home page', () => {
   });
 
   it('affiche le footer premium avec les routes sûres', () => {
-    render(<Home />);
+    renderHome();
 
     const footer = screen.getByRole('contentinfo');
     expect(footer).toBeInTheDocument();
@@ -136,7 +151,7 @@ describe('Static Home page', () => {
   });
 
   it('ne contient pas de liens vers /matching ou /lesson-request directs', () => {
-    render(<Home />);
+    renderHome();
 
     const allLinks = screen.getAllByRole('link');
     const deadLinks = allLinks.filter((link) => {
@@ -147,7 +162,7 @@ describe('Static Home page', () => {
   });
 
   it('ne contient aucun lien vers /promos (placeholder non MVP) ni wording « réserve »', () => {
-    const { container } = render(<Home />);
+    const { container } = renderHome();
 
     const promoLinks = screen
       .getAllByRole('link')
@@ -156,5 +171,36 @@ describe('Static Home page', () => {
 
     // La réservation est hors scope MVP : le wording produit est « demande de cours »
     expect(container.textContent).not.toMatch(/réserve un cours|réserve avec/i);
+  });
+
+  it('bascule intégralement en anglais quand la locale est "en"', () => {
+    const { container } = renderHome('en');
+
+    // Header
+    const header = screen.getByRole('banner', { name: /site header/i });
+    expectLinkWithHref(header, /^Lessons$/i, '/register?intent=lesson-request');
+    expectLinkWithHref(header, /Log in/i, '/login');
+    expectLinkWithHref(header, /Join the community/i, '/register');
+
+    // Hero + CTAs
+    const hero = screen.getByRole('region', {
+      name: /Blob.*surf & kite community/i,
+    });
+    expectLinkWithHref(hero, /I'm a rider/i, '/register?intent=matching');
+    expectLinkWithHref(hero, /I'm a pro/i, '/register?intent=pro');
+
+    // Sections
+    expect(screen.getByRole('heading', { name: /Why Blob\?/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /We start where the community already rides/i }),
+    ).toBeInTheDocument();
+
+    // Footer
+    const footer = screen.getByRole('contentinfo');
+    expect(within(footer).getByText(/Terms of Use/i)).toBeInTheDocument();
+    expect(within(footer).getByText(/Privacy & GDPR/i)).toBeInTheDocument();
+
+    // Aucun résidu français en dur sur la home anglophone
+    expect(container.textContent).not.toMatch(/Se connecter|Rejoindre la communauté|Pourquoi Blob/);
   });
 });
