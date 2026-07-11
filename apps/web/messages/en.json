@@ -245,5 +245,117 @@
     "es": "Español",
     "de": "Deutsch",
     "nl": "Nederlands"
+  },
+  "home": {
+    "header": {
+      "ariaSiteHeader": "Site header",
+      "ariaMainNav": "Main navigation",
+      "ariaBackHome": "Blob — Back to home",
+      "nav": {
+        "matching": "Matching",
+        "lessons": "Lessons",
+        "guides": "Guides",
+        "about": "About"
+      },
+      "loginShort": "Log in",
+      "login": "Log in",
+      "join": "Join the community",
+      "joinShort": "Join"
+    },
+    "hero": {
+      "ariaSection": "Blob — The surf & kite community of the Médoc Atlantique",
+      "titleLine1": "The Surf & Kite",
+      "titleLine2": "community",
+      "subtitle": "of the Médoc Atlantique",
+      "description": "Find your session buddy, request a lesson from a pro and progress with useful tips.",
+      "ctaRider": "I'm a rider",
+      "ctaPro": "I'm a pro"
+    },
+    "cards": {
+      "matching": {
+        "title": "Find your session buddy",
+        "description": "Fast matching between riders based on your level and goals.",
+        "cta": "Start matching",
+        "imageAlt": "Two riders facing the ocean at sunset"
+      },
+      "lessons": {
+        "title": "Progress with local pros",
+        "description": "Request a private or group lesson, choose your spot and your pro.",
+        "cta": "See the pros",
+        "imageAlt": "Group of riders with a kite instructor on a Médoc beach"
+      },
+      "guides": {
+        "title": "Tips & guides",
+        "description": "Safety, weather, gear, spots — all our tips to help you progress.",
+        "cta": "Read the guides",
+        "imageAlt": "Kitesurfing in action in the Médoc Atlantique"
+      }
+    },
+    "quickAccess": {
+      "ariaSection": "Quick access to Blob features",
+      "rider": {
+        "label": "Rider or beginner",
+        "description": "Find partners to ride and progress with."
+      },
+      "lessons": {
+        "label": "Lessons with a pro",
+        "description": "Request a lesson from local pros."
+      },
+      "guides": {
+        "label": "Guides & tips",
+        "description": "Safety tips, conditions, gear and more."
+      }
+    },
+    "ocean": {
+      "kicker": "FIRST TEST AREA",
+      "title": "We start where the community already rides.",
+      "body": "Blob is starting out between Hourtin, Carcans, Lacanau and Bordeaux to test a simple idea: better connect riders, pros and useful local deals."
+    },
+    "why": {
+      "title": "Why Blob?",
+      "intro1": "Blob is starting as a local beta around surfing and kitesurfing in the Médoc Atlantique.",
+      "intro2": "The idea is simple: see whether a community can help riders, beginners and pros find each other more easily, share the right info and build useful perks together.",
+      "pillars": {
+        "beta": {
+          "label": "Local beta",
+          "body": "We're starting in the Médoc Atlantique, without closing the door to riders from Bordeaux."
+        },
+        "free": {
+          "label": "Free & no commitment",
+          "body": "During the test phase, signing up is free. The goal is to observe real usage and improve Blob with feedback from the community."
+        },
+        "community": {
+          "label": "Useful for the community",
+          "body": "Articles, tips and good deals will arrive gradually. The more the community grows, the more interesting offers Blob can secure for riders, beginners and pros."
+        }
+      }
+    },
+    "footer": {
+      "ariaFooter": "Blob footer",
+      "ariaLegalNav": "Legal links",
+      "ariaBackHome": "Blob — Back to home",
+      "columns": {
+        "platform": "Platform",
+        "community": "Community",
+        "about": "About"
+      },
+      "links": {
+        "matching": "Matching",
+        "lessons": "Lessons",
+        "guides": "Guides",
+        "join": "Join the community",
+        "rider": "I'm a rider",
+        "pro": "I'm a pro",
+        "why": "Why Blob?",
+        "login": "Log in"
+      },
+      "taglineLine1": "Surf & kite community",
+      "taglineLine2": "Médoc Atlantique",
+      "copyright": "© 2024–2026 Blob — Local beta, Médoc Atlantique",
+      "terms": "Terms of Use",
+      "privacy": "Privacy & GDPR",
+      "aboutLink": "About",
+      "freeNote": "Free sign-up, no commitment"
+    }
   }
 }

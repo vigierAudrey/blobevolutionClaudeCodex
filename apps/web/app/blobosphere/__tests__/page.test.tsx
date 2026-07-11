@@ -1,6 +1,17 @@
 import { render, screen } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
 import BlobospherePage from '../page';
+import fr from '@/messages/fr.json';
 import { loadBlobospherePreviews } from '@/lib/blobosphere/loadBlobospherePreviews';
+
+// La page réutilise HomeHeader/HomeFooter, câblés sur next-intl.
+function renderWithIntl(ui: React.ReactElement) {
+  return render(
+    <NextIntlClientProvider locale="fr" messages={fr} timeZone="Europe/Paris">
+      {ui}
+    </NextIntlClientProvider>,
+  );
+}
 
 type MockImageProps = React.ImgHTMLAttributes<HTMLImageElement> & {
   fill?: boolean;
@@ -50,7 +61,7 @@ describe('/blobosphere', () => {
   });
 
   it('lists published articles returned by the public loader', async () => {
-    render(await BlobospherePage({ searchParams: Promise.resolve({}) }));
+    renderWithIntl(await BlobospherePage({ searchParams: Promise.resolve({}) }));
 
     expect(screen.getByRole('heading', { name: 'Article publié' })).toBeInTheDocument();
     expect(screen.getByText('Extrait publié')).toBeInTheDocument();
@@ -58,7 +69,7 @@ describe('/blobosphere', () => {
   });
 
   it('filters by topic without client fetch', async () => {
-    render(await BlobospherePage({ searchParams: Promise.resolve({ topic: 'kitesurf' }) }));
+    renderWithIntl(await BlobospherePage({ searchParams: Promise.resolve({ topic: 'kitesurf' }) }));
 
     expect(screen.queryByRole('heading', { name: 'Article publié' })).not.toBeInTheDocument();
     expect(screen.getByText(/Aucun article publié pour cette rubrique/i)).toBeInTheDocument();

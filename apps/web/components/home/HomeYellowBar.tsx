@@ -1,10 +1,11 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { GraduationCap, BookOpen, type LucideIcon } from 'lucide-react';
 
 type YellowBarItem = {
-  label: string;
-  description: string;
+  /* Clé sous home.quickAccess.* portant label/description */
+  key: 'rider' | 'lessons' | 'guides';
   href: string;
   blobLogo?: true;
   Icon?: LucideIcon;
@@ -12,20 +13,17 @@ type YellowBarItem = {
 
 const items: YellowBarItem[] = [
   {
-    label: 'Rider ou débutant',
-    description: 'Trouve des partenaires pour rider et progresser.',
+    key: 'rider',
     href: '/register?intent=matching',
     blobLogo: true,
   },
   {
-    label: 'Cours avec un pro',
-    description: 'Demande un cours à des pros locaux.',
+    key: 'lessons',
     href: '/register?intent=lesson-request',
     Icon: GraduationCap,
   },
   {
-    label: 'Guides & conseils',
-    description: 'Tips sécurité, conditions, matos et plus encore.',
+    key: 'guides',
     href: '/blobosphere',
     Icon: BookOpen,
   },
@@ -84,9 +82,11 @@ function WaveEdge({ gradId }: { gradId: string }) {
 }
 
 export function HomeYellowBar() {
+  const t = useTranslations('home.quickAccess');
+
   return (
     <section
-      aria-label="Accès rapide aux fonctionnalités Blob"
+      aria-label={t('ariaSection')}
       className="relative z-20"
     >
       <div className="bg-blob-black overflow-hidden">
@@ -152,10 +152,10 @@ export function HomeYellowBar() {
 
                     <span className="flex min-w-0 flex-col">
                       <span className="font-bold uppercase tracking-wide text-blob-black dark:text-white text-[10px] sm:text-[11px] leading-tight">
-                        {item.label}
+                        {t(`${item.key}.label`)}
                       </span>
                       <span className="hidden max-w-[22ch] pt-0.5 text-[10px] leading-snug text-blob-black/58 dark:text-white/50 sm:block lg:absolute lg:left-1/2 lg:top-[calc(100%-4px)] lg:z-30 lg:w-max lg:max-w-[210px] lg:-translate-x-1/2 lg:rounded-[4px] lg:border lg:border-blob-black/10 dark:lg:border-white/10 lg:bg-white dark:lg:bg-[hsl(220_14%_16%)] lg:px-2.5 lg:py-1.5 lg:text-center lg:opacity-0 lg:shadow-[0_10px_24px_rgba(17,19,24,0.14)] dark:lg:shadow-[0_10px_24px_rgba(0,0,0,0.5)] lg:transition-opacity lg:duration-150 lg:group-hover:opacity-100 lg:group-focus-visible:opacity-100 lg:motion-reduce:transition-none">
-                        {item.description}
+                        {t(`${item.key}.description`)}
                       </span>
                     </span>
                   </Link>

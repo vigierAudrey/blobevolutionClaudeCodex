@@ -1,25 +1,12 @@
 import Image from 'next/image';
+import { useTranslations } from 'next-intl';
 import { Unlock, Users } from 'lucide-react';
 
 const pillars = [
-  {
-    id: 'beta-locale',
-    brandIcon: true,
-    label: 'Bêta locale',
-    body: 'On commence dans le Médoc Atlantique, sans fermer la porte aux riders bordelais.',
-  },
-  {
-    id: 'gratuit',
-    Icon: Unlock,
-    label: 'Gratuit & sans engagement',
-    body: "Pendant la phase de test, l'inscription est gratuite. L'idée est d'observer les usages réels et d'améliorer Blob avec les retours de la communauté.",
-  },
-  {
-    id: 'utile',
-    Icon: Users,
-    label: 'Utile pour la communauté',
-    body: "Articles, conseils et bons plans arriveront progressivement. Plus la communauté grandira, plus Blob pourra aller chercher des offres intéressantes pour les riders, les débutants et les pros.",
-  },
+  /* key = clé sous home.why.pillars.* portant label/body */
+  { id: 'beta-locale', key: 'beta', brandIcon: true },
+  { id: 'gratuit', key: 'free', Icon: Unlock },
+  { id: 'utile', key: 'community', Icon: Users },
 ] as const;
 
 /*
@@ -29,6 +16,8 @@ const pillars = [
  * Server Component — aucun JS client.
  */
 export function HomeWhyBlob() {
+  const t = useTranslations('home.why');
+
   return (
     <section
       id="why-blob"
@@ -43,7 +32,7 @@ export function HomeWhyBlob() {
             id="why-blob-title"
             className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-widest text-blob-black"
           >
-            Pourquoi Blob&nbsp;?
+            {t('title')}
           </h2>
           <div className="mt-3 h-1 w-14 bg-blob-yellow rounded-full" aria-hidden />
         </div>
@@ -54,19 +43,16 @@ export function HomeWhyBlob() {
           {/* Texte brand story */}
           <div className="space-y-4 max-w-prose">
             <p className="text-base sm:text-lg leading-relaxed text-blob-black/80 font-medium">
-              Blob démarre comme une bêta locale autour du surf et du kite dans le Médoc
-              Atlantique.
+              {t('intro1')}
             </p>
             <p className="text-sm sm:text-base leading-relaxed text-blob-black/65">
-              L&apos;idée est simple : tester si une communauté peut aider les riders, les
-              débutants et les pros à se trouver plus facilement, partager les bonnes infos et
-              construire des avantages utiles ensemble.
+              {t('intro2')}
             </p>
           </div>
 
           {/* 3 piliers */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-8 lg:grid-cols-1 lg:pt-2 xl:grid-cols-3">
-            {pillars.map(({ id, label, body, ...pillar }) => (
+            {pillars.map(({ id, key, ...pillar }) => (
               <div key={id} className="flex flex-col gap-3">
                 <div className="flex items-center gap-2.5">
                   <span
@@ -86,11 +72,11 @@ export function HomeWhyBlob() {
                     )}
                   </span>
                   <p className="text-[11px] font-black uppercase tracking-[0.14em] text-blob-black">
-                    {label}
+                    {t(`pillars.${key}.label`)}
                   </p>
                 </div>
                 <p className="text-sm leading-relaxed text-blob-black/60 pl-[42px] lg:pl-0 xl:pl-0">
-                  {body}
+                  {t(`pillars.${key}.body`)}
                 </p>
               </div>
             ))}

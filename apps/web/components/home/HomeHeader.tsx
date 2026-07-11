@@ -1,12 +1,13 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { BlobButton } from '@/components/blob/BlobButton';
 
-const navLinks = [
-  { href: '/register?intent=matching', label: 'Matching' },
-  { href: '/register?intent=lesson-request', label: 'Cours' },
-  { href: '/blobosphere', label: 'Guides' },
-  { href: '/#why-blob', label: 'À propos' },
+const NAV_LINKS = [
+  { href: '/register?intent=matching', key: 'matching' },
+  { href: '/register?intent=lesson-request', key: 'lessons' },
+  { href: '/blobosphere', key: 'guides' },
+  { href: '/#why-blob', key: 'about' },
 ] as const;
 
 /*
@@ -17,6 +18,8 @@ const navLinks = [
  * Mobile : nav masquée (aucun hamburger JS requis), logo + CTA conservés.
  */
 export function HomeHeader() {
+  const t = useTranslations('home.header');
+
   return (
     <header
       className={[
@@ -32,14 +35,14 @@ export function HomeHeader() {
         'bg-[linear-gradient(90deg,rgba(14,16,18,0.90)_0%,rgba(18,18,16,0.78)_55%,rgba(28,25,18,0.66)_100%)] backdrop-blur-sm',
         'border-b border-white/12 shadow-[0_8px_24px_rgba(0,0,0,0.28)]',
       ].join(' ')}
-      aria-label="En-tête du site"
+      aria-label={t('ariaSiteHeader')}
     >
       <div className="flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-10 xl:px-14 py-3">
 
         {/* Logo */}
         <Link
           href="/"
-          aria-label="Blob — Retour à l'accueil"
+          aria-label={t('ariaBackHome')}
           className="shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow focus-visible:ring-offset-2 focus-visible:ring-offset-blob-black rounded-sm"
         >
           <Image
@@ -54,15 +57,15 @@ export function HomeHeader() {
         </Link>
 
         {/* Navigation — desktop uniquement */}
-        <nav aria-label="Navigation principale" className="hidden md:block flex-1 mx-4 lg:mx-8">
+        <nav aria-label={t('ariaMainNav')} className="hidden md:block flex-1 mx-4 lg:mx-8">
           <ul className="flex items-center gap-5 lg:gap-7" role="list">
-            {navLinks.map(({ href, label }) => (
+            {NAV_LINKS.map(({ href, key }) => (
               <li key={href}>
                 <Link
                   href={href}
                   className="text-white/90 text-[11px] font-bold uppercase tracking-[0.12em] drop-shadow-[0_1px_8px_rgba(0,0,0,0.55)] hover:text-blob-yellow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm py-1"
                 >
-                  {label}
+                  {t(`nav.${key}`)}
                 </Link>
               </li>
             ))}
@@ -75,13 +78,13 @@ export function HomeHeader() {
             href="/login"
             className="inline-flex min-h-9 items-center border border-white/45 bg-blob-black/22 px-3 sm:px-4 py-2 text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.10em] sm:tracking-[0.12em] text-white hover:border-blob-yellow hover:text-blob-yellow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm whitespace-nowrap"
           >
-            <span className="sm:hidden">Connexion</span>
-            <span className="hidden sm:inline">Se connecter</span>
+            <span className="sm:hidden">{t('loginShort')}</span>
+            <span className="hidden sm:inline">{t('login')}</span>
           </Link>
           <BlobButton asChild variant="primaryYellow" size="sm">
             <Link href="/register" className="whitespace-nowrap">
-              <span className="hidden sm:inline">Rejoindre la communauté</span>
-              <span className="sm:hidden">Rejoindre</span>
+              <span className="hidden sm:inline">{t('join')}</span>
+              <span className="sm:hidden">{t('joinShort')}</span>
             </Link>
           </BlobButton>
         </div>

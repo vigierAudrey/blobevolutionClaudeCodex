@@ -1,28 +1,29 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 
-const footerColumns = [
+const FOOTER_COLUMNS = [
   {
-    label: 'Plateforme',
+    key: 'platform',
     links: [
-      { label: 'Matching', href: '/register?intent=matching' },
-      { label: 'Cours', href: '/register?intent=lesson-request' },
-      { label: 'Guides', href: '/blobosphere' },
+      { key: 'matching', href: '/register?intent=matching' },
+      { key: 'lessons', href: '/register?intent=lesson-request' },
+      { key: 'guides', href: '/blobosphere' },
     ],
   },
   {
-    label: 'Communauté',
+    key: 'community',
     links: [
-      { label: 'Rejoindre la communauté', href: '/register' },
-      { label: 'Je suis rider', href: '/register?intent=matching' },
-      { label: 'Je suis pro', href: '/register?intent=pro' },
+      { key: 'join', href: '/register' },
+      { key: 'rider', href: '/register?intent=matching' },
+      { key: 'pro', href: '/register?intent=pro' },
     ],
   },
   {
-    label: 'À propos',
+    key: 'about',
     links: [
-      { label: 'Pourquoi Blob ?', href: '/#why-blob' },
-      { label: 'Se connecter', href: '/login' },
+      { key: 'why', href: '/#why-blob' },
+      { key: 'login', href: '/login' },
     ],
   },
 ] as const;
@@ -33,10 +34,12 @@ const footerColumns = [
  * role="contentinfo" explicite car imbriqué dans <main> (pas de rôle implicite).
  */
 export function HomeFooter() {
+  const t = useTranslations('home.footer');
+
   return (
     <footer
       role="contentinfo"
-      aria-label="Pied de page Blob"
+      aria-label={t('ariaFooter')}
       className="-mx-4 sm:-mx-6 lg:-mx-8 -mb-6 sm:-mb-10"
     >
       <div className="bg-blob-black px-4 sm:px-6 lg:px-10 xl:px-14 pt-12 sm:pt-14 pb-8 sm:pb-10">
@@ -45,19 +48,19 @@ export function HomeFooter() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-6">
 
           {/* Colonnes de liens */}
-          {footerColumns.map((col) => (
-            <div key={col.label} className="space-y-4">
+          {FOOTER_COLUMNS.map((col) => (
+            <div key={col.key} className="space-y-4">
               <p className="text-white/75 text-[10px] font-black uppercase tracking-[0.2em]">
-                {col.label}
+                {t(`columns.${col.key}`)}
               </p>
               <ul className="space-y-2.5" role="list">
                 {col.links.map((link) => (
-                  <li key={`${col.label}-${link.href}`}>
+                  <li key={`${col.key}-${link.href}`}>
                     <Link
                       href={link.href}
                       className="text-white/60 text-[13px] leading-snug hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blob-yellow rounded-sm"
                     >
-                      {link.label}
+                      {t(`links.${link.key}`)}
                     </Link>
                   </li>
                 ))}
@@ -69,7 +72,7 @@ export function HomeFooter() {
           <div className="col-span-2 md:col-span-1 space-y-4 md:text-right">
             <Link
               href="/"
-              aria-label="Blob — Retour à l'accueil"
+              aria-label={t('ariaBackHome')}
               className="inline-block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blob-yellow rounded-sm"
             >
               <Image
@@ -82,9 +85,9 @@ export function HomeFooter() {
               />
             </Link>
             <p className="text-white/60 text-[11px] leading-relaxed uppercase tracking-[0.14em]">
-              Surf &amp; kite community
+              {t('taglineLine1')}
               <br />
-              Médoc Atlantique
+              {t('taglineLine2')}
             </p>
           </div>
 
@@ -93,30 +96,30 @@ export function HomeFooter() {
         {/* Séparateur + mention légale */}
         <div className="mt-10 pt-6 border-t border-white/[0.07] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <p className="text-white/20 text-[11px]">
-            © 2024–2026 Blob — Bêta locale Médoc Atlantique
+            {t('copyright')}
           </p>
-          <nav aria-label="Liens légaux" className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <nav aria-label={t('ariaLegalNav')} className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <Link
               href="/terms"
               className="text-white/40 text-[11px] hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blob-yellow rounded-sm"
             >
-              CGU
+              {t('terms')}
             </Link>
             <Link
               href="/docs/rgpd"
               className="text-white/40 text-[11px] hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blob-yellow rounded-sm"
             >
-              Confidentialité &amp; RGPD
+              {t('privacy')}
             </Link>
             <Link
               href="/about"
               className="text-white/40 text-[11px] hover:text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blob-yellow rounded-sm"
             >
-              À propos
+              {t('aboutLink')}
             </Link>
           </nav>
           <p className="text-white/15 text-[10px] uppercase tracking-widest">
-            Inscription gratuite, sans engagement
+            {t('freeNote')}
           </p>
         </div>
 

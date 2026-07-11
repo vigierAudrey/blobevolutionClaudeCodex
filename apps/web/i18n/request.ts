@@ -1,29 +1,22 @@
 import { getRequestConfig } from 'next-intl/server';
 import { cookies } from 'next/headers';
+import { DEFAULT_LOCALE, LOCALE_COOKIE, resolveLocale } from './config';
 
-export const LOCALES = ['fr', 'en', 'es', 'de', 'nl'] as const;
-export const DEFAULT_LOCALE = 'fr';
-
-export type Locale = (typeof LOCALES)[number];
+export { LOCALES, DEFAULT_LOCALE, type Locale } from './config';
 
 export default getRequestConfig(async () => {
-  // 1. Vérifier si l'utilisateur a déjà choisi une langue (cookie)
+  // La langue vient du cookie de préférence (pas de préfixe d'URL) ;
+  // toute valeur absente/invalide retombe sur le français.
   const cookieStore = await cookies();
-  const savedLocale = cookieStore.get('NEXT_LOCALE')?.value;
+  const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
 
-  // 2. Utiliser la langue sauvegardée ou fallback FR
-  const locale = (savedLocale && LOCALES.includes(savedLocale as Locale))
-    ? savedLocale
-    : DEFAULT_LOCALE;
-
-  // 3. Charger les traductions
   let messages;
   try {
     messages = (await import(`../messages/${locale}.json`)).default;
-  } catch (error) {
-    // Fallback si fichier de traduction manquant
-    console.warn(`Translation file for locale "${locale}" not found, falling back to French`);
-    messages = (await import(`../messages/fr.json`)).default;
+  } catch {
+    // Fichier de traduction manquant : fallback FR plutôt qu'une 500.
+    console.warn(`[i18n] messages manquants pour "${locale}", fallback "${DEFAULT_LOCALE}"`);
+    messages = (await import(`../messages/${DEFAULT_LOCALE}.json`)).default;
   }
 
   return {
