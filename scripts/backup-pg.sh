@@ -36,6 +36,23 @@ SHA256=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Canal d'alerte Discord (dégrade en log local si alert.sh ou webhook absents).
+# Sourcé AVANT le premier die() : un échec précoce (env manquant, container
+# arrêté) doit alerter comme un échec de dump.
+# shellcheck disable=SC1091
+[[ -f "$SCRIPT_DIR/alert.sh" ]] && source "$SCRIPT_DIR/alert.sh" || \
+  send_alert() { echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') [backup] [alert:${1:-?}] ${2:-}"; }
+
+# Dédupe : die() déclenche aussi le trap EXIT — une seule alerte par échec.
+# Message volontairement générique : jamais de chemin, host ou détail sensible
+# dans Discord — le détail vit dans backup-pg.log.
+_ALERT_SENT=0
+_alert_failure() {
+  [[ "$_ALERT_SENT" -eq 1 ]] && return 0
+  _ALERT_SENT=1
+  send_alert critical "Backup PostgreSQL ÉCHOUÉ — voir logs/backup-pg.log sur le VPS" "${1:-backup-pg-failed}"
+}
+
 BACKUP_DIR="${BACKUP_DIR:-$HOME/backups/blobconnect-prevps}"
 BACKUP_MIN_BYTES="${BACKUP_MIN_BYTES:-1024}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
@@ -55,7 +72,7 @@ done
 
 ts()  { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 log() { echo "$(ts) [backup] $*"; }
-die() { echo "$(ts) [backup] ERREUR FATALE: $*" >&2; exit 1; }
+die() { echo "$(ts) [backup] ERREUR FATALE: $*" >&2; _alert_failure; exit 1; }
 
 # Écrit le fichier d'état JSON (admin-safe) de manière atomique.
 # Usage : _write_state ok | _write_state failed [ERROR_CODE]
@@ -151,6 +168,8 @@ _cleanup() {
     log "Sortie sur erreur (code: $code)"
     # Trace l'échec dans le fichier d'état (consommé par la page admin "État système").
     _write_state failed "BACKUP_FAILED"
+    # Alerte Discord — couvre aussi les échecs pipeline (set -e) sans die().
+    _alert_failure
   fi
 }
 trap _cleanup EXIT
@@ -234,6 +253,9 @@ REMAINING=$(find "$BACKUP_DIR_ABS" -maxdepth 1 -name "${BACKUP_PREFIX}_*.sql.gz"
 
 # ─── État JSON (succès) — consommé par la page admin "État système" ──────────
 _write_state ok
+
+# Alerte "ok" (filtrable via ALERT_MIN_LEVEL=warning pour couper le bruit).
+send_alert ok "Backup PostgreSQL OK (${BACKUP_SIZE} bytes, ${REMAINING} conservés)" "backup-pg-ok"
 
 log "=== Backup terminé avec succès ==="
 log "  Fichier   : $BACKUP_FILE"

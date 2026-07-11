@@ -8,17 +8,18 @@ dans le cockpit [admin "État système"](./admin-system-status.md) et la page
 ## Vue d'ensemble
 
 ```
-cron VPS ──► ts-node checkBackupFreshness.ts ──► backup-monitor.service
-                                                      │ lit last-backup.json (GAP-2, RO)
-                                                      ▼
-                                              SystemAlert (dedupeKey stable)
-                                                      │
-                                          ┌───────────┴───────────┐
-                                          ▼                       ▼
-                                  /admin/alerts (liste)   email Brevo (cooldown)
+API in-process (30 min, prod) ──► backup-monitor.service
+   ou CLI checkBackupFreshness.ts     │ lit last-backup.json (GAP-2, RO)
+                                      ▼
+                              SystemAlert (dedupeKey stable)
+                                      │
+                          ┌───────────┴───────────┐
+                          ▼                       ▼
+                  /admin/alerts (liste)   email Brevo (cooldown)
 ```
 
-- **Aucune route HTTP** ne déclenche le job (zéro surface d'abus) — cron uniquement.
+- **Aucune route HTTP** ne déclenche le job (zéro surface d'abus) — scheduler
+  in-process de l'API (défaut en production) ou CLI/cron externe.
 - **Idempotent** : `dedupeKey = backup.postgres.freshness`, type `BACKUP_FRESHNESS`.
   Une exécution répétée met à jour `lastSeenAt`/`occurrenceCount`, ne duplique jamais.
 - L'API ne lit **que** `last-backup.json`, jamais les dumps.
@@ -56,21 +57,32 @@ lastSeenAt, resolvedAt, createdAt, updatedAt`.
 Index : `status`, **`status+severity`** (migration `20260613120000`), `type`,
 `dedupeKey`, `createdAt`. Liste admin paginée (cap 100), select minimal, pas de N+1.
 
-## Scheduler (cron VPS)
+## Scheduler
 
-Le job est un process court, à protéger par `flock` (pas de recouvrement) :
+**Par défaut (recommandé)** : le job tourne **in-process dans l'API** — le
+conteneur API monte `/var/lib/blob/status` en lecture seule (compose VPS),
+aucun node/pnpm requis sur l'hôte, rien à installer dans le crontab.
 
-```cron
-# /etc/cron.d/blob-backup-monitor — toutes les 30 min, user deploy
-*/30 * * * * deploy flock -n /tmp/blob-backup-monitor.lock \
-  sh -c 'cd /srv/blob && ENV_FILE=.env.vps pnpm --filter @blobinfini/api exec ts-node src/jobs/checkBackupFreshness.ts >> /var/log/blob/backup-monitor.log 2>&1'
+- `BACKUP_MONITOR_INTERVAL_MINUTES` : intervalle en minutes. Défaut : `30` si
+  `NODE_ENV=production`, `0` (désactivé) sinon — en dev le fichier d'état
+  n'existe pas et créerait une alerte WARNING parasite.
+- Un run est déclenché au démarrage de l'API, puis à chaque intervalle.
+
+**Alternative CLI** (run manuel ou cron externe, à protéger par `flock`) —
+chemins alignés sur le VPS réel (`/home/audrey/blob-app`, user `audrey`,
+cf. [cron-blobsurf.cron](./cron-blobsurf.cron)) :
+
+```bash
+cd /home/audrey/blob-app && ENV_FILE=/home/audrey/blob-app/.env.vps \
+  pnpm --filter @blobinfini/api exec tsx src/jobs/checkBackupFreshness.ts
 ```
 
 ## Variables d'environnement
 
 | Variable | Défaut | Rôle |
 |----------|--------|------|
-| `BACKUP_ALERT_EMAIL_ENABLED` | `false` | Active la notification email Brevo |
+| `BACKUP_MONITOR_INTERVAL_MINUTES` | `30` en prod, `0` sinon | Intervalle du check in-process (0 = off) |
+| `BACKUP_ALERT_EMAIL_ENABLED` | `false` | Active la notification email Brevo — **à mettre à `true` dans `.env.vps`**, sinon l'alerte reste silencieuse (DB/admin uniquement) |
 | `BACKUP_ALERT_NOTIFY_COOLDOWN_HOURS` | `12` | Cooldown anti-spam (borné 1–168) |
 | `ADMIN_EMAIL` | `security@blobsurf.com` | Destinataire des alertes |
 | `BACKUP_MAX_AGE_WARN_HOURS` / `…_CRITICAL_HOURS` | `26` / `50` | Seuils d'âge (voir [admin-system-status](./admin-system-status.md)) |
