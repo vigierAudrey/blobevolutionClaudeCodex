@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: bash scripts/no-skip-critical-check.sh
       - run: bash scripts/no-insecure-logs-check.sh
       - run: node scripts/check-security-routes.mjs
@@ -84,7 +84,7 @@ jobs:
       WEB_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
         with:
@@ -177,7 +177,7 @@ jobs:
       WEB_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
         with:
@@ -265,7 +265,7 @@ jobs:
       WEB_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:4000
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
         with:
@@ -344,7 +344,7 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blobinfini
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
         with:
@@ -411,7 +411,7 @@ jobs:
     needs: security-guard
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Validate backup script syntax (bash -n)
         run: |
