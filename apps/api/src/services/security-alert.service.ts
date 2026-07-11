@@ -15,6 +15,7 @@ import { sendMail } from '../lib/mailer';
 import { hashIpHmac } from '../lib/hash-ip';
 import { hashEmail } from '../modules/auth/login-attempt.util';
 import { secureLogger } from '../utils/secure-logger';
+import { sendDiscordAlertSilent } from './discord-alert.service';
 
 interface SecurityViolation {
   userId: string;
@@ -95,6 +96,15 @@ class SecurityAlertService {
       secureLogger.error('SECURITY_ALERT_EMAIL_FAILED', { error });
       // Ne pas bloquer si l'email échoue
     }
+
+    // 4. Alerte Discord temps réel — canal de réveil, fire-and-forget.
+    // Message générique SANS PII (pas d'userId, email, IP, user-agent) :
+    // les détails vivent dans la SystemAlert et l'email admin.
+    sendDiscordAlertSilent(
+      'critical',
+      `Violation de sécurité bloquée : ${action} (rôle ${userRole}). Détails : /admin/security-alerts + email admin.`,
+      'security-violation',
+    );
   }
 
   /**

@@ -138,6 +138,44 @@ describe('checkBackupFreshness', () => {
     });
   });
 
+  describe('canal Discord', () => {
+    it('setup Discord-only (email off) : notifie à la création puis respecte le cooldown', async () => {
+      const discord = jest.fn().mockResolvedValue(true);
+
+      const r1 = await checkBackupFreshness({ now: () => NOW, readState: async () => failed(), sendDiscord: discord });
+      expect(r1.notified).toBe(true);
+      expect(discord).toHaveBeenCalledTimes(1);
+      expect(discord).toHaveBeenCalledWith('critical', expect.any(String), 'backup-freshness');
+
+      // 1 h plus tard : toujours critique mais < cooldown → pas de re-notif Discord
+      const r2 = await checkBackupFreshness({ now: () => new Date(NOW.getTime() + 1 * H), readState: async () => failed(), sendDiscord: discord });
+      expect(r2.notified).toBe(false);
+      expect(discord).toHaveBeenCalledTimes(1);
+    });
+
+    it('gravité WARNING → niveau Discord warning', async () => {
+      const discord = jest.fn().mockResolvedValue(true);
+      await checkBackupFreshness({ now: () => NOW, readState: async () => null, sendDiscord: discord });
+      expect(discord).toHaveBeenCalledWith('warning', expect.any(String), 'backup-freshness');
+    });
+
+    it('résolution → alerte Discord "ok"', async () => {
+      const discord = jest.fn().mockResolvedValue(true);
+      await checkBackupFreshness({ now: () => NOW, readState: async () => failed(), sendDiscord: discord });
+
+      const r = await checkBackupFreshness({ now: () => new Date(NOW.getTime() + H), readState: async () => okRecent(), sendDiscord: discord });
+      expect(r.action).toBe('resolved');
+      expect(discord).toHaveBeenCalledWith('ok', expect.any(String), 'backup-freshness');
+    });
+
+    it('Discord indisponible (false) : le job aboutit, notified reste false sans email', async () => {
+      const discord = jest.fn().mockResolvedValue(false);
+      const r = await checkBackupFreshness({ now: () => NOW, readState: async () => failed(), sendDiscord: discord });
+      expect(r.notified).toBe(false);
+      expect(r.alertId).toBeTruthy();
+    });
+  });
+
   it('anti-fuite : ni secret ni chemin absolu dans message/metadata', async () => {
     await checkBackupFreshness({
       now: () => NOW,

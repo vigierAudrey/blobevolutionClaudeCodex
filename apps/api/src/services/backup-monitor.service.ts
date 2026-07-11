@@ -23,6 +23,7 @@
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';
 import { secureLogger } from '../utils/secure-logger';
 import { sendMail } from '../lib/mailer';
+import { sendDiscordAlert, type DiscordAlertLevel } from './discord-alert.service';
 import {
   readBackupStateRaw,
   evaluateBackupState,
@@ -65,6 +66,8 @@ export interface BackupMonitorDeps {
   readState?: () => Promise<unknown | null>;
   /** Injectable pour tester sans email réel. Défaut : email admin via Brevo. */
   sendNotification?: (input: BackupNotificationInput) => Promise<void>;
+  /** Injectable pour tester sans réseau. Défaut : webhook Discord ops. */
+  sendDiscord?: (level: DiscordAlertLevel, message: string, context?: string) => Promise<boolean>;
 }
 
 function humanAge(seconds: number | null): string {
@@ -128,6 +131,12 @@ export async function checkBackupFreshness(deps: BackupMonitorDeps = {}): Promis
     });
     if (resolved.count > 0) {
       secureLogger.info('BACKUP_FRESHNESS_ALERT_RESOLVED', { count: resolved.count });
+      // Ferme la boucle côté Discord : le salon a vu l'alerte, il voit la résolution.
+      await (deps.sendDiscord ?? sendDiscordAlert)(
+        'ok',
+        'Backup PostgreSQL redevenu sain — alerte fraîcheur résolue.',
+        'backup-freshness',
+      );
     }
     return { health: 'ok', action: resolved.count > 0 ? 'resolved' : 'noop-ok', severity: null, notified: false, alertId: null };
   }
@@ -201,16 +210,36 @@ export async function checkBackupFreshness(deps: BackupMonitorDeps = {}): Promis
   const shouldNotify = isNew || escalated || (severity === 'CRITICAL' && cooldownPassed);
 
   let notified = false;
-  if (shouldNotify && emailEnabled()) {
-    try {
-      await (deps.sendNotification ?? defaultNotify)({ severity, backup });
-      notified = true;
-      await prisma.systemAlert.update({
-        where: { id: alertId },
-        data: { metadata: toJson({ ...diagnostics, lastNotifiedAt: now.toISOString() }) },
-      });
-    } catch (error) {
-      secureLogger.error('BACKUP_ALERT_EMAIL_FAILED', { error });
+  if (shouldNotify) {
+    if (emailEnabled()) {
+      try {
+        await (deps.sendNotification ?? defaultNotify)({ severity, backup });
+        notified = true;
+      } catch (error) {
+        secureLogger.error('BACKUP_ALERT_EMAIL_FAILED', { error });
+      }
+    }
+
+    // Canal Discord — indépendant de l'email (webhook présent = actif).
+    // backup.message est admin-safe by design : ni chemin, ni dump, ni secret.
+    const discordSent = await (deps.sendDiscord ?? sendDiscordAlert)(
+      severity === 'CRITICAL' ? 'critical' : 'warning',
+      backup.message,
+      'backup-freshness',
+    );
+    if (discordSent) notified = true;
+
+    // lastNotifiedAt (cooldown anti-spam) posé dès qu'UN canal a notifié —
+    // sans quoi un setup Discord-only re-notifierait à chaque run.
+    if (notified) {
+      try {
+        await prisma.systemAlert.update({
+          where: { id: alertId },
+          data: { metadata: toJson({ ...diagnostics, lastNotifiedAt: now.toISOString() }) },
+        });
+      } catch (error) {
+        secureLogger.error('BACKUP_ALERT_NOTIFY_STATE_FAILED', { error });
+      }
     }
   }
 

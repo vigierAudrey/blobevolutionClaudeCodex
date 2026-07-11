@@ -82,6 +82,8 @@ cd /home/audrey/blob-app && ENV_FILE=/home/audrey/blob-app/.env.vps \
 | Variable | Défaut | Rôle |
 |----------|--------|------|
 | `BACKUP_MONITOR_INTERVAL_MINUTES` | `30` en prod, `0` sinon | Intervalle du check in-process (0 = off) |
+| `DISCORD_WEBHOOK_URL` | — | Canal Discord temps réel (partagé avec alert.sh). Actif dès que présent : WARNING/CRITICAL à la notification, `ok` à la résolution. Les violations de sécurité y passent aussi (message générique, zéro PII) |
+| `ALERT_MIN_LEVEL` | `ok` | Filtre de niveau Discord partagé API + scripts (`ok`\|`warning`\|`critical`\|`emergency`) |
 | `BACKUP_ALERT_EMAIL_ENABLED` | `false` | Active la notification email Brevo — **à mettre à `true` dans `.env.vps`**, sinon l'alerte reste silencieuse (DB/admin uniquement) |
 | `BACKUP_ALERT_NOTIFY_COOLDOWN_HOURS` | `12` | Cooldown anti-spam (borné 1–168) |
 | `ADMIN_EMAIL` | `security@blobsurf.com` | Destinataire des alertes |
