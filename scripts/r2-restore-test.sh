@@ -188,9 +188,11 @@ else
 fi
 
 # ─── Vérification header age ──────────────────────────────────────────────────
-# Les fichiers age commencent par "age-encryption.org/v1" (en ASCII, les 20 premiers bytes)
+# Les fichiers age commencent par "age-encryption.org/v1" — 21 octets ASCII.
+# Off-by-one historique : head -c 20 tronquait à "age-encryption.org/v" et ne
+# pouvait JAMAIS égaler la chaîne attendue → fausse alerte emergency à chaque run.
 log "Vérification header age (fichier chiffré valide)..."
-AGE_MAGIC="$(head -c 20 "$DOWNLOADED_FILE" 2>/dev/null | tr -dc '[:print:]' || true)"
+AGE_MAGIC="$(head -c 21 "$DOWNLOADED_FILE" 2>/dev/null | tr -dc '[:print:]' || true)"
 if [[ "$AGE_MAGIC" == "age-encryption.org/v1" ]]; then
   log "  Header age valide : fichier chiffré confirmé."
 else

@@ -248,10 +248,14 @@ for PLAINTEXT_FILE in "${FILES_TO_UPLOAD[@]}"; do
 
   # ── 5. Upload SHA256 manifest + nettoyage ───────────────────────────────────
   log "  5/5 Upload SHA256 manifest + nettoyage..."
+  # --timeout exige une unité (« 30 » nu = flag invalide → le manifest n'a
+  # JAMAIS été uploadé avant ce fix). --checksum : R2 renvoie NotImplemented
+  # sur le set-modtime post-upload ; la comparaison par hash au retry absorbe
+  # cette erreur (même approche que l'upload principal du .age).
   timeout 60 rclone copy \
     "$SHA256_FILE" \
     "${RCLONE_REMOTE}:${R2_BUCKET}/${REMOTE_PATH}/" \
-    --retries 2 --timeout 30 \
+    --retries 2 --timeout 30s --checksum \
     2>/dev/null || log "  AVERTISSEMENT: Upload SHA256 manifest échoué (non bloquant)"
 
   # Supprimer le fichier .age local (R2 est la copie distante de référence)
