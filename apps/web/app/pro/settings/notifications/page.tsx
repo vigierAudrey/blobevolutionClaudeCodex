@@ -224,7 +224,7 @@ export default function ProNotificationsPage() {
                     </span>
                     <div className="min-w-0">
                       <p className="text-sm font-black uppercase tracking-wide">Demandes de cours (BloboMap)</p>
-                      <p className="text-xs text-blob-black/64 dark:text-white/60">Riders cherchant un cours — alerte dans Blob et par email</p>
+                      <p className="text-xs text-blob-black/64 dark:text-white/60">Riders cherchant un cours — alerte dans Blob, push et email</p>
                     </div>
                   </div>
                   <button

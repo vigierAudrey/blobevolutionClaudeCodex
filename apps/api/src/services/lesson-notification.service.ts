@@ -7,12 +7,19 @@ import { secureLogger } from '../utils/secure-logger';
 import { computeZoneLarge } from './analytics/events.service';
 import { sendNewLessonRequestEmailToPro } from '../lib/mailer';
 import { hashEmail } from '../modules/auth/login-attempt.util';
+import { pushNotificationService } from './push-notification.service';
 
 /** Max pros notifiés par demande de cours (cap dur MVP). */
 export const MAX_PROS_TO_NOTIFY = 100;
 
 /** Max emails envoyés en parallèle : respecte les limites Brevo et le pool SMTP. */
 export const EMAIL_CONCURRENCY = 5;
+
+/**
+ * Max envois push en parallèle : chaque sendToUser fait un lookup préférences +
+ * tokens (DB) puis 1..5 appels FCM — même logique de bornage que les emails.
+ */
+export const PUSH_CONCURRENCY = 5;
 
 /**
  * Taille des lots pour les inserts de notifications.
@@ -49,6 +56,7 @@ interface EligibleProRow {
   distanceKm: number;
   emailNotif: boolean;
   inAppEnabled: boolean;
+  pushEnabled: boolean;
 }
 
 function safeErrorMeta(error: unknown): { errorName?: string; errorCode?: string } {
@@ -127,6 +135,7 @@ async function sendNotificationsChunked(
  *   - ProProfile.lat + lng non-null (position de service définie)
  *   - Distance(pro, lessonLocation) <= pro.radiusKm
  *   - NotificationPreferences.notifyLessonRequests = true (ou absent = défaut true)
+ *   - Au moins un canal actif (emailNotif, inAppEnabled ou pushEnabled)
  *   - Si lessonSport fourni : filtre sur notifyForSurf / notifyForKitesurf
  *
  * Sécurité : paramètres liés via Prisma.sql (injection SQL impossible).
@@ -154,7 +163,8 @@ async function findEligiblePros(input: LessonNotificationInput): Promise<Eligibl
         ) / 1000.0
       )::float AS "distanceKm",
       pp."emailNotif",
-      COALESCE(np."inAppEnabled", true) AS "inAppEnabled"
+      COALESCE(np."inAppEnabled", true) AS "inAppEnabled",
+      COALESCE(np."pushEnabled", true) AS "pushEnabled"
     FROM "ProProfile" pp
     LEFT JOIN "NotificationPreferences" np ON np."userId" = pp."userId"
     WHERE pp."verified" = true
@@ -165,6 +175,7 @@ async function findEligiblePros(input: LessonNotificationInput): Promise<Eligibl
         pp."emailNotif" = true
         OR np."inAppEnabled" IS NULL
         OR np."inAppEnabled" = true
+        OR np."pushEnabled" = true
       )
       AND ST_DWithin(
         ST_SetSRID(ST_MakePoint(pp."lng", pp."lat"), 4326)::geography,
@@ -248,6 +259,41 @@ export async function sendEmailsToOptedInPros(
       }),
     );
   }
+}
+
+/**
+ * Envoie les push FCM aux pros ayant pushEnabled=true, en lots de PUSH_CONCURRENCY.
+ *
+ * Sécurité / robustesse :
+ *   - sendToUser re-vérifie shouldNotifyUser(LESSON_REQUEST_NEARBY, PUSH)
+ *     fail-closed — le flag SQL pushEnabled n'est qu'un pré-filtre.
+ *   - Pas de coordonnées ni d'identifiant rider dans le payload push.
+ *   - Une erreur FCM sur un pro ne bloque pas les autres (allSettled).
+ *   - Fire-and-forget : n'impacte pas la réponse HTTP rider.
+ *   - Feature flag PUSH_NOTIFICATIONS_ENABLED géré par le service push (no-op sinon).
+ */
+export async function sendPushToOptedInPros(
+  pros: EligibleProRow[],
+  sport: LessonSport | null,
+): Promise<void> {
+  const optedIn = pros.filter((p) => p.pushEnabled);
+  if (optedIn.length === 0) return;
+
+  let sent = 0;
+  for (let i = 0; i < optedIn.length; i += PUSH_CONCURRENCY) {
+    const chunk = optedIn.slice(i, i + PUSH_CONCURRENCY);
+    const results = await Promise.allSettled(
+      chunk.map((pro) =>
+        pushNotificationService.sendLessonRequestNearby(pro.userId, {
+          sport,
+          distanceBucket: toDistanceBucket(Number(pro.distanceKm)),
+        }),
+      ),
+    );
+    sent += results.filter((r) => r.status === 'fulfilled' && r.value === true).length;
+  }
+
+  secureLogger.info('LESSON_PUSH_FANOUT_DONE', { attempted: optedIn.length, sent });
 }
 
 /**
@@ -341,6 +387,12 @@ export async function notifyNearbyProsForLesson(input: LessonNotificationInput):
   // Une erreur Brevo ne bloque pas et ne casse pas la demande rider.
   void sendEmailsToOptedInPros(pros, lessonSport).catch((err: unknown) => {
     secureLogger.warn('LESSON_EMAIL_FANOUT_FAILED', safeErrorMeta(err));
+  });
+
+  // Envoi push FCM aux pros ayant pushEnabled=true — fire-and-forget.
+  // Une erreur FCM ne bloque pas et ne casse pas la demande rider.
+  void sendPushToOptedInPros(pros, lessonSport).catch((err: unknown) => {
+    secureLogger.warn('LESSON_PUSH_FANOUT_FAILED', safeErrorMeta(err));
   });
 
   await recordFanout({

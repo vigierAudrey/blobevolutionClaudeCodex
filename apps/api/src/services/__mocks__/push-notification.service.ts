@@ -48,6 +48,13 @@ export class PushNotificationService {
     return true;
   }
 
+  async sendLessonRequestNearby(
+    proUserId: string,
+    lessonData: { sport: 'surf' | 'kitesurf' | null; distanceBucket?: string },
+  ): Promise<boolean> {
+    return true;
+  }
+
   async subscribeTopic(token: string, topic: string): Promise<boolean> {
     return true;
   }
