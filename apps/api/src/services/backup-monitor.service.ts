@@ -13,7 +13,11 @@
  * uniquement sur changement d'état / escalade / persistance critique.
  *
  * Aucun secret, chemin absolu ou nom de dump dans l'alerte, l'email ou les logs.
- * Aucune route HTTP : déclenché par cron côté VPS (apps/api/src/jobs/checkBackupFreshness.ts).
+ * Aucune route HTTP. Déclenchement :
+ *   - in-process (index.ts, BACKUP_MONITOR_INTERVAL_MINUTES — défaut 30 min en
+ *     production, désactivé ailleurs) : le conteneur API monte /var/lib/blob/status
+ *     en lecture seule, aucun tooling host requis ;
+ *   - CLI apps/api/src/jobs/checkBackupFreshness.ts : run manuel ou cron externe.
  */
 
 import { clientPrisma as prisma, Prisma } from '@blobinfini/database';

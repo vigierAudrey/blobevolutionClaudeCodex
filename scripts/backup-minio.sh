@@ -31,7 +31,9 @@
 #   MINIO_BACKUP_GZIP_LEVEL      Niveau gzip 1-9             (défaut: 6)
 #   BACKUP_HELPER_IMAGE          Image tar éphémère          (défaut: busybox:stable)
 #   LOCK_FILE                    Verrou flock                (défaut: /tmp/blob-backup-minio.lock)
-#   ENV_FILE                     Accepté pour parité cron — NON lu (aucun secret requis).
+#   ENV_FILE                     Seule la variable DISCORD_WEBHOOK_URL en est extraite
+#                                (canal d'alerte) — le fichier n'est JAMAIS sourcé en
+#                                entier : aucun credential MinIO/PG ne transite ici.
 #
 # Sortie : $BACKUP_DIR/<prefix>_YYYY-MM-DD_HHMMSS_UTC.tar.gz (+ .sha256)
 #
@@ -43,6 +45,26 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ─── Canal d'alerte Discord ───────────────────────────────────────────────────
+# Ce script ne source PAS ENV_FILE (zéro secret requis pour le backup) ; seule
+# DISCORD_WEBHOOK_URL est extraite si absente de l'environnement.
+if [[ -z "${DISCORD_WEBHOOK_URL:-}" && -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then
+  DISCORD_WEBHOOK_URL="$(grep -E '^DISCORD_WEBHOOK_URL=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)" || true
+  export DISCORD_WEBHOOK_URL
+fi
+# shellcheck disable=SC1091
+[[ -f "$SCRIPT_DIR/alert.sh" ]] && source "$SCRIPT_DIR/alert.sh" || \
+  send_alert() { echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') [backup-minio] [alert:${1:-?}] ${2:-}"; }
+
+# Dédupe : die() déclenche aussi le trap EXIT — une seule alerte par échec.
+# Message générique : jamais de chemin ni de détail sensible dans Discord.
+_ALERT_SENT=0
+_alert_failure() {
+  [[ "$_ALERT_SENT" -eq 1 ]] && return 0
+  _ALERT_SENT=1
+  send_alert critical "Backup MinIO ÉCHOUÉ — voir logs/backup-minio.log sur le VPS" "${1:-backup-minio-failed}"
+}
 
 # ─── Configuration (toutes surchargeables par variable d'environnement) ───────
 DC_PROJECT="${DC_PROJECT:-blobconnect-vps}"
@@ -62,7 +84,7 @@ DRY_RUN=0
 
 ts()  { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 log() { echo "$(ts) [backup-minio] $*"; }
-die() { echo "$(ts) [backup-minio] ERREUR FATALE: $*" >&2; exit 1; }
+die() { echo "$(ts) [backup-minio] ERREUR FATALE: $*" >&2; _alert_failure; exit 1; }
 
 usage() {
   sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -161,7 +183,11 @@ log "Destination: $BACKUP_FILE"
 _cleanup() {
   local code=$?
   [[ -f "$BACKUP_TEMP" ]] && rm -f "$BACKUP_TEMP"
-  [[ $code -ne 0 ]] && log "Sortie sur erreur (code: $code)"
+  if [[ $code -ne 0 ]]; then
+    log "Sortie sur erreur (code: $code)"
+    # Alerte Discord — couvre aussi les échecs pipeline (set -e) sans die().
+    _alert_failure
+  fi
 }
 trap _cleanup EXIT
 
@@ -225,6 +251,9 @@ done < <(find "$BACKUP_DIR_ABS" -maxdepth 1 \
            -mtime +"$MINIO_BACKUP_RETENTION_DAYS" -print0 2>/dev/null)
 
 REMAINING=$(find "$BACKUP_DIR_ABS" -maxdepth 1 -name "${MINIO_BACKUP_PREFIX}_*.tar.gz" | wc -l | tr -d ' ')
+
+# Alerte "ok" (filtrable via ALERT_MIN_LEVEL=warning pour couper le bruit).
+send_alert ok "Backup MinIO OK (${BACKUP_SIZE} bytes, ${REMAINING} conservés)" "backup-minio-ok"
 
 log "=== Backup MinIO terminé avec succès ==="
 log "  Fichier   : $BACKUP_FILE"

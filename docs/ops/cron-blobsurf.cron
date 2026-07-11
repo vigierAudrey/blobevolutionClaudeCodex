@@ -23,6 +23,13 @@ BACKUP_DIR=/home/audrey/backups/blobsurf
 ENV_FILE=/home/audrey/blob-app/.env.vps
 DC_PROJECT=blobconnect-vps
 
+# ─── Surveillance fraîcheur backups : PAS de ligne cron nécessaire ───────────
+# Le check tourne IN-PROCESS dans l'API (BACKUP_MONITOR_INTERVAL_MINUTES,
+# défaut 30 min en production) — voir docs/ops/system-alerts.md.
+# Rappel .env.vps : BACKUP_ALERT_EMAIL_ENABLED=true pour recevoir l'email admin.
+# Les scripts backup-pg/blobsurf/minio envoient en plus une alerte Discord
+# (alert.sh) : critical sur échec, ok sur succès (filtrable ALERT_MIN_LEVEL).
+
 # ─── Backup PostgreSQL — tous les jours à 3h00 UTC ───────────────────────────
 # Dumps quotidiens + rotation 7 jours
 # Logs dans : /home/audrey/backups/blobsurf/logs/backup-pg.log
@@ -35,7 +42,9 @@ DC_PROJECT=blobconnect-vps
 # manuel validé sur le VPS (voir docs/ops/backups.md § MinIO). MinIO 4h00 UTC,
 # avant l'upload R2 de 4h30. Sort dans le sous-dossier minio/ (repris par
 # backup-encrypt-upload.sh → R2 minio/).
-# 0 4 * * * DC_PROJECT=blobconnect-vps BACKUP_DIR=/home/audrey/backups/blobsurf/minio /home/audrey/blob-app/scripts/backup-minio.sh >> /home/audrey/backups/blobsurf/logs/backup-minio.log 2>&1
+# ENV_FILE est passé UNIQUEMENT pour l'alerte Discord (seule la variable
+# DISCORD_WEBHOOK_URL en est extraite — le fichier n'est jamais sourcé entier).
+# 0 4 * * * DC_PROJECT=blobconnect-vps ENV_FILE=/home/audrey/blob-app/.env.vps BACKUP_DIR=/home/audrey/backups/blobsurf/minio /home/audrey/blob-app/scripts/backup-minio.sh >> /home/audrey/backups/blobsurf/logs/backup-minio.log 2>&1
 
 # ─── TODO non installé : Surveillance disque ─────────────────────────────────
 # Script absent du dépôt : /home/audrey/blob-app/scripts/disk-guard.sh

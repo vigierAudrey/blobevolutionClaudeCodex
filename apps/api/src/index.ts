@@ -361,6 +361,14 @@ export function createApp() {
   // Expiration des demandes de cours (BloboMap) — toutes les 6h par défaut :
   // la fenêtre d'expiration est à minuit UTC, 4 passages/jour bornent le retard.
   const lessonExpiryHours = Number(process.env.LESSON_EXPIRY_INTERVAL_HOURS || '6');
+  // Surveillance fraîcheur backups (GAP-3) : in-process — le conteneur API monte
+  // déjà /var/lib/blob/status en RO, aucun tooling host requis. Actif par défaut
+  // UNIQUEMENT en production : en dev le fichier d'état n'existe pas et créerait
+  // une SystemAlert WARNING parasite à chaque démarrage.
+  const backupMonitorMinutes = Number(
+    process.env.BACKUP_MONITOR_INTERVAL_MINUTES
+      || (process.env.NODE_ENV === 'production' ? '30' : '0'),
+  );
   async function purgeOnce() {
     await runJobWithLogContext('consent-purge', async () => {
       try {
@@ -405,6 +413,25 @@ export function createApp() {
     });
   }
 
+  // Fraîcheur des backups PostgreSQL : lit last-backup.json (RO), maintient la
+  // SystemAlert dédupliquée + email admin (cf. backup-monitor.service.ts).
+  async function runBackupFreshnessCheck() {
+    await runJobWithLogContext('backup-freshness', async () => {
+      try {
+        const { checkBackupFreshness } = await import('./services/backup-monitor.service.js');
+        const result = await checkBackupFreshness();
+        secureLogger.info('BACKUP_FRESHNESS_RUN', {
+          health: result.health,
+          action: result.action,
+          severity: result.severity,
+          notified: result.notified,
+        });
+      } catch (e) {
+        secureLogger.error('BACKUP_FRESHNESS_FAILED', { error: e });
+      }
+    });
+  }
+
   // Only start background jobs in production/development, not in tests
   if (process.env.NODE_ENV !== 'test') {
     if (gdprPurgeHours > 0) {
@@ -432,6 +459,12 @@ export function createApp() {
     if (lessonExpiryHours > 0) {
       setInterval(runLessonExpiry, lessonExpiryHours * 60 * 60 * 1000);
       runLessonExpiry();
+    }
+
+    // Surveillance fraîcheur backups (prod par défaut, cf. backupMonitorMinutes)
+    if (backupMonitorMinutes > 0) {
+      setInterval(runBackupFreshnessCheck, backupMonitorMinutes * 60 * 1000);
+      runBackupFreshnessCheck();
     }
   }
 
